@@ -320,30 +320,56 @@ theorem exec_jmpRax (ctx : Ctx) (x : X86.State) :
     Item.jmpRax.exec ctx x = .ok (x.jump (x.reg .rax)) := rfl
 
 /-- The epilogue alone (a tail call's: no `ret`): `rsp = fp + 8`, where the caller's return
-address is; the saved registers restored as in `ArgRet.exec_epilogue`; nothing else changed but
+address is; the saved `rbp` restored as in `ArgRet.exec_epilogue`; nothing else changed but
 the flags. -/
 theorem exec_epilogue_only (ctx : Ctx) (F : Nat) (m : Ryo.Obj.Mode) (y : X86.State)
-    (hsp : m.pe = false → m.framePointer = false →
+    (hsp : m.pe = true ∨ m.framePointer = false →
       y.rsp = y.reg .rbp - BitVec.ofNat 64 F ∧ F + 8 < 2 ^ 31) :
     ∃ y', execItems ctx (epilogue F m) y = .ok y' ∧ y'.mem = y.mem ∧ y'.xmm = y.xmm ∧
       y'.rsp = y.reg .rbp + 8 ∧
-      (∀ i : Fin 16, i ≠ 4 → i ≠ 5 → i ≠ 6 → i ≠ 7 → y'.regs i = y.regs i) ∧
+      (∀ i : Fin 16, i ≠ 4 → i ≠ 5 → y'.regs i = y.regs i) ∧
       (m.pe = true ∨ m.framePointer = true → y'.reg .rbp = y.mem.read64 (y.reg .rbp)) ∧
-      (m.pe = false → m.framePointer = false → y'.reg .rbp = y.reg .rbp) ∧
-      (m.pe = true → y'.reg .rsi = y.mem.read64 (y.reg .rbp - 16) ∧
-        y'.reg .rdi = y.mem.read64 (y.reg .rbp - 8)) ∧
-      (m.pe = false → y'.reg .rsi = y.reg .rsi ∧ y'.reg .rdi = y.reg .rdi) := by
+      (m.pe = false → m.framePointer = false → y'.reg .rbp = y.reg .rbp) := by
+  have ea : ∀ a b : BitVec 64, (addF a b).1 = a + b := fun _ _ => rfl
   unfold epilogue
   cases hpe : m.pe <;> cases hfp : m.framePointer <;>
-    simp only [hpe, hfp, Bool.false_eq_true, ↓reduceIte, winEpilogue, execItems_cons, execItems_nil,
-      Item.exec, pure, Except.pure, ex_bind_ok', false_implies, forall_const,
-      true_or, or_true] at hsp ⊢
-  all_goals refine ⟨_, rfl, ?_⟩
+    simp only [hpe, hfp, Bool.false_eq_true, ↓reduceIte, true_or, or_true, or_false,
+      false_implies, forall_const, true_implies] at hsp ⊢
+  -- PE: `add rsp, F` (for `F > 0`) and `pop rbp`, from `rsp = fp - F`.
+  case true.false | true.true =>
+    obtain ⟨hr, hF⟩ := hsp
+    simp only [State.rsp, State.reg, ArgRet.idx_rsp, idx_rbp] at hr
+    by_cases hF0 : F = 0
+    · subst hF0
+      simp only [bne_self_eq_false, Bool.false_eq_true, ↓reduceIte, List.nil_append,
+        execItems_cons, execItems_nil, Item.exec, pure, Except.pure, ex_bind_ok']
+      refine ⟨_, rfl, ?_⟩
+      simp (config := { decide := true }) [State.pop, State.rsp, State.reg, State.setReg, State.jump]
+      simp only [BitVec.ofNat_eq_ofNat, BitVec.sub_zero] at hr
+      simp only [hr, idx_rbp]
+      and_intros
+      all_goals first
+        | (intro i h4 h5; simp [h4, h5])
+        | (congr 1; bv_omega)
+        | bv_omega
+    · have hne : (F != 0) = true := by simpa using hF0
+      simp only [hne, ↓reduceIte, List.cons_append, List.singleton_append, List.nil_append,
+        execItems_cons, execItems_nil, Item.exec, pure, Except.pure, ex_bind_ok']
+      refine ⟨_, rfl, ?_⟩
+      simp (config := { decide := true }) [State.pop, State.rsp, State.reg, State.setReg,
+        State.setFlags, State.jump]
+      simp only [ea, idx_rbp]
+      rw [hr, ArgRet.signExtend_ofNat_small _ (by omega)]
+      and_intros
+      all_goals first
+        | (intro i h4 h5; simp [h4, h5])
+        | (congr 1; bv_omega)
+        | bv_omega
   all_goals
+    simp only [execItems_cons, execItems_nil, Item.exec, pure, Except.pure, ex_bind_ok']
+    refine ⟨_, rfl, ?_⟩
     simp (config := { decide := true }) [State.pop, State.rsp, State.reg, State.setReg,
       State.setFlags, State.jump]
-  all_goals
-    have ea : ∀ a b : BitVec 64, (addF a b).1 = a + b := fun _ _ => rfl
     try simp only [ea]
   case false.false =>
     obtain ⟨hr, hF⟩ := hsp
@@ -351,12 +377,12 @@ theorem exec_epilogue_only (ctx : Ctx) (F : Nat) (m : Ryo.Obj.Mode) (y : X86.Sta
     rw [hr, ArgRet.signExtend_ofNat_small _ (by omega), BitVec.ofNat_add]
     and_intros
     · bv_omega
-    · intro i h4 h5 h6 h7; simp [h4]
+    · intro i h4 h5; simp [h4]
   all_goals
     and_intros <;>
     first
       | exact True.intro
-      | (intro i h4 h5 h6 h7; simp [h4, h5, h6, h7])
+      | (intro i h4 h5; simp [h4, h5])
       | bv_omega
       | (congr 1; bv_omega)
 
@@ -1345,7 +1371,7 @@ theorem tail_call_step (ctx : Ctx) {c : R.Code} {s : R.RState} {x : X86.State}
     (hf : op.full = some f) (hsh : f.info.shape = .tailCall)
     (hs : tailSeq c.d.frameSize c.mode f fo ws = some items)
     (hr : RRel s x) (hm : MemRel s.st x) (hsz : ∀ sc ∈ c.scopesAt s.pc, sc.size < 2 ^ 62)
-    (hsp : c.mode.pe = false → c.mode.framePointer = false →
+    (hsp : c.mode.pe = true ∨ c.mode.framePointer = false →
       x.rsp = x.reg .rbp - BitVec.ofNat 64 c.d.frameSize ∧ c.d.frameSize + 8 < 2 ^ 31)
     (hn : 16 + c.stackSize s.pc ≤ 2 ^ 63)
     (h : R.step c s ch = .ok (.done fin)) :
@@ -1356,9 +1382,7 @@ theorem tail_call_step (ctx : Ctx) {c : R.Code} {s : R.RState} {x : X86.State}
       x'.mem = x.mem ∧ x'.rsp = x.reg .rbp + 8 ∧
       (c.mode.pe = true ∨ c.mode.framePointer = true → x'.reg .rbp = x.mem.read64 (x.reg .rbp)) ∧
       (c.mode.pe = false → c.mode.framePointer = false → x'.reg .rbp = x.reg .rbp) ∧
-      (c.mode.pe = true → x'.reg .rsi = x.mem.read64 (x.reg .rbp - 16) ∧
-        x'.reg .rdi = x.mem.read64 (x.reg .rbp - 8)) ∧
-      (∀ i, CalleeSaved i → i ≠ 5 → x'.regs i = x.regs i) := by
+      (∀ i, Saved c.mode.pe i → i ≠ 5 → x'.regs i = x.regs i) := by
   obtain ⟨s1, cal, regs, stack, hsc, hc, ha, hrd, hfin⟩ := CallLemmas.step_tailCall hi hf hsh h
   have hk := scopes_keeps _ hsc
   obtain ⟨hr1, hm1⟩ := ScopeMem.memRel_foldlM _ hsz hr hm hsc
@@ -1390,12 +1414,12 @@ theorem tail_call_step (ctx : Ctx) {c : R.Code} {s : R.RState} {x : X86.State}
     show y.regs 4 = x.regs 4; rw [hkeep 4 (by simp), rs0 4 (by decide)]
   have hyrbp : y.reg .rbp = x.reg .rbp := by
     show y.regs 5 = x.regs 5; rw [hkeep 5 (by simp), rs0 5 (by decide)]
-  obtain ⟨y', ex, mx, xx, rspx, regsx, rbpx, rbpx2, rsix, rsix2⟩ :=
-    exec_epilogue_only ctx c.d.frameSize c.mode y (fun h1 h2 => by
-      rw [hyrsp, hyrbp]; exact hsp h1 h2)
+  obtain ⟨y', ex, mx, xx, rspx, regsx, rbpx, rbpx2⟩ :=
+    exec_epilogue_only ctx c.d.frameSize c.mode y (fun h1 => by
+      rw [hyrsp, hyrbp]; exact hsp h1)
   have hyrax' : y'.reg .rax = y0.reg .rax := by
     show y'.regs 0 = y0.regs 0
-    rw [regsx 0 (by decide) (by decide) (by decide) (by decide), hkeep 0 (by simp)]
+    rw [regsx 0 (by decide) (by decide), hkeep 0 (by simp)]
   generalize hx' : y'.jump (calleeTarget ctx y'.mem cal) = x'
   have ej := hj y' hyrax' y'.mem
   rw [hx'] at ej
@@ -1408,7 +1432,7 @@ theorem tail_call_step (ctx : Ctx) {c : R.Code} {s : R.RState} {x : X86.State}
     simp only [fpAddr, hr.rbp]
     rw [BitVec.ofNat_add]; rfl
   refine ⟨s1, cal, regs, stack, x', hfin.trans (by rw [hk.fp]), hr1, hm1, hk.fp, hstl, ?_,
-    ⟨?_, ?_, ?_, ?_, ?_⟩, hx'mem, ?_, ?_, ?_, ?_, ?_⟩
+    ⟨?_, ?_, ?_, ?_, ?_⟩, hx'mem, ?_, ?_, ?_, ?_⟩
   · rw [ArgRet.execItems_append, ArgRet.execItems_append, e0]
     show (execItems ctx ps y0 >>= fun s1 => execItems ctx (epilogue c.d.frameSize c.mode ++ [j]) s1) = _
     rw [e1]
@@ -1419,24 +1443,8 @@ theorem tail_call_step (ctx : Ctx) {c : R.Code} {s : R.RState} {x : X86.State}
   · rw [← hx']; rfl
   · refine ArgRet.ArgsRel.congr (argsRel_of hlist) (fun i hi => ?_) (fun i _ => by rw [hx'xmm, xx])
     rw [hx'regs]
-    obtain ⟨h4, h5, h67⟩ := intArg_epi hi
-    by_cases h6 : (intArg c.mode.pe i).idx = 6
-    · have hpe : c.mode.pe = false := by
-        cases hpe : c.mode.pe
-        · rfl
-        · exact absurd h6 (h67 hpe).1
-      have := (rsix2 hpe).1
-      simp only [State.reg, ArgRet.idx_rsi] at this
-      rw [h6]; exact this
-    by_cases h7 : (intArg c.mode.pe i).idx = 7
-    · have hpe : c.mode.pe = false := by
-        cases hpe : c.mode.pe
-        · rfl
-        · exact absurd h7 (h67 hpe).2
-      have := (rsix2 hpe).2
-      simp only [State.reg, ArgRet.idx_rdi] at this
-      rw [h7]; exact this
-    exact regsx _ h4 h5 h6 h7
+    obtain ⟨h4, h5, -⟩ := intArg_epi hi
+    exact regsx _ h4 h5
   · show x'.regs 4 + 8 = _
     rw [hx'regs]
     show y'.rsp + 8 = _
@@ -1457,18 +1465,10 @@ theorem tail_call_step (ctx : Ctx) {c : R.Code} {s : R.RState} {x : X86.State}
   · intro h1 h2
     show x'.regs 5 = _
     rw [hx'regs]; show y'.reg .rbp = _; rw [rbpx2 h1 h2, hyrbp]
-  · intro hm'
-    obtain ⟨a1, a2⟩ := rsix hm'
-    refine ⟨?_, ?_⟩
-    · show x'.regs 6 = _; rw [hx'regs]; show y'.reg .rsi = _; rw [a1, hyrbp, hymem]
-    · show x'.regs 7 = _; rw [hx'regs]; show y'.reg .rdi = _; rw [a2, hyrbp, hymem]
-  · intro i hi h5
-    have hs : Saved c.mode.pe i := saved_of_calleeSaved hi
+  · intro i hs h5
     have := saved_ne hs
     rw [hx'regs]
     have h4 : i ≠ 4 := this.2.2.2
-    have h6 : i ≠ 6 := by rcases hi with rfl | rfl | rfl | rfl | rfl | rfl <;> decide
-    have h7 : i ≠ 7 := by rcases hi with rfl | rfl | rfl | rfl | rfl | rfl <;> decide
-    rw [regsx i h4 h5 h6 h7, hkeep i (by simp [hs]), rs0 i this.1]
+    rw [regsx i h4 h5, hkeep i (by simp [hs]), rs0 i this.1]
 
 end Ryo.Proofs.Call

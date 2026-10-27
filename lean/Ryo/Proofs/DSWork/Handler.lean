@@ -119,8 +119,8 @@ theorem handler_scopes_err {l : List R.Scope} {s : R.RState} {e : Stop}
 
 theorem handler_view {mode : Ryo.Obj.Mode} {ρ : R.Addrs} {h : Full.Opcode} {args : List R.Arg}
     {t : R.Then Nat} {v : R.View} (hv : R.view mode ρ (.handler h args t) = some v) :
-    ∃ vals, R.unpack ρ h mode.fpArg args = some vals ∧ v = ⟨h, vals, some t⟩ := by
-  cases hu : R.unpack ρ h mode.fpArg args with
+    ∃ vals, R.unpack ρ h mode args = some vals ∧ v = ⟨h, vals, some t⟩ := by
+  cases hu : R.unpack ρ h mode args with
   | none => simp [R.view, hu] at hv
   | some vals =>
     refine ⟨vals, rfl, ?_⟩
@@ -136,7 +136,7 @@ theorem handler_rside {Safe : R.Query → Prop} {c : R.Code} {s : R.RState} {h :
     {args : List R.Arg} {t : R.Then Nat} (hi : c.d.insns[s.pc]? = some (.handler h args t))
     (hsafe : RSafe Safe c s) (hres : h ≠ .resume) (hun : h ≠ .unreachable) :
     ∃ s1 vals, (c.scopesAt s.pc).foldlM R.applyScope s = .ok s1 ∧
-      R.unpack c.ρ h c.mode.fpArg args = some vals ∧ Handler.NoUB h vals s1.st ∧
+      R.unpack c.ρ h c.mode args = some vals ∧ Handler.NoUB h vals s1.st ∧
       ∀ ch ctl st', opSem h vals s1.st ch = .ok (ctl, st') → ∃ pc, t.succ s.pc ctl = some pc ∧
         R.step c s ch = .ok (.step { s1 with pc, st := st' }) := by
   have hE : ∀ ch e, R.step c s ch = .error e → handler_NotNB e → False := fun ch e h1 h2 => by
@@ -195,13 +195,14 @@ entry exposed): at the handler, the arguments in place, the relations kept. -/
 theorem handler_call {ρ : R.Addrs} {mode : Ryo.Obj.Mode} {lo : BitVec 64} (ctx : Ctx)
     (hl : Handler.Linked ctx ρ) {h : Full.Opcode} {n : Nat} (hn : Full.Opcode.ofNat? n = some h)
     {args : List R.Arg} {items : List Item} (hs : Handler.setupItems mode args = some items)
+    (hreg : args.length ≤ (handlerRegs mode.pe).length)
     {st : OpSem.State} {x : X86.State} (hr : Handler.HRel st x) (hap : Handler.StackApart lo st x)
     (hlo : lo.toNat + 8 ≤ x.rsp.toNat) :
     ∃ x2, execItems ctx (items ++ [Item.call (.handler n)]) x = .ok x2 ∧
-      Handler.AtHandler ctx h x2 ∧ Handler.ArgsIn ρ x2 x2 args ∧ Handler.HRel st x2 ∧
+      Handler.AtHandler ctx h x2 ∧ Handler.ArgsIn ρ mode.pe x2 x2 args ∧ Handler.HRel st x2 ∧
       x2.reg .rbp = x.reg .rbp ∧ x2.rsp = x.rsp - 8 ∧
       (∀ a, ¬ InStack lo x.rsp a → x2.mem a = x.mem a) := by
-  obtain ⟨x1, he1, hargs, hm1, hx1, hr1, hrip1⟩ := Handler.exec_setup ctx ρ mode args items x hs hl
+  obtain ⟨x1, he1, hargs, hm1, hx1, hr1, hrip1⟩ := Handler.exec_setup ctx ρ mode args items x hs hreg hl
   have hkeep : ∀ i : Fin 16, (i = 0 ∨ i = 4 ∨ CalleeSaved i) → x1.regs i = x.regs i := by
     intro i hi
     apply hr1
@@ -236,16 +237,16 @@ theorem handler_call {ρ : R.Addrs} {mode : Ryo.Obj.Mode} {lo : BitVec 64} (ctx 
         (execItems ctx items x >>= execItems ctx [Item.call (.handler n)]) := by
       simp only [execItems, List.foldlM_append]; rfl
     rw [happ, he1, ex_bind_ok', X86.execItems_cons]; rfl
-  have hA : Handler.ArgsIn ρ x2 x2 args := by
-    intro i h1 h2
+  have hA : Handler.ArgsIn ρ mode.pe x2 x2 args := by
+    refine ⟨fun i h1 h2 => ?_, fun h4 hpe => absurd hreg (by rw [hpe]; simp [handlerRegs]; omega)⟩
     have hv : ∀ b, Handler.argVal ρ x2 b = Handler.argVal ρ x b := by
       intro b; cases b <;> simp [Handler.argVal, hrbp, hrax]
     rw [hv, hargs i h1 h2]
-    suffices hs : x2.regs (X86.argRegs[i]).idx = x1.regs (X86.argRegs[i]).idx by
+    suffices hs : x2.regs ((handlerRegs mode.pe)[i]).idx = x1.regs ((handlerRegs mode.pe)[i]).idx by
       show some (x1.regs _) = some (x2.regs _); rw [hs]
     apply hregs2
-    have hm : X86.argRegs[i] ∈ X86.argRegs := List.getElem_mem h2
-    generalize X86.argRegs[i] = r at hm ⊢
+    have hm : (handlerRegs mode.pe)[i] ∈ X86.argRegs := Handler.mem_handlerRegs (List.getElem_mem h2)
+    generalize (handlerRegs mode.pe)[i] = r at hm ⊢
     simp only [X86.argRegs, List.mem_cons, List.not_mem_nil, or_false] at hm
     rcases hm with rfl | rfl | rfl | rfl | rfl | rfl <;> decide
   have hat : Handler.AtHandler ctx h x2 := ⟨n, hn, by simp [x2, State.jump]⟩
@@ -253,20 +254,72 @@ theorem handler_call {ρ : R.Addrs} {mode : Ryo.Obj.Mode} {lo : BitVec 64} (ctx 
     let ⟨h1, h2⟩ := hap.rel hr.rel hr.mem hrbp hmem2; ⟨h1, h2⟩
   exact ⟨x2, hexec, hat, hA, hH, hrbp, hrsp2, hmem2⟩
 
+theorem handler_argItem_regs (ctx : Ctx) {mode : Ryo.Obj.Mode} {r : X86.Reg} {a : R.Arg}
+    {it : Item} (h : Handler.argItem mode r a = some it) {x y : X86.State}
+    (he : it.exec ctx x = .ok y) : ∀ i, i ≠ r.idx → y.regs i = x.regs i := by
+  intro i hi
+  cases a with
+  | fp =>
+    simp only [Handler.argItem, fpItem, Option.some.injEq] at h
+    split at h <;> subst h <;> simp only [Item.exec] at he <;> cases Switch.except_ok_inj he <;>
+      simp [State.setReg, State.jump, hi]
+  | exception =>
+    simp only [Handler.argItem, Option.some.injEq] at h; subst h
+    simp only [Item.exec] at he; cases Switch.except_ok_inj he; simp [State.setReg, State.jump, hi]
+  | imm v =>
+    simp only [Handler.argItem, Option.some.injEq] at h; subst h
+    simp only [Item.exec] at he
+    split at he <;> cases Switch.except_ok_inj he <;>
+      simp [State.setReg, State.setFlags, State.jump, hi]
+  | const _ | data _ | sym _ | site _ | ro _ =>
+    simp only [Handler.argItem, Handler.argRef, Option.map_some, Option.some.injEq] at h; subst h
+    simp only [Item.exec] at he; cases Switch.except_ok_inj he; simp [State.setReg, State.jump, hi]
+
+theorem handler_setup_regs (ctx : Ctx) (mode : Ryo.Obj.Mode) :
+    ∀ (args : List R.Arg) (regs : List X86.Reg) (items : List Item) (x y : X86.State),
+    (args.zip regs).mapM (fun (a, r) => Handler.argItem mode r a) = some items →
+    execItems ctx items x = .ok y → ∀ i : Fin 16, (∀ r ∈ regs, r.idx ≠ i) → y.regs i = x.regs i
+  | [], regs, items, x, y, h, he, i, hi => by
+    simp only [List.zip_nil_left, List.mapM_nil, pure, Option.some.injEq] at h; subst h
+    cases Switch.except_ok_inj he; rfl
+  | a :: args, [], items, x, y, h, he, i, hi => by
+    simp only [List.zip_nil_right, List.mapM_nil, pure, Option.some.injEq] at h; subst h
+    cases Switch.except_ok_inj he; rfl
+  | a :: args, r :: regs, items, x, y, h, he, i, hi => by
+    simp only [List.zip_cons_cons, List.mapM_cons, bind, Option.bind] at h
+    cases hit : Handler.argItem mode r a with
+    | none => simp [hit] at h
+    | some it =>
+      simp only [hit] at h
+      cases hrest : (args.zip regs).mapM (fun (a, r) => Handler.argItem mode r a) with
+      | none => simp [hrest] at h
+      | some its =>
+        simp only [hrest, pure, Option.some.injEq] at h
+        subst h
+        rw [X86.execItems_cons] at he
+        cases hy : it.exec ctx x with
+        | error e => rw [hy] at he; cases he
+        | ok y1 =>
+          rw [hy] at he
+          rw [handler_setup_regs ctx mode args regs its y1 y hrest he i
+            (fun r' hr' => hi r' (List.mem_cons_of_mem _ hr')),
+            handler_argItem_regs ctx hit hy i (fun e => hi r (List.mem_cons_self ..) e.symm)]
+
 /-- `handler_call` without the R state: the setup and `call h` reach the handler with the
 return address at `rsp`, `rsp` down 8, the callee-saved registers kept and memory kept off the
 stack below `rsp`. -/
 theorem handler_call_ret {ρ : R.Addrs} {mode : Ryo.Obj.Mode} {lo : BitVec 64} (ctx : Ctx)
     (hl : Handler.Linked ctx ρ) {h : Full.Opcode} {n : Nat} (hn : Full.Opcode.ofNat? n = some h)
     {args : List R.Arg} {items : List Item} (hs : Handler.setupItems mode args = some items)
+    (hreg : args.length ≤ (handlerRegs mode.pe).length)
     {x : X86.State} (hlo : lo.toNat + 8 ≤ x.rsp.toNat) :
     ∃ x2, execItems ctx (items ++ [Item.call (.handler n)]) x = .ok x2 ∧
-      Handler.AtHandler ctx h x2 ∧ Handler.ArgsIn ρ x2 x2 args ∧ x2.rsp = x.rsp - 8 ∧
-      (∀ i, CalleeSaved i → x2.regs i = x.regs i) ∧
+      Handler.AtHandler ctx h x2 ∧ Handler.ArgsIn ρ mode.pe x2 x2 args ∧ x2.rsp = x.rsp - 8 ∧
+      (∀ i, Saved mode.pe i → x2.regs i = x.regs i) ∧
       (∀ a, ¬ InStack lo x.rsp a → x2.mem a = x.mem a) ∧
       x2.mem.read64 x2.rsp =
         x.rip + BitVec.ofNat 64 ((items ++ [Item.call (.handler n)]).map Item.size).sum := by
-  obtain ⟨x1, he1, hargs, hm1, hx1, hr1, hrip1⟩ := Handler.exec_setup ctx ρ mode args items x hs hl
+  obtain ⟨x1, he1, hargs, hm1, hx1, hr1, hrip1⟩ := Handler.exec_setup ctx ρ mode args items x hs hreg hl
   have hkeep : ∀ i : Fin 16, (i = 0 ∨ i = 4 ∨ CalleeSaved i) → x1.regs i = x.regs i := by
     intro i hi
     apply hr1
@@ -301,22 +354,32 @@ theorem handler_call_ret {ρ : R.Addrs} {mode : Ryo.Obj.Mode} {lo : BitVec 64} (
         (execItems ctx items x >>= execItems ctx [Item.call (.handler n)]) := by
       simp only [execItems, List.foldlM_append]; rfl
     rw [happ, he1, ex_bind_ok', X86.execItems_cons]; rfl
-  have hA : Handler.ArgsIn ρ x2 x2 args := by
-    intro i h1 h2
+  have hA : Handler.ArgsIn ρ mode.pe x2 x2 args := by
+    refine ⟨fun i h1 h2 => ?_, fun h4 hpe => absurd hreg (by rw [hpe]; simp [handlerRegs]; omega)⟩
     have hv : ∀ b, Handler.argVal ρ x2 b = Handler.argVal ρ x b := by
       intro b; cases b <;> simp [Handler.argVal, hrbp, hrax]
     rw [hv, hargs i h1 h2]
-    suffices hs : x2.regs (X86.argRegs[i]).idx = x1.regs (X86.argRegs[i]).idx by
+    suffices hs : x2.regs ((handlerRegs mode.pe)[i]).idx = x1.regs ((handlerRegs mode.pe)[i]).idx by
       show some (x1.regs _) = some (x2.regs _); rw [hs]
     apply hregs2
-    have hm : X86.argRegs[i] ∈ X86.argRegs := List.getElem_mem h2
-    generalize X86.argRegs[i] = r at hm ⊢
+    have hm : (handlerRegs mode.pe)[i] ∈ X86.argRegs := Handler.mem_handlerRegs (List.getElem_mem h2)
+    generalize (handlerRegs mode.pe)[i] = r at hm ⊢
     simp only [X86.argRegs, List.mem_cons, List.not_mem_nil, or_false] at hm
     rcases hm with rfl | rfl | rfl | rfl | rfl | rfl <;> decide
   have hat : Handler.AtHandler ctx h x2 := ⟨n, hn, by simp [x2, State.jump]⟩
-  have hsaved : ∀ i, CalleeSaved i → x2.regs i = x.regs i := by
+  have hsaved : ∀ i, Saved mode.pe i → x2.regs i = x.regs i := by
     intro i hi
-    rw [hregs2 i (by rcases hi with rfl | rfl | rfl | rfl | rfl | rfl <;> decide), hkeep i (.inr (.inr hi))]
+    have hs' := hs
+    rw [Handler.setupItems_regs hreg] at hs'
+    rw [hregs2 i (by rcases hi with (rfl | rfl | rfl | rfl | rfl | rfl) | ⟨-, rfl | rfl⟩ <;> decide),
+      handler_setup_regs ctx mode args _ items x x1 hs' he1 i (by
+        intro r hr
+        cases hpe : mode.pe <;> rw [hpe] at hr <;>
+          simp only [handlerRegs, X86.argRegs, Bool.false_eq_true, ↓reduceIte, List.mem_cons,
+            List.not_mem_nil, or_false] at hr <;>
+          rcases hi with (rfl | rfl | rfl | rfl | rfl | rfl) | ⟨hp, rfl | rfl⟩ <;>
+          (try simp only [hpe, Bool.false_eq_true] at hp) <;>
+          rcases hr with rfl | rfl | rfl | rfl | rfl | rfl <;> decide)]
   have hret : x2.mem.read64 x2.rsp = next := by
     have e : x2.rsp = x1.rsp - 8 := by rw [hrsp2, hx1sp]
     rw [e]
@@ -380,14 +443,13 @@ theorem handler_mapM_mem {α β : Type} {f : α → Option β} :
           exact ⟨a', by simp [ha'], hf⟩
 
 theorem handler_setup_ok (ctx : Ctx) {mode : Ryo.Obj.Mode} (hfp : mode.framePointer = true)
-    {args : List R.Arg} {items : List Item} (hs : Handler.setupItems mode args = some items) :
+    {args : List R.Arg} {items : List Item} (hs : Handler.setupItems mode args = some items)
+    (hreg : args.length ≤ (handlerRegs mode.pe).length) :
     ∀ it ∈ items, (∀ p, it.Canonical p) ∧ it.FallsThrough ctx ∧ it.MemKept ctx := by
   intro it hit
-  unfold Handler.setupItems at hs
-  split at hs
-  · obtain ⟨⟨a, r⟩, -, hf⟩ := handler_mapM_mem hs it hit
-    exact handler_argItem_ok ctx hfp hf
-  · cases hs
+  rw [Handler.setupItems_regs hreg] at hs
+  obtain ⟨⟨a, r⟩, -, hf⟩ := handler_mapM_mem hs it hit
+  exact handler_argItem_ok ctx hfp hf
 
 theorem handler_canon_of : ∀ {l : List Item} {pos : Nat}, (∀ i ∈ l, ∀ p, i.Canonical p) →
     Canon l pos
@@ -401,10 +463,10 @@ theorem handler_call_canonical (n p : Nat) : (Item.call (.handler n)).Canonical 
 /-- The setup and the call, fetched from memory at `p`. -/
 theorem handler_call_steps {ctx : Ctx} {mode : Ryo.Obj.Mode} (hfp : mode.framePointer = true)
     {args : List R.Arg} {items : List Item} (hs : Handler.setupItems mode args = some items)
-    {n p : Nat} {x x2 : X86.State} (hc : CodeAt ctx x.mem (items ++ [Item.call (.handler n)]) p)
+    (hreg : args.length ≤ (handlerRegs mode.pe).length) {n p : Nat} {x x2 : X86.State} (hc : CodeAt ctx x.mem (items ++ [Item.call (.handler n)]) p)
     (hrip : x.rip = addrAt ctx p)
     (he : execItems ctx (items ++ [Item.call (.handler n)]) x = .ok x2) : Steps ctx x x2 := by
-  have hok := handler_setup_ok ctx hfp hs
+  have hok := handler_setup_ok ctx hfp hs hreg
   have hcan : Canon (items ++ [Item.call (.handler n)]) p :=
     handler_canon_of fun i hi => by
       rcases List.mem_append.mp hi with hi | hi
@@ -426,13 +488,12 @@ structure HdlApart (S : Setup) : Prop where
   window : ∀ s x, FrameInv S s x → ∀ o : Int, -(S.F : Int) ≤ o → o < S.K → ¬ S.Owned (fpAddr x o)
   allocs : ∀ s x, FrameInv S s x → ∀ a, Call.InAlloc s.world a →
     ¬ S.Owned a ∧ ¬ InStack S.lo x.rsp a
-  peF : S.c.mode.pe = true → 16 ≤ S.F
   relocs : ∀ r ∈ S.rs.toList, r.pos + 4 ≤ S.body.code.size
 
-theorem hdl_apart (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+theorem hdl_apart (_hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (H : Hyps S) : HdlApart S :=
   ⟨fun s x hf o h1 h2 => by rw [hf.fpAddr_eq]; exact H.envApart.window o h1 h2,
-    H.envApart.allocs, frameSize_pe hD, H.relocsIn⟩
+    H.envApart.allocs, H.relocsIn⟩
 
 theorem hdl_add_sub_left (x y : BitVec 64) : x + y - x = y := by bv_omega
 
@@ -552,7 +613,8 @@ theorem hdl_byte_apart (H : Hyps S) (HC : HdlApart S) {s : R.RState} {x : X86.St
 /-- `FrameInv` survives a state that agrees with `x` (`Counter.Agree`), at an instruction past
 the leading `arg`s. -/
 theorem hdl_frameInv (H : Hyps S) (HC : HdlApart S) {s : R.RState} {x y : X86.State}
-    (hf : FrameInv S s x) (hag : Counter.Agree S.Owned S.lo x y) (ha : ¬ LeadArg S s.pc) :
+    (hf : FrameInv S s x) (hag : Counter.Agree S.Owned S.lo x y)
+    (hsv : ∀ i, Saved S.c.mode.pe i → y.regs i = x.regs i) (ha : ¬ LeadArg S s.pc) :
     FrameInv S s y := by
   have hrbp : y.reg .rbp = x.reg .rbp := hag.2.1 5 (Or.inr (Or.inl rfl))
   have hfp : ∀ o, fpAddr y o = fpAddr x o := fun o => by simp [fpAddr, hrbp]
@@ -578,21 +640,29 @@ theorem hdl_frameInv (H : Hyps S) (HC : HdlApart S) {s : R.RState} {x y : X86.St
       simp only [Allocation.size] at *
       omega⟩
     rw [hm _ a1 a2]; exact hr
-  · obtain ⟨f1, f2, f3, f4, f5⟩ := hf.frame
+  · obtain ⟨f1, f2, f3, f5⟩ := hf.frame
     have e8 : x.reg .rbp + 8 = fpAddr x 8 := rfl
     have e0 : x.reg .rbp = fpAddr x 0 := by simp [fpAddr]
-    refine ⟨by rw [hrbp]; exact f1, ?_, ?_, fun hpe => ?_, fun i hi h5 => by
-      rw [hag.2.1 i hi]; exact f5 i hi h5⟩
+    refine ⟨by rw [hrbp]; exact f1, ?_, ?_, fun i hi h5 => by
+      rw [hsv i hi]; exact f5 i hi h5⟩
     · rw [hrbp, e8, hdl_read64 H HC hf hm (by omega) (by omega), ← e8]; exact f2
     · rw [hrbp, e0, hdl_read64 H HC hf hm (by omega) (by omega), ← e0]; exact f3
-    · have h16 := HC.peF hpe
-      have e16 : x.reg .rbp - 16 = fpAddr x (-16) := by simp [fpAddr]; bv_omega
-      have e8' : x.reg .rbp - 8 = fpAddr x (-8) := by simp [fpAddr]; bv_omega
-      obtain ⟨g1, g2⟩ := f4 hpe
-      rw [hrbp, e16, e8', hdl_read64 H HC hf hm (by omega) (by omega),
-        hdl_read64 H HC hf hm (by omega) (by omega), ← e16, ← e8']
-      exact ⟨g1, g2⟩
 
+
+theorem handler_dense_op {fr : Vm.Frame} {c c' : Cursor} {q : Proto}
+    (h : (denseSwitch fr).run c = .ok (some q, c')) : ∃ w, q.op = denseOp w := by
+  unfold denseSwitch at h
+  obtain ⟨x, c1, h1, h2⟩ := bind_ok h
+  obtain ⟨rfl, rfl⟩ := get_run h1
+  split at h2
+  · rename_i w _ _ _ _ _
+    obtain ⟨u, c2, h3, h⟩ := bind_ok h2
+    obtain ⟨ts, c3, h4, h⟩ := bind_ok h
+    split at h
+    · obtain ⟨e, -⟩ := pure_ok h
+      cases e; exact ⟨w, rfl⟩
+    · exact (err_ok h).elim
+  · obtain ⟨e, -⟩ := pure_ok h2; cases e
 
 set_option maxRecDepth 100000 in
 theorem handler_thenSeq_resume {nn hat : Nat} {c c' : Cursor} {t : R.Then Nat}
@@ -617,7 +687,7 @@ an environment step); each return is `H.resume`'s: at the landing pad `PadsLinke
 empty at the pad (`CacheCleared.pads`); no pad: no return. -/
 theorem handler_resume' (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (H : Hyps S) {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
-    (hP : ProtoFacts S k p q c' {}) (hn : NoArg S.fr S.body p a cur)
+    (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
     (hr : InsnRead S.fr S.ro cur q c') (hres : q.op = .resume) :
     BodySim S k p (S.used k) := by
   intro s x hs hf hrip _ hsafe
@@ -630,6 +700,10 @@ theorem handler_resume' (hD : Decodes S code relocs rodata callSites dropped sco
   | unreachable => simp only at hres; exact absurd hres (by decide)
   | jmp => simp only at hres; exact absurd hres (by decide)
   | island => simp only at hres; exact absurd hres (by decide)
+  | resume hrg => exact absurd hrg (by simp [Setup.fr])
+  | dense hd =>
+    obtain ⟨w, hw⟩ := handler_dense_op hd
+    rw [hw] at hres; cases w <;> exact absurd hres (by decide)
   | @handler items hat n len nn op args t sites c'' hd hcall hnop hhh hsetup hthen =>
   simp only at hres
   subst hres
@@ -693,9 +767,10 @@ theorem handler_resume' (hD : Decodes S code relocs rodata callSites dropped sco
     hf.code.sorted hf.code.loaded hf.code.small hf.code.fp hbh hcall
   have hlen5 : len = 5 := by rw [← hlen]; rfl
   have hlo : S.lo.toNat + 8 ≤ x.rsp.toNat := by have := hf.room; omega
+  have hreg : args.length ≤ (handlerRegs S.fr.mode.pe).length := H.regArgs s.pc _ _ _ hi
   obtain ⟨x2, hx2, hat2, hargs2, hrsp2, hsaved2, hmem2, hret2⟩ :=
-    handler_call_ret (lo := S.lo) S.ctx H.linked hnop hsetup hlo
-  have hsteps := handler_call_steps H.fp hsetup hca hrip hx2
+    handler_call_ret (lo := S.lo) S.ctx H.linked hnop hsetup hreg hlo
+  have hsteps := handler_call_steps H.fp hsetup hreg hca hrip hx2
   have hra : x2.mem.read64 x2.rsp = addrAt S.ctx (hat + 5) := by
     rw [hret2, hrip, addrAt_add', ← hlen5, hend]; rfl
   have hsite : (hat, 5) ∈ S.r.protos[k].sites := by rw [hpk]; simp
@@ -735,7 +810,7 @@ theorem handler_resume' (hD : Decodes S code relocs rodata callSites dropped sco
   have h8 : 8 ≤ x.rsp.toNat := by omega
   have hag : Counter.Agree S.Owned S.lo x x' := by
     refine ⟨by rw [hrsp', hrsp2]; exact BitVec.sub_add_cancel _ _,
-      fun i hi => by rw [hsaved' i (Or.inl hi), hsaved2 i hi], fun a ho hst => ?_⟩
+      fun i hi => by rw [hsaved' i (Or.inl hi), hsaved2 i (Or.inl hi)], fun a ho hst => ?_⟩
     rw [hmem' a ho ?_, hmem2 a hst]
     intro ⟨h1, h2⟩
     apply hst
@@ -744,12 +819,12 @@ theorem handler_resume' (hD : Decodes S code relocs rodata callSites dropped sco
     have := x.rsp.isLt
     simp at h2
     omega
-  have hfin := hdl_frameInv H HA hfi hag hnl
+  have hfin := hdl_frameInv H HA hfi hag (fun i hi => by rw [hsaved' i hi, hsaved2 i hi]) hnl
   have hstep' : R.step S.c s {} = .ok (.step s2) := hstep.trans rfl
   refine .done (.inl ⟨s2, .step hstep', hfin, .inr ⟨hpad', ?_⟩⟩)
   show CacheInv (S.used pad) x'
   rw [H.cacheCleared.pads k pad cat hcl]
-  exact CacheInv.empty _
+  exact CacheInv.emptyPe _ _
 
 /-- `bodySim_handler`. Proof idea: `noArg_insn`, then `InsnRead.handler`'s `link_handler`
 (setup, `call h`, the shape's tail); `resume` by `handler_resume'`; `unreachable` has no handler;
@@ -761,7 +836,7 @@ the environment step at the handler (`H.envOutside.handler`), `FrameSep` across 
 (`ArgsOk.untargeted`) with the cache cleared there (`CacheCleared.targets`). -/
 theorem bodySim_handler' (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (H : Hyps S) {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
-    (hP : ProtoFacts S k p q c' {}) (hn : NoArg S.fr S.body p a cur)
+    (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
     (hr : InsnRead S.fr S.ro cur q c') (hh : q.handler ≠ none) :
     BodySim S k p (S.used k) := by
   sorry  -- TODO(wip): bodySim_handler'

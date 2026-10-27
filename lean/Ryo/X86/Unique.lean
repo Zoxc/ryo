@@ -19,10 +19,9 @@ function (`step_deterministic_of_refsNear`, by `step_deterministic`):
   the target's offset from the function's start, which the model's unsigned in-function targets
   need.)
 
-That needs every item to be one instruction: the PE prologue and epilogue, one item each in
-Rust (`Item::WinPrologue`, whose first instruction is `push rbp`), are their four instructions
-here (`winPrologue`, `winEpilogue`, `Ryo.X86.Item`); as one item, `pushRbp`'s byte would be a
-prefix of the prologue's and both would step from the same state to different ones.
+That needs every item to be one instruction, as every item is (the PE prologue and epilogue are
+`push rbp; mov rbp, rsp; sub rsp, F` and `add rsp, F; pop rbp`): an item whose bytes were a
+prefix of another's would step from the same state to a different one.
 
 The proof is a decoder (`Uniq.dec`, a proof device: not `Ryo.X86.Decode`'s `decodeItem`, whose
 round trip stays tested). It reads a byte list from the item's address and function position and
@@ -330,10 +329,7 @@ def native (a : BitVec 64) (pl : Nat) (p66 : Bool) (rex : Nat) : List Nat → Op
         let reg ← regOf g R
         match o with
         | .mem m =>
-          if reg = .rsp then
-            if m = ⟨.rbp, 0xfffffff0⟩ then pure (.item .leaRspRbp16, r) else none
-          else if reg = .rbp then
-            if m = ⟨.rsp, 16⟩ then pure (.item .leaRbpRsp16, r) else none
+          if reg = .rsp ∨ reg = .rbp then none
           else pure (.item (.leaM reg m), r)
         | .rip d => pure (.ref (.lea reg) (tgt d), r)
         | .reg _ => none
@@ -376,7 +372,9 @@ def native (a : BitVec 64) (pl : Nat) (p66 : Bool) (rex : Nat) : List Nat → Op
         pure (.item (if g = 6 ∨ g = 7 then .div (g == 7) wd rm else .mulQ rm), r)
       else if op = 0xff then
         match o with
-        | .reg _ => if g = 2 then pure (.item .callRax, r) else pure (.item .jmpRax, r)
+        | .reg b =>
+          if g = 2 then pure (.item .callRax, r)
+          else if b = .r11 then pure (.item .jmpR11, r) else pure (.item .jmpRax, r)
         | .mem m =>
           if m.base = .rax then pure (.item .callMemRax, r)
           else pure (.item (.callR11 (m.disp.setWidth 8)), r)
@@ -434,11 +432,7 @@ def dec (a : BitVec 64) (p : BitVec 32) : List Nat → Option (Key × List Nat)
     if 0x40 ≤ b ∧ b < 0x50 then native a 1 false b r
     else if b = 0x66 then dec66 a r
     else if b = 0x55 then some (.item .pushRbp, r)
-    else if b = 0x56 then some (.item (.push .rsi), r)
-    else if b = 0x57 then some (.item (.push .rdi), r)
-    else if b = 0x5d then some (.item (.pop .rbp), r)
-    else if b = 0x5e then some (.item (.pop .rsi), r)
-    else if b = 0x5f then some (.item (.pop .rdi), r)
+    else if b = 0x5d then some (.item .popRbp, r)
     else if b = 0x90 then some (.item (.nop 1), r)
     else if b = 0xcc then some (.item .int3, r)
     else if b = 0xc9 then some (.item .leave, r)
@@ -521,8 +515,6 @@ def Ok (pos : BitVec 32) : Item → Prop
   | .ld w sx _ _ => w = .b ∨ w = .w ∨ sx = false
   | .stImm w _ imm => (w = .b → fitsSigned 8 imm = true) ∧ (w = .w → fitsSigned 16 imm = true)
   | .leaM dst _ => dst ≠ .rsp ∧ dst ≠ .rbp
-  | .push r => r = .rdi ∨ r = .rsi
-  | .pop r => r = .rsi ∨ r = .rdi ∨ r = .rbp
   | .aluImm _ w rm imm =>
     rm ≠ .reg .rsp ∧ (w = .b → fitsSigned 8 imm = true) ∧ (w = .w → fitsSigned 16 imm = true)
   | .imul w _ _ | .imulImm w _ _ _ | .shift _ w _ _ => w = .d ∨ w = .q
@@ -970,25 +962,11 @@ macro "fixed" : tactic => `(tactic| (
     Opnd.mem?, Opnd.rm?, Opnd.reg?, rd8, rd32, Reg.ext, Reg.low, Reg.num, byte]))
 
 theorem fam_fixed (ctx : Ctx) (pos : Nat) (rest : List Nat) (i : Item)
-    (hi : i = .pushRbp ∨ i = .leaRbpRsp16 ∨ i = .leaRspRbp16 ∨ i = .callRax ∨ i = .callMemRax ∨
+    (hi : i = .pushRbp ∨ i = .popRbp ∨ i = .jmpR11 ∨ i = .callRax ∨ i = .callMemRax ∨
       i = .jmpRax ∨ i = .testAl ∨ i = .testRax ∨ i = .leave ∨ i = .ret ∨ i = .ud2 ∨
       i = .loadTableEntry ∨ i = .addRaxRcx ∨ i = .int3) :
     decAt ctx pos ((i.linkedAt ctx pos).map UInt8.toNat ++ rest) = some (keyOf ctx i, rest) := by
   rcases hi with rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl <;> fixed
-
-theorem fam_push (ctx : Ctx) (pos : Nat) (rest : List Nat) (r : Reg)
-    (h : Ok (BitVec.ofNat 32 pos) (.push r)) :
-    decAt ctx pos (((Item.push r).linkedAt ctx pos).map UInt8.toNat ++ rest) =
-      some (keyOf ctx (.push r), rest) := by
-  simp only [Ok] at h
-  rcases h with rfl | rfl <;> fixed
-
-theorem fam_pop (ctx : Ctx) (pos : Nat) (rest : List Nat) (r : Reg)
-    (h : Ok (BitVec.ofNat 32 pos) (.pop r)) :
-    decAt ctx pos (((Item.pop r).linkedAt ctx pos).map UInt8.toNat ++ rest) =
-      some (keyOf ctx (.pop r), rest) := by
-  simp only [Ok] at h
-  rcases h with rfl | rfl | rfl <;> fixed
 
 theorem fam_callR11 (ctx : Ctx) (pos : Nat) (rest : List Nat) (d : BitVec 8) :
     decAt ctx pos (((Item.callR11 d).linkedAt ctx pos).map UInt8.toNat ++ rest) =
@@ -1192,8 +1170,6 @@ theorem dec_linked (ctx : Ctx) (pos : Nat) (rest : List Nat) (i : Item)
     decAt ctx pos ((i.linkedAt ctx pos).map UInt8.toNat ++ rest) = some (keyOf ctx i, rest) := by
   cases i
   case tableEntry => exact h.elim
-  case push r => exact fam_push ctx pos rest r h
-  case pop r => exact fam_pop ctx pos rest r h
   case subRsp v => simpa using fam_subRsp ctx pos rest v true
   case addRsp v => simpa using fam_subRsp ctx pos rest v false
   case setReg r v => exact fam_setReg ctx pos rest r v

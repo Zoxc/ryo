@@ -33,7 +33,7 @@ Flags (SDM Vol. 2, per instruction; `none` = undefined, see `Ryo.X86.State`):
   the destination is undefined: it gets `ctx.undef`, a value the context chooses (an oracle), so a
   proof over every `ctx` holds whatever the CPU leaves there (as a later `cmovz` overwriting it
   makes the inline `cttz`/`ctlz` do).
-- `lea` (`leaRbpRsp16`, `leaRspRbp16` too), `mov`, `movzx`/`movsx`, `setcc`, `push`/`pop`, `call`/`ret`, `leave`, `jmp`/`jcc`,
+- `lea`, `mov`, `movzx`/`movsx`, `setcc`, `push rbp`/`pop rbp`, `call`/`ret`, `leave`, `jmp`/`jcc`,
   SSE moves: no flags.
 
 Partial register writes: a 32-bit destination zero-extends into the 64-bit register (also a
@@ -231,10 +231,7 @@ def Item.exec (ctx : Ctx) (i : Item) (s : State) : Except Fault State :=
   let inFn (t : BitVec 32) : BitVec 64 := ctx.base + t.setWidth 64
   match i with
   | .pushRbp => pure (s0.push (s0.reg .rbp))
-  | .push r => pure (s0.push (s0.reg r))
-  | .pop r => let (v, s1) := s0.pop; pure (s1.setReg r v)
-  | .leaRbpRsp16 => pure (s0.setReg .rbp (s0.rsp + 16))
-  | .leaRspRbp16 => pure (s0.setReg .rsp (s0.reg .rbp - 16))
+  | .popRbp => let (v, s1) := s0.pop; pure (s1.setReg .rbp v)
   | .subRsp v =>
     let (r, f) := subF s0.rsp (v.signExtend 64)
     pure ((s0.setReg .rsp r).setFlags f)
@@ -264,6 +261,7 @@ def Item.exec (ctx : Ctx) (i : Item) (s : State) : Except Fault State :=
     let target := s0.mem.read64 (s0.reg .rax)
     pure ((s0.push next).jump target)
   | .jmpRax => pure (s0.jump (s0.reg .rax))
+  | .jmpR11 => pure (s0.jump (s0.reg .r11))
   | .jmp to => pure (s0.jump (ctx.addrOf to))
   | .branch cond target _ => do
     if ← cond.eval s0.flags then pure (s0.jump (inFn target)) else pure s0

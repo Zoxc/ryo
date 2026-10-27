@@ -42,7 +42,7 @@ def arg (d : Int) (r : Nat) : Insn := nat "arg" [sl d, im r]
 `then_`. -/
 def handler (m : String) (vals : List Int) (then_ : Then Nat := .next) : Insn := Id.run do
   let h := full m
-  let l := (h.layout mode.fpArg).get!
+  let l := (h.layout mode.fpArg mode.pe).get!
   let mut regs : Array Nat := Array.replicate l.regs 0
   for (v, k) in vals.zipIdx do
     let loc := l.locs[k]!

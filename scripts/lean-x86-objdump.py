@@ -105,10 +105,9 @@ def render(item, pos, off, length, sp):
         return f"{(off + sx(target - pos, 32)) & ((1 << 64) - 1):#x}"
 
     simple = {
-        "pushRbp": ["push rbp"],
-        "winPrologue": ["push rbp", "push rdi", "push rsi", "lea rbp,[rsp+0x10]"],
-        "winEpilogue": ["lea rsp,[rbp-0x10]", "pop rsi", "pop rdi", "pop rbp"],
+        "pushRbp": ["push rbp"], "popRbp": ["pop rbp"],
         "callRax": ["call rax"], "callMemRax": ["call QWORD PTR [rax]"], "jmpRax": ["jmp rax"],
+        "jmpR11": ["jmp r11"],
         "testAl": ["test al,al"], "testRax": ["test rax,rax"], "leave": ["leave"],
         "ret": ["ret"], "ud2": ["ud2"], "int3": ["int3"],
         "loadTableEntry": ["movsxd rax,DWORD PTR [rcx+rax*4]"], "addRaxRcx": ["add rax,rcx"],

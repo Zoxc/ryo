@@ -3,35 +3,6 @@
 Rust-side changes that the Lean model or proofs don't reflect yet. Add an entry per change;
 remove it once a Lean session has handled it.
 
-- PE frames are the frame pointer's (Commit: "Asm, Rt, JIT, Backend: Win64 handlers on PE"). `Item::WinPrologue`/`Item::WinEpilogue` are gone: the PE `prologue` is
-  `[pushRbp, mov rbp rsp] ++ probe ++ [subRsp F]`, as with a frame pointer elsewhere, and the
-  PE `epilogue` is `addRsp F` (for `F > 0`) then the new `Item::PopRbp` (`0x5d`, Lean's
-  `.pop .rbp`), the form the Win64 unwinder recognizes. So `winPrologue`/`winEpilogue`
-  (`Item.lean`, `Encode.lean`, `Exec.lean`, `Decode.lean`'s special case, `DecodeReduced.lean`,
-  `Asm.lean:181`, `ArgRet.lean`'s `rsi`/`rdi` at `fp - 16`/`fp - 8`) can go, which should also
-  make `ExecUnique` (`Unique.lean` header) hold. Frames no longer keep `rdi`/`rsi` in their top
-  16 bytes; instead every PE frame reserves the calls' 32 bytes of shadow space at its bottom
-  (40 with a handler stack argument, below), and `image::pe_unwind_info` is `PUSH_NONVOL rbp`
-  at `p + 1`, `SET_FPREG` (frame offset 0) at `p + 4`, `ALLOC F` at the `sub`'s end. Island
-  calls on PE no longer `sub rsp, 32`/`add rsp, 32` (they are bare calls, with the `nop` after
-  one with a landing pad, as in the pad region). Meanwhile `lean_x86_vectors.rs` has no
-  `winPrologue`/`winEpilogue` vectors and doesn't generate `PopRbp`, and
-  `lean_reduced_vectors.rs`/`lean_view_vectors.rs` have no PE modes (their four PE modes repeat
-  the others).
-
-- Handlers are Win64 on PE (same commit). `asm::layout(op, mode)` now depends on `mode.pe` too: on PE `fp_arg` is never set
-  (`Mode::valid`: PE needs a frame pointer and no `fp_arg`; handlers read `rbp`), and the
-  argument positions are `rcx, rdx, r8, r9` (`asm::handler_arg`, `PE_ARG_REGS`) plus a fifth on
-  the stack, which only a single 32-bit operand takes (else the operands pair down to four):
-  the `atomic.cxchg.*` handlers. The call stores it as `Item::StImm { w: D, m: [rsp + 32], imm }`
-  (`x86::STACK_ARG`, not an inline item) after the register setup; `lpad`'s exception object
-  is in `rcx`. Off PE nothing changes (the template hash of ELF modes is the same). The
-  generated tables (`Generated/Asm.lean` layouts, `argRegs`) still cover only the non-PE
-  layouts (`lean_tables.rs` checks "depends only on `fp_arg`" off PE). On PE the register
-  cache (`inline::Cache::new(pe)`) doesn't compute in `rsi`/`rdi`. The handler semantics are
-  unchanged; the `i128` saturating float casts are handlers on PE too now (the lowering's
-  `as_cast` island for them is gone: Commit "Asm, Rt, JIT, Backend: Win64 handlers on PE"), and `effects::PE_XMM_CLOBBERS` is gone.
-
 - SSA tier on PE (Commit: "Asm, Rt, JIT, Backend: Win64 handlers on PE"): handler
   calls take the Win64 positions (the fifth as `mov [rsp + 32], r11d`), `rdi`/`rsi` are
   callee-saved (saved when used, no longer at fixed AOT slots; the PE prologue pushes only
@@ -39,30 +10,6 @@ remove it once a Lean session has handled it.
   volatile registers, register entries take at most four arguments and return two values in
   `xmm0` (moved to `rax`/`rdx` after the call). Only matters if the Lean model covers the SSA
   tier.
-
-- The `switch_sparse` handler kind lost its unused case-kind parameter (`Case32`/...), so
-  `Generated/Handlers.lean` (regenerated) lists only the key type for `switch.sparse.*`.
-  `Sem`/`Footprint` read only `p0`; check that the Lean build still passes. Commit: "Drop
-  switch_sparse's unused case-kind parameter".
-
-- PE pad region (design/vm.md#unwinding): on PE the lowering emits the cleanup blocks last
-  (`lower/mod.rs`, `blocks`): the body's blocks, the body's terminate stubs and their landing
-  pads, then (if there is a cleanup landing pad) the region: the cleanup landing pads, the
-  cleanup blocks, their own terminate stubs and pads. The encoder (`Asm::begin_region`;
-  `encode`/`encode_reduced` start it at `asm::pe_region_start`, the first cleanup landing
-  pad) lays it out after the counter stubs, behind its entry `sub rsp, 40; jmp r11`
-  (`Item::JmpR11`, `41 ff e3`, new); in it `resume x` is `add rsp, 40; ret` (no call site:
-  the decoder gives it a Continue cleanup entry and the landing pads' exception slot), island
-  calls don't move `rsp`, and loop heads have neither counter checks nor padding (the
-  decoders' heads exclude them). Nothing may branch across the region's start or fall into
-  it, region calls have no cleanup pads, catching pads stay on their call's side
-  (`EncodeError::BadRegion`). On PE every call with a landing pad that ends its instruction
-  (a call storing no result, a region island) is followed by a 1-byte `nop`. `Encoded::region`
-  and `FuncCode::region` give the region's offset; `.pdata` gets a third entry over it with
-  `pe_region_unwind_info`. ELF code is unchanged. Matters if the Lean model covers PE code
-  (the decoder model, `DecodeReduced.lean`, reads `resume` as a handler call and PE islands
-  with their shadow space); `lean_reduced_vectors.rs` gives its PE functions no landing pads
-  meanwhile. Commit: "Backend: PE cleanup code in a pad region after the body".
 
 - Image writer: `ImageWriter::set_eh_pointers(EhPointers::Abs8)` (Mach-O images) writes
   the CIE's L and R encodings as `DW_EH_PE_pcrel | DW_EH_PE_absptr` (0x10), and each FDE's

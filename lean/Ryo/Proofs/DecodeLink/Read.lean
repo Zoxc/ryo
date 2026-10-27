@@ -8,7 +8,7 @@ item list, with the operands it records.
   arguments `handlerArgs` returns (`setupItems_snoc`: one more argument, one more item).
 - `thenSeq_read` (`ThenRead`): after the call, nothing (`op`, `lpad`), `test al, al; jz/jnz t`
   (`br`, the `then` being `branch (cond == z) t`), `table (n + 1)` (`switch`), `ud2` (`trap`).
-- `islandCall_read`: `Island.islandPre` and `Island.islandPost`.
+- `islandCall_read`: `Island.islandPre`.
 - `retSeq_read`: `retLoads k s`, the epilogue, `ret`; `k` a `u32`.
 - `table_read`: `Switch.switchItems tb`, then (after the `int3` padding, not items) one entry
   per 4 bytes from `tb`, each what `Cursor.tableEntry` reads there.
@@ -33,33 +33,65 @@ open Ryo.X86 Ryo.Vm Ryo.Vm.R Ryo.Vm.Asm
 theorem argRef_addrArg {to : Ref} {a : Arg} (h : addrArg to = some a) : Handler.argRef a = some to := by
   cases to <;> simp only [addrArg] at h <;> first | (cases h; rfl) | cases h
 
-theorem zip_snoc {α β : Type} {a : α} : ∀ {args : List α} {rs : List β} (h : args.length < rs.length),
-    (args ++ [a]).zip rs = args.zip rs ++ [(a, rs[args.length])]
-  | [], r :: rs, _ => by simp
-  | x :: args, r :: rs, h => by
-    simp only [List.cons_append, List.zip_cons_cons, List.length_cons, List.getElem_cons_succ]
-    rw [zip_snoc (by simpa using h)]
-
-theorem setupItems_snoc {mode : Ryo.Obj.Mode} {args : List Arg} {L : List Item} {a : Arg} {r : X86.Reg}
-    {it : Item} (hs : Handler.setupItems mode args = some L) (hr : X86.argRegs[args.length]? = some r)
-    (ha : Handler.argItem mode r a = some it) :
+theorem setupItems_snoc {mode : Ryo.Obj.Mode} {args : List Arg} {L : List Item} {a : Arg}
+    {it : Item} (hs : Handler.setupItems mode args = some L)
+    (hlt : args.length < handlerPositions mode.pe)
+    (ha : Handler.posItem mode args.length a = some it) :
     Handler.setupItems mode (args ++ [a]) = some (L ++ [it]) := by
   unfold Handler.setupItems at hs ⊢
-  have hlt : args.length < X86.argRegs.length := by
-    rcases Nat.lt_or_ge args.length X86.argRegs.length with h | h
-    · exact h
-    · rw [List.getElem?_eq_none h] at hr; cases hr
-  have hc1 : args.length ≤ X86.argRegs.length := by omega
-  have hc2 : (args ++ [a]).length ≤ X86.argRegs.length := by
+  have hc1 : args.length ≤ handlerPositions mode.pe := by omega
+  have hc2 : (args ++ [a]).length ≤ handlerPositions mode.pe := by
     simp only [List.length_append, List.length_cons, List.length_nil]; omega
   simp only [hc1, ↓reduceIte] at hs
   simp only [hc2, ↓reduceIte]
-  have hz : (args ++ [a]).zip X86.argRegs = args.zip X86.argRegs ++ [(a, r)] := by
-    rw [zip_snoc hlt, (List.getElem?_eq_some_iff.mp hr).2]
-  rw [hz, List.mapM_append, hs]
+  rw [List.zipIdx_append, List.mapM_append, hs]
   simp [ha]
 
-/-- `handlerArgs` reads each setup item as an argument for its register, in order: the
+/-- What `setupArg` reads is the item `posItem` puts the argument in its position with. -/
+theorem setupArg_posItem {fr : Frame} {i : Nat} {it : Item} {a : Arg}
+    (h : setupArg fr i it = some a) : Handler.posItem fr.mode i a = some it := by
+  unfold setupArg at h
+  unfold Handler.posItem
+  split at h
+  · rename_i hr
+    rw [hr]
+    split at h
+    · rename_i m imm
+      split at h
+      · rename_i hm
+        cases h
+        simp only [beq_iff_eq] at hm
+        subst hm
+        have hlt : (imm.setWidth 64).toNat < 2 ^ 32 := by
+          have := imm.isLt; simp only [BitVec.toNat_setWidth]; omega
+        simp only [Handler.stackItem, hlt, ↓reduceIte, Option.some.injEq]
+        simp
+      · cases h
+    · cases h
+  · rename_i r hr
+    rw [hr]
+    split at h
+    · rename_i hfp
+      cases h
+      simp only [beq_iff_eq] at hfp
+      simp [Handler.argItem, hfp, Frame.fp]
+    · split at h
+      · split at h
+        · rename_i hg; cases h; simp only [beq_iff_eq] at hg; subst hg; rfl
+        · cases h
+      · split at h
+        · rename_i hg; cases h; simp only [beq_iff_eq] at hg; subst hg; rfl
+        · cases h
+      · split at h
+        · rename_i g to hg
+          simp only [beq_iff_eq] at hg
+          subst hg
+          have := argRef_addrArg h
+          cases a <;> simp_all [Handler.argItem, Handler.argRef]
+        · cases h
+      · cases h
+
+/-- `handlerArgs` reads each setup item as an argument for its position, in order: the
 arguments' `setupItems` are the items, and the cursor stays. -/
 theorem handlerArgs_ok {setup : List (Nat × Item)} {fr : Frame} {p0 : Nat} {c c' : Cursor}
     {args : List Arg} (h : (handlerArgs setup fr p0).run c = .ok (args, c')) :
@@ -67,54 +99,29 @@ theorem handlerArgs_ok {setup : List (Nat × Item)} {fr : Frame} {p0 : Nat} {c c
   unfold handlerArgs at h
   obtain ⟨st, c1, h1, h2⟩ := bind_ok h
   obtain ⟨rfl, rfl⟩ := pure_ok h2
-  let I : List (Nat × Item) → Array Arg × Nat → Cursor → Prop := fun pre st c2 =>
-    Handler.setupItems fr.mode st.1.toList = some (pre.map (·.2)) ∧ st.2 = st.1.size ∧ c2 = c
-  have key := forIn_list_pre I (fun _ _ => False) _ ?step setup [] (#[], 0) c c1 st
-    ⟨by simp [Handler.setupItems], rfl, rfl⟩ h1
+  let I : List (Nat × Item) → Array Arg → Cursor → Prop := fun pre st c2 =>
+    Handler.setupItems fr.mode st.toList = some (pre.map (·.2)) ∧ c2 = c
+  have key := forIn_list_pre I (fun _ _ => False) _ ?step setup [] #[] c c1 st
+    ⟨by simp [Handler.setupItems], rfl⟩ h1
   case step =>
-    intro pre x b c2 r c3 hI hr
-    obtain ⟨hs, hi, rfl⟩ := hI
+    intro pre x out c2 r c3 hI hr
+    obtain ⟨hs, rfl⟩ := hI
     obtain ⟨at_, it⟩ := x
-    obtain ⟨out, i⟩ := b
-    simp only at hi hr
-    subst hi
+    simp only at hr
     split at hr
-    · rename_i rg hrg
-      have hrg' : X86.argRegs[out.toList.length]? = some rg := by simpa using hrg
-      have step : ∀ a, Handler.argItem fr.mode rg a = some it →
-          Handler.setupItems fr.mode (out.push a).toList = some ((pre ++ [(at_, it)]).map (·.2)) := by
-        intro a ha
-        simp only [Array.toList_push, List.map_append, List.map_cons, List.map_nil]
-        exact setupItems_snoc hs hrg' ha
-      split at hr
-      · rename_i hfp
-        obtain ⟨rfl, rfl⟩ := pure_ok hr
-        refine ⟨step .fp ?_, by simp, rfl⟩
-        simp only [beq_iff_eq] at hfp
-        simp [Handler.argItem, hfp, Frame.fp]
-      · split at hr
-        · split at hr
-          · obtain ⟨rfl, rfl⟩ := pure_ok hr
-            refine ⟨step _ ?_, by simp, rfl⟩
-            simp_all [Handler.argItem]
-          · obtain ⟨_, _, h3, -⟩ := bind_ok hr; exact (err_ok h3).elim
-        · split at hr
-          · obtain ⟨rfl, rfl⟩ := pure_ok hr
-            refine ⟨step _ ?_, by simp, rfl⟩
-            simp_all [Handler.argItem]
-          · obtain ⟨_, _, h3, -⟩ := bind_ok hr; exact (err_ok h3).elim
-        · split at hr
-          · rename_i g to _ _ _ a hg hga
-            obtain ⟨rfl, rfl⟩ := pure_ok hr
-            refine ⟨step _ ?_, by simp, rfl⟩
-            simp only [beq_iff_eq] at hg
-            subst hg
-            have := argRef_addrArg hga
-            cases a <;> simp_all [Handler.argItem, Handler.argRef]
-          · obtain ⟨_, _, h3, -⟩ := bind_ok hr; exact (err_ok h3).elim
-        · obtain ⟨_, _, h3, -⟩ := bind_ok hr; exact (err_ok h3).elim
+    · obtain ⟨_, _, h4, -⟩ := bind_ok hr; exact (err_ok h4).elim
+    rename_i hlt
+    split at hr
+    · rename_i a ha
+      obtain ⟨rfl, rfl⟩ := pure_ok hr
+      refine ⟨?_, rfl⟩
+      simp only [Array.toList_push, List.map_append, List.map_cons, List.map_nil]
+      have hl : out.toList.length < handlerPositions fr.mode.pe := by simp at hlt ⊢; omega
+      have hp : Handler.posItem fr.mode out.toList.length a = some it := by
+        simpa using setupArg_posItem ha
+      exact setupItems_snoc hs hl hp
     · obtain ⟨_, _, h3, -⟩ := bind_ok hr; exact (err_ok h3).elim
-  rcases key with ⟨hs, -, rfl⟩ | hf
+  rcases key with ⟨hs, rfl⟩ | hf
   · exact ⟨by simpa using hs, rfl⟩
   · exact hf.elim
 
@@ -193,14 +200,15 @@ theorem thenSeq_read {op : Full.Opcode} {nn hat : Nat} {c c' : Cursor} {t : Then
 
 theorem islandCall_read {fr : Frame} {c c' : Cursor} {isl ops : Nat} {site : Nat × Nat}
     (h : (islandCall fr).run c = .ok ((isl, ops, site), c')) :
-    Dec c c.pos (Island.islandPre fr.mode isl ops ++ Island.islandPost fr.mode) c'.pos ∧
+    Dec c c.pos (Island.islandPre fr.mode isl ops) c'.pos ∧
       c' = atPos c c'.pos := by
   unfold islandCall at h
-  obtain ⟨at_, c1, h1, h⟩ := bind_ok h
-  obtain ⟨rfl, hc1⟩ := pos_run' h1
-  subst c1
-  cases hpe : fr.mode.pe <;> rw [hpe] at h <;> simp (config := { zeta := false }) only [Bool.false_eq_true, ↓reduceIte] at h
+  cases hpe : fr.mode.pe <;> rw [hpe] at h <;>
+    simp (config := { zeta := false }) only [Bool.false_eq_true, ↓reduceIte] at h
   all_goals
+    obtain ⟨at_, c1, h1, h⟩ := bind_ok h
+    obtain ⟨rfl, hc1⟩ := pos_run' h1
+    subst c1
     obtain ⟨c1, d1, e1, h⟩ := check_dec (fun _ _ _ hh => err_ok hh) h
     obtain ⟨x, c2, h2, h⟩ := bind_ok h
     obtain ⟨d2, e2⟩ := item_dec h2
@@ -212,7 +220,6 @@ theorem islandCall_read {fr : Frame} {c c' : Cursor} {isl ops : Nat} {site : Nat
     rename_i hr
     simp only [bne_iff_ne, ne_eq, Decidable.not_not] at hr
     subst hr
-  · -- no PE
     obtain ⟨st, c3, h3, h⟩ := bind_ok h
     obtain ⟨rfl, hc3⟩ := pos_run' h3
     subst c3
@@ -224,28 +231,10 @@ theorem islandCall_read {fr : Frame} {c c' : Cursor} {isl ops : Nat} {site : Nat
     obtain ⟨he, rfl⟩ := pure_ok h
     cases he
     refine ⟨?_, by rw [e4, e2, e1]⟩
-    simp only [Island.islandPre, Island.islandPost, Island.islandRegs, hpe, Bool.false_eq_true,
-      ↓reduceIte, List.append_nil, Frame.fp] at d1 ⊢
-    rw [e1] at d2; rw [e2, e1] at d4
-    exact (d1.trans' d2).trans' (by simpa using d4)
-  · -- PE
-    obtain ⟨c3, d3, e3, h⟩ := check_dec (fun _ _ _ hh => err_ok hh) h
-    obtain ⟨st, c5, h5, h⟩ := bind_ok h
-    obtain ⟨rfl, hc5⟩ := pos_run' h5
-    subst c5
-    obtain ⟨y, c4, h4, h⟩ := bind_ok h
-    obtain ⟨d4, e4⟩ := item_dec h4
-    split at h
-    case h_2 => exact (err_ok h).elim
-    rename_i isl'
-    obtain ⟨c6, d6, e6, h⟩ := check_dec (fun _ _ _ hh => err_ok hh) h
-    obtain ⟨he, rfl⟩ := pure_ok h
-    cases he
-    refine ⟨?_, by rw [e6, e4, e3, e2, e1]⟩
-    simp only [Island.islandPre, Island.islandPost, Island.islandRegs, hpe, ↓reduceIte,
+    simp only [Island.islandPre, Island.islandRegs, hpe, Bool.false_eq_true, ↓reduceIte,
       Frame.fp] at d1 ⊢
-    rw [e1] at d2; rw [e2, e1] at d3; rw [e3, e2, e1] at d4; rw [e4, e3, e2, e1] at d6
-    have := (((d1.trans' d2).trans' d3).trans' d4).trans' d6
+    rw [e1] at d2; rw [e2, e1] at d4
+    have := (d1.trans' d2).trans' d4
     simpa using this
 
 /-- `ret`'s sequence as `retSeq` reads it: `retLoads k s`, the epilogue, `ret`; `k` a `u32`. -/
@@ -409,18 +398,19 @@ theorem table_read {n : Nat} {c c' : Cursor} {ts : List Nat}
 
 /-! ### `insn` -/
 
-/-- An item that `insn` collects into the argument setup. -/
-def isSetup : Item → Bool
+/-- An item that `insn` collects into the argument setup (on PE also the stack argument). -/
+def isSetup (pe : Bool) : Item → Bool
   | .setReg .. | .lea .. | .mov .. | .leaM .. => true
-  | _ => false
+  | it => pe && it.isStackArg
 
 theorem Dec.nil_eq {c : Cursor} {p q : Nat} (h : Dec c p [] q) : q = p := by
   cases h; rfl
 
 /-- What `insn` read (`insn_read`): a handler call (its setup items `setupItems` of its
 arguments, read from the start, then `call h`, then what `thenSeq` reads), or `ret`
-(`retSeq`), `unreachable` (`ud2`), `jmp` (a `jmp` within the function) or `island`
-(`islandCall`, and the operand array in the rodata). -/
+(`retSeq`), `unreachable` (`ud2`), `jmp` (a `jmp` within the function), `island`
+(`islandCall`, and the operand array in the rodata), or in the pad region `resume`
+(`add rsp, 40; ret`). -/
 inductive InsnRead (fr : Frame) (ro : ByteArray) (c : Cursor) : Proto → Cursor → Prop
   | handler {items : List Item} {hat n len nn : Nat} {op : Full.Opcode} {args : List Arg}
       {t : Then Nat} {sites : List (Nat × Nat)} {c' : Cursor} :
@@ -440,7 +430,13 @@ inductive InsnRead (fr : Frame) (ro : ByteArray) (c : Cursor) : Proto → Cursor
       InsnRead fr ro c { op := .jmp, ops := [.target t.toNat], pos := c.pos } (atPos c (c.pos + len))
   | island {isl opsRo : Nat} {site : Nat × Nat} {ws : List (BitVec 32)} {c' : Cursor} :
       (islandCall fr).run c = .ok ((isl, opsRo, site), c') → opsArray ro opsRo = some ws →
-      InsnRead fr ro c { op := .island, ops := [.sym isl, .words ws], pos := c.pos, sites := [site] } c'
+      InsnRead fr ro c { op := .island, ops := [.sym isl, .words ws], pos := c.pos, sites := [site], bare := fr.mode.pe } c'
+  /-- The pad region's `resume`: `add rsp, 40; ret` (its arguments are `read`'s, `resumeSlots`). -/
+  | resume {len len2 : Nat} : fr.region = true →
+      decodeItem c = some (.addRsp (BitVec.ofNat 32 peRegionAlloc), len) →
+      decodeItem (atPos c (c.pos + len)) = some (.ret, len2) →
+      InsnRead fr ro c { op := .resume, handler := some ([], .trap), pos := c.pos }
+        (atPos c (c.pos + len + len2))
   /-- A dense switch's index computation and its table (`denseSwitch`), its handler call in the
   reduced form: not described further yet. -/
   | dense {c' : Cursor} {q : Proto} : (denseSwitch fr).run c = .ok (some q, c') → InsnRead fr ro c q c'
@@ -459,7 +455,8 @@ theorem insnCore_read {fr : Frame} {ro : ByteArray} {c c' : Cursor} {q : Proto}
     st.2 = none ∧ Dec c c.pos (st.1.toList.map (·.2)) c3.pos ∧ c3 = atPos c c3.pos
   let D : Array (Nat × Item) × Option (Nat × Item) → Cursor → Prop := fun st c3 =>
     ∃ hat hd n, st.2 = some (hat, hd) ∧ Dec c c.pos (st.1.toList.map (·.2)) hat ∧
-        decodeItem (atPos c hat) = some (hd, n) ∧ c3 = atPos c (hat + n) ∧ isSetup hd = false
+        decodeItem (atPos c hat) = some (hd, n) ∧ c3 = atPos c (hat + n) ∧
+        isSetup fr.mode.pe hd = false
   have key := forIn_range_inv I D _ ?step fu (#[], none) c c3 st ⟨rfl, .nil _, hc⟩ h3
   case step =>
     intro a b c4 r c5 hI hr
@@ -470,13 +467,17 @@ theorem insnCore_read {fr : Frame} {ro : ByteArray} {c c' : Cursor} {q : Proto}
     subst c6
     obtain ⟨it, c7, h7, hr⟩ := bind_ok hr
     obtain ⟨n, hn, rfl⟩ := run_item h7
-    cases it <;> obtain ⟨rfl, rfl⟩ := pure_ok hr
+    by_cases hsa : (fr.mode.pe && it.isStackArg) = true
+    all_goals cases it <;> (try simp only [hsa, ↓reduceIte, Bool.false_eq_true] at hr) <;>
+      obtain ⟨rfl, rfl⟩ := pure_ok hr
     all_goals first
       | (refine ⟨hb2, ?_, rfl⟩
          simp only [Array.toList_push, List.map_append, List.map_cons, List.map_nil]
          exact hd.append (Dec.single hn))
       | (refine ⟨_, _, n, rfl, hd, hn, rfl, ?_⟩
-         rfl)
+         first
+           | (simp only [isSetup, Item.isStackArg, Bool.and_false]; done)
+           | (simp only [isSetup]; simpa using hsa))
   rcases key with ⟨hnone, -, -⟩ | ⟨hat, hd, n, hst, hdec, hdh, rfl, hns⟩
   · simp only [hnone] at h
     exact (err_ok h).elim
@@ -532,10 +533,28 @@ theorem insnCore_read {fr : Frame} {ro : ByteArray} {c c' : Cursor} {q : Proto}
       have hisl : ∀ (c5 : Cursor) (u : Unit), (DM.setPos c.pos).run (atPos c (hat + n)) = .ok (u, c5) →
           ∀ isl opsRo site c6, (islandCall fr).run c5 = .ok ((isl, opsRo, site), c6) →
           ∀ ws, opsArray ro opsRo = some ws →
-          InsnRead fr ro c { op := .island, ops := [.sym isl, .words ws], pos := c.pos, sites := [site] } c6 := by
+          InsnRead fr ro c { op := .island, ops := [.sym isl, .words ws], pos := c.pos, sites := [site], bare := fr.mode.pe } c6 := by
         intro c5 u h5 isl opsRo site c6 h6 ws hws
         rw [run_setPos] at h5; cases h5
         exact .island (by rw [hc]; exact h6) hws
+      -- The pad region's `resume`.
+      split at h
+      · rename_i hres
+        simp only [Bool.and_eq_true, beq_iff_eq] at hres
+        obtain ⟨⟨hrg, he⟩, rfl⟩ := hres
+        have := hempty he; subst this
+        obtain ⟨at_, c5, h5, h⟩ := bind_ok h
+        obtain ⟨rfl, hc5⟩ := pos_run' h5
+        subst c5
+        obtain ⟨y, c6, h6, h⟩ := bind_ok h
+        obtain ⟨n2, hn2, rfl⟩ := run_item h6
+        split at h
+        · obtain ⟨_, _, h7, -⟩ := bind_ok h; exact (err_ok h7).elim
+        rename_i hy
+        have hy' : y = .ret := by simpa using hy
+        subst hy'
+        obtain ⟨rfl, rfl⟩ := pure_ok h
+        exact .resume hrg hdh hn2
       by_cases hbr : ∃ cond t long, hd = .branch cond t long
       · obtain ⟨cond, t, long, rfl⟩ := hbr
         cases cond <;> dsimp only at h
@@ -547,7 +566,7 @@ theorem insnCore_read {fr : Frame} {ro : ByteArray} {c c' : Cursor} {q : Proto}
             exact .jmp hdh
           · exact (err_ok h).elim
         all_goals exact (err_ok h).elim
-      · cases hd <;> dsimp only at h
+      · cases hd <;> (try dsimp only at h)
         case branch => exact (hbr ⟨_, _, _, rfl⟩).elim
         case ld =>
           split at h
@@ -570,7 +589,7 @@ theorem insnCore_read {fr : Frame} {ro : ByteArray} {c c' : Cursor} {q : Proto}
             obtain ⟨rfl, rfl⟩ := pure_ok h
             exact hret _ _ h5 _ _ h6 _ rfl
           · exact (err_ok h).elim
-        case leaRspRbp16 =>
+        case popRbp =>
           split at h
           · obtain ⟨u, c5, h5, h⟩ := bind_ok h
             obtain ⟨x, c6, h6, h⟩ := bind_ok h
@@ -585,27 +604,14 @@ theorem insnCore_read {fr : Frame} {ro : ByteArray} {c c' : Cursor} {q : Proto}
             exact hret _ _ h5 _ _ h6 _ rfl
           · exact (err_ok h).elim
         case callMem =>
+          obtain ⟨u, c5, h5, h⟩ := bind_ok h
+          obtain ⟨⟨isl, opsRo, site⟩, c6, h6, h⟩ := bind_ok h
+          dsimp only at h
           split at h
-          · obtain ⟨_, _, h5, -⟩ := bind_ok h; exact (err_ok h5).elim
-          · obtain ⟨u, c5, h5, h⟩ := bind_ok h
-            obtain ⟨⟨isl, opsRo, site⟩, c6, h6, h⟩ := bind_ok h
-            dsimp only at h
-            split at h
-            · rename_i ws hws
-              obtain ⟨rfl, rfl⟩ := pure_ok h
-              exact hisl _ _ h5 _ _ _ _ h6 _ hws
-            · exact (err_ok h).elim
-        case subRsp =>
-          split at h
-          · obtain ⟨_, _, h5, -⟩ := bind_ok h; exact (err_ok h5).elim
-          · obtain ⟨u, c5, h5, h⟩ := bind_ok h
-            obtain ⟨⟨isl, opsRo, site⟩, c6, h6, h⟩ := bind_ok h
-            dsimp only at h
-            split at h
-            · rename_i ws hws
-              obtain ⟨rfl, rfl⟩ := pure_ok h
-              exact hisl _ _ h5 _ _ _ _ h6 _ hws
-            · exact (err_ok h).elim
+          · rename_i ws hws
+            obtain ⟨rfl, rfl⟩ := pure_ok h
+            exact hisl _ _ h5 _ _ _ _ h6 _ hws
+          · exact (err_ok h).elim
         case ud2 =>
           split at h
           · rename_i he

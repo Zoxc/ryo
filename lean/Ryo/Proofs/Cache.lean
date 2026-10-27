@@ -248,6 +248,12 @@ theorem CacheInv.empty (x : X86.State) : CacheInv {} x := by
   simp only [Array.getElem_replicate]
   exact ⟨fun _ _ h => (nomatch h), fun _ h => (nomatch h)⟩
 
+/-- The empty cache of a PE target or another (`Cache.pe`) holds of every state. -/
+theorem CacheInv.emptyPe (pe : Bool) (x : X86.State) : CacheInv { pe := pe } x := by
+  refine ⟨by simp, fun i hi => ?_⟩
+  simp only [Array.getElem_replicate]
+  exact ⟨fun _ _ h => (nomatch h), fun _ h => (nomatch h)⟩
+
 theorem CacheInv.get {c : Cache} {x : X86.State} (h : CacheInv c x) {i : Nat} (hi : i < 8) :
     Holds c.regs[i]! x pool[i]! := by
   have hi' : i < c.regs.size := by rw [h.1]; exact hi

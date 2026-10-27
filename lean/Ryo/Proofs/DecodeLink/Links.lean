@@ -20,7 +20,7 @@ indices with `pos32 r t = tgt`.
   computation stands in for the call (`denseSwitch`, a hypothesis): its link is still to do.
 - `link_jmp`, `link_unreachable`, `link_ret`, `link_island`: `jmp tgt` (`jmp_step`), `ud2`
   (`unreachable_step`), `retLoads k.toNat src ++ epilogue F mode ++ [ret]` with `F` the frame size
-  (`ret_step`), `islandPre ++ islandPost` and the rodata operand words (`island_sound`).
+  (`ret_step`), `islandPre` and the rodata operand words (`island_sound`).
 - `link_arg`: `argStore a d pe` with `r = word a`, `ArgReg.of? r` defined; `of_word_eq`: its
   result is `a` when `a.size < 32` and `a.index < 2 ^ 24` (what `ArgRet.arg_step` needs);
   `DecodeLink.Arg` proves the bounds of `argInsn`'s `a` (`link_arg_exact`).
@@ -167,7 +167,8 @@ theorem noHandler : Full.Opcode.jmp.hasHandler = false ∧ Full.Opcode.ret.hasHa
 theorem link_handler {ctx : Ctx} {m : Mem} {c c' : Cursor} {rs : Array Reloc} {fr : Frame}
     {ro : ByteArray} {q : Proto} {args : List Arg} {t : Then Nat} (hk : LinkOk ctx m c rs)
     (hb : Boundary rs c.pos) (h : (insn fr ro).run c = .ok (q, c'))
-    (hh : q.handler = some (args, t)) (hnd : ∀ c'', (denseSwitch fr).run c ≠ .ok (some q, c'')) :
+    (hh : q.handler = some (args, t)) (hnd : ∀ c'', (denseSwitch fr).run c ≠ .ok (some q, c''))
+    (hrg : fr.region = false) :
     ∃ n items, Full.Opcode.ofNat? n = some q.op ∧ q.op.hasHandler = true ∧
       Handler.setupItems fr.mode args = some items ∧
       CodeAt ctx m (items ++ [.call (.handler n)]) c.pos ∧
@@ -187,6 +188,7 @@ theorem link_handler {ctx : Ctx} {m : Mem} {c c' : Cursor} {rs : Array Reloc} {f
   | unreachable => cases hh
   | jmp => cases hh
   | island => cases hh
+  | resume h1 => rw [hrg] at h1; cases h1
   | dense hd => exact (hnd _ hd).elim
 
 /-- `jmp`: the item `jmp tgt` (`Shapes.jmp_step`), the operand its target's position. -/
@@ -203,6 +205,7 @@ theorem link_jmp {ctx : Ctx} {m : Mem} {c c' : Cursor} {rs : Array Reloc} {fr : 
   | ret => simp only at hop; exact absurd hop (by decide)
   | unreachable => simp only at hop; exact absurd hop (by decide)
   | island => simp only at hop; exact absurd hop (by decide)
+  | resume => simp only at hop; exact absurd hop (by decide)
   | dense hd =>
     obtain ⟨w, hw, -⟩ := denseSwitch_some hd
     rw [hw] at hop; cases w <;> exact absurd hop (by decide)
@@ -223,6 +226,7 @@ theorem link_unreachable {ctx : Ctx} {m : Mem} {c c' : Cursor} {rs : Array Reloc
   | ret => simp only at hop; exact absurd hop (by decide)
   | jmp => simp only at hop; exact absurd hop (by decide)
   | island => simp only at hop; exact absurd hop (by decide)
+  | resume => simp only at hop; exact absurd hop (by decide)
   | dense hd =>
     obtain ⟨w, hw, -⟩ := denseSwitch_some hd
     rw [hw] at hop; cases w <;> exact absurd hop (by decide)
@@ -246,6 +250,7 @@ theorem link_ret {ctx : Ctx} {m : Mem} {c c' : Cursor} {rs : Array Reloc} {fr : 
   | jmp => simp only at hop; exact absurd hop (by decide)
   | unreachable => simp only at hop; exact absurd hop (by decide)
   | island => simp only at hop; exact absurd hop (by decide)
+  | resume => simp only at hop; exact absurd hop (by decide)
   | dense hd =>
     obtain ⟨w, hw, -⟩ := denseSwitch_some hd
     rw [hw] at hop; cases w <;> exact absurd hop (by decide)
@@ -258,14 +263,14 @@ theorem link_ret {ctx : Ctx} {m : Mem} {c c' : Cursor} {rs : Array Reloc} {fr : 
     rw [hkk]
     exact ⟨hca, hq, hb'⟩
 
-/-- `island isl, ops`: `islandPre` and `islandPost` (`Island.island_sound`'s items), the
+/-- `island isl, ops`: `islandPre` (`Island.island_sound`'s items), the
 operand words the array at rodata offset `o` holds. -/
 theorem link_island {ctx : Ctx} {m : Mem} {c c' : Cursor} {rs : Array Reloc} {fr : Frame}
     {ro : ByteArray} {q : Proto} (hk : LinkOk ctx m c rs) (hb : Boundary rs c.pos)
     (h : (insn fr ro).run c = .ok (q, c')) (hop : q.op = .island) :
     ∃ isl o ws, q.ops = [.sym isl, .words ws] ∧ q.handler = none ∧ opsArray ro o = some ws ∧
-      CodeAt ctx m (Island.islandPre fr.mode isl o ++ Island.islandPost fr.mode) c.pos ∧
-      c'.pos = c.pos + codeSize (Island.islandPre fr.mode isl o ++ Island.islandPost fr.mode) ∧
+      CodeAt ctx m (Island.islandPre fr.mode isl o) c.pos ∧
+      c'.pos = c.pos + codeSize (Island.islandPre fr.mode isl o) ∧
       Boundary rs c'.pos := by
   cases insn_read h with
   | @handler _ _ _ _ _ op _ _ _ _ _ _ hn hhh =>
@@ -274,6 +279,7 @@ theorem link_island {ctx : Ctx} {m : Mem} {c c' : Cursor} {rs : Array Reloc} {fr
   | jmp => simp only at hop; exact absurd hop (by decide)
   | unreachable => simp only at hop; exact absurd hop (by decide)
   | ret => simp only at hop; exact absurd hop (by decide)
+  | resume => simp only at hop; exact absurd hop (by decide)
   | dense hd =>
     obtain ⟨w, hw, -⟩ := denseSwitch_some hd
     rw [hw] at hop; cases w <;> exact absurd hop (by decide)

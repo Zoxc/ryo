@@ -268,7 +268,8 @@ theorem decodeItem_matches {c : Cursor} {j : Item} {n : Nat} (hsp : c.spFrame = 
     revert hk
     cases i.mem?.map (·.base) with
     | none => intro hk; cases hk; rfl
-    | some b => cases b <;> intro hk <;> first | (cases hk; rfl) | cases hk
+    | some b =>
+      cases b <;> intro hk <;> first | (cases hk; rfl) | (split at hk <;> simp_all) | cases hk
   unfold decodeItem at h
   rcases Option.orElse_some' h with h | h
   · obtain ⟨i, -, h⟩ := Option.bind_eq_some_iff.mp h

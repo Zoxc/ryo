@@ -35,8 +35,8 @@ stores, `Layout`), the window end `K`, the state `x0` at the function's entry (t
   `rsp` (`lo`), the code linked in memory (`LinkOk`) and the rodata (`RoLoaded`), at a leading
   `arg` (`LeadArg`: it and every instruction before are `arg`s) the incoming argument registers
   no earlier `arg` read (`ArgsLive`: an `arg` stored in pieces shifts its own register, so only
-  the unconsumed ones stay related; at instruction 0 it is `ArgsRel`), and the frame's link to the caller (`FrameFacts`: return address, saved `rbp` (and PE `rsi`/`rdi`), the
-  other callee-saved registers as at entry).
+  the unconsumed ones stay related; at instruction 0 it is `ArgsRel`), and the frame's link to the caller (`FrameFacts`: return address, saved `rbp`, the
+  other callee-saved registers as at entry, on PE `rsi`/`rdi` too).
 - `ExitRel`: a return with the return registers related, `rip` the return address, `rsp` and
   the callee-saved registers as the caller left them, and the world related; a tail call at the
   callee's entry (`EntryAt`) with `rsp` as at entry; an unwind out of the function is not a
@@ -51,8 +51,8 @@ Proved helpers: decoded branches are canonical (`branch_canonical`), every itera
 relocation boundary (`boundary_start`), R's scopes never stop with `noBehavior` (`noNB_scopes`).
 Facts of the decoder used and not yet proved (`sorry`): the prologue read item by item
 (`read_instructions_prologue`), landing pads are `lpad`s (`pad_lpad`, so not leading `arg`s,
-`pad_not_leadArg`), protos lie within the code (`posOf_le_size`, so `posOf_lt_32`), PE frames are
-at least 16 bytes (`frameSize_pe`). The open proofs are worked on in `DSWork/*.lean`.
+`pad_not_leadArg`), protos lie within the code (`posOf_le_size`, so `posOf_lt_32`). The open
+proofs are worked on in `DSWork/*.lean`.
 
 **`decode_sound`** (§5): from `decodeReduced … = .ok d`, `read_instructions_prologue`,
 `instructions_read` and `iters_indexed` give the layout; `reducedOf_insns` the instructions; then
@@ -63,8 +63,11 @@ environment's `ret` (`HandlerContract`, `ResumeContract`: `resume`'s handler is 
 `opSem`, and comes back only at a landing pad; `CallContract`, `IslandContract`,
 `TripContract`), the link map (`Linked`, `Globals`). Proved elsewhere, outside the default
 build: `OpFacts` of every opcode (`RyoProofs/OpFacts.lean`) and `InlineOk` of every inline class
-(`RyoProofs/InlineOk.lean`). A restriction: the frame-pointer mode (`fp`), the items without a
-frame pointer have no step lemmas yet. Open prerequisites, each a named hypothesis to be
+(`RyoProofs/InlineOk.lean`). Restrictions: the frame-pointer mode (`fp`), the items without a
+frame pointer have no step lemmas yet; handler calls with their arguments in registers
+(`regArgs`: PE's stack argument, the `atomic.cxchg` handlers', writes the frame's bottom, its
+step is open); no PE pad region (`Decodes.noRegion`: PE's cleanup code after the body, which the
+exception dispatcher enters on its own stack). Open prerequisites, each a named hypothesis to be
 discharged later:
 
 - of the decoded code, checkable (the decoder or a check could reject the code otherwise):
@@ -231,21 +234,23 @@ end Sim
 /-- The iterations of `instructions`, indexed by instruction: proto `k` is read from
 `start k` with cache `cache k` and dropped stores `dr k`, `args k` while every proto before is
 an `arg`, the next iteration starting where it ends. -/
-def Indexed (fr : Vm.Frame) (ro : ByteArray) (targets : Option (Array Nat)) (c : Cursor)
+def Indexed (fr : Vm.Frame) (ro : ByteArray) (targets : Option (Array Nat))
+    (callSites : Array CallSite) (c : Cursor)
     (protos : List Proto) (start : Nat → Nat) (cache : Nat → Cache)
     (dr : Nat → List DroppedStore) (args : Nat → Bool) : Prop :=
-  ∀ k (hk : k < protos.length), Iter fr ro targets c (args k) (start k) (cache k) (dr k)
+  ∀ k (hk : k < protos.length), Iter fr ro targets callSites c (args k) (start k) (cache k) (dr k)
     protos[k] (start (k + 1)) (cache (k + 1)) (dr (k + 1))
 
 /-- `Iters` as indexed iterations, from the chain's start to its end. -/
-theorem iters_indexed {fr : Vm.Frame} {ro : ByteArray} {targets : Option (Array Nat)} {c : Cursor} :
+theorem iters_indexed {fr : Vm.Frame} {ro : ByteArray} {targets : Option (Array Nat)}
+    {callSites : Array CallSite} {c : Cursor} :
     ∀ {a : Bool} {p : Nat} {cache : Cache} {dr : List DroppedStore} {qs : List Proto} {pe : Nat}
-      {dre : List DroppedStore}, Iters fr ro targets c a p cache dr qs pe dre →
+      {dre : List DroppedStore}, Iters fr ro targets callSites c a p cache dr qs pe dre →
     ∃ (start : Nat → Nat) (ca : Nat → Cache) (drs : Nat → List DroppedStore) (args : Nat → Bool),
       start 0 = p ∧ ca 0 = cache ∧ drs 0 = dr ∧ args 0 = a ∧ start qs.length = pe ∧
       drs qs.length = dre ∧
       (∀ k (hk : k < qs.length), args (k + 1) = (args k && qs[k].op == .arg)) ∧
-      Indexed fr ro targets c qs start ca drs args := by
+      Indexed fr ro targets callSites c qs start ca drs args := by
   intro a p cache dr qs pe dre h
   induction h with
   | nil a p cache dr =>
@@ -289,6 +294,8 @@ structure Setup where
   body : Cursor
   rs : Array Reloc
   ro : ByteArray
+  /-- The call sites (the LSDA's): PE's `nop` after a call with a landing pad. -/
+  callSites : Array CallSite
   /-- The branch targets of the decoder's first pass (the cache is cleared there). -/
   targets : Array Nat
   /-- The iterations (`Indexed`). -/
@@ -311,18 +318,14 @@ variable (S : Setup)
 
 def F : Nat := S.c.d.frameSize
 
-def fr : Vm.Frame := ⟨S.r.frameSize, S.c.mode⟩
+def fr : Vm.Frame := ⟨S.r.frameSize, S.c.mode, false⟩
 
 /-- The cache the decoder used at proto `k`'s position: cleared at a branch target. -/
 def used (k : Nat) : Cache :=
-  if sortedContains S.targets (posOf S.r k) then {} else S.cache k
+  if sortedContains S.targets (posOf S.r k) then { pe := S.c.mode.pe } else S.cache k
 
 /-- Where proto `k`'s iteration ends: the next one's start. -/
 def stop (k : Nat) : Nat := S.start (k + 1)
-
-/-- The frame's link slots are `[linkLo, 16)`: the saved `rbp` and the return address (PE: also
-the saved `rsi`/`rdi` below). -/
-def linkLo : Int := if S.c.mode.pe then -16 else 0
 
 /-- The address of frame offset `o` (`fp = x0.rsp - 8`, `FrameInv.fpAddr_eq`). -/
 def winAddr (o : Int) : BitVec 64 := S.x0.rsp - 8 + BitVec.ofInt 64 o
@@ -354,15 +357,13 @@ theorem argsLive_zero {S : Setup} {args : R.Regs} {x : X86.State} :
   ⟨fun h r hr => h r hr (fun _ hj => absurd hj (Nat.not_lt_zero _)), fun h r hr _ => h r hr⟩
 
 /-- The frame's link to the caller (frame-pointer form): `rbp` is the entry `rsp - 8`, with the
-return address above it and the caller's `rbp` (PE: also `rsi`, `rdi`) saved below; the other
-callee-saved registers as at entry. -/
+return address above it and the caller's `rbp` saved below; the other callee-saved registers
+(`Saved`: on PE also `rsi`, `rdi`, which the function's code doesn't change) as at entry. -/
 structure FrameFacts (S : Setup) (x : X86.State) : Prop where
   rbp : x.reg .rbp + 16 = S.x0.rsp + 8
   retAddr : x.mem.read64 (x.reg .rbp + 8) = S.x0.mem.read64 S.x0.rsp
   savedRbp : x.mem.read64 (x.reg .rbp) = S.x0.reg .rbp
-  savedPe : S.c.mode.pe = true →
-    x.mem.read64 (x.reg .rbp - 16) = S.x0.reg .rsi ∧ x.mem.read64 (x.reg .rbp - 8) = S.x0.reg .rdi
-  saved : ∀ i, CalleeSaved i → i ≠ 5 → x.regs i = S.x0.regs i
+  saved : ∀ i, Saved S.c.mode.pe i → i ≠ 5 → x.regs i = S.x0.regs i
 
 /-- Everything a boundary relates but the position and the cache (see the module comment). -/
 structure FrameInv (S : Setup) (s : R.RState) (x : X86.State) : Prop where
@@ -419,21 +420,26 @@ structure Decodes (S : Setup) (code : ByteArray) (relocs : Array Reloc) (rodata 
     (mode : Ryo.Obj.Mode) : Prop where
   read : ∃ c', (Vm.read rodata callSites dropped.toList scopes mode).run
     { code := code.data, pos := 0, fields := .relocs relocs } = .ok (S.r, c')
-  reduced : reducedOf S.r = .ok S.c.d
+  reduced : reducedOf S.r mode.pe = .ok S.c.d
   modeEq : S.c.mode = mode
   rsEq : S.rs = relocs
   roEq : S.ro = rodata
+  callSitesEq : S.callSites = callSites
+  /-- No pad region (PE's cleanup code after the body, run by the exception dispatcher on its
+  own stack): not covered. -/
+  noRegion : regionPad mode callSites = none
   bodyEq : S.body = bodyCursor { code := code.data, pos := 0, fields := .relocs relocs } mode
     S.r.frameSize S.body.pos
-  run : ∃ stub padded c1, (instructions S.fr rodata dropped.toList (some S.targets) stub).run
-    S.body = .ok ((S.r.protos, padded), c1)
+  run : ∃ stub padded c1, (instructions S.fr rodata dropped.toList (some S.targets) stub
+    S.body.code.size callSites).run S.body = .ok ((S.r.protos, padded), c1)
   start0 : S.start 0 = S.body.pos
-  cache0 : S.cache 0 = {}
+  cache0 : S.cache 0 = { pe := mode.pe }
   dr0 : S.dr 0 = dropped.toList
   args0 : S.args 0 = true
   argsSucc : ∀ k (hk : k < S.r.protos.toList.length),
     S.args (k + 1) = (S.args k && S.r.protos.toList[k].op == .arg)
-  iters : Indexed S.fr S.ro (some S.targets) S.body S.r.protos.toList S.start S.cache S.dr S.args
+  iters : Indexed S.fr S.ro (some S.targets) S.callSites S.body S.r.protos.toList S.start S.cache
+    S.dr S.args
   /-- The prologue (the entry's counter check, the frame's `prologue`) is read item by item from
   0 to the body's start (frame-pointer form: the body cursor is the code's). -/
   prologue : S.c.mode.framePointer = true → ∃ items, Dec S.body 0 items S.body.pos
@@ -444,15 +450,16 @@ are read one after the other from the start (`sorry`: the entry's counter check 
 `read_instructions`). -/
 theorem read_instructions_prologue {ro : ByteArray} {callSites : Array CallSite}
     {dropped : List DroppedStore} {scopes : Array R.Scope} {mode : Ryo.Obj.Mode} {c c' : Cursor}
-    {r : ReadResult} (h : (Vm.read ro callSites dropped scopes mode).run c = .ok (r, c')) :
+    {r : ReadResult} (h : (Vm.read ro callSites dropped scopes mode).run c = .ok (r, c'))
+    (hnr : regionPad mode callSites = none) :
     ∃ (c0 c1 : Cursor) (targets : Array Nat) (stub : Option Nat) (padded : Array Bool),
       c0 = bodyCursor c mode r.frameSize c0.pos ∧
-      (instructions ⟨r.frameSize, mode⟩ ro dropped (some targets) stub).run c0 =
-        .ok ((r.protos, padded), c1) ∧
+      (instructions ⟨r.frameSize, mode, false⟩ ro dropped (some targets) stub c.code.size
+        callSites).run c0 = .ok ((r.protos, padded), c1) ∧
       (mode.framePointer = true → ∃ items, Dec c0 c.pos items c0.pos) := by
   sorry  -- TODO(wip): read_instructions_prologue
 
-theorem reducedOf_frameSize {r : ReadResult} {d : Decoded} (h : reducedOf r = .ok d) :
+theorem reducedOf_frameSize {r : ReadResult} {pe : Bool} {d : Decoded} (h : reducedOf r pe = .ok d) :
     d.frameSize = r.frameSize := by
   unfold reducedOf at h
   obtain ⟨insns, -, h2⟩ := ebind_ok h
@@ -466,6 +473,7 @@ theorem decodes_of_ok {code : ByteArray} {relocs : Array Reloc} {rodata : ByteAr
     {callSites : Array CallSite} {dropped : Array DroppedStore} {scopes : Array R.Scope}
     {mode : Ryo.Obj.Mode} {d : Decoded}
     (hdec : decodeReduced code relocs rodata callSites dropped scopes mode = .ok d)
+    (hnr : regionPad mode callSites = none)
     (c : R.Code) (hc : c.d = d) (hm : c.mode = mode) (ctx : Ctx) (E : Env) (K : Int)
     (x0 : X86.State) (Owned : BitVec 64 → Prop) (lo : BitVec 64)
     (padOf : BitVec 64 → Option (BitVec 64)) (Safe : R.Query → Prop) :
@@ -473,14 +481,15 @@ theorem decodes_of_ok {code : ByteArray} {relocs : Array Reloc} {rodata : ByteAr
       S.ctx = ctx ∧ S.E = E ∧ S.K = K ∧ S.x0 = x0 ∧ S.Owned = Owned ∧ S.lo = lo ∧
       S.padOf = padOf ∧ S.Safe = Safe := by
   obtain ⟨r, c', hread, hred⟩ := decodeReduced_read hdec
-  obtain ⟨c0, c1, targets, stub, padded, hc0, hrun, hpro⟩ := read_instructions_prologue hread
+  obtain ⟨c0, c1, targets, stub, padded, hc0, hrun, hpro⟩ := read_instructions_prologue hread hnr
   obtain ⟨hit, -, -, -⟩ := instructions_read hrun
   obtain ⟨st, ca, drs, ar, h0, hc0', hd0, ha0, -, -, har, hix⟩ := iters_indexed hit
-  refine ⟨Setup.mk ctx E c r c0 relocs rodata targets st ca drs ar K x0 Owned lo padOf Safe,
-    ⟨⟨c', hread⟩,
-    hc ▸ hred, hm, rfl, rfl, hc0, ?_, h0, hc0', hd0, ha0, har, ?_, fun hfp => hpro (hm ▸ hfp)⟩,
-    rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
-  · exact ⟨stub, padded, c1, by simpa [Setup.fr, hm] using hrun⟩
+  have hsz : c0.code.size = code.data.size := by rw [hc0]; rfl
+  refine ⟨Setup.mk ctx E c r c0 relocs rodata callSites targets st ca drs ar K x0 Owned lo padOf
+    Safe, ⟨⟨c', hread⟩,
+    hc ▸ hred, hm, rfl, rfl, rfl, hnr, hc0, ?_, h0, hc0', hd0, ha0, har, ?_,
+    fun hfp => hpro (hm ▸ hfp)⟩, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  · exact ⟨stub, padded, c1, by simpa [Setup.fr, hm, hsz] using hrun⟩
   · simpa [Setup.fr, hm] using hix
 
 /-! ## 3. Hypotheses -/
@@ -513,8 +522,9 @@ allocations off the frame window, disjoint, in the address space), for the same 
 answer the contract relates the return to. -/
 structure SepAcross (S : Setup) : Prop where
   handler : ∀ h args vals st x x' y, h.hasHandler = true →
-    R.unpack S.c.ρ h S.c.mode.fpArg args = some vals → Handler.AtHandler S.ctx h x →
-    Handler.ArgsIn S.c.ρ x x args → Handler.HRel st x → Handler.NoUB h vals st → S.E.ret x x' →
+    R.unpack S.c.ρ h S.c.mode args = some vals → Handler.AtHandler S.ctx h x →
+    Handler.ArgsIn S.c.ρ S.c.mode.pe x x args → Handler.HRel st x → Handler.NoUB h vals st →
+    S.E.ret x x' →
     FrameSep (-(S.F : Int)) S.K st y →
     ∃ ch ctl st', opSem h vals st ch = .ok (ctl, st') ∧ Handler.HRel st' x' ∧
       Handler.CtlIn ctl x' ∧ AllocFacts S st st' y
@@ -534,7 +544,7 @@ structure SepAcross (S : Setup) : Prop where
       AllocFacts S st (withWorld st a.world) y) ∧
     (UnwAt S.E x x' → ∃ a exc, a.result = .unwind exc ∧
       Island.IslandEnd S.c.mode.pe S.Owned S.lo fp lends w x x' a ∧
-      Call.Landed S.c.mode.pe S.padOf (x.rsp + 8 + BitVec.ofNat 64 (Island.shadow S.c.mode.pe)) x x' exc ∧
+      Call.Landed S.c.mode.pe S.padOf (x.rsp + 8) x x' exc ∧
       AllocFacts S st (withWorld st a.world) y)
 
 /-- Open: the dead-store steps, for an iteration that reads a dropped store with no code
@@ -556,7 +566,7 @@ normally a terminator or a call, which leave it empty). -/
 structure CacheCleared (S : Setup) : Prop where
   targets : ∀ k (hk : k < S.r.protos.size), ∀ t ∈ S.r.protos[k].targets,
     sortedContains S.targets t = true
-  pads : ∀ k pad cat, S.c.cleanupAt k = some (some pad, cat) → S.used pad = {}
+  pads : ∀ k pad cat, S.c.cleanupAt k = some (some pad, cat) → S.used pad = { pe := S.c.mode.pe }
 
 /-- Open: the unwinder's landing pad for a return address in instruction `k`'s call sites is
 the pad of `k`'s cleanup entry, at its position, and none for a `continue` entry or none (the
@@ -606,8 +616,8 @@ continues the unwind with the exception object in its slot operand `off`: from i
 object in `rax`, `rsp` the frame's, the callee-saved registers kept, and memory changed only in
 runtime-owned bytes and the stack below `rsp`. -/
 def ResumeContract (S : Setup) : Prop :=
-  ∀ args off x x', R.unpack S.c.ρ .resume S.c.mode.fpArg args = some [.slot off] →
-    Handler.AtHandler S.ctx .resume x → Handler.ArgsIn S.c.ρ x x args → S.E.ret x x' →
+  ∀ args off x x', R.unpack S.c.ρ .resume S.c.mode args = some [.slot off] →
+    Handler.AtHandler S.ctx .resume x → Handler.ArgsIn S.c.ρ S.c.mode.pe x x args → S.E.ret x x' →
     S.padOf (x.mem.read64 x.rsp) = some x'.rip ∧ x'.reg .rax = x.mem.read64 (fpAddr x off) ∧
       x'.rsp = x.rsp + 8 ∧ (∀ i, Saved S.c.mode.pe i → x'.regs i = x.regs i) ∧
       ∀ a, ¬ S.Owned a → ¬ InStack S.lo x.rsp a → x'.mem a = x.mem a
@@ -665,13 +675,13 @@ def ResultPrivate (S : Setup) : Prop :=
     ∀ parts, R.retRegs k.toNat false = .ok parts → ∀ q ∈ parts, ∀ i < q.1.size,
       s1.st.escapedAt (d.toInt + q.1.off + i) = none
 
-/-- Open: the frame's link slots `[linkLo, 16)` are private after the scopes and in no `Lend`
+/-- Open: the frame's link slots `[0, 16)` are private after the scopes and in no `Lend`
 extent (so no callee, handler or template may write them: `FrameOwn` puts private window bytes
 in no live allocation; `FrameFacts` is kept). A check could discharge it: no `Escape` or `Lend`
 scope covers the link slots (then by induction, escaped objects come only from the scopes). -/
 def LinkPrivate (S : Setup) : Prop :=
   ∀ s x s1, FrameInv S s x → (S.c.scopesAt s.pc).foldlM R.applyScope s = .ok s1 →
-    ∀ o : Int, S.linkLo ≤ o → o < 16 →
+    ∀ o : Int, 0 ≤ o → o < 16 →
       s1.st.escapedAt o = none ∧ ∀ l ∈ S.c.lendsAt s.pc, ¬ (l.1 ≤ o ∧ o < l.1 + l.2)
 
 /-- Open: the frame-offset facts `FrameBounds` lacks: a handler call's frame writes lie in the
@@ -681,7 +691,7 @@ slot (as `FrameBounds.ret`'s). To join `FrameBounds` once `DecodeLink/Bounds.lea
 structure MoreBounds (S : Setup) : Prop where
   handler : ∀ (k : Nat) (h : Full.Opcode) (args : List R.Arg) (t : R.Then Nat) (vals : Operands),
     S.c.d.insns[k]? = some (.handler h args t) →
-    R.unpack S.c.ρ h S.c.mode.fpArg args = some vals → WrIn (-(S.F : Int)) S.K h vals
+    R.unpack S.c.ρ h S.c.mode args = some vals → WrIn (-(S.F : Int)) S.K h vals
   result : ∀ (k : Nat) (op : Reduced.Opcode) (d : BitVec 32) (fo : R.Opnd Nat) (kk : BitVec 64)
     (ws : List (BitVec 32)) (f : Full.Opcode),
     S.c.d.insns[k]? = some (.native op [.slot d, fo, .imm kk, .words ws]) →
@@ -705,7 +715,7 @@ def RelocsIn (S : Setup) : Prop := ∀ r ∈ S.rs.toList, r.pos + 4 ≤ S.body.c
 outside the default build, the frame-pointer restriction, and the open prerequisites. -/
 structure Hyps (S : Setup) : Prop where
   -- Trusted: the environment's contracts and the link map.
-  handler : Handler.HandlerContract S.ctx S.c.ρ S.c.mode.fpArg S.Owned S.lo (fun _ => S.E.ret)
+  handler : Handler.HandlerContract S.ctx S.c.ρ S.c.mode S.Owned S.lo (fun _ => S.E.ret)
   resume : ResumeContract S
   call : CallContract S.ctx S.c.mode.pe S.Owned S.lo S.padOf S.Safe (RetAt S.E) (UnwAt S.E)
   island : IslandContract S.ctx S.c.mode.pe S.Owned S.lo S.padOf S.Safe (RetAt S.E) (UnwAt S.E)
@@ -715,8 +725,12 @@ structure Hyps (S : Setup) : Prop where
   -- Proved in `RyoProofs` (outside the default build): `opFacts`, `inlineOps_ok`.
   opFacts : ∀ h, Shapes.OpFacts h
   inlineOk : ∀ f cls, (f, cls) ∈ inlineOps → Step.InlineOk f cls
-  -- The restriction: the frame-pointer form (no step lemmas without it yet).
+  -- The restrictions: the frame-pointer form (no step lemmas without it yet), and handler calls
+  -- with their arguments in registers (PE's stack argument, the `atomic.cxchg` handlers', writes
+  -- the frame's bottom: its step is open).
   fp : S.c.mode.framePointer = true
+  regArgs : ∀ (k : Nat) (h : Full.Opcode) (args : List R.Arg) (t : R.Then Nat),
+    S.c.d.insns[k]? = some (.handler h args t) → args.length ≤ (handlerRegs S.c.mode.pe).length
   /-- The window holds the incoming area. -/
   argSizeK : (16 + S.c.argSize : Int) ≤ S.K
   -- Open prerequisites: the decoded code (checkable).
@@ -773,11 +787,6 @@ theorem br_baseNoRex_brOk {c : Cursor} {op : UInt8} {i : Item}
     | (split at h) | (obtain ⟨_, _, h⟩ := h))
   all_goals first | trivial | exact br_fits_sext8 _ _
 
-theorem br_winPiece_brOk {c : Cursor} {i : Item} (h : c.winPiece = some i) : BrFits c.pos i := by
-  unfold Cursor.winPiece at h
-  repeat' (first | (simp only [Option.some.injEq, reduceCtorEq] at h) | (split at h))
-  all_goals (subst h; trivial)
-
 set_option maxHeartbeats 10000000 in
 theorem br_baseCandidate_brOk {c : Cursor} {i : Item} (h : c.baseCandidate = some i) :
     BrFits c.pos i := by
@@ -787,7 +796,7 @@ theorem br_baseCandidate_brOk {c : Cursor} {i : Item} (h : c.baseCandidate = som
     | (simp only [Option.bind_eq_some_iff, Option.bind_none, Option.bind_some, Option.some.injEq,
         reduceCtorEq, Functor.map, Option.map_eq_some_iff, exists_const] at h)
     | (split at h) | (obtain ⟨_, _, h⟩ := h))
-  all_goals first | trivial | exact br_winPiece_brOk ‹_› | exact br_baseNoRex_brOk ‹_›
+  all_goals first | trivial  | exact br_baseNoRex_brOk ‹_›
 
 theorem br_nativeCandidate_brOk {c : Cursor} {i : Item} (h : c.nativeCandidate = some i) :
     BrFits c.pos i := by
@@ -838,12 +847,14 @@ theorem br_decodeItem_brOk {c : Cursor} {i : Item} {n : Nat} (hsp : c.spFrame = 
   rcases Option.orElse_some' h with h | h
   · obtain ⟨k, hk, h⟩ := Option.bind_eq_some_iff.mp h
     obtain ⟨s, z, x, m, rfl, -⟩ := sseCandidate_ok hk
-    rcases fromSpFrame_cases (hacc _ _ h) with ⟨f, m', hf, -⟩ | ⟨rfl, -⟩
+    rcases fromSpFrame_cases (hacc _ _ h) with ⟨f, m', hf, -⟩ | ⟨rfl, -⟩ | ⟨rfl, hs, -⟩
     · rw [hsp] at hf; cases hf
     · trivial
+    · trivial
   · obtain ⟨k, hk, h⟩ := Option.bind_eq_some_iff.mp h
-    rcases fromSpFrame_cases (hacc _ _ h) with ⟨f, m', hf, -⟩ | ⟨rfl, -⟩
+    rcases fromSpFrame_cases (hacc _ _ h) with ⟨f, m', hf, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -, -⟩
     · rw [hsp] at hf; cases hf
+    · exact br_nativeCandidate_brOk hk
     · exact br_nativeCandidate_brOk hk
 
 /-- A branch `decodeItem` reads at `p` (frame-pointer form) is canonical there. -/
@@ -959,6 +970,7 @@ theorem bs_insn {ctx : Ctx} {m : Mem} {c c' : Cursor} {rs : Array Reloc} {fr : V
   | unreachable => exact (link_unreachable hk hb h rfl).2.2.2.2
   | jmp => obtain ⟨_, _, -, -, -, -, hb'⟩ := link_jmp hk hb h rfl; exact hb'
   | island => obtain ⟨_, _, _, -, -, -, -, -, hb'⟩ := link_island hk hb h rfl; exact hb'
+  | resume _ h1 h2 => exact (hk.dec (.cons h1 (Dec.single h2)) hb).2.2
 
 /-- The `NoArg` cursor is the code's cursor at a boundary. -/
 theorem bs_noArg {ctx : Ctx} {m : Mem} {c : Cursor} {rs : Array Reloc} {fr : Vm.Frame} {p : Nat}
@@ -1007,17 +1019,33 @@ theorem bs_counter {ctx : Ctx} {m : Mem} {c : Cursor} {rs : Array Reloc} {fr : V
   | none => exact hb
   | check _ hd => exact (hk.dec hd hb).2.2
 
+/-- After PE's `nop` after a call (no relocation starts in it): a boundary. -/
+theorem bs_nop {ctx : Ctx} {m : Mem} {c : Cursor} {rs : Array Reloc} {fr : Vm.Frame}
+    {callSites : Array CallSite} {q : Proto} {p p' : Nat} (hk : LinkOk ctx m c rs)
+    (h : NopRead fr callSites c q p p') (hb : Boundary rs p) : Boundary rs p' := by
+  cases h with
+  | none _ => exact hb
+  | nop _ _ hr =>
+    intro r hr0 hlt
+    by_cases h0 : r.pos < p
+    · exact Nat.le_trans (hb r hr0 h0) (Nat.le_succ _)
+    · exfalso
+      have hr' : relocsIn rs p 1 = [] := by simpa [Cursor.relocsHere, hk.fields] using hr
+      have := (mem_relocsIn hk.sorted p 1 r).mpr ⟨hr0, by omega, by omega⟩
+      rw [hr'] at this; cases this
+
 theorem bs_iter {ctx : Ctx} {m : Mem} {c : Cursor} {rs : Array Reloc} {fr : Vm.Frame}
-    {ro : ByteArray} {targets : Array Nat} {a : Bool} {p p' : Nat} {cache cache' : Cache}
-    {dr dr' : List DroppedStore} {q : Proto} (hk : LinkOk ctx m c rs) (hb : Boundary rs p)
-    (h : Iter fr ro (some targets) c a p cache dr q p' cache' dr') : Boundary rs p' := by
+    {ro : ByteArray} {targets : Array Nat} {callSites : Array CallSite} {a : Bool} {p p' : Nat}
+    {cache cache' : Cache} {dr dr' : List DroppedStore} {q : Proto} (hk : LinkOk ctx m c rs)
+    (hb : Boundary rs p)
+    (h : Iter fr ro (some targets) callSites c a p cache dr q p' cache' dr') : Boundary rs p' := by
   cases h with
   | empty hd hr =>
     obtain ⟨-, -, _, _, _, _, -, -, -, -, hx⟩ := link_inline_drop (bs_linkOk_at hk _) hb hr
     rcases hx with ⟨-, _, -, -, -, hb'⟩ | ⟨_, _, _, -, _, -, -, -, hb'⟩ <;> exact hb'
-  | main hpad hctr hpr =>
+  | main hpad hctr hpr hnop =>
     obtain ⟨-, -, -, -, hb1⟩ := padRead_codeAt hk hpad hb
-    exact bs_protoRead hk (bs_counter hk hctr hb1) hpr
+    exact bs_nop hk hnop (bs_protoRead hk (bs_counter hk hctr hb1) hpr)
 /-! ### R steps that never stop with `noBehavior` -/
 
 set_option maxRecDepth 100000 in
@@ -1153,12 +1181,6 @@ theorem posOf_lt_32 (hD : Decodes S code relocs rodata callSites dropped scopes 
     (hL : LinkOk S.ctx m S.body S.rs) {k : Nat} (hk : k < S.r.protos.size) : posOf S.r k < 2 ^ 32 :=
   Nat.lt_of_le_of_lt (posOf_le_size hD hk) hL.small
 
-/-- PE frames hold the saved `rsi`/`rdi` (`sorry`: `read` makes the frame size `alloc + 16` on
-PE; `reducedOf_frameSize`). -/
-theorem frameSize_pe (hD : Decodes S code relocs rodata callSites dropped scopes mode)
-    (hpe : S.c.mode.pe = true) : 16 ≤ S.F := by
-  sorry  -- TODO(wip): frameSize_pe
-
 /-- At a boundary, `fp` is the entry's `rsp - 8` (`FrameFacts.rbp`). -/
 theorem FrameInv.fpAddr_eq {s : R.RState} {x : X86.State} (h : FrameInv S s x) (o : Int) :
     fpAddr x o = S.winAddr o := by
@@ -1177,20 +1199,21 @@ theorem FrameInv.congr {s : R.RState} {x y : X86.State} (h : FrameInv S s x)
     by rw [hm]; exact hcode, by rw [hm]; exact hro,
     fun ha r hr' hfr => (hargs ha r hr' hfr).congr (fun i _ => by rw [hr]) (fun i _ => by rw [hx]),
     ?_⟩
-  obtain ⟨f1, f2, f3, f4, f5⟩ := hfr
+  obtain ⟨f1, f2, f3, f5⟩ := hfr
   refine ⟨by rw [hrbp]; exact f1, by rw [hrbp, hm]; exact f2, by rw [hrbp, hm]; exact f3,
-    fun hpe => by rw [hrbp, hm]; exact f4 hpe, fun i hi h5 => by rw [hr]; exact f5 i hi h5⟩
+    fun i hi h5 => by rw [hr]; exact f5 i hi h5⟩
 
 /-- What a body lemma knows of proto `k`, read at `p` as `q` ending at `c'` with cache `cache'`:
 the proto (`q` with the iteration's position and counter), its R instruction, the relocation
-boundary at `p`, and where the next iteration starts. -/
+boundary at `p`, and where the next iteration starts (after PE's `nop` after a call with a
+landing pad, `NopRead`). -/
 structure ProtoFacts (S : Setup) (k p : Nat) (q : Proto) (c' : Cursor) (cache' : Cache) : Prop where
   lt : k < S.r.protos.size
   proto : ∃ p1 counter, S.r.protos[k]? = some { q with pos := p1, counter }
   insn : ∃ i, S.c.d.insns[k]? = some i ∧ ∀ hk : k < S.r.protos.size,
     InsnOf (posOf S.r) S.r.protos[k] i
   bound : Boundary S.rs p
-  stop : S.start (k + 1) = c'.pos
+  nop : NopRead S.fr S.callSites S.body q c'.pos (S.start (k + 1))
   cache : S.cache (k + 1) = cache'
   args : S.args (k + 1) = (S.args k && q.op == .arg)
 
@@ -1209,7 +1232,7 @@ theorem protoFacts_insnOf {k p : Nat} {q : Proto} {c' : Cursor} {cache' : Cache}
 `RSafe`). -/
 theorem bodySim_unreachable (_hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (_H : Hyps S) {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
-    (hP : ProtoFacts S k p q c' {}) (_hn : NoArg S.fr S.body p a cur)
+    (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (_hn : NoArg S.fr S.body p a cur)
     (hr : InsnRead S.fr S.ro cur q c') (hop : q.op = .unreachable) :
     BodySim S k p (S.used k) := by
   intro s x hs _ _ _ hsafe
@@ -1224,6 +1247,7 @@ theorem bodySim_unreachable (_hD : Decodes S code relocs rodata callSites droppe
   | ret => simp only at hop; exact absurd hop (by decide)
   | jmp => simp only at hop; exact absurd hop (by decide)
   | island => simp only at hop; exact absurd hop (by decide)
+  | resume => simp only at hop; exact absurd hop (by decide)
   | unreachable _ =>
     simp only [InsnOf] at hio
     obtain ⟨op, ops, hof, rfl, hops⟩ := hio
@@ -1254,7 +1278,7 @@ theorem bodySim_arg (hD : Decodes S code relocs rodata callSites dropped scopes 
 `DecodeLink.link_call_ok`; the pad by `PadsLinked`, `posOf_lt_32`, `pad_not_leadArg`). -/
 theorem bodySim_call (hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
     {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
-    (hP : ProtoFacts S k p q c' {}) (hn : NoArg S.fr S.body p a cur)
+    (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
     (hr : (callInsn S.fr (S.dr k)).run cur = .ok (some q, c')) :
     BodySim S k p (S.used k) := by
   sorry  -- TODO(wip): bodySim_call
@@ -1277,7 +1301,7 @@ theorem bodySim_inline (hD : Decodes S code relocs rodata callSites dropped scop
 `ResumeContract`, its writes by `MoreBounds.handler`). -/
 theorem bodySim_handler (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (H : Hyps S) {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
-    (hP : ProtoFacts S k p q c' {}) (hn : NoArg S.fr S.body p a cur)
+    (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
     (hr : InsnRead S.fr S.ro cur q c') (hh : q.handler ≠ none) :
     BodySim S k p (S.used k) := by
   sorry  -- TODO(wip): bodySim_handler
@@ -1285,7 +1309,7 @@ theorem bodySim_handler (hD : Decodes S code relocs rodata callSites dropped sco
 /-- `ret` (`ArgRet.ret_step`, `DecodeLink.link_ret`): the function's end. -/
 theorem bodySim_ret (hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
     {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
-    (hP : ProtoFacts S k p q c' {}) (hn : NoArg S.fr S.body p a cur)
+    (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
     (hr : InsnRead S.fr S.ro cur q c') (hop : q.op = .ret) :
     BodySim S k p (S.used k) := by
   sorry  -- TODO(wip): bodySim_ret
@@ -1295,7 +1319,7 @@ set_option maxRecDepth 100000 in
 leading `arg`, `ArgsOk.untargeted`). -/
 theorem bodySim_jmp (_hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
     {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
-    (hP : ProtoFacts S k p q c' {}) (hn : NoArg S.fr S.body p a cur)
+    (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
     (hr : InsnRead S.fr S.ro cur q c') (hop : q.op = .jmp) :
     BodySim S k p (S.used k) := by
   intro s x hs hf hrip _ hsafe
@@ -1312,6 +1336,7 @@ theorem bodySim_jmp (_hD : Decodes S code relocs rodata callSites dropped scopes
   | ret => simp only at hop; exact absurd hop (by decide)
   | unreachable => simp only at hop; exact absurd hop (by decide)
   | island => simp only at hop; exact absurd hop (by decide)
+  | resume => simp only at hop; exact absurd hop (by decide)
   | @jmp t long len hd =>
     obtain ⟨hca, -, -⟩ := hf.code.dec (Dec.single hd) hb
     simp only [InsnOf] at hio
@@ -1367,13 +1392,13 @@ theorem bodySim_jmp (_hD : Decodes S code relocs rodata callSites dropped scopes
         have hc := H.cacheCleared.targets k hlt t.toNat (by
           rw [hpk]; simp [Proto.targets, Opnd.targetsOf])
         simp only [Setup.used, ht', hc, ↓reduceIte]
-        exact CacheInv.empty x'
+        exact CacheInv.emptyPe _ x'
 
 /-- `island isl, ops` (`Island.island_sound`, `island_unwind`, with `DecodeLink.link_island`
 and `opsAt_of_opsArray`). -/
 theorem bodySim_island (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (H : Hyps S) {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
-    (hP : ProtoFacts S k p q c' {}) (hn : NoArg S.fr S.body p a cur)
+    (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
     (hr : InsnRead S.fr S.ro cur q c') (hop : q.op = .island) :
     BodySim S k p (S.used k) := by
   sorry  -- TODO(wip): bodySim_island
@@ -1410,6 +1435,7 @@ theorem bodySim_of_read (hD : Decodes S code relocs rodata callSites dropped sco
     | unreachable => exact bodySim_unreachable hD H hP hn hir rfl
     | jmp => exact bodySim_jmp hD H hP hn hir rfl
     | island => exact bodySim_island hD H hP hn hir rfl
+    | resume => exact bodySim_handler hD H hP hn hir (by simp)
     -- The inline dense switch index (inline-forms): not yet covered (lean/PENDING.md).
     | dense _ => sorry
 
@@ -1483,16 +1509,17 @@ theorem insnSim_main (hD : Decodes S code relocs rodata callSites dropped scopes
     (hq : S.r.protos[k] = { q with pos := p1, counter })
     (hpad : PadRead S.body (S.start k) p1) (hctr : CounterRead S.fr S.body p1 counter p2)
     (hpr : ProtoRead S.fr S.ro (some S.targets).isSome S.body p2
-      (if (some S.targets).any (sortedContains · p1) then {} else S.cache k) (S.dr k) (S.args k)
-      q c' cache' dr')
-    (hstop : S.start (k + 1) = c'.pos) (hcache : S.cache (k + 1) = cache') :
+      (if (some S.targets).any (sortedContains · p1) then { pe := S.fr.mode.pe } else S.cache k)
+      (S.dr k) (S.args k) q c' cache' dr')
+    (hnop : NopRead S.fr S.callSites S.body q c'.pos (S.start (k + 1)))
+    (hcache : S.cache (k + 1) = cache') :
     InsnSimAt S k := by
   intro s x hs hbi hsafe
   obtain ⟨hf, hat⟩ := hbi
   have hp1 : posOf S.r k = p1 := by rw [posOf_eq hk, hq]
   have hpr : ProtoRead S.fr S.ro true S.body p2 (S.used k) (S.dr k) (S.args k) q c' cache' dr' := by
-    have e : (if (some S.targets).any (sortedContains · p1) then ({} : Cache) else S.cache k) =
-        S.used k := by simp [Setup.used, hp1, Option.any]
+    have e : (if (some S.targets).any (sortedContains · p1) then ({ pe := S.fr.mode.pe } : Cache)
+        else S.cache k) = S.used k := by simp [Setup.used, Setup.fr, hp1, Option.any]
     rw [e] at hpr
     exact hpr
   have hb0 := boundary_start hD H hf.code k (Nat.le_of_lt hk)
@@ -1508,7 +1535,7 @@ theorem insnSim_main (hD : Decodes S code relocs rodata callSites dropped scopes
     have hk' : k < S.c.d.insns.size := h1.1 ▸ hk
     exact ⟨S.c.d.insns[k], by simp [hk'], fun hk => h1.2 k hk hk'⟩
   have body : ∀ (hb2 : Boundary S.rs p2), BodySim S k p2 (S.used k) := fun hb2 =>
-    bodySim_of_read hD H ⟨hk, ⟨p1, counter, by simp [hk, hq]⟩, hinsn, hb2, hstop, hcache, hargs⟩ hpr
+    bodySim_of_read hD H ⟨hk, ⟨p1, counter, by simp [hk, hq]⟩, hinsn, hb2, hnop, hcache, hargs⟩ hpr
   -- From `p1` with the cache `used k`.
   have from_p1 : ∀ y, FrameInv S s y → y.rip = addrAt S.ctx p1 → CacheInv (S.used k) y →
       Reach S.ctx S.E (SNext S s) y := by
@@ -1526,7 +1553,7 @@ theorem insnSim_main (hD : Decodes S code relocs rodata callSites dropped scopes
     have hcy := inv_congr hci h1 h3
     unfold Setup.used
     split
-    · exact CacheInv.empty y
+    · exact CacheInv.emptyPe _ y
     · exact hcy
   · rw [hs, hp1] at hrip
     rw [hs] at hci
@@ -1566,9 +1593,10 @@ theorem decode_sound {S : Setup} {code : ByteArray} {relocs : Array Reloc} {roda
     cases hit with
     | empty hd _ =>
       exact H.deadStore.empty s.pc hk _ _ hdr hd s x rfl hbi hsafe
-    | main hpad hctr hpr =>
+    | main hpad hctr hpr hnop =>
       rw [← hdr] at hpr
-      exact insnSim_main hD H hk hpk hpad hctr hpr hst1 hca1 s x rfl hbi hsafe
+      rw [← hst1] at hnop
+      exact insnSim_main hD H hk hpk hpad hctr hpr hnop hca1 s x rfl hbi hsafe
   · exact insnSim_oob hD (Nat.le_of_not_lt hk) s x rfl hbi hsafe
 
 /-- `decode_sound` from the decoder's acceptance directly. -/
@@ -1576,6 +1604,7 @@ theorem decode_sound_of_ok {code : ByteArray} {relocs : Array Reloc} {rodata : B
     {callSites : Array CallSite} {dropped : Array DroppedStore} {scopes : Array R.Scope}
     {mode : Ryo.Obj.Mode} {d : Decoded}
     (hdec : decodeReduced code relocs rodata callSites dropped scopes mode = .ok d)
+    (hnr : regionPad mode callSites = none)
     (c : R.Code) (hc : c.d = d) (hm : c.mode = mode) (ctx : Ctx) (E : Env) (K : Int)
     (x0 : X86.State) (Owned : BitVec 64 → Prop) (lo : BitVec 64)
     (padOf : BitVec 64 → Option (BitVec 64)) (Safe : R.Query → Prop) :
@@ -1584,7 +1613,7 @@ theorem decode_sound_of_ok {code : ByteArray} {relocs : Array Reloc} {rodata : B
       S.padOf = padOf ∧ S.Safe = Safe ∧
       (Hyps S → ∀ s x, BInv S s x → SafeFrom Safe c s → FnSim ctx E c (BInv S) (ExitRel S) s x) := by
   obtain ⟨S, hD, h1, h2, h3, h4, h5, h6, h7, h8, h9⟩ :=
-    decodes_of_ok hdec c hc hm ctx E K x0 Owned lo padOf Safe
+    decodes_of_ok hdec hnr c hc hm ctx E K x0 Owned lo padOf Safe
   refine ⟨S, hD, h1, h2, h3, h4, h5, h6, h7, h8, h9, fun H => ?_⟩
   subst h1 h2 h3 h9
   exact decode_sound hD H

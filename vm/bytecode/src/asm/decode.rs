@@ -633,10 +633,9 @@ fn instructions(
         };
         // PE: the `nop` after a call with a landing pad that ends its instruction.
         if fr.mode.pe && p.bare && p.sites.iter().any(|&(at, _)| call_sites.iter().any(|cs| cs.start == at && cs.pad.is_some())) {
-            if c.code.get(c.pos as usize) != Some(&0x90) {
+            if !c.nop1() {
                 return Err(AsmError { at: c.pos, what: "no nop after a call with a landing pad" });
             }
-            c.pos += 1;
         }
         protos.push(Proto { pos, counter, ..p });
     }

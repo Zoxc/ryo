@@ -445,8 +445,8 @@ fn push_wrapped(s: &mut String, items: &[String]) {
     s.push('\n');
 }
 
-fn mode(fp_arg: bool) -> Mode {
-    Mode { fp_arg, frame_pointer: true, align_loops: false, pe: false, counters: false, far_rt: false }
+fn mode(fp_arg: bool, pe: bool) -> Mode {
+    Mode { fp_arg, frame_pointer: true, align_loops: false, pe, counters: false, far_rt: false }
 }
 
 fn layout_term(op: full::Opcode, l: &Layout) -> String {
@@ -470,8 +470,9 @@ fn asm_file() -> String {
 # Handler register layouts (`vm/bytecode/src/asm/mod.rs`)
 
 `asm::layout(op, mode)` for every full opcode with a handler. It depends only on
-`Mode::fp_arg` (checked by the generator over every valid mode), so there are two:
-`layoutRbp` (handlers read `fp` from `rbp`) and `layoutFpArg` (`fp` in `rdi`).
+`Mode::fp_arg` and `Mode::pe` (checked by the generator over every valid mode), so there are
+three: `layoutRbp` (handlers read `fp` from `rbp`), `layoutFpArg` (`fp` in `rdi`) and
+`layoutPe` (PE's Win64 handlers: positions `rcx, rdx, r8, r9`, then the stack, `fp` in `rbp`).
 -/
 
 namespace Ryo.Vm.Asm
@@ -480,6 +481,7 @@ namespace Ryo.Vm.Asm
     );
     for (name, doc, v) in [
         ("argRegs", "`ARG_REGS`: handlers take `rdi, rsi, rdx, rcx, r8, r9`.", asm::ARG_REGS as u64),
+        ("peArgRegs", "`PE_ARG_REGS`: PE's Win64 handlers take `rcx, rdx, r8, r9`, then one stack position.", asm::PE_ARG_REGS as u64),
         ("maxOperands", "`MAX_OPERANDS`.", asm::MAX_OPERANDS as u64),
         (
             "jitLoopCtr",
@@ -502,7 +504,8 @@ namespace Ryo.Vm.Asm
     }
     s.push_str(
         "
-/-- `Loc`: `count` registers from `reg` (0 is `rdi`), the first shifted right by `shift`;
+/-- `Loc`: `count` registers from position `reg` (0 is `rdi`; on PE `rcx`, and 4 the stack), the
+first shifted right by `shift`;
 `shared` if the register holds another operand too. -/
 structure Loc where
   reg : Nat
@@ -524,6 +527,7 @@ structure AsmInfo where
   hasInline : Bool
   layoutRbp : Option Layout
   layoutFpArg : Option Layout
+  layoutPe : Option Layout
   deriving Repr, DecidableEq, Inhabited
 
 /-- By full opcode. -/
@@ -533,9 +537,18 @@ def asmInfos : Array AsmInfo := #[
     let n = full::ALL_OPCODES.len();
     for (i, &op) in full::ALL_OPCODES.iter().enumerate() {
         let h = asm::has_handler(op);
-        let lay = |fp_arg| if h { format!("(some ({}))", layout_term(op, &asm::layout(op, mode(fp_arg)))) } else { "none".to_owned() };
+        let lay = |fp_arg, pe| if h { format!("(some ({}))", layout_term(op, &asm::layout(op, mode(fp_arg, pe)))) } else { "none".to_owned() };
         let sep = if i + 1 < n { "," } else { "" };
-        writeln!(s, "  AsmInfo.mk {h} {} {} {}{sep} -- {}", asm::has_inline(op), lay(false), lay(true), op.mnemonic()).unwrap();
+        writeln!(
+            s,
+            "  AsmInfo.mk {h} {} {} {} {}{sep} -- {}",
+            asm::has_inline(op),
+            lay(false, false),
+            lay(true, false),
+            lay(false, true),
+            op.mnemonic()
+        )
+        .unwrap();
     }
     s.push_str(
         "]
@@ -552,9 +565,10 @@ def hasHandler (op : Opcode) : Bool := op.asm.hasHandler
 /-- `asm::has_inline`. -/
 def hasInline (op : Opcode) : Bool := op.asm.hasInline
 
-/-- `asm::layout(op, mode)` for a mode with `fp_arg = fpArg`. -/
-def layout (op : Opcode) (fpArg : Bool) : Option Asm.Layout :=
-  if fpArg then op.asm.layoutFpArg else op.asm.layoutRbp
+/-- `asm::layout(op, mode)` for a mode with `fp_arg = fpArg` and `pe` (a valid PE mode has no
+`fp_arg`). -/
+def layout (op : Opcode) (fpArg pe : Bool) : Option Asm.Layout :=
+  if pe then op.asm.layoutPe else if fpArg then op.asm.layoutFpArg else op.asm.layoutRbp
 
 end Ryo.Vm.Full.Opcode
 ",
@@ -713,16 +727,15 @@ fn check_assumptions() {
             assert!(kinds.contains(&o.kind), "{:?}", o.kind);
         }
     }
-    // Off PE, the layout depends only on `fp_arg`. (PE's Win64 layouts aren't in the Lean
-    // tables yet: lean/PENDING.md.)
+    // The layout depends only on `fp_arg` and `pe`.
     for bits in 0..32u32 {
         let b = |i: u32| bits >> i & 1 != 0;
         let m = Mode { fp_arg: b(0), frame_pointer: b(1), align_loops: b(2), pe: b(3), counters: b(4), far_rt: false };
-        if !m.valid() || m.pe {
+        if !m.valid() {
             continue;
         }
         for &op in full::ALL_OPCODES.iter().filter(|&&op| asm::has_handler(op)) {
-            assert_eq!(asm::layout(op, m), asm::layout(op, mode(m.fp_arg)), "{op:?} in {m:?}");
+            assert_eq!(asm::layout(op, m), asm::layout(op, mode(m.fp_arg, m.pe)), "{op:?} in {m:?}");
         }
     }
     // Every handler entry is an opcode with a handler.

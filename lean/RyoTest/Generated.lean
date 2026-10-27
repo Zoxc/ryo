@@ -34,10 +34,11 @@ def known : Except String Unit := do
   check (Full.Opcode.island.info.shape == .island && !Full.Opcode.island.hasHandler) "island"
   -- `add.w32`: one register per slot, after `fp` with `fp_arg`.
   let locs (r : List Nat) := r.map fun r => Asm.Loc.mk r 0 1 false
-  check (Full.Opcode.addW32.layout false == some ⟨locs [0, 1, 2], 0, 3⟩) "add.w32's layout (rbp)"
-  check (Full.Opcode.addW32.layout true == some ⟨locs [1, 2, 3], 1, 4⟩) "add.w32's layout (fp_arg)"
+  check (Full.Opcode.addW32.layout false false == some ⟨locs [0, 1, 2], 0, 3⟩) "add.w32's layout (rbp)"
+  check (Full.Opcode.addW32.layout true false == some ⟨locs [1, 2, 3], 1, 4⟩) "add.w32's layout (fp_arg)"
+  check (Full.Opcode.addW32.layout false true == some ⟨locs [0, 1, 2], 0, 3⟩) "add.w32's layout (PE)"
   -- `lpad` takes the exception object before its operands.
-  check ((Full.Opcode.lpad.layout true).map (·.first) == some 2) "lpad's first register"
+  check ((Full.Opcode.lpad.layout true false).map (·.first) == some 2) "lpad's first register"
   let h := Full.Opcode.divSW32.handler?
   check (h == some ⟨.bin_fn, ["i32", "unchecked_div"], none⟩) "div.s.w32's handler"
   check ((Full.Opcode.brEqW8.handler?).bind (·.ret) == some "bool") "br.eq.w8 returns bool"
@@ -61,11 +62,19 @@ def reducedSet : Except String Unit := do
     | none => true) "ofFull/full round trip"
 
 def layouts : Except String Unit := do
-  forAll Full.all (fun op => (op.layout false).isSome == op.hasHandler &&
-    (op.layout true).isSome == op.hasHandler) "layout without a handler or the reverse"
-  forAll Full.all (fun op => [false, true].all fun fpArg => match op.layout fpArg with
+  let modes : List (Bool × Bool) := [(false, false), (true, false), (false, true)]
+  forAll Full.all (fun op => modes.all fun (fpArg, pe) =>
+    (op.layout fpArg pe).isSome == op.hasHandler) "layout without a handler or the reverse"
+  -- On PE, a fifth position (the stack) only for a single 32-bit operand.
+  forAll Full.all (fun op => match op.layout false true with
+    | some l => l.regs ≤ 4 || l.locs.all fun loc => loc.reg != 4 ||
+        (loc.count == 1 && !loc.shared && (op.info.operands.zip l.locs).any fun (o, k) =>
+          k == loc && (o.kind == .slot || o.kind == .u32 || o.kind == .u8 || o.kind == .u16))
+    | none => true) "PE stack position"
+  forAll Full.all (fun op => modes.all fun (fpArg, pe) => match op.layout fpArg pe with
     | none => true
-    | some l => l.locs.length == op.info.operands.length && l.regs ≤ Asm.argRegs &&
+    | some l => l.locs.length == op.info.operands.length &&
+        l.regs ≤ (if pe then Asm.peArgRegs + 1 else Asm.argRegs) &&
         l.first == (if fpArg then 1 else 0) + (if op.info.shape == .lpad then 1 else 0) &&
         l.locs.all fun loc => loc.count == 0 || loc.reg + loc.count ≤ l.regs) "layout shape"
   -- Every opcode with a handler but `resume` has an entry in handlers.rs.

@@ -122,7 +122,7 @@ theorem arg_item_canonical {d : BitVec 32} {n : Nat} {i : Item} (hf : ArgItemFor
     · simp [Item.wf, hu, Item.memWf]
     · rcases hs with rfl | rfl | rfl <;> simp [Item.wf, hx, M.frame]
     · simp [Item.wf, hx, X86.Reg.usable]
-    · simp [Item.wf, hu]
+    · simp [Item.wf, hu, Sh.isShift]
 
 theorem arg_canon {items : List Item} (h : ∀ i ∈ items, ∀ p, i.Canonical p) :
     ∀ pos, Canon items pos := by
@@ -368,8 +368,8 @@ theorem arg_inline_ne (H : Hyps S) {cache cache' : Cache} {dropped dr' : List Dr
 set_option maxRecDepth 100000 in
 /-- The decoder's cache is empty at a leading `arg`: it starts empty, and an `arg` leaves it. -/
 theorem arg_cache_empty (hD : Decodes S code relocs rodata callSites dropped scopes mode)
-    (H : Hyps S) : ∀ k, k ≤ S.r.protos.size → S.args k = true → S.cache k = {}
-  | 0, _, _ => hD.cache0
+    (H : Hyps S) : ∀ k, k ≤ S.r.protos.size → S.args k = true → S.cache k = { pe := S.c.mode.pe }
+  | 0, _, _ => by rw [hD.cache0, hD.modeEq]
   | k + 1, hk, ha => by
     have hk' : k < S.r.protos.toList.length := by simp; omega
     rw [hD.argsSucc k hk', Bool.and_eq_true] at ha
@@ -388,8 +388,8 @@ theorem arg_cache_empty (hD : Decodes S code relocs rodata callSites dropped sco
     cases it with
     | empty _ hin =>
       exact absurd (by simpa using hop) (arg_inline_ne H hin)
-    | main _ _ hpr =>
-      rw [ite_self] at hpr
+    | main _ _ hpr _ =>
+      rw [show S.fr.mode.pe = S.c.mode.pe from rfl, ite_self] at hpr
       cases hpr with
       | arg _ => rfl
       | call _ _ => rfl
@@ -397,21 +397,11 @@ theorem arg_cache_empty (hD : Decodes S code relocs rodata callSites dropped sco
       | insn _ _ _ _ => rfl
 
 theorem arg_used_empty (hD : Decodes S code relocs rodata callSites dropped scopes mode)
-    (H : Hyps S) {k : Nat} (hk : k < S.r.protos.size) (ha : S.args k = true) : S.used k = {} := by
+    (H : Hyps S) {k : Nat} (hk : k < S.r.protos.size) (ha : S.args k = true) : S.used k = { pe := S.c.mode.pe } := by
   unfold Setup.used
   split
   · rfl
   · exact arg_cache_empty hD H k (by omega) ha
-
-/-- Open (checkable), missing from `FrameBounds.arg`: an `arg`'s destination lies below the
-frame's link slots `[linkLo, 16)` (the saved `rbp`, the return address, PE's saved `rsi`/`rdi`).
-`FrameBounds.arg` only bounds it by the window `[-F, K)`, and neither `ArgPrivate` nor
-`LinkPrivate` keeps the two apart (both only say the bytes are private), so without it an `arg`
-storing at `[rbp + 0]` would overwrite the saved `rbp` and break `FrameFacts`. -/
-def ArgBelowLink (S : Setup) : Prop :=
-  ∀ (k : Nat) (op : Reduced.Opcode) (d : BitVec 32) (r : BitVec 64) (f : Full.Opcode)
-    (a : ArgReg), S.c.d.insns[k]? = some (.native op [.slot d, .imm r]) → op.full = some f →
-    f.info.shape = .arg → ArgReg.of? r.toNat true = some a → d.toInt + a.size ≤ S.linkLo
 
 theorem arg_step_write_err {c : R.Code} {s s1 : R.RState} {ch : OpSem.Choice}
     {op : Reduced.Opcode} {d : BitVec 32} {r : BitVec 64} {f : Full.Opcode} {a : ArgReg}
@@ -469,16 +459,32 @@ theorem arg_clobbers_ok (a : ArgReg) (pe : Bool) :
   rcases key with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
     simp [Counter.CalleeSaved] <;> decide
 
-/-- `bodySim_arg`, with the destination below the link slots (`ArgBelowLink`) and the
-decoder's cache empty at the instruction (`hce`). Proof idea: `argInsn_bounds`/`LinkOk.dec`
+/-- On PE the clobbered registers are not `rsi`/`rdi` (Win64 callee-saved). -/
+theorem arg_clobbers_pe (a : ArgReg) : ∀ g ∈ ArgRet.argClobbers a true, g.idx ≠ 6 ∧ g.idx ≠ 7 := by
+  intro g hg
+  have key : g = .r11 ∨ g = .rax ∨ g ∈ [Reg.rcx, .rdx, .r8, .r9] := by
+    unfold ArgRet.argClobbers at hg
+    split at hg
+    · split at hg
+      · simp at hg; exact .inl hg
+      · simp at hg
+    · split at hg
+      · simp at hg
+      · simp only [List.mem_singleton] at hg; subst hg
+        right; unfold intArg; simp only [↓reduceIte]; exact ArgRet.getD_mem
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at key
+  rcases key with rfl | rfl | rfl | rfl | rfl | rfl <;> decide
+
+/-- `bodySim_arg`. The destination lies below the link slots (`FrameBounds.argBelow`) and the
+decoder's cache is empty at the instruction (`hce`). Proof idea: `argInsn_bounds`/`LinkOk.dec`
 give the items `argStore a d pe` in memory at `p` (canonical, fetched as `Steps`, none writing
 the code: `CodeApart`); `FrameBounds.arg_step_fb` with `arg_regRel` gives `RRel`; `ArgPrivate`
 makes the write private, so R's memory and escaped objects are unchanged (`MemRel`: no live
 allocation holds a written byte, `FrameOwn`; `FrameSep` with `frameInit_writeFrame`); the link
 slots, the code and the rodata are outside the written range; `arg_argsLive_succ` the
-registers at `k + 1`; `rip` at `S.start (k + 1)` with the cache empty. -/
+registers at `k + 1` (none callee-saved, nor PE's `rsi`/`rdi`: `arg_clobbers_ok`,
+`arg_clobbers_pe`); `rip` at `S.start (k + 1)` with the cache empty. -/
 theorem bodySim_arg' (hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
-    (hlink : ArgBelowLink S)
     {k p : Nat} {q : Proto} {c' : Cursor} (ha : S.args k = true)
     (hP : ProtoFacts S k p q c' (S.used k))
     (hr : (argInsn S.fr.mode).run (atPos S.body p) = .ok (some q, c')) :
@@ -495,9 +501,15 @@ theorem bodySim_arg' (hD : Decodes S code relocs rodata callSites dropped scopes
     obtain ⟨b, hb⟩ := Option.isSome_iff_exists.mp hofs
     rw [hb, of_word_eq hs32 hi24 hb]
   have hargsk := hP.args
-  have hstop := hP.stop
   have hcache := hP.cache
   subst hq
+  have hstop : S.start (k + 1) = c'.pos := by
+    have hn := hP.nop
+    generalize S.start (k + 1) = e at hn ⊢
+    generalize c'.pos = e0 at hn ⊢
+    cases hn with
+    | none _ => rfl
+    | nop h _ _ => simp [nopAfter] at h
   obtain ⟨i, p1, ctr, hi, hio, hlt, hpk⟩ := protoFacts_insnOf hP
   simp only [InsnOf] at hio
   obtain ⟨op, ops, hofull, rfl, hops⟩ := hio
@@ -509,7 +521,7 @@ theorem bodySim_arg' (hD : Decodes S code relocs rodata callSites dropped scopes
   rw [← hs] at hi
   have hv := ArgRet.argReg_of_spec hof
   have hfb := H.frameBounds.arg k op d _ .arg a hik hf' arg_shape hof
-  have hlk := hlink k op d _ .arg a hik hf' arg_shape hof
+  have hlk := H.frameBounds.argBelow k op d _ .arg a hik hf' arg_shape hof
   have hdisp := H.frameBounds.arg_disp hik hf' arg_shape hof
   have hn16 : a.size ≤ 16 := by
     cases hx : a.xmm
@@ -635,23 +647,22 @@ theorem bodySim_arg' (hD : Decodes S code relocs rodata callSites dropped scopes
           (by have := toInt_bounds d; omega) hc hle i hi
         simpa [fpAddr] using this))
     simp only [Mem.read64, hrd]
-  have hLL : S.linkLo ≤ 0 := by unfold Setup.linkLo; split <;> omega
-  obtain ⟨f1, f2, f3, f4, f5⟩ := hf.frame
+  obtain ⟨f1, f2, f3, f4⟩ := hf.frame
   have hframe' : FrameFacts S x' := by
     have e8 : x.reg .rbp + 8 = fpAddr x 8 := rfl
     have e0 : x.reg .rbp = fpAddr x 0 := by simp [fpAddr]
-    refine ⟨by rw [hrbp]; exact f1, ?_, ?_, fun hpe => ?_, fun i hi h5 => ?_⟩
+    refine ⟨by rw [hrbp]; exact f1, ?_, ?_, fun i hi h5 => ?_⟩
     · rw [hrbp, e8, hread 8 (by omega) (by omega), ← e8]; exact f2
     · rw [hrbp, e0, hread 0 (by omega) (by omega), ← e0]; exact f3
-    · have hl16 : S.linkLo = -16 := by simp [Setup.linkLo, hpe]
-      have e16 : x.reg .rbp - 16 = fpAddr x (-16) := by simp [fpAddr]; bv_omega
-      have e8' : x.reg .rbp - 8 = fpAddr x (-8) := by simp [fpAddr]; bv_omega
-      obtain ⟨g1, g2⟩ := f4 hpe
-      rw [hrbp, e16, e8', hread (-16) (by omega) (by omega), hread (-8) (by omega) (by omega),
-        ← e16, ← e8']
-      exact ⟨g1, g2⟩
-    · rw [hregs i (fun g hg h => (arg_clobbers_ok a _ g hg).2.2 (h ▸ hi))]
-      exact f5 i hi h5
+    · rcases hi with hcs | ⟨hpe, h67⟩
+      · rw [hregs i (fun g hg h => (arg_clobbers_ok a _ g hg).2.2 (h ▸ hcs))]
+        exact f4 i (.inl hcs) h5
+      · rw [hregs i (fun g hg h => by
+          rw [hpe] at hg
+          have := arg_clobbers_pe a g hg
+          rcases h67 with rfl | rfl <;>
+            first | exact this.1 h | exact this.1 h.symm | exact this.2 h | exact this.2 h.symm)]
+        exact f4 i (.inr ⟨hpe, h67⟩) h5
   have hconv := H.argsOk.conv k _ hlead hRA
   refine Reach.steps hsteps (.done (.inl ⟨_, .step hstep, ⟨⟨hr', hmem', hsep', hk1.fp ▸ hf.win,
     hk1.fp ▸ hf.fpF, by rw [hrsp, hrbp]; exact hf.rsp, by rw [hrsp]; exact hf.room, hLk', hro',
@@ -664,7 +675,7 @@ theorem bodySim_arg' (hD : Decodes S code relocs rodata callSites dropped scopes
     exact hripE
   · show CacheInv (S.cache (s1.pc + 1)) x'
     rw [hk1.pc, hs, hcache, hce]
-    exact CacheInv.empty _
+    exact CacheInv.emptyPe _ _
 
 end Insn
 

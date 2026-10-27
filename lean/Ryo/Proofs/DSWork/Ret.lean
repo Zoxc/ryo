@@ -28,27 +28,25 @@ theorem ret_canon_list : ∀ {L : List Item}, (∀ i ∈ L, ∀ pos, i.Canonical
   | [], _, _ => trivial
   | i :: L, h, pos => ⟨h i (by simp) pos, ret_canon_list (fun j hj => h j (by simp [hj])) _⟩
 
+theorem ret_epilogue_mem {F : Nat} {m : Ryo.Obj.Mode} {i : Item} (h : i ∈ epilogue F m) :
+    i = .leave ∨ i = .popRbp ∨ ∃ v, i = .addRsp v := by
+  cases hpe : m.pe <;> cases hfp : m.framePointer <;> by_cases hF : F = 0 <;>
+    simp [epilogue, hpe, hfp, hF] at h <;>
+    first | (subst h; simp) | (rcases h with rfl | rfl <;> simp)
+
 theorem ret_epilogue_canon (F : Nat) (m : Ryo.Obj.Mode) :
     ∀ i ∈ epilogue F m, ∀ pos, i.Canonical pos := by
-  unfold epilogue
-  split
-  · intro i hi
-    simp only [winEpilogue, List.mem_cons, List.not_mem_nil, or_false] at hi
-    rcases hi with rfl | rfl | rfl | rfl <;>
-      exact ret_canon_of (fun _ => by simp [Item.wf]) (fun _ _ h => by cases h)
-  · split
-    · intro i hi; simp only [List.mem_singleton] at hi; subst hi
-      exact ret_canon_of (fun _ => rfl) (fun _ _ h => by cases h)
-    · intro i hi; simp only [List.mem_singleton] at hi; subst hi
-      exact ret_canon_of (fun _ => rfl) (fun _ _ h => by cases h)
+  intro i hi
+  rcases ret_epilogue_mem hi with rfl | rfl | ⟨v, rfl⟩ <;>
+    exact ret_canon_of (fun _ => by simp [Item.wf]) (fun _ _ h => by cases h)
 
 /-- The items of `ret`'s sequence before the final `ret`, by shape. -/
 def RetShape (i : Item) : Prop :=
   (∃ w sx d m, i = .ld w sx d m) ∨ (∃ t x r, i = .movd t x r) ∨ (∃ sz x m, i = .sse false sz x m) ∨
-    i = .leave ∨ i = .leaRspRbp16 ∨ (∃ r, i = .pop r) ∨ (∃ v, i = .addRsp v)
+    i = .leave ∨ i = .popRbp ∨ (∃ v, i = .addRsp v)
 
 theorem ret_shape_ok (ctx : Ctx) {i : Item} (h : RetShape i) : i.FallsThrough ctx ∧ i.MemKept ctx := by
-  rcases h with ⟨w, sx, d, m, rfl⟩ | ⟨t, x, r, rfl⟩ | ⟨sz, x, m, rfl⟩ | rfl | rfl | ⟨r, rfl⟩ | ⟨v, rfl⟩
+  rcases h with ⟨w, sx, d, m, rfl⟩ | ⟨t, x, r, rfl⟩ | ⟨sz, x, m, rfl⟩ | rfl | rfl | ⟨v, rfl⟩
   · constructor <;> intro s s' he <;> simp only [Item.exec] at he <;> split at he <;>
       (cases Switch.except_ok_inj he; rfl)
   · constructor <;> intro s s' he <;> simp only [Item.exec] at he <;> split at he <;>
@@ -62,18 +60,11 @@ theorem ret_shape_ok (ctx : Ctx) {i : Item} (h : RetShape i) : i.FallsThrough ct
     (cases Switch.except_ok_inj he; rfl))
 
 theorem ret_epilogue_shape (F : Nat) (m : Ryo.Obj.Mode) : ∀ i ∈ epilogue F m, RetShape i := by
-  unfold epilogue
-  split
-  · intro i hi
-    simp only [winEpilogue, List.mem_cons, List.not_mem_nil, or_false] at hi
-    rcases hi with rfl | rfl | rfl | rfl
-    · exact .inr (.inr (.inr (.inr (.inl rfl))))
-    all_goals exact .inr (.inr (.inr (.inr (.inr (.inl ⟨_, rfl⟩)))))
-  · split
-    · intro i hi; simp only [List.mem_singleton] at hi; subst hi
-      exact .inr (.inr (.inr (.inl rfl)))
-    · intro i hi; simp only [List.mem_singleton] at hi; subst hi
-      exact .inr (.inr (.inr (.inr (.inr (.inr ⟨_, rfl⟩)))))
+  intro i hi
+  rcases ret_epilogue_mem hi with rfl | rfl | ⟨v, rfl⟩
+  · exact .inr (.inr (.inr (.inl rfl)))
+  · exact .inr (.inr (.inr (.inr (.inl rfl))))
+  · exact .inr (.inr (.inr (.inr (.inr ⟨_, rfl⟩))))
 
 theorem ret_loads_ok {k : Nat} {parts : List (RetPart × R.Reg)}
     (hp : R.retRegs k true = .ok parts) (src : BitVec 32) :
@@ -151,15 +142,20 @@ set_option maxRecDepth 100000 in
 /-- `bodySim_ret`. Proof idea: `noArg_insn`; `InsnRead.ret` and `link_ret` give
 `retLoads k src ++ epilogue F mode ++ [ret]` in memory at `p` (canonical: `call_epilogue_canon`
 as in `DSWork/Call.lean`), fetched as `Steps`; `ArgRet.ret_step` (`FrameBounds.ret_step_fb_disp`,
-`H.fp`) gives `.done (exit s1 (.ret regs incoming))` with `RetRel`; `ExitRel`: `WorldRel` from
+`FrameInv.rsp` and `H.fp`, on PE `hF8`) gives `.done (exit s1 (.ret regs incoming))` with `RetRel`; `ExitRel`: `WorldRel` from
 `MemRel`, `rip` the return address and `rsp = x0.rsp + 8` and the callee-saved registers from
-`FrameFacts` (`retAddr`, `rbp`, `savedRbp`, `savedPe`, `saved`), the incoming area from
+`FrameFacts` (`retAddr`, `rbp`, `savedRbp`, and `saved`: `ret_step` keeps every register but
+`rax`, `rdx`, `r11`, `rsp`, `rbp`, so PE's `rsi`/`rdi` too), the incoming area from
 `Rel` over `[16, 16 + argSize)` (`H.argSizeK`, in the window). R's step is safe: no error but
-`noBehavior` (`RSafe`), the scopes never stop so (`noNB_scopes`). -/
-theorem bodySim_ret' (_hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
+`noBehavior` (`RSafe`), the scopes never stop so (`noNB_scopes`).
+
+`hF8` (not in `bodySim_ret`): PE's epilogue `add rsp, F` needs `F + 8 < 2 ^ 31`, which nothing
+in `Decodes`/`Hyps` gives (`boundsOk` checks `F ≤ 2 ^ 31` only). -/
+theorem bodySim_ret' (hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
     {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
-    (hP : ProtoFacts S k p q c' {}) (hn : NoArg S.fr S.body p a cur)
-    (hr : InsnRead S.fr S.ro cur q c') (hop : q.op = .ret) :
+    (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
+    (hr : InsnRead S.fr S.ro cur q c') (hop : q.op = .ret)
+    (hF8 : S.c.mode.pe = true → S.F + 8 < 2 ^ 31) :
     BodySim S k p (S.used k) := by
   intro s x hs hf hrip _ hsafe
   have hcur := noArg_insn hn hr
@@ -171,6 +167,10 @@ theorem bodySim_ret' (_hD : Decodes S code relocs rodata callSites dropped scope
     simp only at hop; subst hop
     simp [noHandler] at hhh
   | jmp => simp only at hop; exact absurd hop (by decide)
+  | dense hd =>
+    obtain ⟨w, hw, -⟩ := denseSwitch_some hd
+    rw [hw] at hop; cases w <;> exact absurd hop (by decide)
+  | resume => simp only at hop; exact absurd hop (by decide)
   | unreachable => simp only at hop; exact absurd hop (by decide)
   | island => simp only at hop; exact absurd hop (by decide)
   | @ret src kk c'' hret =>
@@ -196,9 +196,14 @@ theorem bodySim_ret' (_hD : Decodes S code relocs rodata callSites dropped scope
       subst ho
       rw [hkk] at hp
       obtain ⟨s1, regs, incoming, x', -, -, -, hfin, -, hbytes, hex, hret, hmem, hrsp, hrip', hrbp,
-          -, hpe, -, hregs⟩ :=
+          -, hregs⟩ :=
         ArgRet.ret_step S.ctx S.r.frameSize hf.rrel hi hf' hsh
-          (ret_step_fb_disp H.frameBounds hi hf' hsh) (fun _ h2 => absurd H.fp (by simp [h2])) hst
+          (ret_step_fb_disp H.frameBounds hi hf' hsh) (fun h1 => by
+            have eF : S.F = S.r.frameSize := reducedOf_frameSize hD.reduced
+            refine ⟨eF ▸ hf.rsp, eF ▸ ?_⟩
+            rcases h1 with h1 | h1
+            · exact hF8 h1
+            · exact absurd H.fp (by simp [h1])) hst
       rw [hkk] at hex
       have hm0 := (memRel_foldlM _ (H.frameBounds.scope_size _) hf.rrel hf.mem hsc0).2
       have hm0' : MemRel s0.st x' := by unfold MemRel; rw [hmem]; exact hm0
@@ -234,20 +239,16 @@ theorem bodySim_ret' (_hD : Decodes S code relocs rodata callSites dropped scope
       · rw [hrip', hbr.retAddr]
       · rw [hrsp, hbr.rbp]
       · intro i hsv
-        rcases hsv with hcs | ⟨hpe', h67⟩
-        · by_cases h5 : i = 5
-          · subst h5
-            exact (hrbp (.inr H.fp)).trans hbr.savedRbp
-          · have hne : i ≠ 0 ∧ i ≠ 2 ∧ i ≠ 11 ∧ i ≠ 4 ∧ i ≠ 6 ∧ i ≠ 7 := by
-              unfold CalleeSaved at hcs
+        by_cases h5 : i = 5
+        · subst h5
+          exact (hrbp (.inr H.fp)).trans hbr.savedRbp
+        · have hne : i ≠ 0 ∧ i ≠ 2 ∧ i ≠ 11 ∧ i ≠ 4 := by
+            rcases hsv with hcs | ⟨-, h67⟩
+            · unfold CalleeSaved at hcs
               rcases hcs with rfl | rfl | rfl | rfl | rfl | rfl <;> decide
-            rw [hregs i hne.1 hne.2.1 hne.2.2.1 hne.2.2.2.1 h5 hne.2.2.2.2.1 hne.2.2.2.2.2]
-            exact hbr.saved i hcs h5
-        · obtain ⟨a1, a2⟩ := hpe hpe'
-          obtain ⟨b1, b2⟩ := hbr.savedPe hpe'
-          rcases h67 with rfl | rfl
-          · exact a1.trans b1
-          · exact a2.trans b2
+            · rcases h67 with rfl | rfl <;> decide
+          rw [hregs i hne.1 hne.2.1 hne.2.2.1 hne.2.2.2 h5]
+          exact hbr.saved i hsv h5
       · rw [hmem, ← e16]
         exact hbytes (by have := H.argSizeK; have := H.frameBounds.K_le; omega)
 

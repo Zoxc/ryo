@@ -47,9 +47,9 @@ const MODES: [Mode; 20] = {
     let mut m = [Mode { fp_arg: false, frame_pointer: true, align_loops: false, pe: false, counters: false, far_rt: false }; 20];
     let mut i = 0;
     while i < 8 {
-        // No PE modes until the Lean model has PE's Win64 handlers and frames (lean/PENDING.md):
-        // the four would-be PE ones repeat the others.
-        m[i] = Mode { fp_arg: i & 1 != 0, frame_pointer: true, align_loops: i & 2 != 0, pe: false, counters: false, far_rt: false };
+        // PE has no `fp_arg` (Win64 handlers read `fp` from `rbp`).
+        m[i] =
+            Mode { fp_arg: i & 1 != 0 && i & 4 == 0, frame_pointer: true, align_loops: i & 2 != 0, pe: i & 4 != 0, counters: false, far_rt: false };
         i += 1;
     }
     m[8] = Mode { fp_arg: true, frame_pointer: false, align_loops: false, pe: false, counters: false, far_rt: false };
@@ -368,8 +368,10 @@ fn every_opcode(rng: &mut Rng, out: &mut Out) {
             f.insns.push(vec![Opcode::Jmp as u32, 0]);
             f.targets.push((pad + 1, 1, 0));
             f.insns.push(vec![Opcode::Abort as u32]);
+            // On PE a cleanup landing pad would start the pad region, which `jmp 0` crosses:
+            // catching pads only there (`lean_reduced_vectors.rs` covers the region).
             if op_may_unwind(op) && list_len != 1 {
-                f.unwind.push((1, if list_len == 0 { None } else { Some((pad, k % 2 == 0)) }));
+                f.unwind.push((1, if list_len == 0 { None } else { Some((pad, k % 2 == 0 || mode.pe)) }));
             }
             out.push(&f, FRAMES[k % FRAMES.len()], mode);
         }

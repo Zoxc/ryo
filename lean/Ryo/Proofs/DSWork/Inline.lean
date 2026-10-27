@@ -90,11 +90,17 @@ theorem inline_seq_map {T U : Type} (g : T → U) (c : Class) (ops : List (Opnd 
   case ovf => seq_case 1; seq_case 2; seq_case 3; seq_case 0
   case mulOvf => seq_case 2; seq_case 3; seq_case 0; seq_case 1
   case ext => seq_case 1; seq_case 0
+  case shiftVar => seq_case 1; seq_case 2; seq_case 0
+  case div => seq_case 1; seq_case 2; seq_case 0
+  case count => seq_case 1; seq_case 0
+  case cmp3 => seq_case 1; seq_case 2; seq_case 0
+  case bswap => seq_case 1; seq_case 0
 
 /-- What `inline_classOfParts` says of a class. -/
 def inline_okC : Class → Prop
   | .ovf op _ _ => op = .add ∨ op = .sub
   | .ext a _ true => a ≠ .q
+  | .shiftImm sh _ => sh.isShift = true
   | _ => True
 
 theorem inline_ec {α : Sort _} {β : Sort _} {a b : α} (x : β) (h : a = b) :
@@ -179,7 +185,8 @@ theorem inline_cop6 {cls : Class} (a b c d e f : String) (l : List String)
 
 /-- The inline classes: no `ovf` but `add`/`sub`, no sign extension from 64 bits. -/
 theorem inline_classOfParts (ps : List String) {cls : Class} (h : classOfParts ps = some cls) :
-    (∀ op s w, cls = .ovf op s w → op = .add ∨ op = .sub) ∧ (∀ b, cls ≠ .ext .q b true) := by
+    (∀ op s w, cls = .ovf op s w → op = .add ∨ op = .sub) ∧ (∀ b, cls ≠ .ext .q b true) ∧
+      (∀ sh w, cls = .shiftImm sh w → sh.isShift = true) := by
   have hk : inline_okC cls := by
     rcases ps with _ | ⟨a, _ | ⟨b, _ | ⟨c, _ | ⟨d, _ | ⟨e, _ | ⟨f, l⟩⟩⟩⟩⟩⟩
     · exact inline_cop0 h
@@ -189,10 +196,12 @@ theorem inline_classOfParts (ps : List String) {cls : Class} (h : classOfParts p
     · exact inline_cop4 _ _ _ _ h
     · exact inline_cop5 _ _ _ _ _ h
     · exact inline_cop6 _ _ _ _ _ _ _ h
-  refine ⟨fun op s w e => by subst e; exact hk, fun b e => by subst e; exact hk rfl⟩
+  refine ⟨fun op s w e => by subst e; exact hk, fun b e => by subst e; exact hk rfl,
+    fun sh w e => by subst e; exact hk⟩
 
 theorem inline_class_of {f : Full.Opcode} {cls : Class} (h : (f, cls) ∈ inlineOps) :
-    (∀ op s w, cls = .ovf op s w → op = .add ∨ op = .sub) ∧ (∀ b, cls ≠ .ext .q b true) := by
+    (∀ op s w, cls = .ovf op s w → op = .add ∨ op = .sub) ∧ (∀ b, cls ≠ .ext .q b true) ∧
+      (∀ sh w, cls = .shiftImm sh w → sh.isShift = true) := by
   simp only [inlineOps, List.mem_filterMap, Option.map_eq_some_iff, Prod.mk.injEq] at h
   obtain ⟨a, -, c', hc', rfl, rfl⟩ := h
   exact inline_classOfParts _ hc'
@@ -289,6 +298,13 @@ theorem inline_nb_intBin (m : String) (s : Bool) {w : Nat} (a b : BitVec w) :
 theorem inline_nb_intOvf (m : String) (s : Bool) {w : Nat} (a b : BitVec w) :
     NoNB (intOvf m s a b) := by
   unfold intOvf; inline_nb_leaf
+theorem inline_nb_intRot (m : String) {w : Nat} (a : BitVec w) (b : Nat) :
+    NoNB (intRot m a b) := by
+  unfold intRot; inline_nb_leaf
+theorem inline_nb_intCount (m : String) {w : Nat} (a : BitVec w) : NoNB (intCount m a) := by
+  unfold intCount; inline_nb_leaf
+theorem inline_nb_intUn (m : String) {w : Nat} (a : BitVec w) : NoNB (intUn m a) := by
+  unfold intUn; inline_nb_leaf
 theorem inline_nb_convert (x y : OpSem.Ty) (v : Nat) : NoNB (OpSem.convert {} x y v) := by
   unfold OpSem.convert; split <;> try exact noNB_pure _
   unfold resolveNaN; split
@@ -365,6 +381,7 @@ macro "inline_nb" : tactic => `(tactic| repeat' (first
   | exact hrd _
   | exact inline_nb_intTy _ | exact inline_nb_parseTy _ | exact inline_nb_intCmp _ _ _ _
   | exact inline_nb_intBin _ _ _ _ | exact inline_nb_intOvf _ _ _ _ | exact inline_nb_convert _ _ _
+  | exact inline_nb_intRot _ _ _ | exact inline_nb_intCount _ _ | exact inline_nb_intUn _ _
   | exact inline_nb_addrOf _ _ | exact inline_nb_load _ _ _ _ | exact inline_nb_store _ _ _ _ _
   | exact inline_nb_int _ hrd _ | exact inline_nb_bv _ hrd _ _ | exact inline_nb_ptr _ hrd _
   | exact inline_nb_memPtr _ hrd _ | exact inline_nb_imm _ _ | exact inline_nb_immBv _ _ _
@@ -489,6 +506,11 @@ theorem inline_nb_class (cls : Class) (ps : List String) (e : OpSem.Env)
   | ovf => exact inline_nbk_ovf ps e hrd
   | mulOvf => exact inline_nbk_ovf ps e hrd
   | ext => exact inline_nbk_cvt ps e hrd hch
+  | shiftVar sh w => cases sh <;> (simp only [classHandler]; unfold kindSem; dsimp only; inline_nb)
+  | div => simp only [classHandler]; unfold kindSem; dsimp only; inline_nb
+  | count => simp only [classHandler]; unfold kindSem; dsimp only; inline_nb
+  | cmp3 => simp only [classHandler]; unfold kindSem; dsimp only; inline_nb
+  | bswap => simp only [classHandler]; unfold kindSem; dsimp only; inline_nb
 
 theorem inline_nb_opSem {f : Full.Opcode} {cls : Class} (hok : Step.InlineOk f cls)
     (vals : Operands) (st : OpSem.State) : NoNB (opSem f vals st {}) := by
@@ -526,6 +548,234 @@ theorem inline_nb_opSem {f : Full.Opcode} {cls : Class} (hok : Step.InlineOk f c
       · exact noNB_writeFrame _ _ _
       · exact noNB_ill _
 
+/-- An inline proto isn't `bare` (as `DecodeLink.inlineInsn_read`, its proof extended). -/
+theorem inline_read_bare {cache cache' : Cache} {dropped dr' : List DroppedStore} {c c' : Cursor}
+    {q : Proto} (h : (inlineInsn cache dropped true).run c = .ok (some (q, cache', dr'), c')) :
+    q.bare = false := by
+  unfold inlineInsn at h
+  obtain ⟨p0, c1, h1, h⟩ := bind_ok h
+  obtain ⟨rfl, hc1⟩ := pos_run' h1
+  subst c1
+  obtain ⟨fu, c2, h2, h⟩ := bind_ok h
+  have := fuel_run h2; subst c2
+  obtain ⟨st, c3, h3, h⟩ := bind_ok h
+  let I : Option (Option (Proto × Cache × List DroppedStore)) × Array Item ×
+      Option (Cond × Nat) × Bool × Nat × List DroppedStore × Bool → Cursor → Prop :=
+    fun st cur => st.1 = none ∧ st.2.2.2.2.2.2 = false ∧ cur = atPos c cur.pos ∧
+      st.2.2.1 = none ∧ (st.2.2.2.1 = false → Dec c c.pos st.2.1.toList cur.pos)
+  let D : Option (Option (Proto × Cache × List DroppedStore)) × Array Item ×
+      Option (Cond × Nat) × Bool × Nat × List DroppedStore × Bool → Cursor → Prop :=
+    fun st cur => st.1 = some none ∨ (st.1 = none ∧ st.2.2.2.2.2.2 = true ∧
+      (st.2.2.2.1 = false → (st.2.2.1 = none ∧ Dec c c.pos st.2.1.toList cur.pos) ∨
+        ∃ cond tgt long, st.2.2.1 = some (cond, tgt.toNat) ∧
+          Dec c c.pos (st.2.1.toList ++ [.branch cond tgt long]) cur.pos))
+  have key := forIn_range_inv I D _ ?step _ _ c c3 st ⟨rfl, rfl, rfl, rfl, fun _ => .nil _⟩ h3
+  case step =>
+    intro a b cur r cur' hI hr
+    obtain ⟨o, items, branch, wd, da, dr, ended⟩ := b
+    obtain ⟨ho, hend, hc, hbr, hd⟩ := hI
+    simp only at ho hend hc hbr hd hr
+    subst ho hend hbr
+    obtain ⟨pc, rfl⟩ : ∃ p, cur = atPos c p := ⟨_, hc⟩
+    split at hr
+    · rename_i d hdr
+      obtain ⟨p1, c4, h4, hr⟩ := bind_ok hr
+      obtain ⟨rfl, hc4⟩ := pos_run' h4
+      subst c4
+      split at hr
+      · -- a dropped store: `wasDropped` from here on
+        obtain ⟨p2, c5, h5, hr⟩ := bind_ok hr
+        obtain ⟨rfl, hc5⟩ := pos_run' h5
+        subst c5
+        obtain ⟨nx, c6, h6, hr⟩ := bind_ok hr
+        have e6 := posOnly_run PosOnly.tryItem h6
+        obtain ⟨u, c7, h7, hr⟩ := bind_ok hr
+        rw [run_setPos] at h7; cases h7
+        split at hr
+        · obtain ⟨rfl, rfl⟩ := pure_ok hr
+          exact ⟨rfl, rfl, by rw [e6], rfl, fun h => by cases h⟩
+        · obtain ⟨rfl, rfl⟩ := pure_ok hr
+          exact .inr ⟨rfl, rfl, fun h => by cases h⟩
+      · obtain ⟨x, c5, h5, hr⟩ := bind_ok hr
+        cases x with
+        | none =>
+          have := run_tryItem_none h5; subst this
+          obtain ⟨u, c7, h7, hr⟩ := bind_ok hr
+          rw [run_setPos] at h7; cases h7
+          obtain ⟨rfl, rfl⟩ := pure_ok hr
+          exact .inl rfl
+        | some it =>
+          obtain ⟨n, hn, rfl⟩ := run_tryItem_some h5
+          dsimp only at hr
+          split at hr
+          · obtain ⟨p2, c6, h6, hr⟩ := bind_ok hr
+            obtain ⟨rfl, hc6⟩ := pos_run' h6
+            subst c6
+            obtain ⟨nx, c7, h7, hr⟩ := bind_ok hr
+            have e7 := posOnly_run PosOnly.tryItem h7
+            obtain ⟨u, c8, h8, hr⟩ := bind_ok hr
+            rw [run_setPos] at h8; cases h8
+            split at hr
+            · obtain ⟨rfl, rfl⟩ := pure_ok hr
+              refine .inr ⟨rfl, rfl, fun hw => .inl ⟨rfl, ?_⟩⟩
+              simp only [Array.toList_push]; exact (hd hw).append (Dec.single hn)
+            · obtain ⟨rfl, rfl⟩ := pure_ok hr
+              refine ⟨rfl, rfl, by rw [e7], rfl, fun hw => ?_⟩
+              simp only [Array.toList_push]; exact (hd hw).append (Dec.single hn)
+          · split at hr
+            · split at hr
+              · obtain ⟨rfl, rfl⟩ := pure_ok hr
+                exact .inr ⟨rfl, rfl, fun hw => .inr ⟨_, _, _, rfl, (hd hw).append (Dec.single hn)⟩⟩
+              · obtain ⟨u, c7, h7, hr⟩ := bind_ok hr
+                rw [run_setPos] at h7; cases h7
+                obtain ⟨rfl, rfl⟩ := pure_ok hr
+                exact .inl rfl
+            · obtain ⟨u, c7, h7, hr⟩ := bind_ok hr
+              rw [run_setPos] at h7; cases h7
+              obtain ⟨rfl, rfl⟩ := pure_ok hr
+              exact .inl rfl
+    · obtain ⟨x, c5, h5, hr⟩ := bind_ok hr
+      cases x with
+      | none =>
+        have := run_tryItem_none h5; subst this
+        obtain ⟨u, c7, h7, hr⟩ := bind_ok hr
+        rw [run_setPos] at h7; cases h7
+        obtain ⟨rfl, rfl⟩ := pure_ok hr
+        exact .inl rfl
+      | some it =>
+        obtain ⟨n, hn, rfl⟩ := run_tryItem_some h5
+        dsimp only at hr
+        split at hr
+        · obtain ⟨p2, c6, h6, hr⟩ := bind_ok hr
+          obtain ⟨rfl, hc6⟩ := pos_run' h6
+          subst c6
+          obtain ⟨nx, c7, h7, hr⟩ := bind_ok hr
+          have e7 := posOnly_run PosOnly.tryItem h7
+          obtain ⟨u, c8, h8, hr⟩ := bind_ok hr
+          rw [run_setPos] at h8; cases h8
+          split at hr
+          · obtain ⟨rfl, rfl⟩ := pure_ok hr
+            refine .inr ⟨rfl, rfl, fun hw => .inl ⟨rfl, ?_⟩⟩
+            simp only [Array.toList_push]; exact (hd hw).append (Dec.single hn)
+          · obtain ⟨rfl, rfl⟩ := pure_ok hr
+            refine ⟨rfl, rfl, by rw [e7], rfl, fun hw => ?_⟩
+            simp only [Array.toList_push]; exact (hd hw).append (Dec.single hn)
+        · split at hr
+          · split at hr
+            · obtain ⟨rfl, rfl⟩ := pure_ok hr
+              exact .inr ⟨rfl, rfl, fun hw => .inr ⟨_, _, _, rfl, (hd hw).append (Dec.single hn)⟩⟩
+            · obtain ⟨u, c7, h7, hr⟩ := bind_ok hr
+              rw [run_setPos] at h7; cases h7
+              obtain ⟨rfl, rfl⟩ := pure_ok hr
+              exact .inl rfl
+          · obtain ⟨u, c7, h7, hr⟩ := bind_ok hr
+            rw [run_setPos] at h7; cases h7
+            obtain ⟨rfl, rfl⟩ := pure_ok hr
+            exact .inl rfl
+  obtain ⟨o, items, branch, wd, da, dr, ended⟩ := st
+  dsimp only at key h
+  rcases key with ⟨rfl, rfl, -, -, -⟩ | rfl | ⟨rfl, rfl, hd⟩
+  · obtain ⟨u, c4, -, h4⟩ := bind_ok h
+    obtain ⟨he, -⟩ := pure_ok h4; cases he
+  · obtain ⟨he, -⟩ := pure_ok h; cases he
+  · simp only [Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
+    -- the candidate the decoder accepted
+    have found : ∃ cand d, decodeInline cand branch = some d ∧
+        (cache.emit cand).1 = items.toList ∧ cache' = (cache.emit cand).2 ∧
+        q.op = d.1 ∧ q.ops = d.2 ∧ q.pos = c.pos ∧ q.handler = none ∧ q.dropped = wd ∧
+        q.items = (if wd = true then items.toList.eraseIdx da else items.toList) ∧ q.bare = false ∧ c' = c3 := by
+      have fin : ∀ cand d (P : Proto) pp cc, decodeInline cand branch = some d →
+          (if ((cache.emit cand).fst != items.toList) = true then none
+            else some (P, (cache.emit cand).snd)) = some (pp, cc) →
+          P.op = d.1 → P.ops = d.2 → P.pos = c.pos → P.handler = none → P.dropped = wd →
+          P.items = (if wd = true then items.toList.eraseIdx da else items.toList) → P.bare = false →
+          (pp, cc, dr) = (q, cache', dr') → c' = c3 → ∃ cand d, decodeInline cand branch = some d ∧
+            (cache.emit cand).1 = items.toList ∧ cache' = (cache.emit cand).2 ∧
+            q.op = d.1 ∧ q.ops = d.2 ∧ q.pos = c.pos ∧ q.handler = none ∧ q.dropped = wd ∧
+            q.items = (if wd = true then items.toList.eraseIdx da else items.toList) ∧ q.bare = false ∧ c' = c3 := by
+        intro cand d P pp cc hd hh h1 h2 h3 h4 h5 h6 h7 he hc
+        split at hh
+        · cases hh
+        · rename_i hne
+          simp only [Option.some.injEq, Prod.mk.injEq] at hh he
+          obtain ⟨rfl, rfl⟩ := hh
+          obtain ⟨rfl, rfl, rfl⟩ := he
+          exact ⟨cand, d, hd, by simpa using hne, rfl, h1, h2, h3, h4, h5, h6, h7, hc⟩
+      split at h
+      · rename_i d hdi
+        split at h
+        · rename_i pp cc hacc
+          obtain ⟨he, rfl⟩ := pure_ok h
+          exact fin _ d _ pp cc hdi hacc rfl rfl rfl rfl rfl rfl rfl (by cases he; rfl) rfl
+        · obtain ⟨res, c4, h4, hk2⟩ := bind_ok h
+          have key2 := forIn_list_inv (fun (st : Option (Option (Proto × Cache × List DroppedStore)) × Unit) cur => st.1 = none ∧ cur = c3)
+            (fun (st : Option (Option (Proto × Cache × List DroppedStore)) × Unit) cur => cur = c3 ∧
+                ∃ (cand : List Item) (d : Full.Opcode × List (Opnd Nat)) (P pp : Proto) (cc : Cache), decodeInline cand branch = some d ∧
+              (if ((cache.emit cand).fst != items.toList) = true then none
+                else some (P, (cache.emit cand).snd)) = some (pp, cc) ∧
+              P.op = d.1 ∧ P.ops = d.2 ∧ P.pos = c.pos ∧ P.handler = none ∧ P.dropped = wd ∧
+              P.items = (if wd = true then items.toList.eraseIdx da else items.toList) ∧ P.bare = false ∧
+              st.1 = some (some (pp, cc, dr))) _ ?step2 _ _ c3 c4 res ⟨rfl, rfl⟩ h4
+          case step2 =>
+            intro cand st cur r cur' hI hr
+            split at hr
+            · rename_i d hd
+              split at hr
+              · rename_i pp cc hacc
+                obtain ⟨rfl, rfl⟩ := pure_ok hr
+                exact ⟨hI.2, cand, d, _, pp, cc, hd, hacc, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+              · obtain ⟨rfl, rfl⟩ := pure_ok hr; exact ⟨rfl, hI.2⟩
+            · obtain ⟨rfl, rfl⟩ := pure_ok hr; exact ⟨rfl, hI.2⟩
+          rcases key2 with ⟨hn, rfl⟩ | ⟨rfl, cand, d, P, pp, cc, hd, hacc, h1, h2, h3, h4', h5, h6, h7, hs⟩
+          · split at hk2
+            · rename_i r hr; rw [hn] at hr; cases hr
+            · obtain ⟨u, c5, -, hk3⟩ := bind_ok hk2
+              obtain ⟨he, -⟩ := pure_ok hk3; cases he
+          · split at hk2
+            · rename_i r hr; rw [hs] at hr; cases hr
+              obtain ⟨he, rfl⟩ := pure_ok hk2
+              exact fin cand d P pp cc hd hacc h1 h2 h3 h4' h5 h6 h7 (by cases he; rfl) rfl
+            · rename_i hr; rw [hs] at hr; cases hr
+      · obtain ⟨res, c4, h4, hk2⟩ := bind_ok h
+        have key2 := forIn_list_inv (fun (st : Option (Option (Proto × Cache × List DroppedStore)) × Unit) cur => st.1 = none ∧ cur = c3)
+          (fun (st : Option (Option (Proto × Cache × List DroppedStore)) × Unit) cur => cur = c3 ∧
+                ∃ (cand : List Item) (d : Full.Opcode × List (Opnd Nat)) (P pp : Proto) (cc : Cache), decodeInline cand branch = some d ∧
+            (if ((cache.emit cand).fst != items.toList) = true then none
+              else some (P, (cache.emit cand).snd)) = some (pp, cc) ∧
+            P.op = d.1 ∧ P.ops = d.2 ∧ P.pos = c.pos ∧ P.handler = none ∧ P.dropped = wd ∧
+            P.items = (if wd = true then items.toList.eraseIdx da else items.toList) ∧ P.bare = false ∧
+            st.1 = some (some (pp, cc, dr))) _ ?step2 _ _ c3 c4 res ⟨rfl, rfl⟩ h4
+        case step2 =>
+          intro cand st cur r cur' hI hr
+          split at hr
+          · rename_i d hd
+            split at hr
+            · rename_i pp cc hacc
+              obtain ⟨rfl, rfl⟩ := pure_ok hr
+              exact ⟨hI.2, cand, d, _, pp, cc, hd, hacc, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+            · obtain ⟨rfl, rfl⟩ := pure_ok hr; exact ⟨rfl, hI.2⟩
+          · obtain ⟨rfl, rfl⟩ := pure_ok hr; exact ⟨rfl, hI.2⟩
+        rcases key2 with ⟨hn, rfl⟩ | ⟨rfl, cand, d, P, pp, cc, hd, hacc, h1, h2, h3, h4', h5, h6, h7, hs⟩
+        · split at hk2
+          · rename_i r hr; rw [hn] at hr; cases hr
+          · obtain ⟨u, c5, -, hk3⟩ := bind_ok hk2
+            obtain ⟨he, -⟩ := pure_ok hk3; cases he
+        · split at hk2
+          · rename_i r hr; rw [hs] at hr; cases hr
+            obtain ⟨he, rfl⟩ := pure_ok hk2
+            exact fin cand d P pp cc hd hacc h1 h2 h3 h4' h5 h6 h7 (by cases he; rfl) rfl
+          · rename_i hr; rw [hs] at hr; cases hr
+    obtain ⟨-, -, -, -, -, -, -, -, -, -, -, hbare, -⟩ := found
+    exact hbare
+
+/-- After an inline proto there is no `nop` (it isn't `bare`): the next proto starts where it
+ends. -/
+theorem inline_nop_none {fr : Vm.Frame} {callSites : Array CallSite} {c : Cursor} {q : Proto}
+    {p p' : Nat} (hb : q.bare = false) (h : NopRead fr callSites c q p p') : p' = p := by
+  cases h with
+  | none => rfl
+  | nop hn => simp [nopAfter, hb] at hn
+
 section Insn
 
 variable {S : Setup} {code : ByteArray} {relocs : Array Reloc} {rodata : ByteArray}
@@ -541,7 +791,8 @@ theorem inline_cls_step (H : Hyps S) {s s' : R.RState} {x : X86.State} {ch : OpS
     (hpriv : ∀ w vals, shapeOk f (.load w) = true → nativeVals S.c.ρ f ops = some vals →
       AfterScopes S.c s (Private f vals))
     (hi : S.c.d.insns[s.pc]? = some (.native op ops)) (hfull : op.full = some f)
-    (hmem : (f, cls) ∈ inlineOps) (hseq : sequence cls ops = some (cand, br))
+    (hmem : (f, cls) ∈ inlineOps) (hlater : laterClass cls = false)
+    (hseq : sequence cls ops = some (cand, br))
     (h : R.step S.c s ch = .ok (.step s')) :
     ∃ x', execItems S.ctx (cache.emit cand).1 x = .ok x' ∧ RRel s' x' ∧
       CacheInv (cache.emit cand).2 x' ∧
@@ -549,13 +800,13 @@ theorem inline_cls_step (H : Hyps S) {s s' : R.RState} {x : X86.State} {ch : OpS
       BrOk f ops s s' br x' := by
   have hok := H.inlineOk f cls hmem
   have hfb := H.frameBounds
-  obtain ⟨hovf, hext⟩ := inline_class_of hmem
+  obtain ⟨hovf, hext, hshi⟩ := inline_class_of hmem
   have cached : SoundC cls → ∃ x', execItems S.ctx (cache.emit cand).1 x = .ok x' ∧
       RRel s' x' ∧ CacheInv (cache.emit cand).2 x' ∧
       x'.rip = x.rip + BitVec.ofNat 64 ((cache.emit cand).1.map Item.size).sum ∧
       BrOk f ops s s' br x' := fun hsc => by
     obtain ⟨x', h1, h2, h3, h4, h5⟩ :=
-      CacheStep.inline_step_cached S.ctx hsc hci hf.rrel hi hfull hok hext hseq h
+      CacheStep.inline_step_cached S.ctx hsc hci hf.rrel hi hfull hok hext hlater hseq h
     exact ⟨x', h1, h2, h3, h4, by cases br <;> exact h5⟩
   cases cls with
   | load w =>
@@ -596,17 +847,17 @@ theorem inline_cls_step (H : Hyps S) {s s' : R.RState} {x : X86.State} {ch : OpS
   | binImm o w => exact cached (inline_soundC _ (.inl rfl))
   | mul w => exact cached (inline_soundC _ (.inl rfl))
   | mulImm w => exact cached (inline_soundC _ (.inl rfl))
-  | shiftImm sh w => exact cached (inline_soundC _ (.inl rfl))
+  | shiftImm sh w => exact cached (inline_soundC _ (.inl (hshi sh w rfl)))
   | cmp c w => exact cached (inline_soundC _ (.inl rfl))
   | cmpImm c w => exact cached (inline_soundC _ (.inl rfl))
   | br => exact cached (inline_soundC _ (.inl rfl))
   | brCmp c w => exact cached (inline_soundC _ (.inl rfl))
   | brCmpImm c w => exact cached (inline_soundC _ (.inl rfl))
   | ext a b sx => exact cached (inline_soundC _ (.inl rfl))
+  | shiftVar | div | count | cmp3 | bswap => simp [laterClass] at hlater
 
 /-- Open (checkable), missing from `FrameBounds.writes`: an inline instruction's frame writes miss
-the frame's link slots `[linkLo, 16)` (the saved `rbp`, the return address, PE's saved
-`rsi`/`rdi`). `FrameBounds.writes` only bounds them by the window `[-F, K)`, and neither
+the frame's link slots `[0, 16)` (the saved `rbp`, the return address). `FrameBounds.writes` only bounds them by the window `[-F, K)`, and neither
 `LoadPrivate` nor `LinkPrivate` keeps them apart (both only say the bytes are private), so
 without it a `mov.w64` to slot `0` (`mov [rbp], rax`) overwrites the saved `rbp` and breaks
 `FrameFacts.savedRbp` after the step, while R's step (a private frame write) succeeds: the
@@ -615,7 +866,15 @@ def InlineBelowLink (S : Setup) : Prop :=
   ∀ (k : Nat) (op : Reduced.Opcode) (ops : List (R.Opnd Nat)) (f : Full.Opcode) (cls : Class)
     (vals : Operands), S.c.d.insns[k]? = some (.native op ops) → op.full = some f →
     (f, cls) ∈ inlineOps → nativeVals S.c.ρ f ops = some vals →
-    ∀ r ∈ wranges f vals, r.1 + r.2 ≤ S.linkLo ∨ 16 ≤ r.1
+    ∀ r ∈ wranges f vals, r.1 + r.2 ≤ 0 ∨ 16 ≤ r.1
+
+/-- Not covered yet: no inline instruction of the classes added after these proofs
+(`laterClass`: variable shifts and rotates, `div`/`rem`, `cttz`/`ctlz`, `cmp3`, `bswap`), whose
+cached steps (`CacheStep.inline_step_cached`) are open. -/
+def NoLaterClass (S : Setup) : Prop :=
+  ∀ (k : Nat) (op : Reduced.Opcode) (ops : List (R.Opnd Nat)) (f : Full.Opcode) (cls : Class),
+    S.c.d.insns[k]? = some (.native op ops) → op.full = some f → (f, cls) ∈ inlineOps →
+    laterClass cls = false
 
 /-- The x86 side of an inline step that the step lemmas don't give: from a frame relation at an
 inline instruction, its emitted items `items` in memory at `rip`, and the R step to `s'` matched
@@ -749,7 +1008,8 @@ set_option maxRecDepth 100000 in
 /-- `bodySim_inline` (`inline_run'`, `inline_progress'`, `branch_canonical`), with the frame
 writes off the link slots (`InlineBelowLink`). -/
 theorem bodySim_inline' (hD : Decodes S code relocs rodata callSites dropped scopes mode)
-    (H : Hyps S) (hbl : InlineBelowLink S) {k p : Nat} {a : Bool} {q : Proto}
+    (H : Hyps S) (hbl : InlineBelowLink S) (hnlc : NoLaterClass S) {k p : Nat} {a : Bool}
+    {q : Proto}
     {cur cur' c' : Cursor}
     {cache' : Cache} {dr' : List DroppedStore}
     (hP : ProtoFacts S k p q c' cache') (hn : NoArg S.fr S.body p a cur)
@@ -798,10 +1058,11 @@ theorem bodySim_inline' (hD : Decodes S code relocs rodata callSites dropped sco
       AfterScopes S.c s (Private q.op vals) :=
     fun w vals hsh hv s1 hsc => H.loadPrivate s _ s1 op ops q.op w vals hbi hi' hfull hsh hv hsc
   obtain ⟨x', hx', hrr, hcc, hrip', hbr⟩ :=
-    inline_cls_step H hf hci hpriv hi' hfull hmem hseqR hstep
+    inline_cls_step H hf hci hpriv hi' hfull hmem (hnlc _ _ _ _ _ hi' hfull hmem) hseqR hstep
   rw [hemit] at hx' hcc hrip'
   simp only at hx' hcc hrip'
   have hb := hP.bound
+  have hstop : S.start (k + 1) = c'.pos := inline_nop_none (inline_read_bare hr) hP.nop
   have hex : ∃ op ops f cls cand br, ∃ cache : Cache, S.c.d.insns[s.pc]? = some (.native op ops) ∧
       op.full = some f ∧ (f, cls) ∈ inlineOps ∧ sequence cls ops = some (cand, br) ∧
       CacheInv cache x ∧ (cache.emit cand).1 = q.items :=
@@ -815,7 +1076,7 @@ theorem bodySim_inline' (hD : Decodes S code relocs rodata callSites dropped sco
       inline_run' H hbl s s' x x' {} p q.items hf hrip hcode hex hnl hstep hx' hrr
     have hpc : s'.pc = k + 1 := by simp only [BrOk, Option.map_none] at hbr; rw [hbr, hs]
     refine Reach.steps hsteps (.done (.inl ⟨s', .step hstep, hf', .inl ⟨?_, ?_⟩⟩))
-    · rw [hpc, hP.stop, hcpos, hrip', hrip, addrAt_add]; rfl
+    · rw [hpc, hstop, hcpos, hrip', hrip, addrAt_add]; rfl
     · rw [hpc, hP.cache]; exact hcc
   · -- A branch class: the `jcc` after the items.
     subst hbrs
@@ -848,7 +1109,7 @@ theorem bodySim_inline' (hD : Decodes S code relocs rodata callSites dropped sco
       simp only [Bool.false_eq_true, ↓reduceIte] at hpc ⊢
       refine .inl ⟨?_, ?_⟩
       · show x'.rip + _ = _
-        rw [hpc, hs, hP.stop, hcpos, hxr, ← addrAt_add, codeSize_append, codeSize_cons,
+        rw [hpc, hs, hstop, hcpos, hxr, ← addrAt_add, codeSize_append, codeSize_cons,
           codeSize_nil, Nat.add_zero, Nat.add_assoc]
       · rw [hpc, hs, hP.cache]; exact hcc
     | true =>

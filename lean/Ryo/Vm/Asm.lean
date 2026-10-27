@@ -138,6 +138,17 @@ def intArg (pe : Bool) (i : Nat) : Reg :=
 def intIndex (r : Reg) (m : Mode) : Option Nat :=
   (List.range (if m.pe then 4 else 6)).find? fun i => intArg m.pe i == r
 
+/-- The registers of a handler call's argument positions (`asm::handler_arg`): `rdi, rsi, rdx,
+rcx, r8, r9`, or on PE (Win64 handlers) `rcx, rdx, r8, r9`, after which comes the stack. -/
+def handlerRegs (pe : Bool) : List Reg := if pe then [.rcx, .rdx, .r8, .r9] else X86.argRegs
+
+/-- The number of argument positions of a handler call: six registers, or on PE four and the
+stack (`ARG_REGS`, `PE_ARG_REGS + 1`). -/
+def handlerPositions (pe : Bool) : Nat := if pe then 5 else 6
+
+/-- The register of argument position `i` (`x86::handler_reg`), `none` for PE's stack position. -/
+def handlerReg (pe : Bool) (i : Nat) : Option Reg := (handlerRegs pe)[i]?
+
 def frameAt (base : BitVec 32) (off : Nat) : M := M.frame (base + BitVec.ofNat 32 off)
 
 /-- `sse_store`. -/
@@ -172,22 +183,27 @@ def resultStores (k : Nat) (d : BitVec 32) : List Item :=
 def argStore (a : ArgReg) (d : BitVec 32) (pe : Bool) : List Item :=
   if a.xmm then sseStore a.size a.index (M.frame d) else intStore a.size (intArg pe a.index) (M.frame d)
 
+/-- `PE_REGION_ALLOC`: what the PE pad region's entry allocates (`sub rsp, 40`) and its `resume`
+frees, the shadow space and the alignment. -/
+def peRegionAlloc : Nat := 40
+
 /-- `PROBE_FROM`. -/
 def probeFrom : Nat := 4096
 
-/-- `prologue` (`u32` arithmetic wrapping). -/
+/-- `prologue` (`u32` arithmetic wrapping): `push rbp; mov rbp, rsp` (PE's too), a stack probe
+from `probeFrom`, `sub rsp, F`; without a frame pointer `sub rsp, F + 8`. -/
 def prologue (frameSize : Nat) (m : Mode) : List Item :=
   let (pre, alloc) : List Item × Nat :=
-    if m.pe then (winPrologue, u32 (frameSize + 2 ^ 32 - 16))
-    else if m.framePointer then ([.pushRbp, .mov .rbp .rsp], frameSize)
+    if m.framePointer then ([.pushRbp, .mov .rbp .rsp], frameSize)
     else ([], u32 (frameSize + 8))
   let probe : List Item :=
     if frameSize ≥ probeFrom then [.setReg .rax (BitVec.ofNat 64 alloc), .call .probe] else []
   pre ++ probe ++ (if alloc != 0 then [.subRsp (BitVec.ofNat 32 alloc)] else [])
 
-/-- `epilogue`: one item, but on PE `winEpilogue`'s four (Rust's one `Item::WinEpilogue`). -/
+/-- `epilogue`: `leave`, or `add rsp, F + 8` without a frame pointer, or on PE `add rsp, F` (for
+`F > 0`) and `pop rbp`, the form the Win64 unwinder recognizes. -/
 def epilogue (frameSize : Nat) (m : Mode) : List Item :=
-  if m.pe then winEpilogue
+  if m.pe then (if frameSize != 0 then [.addRsp (BitVec.ofNat 32 frameSize)] else []) ++ [.popRbp]
   else if m.framePointer then [.leave]
   else [.addRsp (BitVec.ofNat 32 (frameSize + 8))]
 
@@ -243,9 +259,10 @@ def endsInlineAt (it : Item) (prev next : Option Item) : Bool :=
   | .st .., _, some (.setccCl _) => false
   | it, _, _ => endsInline it
 
-/-- `Item::is_inline`. -/
+/-- `Item::is_inline` (not PE's handler stack argument, `M.stackArg`). -/
 def isInline : Item → Bool
-  | .ld .. | .st .. | .stImm .. | .leaM .. | .alu .. | .aluImm .. | .imul .. | .imulImm ..
+  | .stImm _ m _ => m != M.stackArg
+  | .ld .. | .st .. | .leaM .. | .alu .. | .aluImm .. | .imul .. | .imulImm ..
   | .shift .. | .setcc .. | .testM8 .. | .setccCl .. | .mulQ .. | .lea .. | .loadRip .. => true
   | .div .. | .cdq _ | .shiftCl .. | .bswap .. | .setccR .. | .bsf .. | .bsr .. | .cmov .. => true
   | .setReg r _ => r != .rsp && r != .rbp
@@ -819,6 +836,9 @@ deriving DecidableEq, Repr, Inhabited
 structure Cache where
   regs : Array Entry := Array.replicate 8 {}
   tick : Nat := 0
+  /-- PE: `rsi` and `rdi` aren't in the pool (`inPool`): Win64 handlers preserve them, and VM
+  functions must. -/
+  pe : Bool := false
 deriving DecidableEq, Repr, Inhabited
 
 def bytes (w : W) : Nat := w.bits / 8
@@ -860,9 +880,14 @@ def find (c : Cache) (m : M) (w : W) (exact : Bool) : Option Nat :=
     | some (s, sw) => s == m.disp && (if exact then sw == w else bytes sw ≥ bytes w)
     | none => false
 
-/-- `Cache::fresh`: an empty register if there is one, the least recently used first. -/
+/-- Whether `pool[i]` is in the pool on PE (`pe`) or elsewhere (`in_pool`). -/
+def inPool (pe : Bool) (i : Nat) : Bool := !(pe && (pool[i]? == some .rsi || pool[i]? == some .rdi))
+
+/-- `Cache::fresh`: an empty register in the pool if there is one, the least recently used
+first. -/
+
 def fresh (c : Cache) : Nat :=
-  (List.range 8).foldl (fun best i =>
+  ((List.range 8).filter (inPool c.pe)).foldl (fun best i =>
     let key (j : Nat) := (if c.regs[j]!.slot.isSome then 1 else 0, c.regs[j]!.used)
     let (a1, a2) := key i
     let (b1, b2) := key best
@@ -951,7 +976,7 @@ def emit (c : Cache) (items : List Item) : List Item × Cache := Id.run do
 /-- `Cache::unemit`: the sequences on `rax` that `emit` may have turned into `items`. -/
 def unemit (c : Cache) (items : List Item) : List (List Item) := Id.run do
   let mut out : Array (List Item) := #[]
-  let mut xs : List Nat := (List.range 8).filter fun i =>
+  let mut xs : List Nat := (List.range 8).filter fun i => inPool c.pe i &&
     items.any fun it => mapRegs (fun r => if r == pool[i]! then .rbp else r) it != it
   if xs.isEmpty then xs := [c.fresh]
   -- A `mul` or `div` computes in `rax`, which a remainder's sequence may not show.

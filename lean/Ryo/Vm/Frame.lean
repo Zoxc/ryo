@@ -315,7 +315,7 @@ and leaves the function as a return does. Else, and for an extent the operands d
 `asm::frame::handler`'s over-estimate: 16 bytes or the lengths its `len` / `elem_size ×
 count` operands give, `d` clobbered, and a pointer access. -/
 def handler (h : Full.Opcode) (args : List Arg) (mode : Mode) : Except String Effects := do
-  let some l := h.layout mode.fpArg | throw "no layout"
+  let some l := h.layout mode.fpArg mode.pe | throw "no layout"
   if args.length != l.regs then throw "handler arguments"
   let info := h.info
   let vals := opndVals h args l

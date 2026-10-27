@@ -14,7 +14,7 @@ instruction `t` at, maps it back.
   `pos` maps back to `p`'s byte targets: a handler call `handler p.op args t'` with
   `thenMap pos t' = t`, or a native `native op ops` with `op` the reduced form of `p.op` and
   `ops.map (opndMap pos) = p.ops`.
-- `reducedOf_insns`: `reducedOf r = .ok d` gives one instruction per proto, each `InsnOf
+- `reducedOf_insns`: `reducedOf r pe = .ok d` gives one instruction per proto, each `InsnOf
   (posOf r)` of it. `decodeReduced_read`: `decodeReduced` is `reducedOf` of a successful `read`.
 - Reading back: `opnds_target` (a native `jmp`'s `[.target b]` is `[.target t]` with
   `pos t = b`), `thenMap_branch`, `thenMap_table`, `thenMap_next`, `thenMap_trap`, and
@@ -157,7 +157,7 @@ def InsnOf (pos : Nat → Nat) (p : Proto) (i : Insn) : Prop :=
   | none => ∃ op ops, Reduced.Opcode.ofFull p.op = some op ∧ i = .native op ops ∧
       ops.map (opndMap pos) = p.ops
 
-theorem reducedOf_insns {r : ReadResult} {d : Decoded} (h : reducedOf r = .ok d) :
+theorem reducedOf_insns {r : ReadResult} {pe : Bool} {d : Decoded} (h : reducedOf r pe = .ok d) :
     d.insns.size = r.protos.size ∧
       ∀ k (hk : k < r.protos.size) (hk' : k < d.insns.size), InsnOf (posOf r) r.protos[k] d.insns[k] := by
   unfold reducedOf at h
@@ -218,7 +218,7 @@ theorem decodeReduced_read {code : ByteArray} {relocs : Array Reloc} {rodata : B
     (h : decodeReduced code relocs rodata callSites dropped scopes mode = .ok d) :
     ∃ r c', (Vm.read rodata callSites dropped.toList scopes mode).run
         { code := code.data, pos := 0, fields := .relocs relocs } = .ok (r, c') ∧
-      reducedOf r = .ok d := by
+      reducedOf r mode.pe = .ok d := by
   unfold decodeReduced decodeReducedWith at h
   obtain ⟨⟨r, c'⟩, h1, h2⟩ := ebind_ok h
   exact ⟨r, c', h1, h2⟩

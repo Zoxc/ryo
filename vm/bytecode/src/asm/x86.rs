@@ -1168,7 +1168,7 @@ impl<'a> Cursor<'a> {
     /// bytes are the item's canonical encoding.
     fn native(&mut self) -> Result<Item, BadItem> {
         let bad = BadItem(self.pos);
-        let all = &self.code[self.pos as usize..];
+        let all = self.code.get(self.pos as usize..).unwrap_or(&[]);
         let get = |i: usize| all.get(i).copied().ok_or(bad);
         let i32_at = |i: usize| -> Result<i32, BadItem> {
             let b = all.get(i..i + 4).ok_or(bad)?;
@@ -1362,7 +1362,7 @@ impl<'a> Cursor<'a> {
     fn base_item(&mut self) -> Result<Item, BadItem> {
         let bad = BadItem(self.pos);
         let b = self.bytes(1)?;
-        let all = &self.code[self.pos as usize..];
+        let all = self.code.get(self.pos as usize..).unwrap_or(&[]);
         let get = |i: usize| all.get(i).copied().ok_or(bad);
         // An optional REX prefix (0x40..=0x4f), then the opcode.
         let (rex, at) = if (0x40..=0x4f).contains(&b[0]) { (b[0], 1) } else { (0, 0) };
@@ -1519,7 +1519,7 @@ impl<'a> Cursor<'a> {
     /// opcode byte is `pre` bytes in.
     fn sse(&mut self, pre: usize, size: u8, st: bool) -> Result<Item, BadItem> {
         let bad = BadItem(self.pos);
-        let all = &self.code[self.pos as usize..];
+        let all = self.code.get(self.pos as usize..).unwrap_or(&[]);
         let get = |i: usize| all.get(i).copied().ok_or(bad);
         let at = pre + 2;
         let m = get(at)?;
@@ -1556,7 +1556,7 @@ impl<'a> Cursor<'a> {
     pub fn padding(&mut self) -> u32 {
         let start = self.pos;
         loop {
-            let rest = &self.code[self.pos as usize..];
+            let rest = self.code.get(self.pos as usize..).unwrap_or(&[]);
             let Some(n) = (1..NOPS.len()).rev().find(|&n| rest.starts_with(NOPS[n])) else { break };
             if self.reloc_in(self.pos, n as u32) {
                 break;
@@ -1580,6 +1580,15 @@ impl<'a> Cursor<'a> {
 
     fn reloc_in(&self, at: u32, len: u32) -> bool {
         !self.relocs_in(at, len).is_empty()
+    }
+
+    /// Reads a 1-byte `nop` with no relocation in it (PE's after a call with a landing pad).
+    pub fn nop1(&mut self) -> bool {
+        let ok = self.bytes(1) == Ok(&[0x90][..]) && !self.reloc_in(self.pos, 1);
+        if ok {
+            self.pos += 1;
+        }
+        ok
     }
 
     /// Reads `int3`s up to a multiple of 4.

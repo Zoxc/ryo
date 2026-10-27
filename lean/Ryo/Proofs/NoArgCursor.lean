@@ -299,6 +299,7 @@ theorem noArg_insn {fr : Frame} {ro : ByteArray} {c : Cursor} {p : Nat} {a : Boo
   | ret hr => exact noArg_dec_item (by simp) (retSeq_read hr).1
   | unreachable hi => intro hn'; rw [hn'] at hi; cases hi
   | jmp hi => intro hn'; rw [hn'] at hi; cases hi
+  | resume _ hi _ => intro hn'; rw [hn'] at hi; cases hi
   | island hi _ => exact noArg_dec_item (by simp [Island.islandPre]) (islandCall_read hi).1
   | dense h => exact denseSwitch_item h
 

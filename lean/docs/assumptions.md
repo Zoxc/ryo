@@ -54,10 +54,10 @@ Its output at this commit: the seven opaque instances of §1.2 and the `sorry`s 
 `Ryo`'s `sorry`s are all in `Ryo/Proofs/DecodeSound.lean`, the glue of M3's `decode_sound`
 from the per-shape step lemmas (aot.md §C2 "Composition"): the bodies `bodySim_arg`,
 `bodySim_call`, `bodySim_inline`, `bodySim_handler`, `bodySim_ret`, `bodySim_island`, the counter
-check `reach_counter`, and four facts of the decoder not yet exposed by `DecodeLink`
+check `reach_counter`, three facts of the decoder not yet exposed by `DecodeLink`
 (`read_instructions_prologue`: the prologue read item by item; `pad_lpad`: landing pads are
-`lpad`s; `posOf_le_size`: protos lie within the code; `frameSize_pe`: PE frames are at least 16
-bytes); so `decode_sound` depends on them. Its open prerequisites are hypotheses (`Hyps`), not
+`lpad`s; `posOf_le_size`: protos lie within the code), and the inline dense switch index's cases
+(`dense`, four); so `decode_sound` depends on them. Its open prerequisites are hypotheses (`Hyps`), not
 `sorry`s. The work files `Ryo/Proofs/DSWork/*.lean` (outside the default build) hold the open
 proofs and their remaining `sorry` lemmas.
 

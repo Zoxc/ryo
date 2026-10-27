@@ -114,10 +114,11 @@ structure Coverage where
   handlers : Nat := 0
   natives : Nat := 0
 
-def Coverage.add (c : Coverage) (i : Insn) (fpArg : Bool) : Coverage :=
+def Coverage.add (c : Coverage) (i : Insn) (mode : Ryo.Obj.Mode) : Coverage :=
+  let fpArg := mode.fpArg
   match i with
   | .native .. => { c with natives := c.natives + 1 }
-  | .handler h _ _ => match h.layout fpArg with
+  | .handler h _ _ => match h.layout fpArg mode.pe with
   | none => c
   | some _ =>
     let kinds := h.info.operands.map (·.kind)
@@ -141,7 +142,7 @@ def check : Except String Coverage := do
     if d.insns.size != v.full.length then
       throw s!"vector {k}: {d.insns.size} instructions, Rust {v.full.length}"
     for (i, want) in d.insns.toList.zip v.full do
-      cov := cov.add i v.inputs.mode.fpArg
+      cov := cov.add i v.inputs.mode
       let native := match i with
         | .native _ ops => ops
         | _ => []
@@ -162,20 +163,23 @@ def rejects : Except String Unit := do
   let shl := opcode "shl.imm.w8"
   let lpad := opcode "lpad"
   let good := [slotArg (-8), slotArg 16, slotArg (-24)]
+  -- With `fp` in `rbp`, and `fp_arg`.
+  let rbp : Ryo.Obj.Mode := .ofBits 2
+  let fpm : Ryo.Obj.Mode := .ofBits 3
   let expect (what : String) (b : Bool) : Except String Unit := if b then pure () else throw what
-  expect "div: good" (unpack ρ div false good == some [.slot (-8), .slot 16, .slot (-24)])
-  expect "div: fp_arg" (unpack ρ div true (.fp :: good) == some [.slot (-8), .slot 16, .slot (-24)])
-  expect "div: no fp" (unpack ρ div true good == none)
-  expect "div: fp elsewhere" (unpack ρ div false [.fp, slotArg 16, slotArg (-24)] == none)
-  expect "div: too few" (unpack ρ div false good.dropLast == none)
-  expect "div: too many" (unpack ρ div false (good ++ [.imm 0]) == none)
-  expect "div: an address" (unpack ρ div false [.const 3, slotArg 16, slotArg (-24)] == none)
-  expect "div: high bits" (unpack ρ div false [.imm (BitVec.ofNat 64 (2 ^ 32 + 8)), slotArg 16, slotArg (-24)] == none)
-  expect "shl: good" ((unpack ρ shl false [slotArg (-8), slotArg 16, .imm 7]).isSome)
-  expect "shl: imm out of range" (unpack ρ shl false [slotArg (-8), slotArg 16, .imm 256] == none)
-  expect "lpad: good" (unpack ρ lpad false [.exception, slotArg (-8)] == some [.slot (-8)])
-  expect "lpad: no exception" (unpack ρ lpad false [.imm 0, slotArg (-8)] == none)
-  expect "lpad: exception as operand" (unpack ρ lpad false [.exception, .exception] == none)
+  expect "div: good" (unpack ρ div rbp good == some [.slot (-8), .slot 16, .slot (-24)])
+  expect "div: fp_arg" (unpack ρ div fpm (.fp :: good) == some [.slot (-8), .slot 16, .slot (-24)])
+  expect "div: no fp" (unpack ρ div fpm good == none)
+  expect "div: fp elsewhere" (unpack ρ div rbp [.fp, slotArg 16, slotArg (-24)] == none)
+  expect "div: too few" (unpack ρ div rbp good.dropLast == none)
+  expect "div: too many" (unpack ρ div rbp (good ++ [.imm 0]) == none)
+  expect "div: an address" (unpack ρ div rbp [.const 3, slotArg 16, slotArg (-24)] == none)
+  expect "div: high bits" (unpack ρ div rbp [.imm (BitVec.ofNat 64 (2 ^ 32 + 8)), slotArg 16, slotArg (-24)] == none)
+  expect "shl: good" ((unpack ρ shl rbp [slotArg (-8), slotArg 16, .imm 7]).isSome)
+  expect "shl: imm out of range" (unpack ρ shl rbp [slotArg (-8), slotArg 16, .imm 256] == none)
+  expect "lpad: good" (unpack ρ lpad rbp [.exception, slotArg (-8)] == some [.slot (-8)])
+  expect "lpad: no exception" (unpack ρ lpad rbp [.imm 0, slotArg (-8)] == none)
+  expect "lpad: exception as operand" (unpack ρ lpad rbp [.exception, .exception] == none)
   -- A handler call of each vector function, mutated.
   let mut n := 0
   for v in ← vectors do

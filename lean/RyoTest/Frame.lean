@@ -40,7 +40,7 @@ def reg (i : Nat) : Nat := 8 ||| (i <<< 8)
 /-- The handler of `m` with its operands' values (slots as offsets), by its layout. -/
 def handler (m : String) (vals : List Int) : Insn := Id.run do
   let h := full m
-  let l := (h.layout mode.fpArg).get!
+  let l := (h.layout mode.fpArg mode.pe).get!
   let mut regs : Array Nat := Array.replicate l.regs 0
   for (v, k) in vals.zipIdx do
     let loc := l.locs[k]!

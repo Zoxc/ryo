@@ -187,7 +187,8 @@ inductive ProtoRead (fr : Frame) (ro : ByteArray) (exact : Bool) (c : Cursor) :
       ProtoRead fr ro exact c p cache dr true q c' cache dr
   | call {p : Nat} {cache : Cache} {dr : List DroppedStore} {a : Bool} {q : Proto}
       {cur c' : Cursor} : NoArg fr c p a cur →
-      (callInsn fr dr).run cur = .ok (some q, c') → ProtoRead fr ro exact c p cache dr a q c' {} dr
+      (callInsn fr dr).run cur = .ok (some q, c') →
+      ProtoRead fr ro exact c p cache dr a q c' { pe := fr.mode.pe } dr
   | inline {p : Nat} {cache cache' : Cache} {dr dr' : List DroppedStore} {a : Bool} {q : Proto}
       {cur cur' c' : Cursor} : NoArg fr c p a cur → (callInsn fr dr).run cur = .ok (none, cur') →
       (inlineInsn cache dr exact).run cur' = .ok (some (q, cache', dr'), c') →
@@ -196,34 +197,46 @@ inductive ProtoRead (fr : Frame) (ro : ByteArray) (exact : Bool) (c : Cursor) :
       {cur cur' cur'' c' : Cursor} : NoArg fr c p a cur →
       (callInsn fr dr).run cur = .ok (none, cur') →
       (inlineInsn cache dr exact).run cur' = .ok (none, cur'') →
-      (insn fr ro).run cur'' = .ok (q, c') → ProtoRead fr ro exact c p cache dr a q c' {} dr
+      (insn fr ro).run cur'' = .ok (q, c') →
+      ProtoRead fr ro exact c p cache dr a q c' { pe := fr.mode.pe } dr
+
+/-- PE's `nop` after proto `q` (`nopStep`), from `p` to `p'`: none, or with `nopAfter` a `0x90`
+with no relocation in it. -/
+inductive NopRead (fr : Frame) (callSites : Array CallSite) (c : Cursor) (q : Proto) :
+    Nat → Nat → Prop
+  | none {p : Nat} : nopAfter fr.mode callSites q = false → NopRead fr callSites c q p p
+  | nop {p : Nat} : nopAfter fr.mode callSites q = true → c.code[p]? = some 0x90 →
+      (atPos c p).relocsHere 1 = [] → NopRead fr callSites c q p (p + 1)
 
 /-- One iteration of `instructions` (see the module comment): from `p` with `cache` and `dr`,
 proto `q`, to `p'` with `cache'` and `dr'`. -/
-inductive Iter (fr : Frame) (ro : ByteArray) (targets : Option (Array Nat)) (c : Cursor) :
+inductive Iter (fr : Frame) (ro : ByteArray) (targets : Option (Array Nat))
+    (callSites : Array CallSite) (c : Cursor) :
     Bool → Nat → Cache → List DroppedStore → Proto → Nat → Cache → List DroppedStore → Prop
   | empty {a : Bool} {p : Nat} {cache cache' : Cache} {d : DroppedStore}
       {dr dr' : List DroppedStore} {q : Proto} {c' : Cursor} : d.at_ = p →
       (inlineInsn cache (d :: dr) targets.isSome).run (atPos c p) =
         .ok (some (q, cache', dr'), c') →
-      Iter fr ro targets c a p cache (d :: dr) { q with pos := p } c'.pos cache' dr'
-  | main {a : Bool} {p p1 p2 : Nat} {cache cache' : Cache} {dr dr' : List DroppedStore}
+      Iter fr ro targets callSites c a p cache (d :: dr) { q with pos := p } c'.pos cache' dr'
+  | main {a : Bool} {p p1 p2 p3 : Nat} {cache cache' : Cache} {dr dr' : List DroppedStore}
       {counter : Option (Nat × Nat)} {q : Proto} {c' : Cursor} :
       PadRead c p p1 → CounterRead fr c p1 counter p2 →
       ProtoRead fr ro targets.isSome c p2
-        (if targets.any (sortedContains · p1) then {} else cache) dr a q c' cache' dr' →
-      Iter fr ro targets c a p cache dr { q with pos := p1, counter } c'.pos cache' dr'
+        (if targets.any (sortedContains · p1) then { pe := fr.mode.pe } else cache) dr a q c' cache' dr' →
+      NopRead fr callSites c q c'.pos p3 →
+      Iter fr ro targets callSites c a p cache dr { q with pos := p1, counter } p3 cache' dr'
 
 /-- Iterations one after the other; `a`: every proto so far is an `arg`. -/
-inductive Iters (fr : Frame) (ro : ByteArray) (targets : Option (Array Nat)) (c : Cursor) :
+inductive Iters (fr : Frame) (ro : ByteArray) (targets : Option (Array Nat))
+    (callSites : Array CallSite) (c : Cursor) :
     Bool → Nat → Cache → List DroppedStore → List Proto → Nat → List DroppedStore → Prop
   | nil (a : Bool) (p : Nat) (cache : Cache) (dr : List DroppedStore) :
-      Iters fr ro targets c a p cache dr [] p dr
+      Iters fr ro targets callSites c a p cache dr [] p dr
   | cons {a : Bool} {p p' pe : Nat} {cache cache' : Cache} {dr dr' dre : List DroppedStore}
       {q : Proto} {qs : List Proto} :
-      Iter fr ro targets c a p cache dr q p' cache' dr' →
-      Iters fr ro targets c (a && q.op == .arg) p' cache' dr' qs pe dre →
-      Iters fr ro targets c a p cache dr (q :: qs) pe dre
+      Iter fr ro targets callSites c a p cache dr q p' cache' dr' →
+      Iters fr ro targets callSites c (a && q.op == .arg) p' cache' dr' qs pe dre →
+      Iters fr ro targets callSites c a p cache dr (q :: qs) pe dre
 
 /-! ### Failed attempts -/
 
@@ -432,17 +445,46 @@ theorem argInsn_none {mode : Mode} {c c' : Cursor}
 /-! ### The loop -/
 
 set_option maxHeartbeats 1000000 in
+/-- What `nopStep` reads: PE's `nop` after a call with a landing pad (`NopRead`). -/
+theorem nopStep_read {fr : Frame} {callSites : Array CallSite} {c c' c'' : Cursor} {q : Proto}
+    {u : Unit} (h : (nopStep fr.mode callSites q).run c' = .ok (u, c''))
+    (hc : c' = atPos c c'.pos) :
+    NopRead fr callSites c q c'.pos c''.pos ∧ c'' = atPos c c''.pos := by
+  unfold nopStep at h
+  split at h
+  · rename_i hn
+    obtain ⟨x, c1, h1, h⟩ := bind_ok h
+    obtain ⟨hx, hc1⟩ := get_run h1
+    rw [hx, hc1] at h
+    by_cases hb : (!(c'.code[c'.pos]? == some 0x90 && c'.relocsHere 1 == [])) = true
+    · simp only [hb, ↓reduceIte] at h
+      obtain ⟨_, _, h2, -⟩ := bind_ok h; exact (err_ok h2).elim
+    simp only [hb, Bool.false_eq_true, ↓reduceIte] at h
+    rw [run_setPos] at h
+    cases h
+    have hb' : (c'.code[c'.pos]? == some 0x90 && c'.relocsHere 1 == []) = true := by simpa using hb
+    simp only [Bool.and_eq_true, beq_iff_eq] at hb'
+    obtain ⟨h1, h2⟩ := hb'
+    have hcode : c'.code = c.code := by rw [hc]
+    refine ⟨.nop hn (by rw [← hcode]; exact h1) (by rw [← hc]; simpa using h2), ?_⟩
+    rw [hc]
+  · rename_i hn
+    obtain ⟨rfl, rfl⟩ := pure_ok h
+    exact ⟨.none (by simpa using hn), hc⟩
+
+set_option maxHeartbeats 2000000 in
 /-- What a successful `instructions` read (see the module comment): the protos, a chain of
 iterations from the cursor with an empty cache and every dropped store, ending at the cursor
 it returns with no dropped store left, at the code's end or at the first counter stub (the
 entry's, or the first loop head's). -/
 theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedStore}
-    {targets : Option (Array Nat)} {entryStub : Option Nat} {c c' : Cursor}
-    {protos : Array Proto} {padded : Array Bool}
-    (h : (instructions fr ro dropped targets entryStub).run c = .ok ((protos, padded), c')) :
-    Iters fr ro targets c true c.pos {} dropped protos.toList c'.pos [] ∧ c' = atPos c c'.pos ∧
-      padded.size = protos.size ∧
-      (c.code.size ≤ c'.pos ∨ some c'.pos = entryStub ∨
+    {targets : Option (Array Nat)} {entryStub : Option Nat} {limit : Nat}
+    {callSites : Array CallSite} {c c' : Cursor} {protos : Array Proto} {padded : Array Bool}
+    (h : (instructions fr ro dropped targets entryStub limit callSites).run c =
+      .ok ((protos, padded), c')) :
+    Iters fr ro targets callSites c true c.pos { pe := fr.mode.pe } dropped protos.toList c'.pos [] ∧
+      c' = atPos c c'.pos ∧ padded.size = protos.size ∧
+      (limit ≤ c'.pos ∨ some c'.pos = entryStub ∨
         ∃ k, ∃ hk : k < protos.size, (protos[k].counter.map (·.1)) = some c'.pos ∧
           ∀ j (hj : j < k), protos[j].counter = none) := by
   have lrGet : PosOnly (get : DM Cursor) := by
@@ -467,11 +509,23 @@ theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedS
   have po_retSeq : ∀ fr, PosOnly (retSeq fr) := by
     intro fr; unfold retSeq; repeat (first | exact PosOnly.pure _ | exact lrPure _ | exact PosOnly.pos | exact PosOnly.tryItem | exact PosOnly.setPos _ | exact PosOnly.fuel | exact PosOnly.item | exact PosOnly.err _ _ | exact lrGet | exact lrExpect _ | exact lrTake _ | refine PosOnly.forIn_range _ _ _ (fun _ _ => ?_) | refine PosOnly.forIn_list _ _ _ (fun _ _ => ?_) | refine PosOnly.bind ?_ (fun _ => ?_) | split | (dsimp only))
   have po_dense : ∀ fr, PosOnly (denseSwitch fr) := by
-    intro fr; unfold denseSwitch; repeat (first | exact PosOnly.pure _ | exact lrPure _ | exact PosOnly.pos | exact PosOnly.tryItem | exact PosOnly.setPos _ | exact PosOnly.fuel | exact PosOnly.item | exact PosOnly.err _ _ | exact lrGet | exact lrExpect _ | exact lrTake _ | refine PosOnly.forIn_range _ _ _ (fun _ _ => ?_) | refine PosOnly.forIn_list _ _ _ (fun _ _ => ?_) | refine PosOnly.bind ?_ (fun _ => ?_) | split | (dsimp only))
+    intro fr c b c' h
+    unfold denseSwitch at h
+    obtain ⟨x, c1, h1, h2⟩ := bind_ok h
+    obtain ⟨rfl, rfl⟩ := get_run h1
+    split at h2
+    · obtain ⟨u, c2, h3, h⟩ := bind_ok h2
+      rw [run_setPos] at h3; cases h3
+      obtain ⟨ts, c3, h4, h⟩ := bind_ok h
+      obtain ⟨_, _, _, -, -, -, e⟩ := table_read h4
+      split at h
+      · obtain ⟨-, rfl⟩ := pure_ok h; rw [e]
+      · exact (err_ok h).elim
+    · obtain ⟨-, rfl⟩ := pure_ok h2; rfl
   have po_island : ∀ fr, PosOnly (islandCall fr) := by
-    intro fr; unfold islandCall; repeat (first | exact PosOnly.pure _ | exact lrPure _ | exact PosOnly.pos | exact PosOnly.tryItem | exact PosOnly.setPos _ | exact PosOnly.fuel | exact PosOnly.item | exact PosOnly.err _ _ | exact lrGet | exact lrExpect _ | exact lrTake _ | refine PosOnly.forIn_range _ _ _ (fun _ _ => ?_) | refine PosOnly.forIn_list _ _ _ (fun _ _ => ?_) | refine PosOnly.bind ?_ (fun _ => ?_) | split | (dsimp only))
+    intro fr c b c' h; exact (islandCall_read h).2
   have po_hargs : ∀ s fr p, PosOnly (handlerArgs s fr p) := by
-    intro s fr p; unfold handlerArgs; repeat (first | exact PosOnly.pure _ | exact lrPure _ | exact PosOnly.pos | exact PosOnly.tryItem | exact PosOnly.setPos _ | exact PosOnly.fuel | exact PosOnly.item | exact PosOnly.err _ _ | exact lrGet | exact lrExpect _ | exact lrTake _ | refine PosOnly.forIn_range _ _ _ (fun _ _ => ?_) | refine PosOnly.forIn_list _ _ _ (fun _ _ => ?_) | refine PosOnly.bind ?_ (fun _ => ?_) | split | (dsimp only))
+    intro s fr p c b c' h; obtain ⟨-, rfl⟩ := handlerArgs_ok h; rfl
   have po_table : ∀ n, PosOnly (table n) := by
     intro n; unfold table DM.tablePadding DM.tableEntry; repeat (first | exact PosOnly.pure _ | exact lrPure _ | exact PosOnly.pos | exact PosOnly.tryItem | exact PosOnly.setPos _ | exact PosOnly.fuel | exact PosOnly.item | exact PosOnly.err _ _ | exact lrGet | exact lrExpect _ | exact lrTake _ | refine PosOnly.forIn_range _ _ _ (fun _ _ => ?_) | refine PosOnly.forIn_list _ _ _ (fun _ _ => ?_) | refine PosOnly.bind ?_ (fun _ => ?_) | split | (dsimp only))
   have po_then : ∀ op n h, PosOnly (thenSeq op n h) := by
@@ -487,6 +541,7 @@ theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedS
     | unreachable _ => rfl
     | jmp _ => rfl
     | island h _ => exact po_island _ _ _ _ h
+    | resume _ _ _ => rfl
     | dense h => exact po_dense _ _ _ _ h
   have ite_ok : ∀ {α : Type} {p : Prop} [Decidable p] {x y : DM α} {c c' : Cursor} {a : α},
       (if p then x else y).run c = .ok (a, c') →
@@ -503,8 +558,8 @@ theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedS
       ∀ j (hj : j < k), protos[j].counter = none
   let I : Array Proto × Array Bool × Cache × Option Nat × List DroppedStore → Cursor → Prop :=
     fun st cur => cur = atPos c cur.pos ∧ st.2.1.size = st.1.size ∧ EP st.1 st.2.2.2.1 ∧
-      ∀ qs pe dre, Iters fr ro targets c (st.1.all (·.op == .arg)) cur.pos st.2.2.1 st.2.2.2.2 qs pe dre →
-        Iters fr ro targets c true c.pos {} dropped (st.1.toList ++ qs) pe dre
+      ∀ qs pe dre, Iters fr ro targets callSites c (st.1.all (·.op == .arg)) cur.pos st.2.2.1 st.2.2.2.2 qs pe dre →
+        Iters fr ro targets callSites c true c.pos { pe := fr.mode.pe } dropped (st.1.toList ++ qs) pe dre
   obtain ⟨st, c2, h2, h⟩ := bind_ok h
   have key := forIn_range_inv I I _ ?step _ _ c c2 st ?init h2
   case init => exact ⟨rfl, rfl, .inl rfl, fun qs pe dre h => by simpa using h⟩
@@ -530,23 +585,25 @@ theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedS
     have fin : ∀ (p1 p2 : Nat) (counter : Option (Nat × Nat)) (b : Bool) (q : Proto) (c' : Cursor)
         (cache0 cache' : Cache) (dr' : List DroppedStore) (endPos' : Option Nat),
         PadRead c cur.pos p1 → CounterRead fr c p1 counter p2 →
-        cache0 = (if targets.any (sortedContains · p1) then {} else cache) →
+        cache0 = (if targets.any (sortedContains · p1) then { pe := fr.mode.pe } else cache) →
         ProtoRead fr ro targets.isSome c p2 cache0 dr (protos.all (·.op == .arg)) q c' cache' dr' →
         c' = atPos c c'.pos →
         (endPos' = endPos ∨ ∃ t p3, counter = some (t, p3) ∧ protos.all (·.counter.isNone) = true ∧
           endPos' = some t) →
-        I (protos.push { q with pos := p1, counter }, padded.push b, cache', endPos', dr') c' := by
-      intro p1 p2 counter b q c' cache0 cache' dr' endPos' hpad hctr hc0 hpr hc' hE
+        ∀ (c'' : Cursor), (nopStep fr.mode callSites q).run c' = .ok ((), c'') →
+        I (protos.push { q with pos := p1, counter }, padded.push b, cache', endPos', dr') c'' := by
+      intro p1 p2 counter b q c' cache0 cache' dr' endPos' hpad hctr hc0 hpr hc' hE c'' hn
+      obtain ⟨hnr, hc''⟩ := nopStep_read hn hc'
       subst hc0
-      refine ⟨hc', by simp [hsz], ?_, fun qs pe dre hq => ?_⟩
+      refine ⟨hc'', by simp [hsz], ?_, fun qs pe dre hq => ?_⟩
       · rcases hE with rfl | ⟨t, p3, rfl, hall, rfl⟩
         · exact epPush _
         · refine .inr ⟨protos.size, by simp, by simp, fun j hj => ?_⟩
           rw [Array.getElem_push_lt hj]
           have := (Array.all_eq_true.mp hall) j hj
           simpa using this
-      · have it : Iter fr ro targets c (protos.all (·.op == .arg)) cur.pos cache dr
-            { q with pos := p1, counter } c'.pos cache' dr' := .main hpad hctr hpr
+      · have it : Iter fr ro targets callSites c (protos.all (·.op == .arg)) cur.pos cache dr
+            { q with pos := p1, counter } c''.pos cache' dr' := .main hpad hctr hpr hnr
         have := hJ _ _ _ (.cons it (by simpa [Array.all_push] using hq))
         simpa using this
     have finE : ∀ (d : DroppedStore) (dr0 : List DroppedStore) (q : Proto) (c' : Cursor)
@@ -558,18 +615,12 @@ theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedS
       intro d dr0 q c' cache' dr' hd hat hrun hc'
       subst hd
       refine ⟨hc', by simp [hsz], epPush _, fun qs pe dre hq => ?_⟩
-      have it : Iter fr ro targets c (protos.all (·.op == .arg)) cur.pos cache (d :: dr0)
+      have it : Iter fr ro targets callSites c (protos.all (·.op == .arg)) cur.pos cache (d :: dr0)
           { q with pos := cur.pos } c'.pos cache' dr' := .empty hat hrun
       have := hJ _ _ _ (.cons it (by simpa [Array.all_push] using hq))
       simpa using this
     obtain ⟨e, c3, h3, hr⟩ := bind_ok hr
-    have hae : e = decide (cur.pos ≥ cur.code.size) ∧ c3 = cur := by
-      unfold DM.atEnd at h3
-      obtain ⟨x, c4, h4, h5⟩ := bind_ok h3
-      obtain ⟨rfl, rfl⟩ := get_run h4
-      obtain ⟨rfl, rfl⟩ := pure_ok h5
-      exact ⟨rfl, rfl⟩
-    obtain ⟨rfl, rfl⟩ := hae
+    obtain ⟨rfl, rfl⟩ := pos_run' h3
     obtain ⟨p0, c4, h4, hr⟩ := bind_ok hr
     obtain ⟨rfl, rfl⟩ := pos_run' h4
     rcases ite_ok hr with ⟨-, hr⟩ | ⟨hnot, hr⟩
@@ -605,7 +656,7 @@ theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedS
             · rw [hc7p] at h9
               obtain ⟨n1, hn1, rfl⟩ := run_tryItem_some h9
               obtain ⟨n2, hn2, rfl⟩ := run_tryItem_some h10
-              have hctr := CounterRead.check hC (Dec.cons hn1 (Dec.single hn2))
+              have hctr := CounterRead.check (by simp only [Bool.and_eq_true] at hC; exact hC.1) (Dec.cons hn1 (Dec.single hn2))
               obtain ⟨p', c11, h11, hr⟩ := bind_ok hr
               obtain ⟨rfl, rfl⟩ := pos_run' h11
               have hcx : atPos (atPos (atPos c p) (p + n1)) (p + n1 + n2) = atPos c (p + n1 + n2) := rfl
@@ -627,17 +678,25 @@ theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedS
                       rcases o with _ | ⟨q, cache', dr'⟩
                       · have hcy14 : _ = atPos c _ := (inlineInsn_none h14).trans hcy13
                         obtain ⟨q, c15, h15, hr⟩ := bind_ok hr
+                        try dsimp only at hr
+                        obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
                         obtain ⟨rfl, rfl⟩ := pure_ok hr
-                        exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.insn hna h13 h14 h15) (chain hcy14 (insn_pos h15)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
-                      · obtain ⟨rfl, rfl⟩ := pure_ok hr
-                        exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.inline hna h13 h14) (chain hcy13 (po_inline _ _ _ _ _ _ h14)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
+                        exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.insn hna h13 h14 h15) (chain hcy14 (insn_pos h15)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
+                      · try dsimp only at hr
+                        obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
+                        obtain ⟨rfl, rfl⟩ := pure_ok hr
+                        exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.inline hna h13 h14) (chain hcy13 (po_inline _ _ _ _ _ _ h14)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
                     · obtain ⟨-, hr⟩ := (ite_ok hr).resolve_left (fun ⟨hn, _⟩ => by simp at hn)
+                      try dsimp only at hr
+                      obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
                       obtain ⟨rfl, rfl⟩ := pure_ok hr
-                      exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.call hna h13) (chain hcy (po_call _ _ _ _ _ h13)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
+                      exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.call hna h13) (chain hcy (po_call _ _ _ _ _ h13)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
                   · obtain ⟨-, hr⟩ := (ite_ok hr).resolve_left (fun ⟨hn, _⟩ => by simp at hn)
                     obtain ⟨-, hr⟩ := (ite_ok hr).resolve_left (fun ⟨hn, _⟩ => by simp at hn)
+                    try dsimp only at hr
+                    obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
                     obtain ⟨rfl, rfl⟩ := pure_ok hr
-                    exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (by rw [hA]; exact .arg h12') (chain hcx (po_arg _ _ _ _ h12)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
+                    exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (by rw [hA]; exact .arg h12') (chain hcx (po_arg _ _ _ _ h12)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
                 · have hna := (Or.inl ⟨Bool.eq_false_iff.mpr hA, hcx⟩ : NoArg fr c _ _ _)
                   have hcy := hcx
                   obtain ⟨-, hr⟩ := (ite_ok hr).resolve_right (fun ⟨hn, _⟩ => by simp at hn)
@@ -649,13 +708,19 @@ theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedS
                     rcases o with _ | ⟨q, cache', dr'⟩
                     · have hcy14 : _ = atPos c _ := (inlineInsn_none h14).trans hcy13
                       obtain ⟨q, c15, h15, hr⟩ := bind_ok hr
+                      try dsimp only at hr
+                      obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
                       obtain ⟨rfl, rfl⟩ := pure_ok hr
-                      exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.insn hna h13 h14 h15) (chain hcy14 (insn_pos h15)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
-                    · obtain ⟨rfl, rfl⟩ := pure_ok hr
-                      exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.inline hna h13 h14) (chain hcy13 (po_inline _ _ _ _ _ _ h14)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
+                      exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.insn hna h13 h14 h15) (chain hcy14 (insn_pos h15)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
+                    · try dsimp only at hr
+                      obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
+                      obtain ⟨rfl, rfl⟩ := pure_ok hr
+                      exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.inline hna h13 h14) (chain hcy13 (po_inline _ _ _ _ _ _ h14)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
                   · obtain ⟨-, hr⟩ := (ite_ok hr).resolve_left (fun ⟨hn, _⟩ => by simp at hn)
+                    try dsimp only at hr
+                    obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
                     obtain ⟨rfl, rfl⟩ := pure_ok hr
-                    exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.call hna h13) (chain hcy (po_call _ _ _ _ _ h13)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
+                    exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.call hna h13) (chain hcy (po_call _ _ _ _ _ h13)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
             · obtain ⟨u, c11, h11, hr⟩ := bind_ok hr
               rw [run_setPos] at h11
               cases h11
@@ -677,17 +742,25 @@ theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedS
                     rcases o with _ | ⟨q, cache', dr'⟩
                     · have hcy14 : _ = atPos c _ := (inlineInsn_none h14).trans hcy13
                       obtain ⟨q, c15, h15, hr⟩ := bind_ok hr
+                      try dsimp only at hr
+                      obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
                       obtain ⟨rfl, rfl⟩ := pure_ok hr
-                      exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.insn hna h13 h14 h15) (chain hcy14 (insn_pos h15)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
-                    · obtain ⟨rfl, rfl⟩ := pure_ok hr
-                      exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.inline hna h13 h14) (chain hcy13 (po_inline _ _ _ _ _ _ h14)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
+                      exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.insn hna h13 h14 h15) (chain hcy14 (insn_pos h15)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
+                    · try dsimp only at hr
+                      obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
+                      obtain ⟨rfl, rfl⟩ := pure_ok hr
+                      exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.inline hna h13 h14) (chain hcy13 (po_inline _ _ _ _ _ _ h14)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
                   · obtain ⟨-, hr⟩ := (ite_ok hr).resolve_left (fun ⟨hn, _⟩ => by simp at hn)
+                    try dsimp only at hr
+                    obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
                     obtain ⟨rfl, rfl⟩ := pure_ok hr
-                    exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.call hna h13) (chain hcy (po_call _ _ _ _ _ h13)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
+                    exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.call hna h13) (chain hcy (po_call _ _ _ _ _ h13)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
                 · obtain ⟨-, hr⟩ := (ite_ok hr).resolve_left (fun ⟨hn, _⟩ => by simp at hn)
                   obtain ⟨-, hr⟩ := (ite_ok hr).resolve_left (fun ⟨hn, _⟩ => by simp at hn)
+                  try dsimp only at hr
+                  obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
                   obtain ⟨rfl, rfl⟩ := pure_ok hr
-                  exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (by rw [hA]; exact .arg h12') (chain hcx (po_arg _ _ _ _ h12)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
+                  exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (by rw [hA]; exact .arg h12') (chain hcx (po_arg _ _ _ _ h12)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
               · have hna := (Or.inl ⟨Bool.eq_false_iff.mpr hA, hcx⟩ : NoArg fr c _ _ _)
                 have hcy := hcx
                 obtain ⟨-, hr⟩ := (ite_ok hr).resolve_right (fun ⟨hn, _⟩ => by simp at hn)
@@ -699,13 +772,19 @@ theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedS
                   rcases o with _ | ⟨q, cache', dr'⟩
                   · have hcy14 : _ = atPos c _ := (inlineInsn_none h14).trans hcy13
                     obtain ⟨q, c15, h15, hr⟩ := bind_ok hr
+                    try dsimp only at hr
+                    obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
                     obtain ⟨rfl, rfl⟩ := pure_ok hr
-                    exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.insn hna h13 h14 h15) (chain hcy14 (insn_pos h15)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
-                  · obtain ⟨rfl, rfl⟩ := pure_ok hr
-                    exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.inline hna h13 h14) (chain hcy13 (po_inline _ _ _ _ _ _ h14)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
+                    exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.insn hna h13 h14 h15) (chain hcy14 (insn_pos h15)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
+                  · try dsimp only at hr
+                    obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
+                    obtain ⟨rfl, rfl⟩ := pure_ok hr
+                    exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.inline hna h13 h14) (chain hcy13 (po_inline _ _ _ _ _ _ h14)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
                 · obtain ⟨-, hr⟩ := (ite_ok hr).resolve_left (fun ⟨hn, _⟩ => by simp at hn)
+                  try dsimp only at hr
+                  obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
                   obtain ⟨rfl, rfl⟩ := pure_ok hr
-                  exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.call hna h13) (chain hcy (po_call _ _ _ _ _ h13)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
+                  exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.call hna h13) (chain hcy (po_call _ _ _ _ _ h13)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
           · have hctr := CounterRead.none (fr := fr) (c := c) p
             have hcx := hc7p
             rcases ite_ok hr with ⟨hA, hr⟩ | ⟨hA, hr⟩
@@ -724,17 +803,25 @@ theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedS
                   rcases o with _ | ⟨q, cache', dr'⟩
                   · have hcy14 : _ = atPos c _ := (inlineInsn_none h14).trans hcy13
                     obtain ⟨q, c15, h15, hr⟩ := bind_ok hr
+                    try dsimp only at hr
+                    obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
                     obtain ⟨rfl, rfl⟩ := pure_ok hr
-                    exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.insn hna h13 h14 h15) (chain hcy14 (insn_pos h15)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
-                  · obtain ⟨rfl, rfl⟩ := pure_ok hr
-                    exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.inline hna h13 h14) (chain hcy13 (po_inline _ _ _ _ _ _ h14)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
+                    exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.insn hna h13 h14 h15) (chain hcy14 (insn_pos h15)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
+                  · try dsimp only at hr
+                    obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
+                    obtain ⟨rfl, rfl⟩ := pure_ok hr
+                    exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.inline hna h13 h14) (chain hcy13 (po_inline _ _ _ _ _ _ h14)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
                 · obtain ⟨-, hr⟩ := (ite_ok hr).resolve_left (fun ⟨hn, _⟩ => by simp at hn)
+                  try dsimp only at hr
+                  obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
                   obtain ⟨rfl, rfl⟩ := pure_ok hr
-                  exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.call hna h13) (chain hcy (po_call _ _ _ _ _ h13)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
+                  exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.call hna h13) (chain hcy (po_call _ _ _ _ _ h13)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
               · obtain ⟨-, hr⟩ := (ite_ok hr).resolve_left (fun ⟨hn, _⟩ => by simp at hn)
                 obtain ⟨-, hr⟩ := (ite_ok hr).resolve_left (fun ⟨hn, _⟩ => by simp at hn)
+                try dsimp only at hr
+                obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
                 obtain ⟨rfl, rfl⟩ := pure_ok hr
-                exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (by rw [hA]; exact .arg h12') (chain hcx (po_arg _ _ _ _ h12)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
+                exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (by rw [hA]; exact .arg h12') (chain hcx (po_arg _ _ _ _ h12)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
             · have hna := (Or.inl ⟨Bool.eq_false_iff.mpr hA, hcx⟩ : NoArg fr c _ _ _)
               have hcy := hcx
               obtain ⟨-, hr⟩ := (ite_ok hr).resolve_right (fun ⟨hn, _⟩ => by simp at hn)
@@ -746,13 +833,19 @@ theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedS
                 rcases o with _ | ⟨q, cache', dr'⟩
                 · have hcy14 : _ = atPos c _ := (inlineInsn_none h14).trans hcy13
                   obtain ⟨q, c15, h15, hr⟩ := bind_ok hr
+                  try dsimp only at hr
+                  obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
                   obtain ⟨rfl, rfl⟩ := pure_ok hr
-                  exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.insn hna h13 h14 h15) (chain hcy14 (insn_pos h15)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
-                · obtain ⟨rfl, rfl⟩ := pure_ok hr
-                  exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.inline hna h13 h14) (chain hcy13 (po_inline _ _ _ _ _ _ h14)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
+                  exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.insn hna h13 h14 h15) (chain hcy14 (insn_pos h15)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
+                · try dsimp only at hr
+                  obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
+                  obtain ⟨rfl, rfl⟩ := pure_ok hr
+                  exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.inline hna h13 h14) (chain hcy13 (po_inline _ _ _ _ _ _ h14)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
               · obtain ⟨-, hr⟩ := (ite_ok hr).resolve_left (fun ⟨hn, _⟩ => by simp at hn)
+                try dsimp only at hr
+                obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
                 obtain ⟨rfl, rfl⟩ := pure_ok hr
-                exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.call hna h13) (chain hcy (po_call _ _ _ _ _ h13)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
+                exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.call hna h13) (chain hcy (po_call _ _ _ _ _ h13)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
       · obtain ⟨rfl, rfl⟩ := pure_ok hr
         have h6' := h6
         rw [hcur] at h6'
@@ -783,7 +876,7 @@ theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedS
         · rw [hc7p] at h9
           obtain ⟨n1, hn1, rfl⟩ := run_tryItem_some h9
           obtain ⟨n2, hn2, rfl⟩ := run_tryItem_some h10
-          have hctr := CounterRead.check hC (Dec.cons hn1 (Dec.single hn2))
+          have hctr := CounterRead.check (by simp only [Bool.and_eq_true] at hC; exact hC.1) (Dec.cons hn1 (Dec.single hn2))
           obtain ⟨p', c11, h11, hr⟩ := bind_ok hr
           obtain ⟨rfl, rfl⟩ := pos_run' h11
           have hcx : atPos (atPos (atPos c p) (p + n1)) (p + n1 + n2) = atPos c (p + n1 + n2) := rfl
@@ -805,17 +898,25 @@ theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedS
                   rcases o with _ | ⟨q, cache', dr'⟩
                   · have hcy14 : _ = atPos c _ := (inlineInsn_none h14).trans hcy13
                     obtain ⟨q, c15, h15, hr⟩ := bind_ok hr
+                    try dsimp only at hr
+                    obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
                     obtain ⟨rfl, rfl⟩ := pure_ok hr
-                    exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.insn hna h13 h14 h15) (chain hcy14 (insn_pos h15)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
-                  · obtain ⟨rfl, rfl⟩ := pure_ok hr
-                    exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.inline hna h13 h14) (chain hcy13 (po_inline _ _ _ _ _ _ h14)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
+                    exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.insn hna h13 h14 h15) (chain hcy14 (insn_pos h15)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
+                  · try dsimp only at hr
+                    obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
+                    obtain ⟨rfl, rfl⟩ := pure_ok hr
+                    exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.inline hna h13 h14) (chain hcy13 (po_inline _ _ _ _ _ _ h14)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
                 · obtain ⟨-, hr⟩ := (ite_ok hr).resolve_left (fun ⟨hn, _⟩ => by simp at hn)
+                  try dsimp only at hr
+                  obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
                   obtain ⟨rfl, rfl⟩ := pure_ok hr
-                  exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.call hna h13) (chain hcy (po_call _ _ _ _ _ h13)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
+                  exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.call hna h13) (chain hcy (po_call _ _ _ _ _ h13)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
               · obtain ⟨-, hr⟩ := (ite_ok hr).resolve_left (fun ⟨hn, _⟩ => by simp at hn)
                 obtain ⟨-, hr⟩ := (ite_ok hr).resolve_left (fun ⟨hn, _⟩ => by simp at hn)
+                try dsimp only at hr
+                obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
                 obtain ⟨rfl, rfl⟩ := pure_ok hr
-                exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (by rw [hA]; exact .arg h12') (chain hcx (po_arg _ _ _ _ h12)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
+                exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (by rw [hA]; exact .arg h12') (chain hcx (po_arg _ _ _ _ h12)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
             · have hna := (Or.inl ⟨Bool.eq_false_iff.mpr hA, hcx⟩ : NoArg fr c _ _ _)
               have hcy := hcx
               obtain ⟨-, hr⟩ := (ite_ok hr).resolve_right (fun ⟨hn, _⟩ => by simp at hn)
@@ -827,13 +928,19 @@ theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedS
                 rcases o with _ | ⟨q, cache', dr'⟩
                 · have hcy14 : _ = atPos c _ := (inlineInsn_none h14).trans hcy13
                   obtain ⟨q, c15, h15, hr⟩ := bind_ok hr
+                  try dsimp only at hr
+                  obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
                   obtain ⟨rfl, rfl⟩ := pure_ok hr
-                  exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.insn hna h13 h14 h15) (chain hcy14 (insn_pos h15)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
-                · obtain ⟨rfl, rfl⟩ := pure_ok hr
-                  exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.inline hna h13 h14) (chain hcy13 (po_inline _ _ _ _ _ _ h14)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
+                  exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.insn hna h13 h14 h15) (chain hcy14 (insn_pos h15)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
+                · try dsimp only at hr
+                  obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
+                  obtain ⟨rfl, rfl⟩ := pure_ok hr
+                  exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.inline hna h13 h14) (chain hcy13 (po_inline _ _ _ _ _ _ h14)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
               · obtain ⟨-, hr⟩ := (ite_ok hr).resolve_left (fun ⟨hn, _⟩ => by simp at hn)
+                try dsimp only at hr
+                obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
                 obtain ⟨rfl, rfl⟩ := pure_ok hr
-                exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.call hna h13) (chain hcy (po_call _ _ _ _ _ h13)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
+                exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.call hna h13) (chain hcy (po_call _ _ _ _ _ h13)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
         · obtain ⟨u, c11, h11, hr⟩ := bind_ok hr
           rw [run_setPos] at h11
           cases h11
@@ -855,17 +962,25 @@ theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedS
                 rcases o with _ | ⟨q, cache', dr'⟩
                 · have hcy14 : _ = atPos c _ := (inlineInsn_none h14).trans hcy13
                   obtain ⟨q, c15, h15, hr⟩ := bind_ok hr
+                  try dsimp only at hr
+                  obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
                   obtain ⟨rfl, rfl⟩ := pure_ok hr
-                  exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.insn hna h13 h14 h15) (chain hcy14 (insn_pos h15)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
-                · obtain ⟨rfl, rfl⟩ := pure_ok hr
-                  exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.inline hna h13 h14) (chain hcy13 (po_inline _ _ _ _ _ _ h14)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
+                  exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.insn hna h13 h14 h15) (chain hcy14 (insn_pos h15)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
+                · try dsimp only at hr
+                  obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
+                  obtain ⟨rfl, rfl⟩ := pure_ok hr
+                  exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.inline hna h13 h14) (chain hcy13 (po_inline _ _ _ _ _ _ h14)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
               · obtain ⟨-, hr⟩ := (ite_ok hr).resolve_left (fun ⟨hn, _⟩ => by simp at hn)
+                try dsimp only at hr
+                obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
                 obtain ⟨rfl, rfl⟩ := pure_ok hr
-                exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.call hna h13) (chain hcy (po_call _ _ _ _ _ h13)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
+                exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.call hna h13) (chain hcy (po_call _ _ _ _ _ h13)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
             · obtain ⟨-, hr⟩ := (ite_ok hr).resolve_left (fun ⟨hn, _⟩ => by simp at hn)
               obtain ⟨-, hr⟩ := (ite_ok hr).resolve_left (fun ⟨hn, _⟩ => by simp at hn)
+              try dsimp only at hr
+              obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
               obtain ⟨rfl, rfl⟩ := pure_ok hr
-              exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (by rw [hA]; exact .arg h12') (chain hcx (po_arg _ _ _ _ h12)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
+              exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (by rw [hA]; exact .arg h12') (chain hcx (po_arg _ _ _ _ h12)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
           · have hna := (Or.inl ⟨Bool.eq_false_iff.mpr hA, hcx⟩ : NoArg fr c _ _ _)
             have hcy := hcx
             obtain ⟨-, hr⟩ := (ite_ok hr).resolve_right (fun ⟨hn, _⟩ => by simp at hn)
@@ -877,13 +992,19 @@ theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedS
               rcases o with _ | ⟨q, cache', dr'⟩
               · have hcy14 : _ = atPos c _ := (inlineInsn_none h14).trans hcy13
                 obtain ⟨q, c15, h15, hr⟩ := bind_ok hr
+                try dsimp only at hr
+                obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
                 obtain ⟨rfl, rfl⟩ := pure_ok hr
-                exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.insn hna h13 h14 h15) (chain hcy14 (insn_pos h15)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
-              · obtain ⟨rfl, rfl⟩ := pure_ok hr
-                exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.inline hna h13 h14) (chain hcy13 (po_inline _ _ _ _ _ _ h14)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
+                exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.insn hna h13 h14 h15) (chain hcy14 (insn_pos h15)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
+              · try dsimp only at hr
+                obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
+                obtain ⟨rfl, rfl⟩ := pure_ok hr
+                exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.inline hna h13 h14) (chain hcy13 (po_inline _ _ _ _ _ _ h14)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
             · obtain ⟨-, hr⟩ := (ite_ok hr).resolve_left (fun ⟨hn, _⟩ => by simp at hn)
+              try dsimp only at hr
+              obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
               obtain ⟨rfl, rfl⟩ := pure_ok hr
-              exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.call hna h13) (chain hcy (po_call _ _ _ _ _ h13)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
+              exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.call hna h13) (chain hcy (po_call _ _ _ _ _ h13)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
       · have hctr := CounterRead.none (fr := fr) (c := c) p
         have hcx := hc7p
         rcases ite_ok hr with ⟨hA, hr⟩ | ⟨hA, hr⟩
@@ -902,17 +1023,25 @@ theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedS
               rcases o with _ | ⟨q, cache', dr'⟩
               · have hcy14 : _ = atPos c _ := (inlineInsn_none h14).trans hcy13
                 obtain ⟨q, c15, h15, hr⟩ := bind_ok hr
+                try dsimp only at hr
+                obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
                 obtain ⟨rfl, rfl⟩ := pure_ok hr
-                exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.insn hna h13 h14 h15) (chain hcy14 (insn_pos h15)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
-              · obtain ⟨rfl, rfl⟩ := pure_ok hr
-                exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.inline hna h13 h14) (chain hcy13 (po_inline _ _ _ _ _ _ h14)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
+                exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.insn hna h13 h14 h15) (chain hcy14 (insn_pos h15)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
+              · try dsimp only at hr
+                obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
+                obtain ⟨rfl, rfl⟩ := pure_ok hr
+                exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.inline hna h13 h14) (chain hcy13 (po_inline _ _ _ _ _ _ h14)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
             · obtain ⟨-, hr⟩ := (ite_ok hr).resolve_left (fun ⟨hn, _⟩ => by simp at hn)
+              try dsimp only at hr
+              obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
               obtain ⟨rfl, rfl⟩ := pure_ok hr
-              exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.call hna h13) (chain hcy (po_call _ _ _ _ _ h13)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
+              exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.call hna h13) (chain hcy (po_call _ _ _ _ _ h13)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
           · obtain ⟨-, hr⟩ := (ite_ok hr).resolve_left (fun ⟨hn, _⟩ => by simp at hn)
             obtain ⟨-, hr⟩ := (ite_ok hr).resolve_left (fun ⟨hn, _⟩ => by simp at hn)
+            try dsimp only at hr
+            obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
             obtain ⟨rfl, rfl⟩ := pure_ok hr
-            exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (by rw [hA]; exact .arg h12') (chain hcx (po_arg _ _ _ _ h12)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
+            exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (by rw [hA]; exact .arg h12') (chain hcx (po_arg _ _ _ _ h12)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
         · have hna := (Or.inl ⟨Bool.eq_false_iff.mpr hA, hcx⟩ : NoArg fr c _ _ _)
           have hcy := hcx
           obtain ⟨-, hr⟩ := (ite_ok hr).resolve_right (fun ⟨hn, _⟩ => by simp at hn)
@@ -924,25 +1053,25 @@ theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedS
             rcases o with _ | ⟨q, cache', dr'⟩
             · have hcy14 : _ = atPos c _ := (inlineInsn_none h14).trans hcy13
               obtain ⟨q, c15, h15, hr⟩ := bind_ok hr
+              try dsimp only at hr
+              obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
               obtain ⟨rfl, rfl⟩ := pure_ok hr
-              exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.insn hna h13 h14 h15) (chain hcy14 (insn_pos h15)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
-            · obtain ⟨rfl, rfl⟩ := pure_ok hr
-              exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.inline hna h13 h14) (chain hcy13 (po_inline _ _ _ _ _ _ h14)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
+              exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.insn hna h13 h14 h15) (chain hcy14 (insn_pos h15)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
+            · try dsimp only at hr
+              obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
+              obtain ⟨rfl, rfl⟩ := pure_ok hr
+              exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.inline hna h13 h14) (chain hcy13 (po_inline _ _ _ _ _ _ h14)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
           · obtain ⟨-, hr⟩ := (ite_ok hr).resolve_left (fun ⟨hn, _⟩ => by simp at hn)
+            try dsimp only at hr
+            obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
             obtain ⟨rfl, rfl⟩ := pure_ok hr
-            exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.call hna h13) (chain hcy (po_call _ _ _ _ _ h13)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩)
+            exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (.call hna h13) (chain hcy (po_call _ _ _ _ _ h13)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
   have hI : I st c2 := key.elim id id
   obtain ⟨protos', padded', cache', endPos', dr'⟩ := st
   obtain ⟨hc2, hsz, hep, hJ⟩ := hI
   dsimp only at hsz hep hJ
   obtain ⟨e, c3, h3, h⟩ := bind_ok h
-  have hae : e = decide (c2.pos ≥ c2.code.size) ∧ c3 = c2 := by
-    unfold DM.atEnd at h3
-    obtain ⟨x, c4, h4, h5⟩ := bind_ok h3
-    obtain ⟨rfl, rfl⟩ := get_run h4
-    obtain ⟨rfl, rfl⟩ := pure_ok h5
-    exact ⟨rfl, rfl⟩
-  obtain ⟨rfl, rfl⟩ := hae
+  obtain ⟨rfl, rfl⟩ := pos_run' h3
   obtain ⟨p0, c4, h4, h⟩ := bind_ok h
   obtain ⟨rfl, rfl⟩ := pos_run' h4
   rcases ite_ok h with ⟨-, h⟩ | ⟨hfin, h⟩
@@ -957,31 +1086,25 @@ theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedS
     obtain ⟨he, rfl⟩ := pure_ok h
     cases he
     refine ⟨by simpa using hJ [] _ [] (.nil _ _ _ _), hc2, hsz, ?_⟩
-    have hcode : c4.code = c.code := (congrArg Cursor.code hc2).trans rfl
-    have hfin' : c4.pos < c4.code.size → some c4.pos = endPos' := by
+    have hfin' : c4.pos < limit → some c4.pos = endPos' := by
       simpa using hfin
-    rcases Nat.lt_or_ge c4.pos c4.code.size with h1 | h1
+    rcases Nat.lt_or_ge c4.pos limit with h1 | h1
     · replace h1 := hfin' h1
       rcases hep with h2 | h2
       · exact .inr (.inl (h1.trans h2))
       · obtain ⟨k, hk, h3, h4⟩ := h2
         exact .inr (.inr ⟨k, hk, h3.trans h1.symm, h4⟩)
-    · exact .inl (hcode ▸ h1)
+    · exact .inl h1
 
 /-- The cursor of a function's body at `p`: without a frame pointer with the frame size. -/
 def bodyCursor (c : Cursor) (mode : Mode) (frameSize p : Nat) : Cursor :=
   let sp := if mode.framePointer then c.spFrame else some (BitVec.ofNat 32 frameSize)
   { c with pos := p, spFrame := sp }
 
-/-- `read`'s protos are its second `instructions` pass (targets known), from the body's cursor:
-the code's, its relocations, and without a frame pointer the frame size as `spFrame`. -/
-theorem read_instructions {ro : ByteArray} {callSites : Array CallSite}
-    {dropped : List DroppedStore} {scopes : Array Scope} {mode : Mode} {c c' : Cursor}
-    {r : ReadResult} (h : (Vm.read ro callSites dropped scopes mode).run c = .ok (r, c')) :
-    ∃ (c0 c1 : Cursor) (targets : Array Nat) (stub : Option Nat) (padded : Array Bool),
-      c0 = bodyCursor c mode r.frameSize c0.pos ∧
-      (instructions ⟨r.frameSize, mode⟩ ro dropped (some targets) stub).run c0 =
-        .ok ((r.protos, padded), c1) := by
+/-- After `readFrame`, the cursor is the body's: the code's, its relocations, and without a
+frame pointer the frame size as `spFrame`. -/
+theorem readFrame_body {mode : Mode} {c c' : Cursor} {entry : Option (Nat × Nat)} {fs : Nat}
+    (h : (readFrame mode).run c = .ok ((entry, fs), c')) : c' = bodyCursor c mode fs c'.pos := by
   have ite_ok : ∀ {α : Type} {p : Prop} [Decidable p] {x y : DM α} {c c' : Cursor} {a : α},
       (if p then x else y).run c = .ok (a, c') →
         (p ∧ x.run c = .ok (a, c')) ∨ (¬p ∧ y.run c = .ok (a, c')) := by
@@ -989,7 +1112,7 @@ theorem read_instructions {ro : ByteArray} {callSites : Array CallSite}
     by_cases hp : p
     · exact .inl ⟨hp, by simpa only [hp, ite_true] using h⟩
     · exact .inr ⟨hp, by simpa only [hp, ite_false] using h⟩
-  unfold Vm.read at h
+  unfold readFrame at h
   rcases ite_ok h with ⟨-, h⟩ | ⟨-, h⟩
   · obtain ⟨_, _, h1, -⟩ := bind_ok h; exact (err_ok h1).elim
   obtain ⟨entry, c1, h1, h⟩ := bind_ok h
@@ -1007,14 +1130,12 @@ theorem read_instructions {ro : ByteArray} {callSites : Array CallSite}
     · cases i <;> first | exact PosOnly.pure _ | (rename_i x; cases x <;> exact PosOnly.pure _) | (rename_i x y; cases x <;> exact PosOnly.pure _) | (rename_i x y; cases x <;> cases y <;> exact PosOnly.pure _)
   rcases ite_ok h with ⟨-, h⟩ | ⟨-, h⟩
   · obtain ⟨_, _, h4, -⟩ := bind_ok h; exact (err_ok h4).elim
-  rcases ite_ok h with ⟨-, h⟩ | ⟨-, h⟩
-  · obtain ⟨_, _, h4, -⟩ := bind_ok h; exact (err_ok h4).elim
   obtain ⟨u, c4, h4, h⟩ := bind_ok h
   rw [run_setPos] at h4
   cases h4
   obtain ⟨u, c4, h4, h⟩ := bind_ok h
   have e4 : c4 = atPos c c4.pos := (posOnly_run (by posonly) h4).trans (by rw [e3])
-  let FS := if mode.pe = true then alloc + 16 else if mode.framePointer = true then alloc else u32 (alloc + 2 ^ 32 - 8)
+  let FS := if mode.framePointer = true then alloc else u32 (alloc + 2 ^ 32 - 8)
   rcases ite_ok h with ⟨hfp, h⟩ | ⟨hfp, h⟩
   · obtain ⟨u, c5, h5, h⟩ := bind_ok h
     have hc5 : c5 = bodyCursor c mode FS c5.pos := by
@@ -1024,79 +1145,123 @@ theorem read_instructions {ro : ByteArray} {callSites : Array CallSite}
       have hfp' : mode.framePointer = false := by simpa using hfp
       rw [e4]
       simp [bodyCursor, hfp', FS]
-    obtain ⟨body, c6, h6, h⟩ := bind_ok h
-    obtain ⟨hb, hc6⟩ := pos_run' h6
-    obtain ⟨⟨protos1, pad1⟩, c7, h7, h⟩ := bind_ok h
-    have e7 := (instructions_read h7).2.1
-    obtain ⟨u, c8, h8, h⟩ := bind_ok h
-    rw [run_setPos] at h8
-    cases h8
-    obtain ⟨⟨protos, padded⟩, c9, h9, h⟩ := bind_ok h
-    have tail : r.protos = protos ∧ r.frameSize = FS := by
-      obtain ⟨_, _, -, h⟩ := bind_ok h
-      obtain ⟨_, _, -, h⟩ := bind_ok h
-      dsimp only at h
-      split at h
-      · obtain ⟨_, _, -, h⟩ := bind_ok h
-        obtain ⟨_, _, -, h⟩ := bind_ok h
-        rcases ite_ok h with ⟨-, h⟩ | ⟨-, h⟩
-        · obtain ⟨_, _, -, h⟩ := bind_ok h
-          obtain ⟨_, _, h', -⟩ := bind_ok h; exact (err_ok h').elim
-        obtain ⟨_, _, -, h⟩ := bind_ok h
-        rcases ite_ok h with ⟨-, h⟩ | ⟨-, h⟩
-        · obtain ⟨_, _, h', -⟩ := bind_ok h; exact (err_ok h').elim
-        obtain ⟨he, -⟩ := pure_ok h
-        subst he
-        exact ⟨rfl, rfl⟩
-      · obtain ⟨_, _, -, h⟩ := bind_ok h
-        rcases ite_ok h with ⟨-, h⟩ | ⟨-, h⟩
-        · obtain ⟨_, _, h', -⟩ := bind_ok h; exact (err_ok h').elim
-        obtain ⟨he, -⟩ := pure_ok h
-        subst he
-        exact ⟨rfl, rfl⟩
-    obtain ⟨tp, tf⟩ := tail
-    refine ⟨_, c9, _, _, padded, ?_, by rw [tp, tf]; exact h9⟩
-    rw [tf]
-    exact (congrArg (atPos · body) e7).trans ((congrArg (atPos · body) hc6).trans
-      ((congrArg (atPos · body) hc5).trans rfl))
+    obtain ⟨he, rfl⟩ := pure_ok h
+    cases he
+    exact hc5
   · have hc5 : c4 = bodyCursor c mode FS c4.pos := by
       have hfp' : mode.framePointer = true := by simpa using hfp
       rw [e4]
       simp [bodyCursor, hfp']
-    obtain ⟨body, c6, h6, h⟩ := bind_ok h
-    obtain ⟨hb, hc6⟩ := pos_run' h6
-    obtain ⟨⟨protos1, pad1⟩, c7, h7, h⟩ := bind_ok h
-    have e7 := (instructions_read h7).2.1
-    obtain ⟨u, c8, h8, h⟩ := bind_ok h
-    rw [run_setPos] at h8
-    cases h8
-    obtain ⟨⟨protos, padded⟩, c9, h9, h⟩ := bind_ok h
-    have tail : r.protos = protos ∧ r.frameSize = FS := by
-      obtain ⟨_, _, -, h⟩ := bind_ok h
-      obtain ⟨_, _, -, h⟩ := bind_ok h
-      dsimp only at h
-      split at h
-      · obtain ⟨_, _, -, h⟩ := bind_ok h
-        obtain ⟨_, _, -, h⟩ := bind_ok h
-        rcases ite_ok h with ⟨-, h⟩ | ⟨-, h⟩
-        · obtain ⟨_, _, -, h⟩ := bind_ok h
-          obtain ⟨_, _, h', -⟩ := bind_ok h; exact (err_ok h').elim
-        obtain ⟨_, _, -, h⟩ := bind_ok h
-        rcases ite_ok h with ⟨-, h⟩ | ⟨-, h⟩
-        · obtain ⟨_, _, h', -⟩ := bind_ok h; exact (err_ok h').elim
-        obtain ⟨he, -⟩ := pure_ok h
-        subst he
-        exact ⟨rfl, rfl⟩
-      · obtain ⟨_, _, -, h⟩ := bind_ok h
-        rcases ite_ok h with ⟨-, h⟩ | ⟨-, h⟩
-        · obtain ⟨_, _, h', -⟩ := bind_ok h; exact (err_ok h').elim
-        obtain ⟨he, -⟩ := pure_ok h
-        subst he
-        exact ⟨rfl, rfl⟩
-    obtain ⟨tp, tf⟩ := tail
-    refine ⟨_, c9, _, _, padded, ?_, by rw [tp, tf]; exact h9⟩
-    rw [tf]
-    exact (congrArg (atPos · body) e7).trans ((congrArg (atPos · body) hc6).trans
-      ((congrArg (atPos · body) hc5).trans rfl))
+    obtain ⟨he, rfl⟩ := pure_ok h
+    cases he
+    exact hc5
+
+theorem expect_ok {cond : Bool} {at_ : Nat} {w : String} {c c' : Cursor} {u : Unit}
+    (h : (expect cond at_ w).run c = .ok (u, c')) : cond = true ∧ c' = c := by
+  unfold expect at h
+  split at h
+  · exact ⟨‹_›, (pure_ok h).2.symm⟩
+  · exact (err_ok h).elim
+
+/-- `readParts` leaves the cursor's code and fields. -/
+theorem readParts_pos {fr : Frame} {ro : ByteArray} {callSites : Array CallSite}
+    {d1 d2 : List DroppedStore} {stubs regionAt : Option Nat} {body limit size : Nat}
+    {targets : Option (Array Nat)} {c c' : Cursor} {x : Array Proto × Array Bool × Nat}
+    (h : (readParts fr ro callSites d1 d2 stubs regionAt body limit size targets).run c = .ok (x, c')) :
+    c' = atPos c c'.pos := by
+  unfold readParts at h
+  obtain ⟨u, c1, h1, h⟩ := bind_ok h
+  rw [run_setPos] at h1; cases h1
+  obtain ⟨⟨ps, pd⟩, c2, h2, h⟩ := bind_ok h
+  have e2 := (instructions_read h2).2.1
+  obtain ⟨be, c3, h3, h⟩ := bind_ok h
+  obtain ⟨rfl, rfl⟩ := pos_run' h3
+  obtain ⟨u, c4, h4, h⟩ := bind_ok h
+  obtain ⟨-, rfl⟩ := expect_ok h4
+  split at h
+  · obtain ⟨-, rfl⟩ := pure_ok h; rw [e2]
+  · obtain ⟨⟨rp, rpd⟩, c5, h5, h⟩ := bind_ok h
+    obtain ⟨-, rfl⟩ := pure_ok h
+    unfold readRegion at h5
+    obtain ⟨u, c6, h6, h5⟩ := bind_ok h5
+    rw [run_setPos] at h6; cases h6
+    obtain ⟨i1, c7, h7, h5⟩ := bind_ok h5
+    obtain ⟨n1, -, rfl⟩ := run_item h7
+    obtain ⟨u, c8, h8, h5⟩ := bind_ok h5
+    obtain ⟨-, rfl⟩ := expect_ok h8
+    obtain ⟨i2, c9, h9, h5⟩ := bind_ok h5
+    obtain ⟨n2, -, rfl⟩ := run_item h9
+    obtain ⟨u, c10, h10, h5⟩ := bind_ok h5
+    obtain ⟨-, rfl⟩ := expect_ok h10
+    have e5 := (instructions_read h5).2.1
+    rw [e5, e2]
+
+/-- `read`'s protos, for a function without a pad region (`regionPad = none`, always off PE),
+are its second `instructions` pass (targets known) from the body's cursor (the code's, its
+relocations, and without a frame pointer the frame size as `spFrame`) to the code's end. -/
+theorem read_instructions {ro : ByteArray} {callSites : Array CallSite}
+    {dropped : List DroppedStore} {scopes : Array Scope} {mode : Mode} {c c' : Cursor}
+    {r : ReadResult} (h : (Vm.read ro callSites dropped scopes mode).run c = .ok (r, c'))
+    (hnr : regionPad mode callSites = none) :
+    ∃ (c0 c1 : Cursor) (targets : Array Nat) (stub : Option Nat) (padded : Array Bool),
+      c0 = bodyCursor c mode r.frameSize c0.pos ∧
+      (instructions ⟨r.frameSize, mode, false⟩ ro dropped (some targets) stub c.code.size
+        callSites).run c0 = .ok ((r.protos, padded), c1) := by
+  unfold Vm.read at h
+  obtain ⟨⟨entry, fs⟩, c1, h1, h⟩ := bind_ok h
+  have hc1 := readFrame_body h1
+  dsimp only at h
+  obtain ⟨x, c2, h2, h⟩ := bind_ok h
+  obtain ⟨hx, hc2⟩ := get_run h2
+  rw [hx, hc2] at h
+  obtain ⟨ra, c3, h3, h⟩ := bind_ok h
+  have hra : ra = none ∧ c3 = c1 := by
+    unfold regionEntry at h3; rw [hnr] at h3
+    exact ⟨(pure_ok h3).1.symm, (pure_ok h3).2.symm⟩
+  rw [hra.1, hra.2] at h
+  have hsize : c1.code.size = c.code.size := by rw [hc1]; rfl
+  dsimp only at h
+  obtain ⟨body, c4, h4, h⟩ := bind_ok h
+  obtain ⟨hb4, hc4⟩ := pos_run' h4
+  subst hb4
+  rw [hc4] at h
+  obtain ⟨⟨p1, pd1, be1⟩, c5, h5, h⟩ := bind_ok h
+  have e5 := readParts_pos h5
+  dsimp only at h
+  obtain ⟨⟨protos, padded, bodyEnd⟩, c6, h6, h⟩ := bind_ok h
+  -- The second pass: `instructions` from the body.
+  have hpass : ∃ c7, (instructions ⟨fs, mode, false⟩ ro dropped
+      (some ((p1.toList.flatMap Proto.targets).toArray.qsort (· < ·))) (entry.map (·.1))
+      c.code.size callSites).run (atPos c5 c1.pos) = .ok ((protos, padded), c7) := by
+    unfold readParts at h6
+    obtain ⟨u, c7, h7, h6⟩ := bind_ok h6
+    rw [run_setPos] at h7; cases h7
+    obtain ⟨⟨ps, pd⟩, c8, h8, h6⟩ := bind_ok h6
+    obtain ⟨be, c9, h9, h6⟩ := bind_ok h6
+    obtain ⟨rfl, rfl⟩ := pos_run' h9
+    obtain ⟨u, c10, h10, h6⟩ := bind_ok h6
+    obtain ⟨he, -⟩ := pure_ok h6
+    cases he
+    rw [hsize] at h8
+    exact ⟨_, h8⟩
+  obtain ⟨c7, hc7⟩ := hpass
+  -- The rest leaves the protos (no pad region: `rs` is their count).
+  have tail : r.protos = protos ∧ r.frameSize = fs := by
+    dsimp only at h
+    obtain ⟨u, c8, -, h⟩ := bind_ok h
+    obtain ⟨heads, c9, -, h⟩ := bind_ok h
+    obtain ⟨u, c10, -, h⟩ := bind_ok h
+    simp only [Nat.lt_irrefl, ↓reduceIte] at h
+    obtain ⟨protos', c11, h11, h⟩ := bind_ok h
+    obtain ⟨rfl, rfl⟩ := pure_ok h11
+    obtain ⟨acts, c12, -, h⟩ := bind_ok h
+    obtain ⟨he, -⟩ := pure_ok h
+    cases he
+    exact ⟨rfl, rfl⟩
+  obtain ⟨tp, tf⟩ := tail
+  refine ⟨_, c7, _, _, padded, ?_, by rw [tp, tf]; exact hc7⟩
+  rw [tf, e5]
+  show atPos (atPos c1 c5.pos) c1.pos = _
+  rw [hc1]; rfl
 
 end Ryo.Proofs.DecodeLink

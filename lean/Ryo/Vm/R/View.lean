@@ -3,7 +3,8 @@ Ryo.Vm.R.View — the op view of R (reduced.md §C0.5, §C0.6): `unpack`, a hand
 from its argument registers, and `view`, an R instruction as a full opcode with the operands
 `opSem` takes and its shape's control flow.
 
-- `unpack ρ h fpArg args`: what `ryo_h_<h>` reads from `rdi … r9` by `asm::layout(h, mode)`
+- `unpack ρ h mode args`: what `ryo_h_<h>` reads from `rdi … r9` (on PE `rcx … r9` and the
+  stack) by `asm::layout(h, mode)`
   (`asm::read`, `vm/bytecode/src/asm/mod.rs`), one `OpSem.Val` per operand of `h`, with the
   checks of Rust's full decoder (`handler_operands`, `asm/decode.rs`): `none` when the
   arguments don't fit the layout.
@@ -108,16 +109,17 @@ def unpackOpnd (ρ : Addrs) (args : List Arg) (k : OperandKind) (loc : Asm.Loc) 
     | _, _ => none
   | _ => none
 
-/-- `unpack(layout h)`: the operands handler `h` reads from its argument registers `args`
-(`rdi` on), one `Val` per operand of `h`. `fp` is `args[0]` with `fpArg` (else the handler
+/-- `unpack(layout h)`: the operands handler `h` reads from its argument positions `args`
+(`rdi` on; on PE `rcx` on, then the stack), one `Val` per operand of `h`. `fp` is `args[0]`
+with `fpArg` (else the handler
 reads `rbp`), `lpad`'s exception object the register before its operands; each operand
 register holds an immediate or an address (`Arg.fp` and `Arg.exception` nowhere else), as
 `h`'s layout gives it. `none` for an opcode without a handler, a wrong register count, or
 a register that doesn't fit its operand. -/
-def unpack (ρ : Addrs) (h : Full.Opcode) (fpArg : Bool) (args : List Arg) : Option Operands := do
-  let l ← h.layout fpArg
+def unpack (ρ : Addrs) (h : Full.Opcode) (mode : Ryo.Obj.Mode) (args : List Arg) : Option Operands := do
+  let l ← h.layout mode.fpArg mode.pe
   if args.length != l.regs then none
-  if fpArg && args[0]? != some .fp then none
+  if mode.fpArg && args[0]? != some .fp then none
   if h.info.shape == .lpad && args[l.first - 1]? != some .exception then none
   h.info.operands.zipIdx.mapM fun (o, i) => unpackOpnd ρ args o.kind (l.locs.getD i default)
 
@@ -186,7 +188,7 @@ def view (mode : Ryo.Obj.Mode) (ρ : Addrs) : Insn → Option View
     pure ⟨f, vals, ctl⟩
   | .handler h args t => do
     if !h.hasHandler then none
-    let vals ← unpack ρ h mode.fpArg args
+    let vals ← unpack ρ h mode args
     let ok := match h.info.shape, t with
       | .op, .next | .lpad, .next | .trap, .trap | .br, .branch .. => true
       | .switch, .table ts => ts.length == caseCount vals + 1

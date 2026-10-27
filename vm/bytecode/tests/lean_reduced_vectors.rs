@@ -50,9 +50,9 @@ const MODES: [Mode; 20] = {
     let mut m = [Mode { fp_arg: false, frame_pointer: true, align_loops: false, pe: false, counters: false, far_rt: false }; 20];
     let mut i = 0;
     while i < 8 {
-        // No PE modes until the Lean model has PE's Win64 handlers and frames (lean/PENDING.md):
-        // the four would-be PE ones repeat the others.
-        m[i] = Mode { fp_arg: i & 1 != 0, frame_pointer: true, align_loops: i & 2 != 0, pe: false, counters: false, far_rt: false };
+        // PE has no `fp_arg` (Win64 handlers read `fp` from `rbp`).
+        m[i] =
+            Mode { fp_arg: i & 1 != 0 && i & 4 == 0, frame_pointer: true, align_loops: i & 2 != 0, pe: i & 4 != 0, counters: false, far_rt: false };
         i += 1;
     }
     m[8] = Mode { fp_arg: true, frame_pointer: false, align_loops: false, pe: false, counters: false, far_rt: false };
@@ -421,9 +421,6 @@ impl Out {
                         }
                         let p = rng.below(m.code.len() as u64) as usize;
                         let v = if rng.below(2) == 0 { m.code[p] ^ (1 << rng.below(8)) } else { rng.next() as u8 };
-                        // Not `pop rbp` (PE's `Item::PopRbp`), which the Lean decoder doesn't
-                        // know yet (lean/PENDING.md).
-                        let v = if v == 0x5d { 0x5e } else { v };
                         m.code[p] = v;
                         sets.push(format!("[{p},{v}]"));
                     }
@@ -498,8 +495,16 @@ fn every_opcode(rng: &mut Rng, out: &mut Out) {
         let list_len = [0, 1, 3][k / MODES.len() % 3];
         let mut f = Fn { insns: vec![vec![Opcode::Abort as u32]], targets: Vec::new(), unwind: Vec::new() };
         let fillers = [0, 2][k % 2];
-        let last = 2 + fillers + 2;
-        let mut target = |rng: &mut Rng| [0, 1, last, 2 + fillers][rng.below(4) as usize];
+        let catch = k % 2 == 0;
+        // [abort], insn, filler…, lpad, jmp 0, abort. On PE, a cleanup landing pad starts the
+        // pad region, which nothing branches into or out of: [abort], insn, filler…, abort,
+        // lpad, jmp, abort (as in `asm.rs`).
+        let region = mode.pe && op_may_unwind(op) && list_len == 3 && !catch;
+        let last = 2 + fillers + 2 + usize::from(region);
+        let mut target = |rng: &mut Rng| {
+            let k = rng.below(4) as usize;
+            if region { [0, 1, 2 + fillers, 2 + fillers][k] } else { [0, 1, last, 2 + fillers][k] }
+        };
         let w = insn(op, rng, list_len, &mut f, &mut target);
         if op == Opcode::Arg {
             f.insns[0] = w;
@@ -510,19 +515,90 @@ fn every_opcode(rng: &mut Rng, out: &mut Out) {
             let filler = insn(Opcode::AddImmW64, rng, 0, &mut f, &mut |_| 0);
             f.insns.push(filler);
         }
+        if region {
+            f.insns.push(vec![Opcode::Abort as u32]);
+        }
         let pad = f.insns.len();
         f.insns.push(vec![Opcode::Lpad as u32, rng.next() as u32]);
         f.insns.push(vec![Opcode::Jmp as u32, 0]);
-        f.targets.push((pad + 1, 1, 0));
+        f.targets.push((pad + 1, 1, if region { pad + 2 } else { 0 }));
         f.insns.push(vec![Opcode::Abort as u32]);
-        // PE: no landing pads, whose forms the Lean decoder doesn't model yet (the pad region
-        // and the `nop` after their calls, lean/PENDING.md).
         if op_may_unwind(op) && list_len != 1 {
-            f.unwind.push((1, if list_len == 0 || mode.pe { None } else { Some((pad, k % 2 == 0)) }));
+            f.unwind.push((1, if list_len == 0 { None } else { Some((pad, catch)) }));
         }
         let enc = encode_fn(&f, FRAMES[k % FRAMES.len()], mode);
         out.encoded(&enc, mode);
         out.mutate(rng, if k % 4 == 0 { 2 } else { 1 });
+    }
+}
+
+/// PE: functions with a pad region (design/vm.md#unwinding), as in `asm.rs`'s `pe_pad_region`:
+/// cleanup landing pads after the counter stubs behind the region's entry, its own calls and
+/// islands, terminate pads on both sides, a loop in it, `resume`, and the `nop`s after calls
+/// with landing pads that end their instruction.
+fn pe_pad_region(rng: &mut Rng, out: &mut Out) {
+    for (k, mode) in MODES.into_iter().filter(|m| m.pe).enumerate() {
+        for round in 0..4 {
+            let mut f = Fn::new();
+            let x = -8i32 as u32;
+            // A call storing nothing (bare), or with a random return kind.
+            let call = |f: &mut Fn, rng: &mut Rng, bare: bool| {
+                let mut w = insn(Opcode::Call, rng, 1, f, &mut |_| 0);
+                if bare {
+                    (w[1], w[3]) = (0, 0);
+                }
+                f.insns.push(w);
+            };
+            // The body: a loop head at 0, calls and an island with the cleanup pad, a call
+            // with the body's terminate pad, `ret`.
+            call(&mut f, rng, true);
+            let island = insn(Opcode::Island, rng, 2, &mut f, &mut |_| 0);
+            f.insns.push(island);
+            call(&mut f, rng, round % 2 == 0);
+            call(&mut f, rng, true);
+            f.insns.push(vec![Opcode::Br as u32, 8, 0, 0]);
+            f.targets.push((4, 3, 0));
+            let ret = insn(Opcode::Ret, rng, 0, &mut f, &mut |_| 0);
+            f.insns.push(ret);
+            // The body's terminate pad and stub.
+            let body_pad = f.insns.len();
+            f.insns.push(vec![Opcode::Lpad as u32, x]);
+            f.insns.push(vec![Opcode::Jmp as u32, 0]);
+            f.targets.push((body_pad + 1, 1, body_pad + 2));
+            call(&mut f, rng, true);
+            f.insns.push(vec![Opcode::Unreachable as u32]);
+            // The region: the cleanup pad, a loop of a call and an island with the region's
+            // terminate pad, `resume`, then that pad and its stub.
+            let pad = f.insns.len();
+            f.insns.push(vec![Opcode::Lpad as u32, x]);
+            f.insns.push(vec![Opcode::Jmp as u32, 0]);
+            f.targets.push((pad + 1, 1, pad + 2));
+            call(&mut f, rng, round < 2);
+            let island = insn(Opcode::Island, rng, 1, &mut f, &mut |_| 0);
+            f.insns.push(island);
+            f.insns.push(vec![Opcode::Br as u32, 16, 1, 0]);
+            f.targets.push((pad + 4, 3, pad + 2));
+            f.insns.push(vec![Opcode::Resume as u32, x]);
+            let region_pad = f.insns.len();
+            f.insns.push(vec![Opcode::Lpad as u32, x]);
+            f.insns.push(vec![Opcode::Jmp as u32, 0]);
+            f.targets.push((region_pad + 1, 1, region_pad + 2));
+            call(&mut f, rng, true);
+            f.insns.push(vec![Opcode::Unreachable as u32]);
+            f.unwind = vec![
+                (0, Some((pad, false))),
+                (1, Some((pad, false))),
+                (2, Some((pad, false))),
+                (3, Some((body_pad, true))),
+                (body_pad + 2, None),
+                (pad + 2, Some((region_pad, true))),
+                (pad + 3, Some((region_pad, true))),
+                (pad + 5, None),
+            ];
+            let enc = encode_fn(&f, [48, 4096][(round + k) % 2], mode);
+            out.encoded(&enc, mode);
+            out.mutate(rng, 6);
+        }
     }
 }
 
@@ -835,12 +911,6 @@ fn overflows(out: &mut Out) {
         out.rejected += 1;
         out.lines.push(format!("{{\"base\":{b},\"code_set\":[{}],\"out\":{}}}", sets.join(","), json_str(&t)));
     };
-    // PE: `sub rsp, 0xfffffff0` makes the frame size `alloc + 16` overflow.
-    let mode = MODES[4];
-    let f = Fn { insns: vec![vec![Opcode::Abort as u32]], targets: Vec::new(), unwind: Vec::new() };
-    let enc = encode_fn(&f, 1 << 20, mode);
-    let at = find(&enc.code, &[0x48, 0x81, 0xec]) + 3;
-    push(out, &enc, mode, at, &[0xf0, 0xff, 0xff, 0xff]);
     // `mov.w128` whose source is at `i32::MAX - 3`: its high half's `disp + 8` overflows.
     let mode = MODES[0];
     let s: i32 = -(1 << 20) + 64;
@@ -891,6 +961,7 @@ fn vectors() -> (String, String) {
     let mut rng = Rng(0x1ea4_dec0_de00_0001);
     let mut out = Out { lines: Vec::new(), bases: Vec::new(), ok: 0, rejected: 0 };
     every_opcode(&mut rng, &mut out);
+    pe_pad_region(&mut rng, &mut out);
     long_branches(&mut rng, &mut out);
     register_cache(&mut rng, &mut out);
     dead_stores(&mut rng, &mut out);

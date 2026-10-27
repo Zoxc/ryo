@@ -153,11 +153,12 @@ def checkSignature (o : ImageObject) (i : Nat) (d : Decoded) : Array String := I
   if f.argSize % 16 != 0 then out := out.push s!"{l}: arg_size {f.argSize} isn't a multiple of 16"
   -- The frame window `decode_sound` works in, `[-F, 16 + arg_size)` (`FrameBounds.mono` from
   -- `decode_frameBounds`): the frame ranges in bounds, and the highest no higher than that.
-  -- Also: the frame writes miss the link slots (saved `rbp`, return address, PE's `rsi`/`rdi`).
+  -- Also: the frame writes miss the link slots (saved `rbp`, return address), and on PE the
+  -- frame ranges the shadow space at the frame's bottom.
   let mode := o.image.mode
   if !d.boundsOk mode then out := out.push s!"{l}: frame access outside the frame (Decoded.boundsOk)"
-  if d.frameTop mode.fpArg > 16 + (f.argSize : Int) then
-    out := out.push s!"{l}: frame ranges end at fp + {d.frameTop mode.fpArg}, past 16 + arg_size {f.argSize}"
+  if d.frameTop mode > 16 + (f.argSize : Int) then
+    out := out.push s!"{l}: frame ranges end at fp + {d.frameTop mode}, past 16 + arg_size {f.argSize}"
   -- The slots the first integer argument register is stored to (an sret function's pointer).
   let argSlots := d.insns.toList.filterMap fun
     | .native op [.slot s, .imm w] => if op.info.mnemonic == "arg" && w.toNat == 8 then some s else none
@@ -183,11 +184,10 @@ def checkSignature (o : ImageObject) (i : Nat) (d : Decoded) : Array String := I
           | some callee, some kn =>
             if kn != callKind callee.retKind then
               out := out.push s!"{l}: insn {k}: call of func {g} collects kind {hex kn}, its ret_kind is {hex callee.retKind}"
-            -- The outgoing area (the callee's `arg_size`, `Code.stackSize`) lies in the frame,
-            -- below PE's saved `rsi`/`rdi` (`StackSizes.frame`).
-            let saved := if mode.pe then 16 else 0
-            if callee.argSize + saved > d.frameSize then
-              out := out.push s!"{l}: insn {k}: call of func {g} with arg_size {callee.argSize}, frame size {d.frameSize}{if mode.pe then " (16 of them the saved rsi/rdi)" else ""}"
+            -- The outgoing area (the callee's `arg_size`, `Code.stackSize`) lies in the frame
+            -- (`StackSizes.frame`).
+            if callee.argSize > d.frameSize then
+              out := out.push s!"{l}: insn {k}: call of func {g} with arg_size {callee.argSize}, frame size {d.frameSize}"
           | _, _ => out := out.push s!"{l}: insn {k}: call of func {g} (no such function)"
         | _ => out := out.push s!"{l}: insn {k}: call operands"
       else if m == "tail_call" then

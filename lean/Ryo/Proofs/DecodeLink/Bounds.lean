@@ -173,19 +173,19 @@ theorem mapM_unpack_erase {ρ : R.Addrs} {args : List R.Arg} {locs : List Asm.Lo
     rfl
 
 /-- The operands a handler unpacks under any placement, with their addresses forgotten. -/
-theorem unpack_erase {ρ : R.Addrs} {h : Full.Opcode} {fpArg : Bool} {args : List R.Arg}
-    {vals : Operands} (hu : R.unpack ρ h fpArg args = some vals) :
-    R.unpack anyAddrs h fpArg args = some (vals.map erase) := by
+theorem unpack_erase {ρ : R.Addrs} {h : Full.Opcode} {mode : Ryo.Obj.Mode} {args : List R.Arg}
+    {vals : Operands} (hu : R.unpack ρ h mode args = some vals) :
+    R.unpack anyAddrs h mode args = some (vals.map erase) := by
   unfold R.unpack at hu ⊢
   revert hu
-  cases h.layout fpArg with
+  cases h.layout mode.fpArg mode.pe with
   | none => intro hu; cases hu
   | some l =>
     intro hu
     simp only [Option.bind_some, bind] at hu ⊢
     by_cases h1 : (args.length != l.regs) = true
     · simp [h1] at hu
-    · by_cases h2 : (fpArg && args[0]? != some .fp) = true
+    · by_cases h2 : (mode.fpArg && args[0]? != some .fp) = true
       · simp [h2] at hu
       · by_cases h3 : (h.info.shape == .lpad && args[l.first - 1]? != some .exception) = true
         · simp [h3] at hu
@@ -194,9 +194,9 @@ theorem unpack_erase {ρ : R.Addrs} {h : Full.Opcode} {fpArg : Bool} {args : Lis
           exact mapM_unpack_erase _ _ hu
 
 /-- The check's handler writes are `wranges` under any placement. -/
-theorem handlerWrites_eq {ρ : R.Addrs} {h : Full.Opcode} {fpArg : Bool} {args : List R.Arg}
-    {vals : Operands} (hu : R.unpack ρ h fpArg args = some vals) :
-    wranges h vals = handlerWrites fpArg h args := by
+theorem handlerWrites_eq {ρ : R.Addrs} {h : Full.Opcode} {mode : Ryo.Obj.Mode} {args : List R.Arg}
+    {vals : Operands} (hu : R.unpack ρ h mode args = some vals) :
+    wranges h vals = handlerWrites mode h args := by
   rw [← wranges_erase h vals]
   unfold handlerWrites wranges
   rw [unpack_erase hu]
@@ -239,22 +239,22 @@ theorem le_foldl_max : ∀ (l : List (Int × Nat)) (t : Int),
     · omega
     · exact h2 q hq
 
-theorem le_frameTop {d : R.Decoded} {fpArg : Bool} {r : Int × Nat} (h : r ∈ d.frameRanges fpArg) :
-    r.1 + r.2 ≤ d.frameTop fpArg :=
-  (le_foldl_max (d.frameRanges fpArg) 0).2 r h
+theorem le_frameTop {d : R.Decoded} {mode : Ryo.Obj.Mode} {r : Int × Nat} (h : r ∈ d.frameRanges mode) :
+    r.1 + r.2 ≤ d.frameTop mode :=
+  (le_foldl_max (d.frameRanges mode) 0).2 r h
 
-theorem frameTop_nonneg (d : R.Decoded) (fpArg : Bool) : 0 ≤ d.frameTop fpArg :=
-  (le_foldl_max (d.frameRanges fpArg) 0).1
+theorem frameTop_nonneg (d : R.Decoded) (mode : Ryo.Obj.Mode) : 0 ≤ d.frameTop mode :=
+  (le_foldl_max (d.frameRanges mode) 0).1
 
-theorem mem_frameRanges_insn {d : R.Decoded} {fpArg : Bool} {k : Nat} {i : R.Insn}
-    {r : Int × Nat} (hi : d.insns[k]? = some i) (hr : r ∈ i.frameRanges fpArg) :
-    r ∈ d.frameRanges fpArg := by
+theorem mem_frameRanges_insn {d : R.Decoded} {mode : Ryo.Obj.Mode} {k : Nat} {i : R.Insn}
+    {r : Int × Nat} (hi : d.insns[k]? = some i) (hr : r ∈ i.frameRanges mode) :
+    r ∈ d.frameRanges mode := by
   unfold R.Decoded.frameRanges
   exact List.mem_append_right _ (List.mem_flatMap.2 ⟨i, Array.mem_toList_iff.2
     (Array.mem_of_getElem? hi), hr⟩)
 
-theorem mem_frameRanges_scope {c : R.Code} {fpArg : Bool} {k : Nat} {sc : R.Scope}
-    (h : sc ∈ c.scopesAt k) : (sc.frameOffset.toInt, sc.size) ∈ c.d.frameRanges fpArg := by
+theorem mem_frameRanges_scope {c : R.Code} {mode : Ryo.Obj.Mode} {k : Nat} {sc : R.Scope}
+    (h : sc ∈ c.scopesAt k) : (sc.frameOffset.toInt, sc.size) ∈ c.d.frameRanges mode := by
   unfold R.Code.scopesAt at h
   obtain ⟨p, hp, rfl⟩ := List.mem_map.1 h
   unfold R.Decoded.frameRanges
@@ -264,31 +264,33 @@ theorem mem_frameRanges_scope {c : R.Code} {fpArg : Bool} {k : Nat} {sc : R.Scop
 
 /-- What `boundsOk` says of the frame ranges, the writes and the `arg` destinations. -/
 theorem boundsOk_spec {d : R.Decoded} {mode : Ryo.Obj.Mode} (h : d.boundsOk mode = true) :
-    (d.frameSize : Int) ≤ 2 ^ 31 ∧ d.frameTop mode.fpArg ≤ 2 ^ 31 ∧
-      (∀ r ∈ d.frameRanges mode.fpArg, -(d.frameSize : Int) ≤ r.1 ∧
-        r.1 + r.2 ≤ d.frameTop mode.fpArg) ∧
+    (d.frameSize : Int) ≤ 2 ^ 31 ∧ d.frameTop mode ≤ 2 ^ 31 ∧
+      (∀ r ∈ d.frameRanges mode, -(d.frameSize : Int) ≤ r.1 ∧
+        r.1 + r.2 ≤ d.frameTop mode) ∧
       ∀ (k : Nat) (i : R.Insn), d.insns[k]? = some i →
-        (∀ r ∈ i.writeRanges mode.fpArg, OffLink mode.pe r) ∧
-        ∀ r ∈ i.argRanges, r.1 + r.2 ≤ linkLo mode.pe := by
+        (∀ r ∈ i.writeRanges mode, OffLink r) ∧
+        ∀ r ∈ i.argRanges, r.1 + r.2 ≤ 0 := by
   simp only [R.Decoded.boundsOk, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at h
   obtain ⟨⟨⟨hF, hK⟩, hall⟩, hw⟩ := h
-  refine ⟨by omega, hK, fun r hr => ⟨hall r hr, le_frameTop hr⟩, fun k i hi => ?_⟩
+  have hlo : -(d.frameSize : Int) ≤ d.frameLo mode := by
+    unfold R.Decoded.frameLo; omega
+  refine ⟨by omega, hK, fun r hr => ⟨Int.le_trans hlo (hall r hr), le_frameTop hr⟩, fun k i hi => ?_⟩
   obtain ⟨h1, h2⟩ := hw i (Array.mem_toList_iff.2 (Array.mem_of_getElem? hi))
   exact ⟨fun r hr => offLink_iff.1 (h1 r hr), h2⟩
 
-theorem frameRanges_native {fpArg : Bool} {op : Reduced.Opcode} {ops : List (R.Opnd Nat)}
+theorem frameRanges_native {mode : Ryo.Obj.Mode} {op : Reduced.Opcode} {ops : List (R.Opnd Nat)}
     {f : Full.Opcode} (hf : op.full = some f) :
-    (R.Insn.native op ops).frameRanges fpArg = nativeRanges f ops := by
+    (R.Insn.native op ops).frameRanges mode = nativeRanges f ops := by
   simp only [R.Insn.frameRanges, hf, Option.map_some, Option.getD_some]
 
-theorem writeRanges_native {fpArg : Bool} {op : Reduced.Opcode} {ops : List (R.Opnd Nat)}
+theorem writeRanges_native {mode : Ryo.Obj.Mode} {op : Reduced.Opcode} {ops : List (R.Opnd Nat)}
     {f : Full.Opcode} (hf : op.full = some f) :
-    (R.Insn.native op ops).writeRanges fpArg =
+    (R.Insn.native op ops).writeRanges mode =
       nativeWrites f ops ++ (if f.info.shape = .call then resultParts ops else []) := by
   simp only [R.Insn.writeRanges, hf, Option.map_some, Option.getD_some]
 
 theorem frameBounds_of_boundsOk {c : R.Code} (h : c.d.boundsOk c.mode = true) :
-    FrameBounds c (c.d.frameTop c.mode.fpArg) := by
+    FrameBounds c (c.d.frameTop c.mode) := by
   obtain ⟨hF, hK, hin, hlk⟩ := boundsOk_spec h
   refine ⟨hF, hK, fun k sc hsc => hin _ (mem_frameRanges_scope hsc), ?_, ?_, ?_, ?_, ?_, ?_, ?_,
     ?_, ?_⟩
@@ -371,7 +373,7 @@ theorem decode_frameBounds {code : ByteArray} {fields : Ryo.X86.Fields} {rodata 
     (h : decodeBounded code fields rodata callSites dropped scopes mode = .ok d)
     {c : R.Code} (hc : c.d = d) (hm : c.mode = mode) :
     decodeReducedWith code fields rodata callSites dropped scopes mode = .ok d ∧
-      FrameBounds c (d.frameTop mode.fpArg) := by
+      FrameBounds c (d.frameTop mode) := by
   obtain ⟨hd, hb⟩ := decodeBounded_ok h
   subst hc
   subst hm

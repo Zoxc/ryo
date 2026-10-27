@@ -47,8 +47,10 @@ def Mode.ofBits (m : Nat) : Mode :=
     alignLoops := m &&& MODE_ALIGN_LOOPS != 0, pe := m &&& MODE_PE != 0,
     counters := m &&& MODE_COUNTERS != 0 }
 
-/-- `Mode::valid`: the combinations the encoder supports. -/
-def Mode.valid (m : Mode) : Bool := m.framePointer || (m.fpArg && !m.pe)
+/-- `Mode::valid`: the combinations the encoder supports. PE needs a frame pointer and no
+`fpArg` (Win64 handlers read `fp` from `rbp`). -/
+def Mode.valid (m : Mode) : Bool :=
+  if m.pe then m.framePointer && !m.fpArg else m.framePointer || m.fpArg
 
 instance : ToString Mode where
   toString m :=

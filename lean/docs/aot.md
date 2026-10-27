@@ -297,8 +297,8 @@ follows the decoder's structure:
   encodings at one address execute alike) holds given `RefsNear`, every reference within the
   4 GiB from the function's address up (`Ryo/X86/Unique.lean`, `execUnique`; necessary too,
   `refsNear_of_execUnique`), so `Step` is a function (`step_deterministic_of_refsNear`). It
-  needs every item to be one instruction: the PE prologue and epilogue are their four
-  instructions each in Lean (`winPrologue`, `winEpilogue`), one item each in Rust.
+  needs every item to be one instruction, as every item is (PE's prologue and epilogue too:
+  `push rbp; mov rbp, rsp; sub rsp, F` and `add rsp, F; pop rbp`).
 - **Decoder links** (`Ryo/Proofs/DecodeLink/`): an instruction the decoder accepts at a
   position has, in memory holding the code with its relocated fields patched (`RelocLoaded`),
   exactly the items the shape lemma takes, with the R instruction's operands (`link_handler`,
@@ -436,9 +436,16 @@ follows the decoder's structure:
   for returns and tail calls. Proved: the padding, the dispatch over what the decoder read, the
   relocation boundaries (`boundary_start`), decoded branches canonical (`branch_canonical`),
   `unreachable` and `jmp`. `sorry` ([assumptions.md](assumptions.md) §1.1): the other per-shape
-  bodies (`bodySim_*`), the counter check (`reach_counter`), and four facts of the decoder
-  (`read_instructions_prologue`, `pad_lpad`, `posOf_le_size`, `frameSize_pe`); the open proofs
-  are worked on in `Ryo/Proofs/DSWork/`. The frame-pointer mode only. The open prerequisites are
+  bodies (`bodySim_*`), the counter check (`reach_counter`), and three facts of the decoder
+  (`read_instructions_prologue`, `pad_lpad`, `posOf_le_size`); the open proofs are worked on in
+  `Ryo/Proofs/DSWork/`. The frame-pointer mode only, without a PE pad region
+  (`Decodes.noRegion`: PE's cleanup code after the body, entered by the exception dispatcher on
+  its own stack, is decoded but not simulated), and handler calls with their arguments in
+  registers (`Hyps.regArgs`: PE's stack argument, the `atomic.cxchg` handlers', writes the
+  frame's bottom; its step is open). On PE the frame keeps no saved `rsi`/`rdi`: they are
+  callee-saved registers the function's code never changes (`FrameFacts.saved` over
+  `Call.Saved`), and the PE `nop` after a call with a landing pad is part of the iteration
+  (`NopRead`). The open prerequisites are
   named hypotheses (`Hyps`): of the decoded code, checkable (`FrameBounds`, `MoreBounds`: handler
   writes and call result slots in the window, `RelocsIn`, `ArgsOk`: the leading `arg`s read
   distinct argument registers of the convention and no branch target is one); privacy after the
@@ -666,7 +673,9 @@ theorem; the program-level theorem is then conditional on their correctness.
   themselves are checked).
 - The ELF/DWARF readers' fidelity to the specs (tested against `readelf`).
 - The mode: ELF; `fp_arg` with or without frame pointer; `fp-rbp`; counters on (AOT) or off;
-  loop alignment on/off. PE is out of scope.
+  loop alignment on/off. PE: the decoder model and the step lemmas cover PE's code (Win64
+  handlers and frames; the pad region decoded but not simulated), the object readers and image
+  checks are ELF only.
 
 Not trusted: the Rust lowering, encoder and decoders, the certificate, the instruction lists
 and the call-site table, the constant pool, the function table and symbols, the relocation

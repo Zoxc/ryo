@@ -5,11 +5,15 @@ shape's control flow) implements R's step of that instruction (`Ryo.Vm.R.Sem.ste
 `opSem` on `view`'s operands, then `Then.succ`), given the handler's contract.
 
 - `argItem`, `setupItems`: the setup the decoder accepts (`handlerArgs`): argument `i` into
-  `X86.argRegs[i]` by `fpItem` (`fp`), `mov r, rax` (the exception object), `setReg` (an
-  immediate) or `lea r, [rip + ref]` (an address).
-- `exec_setup`: the setup puts each argument's value (`argVal`: `rbp`, `rax`, the immediate,
-  `ρ`'s address of the argument, `Linked`) in its register (`ArgsIn`), and changes only those
-  registers, the flags and `rip`.
+  `handlerRegs pe` (`rdi, rsi, rdx, rcx, r8, r9`; PE's Win64 `rcx, rdx, r8, r9`) by `fpItem`
+  (`fp`), `mov r, rax` (the exception object), `setReg` (an immediate) or `lea r, [rip + ref]`
+  (an address); on PE a fifth, a 32-bit immediate, stored to the stack (`stackItem`,
+  `mov dword [rsp + 32], imm`).
+- `exec_setup`: a setup of register arguments only (`args.length ≤ (handlerRegs pe).length`)
+  puts each argument's value (`argVal`: `rbp`, `rax`, the immediate, `ρ`'s address of the
+  argument, `Linked`) in its register (`ArgsIn`), and changes only those registers, the flags
+  and `rip`. (PE's stack argument, the `atomic.cxchg` handlers', writes the frame's bottom: its
+  step is open.)
 - `HandlerContract`: what a handler call does, as a trusted assumption on an abstract return
   relation `Ret h x x'` (`x` just after `call h`, at `h`'s linked entry, `AtHandler`; `x'`
   where it returns). It is `opSem` plus
@@ -60,11 +64,51 @@ def argItem (mode : Ryo.Obj.Mode) (r : Reg) : R.Arg → Option Item
   | .imm v => some (.setReg r v)
   | a => (argRef a).map (.lea r ·)
 
-/-- A handler call's argument setup: argument `i` into `X86.argRegs[i]`, in order. -/
+/-- PE's stack argument (position 4): a 32-bit immediate, stored as a `dword` at `[rsp + 32]`
+(`M.stackArg`). -/
+def stackItem : R.Arg → Option Item
+  | .imm v => if v.toNat < 2 ^ 32 then some (.stImm .d M.stackArg (v.setWidth 32)) else none
+  | _ => none
+
+/-- The item that puts argument `a` in position `i`: into its register (`argItem`), or into PE's
+stack position (`stackItem`). -/
+def posItem (mode : Ryo.Obj.Mode) (i : Nat) (a : R.Arg) : Option Item :=
+  match handlerReg mode.pe i with
+  | some r => argItem mode r a
+  | none => stackItem a
+
+/-- A handler call's argument setup: argument `i` into position `i` (`(handlerRegs mode.pe)[i]`,
+on PE a fifth to the stack), in order. -/
 def setupItems (mode : Ryo.Obj.Mode) (args : List R.Arg) : Option (List Item) :=
-  if args.length ≤ X86.argRegs.length then
-    (args.zip X86.argRegs).mapM fun (a, r) => argItem mode r a
+  if args.length ≤ handlerPositions mode.pe then
+    args.zipIdx.mapM fun (a, i) => posItem mode i a
   else none
+
+theorem handlerRegs_le_positions (pe : Bool) : (handlerRegs pe).length ≤ handlerPositions pe := by
+  cases pe <;> decide
+
+private theorem mapM_zipIdx_regs (mode : Ryo.Obj.Mode) : ∀ (args : List R.Arg) (k : Nat),
+    k + args.length ≤ (handlerRegs mode.pe).length →
+    (args.zipIdx k).mapM (fun (a, i) => posItem mode i a) =
+      (args.zip ((handlerRegs mode.pe).drop k)).mapM (fun (a, r) => argItem mode r a)
+  | [], _, _ => by simp
+  | a :: args, k, h => by
+    have hk : k < (handlerRegs mode.pe).length := by simp at h; omega
+    rw [List.drop_eq_getElem_cons hk]
+    simp only [List.zipIdx_cons, List.zip_cons_cons, List.mapM_cons]
+    rw [mapM_zipIdx_regs mode args (k + 1) (by simp at h ⊢; omega)]
+    have hp : posItem mode k a = argItem mode (handlerRegs mode.pe)[k] a := by
+      simp [posItem, handlerReg, List.getElem?_eq_getElem hk]
+    rw [hp]
+
+/-- A setup of register arguments only is `argItem`s into `handlerRegs`. -/
+theorem setupItems_regs {mode : Ryo.Obj.Mode} {args : List R.Arg}
+    (h : args.length ≤ (handlerRegs mode.pe).length) :
+    setupItems mode args = (args.zip (handlerRegs mode.pe)).mapM fun (a, r) => argItem mode r a := by
+  unfold setupItems
+  rw [if_pos (Nat.le_trans h (handlerRegs_le_positions mode.pe))]
+  have := mapM_zipIdx_regs mode args 0 (by simpa using h)
+  simpa using this
 
 /-- The addresses `ρ` gives the address arguments are where they are linked. -/
 def Linked (ctx : Ctx) (ρ : R.Addrs) : Prop :=
@@ -77,9 +121,15 @@ def argVal (ρ : R.Addrs) (x : X86.State) : R.Arg → Option (BitVec 64)
   | .imm v => some v
   | a => (ρ a).map fun p => BitVec.ofNat 64 p.addr
 
-/-- The argument registers of `x` hold the values `args` have in `x0`. -/
-def ArgsIn (ρ : R.Addrs) (x0 x : X86.State) (args : List R.Arg) : Prop :=
-  ∀ i (h1 : i < args.length) (h2 : i < X86.argRegs.length), argVal ρ x0 args[i] = some (x.reg X86.argRegs[i])
+/-- The argument positions of `x`, at the handler's entry (the return address at `rsp`), hold the
+values `args` have in `x0`: the registers (`handlerRegs pe`), and on PE the stack position
+(position 4) the 32-bit immediate in the `dword` past the return address and the shadow space,
+at `rsp + 40`. -/
+def ArgsIn (ρ : R.Addrs) (pe : Bool) (x0 x : X86.State) (args : List R.Arg) : Prop :=
+  (∀ i (h1 : i < args.length) (h2 : i < (handlerRegs pe).length),
+    argVal ρ x0 args[i] = some (x.reg (handlerRegs pe)[i])) ∧
+  (∀ (h1 : 4 < args.length), pe = true →
+    ∃ v, args[4] = .imm v ∧ v.toNat < 2 ^ 32 ∧ x.memW .d (x.rsp + 40) = v.setWidth 32)
 
 /-! ### The contract -/
 
@@ -115,13 +165,13 @@ def AtHandler (ctx : Ctx) (h : Full.Opcode) (x : X86.State) : Prop :=
 /-- The handler contract (trusted; see the module comment). `x` is the state just after
 `call h`: at the handler (`AtHandler`), the argument registers set, the return address at
 `rsp`. -/
-structure HandlerContract (ctx : Ctx) (ρ : R.Addrs) (fpArg : Bool) (Owned : BitVec 64 → Prop)
+structure HandlerContract (ctx : Ctx) (ρ : R.Addrs) (mode : Ryo.Obj.Mode) (Owned : BitVec 64 → Prop)
     (lo : BitVec 64) (Ret : Full.Opcode → X86.State → X86.State → Prop) : Prop where
-  returns : ∀ h args vals st x, h.hasHandler = true → R.unpack ρ h fpArg args = some vals →
-    AtHandler ctx h x → ArgsIn ρ x x args → HRel st x → NoUB h vals st →
+  returns : ∀ h args vals st x, h.hasHandler = true → R.unpack ρ h mode args = some vals →
+    AtHandler ctx h x → ArgsIn ρ mode.pe x x args → HRel st x → NoUB h vals st →
     (∃ ch r, opSem h vals st ch = .ok r) → ∃ x', Ret h x x'
-  sound : ∀ h args vals st x x', h.hasHandler = true → R.unpack ρ h fpArg args = some vals →
-    AtHandler ctx h x → ArgsIn ρ x x args → HRel st x → NoUB h vals st → Ret h x x' →
+  sound : ∀ h args vals st x x', h.hasHandler = true → R.unpack ρ h mode args = some vals →
+    AtHandler ctx h x → ArgsIn ρ mode.pe x x args → HRel st x → NoUB h vals st → Ret h x x' →
     ∃ ch ctl st', opSem h vals st ch = .ok (ctl, st') ∧ HRel st' x' ∧ CtlIn ctl x' ∧
       x'.rsp = x.rsp + 8 ∧ x'.rip = x.mem.read64 x.rsp ∧
       (∀ i, CalleeSaved i → x'.regs i = x.regs i) ∧
@@ -240,19 +290,30 @@ private theorem setup_exec (ctx : Ctx) (ρ : R.Addrs) (mode : Ryo.Obj.Mode) (hl 
             simp [BitVec.add_assoc, BitVec.ofNat_add]
 
 
-/-- The setup puts each argument's value in its register (see the module comment). -/
+/-- The handler registers are distinct, and neither `rax` nor `rbp`. -/
+theorem handlerRegs_ok (pe : Bool) : (handlerRegs pe).Pairwise (fun a b => a.idx ≠ b.idx) ∧
+    ∀ r ∈ handlerRegs pe, r.idx ≠ Reg.rax.idx ∧ r.idx ≠ Reg.rbp.idx := by
+  cases pe <;> decide
+
+/-- A handler register is an argument register of either convention: `rdi, rsi, rdx, rcx, r8,
+r9`. -/
+theorem mem_handlerRegs {pe : Bool} {r : Reg} (h : r ∈ handlerRegs pe) : r ∈ X86.argRegs := by
+  cases pe <;> cases r <;> simp_all [handlerRegs, X86.argRegs]
+
+/-- The setup of register arguments puts each argument's value in its register (see the module
+comment). -/
 theorem exec_setup (ctx : Ctx) (ρ : R.Addrs) (mode : Ryo.Obj.Mode) (args : List R.Arg)
     (items : List Item) (x : X86.State) (hs : setupItems mode args = some items)
-    (hl : Linked ctx ρ) :
-    ∃ x1, execItems ctx items x = .ok x1 ∧ ArgsIn ρ x x1 args ∧ x1.mem = x.mem ∧
+    (hreg : args.length ≤ (handlerRegs mode.pe).length) (hl : Linked ctx ρ) :
+    ∃ x1, execItems ctx items x = .ok x1 ∧
+      (∀ i (h1 : i < args.length) (h2 : i < (handlerRegs mode.pe).length),
+        argVal ρ x args[i] = some (x1.reg (handlerRegs mode.pe)[i])) ∧ x1.mem = x.mem ∧
       x1.xmm = x.xmm ∧ (∀ i : Fin 16, (∀ r ∈ X86.argRegs, r.idx ≠ i) → x1.regs i = x.regs i) ∧
       x1.rip = x.rip + BitVec.ofNat 64 (items.map Item.size).sum := by
-  unfold setupItems at hs
-  split at hs
-  · obtain ⟨x1, he, ha, hm, hx, hr, -, -, hrip⟩ := setup_exec ctx ρ mode hl args X86.argRegs items x
-      (by decide) (by decide) hs
-    exact ⟨x1, he, ha, hm, hx, hr, hrip⟩
-  · cases hs
+  rw [setupItems_regs hreg] at hs
+  obtain ⟨x1, he, ha, hm, hx, hr, -, -, hrip⟩ := setup_exec ctx ρ mode hl args (handlerRegs mode.pe)
+    items x (handlerRegs_ok mode.pe).1 (handlerRegs_ok mode.pe).2 hs
+  exact ⟨x1, he, ha, hm, hx, fun i hi => hr i (fun r hr' => hi r (mem_handlerRegs hr')), hrip⟩
 
 /-! ### The shapes `op` and `br` -/
 
@@ -435,10 +496,11 @@ returns if `opSem` can step; each return is at the next item, related to `opSem`
 one of its choices, with `rsp` and the callee-saved registers of `x`. -/
 theorem handler_op_sound {ρ : R.Addrs} {mode : Ryo.Obj.Mode} {Owned : BitVec 64 → Prop}
     {lo : BitVec 64} {Ret : Full.Opcode → X86.State → X86.State → Prop}
-    (ctx : Ctx) (hC : HandlerContract ctx ρ mode.fpArg Owned lo Ret) (hl : Linked ctx ρ)
+    (ctx : Ctx) (hC : HandlerContract ctx ρ mode Owned lo Ret) (hl : Linked ctx ρ)
     {h : Full.Opcode} {n : Nat} (hn : Full.Opcode.ofNat? n = some h) (hh : h.hasHandler = true)
     {args : List R.Arg} {vals : Operands} {items : List Item}
-    (hu : R.unpack ρ h mode.fpArg args = some vals) (hs : setupItems mode args = some items)
+    (hu : R.unpack ρ h mode args = some vals) (hs : setupItems mode args = some items)
+    (hreg : args.length ≤ (handlerRegs mode.pe).length)
     {st : OpSem.State} {x : X86.State} (hr : HRel st x) (hno : NoUB h vals st)
     (hap : StackApart lo st x) (hlo : lo.toNat + 8 ≤ x.rsp.toNat) :
     ∃ x1, execItems ctx (items ++ [Item.call (.handler n)]) x = .ok x1 ∧
@@ -447,7 +509,7 @@ theorem handler_op_sound {ρ : R.Addrs} {mode : Ryo.Obj.Mode} {Owned : BitVec 64
         CtlIn ctl x' ∧ x'.rsp = x.rsp ∧
         x'.rip = x.rip + BitVec.ofNat 64 ((items ++ [Item.call (.handler n)]).map Item.size).sum ∧
         (∀ i, CalleeSaved i → x'.regs i = x.regs i) := by
-  obtain ⟨x1, he1, hargs, hm1, hx1, hr1, hrip1⟩ := exec_setup ctx ρ mode args items x hs hl
+  obtain ⟨x1, he1, hargs, hm1, hx1, hr1, hrip1⟩ := exec_setup ctx ρ mode args items x hs hreg hl
   have hkeep : ∀ i : Fin 16, (i = 0 ∨ i = 4 ∨ CalleeSaved i) → x1.regs i = x.regs i := by
     intro i hi
     apply hr1
@@ -485,16 +547,16 @@ theorem handler_op_sound {ρ : R.Addrs} {mode : Ryo.Obj.Mode} {Owned : BitVec 64
         (execItems ctx items x >>= execItems ctx [Item.call (.handler n)]) := by
       simp only [execItems, List.foldlM_append]; rfl
     rw [happ, he1, ex_bind_ok', execItems_cons]; rfl
-  have hA : ArgsIn ρ x2 x2 args := by
-    intro i h1 h2
+  have hA : ArgsIn ρ mode.pe x2 x2 args := by
+    refine ⟨fun i h1 h2 => ?_, fun h4 hpe => absurd hreg (by rw [hpe]; simp [handlerRegs]; omega)⟩
     have hv : ∀ b, argVal ρ x2 b = argVal ρ x b := by
       intro b; cases b <;> simp [argVal, hrbp, hrax]
     rw [hv, hargs i h1 h2]
-    suffices hs : x2.regs (X86.argRegs[i]).idx = x1.regs (X86.argRegs[i]).idx by
+    suffices hs : x2.regs ((handlerRegs mode.pe)[i]).idx = x1.regs ((handlerRegs mode.pe)[i]).idx by
       show some (x1.regs _) = some (x2.regs _); rw [hs]
     apply hregs2
-    have hm : X86.argRegs[i] ∈ X86.argRegs := List.getElem_mem h2
-    generalize X86.argRegs[i] = r at hm ⊢
+    have hm : (handlerRegs mode.pe)[i] ∈ X86.argRegs := mem_handlerRegs (List.getElem_mem h2)
+    generalize (handlerRegs mode.pe)[i] = r at hm ⊢
     simp only [X86.argRegs, List.mem_cons, List.not_mem_nil, or_false] at hm
     rcases hm with rfl | rfl | rfl | rfl | rfl | rfl <;> decide
   have hat : AtHandler ctx h x2 := ⟨n, hn, by simp [x2, State.jump]⟩

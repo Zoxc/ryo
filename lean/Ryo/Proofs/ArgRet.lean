@@ -30,11 +30,11 @@ are one.
 parts are `partRegs`', each `partOk` and within 16 bytes; `exec_loads` by induction, the
 invariant being that the registers not loaded later already relate), so `RetRel regs x'`; then
 the epilogue and `ret` (`exec_epilogue`): `rsp = fp + 16`, `rip` the return address at
-`[fp + 8]`, memory unchanged; with a frame pointer or PE the saved `rbp` from `[fp]`, PE's
-`rsi`/`rdi` from `[fp - 16]`/`[fp - 8]` (`winPrologue` pushes them below the saved `rbp`); only
-`rax rdx r11 rsp rbp rsi rdi` and the flags change. The incoming area relates to the x86 bytes at
-`fp + 16`. All three modes are handled; without a frame pointer (`add rsp, F + 8`) the hypothesis
-`hsp` gives `rsp = fp - F` (the frame's `lea reg, [rsp + F]` is `fp`), which `RRel` doesn't carry.
+`[fp + 8]`, memory unchanged; with a frame pointer or PE the saved `rbp` from `[fp]`; only
+`rax rdx r11 rsp rbp` and the flags change. The incoming area relates to the x86 bytes at
+`fp + 16`. All three modes are handled; without a frame pointer (`add rsp, F + 8`) and on PE
+(`add rsp, F; pop rbp`) the hypothesis `hsp` gives `rsp = fp - F` (the frame's
+`lea reg, [rsp + F]` is `fp`), which `RRel` doesn't carry.
 That `[fp]` and `[fp + 8]` hold the caller's `rbp` and return address is the caller's side (the
 statements give the values in terms of the memory there).
 
@@ -1025,32 +1025,58 @@ theorem signExtend_ofNat_small (v : Nat) (h : v < 2 ^ 31) :
   simp only [BitVec.toInt_eq_toNat_cond, BitVec.toNat_ofNat]
   split <;> split <;> omega
 
-/-- The epilogue (`leave`; PE: `lea rsp, [rbp - 16]; pop rsi; pop rdi; pop rbp`; without a
-frame pointer: `add rsp, F + 8`, from `rsp = fp - F`) and `ret`: the return address at `fp + 8`
-jumped to, `rsp = fp + 16`, the saved registers restored; nothing else changed but the flags. -/
+/-- The epilogue (`leave`; PE: `add rsp, F; pop rbp`, from `rsp = fp - F`; without a frame
+pointer: `add rsp, F + 8`, from `rsp = fp - F`) and `ret`: the return address at `fp + 8`
+jumped to, `rsp = fp + 16`, the saved `rbp` restored; nothing else changed but the flags. -/
 theorem exec_epilogue (ctx : Ctx) (F : Nat) (m : Ryo.Obj.Mode) (y : X86.State)
-    (hsp : m.pe = false → m.framePointer = false →
+    (hsp : m.pe = true ∨ m.framePointer = false →
       y.rsp = y.reg .rbp - BitVec.ofNat 64 F ∧ F + 8 < 2 ^ 31) :
     ∃ y', execItems ctx (epilogue F m ++ [.ret]) y = .ok y' ∧ y'.mem = y.mem ∧ y'.xmm = y.xmm ∧
       y'.rsp = y.reg .rbp + 16 ∧ y'.rip = y.mem.read64 (y.reg .rbp + 8) ∧
-      (∀ i : Fin 16, i ≠ 4 → i ≠ 5 → i ≠ 6 → i ≠ 7 → y'.regs i = y.regs i) ∧
+      (∀ i : Fin 16, i ≠ 4 → i ≠ 5 → y'.regs i = y.regs i) ∧
       (m.pe = true ∨ m.framePointer = true → y'.reg .rbp = y.mem.read64 (y.reg .rbp)) ∧
-      (m.pe = false → m.framePointer = false → y'.reg .rbp = y.reg .rbp) ∧
-      (m.pe = true → y'.reg .rsi = y.mem.read64 (y.reg .rbp - 16) ∧
-        y'.reg .rdi = y.mem.read64 (y.reg .rbp - 8)) ∧
-      (m.pe = false → y'.reg .rsi = y.reg .rsi ∧ y'.reg .rdi = y.reg .rdi) := by
+      (m.pe = false → m.framePointer = false → y'.reg .rbp = y.reg .rbp) := by
+  have ea : ∀ a b : BitVec 64, (addF a b).1 = a + b := fun _ _ => rfl
   unfold epilogue
   cases hpe : m.pe <;> cases hfp : m.framePointer <;>
-    simp only [hpe, hfp, Bool.false_eq_true, ↓reduceIte, winEpilogue, List.cons_append,
-      List.nil_append, execItems_cons, execItems_nil,
-      Item.exec, pure, Except.pure, ex_bind_ok', false_implies, forall_const,
-      true_or, or_true] at hsp ⊢
-  all_goals refine ⟨_, rfl, ?_⟩
+    simp only [hpe, hfp, Bool.false_eq_true, ↓reduceIte, true_or, or_true, or_false,
+      false_implies, forall_const, true_implies] at hsp ⊢
+  -- PE: `add rsp, F` (for `F > 0`) and `pop rbp`, from `rsp = fp - F`.
+  case true.false | true.true =>
+    obtain ⟨hr, hF⟩ := hsp
+    simp only [State.rsp, State.reg, idx_rsp, idx_rbp] at hr
+    by_cases hF0 : F = 0
+    · subst hF0
+      simp only [bne_self_eq_false, Bool.false_eq_true, ↓reduceIte, List.nil_append,
+        List.cons_append, execItems_cons, execItems_nil, Item.exec, pure, Except.pure, ex_bind_ok']
+      refine ⟨_, rfl, ?_⟩
+      simp (config := { decide := true }) [State.pop, State.rsp, State.reg, State.setReg, State.jump]
+      simp only [BitVec.ofNat_eq_ofNat, BitVec.sub_zero] at hr
+      simp only [hr, idx_rbp]
+      and_intros
+      all_goals first
+        | (intro i h4 h5; simp [h4, h5])
+        | (congr 1; bv_omega)
+        | bv_omega
+    · have hne : (F != 0) = true := by simpa using hF0
+      simp only [hne, ↓reduceIte, List.cons_append, List.singleton_append, execItems_cons,
+        execItems_nil, Item.exec, pure, Except.pure, ex_bind_ok']
+      refine ⟨_, rfl, ?_⟩
+      simp (config := { decide := true }) [State.pop, State.rsp, State.reg, State.setReg,
+        State.setFlags, State.jump]
+      simp only [ea, idx_rbp]
+      rw [hr, signExtend_ofNat_small _ (by omega)]
+      and_intros
+      all_goals first
+        | (intro i h4 h5; simp [h4, h5])
+        | (congr 1; bv_omega)
+        | bv_omega
   all_goals
+    simp only [List.cons_append, List.nil_append, execItems_cons, execItems_nil, Item.exec, pure,
+      Except.pure, ex_bind_ok']
+    refine ⟨_, rfl, ?_⟩
     simp (config := { decide := true }) [State.pop, State.rsp, State.reg, State.setReg,
       State.setFlags, State.jump]
-  all_goals
-    have ea : ∀ a b : BitVec 64, (addF a b).1 = a + b := fun _ _ => rfl
     try simp only [ea]
   case false.false =>
     obtain ⟨hr, hF⟩ := hsp
@@ -1059,15 +1085,14 @@ theorem exec_epilogue (ctx : Ctx) (F : Nat) (m : Ryo.Obj.Mode) (y : X86.State)
     and_intros
     · bv_omega
     · congr 1; bv_omega
-    · intro i h4 h5 h6 h7; simp [h4]
+    · intro i h4 h5; simp [h4]
   all_goals
     and_intros <;>
     first
       | exact True.intro
-      | (intro i h4 h5 h6 h7; simp [h4, h5, h6, h7])
+      | (intro i h4 h5; simp [h4, h5])
       | bv_omega
       | (congr 1; bv_omega)
-      | (intro i h4 h5 h6 h7; simp [h4, h5, h6, h7])
 
 theorem uninit_retBytes (r : R.Reg) (y : X86.State) :
     BytesRel (List.replicate r.width .uninit) (retBytes y r) := by
@@ -1091,15 +1116,15 @@ return registers, zero-extended, the incoming area read, and the function's end)
 `retLoads k src ++ epilogue F mode ++ [ret]`: the x86 return registers relate to R's (`RetRel`),
 memory is unchanged, `rsp` is the frame's `fp + 16` (the caller's, past the return address)
 and `rip` the return address at `fp + 8`; with a frame pointer (or PE) the saved `rbp` is
-restored from `[fp]`, PE's `rsi`/`rdi` from `[fp - 16]`/`[fp - 8]`. Without a frame pointer,
-`hsp` gives `rsp = fp - F` (`F` the frame size: `lea reg, [rsp + F]` is `fp`). Only `rax`,
-`rdx`, `r11`, `rsp`, `rbp`, `rsi`, `rdi` and the flags change. -/
+restored from `[fp]`. Without a frame pointer and on PE, `hsp` gives `rsp = fp - F` (`F` the
+frame size: `lea reg, [rsp + F]` is `fp`; PE's epilogue is `add rsp, F; pop rbp`). Only `rax`,
+`rdx`, `r11`, `rsp`, `rbp` and the flags change. -/
 theorem ret_step (ctx : Ctx) (F : Nat) {c : R.Code} {s : R.RState} {x : X86.State}
     {ch : OpSem.Choice} {op : Reduced.Opcode} {src : BitVec 32} {k : BitVec 64}
     {f : Full.Opcode} {fin : R.Final} (hr : RRel s x)
     (hi : c.d.insns[s.pc]? = some (.native op [.slot src, .imm k])) (hf : op.full = some f)
     (hsh : f.info.shape = .ret) (hsrc : src.toInt + 16 ≤ 2 ^ 31)
-    (hsp : c.mode.pe = false → c.mode.framePointer = false →
+    (hsp : c.mode.pe = true ∨ c.mode.framePointer = false →
       x.rsp = x.reg .rbp - BitVec.ofNat 64 F ∧ F + 8 < 2 ^ 31)
     (h : R.step c s ch = .ok (.done fin)) :
     ∃ s1 regs incoming x', RRel s1 x ∧ s1.fp = s.fp ∧ s1.args = s.args ∧
@@ -1111,11 +1136,7 @@ theorem ret_step (ctx : Ctx) (F : Nat) {c : R.Code} {s : R.RState} {x : X86.Stat
       x'.rsp = x.reg .rbp + 16 ∧ x'.rip = x.mem.read64 (x.reg .rbp + 8) ∧
       (c.mode.pe = true ∨ c.mode.framePointer = true → x'.reg .rbp = x.mem.read64 (x.reg .rbp)) ∧
       (c.mode.pe = false → c.mode.framePointer = false → x'.reg .rbp = x.reg .rbp) ∧
-      (c.mode.pe = true → x'.reg .rsi = x.mem.read64 (x.reg .rbp - 16) ∧
-        x'.reg .rdi = x.mem.read64 (x.reg .rbp - 8)) ∧
-      (c.mode.pe = false → x'.reg .rsi = x.reg .rsi ∧ x'.reg .rdi = x.reg .rdi) ∧
-      (∀ i : Fin 16, i ≠ 0 → i ≠ 2 → i ≠ 11 → i ≠ 4 → i ≠ 5 → i ≠ 6 → i ≠ 7 →
-        x'.regs i = x.regs i) := by
+      (∀ i : Fin 16, i ≠ 0 → i ≠ 2 → i ≠ 11 → i ≠ 4 → i ≠ 5 → x'.regs i = x.regs i) := by
   obtain ⟨s1, parts, regs, incoming, hsc, hp, hg, hin, ho⟩ := step_ret hi hf hsh h
   simp only [R.Out.done.injEq] at ho
   subst ho
@@ -1126,26 +1147,20 @@ theorem ret_step (ctx : Ctx) (F : Nat) {c : R.Code} {s : R.RState} {x : X86.Stat
     hg rfl rfl (fun r _ _ => by rw [Regs.get_empty]; exact uninit_retBytes r x)
   have hy4 : y.regs 4 = x.regs 4 := ry 4 (by decide) (by decide) (by decide)
   have hy5 : y.regs 5 = x.regs 5 := ry 5 (by decide) (by decide) (by decide)
-  have hy6 : y.regs 6 = x.regs 6 := ry 6 (by decide) (by decide) (by decide)
-  have hy7 : y.regs 7 = x.regs 7 := ry 7 (by decide) (by decide) (by decide)
   have hyb : y.reg .rbp = x.reg .rbp := hy5
-  obtain ⟨x', ex, mx, xx, rspx, ripx, regsx, rbpx, rbpx2, rsix, rsix2⟩ :=
-    exec_epilogue ctx F c.mode y (fun h1 h2 => by
-      have := hsp h1 h2
+  obtain ⟨x', ex, mx, xx, rspx, ripx, regsx, rbpx, rbpx2⟩ :=
+    exec_epilogue ctx F c.mode y (fun h1 => by
+      have := hsp h1
       simp only [State.rsp, State.reg, idx_rsp, idx_rbp] at this ⊢
       rw [hy4, hy5]; exact this)
-  have h0 : x'.regs 0 = y.regs 0 := regsx 0 (by decide) (by decide) (by decide) (by decide)
-  have h2 : x'.regs 2 = y.regs 2 := regsx 2 (by decide) (by decide) (by decide) (by decide)
+  have h0 : x'.regs 0 = y.regs 0 := regsx 0 (by decide) (by decide)
+  have h2 : x'.regs 2 = y.regs 2 := regsx 2 (by decide) (by decide)
   refine ⟨s1, regs, incoming, x', hr1, hk.fp, hk.args, rfl, hin,
     fun hn => readFrame_rel hr1.rel hin (by omega) (by omega), ?_,
     fun r hr' => by rw [retBytes_congr h0 h2 xx]; exact hrr r hr', by rw [mx, my],
     by rw [rspx, hyb], by rw [ripx, hyb, my], fun hm => by rw [rbpx hm, hyb, my],
-    fun h1 h2 => by rw [rbpx2 h1 h2, hyb], fun hm => by rw [(rsix hm).1, (rsix hm).2, hyb, my]; exact ⟨rfl, rfl⟩,
-    fun hm => ?_, fun i i0 i2 i11 i4 i5 i6 i7 => by
-      rw [regsx i i4 i5 i6 i7, ry i i0 i2 i11]⟩
-  · rw [execItems_append, hl, ey]; exact ex
-  · obtain ⟨a1, a2⟩ := rsix2 hm
-    simp only [State.reg] at a1 a2 ⊢
-    exact ⟨a1.trans hy6, a2.trans hy7⟩
+    fun h1 h2 => by rw [rbpx2 h1 h2, hyb], fun i i0 i2 i11 i4 i5 => by
+      rw [regsx i i4 i5, ry i i0 i2 i11]⟩
+  rw [execItems_append, hl, ey]; exact ex
 
 end Ryo.Proofs.ArgRet

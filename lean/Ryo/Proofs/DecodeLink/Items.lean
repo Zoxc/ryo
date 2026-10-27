@@ -41,11 +41,6 @@ theorem u8_and7 (m : UInt8) : (m &&& 7).toNat < 8 := by
 /-- What `Cursor::base_item` returns: no memory operand, a `movd` register below 8. -/
 def BaseOk (i : Item) : Prop := i.mem? = none ∧ XmmOk i
 
-theorem winPiece_ok {c : Cursor} {i : Item} (h : c.winPiece = some i) : BaseOk i := by
-  unfold Cursor.winPiece at h
-  repeat' (first | (simp only [Option.some.injEq, reduceCtorEq] at h) | (split at h))
-  all_goals (subst h; exact ⟨rfl, trivial⟩)
-
 theorem baseNoRex_ok {c : Cursor} {op : UInt8} {i : Item}
     (h : Cursor.baseCandidate.baseNoRex c op = some i) : BaseOk i := by
   unfold Cursor.baseCandidate.baseNoRex at h
@@ -65,7 +60,7 @@ theorem baseCandidate_ok {c : Cursor} {i : Item} (h : c.baseCandidate = some i) 
     | (simp only [Option.bind_eq_some_iff, Option.bind_none, Option.bind_some, Option.some.injEq,
         reduceCtorEq, Functor.map, Option.map_eq_some_iff, exists_const] at h)
     | (split at h) | (obtain ⟨_, _, h⟩ := h))
-  all_goals first | exact ⟨rfl, trivial⟩ | exact winPiece_ok ‹_› | exact baseNoRex_ok ‹_›
+  all_goals first | exact ⟨rfl, trivial⟩ | exact baseNoRex_ok ‹_›
 
 /-- `sseCandidate`'s items: `movss`/`movsd`/`movups` of a register below 8, off `rbp` or `rsp`. -/
 theorem sseCandidate_ok {c : Cursor} {i : Item} (h : c.sseCandidate = some i) :
@@ -165,11 +160,13 @@ theorem noXmm_mapMem {i : Item} (f : M → M) (h : NoXmm i) : NoXmm (i.mapMem f)
     | (rename_i rm _; cases rm <;> exact h)
 
 /-- What `fromSpFrame` does: maps a `[rsp + _]` operand without a frame pointer, else keeps
-the item (rejecting `[rsp + _]` with a frame pointer and `[rbp + _]` without). -/
+the item (rejecting `[rsp + _]` with a frame pointer but PE's handler stack argument, and
+`[rbp + _]` without). -/
 theorem fromSpFrame_cases {c : Cursor} {i j : Item} (h : c.fromSpFrame i = some j) :
     (∃ f m, c.spFrame = some f ∧ i.mem? = some m ∧ m.base = .rsp ∧
       j = i.mapMem (fun m => M.frame (m.disp - f))) ∨
-    (j = i ∧ ∀ m, i.mem? = some m → m.base ≠ .rsp ∧ (m.base = .rbp → c.spFrame = none)) := by
+    (j = i ∧ ∀ m, i.mem? = some m → m.base ≠ .rsp ∧ (m.base = .rbp → c.spFrame = none)) ∨
+    (j = i ∧ i.isStackArg = true ∧ c.spFrame = none) := by
   unfold Cursor.fromSpFrame at h
   generalize hsf : c.spFrame = sf at h
   generalize hmb : i.mem?.map (·.base) = mb at h
@@ -177,30 +174,38 @@ theorem fromSpFrame_cases {c : Cursor} {i j : Item} (h : c.fromSpFrame i = some 
   cases mb with
   | none =>
     cases sf <;> intro h <;> cases h <;>
-      exact .inr ⟨rfl, fun m hm => by rw [hm] at hmb; cases hmb⟩
+      exact .inr (.inl ⟨rfl, fun m hm => by rw [hm] at hmb; cases hmb⟩)
   | some b =>
-    cases sf <;> cases b <;> intro h <;> cases h
+    cases sf <;> cases b <;> intro h
+    case none.rsp =>
+      by_cases hs : i.isStackArg = true
+      · simp only [hs, ↓reduceIte, Option.some.injEq] at h
+        subst h; exact .inr (.inr ⟨rfl, hs, rfl⟩)
+      · simp only [hs, Bool.false_eq_true, ↓reduceIte, reduceCtorEq] at h
+    all_goals cases h
     all_goals first
-      | exact .inr ⟨rfl, fun m hm => by
-          rw [hm] at hmb; simp only [Option.map_some, Option.some.injEq] at hmb; simp [hmb]⟩
+      | exact .inr (.inl ⟨rfl, fun m hm => by
+          rw [hm] at hmb; simp only [Option.map_some, Option.some.injEq] at hmb; simp [hmb]⟩)
       | (obtain ⟨m, hm, hb⟩ := Option.map_eq_some_iff.mp hmb
          exact .inl ⟨_, m, rfl, hm, hb, rfl⟩)
 
 theorem fromSpFrame_noXmm {c : Cursor} {i j : Item} (hi : NoXmm i) (h : c.fromSpFrame i = some j) :
     NoXmm j := by
-  rcases fromSpFrame_cases h with ⟨f, m, -, -, -, rfl⟩ | ⟨rfl, -⟩
+  rcases fromSpFrame_cases h with ⟨f, m, -, -, -, rfl⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩
   · exact noXmm_mapMem _ hi
+  · exact hi
   · exact hi
 
 theorem fromSpFrame_sse {c : Cursor} {s : Bool} {z x : Nat} {m : M} {j : Item}
     (hb : m.base = .rbp ∨ m.base = .rsp) (h : c.fromSpFrame (.sse s z x m) = some j) :
     ∃ m', j = .sse s z x m' ∧ m'.base = .rbp := by
-  rcases fromSpFrame_cases h with ⟨f, m', -, -, -, rfl⟩ | ⟨rfl, hk⟩
+  rcases fromSpFrame_cases h with ⟨f, m', -, -, -, rfl⟩ | ⟨rfl, hk⟩ | ⟨rfl, hs, -⟩
   · exact ⟨_, rfl, rfl⟩
   · have := hk m rfl
     rcases hb with hb | hb
     · exact ⟨m, rfl, hb⟩
     · exact absurd hb this.1
+  · simp [Item.isStackArg] at hs
 
 /-- Every item `decodeItem` returns is `XmmOk` (`Call.XmmOk`), in either frame form. -/
 theorem decodeItem_xmmOk {c : Cursor} {i : Item} {n : Nat} (h : decodeItem c = some (i, n)) :
@@ -288,7 +293,7 @@ theorem mapMem_eq_self {f : M → M} {i : Item} (h : ∀ m, i.mem? = some m → 
 theorem fromSpFrame_sp {c : Cursor} {F : BitVec 32} {i j : Item} (hsp : c.spFrame = some F)
     (h : c.fromSpFrame i = some j) : j.spFrame F = i := by
   unfold Item.spFrame
-  rcases fromSpFrame_cases h with ⟨f, m, hf, hm, hb, rfl⟩ | ⟨rfl, hk⟩
+  rcases fromSpFrame_cases h with ⟨f, m, hf, hm, hb, rfl⟩ | ⟨rfl, hk⟩ | ⟨rfl, -, hs⟩
   · rw [hsp] at hf; cases hf
     rw [mapMem_mapMem]
     apply mapMem_eq_self
@@ -302,6 +307,7 @@ theorem fromSpFrame_sp {c : Cursor} {F : BitVec 32} {i j : Item} (hsp : c.spFram
     intro m hm
     have hne : m.base ≠ .rbp := fun hb => by rw [(hk m hm).2 hb] at hsp; cases hsp
     simp [hne]
+  · rw [hsp] at hs; cases hs
 
 theorem baseOk_spFrame {i : Item} (h : BaseOk i) (F : BitVec 32) : i.spFrame F = i :=
   mapMem_eq_self fun m hm => by rw [h.1] at hm; cases hm

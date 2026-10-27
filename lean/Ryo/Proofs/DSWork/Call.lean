@@ -428,40 +428,34 @@ theorem call_read_site {fr : Frame} {dropped : List DroppedStore} {c c' : Cursor
   · obtain ⟨rfl, rfl⟩ := pure_ok h6
     obtain ⟨n, hn, rfl⟩ := run_tryItem_some h5
     exact fin_call _ _ _ n (head_callPtr _) hn rfl rfl
-  · rename_i it0 _ _ _ _
-    obtain ⟨n1, hn1, rfl⟩ := run_tryItem_some h5
+  · -- A tail call: the epilogue and the jump, read again from `callAt`.
+    have e5 : c5 = atPos c3 c5.pos := posOnly_run PosOnly.tryItem h5
+    obtain ⟨u, c7, h7, h6⟩ := bind_ok h6
+    rw [run_setPos] at h7; cases h7
+    have hc3 : atPos c5 c3.pos = c3 := by rw [e5]
+    rw [hc3] at h6
+    obtain ⟨b, cE, hE, h6⟩ := bind_ok h6
     split at h6
-    · rename_i hep
-      have hcons : fr.epilogue = it0 :: fr.epilogue.tail := by
-        revert hep; cases fr.epilogue <;> simp
-      obtain ⟨b, cE, hE, h6⟩ := bind_ok h6
-      split at h6
-      · obtain ⟨rfl, rfl⟩ := pure_ok h6
-        exact (hnone rfl).elim
-      rename_i hb
-      have hb : b = true := by simpa using hb
-      subst hb
-      obtain ⟨dE, eE⟩ := expectItems_dec hE
-      have dE' : Dec c c3.pos fr.epilogue cE.pos := by
-        rw [hcons]
-        obtain ⟨p3, rfl⟩ : ∃ p, c3 = atPos c p := ⟨_, eps'⟩
-        exact .cons hn1 (Dec.at_iff.mp (Dec.at_iff.mp dE))
-      have eE' : cE = atPos c cE.pos := by rw [eE, eps']
-      obtain ⟨y, c7, h7, h6⟩ := bind_ok h6
-      split at h6
-      · obtain ⟨rfl, rfl⟩ := pure_ok h6
-        obtain ⟨n2, hn2, rfl⟩ := run_tryItem_some h7
-        exact fin_tail _ _ _ cE n2 (head_tailCall _) dE' eE' hn2 rfl rfl
-      · obtain ⟨rfl, rfl⟩ := pure_ok h6
-        obtain ⟨n2, hn2, rfl⟩ := run_tryItem_some h7
-        exact fin_tail _ _ _ cE n2 (head_tailCallPtr _) dE' eE' hn2 rfl rfl
-      · obtain ⟨rfl, rfl⟩ := pure_ok h6
-        exact (hnone rfl).elim
     · obtain ⟨rfl, rfl⟩ := pure_ok h6
       exact (hnone rfl).elim
-  · obtain ⟨rfl, rfl⟩ := pure_ok h6
-    exact (hnone rfl).elim
-
+    rename_i hb
+    have hb : b = true := by simpa using hb
+    subst hb
+    obtain ⟨dE, eE⟩ := expectItems_dec hE
+    have dE' : Dec c c3.pos fr.epilogue cE.pos := by
+      obtain ⟨p3, rfl⟩ : ∃ p, c3 = atPos c p := ⟨_, eps'⟩
+      exact Dec.at_iff.mp dE
+    have eE' : cE = atPos c cE.pos := by rw [eE, eps']
+    obtain ⟨y, c8, h8, h6⟩ := bind_ok h6
+    split at h6
+    · obtain ⟨rfl, rfl⟩ := pure_ok h6
+      obtain ⟨n2, hn2, rfl⟩ := run_tryItem_some h8
+      exact fin_tail _ _ _ cE n2 (head_tailCall _) dE' eE' hn2 rfl rfl
+    · obtain ⟨rfl, rfl⟩ := pure_ok h6
+      obtain ⟨n2, hn2, rfl⟩ := run_tryItem_some h8
+      exact fin_tail _ _ _ cE n2 (head_tailCallPtr _) dE' eE' hn2 rfl rfl
+    · obtain ⟨rfl, rfl⟩ := pure_ok h6
+      exact (hnone rfl).elim
 
 end Ryo.Proofs.DecodeLink
 
@@ -625,9 +619,11 @@ theorem call_epilogue_canon (F : Nat) (m : Ryo.Obj.Mode) :
   unfold epilogue
   split
   · intro i hi
-    simp only [winEpilogue, List.mem_cons, List.not_mem_nil, or_false] at hi
-    rcases hi with rfl | rfl | rfl | rfl <;>
-      exact call_canon_of (fun _ => by simp [Item.wf]) (fun _ _ h => by cases h)
+    split at hi <;> simp only [List.mem_append, List.mem_cons, List.not_mem_nil, or_false,
+      false_or] at hi
+    all_goals (try rcases hi with rfl | rfl)
+    all_goals (try subst hi)
+    all_goals exact call_canon_of (fun _ => by simp [Item.wf]) (fun _ _ h => by cases h)
   · split
     · intro i hi; simp only [List.mem_singleton] at hi; subst hi
       exact call_canon_of (fun _ => rfl) (fun _ _ h => by cases h)
@@ -676,7 +672,7 @@ tail call: `Call.tail_call_step` (`hn` from `StackSizes.stack`), `ExitRel`'s `ta
 `FrameFacts`. -/
 theorem bodySim_call' (hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
     {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
-    (hP : ProtoFacts S k p q c' {}) (hn : NoArg S.fr S.body p a cur)
+    (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
     (hr : (callInsn S.fr (S.dr k)).run cur = .ok (some q, c')) :
     BodySim S k p (S.used k) := by
   sorry  -- TODO(wip): bodySim_call'

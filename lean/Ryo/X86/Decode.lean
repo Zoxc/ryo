@@ -17,14 +17,9 @@ the linker's business), so `encode` inverts `decodeItem` on what it accepts by c
 (`Cursor.matchesItem`; `decodeItem_pos`: an accepted element is never empty). The converse, `decodeItem (encode i) = some (i, len)` for `Item.wf` items,
 is tested over the Rust encoder's vectors and generated item sets in `RyoTest/X86.lean`.
 
-The PE prologue and epilogue, one item each in Rust (`Item::WinPrologue`, `Item::WinEpilogue`),
-are their instructions here (`Ryo.X86.Item`); `Cursor.winPiece` reads those past `push rbp`
-only inside the whole sequence, so the decoder accepts what Rust's does, an instruction at a
-time.
-
 `Cursor.spFrame`: without a frame pointer, frame slots are `[rsp + F + d]`, which the decoder
 returns as `[rbp + d]` (the encoder's form); `[rbp + _]` is then invalid, as `[rsp + _]` is with a
-frame pointer.
+frame pointer, but for PE's handler stack argument, `mov dword [rsp + 32], imm` (`stackArg`).
 -/
 import Ryo.X86.Encode
 
@@ -148,33 +143,17 @@ def accept (c : Cursor) (post : Item → Option Item) (i : Item) : Option (Item 
   | some n, some j => some (j, n)
   | _, _ => none
 
-/-- An instruction of the PE prologue or epilogue past `push rbp`, read only inside the whole
-sequence: Rust reads `winPrologueBytes` and `winEpilogueBytes` as one item each
-(`Item::WinPrologue`, `Item::WinEpilogue`), so it reads none of these instructions elsewhere.
-The sequence is the bytes around the cursor, `k` bytes back for the instruction `k` bytes in. -/
-def winPiece (c : Cursor) : Option Item :=
-  let seqAt (k : Nat) (bs : List UInt8) : Bool :=
-    k ≤ c.pos && { c with pos := c.pos - k }.bytes bs.length == some bs
-  if seqAt 1 winPrologueBytes then some (.push .rdi)
-  else if seqAt 2 winPrologueBytes then some (.push .rsi)
-  else if seqAt 3 winPrologueBytes then some .leaRbpRsp16
-  else if seqAt 0 winEpilogueBytes then some .leaRspRbp16
-  else if seqAt 4 winEpilogueBytes then some (.pop .rsi)
-  else if seqAt 5 winEpilogueBytes then some (.pop .rdi)
-  else if seqAt 6 winEpilogueBytes then some (.pop .rbp)
-  else none
-
 /-- `Cursor::base_item`'s parse: the candidate item, before the canonical check. -/
 def baseCandidate (c : Cursor) : Option Item := do
   let b0 ← c.get 0
   let g := c.get
-  if let some i := c.winPiece then return i
   let (rex, at_) : UInt8 × Nat := if 0x40 ≤ b0 && b0 ≤ 0x4f then (b0, 1) else (0, 0)
   let (rw, rr, rx, rb) := (rex &&& 8 != 0, rex &&& 4 != 0, rex &&& 2 != 0, rex &&& 1 != 0)
   let ext (c : Bool) : Nat := if c then 8 else 0
   let op ← g at_
   match rex, op with
   | 0, 0x55 => pure .pushRbp
+  | 0, 0x5d => pure .popRbp
   -- A counter's `inc`: of the record's call counter or its loop counter.
   | 0x48, 0xff =>
     if (← g 2) != 0x05 then none
@@ -208,6 +187,7 @@ def baseCandidate (c : Cursor) : Option Item := do
     else if rex == 0 then
       baseNoRex c op
     else if op == 0xff && (← g 2) == 0x53 then pure (.callR11 (BitVec.ofNat 8 (← g 3).toNat))
+    else if op == 0xff && (← g 2) == 0xe3 then pure .jmpR11
     else none
   | 0x48, 0xc7 | 0x49, 0xc7 =>
     let m ← g 2
@@ -430,10 +410,12 @@ def nativeCandidate (c : Cursor) : Option Item := do
   | _ => pure ()
   pure item
 
-/-- The frame slots of a native or SSE item, from the mode's form to the encoder's. -/
+/-- The frame slots of a native or SSE item, from the mode's form to the encoder's. With a frame
+pointer, PE's handler stack argument (`stackArg`), outside the frame slots, is kept. -/
 def fromSpFrame (c : Cursor) (item : Item) : Option Item :=
   match item.mem?.map (·.base), c.spFrame with
-  | some Reg.rbp, some _ | some Reg.rsp, none => none
+  | some Reg.rsp, none => if item.isStackArg then some item else none
+  | some Reg.rbp, some _ => none
   | some Reg.rsp, some f => some (item.mapMem fun m => M.frame (m.disp - f))
   | _, _ => some item
 

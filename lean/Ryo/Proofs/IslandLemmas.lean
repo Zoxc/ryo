@@ -82,43 +82,37 @@ theorem readNat_congr (m m' : Mem) : ∀ (a : BitVec 64) (k : Nat),
         apply BitVec.eq_of_toNat_eq; simp; omega
       rwa [e] at this)]
 
-/-- The island's setup items, as one state transformation. -/
+/-- The island's setup items, as one state transformation: at the template, `rsp` 8 lower. -/
 theorem exec_pre (ctx : Ctx) (mode : Ryo.Obj.Mode) (r1 r2 : Reg) (isl o : Nat) (x : X86.State)
-    (pe : Bool) (hpe : mode.pe = pe) (h1 : r1.idx ≠ Reg.rsp.idx) (h2 : r2.idx ≠ Reg.rsp.idx) :
-    let items := [fpItem r1 mode, .lea r2 (.ro o)] ++
-      (if pe then [Item.subRsp 32] else []) ++ [.callMem (.sym isl)]
-    let sh : BitVec 64 := if pe then 32 else 0
+    (h1 : r1.idx ≠ Reg.rsp.idx) (h2 : r2.idx ≠ Reg.rsp.idx) :
+    let items := [fpItem r1 mode, .lea r2 (.ro o), .callMem (.sym isl)]
     ∃ x1, execItems ctx items x = .ok x1 ∧
-      x1.mem = x.mem.write (x.rsp - sh - 8) 8 (x.rip + BitVec.ofNat 64 (items.map Item.size).sum).toNat ∧
+      x1.mem = x.mem.write (x.rsp - 8) 8 (x.rip + BitVec.ofNat 64 (items.map Item.size).sum).toNat ∧
       x1.rip = x.mem.read64 (ctx.addrOf (.sym isl)) ∧
-      x1.regs = fun i => if i = Reg.rsp.idx then x.rsp - sh - 8 else
+      x1.regs = fun i => if i = Reg.rsp.idx then x.rsp - 8 else
         if i = r2.idx then ctx.addrOf (.ro o) else if i = r1.idx then x.reg .rbp else x.regs i := by
-  intro items sh
-  subst hpe
+  intro items
   have h1' : ¬ (4 : Fin 16) = r1.idx := fun h => h1 (by rw [← h]; rfl)
   have h2' : ¬ (4 : Fin 16) = r2.idx := fun h => h2 (by rw [← h]; rfl)
-  cases hp : mode.pe <;> cases hf : mode.framePointer <;>
-    simp only [items, sh, hp, hf, fpItem, Bool.false_eq_true, ↓reduceIte, List.cons_append,
-      List.nil_append, execItems_cons, execItems_nil, Item.exec, pure, Except.pure, ex_bind_ok'] <;>
+  cases hf : mode.framePointer <;>
+    simp only [items, hf, fpItem, Bool.false_eq_true, ↓reduceIte, execItems_cons, execItems_nil, Item.exec, pure, Except.pure, ex_bind_ok'] <;>
     refine ⟨_, rfl, ?_, ?_, ?_⟩
-  all_goals simp only [State.push, State.setMem, State.setReg, State.jump, State.setFlags, State.rsp,
-    State.reg, State.ea, M.frame, ↓reduceIte, List.map_cons, List.map_nil, List.sum_cons,
-    List.sum_nil, Nat.add_zero, BitVec.ofNat_add, BitVec.add_assoc, BitVec.sub_zero, subF_eq]
-  all_goals simp [h1', h2', State.reg, BitVec.sub_sub]
+  all_goals simp only [State.push, State.setMem, State.setReg, State.jump, State.rsp,
+    State.reg, State.ea, M.frame, List.map_cons, List.map_nil, List.sum_cons,
+    List.sum_nil, Nat.add_zero, BitVec.ofNat_add, BitVec.add_assoc]
+  all_goals simp [h1', h2']
   all_goals funext i; by_cases hi : i = 4 <;> simp [hi]
 
 theorem bv_add4 (A P Q : BitVec 64) : A + P + Q = A - 4 + (4 + P + Q) := by
   rw [← BitVec.add_assoc, ← BitVec.add_assoc, BitVec.sub_add_cancel]
-theorem bv_subadd (r k : BitVec 64) : r - k - 8 + 8 + k = r := by
-  rw [BitVec.sub_add_cancel, BitVec.sub_add_cancel]
+theorem bv_subadd (r : BitVec 64) : r - 8 + 8 = r := BitVec.sub_add_cancel _ _
 
-/-- The push below the shadow space writes only on the stack. -/
-theorem push_other' (lo sp a : BitVec 64) (k : Nat) (hk : k ≤ 32) (hlo : lo.toNat + 8 + k ≤ sp.toNat)
-    (ha : ¬ Counter.InStack lo sp a) : 8 ≤ (a - (sp - BitVec.ofNat 64 k - 8)).toNat := by
+/-- The call's push writes only on the stack. -/
+theorem push_other' (lo sp a : BitVec 64) (hlo : lo.toNat + 8 ≤ sp.toNat)
+    (ha : ¬ Counter.InStack lo sp a) : 8 ≤ (a - (sp - 8)).toNat := by
   simp only [Counter.InStack] at ha
-  have e : (BitVec.ofNat 64 k).toNat = k := by simp; omega
   have := a.isLt; have := sp.isLt
-  rw [BitVec.toNat_sub, BitVec.toNat_sub, BitVec.toNat_sub, e]
+  rw [BitVec.toNat_sub, BitVec.toNat_sub]
   have e8 : (8 : BitVec 64).toNat = 8 := rfl
   rw [e8]
   by_cases h1 : lo.toNat ≤ a.toNat

@@ -139,14 +139,14 @@ theorem opSem_of_stepView {c : R.Code} {s1 : R.RState} {ch : OpSem.Choice} {h : 
 step for the returned choice. -/
 theorem handler_core (ctx : Ctx) {c : R.Code} {s s1 : R.RState} {x : X86.State}
     {Owned : BitVec 64 → Prop} {lo : BitVec 64} {Ret : Full.Opcode → X86.State → X86.State → Prop}
-    (hC : HandlerContract ctx c.ρ c.mode.fpArg Owned lo Ret) (hl : Linked ctx c.ρ)
+    (hC : HandlerContract ctx c.ρ c.mode Owned lo Ret) (hl : Linked ctx c.ρ)
     {h : Full.Opcode} {n : Nat} {args : List R.Arg} {t : R.Then Nat} {vals : Operands}
     {items : List Item} (hn : Full.Opcode.ofNat? n = some h) (hh : h.hasHandler = true)
     (hF : OpFacts h) (hres : h ≠ .resume) (hun : h ≠ .unreachable)
     (hi : c.d.insns[s.pc]? = some (.handler h args t))
-    (hu : R.unpack c.ρ h c.mode.fpArg args = some vals)
+    (hu : R.unpack c.ρ h c.mode args = some vals)
     (hv : R.view c.mode c.ρ (.handler h args t) = some ⟨h, vals, some t⟩)
-    (hs : setupItems c.mode args = some items)
+    (hs : setupItems c.mode args = some items) (hreg : args.length ≤ (handlerRegs c.mode.pe).length)
     (hr : RRel s x) (hm : MemRel s.st x) (hsz : ∀ sc ∈ c.scopesAt s.pc, sc.size < 2 ^ 62)
     (hsc : (c.scopesAt s.pc).foldlM R.applyScope s = .ok s1)
     (hno : NoUB h vals s1.st) (hap : StackApart lo s1.st x) (hlo : lo.toNat + 8 ≤ x.rsp.toNat) :
@@ -164,7 +164,7 @@ theorem handler_core (ctx : Ctx) {c : R.Code} {s s1 : R.RState} {x : X86.State}
   obtain ⟨hr1, hm1⟩ := memRel_foldlM _ hsz hr hm hsc
   have hpc : s1.pc = s.pc := (scopes_keeps _ hsc).pc
   obtain ⟨x1, hx1, hret, hsound⟩ :=
-    handler_op_sound ctx hC hl hn hh hu hs ⟨hr1.rel, hm1⟩ hno hap hlo
+    handler_op_sound ctx hC hl hn hh hu hs hreg ⟨hr1.rel, hm1⟩ hno hap hlo
   refine ⟨x1, hx1, fun ⟨ch, o, ho⟩ => hret ?_, fun x' hR => ?_⟩
   · rw [step_handler hi hsc] at ho
     obtain ⟨r, hop⟩ := opSem_of_stepView hv hres hun ho
@@ -185,13 +185,13 @@ theorem handler_core (ctx : Ctx) {c : R.Code} {s s1 : R.RState} {x : X86.State}
 /-- `handler h args next` of shape `op` or `lpad` (see the module comment). -/
 theorem handler_step_op (ctx : Ctx) {c : R.Code} {s s1 : R.RState} {x : X86.State}
     {Owned : BitVec 64 → Prop} {lo : BitVec 64} {Ret : Full.Opcode → X86.State → X86.State → Prop}
-    (hC : HandlerContract ctx c.ρ c.mode.fpArg Owned lo Ret) (hl : Linked ctx c.ρ)
+    (hC : HandlerContract ctx c.ρ c.mode Owned lo Ret) (hl : Linked ctx c.ρ)
     {h : Full.Opcode} {n : Nat} {args : List R.Arg} {vals : Operands} {items : List Item}
     (hn : Full.Opcode.ofNat? n = some h) (hh : h.hasHandler = true)
     (hsh : h.info.shape = .op ∨ h.info.shape = .lpad) (hF : OpFacts h)
     (hi : c.d.insns[s.pc]? = some (.handler h args .next))
-    (hu : R.unpack c.ρ h c.mode.fpArg args = some vals)
-    (hs : setupItems c.mode args = some items)
+    (hu : R.unpack c.ρ h c.mode args = some vals)
+    (hs : setupItems c.mode args = some items) (hreg : args.length ≤ (handlerRegs c.mode.pe).length)
     (hr : RRel s x) (hm : MemRel s.st x) (hsz : ∀ sc ∈ c.scopesAt s.pc, sc.size < 2 ^ 62)
     (hsc : (c.scopesAt s.pc).foldlM R.applyScope s = .ok s1)
     (hno : NoUB h vals s1.st) (hap : StackApart lo s1.st x) (hlo : lo.toNat + 8 ≤ x.rsp.toNat) :
@@ -207,7 +207,7 @@ theorem handler_step_op (ctx : Ctx) {c : R.Code} {s s1 : R.RState} {x : X86.Stat
     rintro rfl; rw [unreachable_shape] at hsh; rcases hsh with hsh | hsh <;> cases hsh
   have hv : R.view c.mode c.ρ (.handler h args .next) = some ⟨h, vals, some .next⟩ := by
     rcases hsh with hsh | hsh <;> simp [R.view, hh, hu, hsh]
-  obtain ⟨x1, hx1, hret, hall⟩ := handler_core ctx hC hl hn hh hF hres hun hi hu hv hs hr hm hsz
+  obtain ⟨x1, hx1, hret, hall⟩ := handler_core ctx hC hl hn hh hF hres hun hi hu hv hs hreg hr hm hsz
     hsc hno hap hlo
   refine ⟨x1, hx1, hret, fun x' hR => ?_⟩
   obtain ⟨ch, ctl, st', -, hH, hwf, -, hfit, hrbp, -, hsp, hrip, hsaved, hok, -⟩ := hall x' hR
@@ -219,15 +219,15 @@ theorem handler_step_op (ctx : Ctx) {c : R.Code} {s s1 : R.RState} {x : X86.Stat
 (`pos t = tgt`: see the module comment). -/
 theorem handler_step_br (ctx : Ctx) {c : R.Code} {s s1 : R.RState} {x : X86.State}
     {Owned : BitVec 64 → Prop} {lo : BitVec 64} {Ret : Full.Opcode → X86.State → X86.State → Prop}
-    (hC : HandlerContract ctx c.ρ c.mode.fpArg Owned lo Ret) (hl : Linked ctx c.ρ)
+    (hC : HandlerContract ctx c.ρ c.mode Owned lo Ret) (hl : Linked ctx c.ρ)
     {h : Full.Opcode} {n : Nat} {args : List R.Arg} {vals : Operands} {items : List Item}
     {neg : Bool} {t : Nat} {tgt : BitVec 32} {long : Bool} (pos : Nat → BitVec 32)
     (hpos : pos t = tgt)
     (hn : Full.Opcode.ofNat? n = some h) (hh : h.hasHandler = true)
     (hsh : h.info.shape = .br) (hF : OpFacts h)
     (hi : c.d.insns[s.pc]? = some (.handler h args (.branch neg t)))
-    (hu : R.unpack c.ρ h c.mode.fpArg args = some vals)
-    (hs : setupItems c.mode args = some items)
+    (hu : R.unpack c.ρ h c.mode args = some vals)
+    (hs : setupItems c.mode args = some items) (hreg : args.length ≤ (handlerRegs c.mode.pe).length)
     (hr : RRel s x) (hm : MemRel s.st x) (hsz : ∀ sc ∈ c.scopesAt s.pc, sc.size < 2 ^ 62)
     (hsc : (c.scopesAt s.pc).foldlM R.applyScope s = .ok s1)
     (hno : NoUB h vals s1.st) (hap : StackApart lo s1.st x) (hlo : lo.toNat + 8 ≤ x.rsp.toNat) :
@@ -246,7 +246,7 @@ theorem handler_step_br (ctx : Ctx) {c : R.Code} {s s1 : R.RState} {x : X86.Stat
   have hv : R.view c.mode c.ρ (.handler h args (.branch neg t)) =
       some ⟨h, vals, some (.branch neg t)⟩ := by
     simp [R.view, hh, hu, hsh]
-  obtain ⟨x1, hx1, hret, hall⟩ := handler_core ctx hC hl hn hh hF hres hun hi hu hv hs hr hm hsz
+  obtain ⟨x1, hx1, hret, hall⟩ := handler_core ctx hC hl hn hh hF hres hun hi hu hv hs hreg hr hm hsz
     hsc hno hap hlo
   refine ⟨x1, hx1, hret, fun x' hR => ?_⟩
   obtain ⟨ch, ctl, st', -, hH, hwf, hcin, hfit, hrbp, -, hsp, hrip, hsaved, hok, -⟩ := hall x' hR
@@ -265,13 +265,13 @@ theorem handler_step_br (ctx : Ctx) {c : R.Code} {s s1 : R.RState} {x : X86.Stat
 for that return's choice errors (`Then.succ` of `trap` is `none`). -/
 theorem handler_step_trap (ctx : Ctx) {c : R.Code} {s s1 : R.RState} {x : X86.State}
     {Owned : BitVec 64 → Prop} {lo : BitVec 64} {Ret : Full.Opcode → X86.State → X86.State → Prop}
-    (hC : HandlerContract ctx c.ρ c.mode.fpArg Owned lo Ret) (hl : Linked ctx c.ρ)
+    (hC : HandlerContract ctx c.ρ c.mode Owned lo Ret) (hl : Linked ctx c.ρ)
     {h : Full.Opcode} {n : Nat} {args : List R.Arg} {vals : Operands} {items : List Item}
     (hn : Full.Opcode.ofNat? n = some h) (hh : h.hasHandler = true)
     (hsh : h.info.shape = .trap) (hres : h ≠ .resume) (hun : h ≠ .unreachable) (hF : OpFacts h)
     (hi : c.d.insns[s.pc]? = some (.handler h args .trap))
-    (hu : R.unpack c.ρ h c.mode.fpArg args = some vals)
-    (hs : setupItems c.mode args = some items)
+    (hu : R.unpack c.ρ h c.mode args = some vals)
+    (hs : setupItems c.mode args = some items) (hreg : args.length ≤ (handlerRegs c.mode.pe).length)
     (hr : RRel s x) (hm : MemRel s.st x) (hsz : ∀ sc ∈ c.scopesAt s.pc, sc.size < 2 ^ 62)
     (hsc : (c.scopesAt s.pc).foldlM R.applyScope s = .ok s1)
     (hno : NoUB h vals s1.st) (hap : StackApart lo s1.st x) (hlo : lo.toNat + 8 ≤ x.rsp.toNat) :
@@ -281,7 +281,7 @@ theorem handler_step_trap (ctx : Ctx) {c : R.Code} {s s1 : R.RState} {x : X86.St
         ∃ ch ctl st', opSem h vals s1.st ch = .ok (ctl, st') ∧ ∃ e, R.step c s ch = .error e := by
   have hv : R.view c.mode c.ρ (.handler h args .trap) = some ⟨h, vals, some .trap⟩ := by
     simp [R.view, hh, hu, hsh]
-  obtain ⟨x1, hx1, hret, hall⟩ := handler_core ctx hC hl hn hh hF hres hun hi hu hv hs hr hm hsz
+  obtain ⟨x1, hx1, hret, hall⟩ := handler_core ctx hC hl hn hh hF hres hun hi hu hv hs hreg hr hm hsz
     hsc hno hap hlo
   refine ⟨x1, hx1, hret, fun x' hR => ⟨ud2_fault ctx x', ?_⟩⟩
   obtain ⟨ch, ctl, st', hop, -, -, -, -, -, -, -, -, -, -, herr⟩ := hall x' hR

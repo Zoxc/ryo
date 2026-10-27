@@ -6,16 +6,15 @@ It accepts only the canonical sequences (`asm::x86`, read by `Ryo.X86.decodeItem
 registers set in order, and recovers every operand, the frame size and the unwind entries:
 
 - the prologue and epilogue of the frame size (`push rbp; mov rbp, rsp; sub rsp, F`, or
-  `sub rsp, F + 8` without a frame pointer, or the PE forms; a stack probe from 4096 bytes);
-  the PE prologue and epilogue are their instructions (`winPrologue`, `winEpilogue`), which
-  `decodeItem` reads only inside the whole sequence, as Rust reads it as one item
-  (`Cursor.winPiece`), and a mismatch in the prologue is at its start, as Rust's;
+  `sub rsp, F + 8` without a frame pointer; a stack probe from 4096 bytes; PE's epilogue
+  `add rsp, F; pop rbp`);
 - with `Mode.counters`, the entry's and each loop head's counter check
   (`inc qword [rip + rec]; jns stub`, a loop head's on the loop counter, `rec + 56`) and the
   stubs after the code, in order;
 - the `arg`s at the start, calls and tail calls (argument loads, call, result stores),
   islands, `ret`, `jmp`, and every handler call as `handler h args then`, its argument
-  registers read from `rdi` on (`fp`, the exception object, an immediate or an address), then
+  registers read from `rdi` on (on PE the Win64 positions `rcx, rdx, r8, r9` and the stack,
+  `Asm.handlerPos`) (`fp`, the exception object, an immediate or an address), then
   its shape's control flow (a branch on `al`, a jump table, `ud2`); a `switch.dense.w8-w64`
   whose index computation (`Asm.denseIndex`) stands in for the call, read as that handler call
   (`denseSwitch`); `unreachable`, a bare `ud2`;
@@ -26,11 +25,16 @@ registers set in order, and recovers every operand, the frame size and the unwin
   sequence where they would have been;
 - loop-head padding (`Mode.alignLoops`), jump tables and their `int3` padding;
 - the call sites (from the LSDA) against the calls, landing pads that are `lpad`s, and the
-  scopes, placed before the first instruction at or after their position.
+  scopes, placed before the first instruction at or after their position;
+- PE (design/vm.md#unwinding): the `nop` after a call with a landing pad that ends its
+  instruction (`Proto.bare`), and the pad region: from the first cleanup landing pad on, behind
+  its entry `sub rsp, 40; jmp r11` after the counter stubs, with no padding or counter checks,
+  `resume` as `add rsp, 40; ret` (taking the landing pads' exception slot, `resumeSlots`), and no
+  branch across its start.
 
 The functions mirror Rust's one for one, including their quirks (`arg`'s cursor after a
 failed `movd` pair; `binary_search`'s choice among equal positions; `u32` wrapping where Rust
-wraps, and its checked sums: the PE frame size, a result piece's offset).
+wraps, and its checked sums: a result piece's offset, the pad region's entry).
 Loops that Rust runs until the code ends take fuel (the code's length, plus the dropped stores
 for the instruction loop), which they never exhaust: every element read is at least one byte
 (`decodeItem_pos`).
@@ -175,6 +179,8 @@ def sortedContains (a : Array Nat) (x : Nat) : Bool := (rustBinarySearch a x).to
 structure Frame where
   size : Nat
   mode : Mode
+  /-- In the pad region (PE). -/
+  region : Bool := false
 
 def Frame.epilogue (fr : Frame) : List Item := Asm.epilogue fr.size fr.mode
 def Frame.fp (fr : Frame) (r : Reg) : Item := fpItem r fr.mode
@@ -192,6 +198,9 @@ structure Proto where
   counter : Option (Nat × Nat) := none
   /-- An inline instruction's items in the code (without its dropped store). -/
   items : List Item := []
+  /-- Its last item is its call (a call storing no result, a PE island), which on PE a `nop`
+  follows if it has a landing pad. -/
+  bare : Bool := false
 deriving Repr, Inhabited
 
 def Proto.targets (p : Proto) : List Nat :=
@@ -339,21 +348,20 @@ def callInsn (fr : Frame) (dropped : List DroppedStore) : DM (Option Proto) := d
     | some (.callMem (.sym s)), .none => return some (.callSym, [.sym s], true)
     | some .callMemRax, .sym s => return some (.callSymInd, [.sym s], true)
     | some .callRax, .ptr p => return some (.callPtr, [.slot p], true)
-    | some it, _ =>
-      if fr.epilogue.head? == some it then
-        -- The rest of the epilogue (on PE `winEpilogue`'s, there whenever its first is).
-        if !(← expectItems fr.epilogue.tail) then return none
-        match ← tryItem, pre with
-        | some (.jmp (.func f)), .none => return some (.tailCall, [.func f, aOp], false)
-        | some .jmpRax, .ptr p => return some (.tailCallPtr, [.slot p, aOp], false)
-        | _, _ => return none
-      else return none
-    | none, _ => return none)
+    | _, _ =>
+      -- A tail call: the epilogue and the jump.
+      setPos callAt
+      if !(← expectItems fr.epilogue) then return none
+      match ← tryItem, pre with
+      | some (.jmp (.func f)), .none => return some (.tailCall, [.func f, aOp], false)
+      | some .jmpRax, .ptr p => return some (.tailCallPtr, [.slot p, aOp], false)
+      | _, _ => return none)
   let some (op, ops, call) := r | setPos p0; return none
   if call then
     let site := (callAt, (← pos) - callAt)
     let (d, k) ← resultSeq
-    return some { op, ops := .slot d :: ops ++ [.imm (BitVec.ofNat 64 k), aOp], pos := p0, sites := [site] }
+    let ops := .slot d :: ops ++ [.imm (BitVec.ofNat 64 k), aOp]
+    return some { op, ops, pos := p0, sites := [site], bare := k == 0 }
   return some { op, ops, pos := p0 }
 
 /-- An `arg` at the cursor: the store of an argument register to its slot. -/
@@ -484,12 +492,8 @@ def islandCall (fr : Frame) : DM (Nat × Nat × (Nat × Nat)) := do
   if (← item) != fr.fp fpR then bad
   let .lea r (.ro ops) ← item | bad
   if r != opsR then bad
-  if fr.mode.pe then
-    if (← item) != .subRsp 32 then bad
   let site ← pos
   let .callMem (.sym isl) ← item | bad
-  if fr.mode.pe then
-    if (← item) != .addRsp 32 then bad
   return (isl, ops, (site, 6))
 
 /-- The control flow after `op`'s handler call (`then`): for a switch, a table of `n` cases and
@@ -514,25 +518,30 @@ def thenSeq (op : Full.Opcode) (n hat : Nat) : DM (Then Nat × List (Nat × Nat)
     return (.trap, sites)
   | _ => err hat "not an instruction"
 
+/-- The argument at position `i` of a handler call that setup item `it` sets (`handler_args`):
+`fp`, the exception object, an immediate or an address in the position's register
+(`handlerReg`), or PE's stack argument, a 32-bit immediate (`M.stackArg`). -/
+def setupArg (fr : Frame) (i : Nat) (it : Item) : Option Arg :=
+  match handlerReg fr.mode.pe i with
+  | none => match it with
+    | .stImm .d m imm => if m == M.stackArg then some (.imm (imm.setWidth 64)) else none
+    | _ => none
+  | some r =>
+    if it == fr.fp r then some .fp
+    else match it with
+      | .mov g .rax => if g == r then some .exception else none
+      | .setReg g v => if g == r then some (.imm v) else none
+      | .lea g to => if g == r then addrArg to else none
+      | _ => none
+
 /-- The argument registers of a handler call from the register setup before it
-(`handler_args`). -/
+(`handler_args`): position `i` from the `i`th item. -/
 def handlerArgs (setup : List (Nat × Item)) (fr : Frame) (p0 : Nat) : DM (List Arg) := do
   let mut out : Array Arg := #[]
-  let mut i := 0
   for (at_, it) in setup do
-    let some r := Ryo.X86.argRegs[i]? | err at_ "too many argument registers"
-    i := i + 1
-    let bad {α : Type} : DM α := err p0 "operand registers out of order"
-    if it == fr.fp r then out := out.push .fp
-    else
-      match it with
-      | .mov g .rax => if g == r then out := out.push .exception else bad
-      | .setReg g v => if g == r then out := out.push (.imm v) else bad
-      | .lea g to =>
-        match g == r, addrArg to with
-        | true, some a => out := out.push a
-        | _, _ => bad
-      | _ => bad
+    if out.size ≥ handlerPositions fr.mode.pe then err at_ "too many argument registers"
+    let some a := setupArg fr out.size it | err p0 "operand registers out of order"
+    out := out.push a
   return out.toList
 
 /-- `ops_array`: the operand array at `at_` of the rodata (its count the word before). -/
@@ -591,7 +600,7 @@ def denseScan (c : Cursor) : Option (W × BitVec 32 × BitVec 64 × BitVec 64 ×
 and the case count `n` in their registers, `fp` first with `Mode.fpArg`, the others 0. -/
 def denseArgs (fr : Frame) (op : Full.Opcode) (s : BitVec 32) (base n : BitVec 64) :
     Option (List Arg) := do
-  let l ← op.layout fr.mode.fpArg
+  let l ← op.layout fr.mode.fpArg fr.mode.pe
   let mut args : Array Arg := Array.replicate l.regs (.imm 0)
   if fr.mode.fpArg then args := args.set! 0 .fp
   for (o, loc) in op.info.operands.zip l.locs do
@@ -626,14 +635,17 @@ def insnCore (fr : Frame) (ro : ByteArray) : DM Proto := do
     let it ← item
     match it with
     | .setReg .. | .lea .. | .mov .. | .leaM .. => setup := setup.push (at_, it)
-    | _ => head := some (at_, it); break
+    | _ =>
+      -- PE's handler stack argument (`M.stackArg`).
+      if fr.mode.pe && it.isStackArg then setup := setup.push (at_, it)
+      else head := some (at_, it); break
   let some (hat, h) := head | err p0 "not an instruction"
   let handlerOp : Option Full.Opcode := match h with
     | .call (.handler n) => (Full.Opcode.ofNat? n).filter (·.hasHandler)
     | _ => none
   if let some op := handlerOp then
     let args ← handlerArgs setup.toList fr p0
-    let some l := op.layout fr.mode.fpArg | err p0 "no layout"
+    let some l := op.layout fr.mode.fpArg fr.mode.pe | err p0 "no layout"
     let nreg := (op.info.operands.zip l.locs).findSome? fun (o, loc) => match o.kind with
       | .list .target => some loc.reg
       | .list .case8 | .list .case16 | .list .case32 | .list .case64 | .list .case128 => some (loc.reg + 1)
@@ -645,8 +657,13 @@ def insnCore (fr : Frame) (ro : ByteArray) : DM Proto := do
         | _ => err p0 "case count"
     let (t, sites) ← thenSeq op n hat
     return { op, handler := some (args, t), pos := p0, sites }
+  -- `resume` in the pad region, `add rsp, 40; ret`: its slot is the landing pads' (`resumeSlots`).
+  if fr.region && setup.isEmpty && h == .addRsp (BitVec.ofNat 32 peRegionAlloc) then
+    let at_ ← pos
+    if (← item) != .ret then err at_ "not the pad region's return"
+    return { op := .resume, handler := some ([], .trap), pos := p0 }
   match h with
-  | .ld .. | .sse .. | .leave | .leaRspRbp16 | .addRsp _ =>
+  | .ld .. | .sse .. | .leave | .popRbp | .addRsp _ =>
     if setup.isEmpty then
       setPos p0
       let (s, k) ← retSeq fr
@@ -659,12 +676,13 @@ def insnCore (fr : Frame) (ro : ByteArray) : DM Proto := do
   | .branch .always t _ =>
     if setup.isEmpty then return { op := .jmp, ops := [.target t.toNat], pos := p0 }
     else err hat "not an instruction"
-  | .callMem _ | .subRsp _ =>
-    if !(h matches .callMem _) && h != .subRsp 32 then err hat "not an instruction"
+  | .callMem _ =>
+    -- An island: `fp`, `ops`, the call through the slot.
     setPos p0
     let (isl, opsRo, site) ← islandCall fr
     let some ws := opsArray ro opsRo | err p0 "island operands"
-    return { op := .island, ops := [.sym isl, .words ws], pos := p0, sites := [site] }
+    let ops := [.sym isl, .words ws]
+    return { op := .island, ops, pos := p0, sites := [site], bare := fr.mode.pe }
   | _ => err hat "not an instruction"
 
 /-- One instruction that isn't inline (`insn`, in the reduced form): a dense switch's index
@@ -675,18 +693,32 @@ def insn (fr : Frame) (ro : ByteArray) : DM Proto := do
 
 /-! ### The instruction loop and the function -/
 
-/-- The instructions from the cursor to the end (`instructions`), and whether each is padded.
+/-- PE: a `nop` follows proto `q`, a call with a landing pad that ends its instruction. -/
+def nopAfter (mode : Mode) (callSites : Array CallSite) (q : Proto) : Bool :=
+  mode.pe && q.bare && q.sites.any fun (at_, _) => callSites.any fun cs => cs.start == at_ && cs.pad.isSome
+
+/-- PE: the `nop` after proto `q`, a call with a landing pad that ends its instruction
+(`nopAfter`): a `0x90` with no relocation in it. -/
+def nopStep (mode : Mode) (callSites : Array CallSite) (q : Proto) : DM Unit := do
+  if nopAfter mode callSites q then
+    let c ← get
+    if !(c.code[c.pos]? == some 0x90 && c.relocsHere 1 == []) then
+      err c.pos "no nop after a call with a landing pad"
+    setPos (c.pos + 1)
+
+/-- The instructions from the cursor to `limit` (`instructions`), and whether each is padded.
 With `targets` (sorted) the cache is cleared at them and inline sequences must be exact. With
-counters the code ends at the counter stubs. -/
+counters the code ends at the counter stubs. In the pad region, no padding or counter checks. -/
 def instructions (fr : Frame) (ro : ByteArray) (dropped : List DroppedStore)
-    (targets : Option (Array Nat)) (entryStub : Option Nat) : DM (Array Proto × Array Bool) := do
+    (targets : Option (Array Nat)) (entryStub : Option Nat) (limit : Nat)
+    (callSites : Array CallSite) : DM (Array Proto × Array Bool) := do
   let mut protos : Array Proto := #[]
   let mut padded : Array Bool := #[]
-  let mut cache : Cache := {}
+  let mut cache : Cache := { pe := fr.mode.pe }
   let mut endPos := entryStub
   let mut dr := dropped
   for _ in [0:(← fuel) + dropped.length] do
-    if (← atEnd) || some (← pos) == endPos then break
+    if (← pos) ≥ limit || some (← pos) == endPos then break
     -- A sequence that left no code (its reload hit the cache, its store was dropped) ends the
     -- block before a loop head's padding and counter check: none starts at a target.
     if dr.head?.any (·.at_ == (← pos)) then
@@ -699,11 +731,11 @@ def instructions (fr : Frame) (ro : ByteArray) (dropped : List DroppedStore)
         continue
     let pad ← padding
     let p ← pos
-    if pad != 0 && (!fr.mode.alignLoops || pad ≥ 16 || p % 16 != 0) then err p "padding"
+    if pad != 0 && (fr.region || !fr.mode.alignLoops || pad ≥ 16 || p % 16 != 0) then err p "padding"
     padded := padded.push (pad != 0)
-    if targets.any (sortedContains · p) then cache := {}
+    if targets.any (sortedContains · p) then cache := { pe := fr.mode.pe }
     let mut counter : Option (Nat × Nat) := none
-    if fr.mode.counters then
+    if fr.mode.counters && !fr.region then
       match ← tryItem, ← tryItem with
       | some (.ctrInc true), some (.branch .ns t _) =>
         counter := some (t.toNat, ← pos)
@@ -714,7 +746,7 @@ def instructions (fr : Frame) (ro : ByteArray) (dropped : List DroppedStore)
       proto ← argInsn fr.mode
     if proto.isNone then
       if let some q ← callInsn fr dr then
-        cache := {}
+        cache := { pe := fr.mode.pe }
         proto := some q
     if proto.isNone then
       match ← inlineInsn cache dr targets.isSome with
@@ -723,11 +755,12 @@ def instructions (fr : Frame) (ro : ByteArray) (dropped : List DroppedStore)
         cache := c
         dr := d
       | none =>
-        cache := {}
+        cache := { pe := fr.mode.pe }
         proto := some (← insn fr ro)
     let some q := proto | err p "not an instruction"
+    nopStep fr.mode callSites q
     protos := protos.push { q with pos := p, counter }
-  if !((← atEnd) || some (← pos) == endPos) then err (← pos) "decoder out of fuel"
+  if !((← pos) ≥ limit || some (← pos) == endPos) then err (← pos) "decoder out of fuel"
   if let some d := dr.head? then err d.at_ "dropped store not at the end of a sequence"
   return (protos, padded)
 
@@ -739,9 +772,43 @@ structure ReadResult where
   scopes : Array (Nat × Scope)
   heads : Array Nat
 
-/-- `read`, handler calls in the reduced form. -/
-def read (ro : ByteArray) (callSites : Array CallSite) (dropped : List DroppedStore)
-    (scopes : Array Scope) (mode : Mode) : DM ReadResult := do
+/-- The argument registers of `resume` of slot `x` (`handler_args`): `fp` first with
+`Mode.fpArg`, the slot in its operand's position. -/
+def resumeArgs (fr : Frame) (x : BitVec 32) : List Arg :=
+  match Full.Opcode.resume.layout fr.mode.fpArg fr.mode.pe with
+  | some l => (List.range l.regs).map fun r =>
+      if fr.mode.fpArg && r == 0 then .fp
+      else if (l.locs.head?.map (·.reg)) == some r then .imm (x.setWidth 64) else .imm 0
+  | none => []
+
+/-- Gives each `resume` of the pad region (from proto `rs` on), which its return doesn't show,
+the exception slot of the function's landing pads (`resume_slots`): every `lpad` and `resume` of
+a function has the same, the first `lpad`'s last argument. -/
+def resumeSlots (protos : Array Proto) (rs : Nat) (fr : Frame) : DM (Array Proto) := do
+  let slot : Option (BitVec 32) := (protos.find? (·.op == .lpad)).bind fun p =>
+    match p.handler with
+    | some (args, _) => match args.getLast? with
+      | some (.imm v) => some (v.setWidth 32)
+      | _ => none
+    | none => match p.ops.head? with
+      | some (.slot s) => some s
+      | _ => none
+  let mut out := protos
+  for i in [rs:protos.size] do
+    let p := protos[i]!
+    if p.op == .resume then
+      let some x := slot | err p.pos "resume without a landing pad"
+      out := out.set! i { p with handler := some (resumeArgs fr x, .trap) }
+  return out
+
+/-- `PE_REGION_ENTRY`'s length: the pad region's entry, `sub rsp, 40; jmp r11`. -/
+def regionEntryLen : Nat := 7
+
+/-- `read`'s prologue part: the entry's counter check (its stub and where the stub returns to),
+the frame size (from the prologue's `sub`: less the 8 bytes in place of the saved `rbp` without a
+frame pointer), and the prologue of that size; the cursor at the body, without a frame pointer
+with `spFrame` the frame size. -/
+def readFrame (mode : Mode) : DM (Option (Nat × Nat) × Nat) := do
   if !mode.valid then err 0 "unsupported mode"
   -- The entry's counter check.
   let entry : Option (Nat × Nat) ← (do
@@ -755,36 +822,84 @@ def read (ro : ByteArray) (callSites : Array CallSite) (dropped : List DroppedSt
   for _ in [0:← fuel] do
     match ← tryItem with
     | some (.subRsp n) => alloc := n.toNat; break
-    | some .pushRbp | some (.push _) | some .leaRbpRsp16 | some (.mov .rbp .rsp) | some (.setReg .rax _)
-    | some (.call .probe) => continue
+    | some .pushRbp | some (.mov .rbp .rsp) | some (.setReg .rax _) | some (.call .probe) => continue
     | _ => break
-  if mode.pe && alloc + 16 ≥ 2 ^ 32 then err 0 "frame size out of range"
-  let frameSize := if mode.pe then alloc + 16
-    else if mode.framePointer then alloc else u32 (alloc + 2 ^ 32 - 8)
+  let frameSize := if mode.framePointer then alloc else u32 (alloc + 2 ^ 32 - 8)
   if frameSize % 16 != 0 then err 0 "frame size not a multiple of 16"
   setPos start
   for want in prologue frameSize mode do
     let at_ ← pos
-    -- Rust reads `winPrologue` as one item: a mismatch in it is at its start.
-    if (← tryItem) != some want then
-      err (if winPrologue.contains want then start else at_) "not the prologue of the frame size"
+    if (← tryItem) != some want then err at_ "not the prologue of the frame size"
   if !mode.framePointer then modify fun c => { c with spFrame := some (BitVec.ofNat 32 frameSize) }
-  let fr : Frame := ⟨frameSize, mode⟩
-  -- Twice: the cache is cleared at branch targets, known once the whole function is read.
-  let body ← pos
-  let stubs := entry.map (·.1)
-  let (protos1, _) ← instructions fr ro dropped none stubs
-  let targets := (protos1.toList.flatMap Proto.targets).toArray.qsort (· < ·)
+  return (entry, frameSize)
+
+/-- PE: the first cleanup landing pad, where the pad region starts (`encode::pe_region_start`),
+if there is one. -/
+def regionPad (mode : Mode) (callSites : Array CallSite) : Option Nat :=
+  if mode.pe then ((callSites.toList.filter (!·.catches)).filterMap (·.pad)).min? else none
+
+/-- The pad region's entry, right before its first cleanup landing pad (`regionPad`). -/
+def regionEntry (mode : Mode) (callSites : Array CallSite) : DM (Option Nat) := do
+  match regionPad mode callSites with
+  | some p => if p < regionEntryLen then err p "no pad region entry" else return some (p - regionEntryLen)
+  | none => return none
+
+/-- `cond`, or the error `what` at `at_`. -/
+def expect (cond : Bool) (at_ : Nat) (what : String) : DM Unit :=
+  if cond then pure () else err at_ what
+
+/-- The pad region from its entry at `r` (`sub rsp, 40; jmp r11`) to the code's end (`size`). -/
+def readRegion (fr : Frame) (ro : ByteArray) (callSites : Array CallSite)
+    (droppedRegion : List DroppedStore) (targets : Option (Array Nat)) (size r : Nat) :
+    DM (Array Proto × Array Bool) := do
+  setPos r
+  let i1 ← item
+  expect (i1 == .subRsp (BitVec.ofNat 32 peRegionAlloc)) r "not the pad region's entry"
+  let i2 ← item
+  expect (i2 == .jmpR11) r "not the pad region's entry"
+  instructions { fr with region := true } ro droppedRegion targets none size callSites
+
+/-- `read_parts`: the body's instructions from `body` to `limit` (with `stubs`, the counter
+stubs, after the first loop head's check), and the pad region's (from its entry at
+`regionAt`; the counter stubs come between, `checkStubs`), read with the targets `targets`;
+and where the body ends. -/
+def readParts (fr : Frame) (ro : ByteArray) (callSites : Array CallSite)
+    (droppedBody droppedRegion : List DroppedStore) (stubs regionAt : Option Nat)
+    (body limit size : Nat) (targets : Option (Array Nat)) : DM (Array Proto × Array Bool × Nat) := do
   setPos body
-  let (protos, padded) ← instructions fr ro dropped (some targets) stubs
+  let (protos, padded) ← instructions fr ro droppedBody targets stubs limit callSites
+  let bodyEnd ← pos
+  expect (fr.mode.counters || bodyEnd == limit) bodyEnd "an instruction across the pad region's entry"
+  match regionAt with
+  | none => return (protos, padded, bodyEnd)
+  | some r =>
+    let (rp, rpad) ← readRegion fr ro callSites droppedRegion targets size r
+    return (protos ++ rp, padded ++ rpad, bodyEnd)
+
+/-- The pad region's first instruction (proto `rs`) is right after its entry. -/
+def checkRegionStart (protos : Array Proto) (rs : Nat) : Option Nat → DM Unit
+  | none => pure ()
+  | some r => expect ((protos[rs]?.map (·.pos)) == some (r + regionEntryLen)) (r + regionEntryLen)
+      "pad region without instructions"
+
+/-- The index of the instruction at byte position `b` (for a target of the instruction at
+`at_`). -/
+def indexAt (ipos : Array Nat) (at_ b : Nat) : DM Nat := match rustBinarySearch ipos b with
+  | .ok i => pure i
+  | .error _ => err at_ "target isn't an instruction"
+
+/-- The loop heads: single branch targets at or before their branch, not in the pad region (from
+proto `rs` on), which no branch crosses into or out of; checked against the padding and the
+counter checks. -/
+def loopHeads (mode : Mode) (protos : Array Proto) (padded : Array Bool) (rs : Nat) :
+    DM (Array Nat) := do
   let ipos := protos.map (·.pos)
-  let index (at_ b : Nat) : DM Nat := match rustBinarySearch ipos b with
-    | .ok i => pure i
-    | .error _ => err at_ "target isn't an instruction"
-  -- Loop heads: single branch targets at or before their branch.
   let mut head := Array.replicate protos.size false
   for h : i in [0:protos.size] do
     let p := protos[i]
+    for t in p.targets do
+      if (decide ((← indexAt ipos p.pos t) ≥ rs)) != decide (i ≥ rs) then
+        err p.pos "a branch across the pad region's start"
     let single := p.ops.filterMap fun
       | .target t => some t
       | _ => none
@@ -793,16 +908,21 @@ def read (ro : ByteArray) (callSites : Array CallSite) (dropped : List DroppedSt
       | some (_, .table ts) => ts.getLast?.toList
       | _ => []
     for t in single ++ br do
-      let j ← index p.pos t
-      if j ≤ i then head := head.set! j true
+      let j ← indexAt ipos p.pos t
+      if j ≤ i && j < rs then head := head.set! j true
   for i in [0:protos.size] do
     if (padded[i]! && !head[i]!) || (mode.alignLoops && head[i]! && ipos[i]! % 16 != 0) then
       err ipos[i]! "loop head padding"
     if protos[i]!.counter.isSome != (mode.counters && head[i]!) then
       err ipos[i]! "counter check not at a loop head"
-  let heads := (List.range protos.size).filter (head[·]!) |>.toArray
-  -- The counter stubs after the code: the loop heads' in order, then the entry's.
+  return (List.range protos.size).filter (head[·]!) |>.toArray
+
+/-- The counter stubs after the body (from `bodyEnd` to `limit`): the loop heads' in order, then
+the entry's. -/
+def checkStubs (entry : Option (Nat × Nat)) (protos : Array Proto) (heads : Array Nat)
+    (bodyEnd limit : Nat) : DM Unit := do
   if let some (entryStub, entryBack) := entry then
+    setPos bodyEnd
     let checks := heads.toList.map fun i => protos[i]!.counter.getD (0, 0)
     let all := checks ++ [(entryStub, entryBack)]
     for h : n in [0:all.length] do
@@ -819,8 +939,13 @@ def read (ro : ByteArray) (callSites : Array CallSite) (dropped : List DroppedSt
       match ← item with
       | .branch .always t _ => if t.toNat != back then bad
       | _ => bad
-    if !(← atEnd) then err (← pos) "code after the counter stubs"
-  -- Unwind actions from the call sites.
+    if (← pos) != limit then err (← pos) "code after the counter stubs"
+
+/-- The unwind actions from the call sites (and the pad region's `resume`s, from proto `rs` on,
+which continue unwinding). -/
+def actionsOf (callSites : Array CallSite) (protos : Array Proto) (rs : Nat) :
+    DM (Array (Option (Option Nat × Bool))) := do
+  let ipos := protos.map (·.pos)
   let mut actions : Array (Option (Option Nat × Bool)) := Array.replicate protos.size none
   let mut used := 0
   for i in [0:protos.size] do
@@ -844,24 +969,67 @@ def read (ro : ByteArray) (callSites : Array CallSite) (dropped : List DroppedSt
       let pad ← match pad with
         | none => pure none
         | some b => do
-          let j ← index ipos[i]! b
+          let j ← indexAt ipos ipos[i]! b
           if protos[j]!.op != .lpad then err b "landing pad isn't an lpad"
           pure (some j)
       actions := actions.set! i (some (pad, catches))
-    | none => pure ()
+    | none =>
+      -- The pad region's `resume`, a return with no call site, continues unwinding.
+      if p.op == .resume && i ≥ rs then actions := actions.set! i (some (none, false))
   if used != callSites.size then err 0 "call site outside every call"
+  return actions
+
+/-- `read`, handler calls in the reduced form. -/
+def read (ro : ByteArray) (callSites : Array CallSite) (dropped : List DroppedStore)
+    (scopes : Array Scope) (mode : Mode) : DM ReadResult := do
+  let (entry, frameSize) ← readFrame mode
+  let fr : Frame := ⟨frameSize, mode, false⟩
+  let size := (← get).code.size
+  -- PE: the pad region's entry, right before the first cleanup landing pad; the body (and the
+  -- counter stubs) end there.
+  let regionAt ← regionEntry mode callSites
+  let limit := regionAt.getD size
+  let droppedBody := match regionAt with
+    | some r => dropped.takeWhile (·.at_ < r)
+    | none => dropped
+  let droppedRegion := match regionAt with
+    | some r => dropped.dropWhile (·.at_ < r)
+    | none => []
+  -- Twice: the cache is cleared at branch targets, known once the whole function is read.
+  let body ← pos
+  let stubs := entry.map (·.1)
+  let (protos1, _, _) ← readParts fr ro callSites droppedBody droppedRegion stubs regionAt body
+    limit size none
+  let targets := (protos1.toList.flatMap Proto.targets).toArray.qsort (· < ·)
+  let (protos, padded, bodyEnd) ← readParts fr ro callSites droppedBody droppedRegion stubs
+    regionAt body limit size (some targets)
+  -- The index of the region's first instruction (the count without one).
+  let rs := match regionAt with
+    | some r => (protos.toList.takeWhile (·.pos < r + regionEntryLen)).length
+    | none => protos.size
+  checkRegionStart protos rs regionAt
+  let heads ← loopHeads mode protos padded rs
+  checkStubs entry protos heads bodyEnd limit
+  -- `resume` in the pad region takes the landing pads' exception slot.
+  let protos ← if rs < protos.size then resumeSlots protos rs fr else pure protos
+  let actions ← actionsOf callSites protos rs
   -- Scopes: before the first instruction at or after their position.
+  let ipos := protos.map (·.pos)
   let scopes := scopes.map fun sc => ((ipos.filter (· < sc.codeOffset)).size, sc)
   return { protos, frameSize, actions, scopes, heads }
 
-/-- The R form of a function read (`reduced_of`, with `reduced::words`'s loop heads). -/
-def reducedOf (r : ReadResult) : Except AsmError Decoded := do
+/-- The R form of a function read (`reduced_of`, with `reduced::words`'s loop heads: with `pe`,
+none from the first cleanup landing pad on, the pad region). -/
+def reducedOf (r : ReadResult) (pe : Bool) : Except AsmError Decoded := do
   let ipos := r.protos.map (·.pos)
   let index (at_ b : Nat) : Except AsmError Nat := match rustBinarySearch ipos b with
     | .ok i => pure i
     | .error _ => throw ⟨at_, "target isn't an instruction"⟩
   let cleanup := (List.range r.actions.size).filterMap (fun i =>
     r.actions[i]!.map fun (pad, c) => (i, pad, c)) |>.toArray
+  let region : Nat := if pe then
+      ((cleanup.toList.filter (!·.2.2)).filterMap (·.2.1)).min?.getD r.protos.size
+    else r.protos.size
   let dropped := (List.range r.protos.size).filter (r.protos[·]!.dropped) |>.toArray
   let mut insns : Array Insn := #[]
   for p in r.protos do
@@ -881,7 +1049,7 @@ def reducedOf (r : ReadResult) : Except AsmError Decoded := do
       | .handler _ _ (.table ts) => ts.getLast?.toList
       | .handler .. => []
     for t in single do
-      if t ≤ k then head := head.set! t true
+      if t ≤ k && t < region then head := head.set! t true
   let heads := (List.range insns.size).filter (head[·]!) |>.toArray
   let items := r.protos.map (·.items)
   return { insns, frameSize := r.frameSize, cleanup, scopes := r.scopes, dropped, heads, items }
@@ -894,7 +1062,7 @@ def decodeReducedWith (code : ByteArray) (fields : Fields) (rodata : ByteArray)
     (mode : Mode) : Except AsmError Decoded := do
   let c : Cursor := { code := code.data, pos := 0, fields }
   let (r, _) ← (read rodata callSites dropped.toList scopes mode).run c
-  reducedOf r
+  reducedOf r mode.pe
 
 /-- `asm::decode_reduced`: one function's machine code with its relocations (sorted), code
 constants, call sites, dropped stores and scopes, to R. -/
@@ -910,10 +1078,12 @@ instruction writes (its footprint's), `arg`'s destination, `ret`'s 16-byte sourc
 16-byte result slot and the frame ranges a handler call writes (its handler's footprint's, of
 the operands `unpack` gives) (`frameRanges`). Of those, the writes (`writeRanges`: the native
 and handler footprints' writes, `arg`'s destination, a call's result parts) must also miss the
-frame's link slots `[linkLo, 16)`: the saved `rbp` and the return address, and with PE the saved
-`rsi`/`rdi` below them; `arg`'s destination must lie below them. `boundsOk` accepts the code
-only if all frame ranges start at or above `-F` and end at or below `frameTop`, the highest end
-(`0` if lower), with `F` and `frameTop` at most `2 ^ 31`, and the writes miss the link slots:
+frame's link slots `[0, 16)`: the saved `rbp` and the return address; `arg`'s destination must
+lie below them. `boundsOk` accepts the code only if all frame ranges start at or above
+`frameLo` and end at or below `frameTop`, the highest end (`0` if lower), with `F` and
+`frameTop` at most `2 ^ 31`, and the writes miss the link slots. `frameLo` is `-F`, but on PE
+the frame's bottom is the calls' 32 bytes of shadow space, which callees may write, and with a
+handler call's stack argument (`M.stackArg`) the 8 bytes above them (`shadowSize`):
 `Ryo.Proofs.DecodeLink.Bounds` turns it into `FrameBounds c frameTop`. Rust's decoder has no
 such check (its test vectors take random slots), so `decodeReduced` doesn't make it, and stays
 diffable; `decodeBounded` (and `Frame.decodeChecked`) do. -/
@@ -922,13 +1092,10 @@ diffable; `decodeBounded` (and `Frame.decodeChecked`) do. -/
 range's offset is a slot's, its length an immediate's or a case list's count). -/
 def anyAddrs : Addrs := fun _ => some default
 
-/-- The frame's link slots start at `linkLo`: the saved `rbp` at `0`, the return address at `8`,
-with PE the saved `rsi`/`rdi` at `-16` and `-8`. -/
-def linkLo (pe : Bool) : Int := if pe then -16 else 0
-
-/-- The frame range `r` misses the link slots. -/
-def offLink (pe : Bool) (r : Int × Nat) : Bool :=
-  decide (r.1 + r.2 ≤ linkLo pe) || decide (16 ≤ r.1)
+/-- The frame range `r` misses the link slots `[0, 16)`: the saved `rbp` at `0`, the return
+address at `8`. -/
+def offLink (r : Int × Nat) : Bool :=
+  decide (r.1 + r.2 ≤ 0) || decide (16 ≤ r.1)
 
 /-- The frame ranges a native instruction of opcode `f` with operands `ops` writes (its
 footprint's, `wranges`), `[]` if its operands don't fit. -/
@@ -943,8 +1110,8 @@ def nativeWrites (f : Full.Opcode) (ops : List (Opnd Nat)) : List (Int × Nat) :
 
 /-- The frame ranges a handler call of `h` with argument registers `args` writes (its handler's
 footprint's, of the operands `unpack` gives), `[]` if they don't unpack. -/
-def handlerWrites (fpArg : Bool) (h : Full.Opcode) (args : List Arg) : List (Int × Nat) :=
-  match R.unpack anyAddrs h fpArg args with
+def handlerWrites (mode : Mode) (h : Full.Opcode) (args : List Arg) : List (Int × Nat) :=
+  match R.unpack anyAddrs h mode args with
   | some vals => match OpSem.footprint h with
     | some fp => fp.writeRanges (OpSem.opndVal h.info vals)
     | none => []
@@ -982,16 +1149,16 @@ def nativeRanges (f : Full.Opcode) (ops : List (Opnd Nat)) : List (Int × Nat) :
     else if f.info.shape = .call then resultRange ops else [])
 
 /-- The frame ranges of instruction `i` that `FrameBounds` bounds. -/
-def R.Insn.frameRanges (fpArg : Bool) : Insn → List (Int × Nat)
+def R.Insn.frameRanges (mode : Mode) : Insn → List (Int × Nat)
   | .native op ops => (op.full.map (nativeRanges · ops)).getD []
-  | .handler h args _ => handlerWrites fpArg h args
+  | .handler h args _ => handlerWrites mode h args
 
 /-- The frame ranges instruction `i` writes but `arg`'s destination (which `boundsOk` checks
 below the link slots): its footprint's and a call's result parts. -/
-def R.Insn.writeRanges (fpArg : Bool) : Insn → List (Int × Nat)
+def R.Insn.writeRanges (mode : Mode) : Insn → List (Int × Nat)
   | .native op ops => (op.full.map fun f => nativeWrites f ops ++
       (if f.info.shape = .call then resultParts ops else [])).getD []
-  | .handler h args _ => handlerWrites fpArg h args
+  | .handler h args _ => handlerWrites mode h args
 
 /-- `arg`'s destination, if `i` is an `arg`. -/
 def R.Insn.argRanges : Insn → List (Int × Nat)
@@ -1000,21 +1167,31 @@ def R.Insn.argRanges : Insn → List (Int × Nat)
   | .handler .. => []
 
 /-- The scopes' and the instructions' frame ranges. -/
-def R.Decoded.frameRanges (d : Decoded) (fpArg : Bool) : List (Int × Nat) :=
+def R.Decoded.frameRanges (d : Decoded) (mode : Mode) : List (Int × Nat) :=
   d.scopes.toList.map (fun p => (p.2.frameOffset.toInt, p.2.size)) ++
-    d.insns.toList.flatMap (Insn.frameRanges fpArg)
+    d.insns.toList.flatMap (Insn.frameRanges mode)
 
 /-- The highest end of a frame range (at least `0`). -/
-def R.Decoded.frameTop (d : Decoded) (fpArg : Bool) : Int :=
-  (d.frameRanges fpArg).foldl (fun t r => max t (r.1 + r.2)) 0
+def R.Decoded.frameTop (d : Decoded) (mode : Mode) : Int :=
+  (d.frameRanges mode).foldl (fun t r => max t (r.1 + r.2)) 0
 
-/-- Every frame range lies in `[-F, frameTop)`, `F` and `frameTop` at most `2 ^ 31`; every
-frame write misses the link slots, and every `arg` destination lies below them. -/
+/-- PE: the bytes at the frame's bottom its calls' callees may use: the 32 bytes of shadow space,
+and with a handler call's stack argument (its fifth position) the 8 above (0 off PE). -/
+def R.Decoded.shadowSize (d : Decoded) (mode : Mode) : Nat :=
+  if !mode.pe then 0
+  else if d.insns.any (fun | .handler _ args _ => args.length > 4 | _ => false) then 40 else 32
+
+/-- The lowest frame offset the frame's ranges may start at: `-F`, above PE's shadow space. -/
+def R.Decoded.frameLo (d : Decoded) (mode : Mode) : Int :=
+  -(d.frameSize : Int) + d.shadowSize mode
+
+/-- Every frame range lies in `[frameLo, frameTop)`, `F` and `frameTop` at most `2 ^ 31`;
+every frame write misses the link slots, and every `arg` destination lies below them. -/
 def R.Decoded.boundsOk (d : Decoded) (mode : Mode) : Bool :=
-  decide (d.frameSize ≤ 2 ^ 31) && decide (d.frameTop mode.fpArg ≤ 2 ^ 31) &&
-    (d.frameRanges mode.fpArg).all (fun r => decide (-(d.frameSize : Int) ≤ r.1)) &&
-    d.insns.toList.all (fun i => (i.writeRanges mode.fpArg).all (offLink mode.pe) &&
-      i.argRanges.all fun r => decide (r.1 + r.2 ≤ linkLo mode.pe))
+  decide (d.frameSize ≤ 2 ^ 31) && decide (d.frameTop mode ≤ 2 ^ 31) &&
+    (d.frameRanges mode).all (fun r => decide (d.frameLo mode ≤ r.1)) &&
+    d.insns.toList.all (fun i => (i.writeRanges mode).all offLink &&
+      i.argRanges.all fun r => decide (r.1 + r.2 ≤ 0))
 
 /-- `decodeReducedWith`, rejecting code whose frame ranges `boundsOk` doesn't accept. -/
 def decodeBounded (code : ByteArray) (fields : Fields) (rodata : ByteArray)

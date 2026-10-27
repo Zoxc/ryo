@@ -5,11 +5,11 @@ Ryo.Proofs.Island — the shape `island isl, ops` (aot.md §C2 "Shapes", toward 
 the `Lend` extents) against the items `DecodeReduced.islandCall` accepts. **Specification
 only**: the main theorems are stated, their proofs are to come.
 
-**Items** (`islandPre`, `islandPost`): `fp` into the first argument register (`fpItem`: `mov rdi,
+**Items** (`islandPre`): `fp` into the first argument register (`fpItem`: `mov rdi,
 rbp`, or `lea` of `[rbp + 0]` without a frame pointer; PE `rcx`), `lea rsi, [rip + ops]` (PE
 `rdx`; `ops` the rodata offset of the operand array: a `u32` count at `ops - 4`, then one `i32`
-slot per operand, `DecodeReduced.opsArray`), on PE `sub rsp, 32` (shadow space), `call [rip +
-isl]`, on PE `add rsp, 32`.
+slot per operand, `DecodeReduced.opsArray`), `call [rip + isl]`; nothing after it. The call leaves `rsp` alone:
+on PE every frame reserves its callees' 32-byte shadow space at its own bottom.
 
 **The island boundary** (`IslandAt`, the template's entry, just after the `call`): `rip` the
 address in the island's symbol slot, `fp` in the first argument register (and in `rbp`), the
@@ -25,12 +25,11 @@ R state; this file only needs the frame-level part.
 it lands in this frame. Each corresponds to an R answer `a` (`IslandEnd`): one byte list per
 `Lend` extent, each related to the x86 bytes at `fp + off`; the answer's world related to `x'`
 and extending the query's (`Call.Extends`); x86 memory changed only at `IslandMayWrite`
-addresses: the stack below the caller's `rsp` (`fp - F`: the template's frames and, on PE, the
-shadow space), the `Lend` extents, the query world's live allocations, `Owned`. A return
-(`IslandReturn`) has `rip` the return address, `rsp` popped, the callee-saved registers
-(`Call.Saved`) kept; an unwind lands per `Call.Landed` with `rsp` the caller's `fp - F` (for PE
-that is above the `sub rsp, 32`: the unwinder restores the frame's body `rsp`). As for calls the
-contract is only for queries the environment's R side handles (`Safe q`): the write set is in
+addresses: the stack below the caller's `rsp` (`fp - F`) plus `shadow` (the template's frames
+and, on PE, its shadow space at the caller's frame bottom), the `Lend` extents, the query
+world's live allocations, `Owned`. A return (`IslandReturn`) has `rip` the return address,
+`rsp` popped (the caller's `fp - F`), the callee-saved registers (`Call.Saved`) kept; an unwind
+lands per `Call.Landed` with `rsp` the caller's `fp - F`. As for calls the contract is only for queries the environment's R side handles (`Safe q`): the write set is in
 terms of the query's world and `Lend` extents, and a query listing fewer of them than the
 template writes must not count (for islands, `Safe` is where the trust that the lowering's
 `Lend` scopes cover each template's frame writes sits: `Ryo.Vm.R.Islands`' write roles).
@@ -40,8 +39,7 @@ template writes must not count (for islands, `Safe` is where the trust that the 
   call reach the template's entry `x1` related to `q` (`IslandAt`), `RRel s' x1`,
   `MemRel s'.st x1`, the return address pushed, the callee-saved registers kept.
 - `island_return`: every `Ret x1 x'` gives an answer with `R.answer c s a = .ok (.step s'')`,
-  and `islandPost` (PE `add rsp, 32`) reaches `x''` related to `s''`, at the next item, with
-  `rsp = fp - F`.
+  and `x'` itself is related to `s''`, at the next item, with `rsp = fp - F`.
 - `island_sound`: the two composed.
 - `island_unwind`: every `Unw x1 x'` lands at the island's landing pad, related to R's
   `unwindAt`.
@@ -72,16 +70,13 @@ open Ryo.Proofs.Counter (CalleeSaved InStack)
 /-- The island call's argument registers: `fp`, then the operand array (PE `rcx`, `rdx`). -/
 def islandRegs (pe : Bool) : Reg × Reg := if pe then (.rcx, .rdx) else (.rdi, .rsi)
 
-/-- The shadow space below the call: 32 bytes on PE. -/
+/-- The callee's shadow space above its return address, at the caller's frame bottom: 32 bytes
+on PE. -/
 def shadow (pe : Bool) : Nat := if pe then 32 else 0
 
 /-- The items up to the island's call (`islandCall`). -/
 def islandPre (mode : Ryo.Obj.Mode) (isl o : Nat) : List Item :=
-  [fpItem (islandRegs mode.pe).1 mode, .lea (islandRegs mode.pe).2 (.ro o)] ++
-    (if mode.pe then [.subRsp 32] else []) ++ [.callMem (.sym isl)]
-
-/-- The items after it: PE's `add rsp, 32`. -/
-def islandPost (mode : Ryo.Obj.Mode) : List Item := if mode.pe then [.addRsp 32] else []
+  [fpItem (islandRegs mode.pe).1 mode, .lea (islandRegs mode.pe).2 (.ro o), .callMem (.sym isl)]
 
 /-! ### The boundary -/
 
@@ -116,7 +111,7 @@ def IslandMayWrite (Owned : BitVec 64 → Prop) (lo sp0 : BitVec 64) (fp : Nat)
   InStack lo sp0 b ∨ (∃ l ∈ lends, (b - lendAddr fp l.1).toNat < l.2) ∨ InAlloc w b ∨ Owned b
 
 /-- What a template's return and an unwind out of it share. `x` is the entry; the caller's
-`rsp` is `x.rsp + 8 + shadow`. -/
+`rsp` is `x.rsp + 8`, the template may write below `x.rsp + 8 + shadow`. -/
 structure IslandEnd (pe : Bool) (Owned : BitVec 64 → Prop) (lo : BitVec 64) (fp : Nat)
     (lends : List (Int × Nat)) (w : R.World) (x x' : X86.State) (a : R.Answer) : Prop where
   frameLen : a.frame.length = lends.length
@@ -146,7 +141,7 @@ structure IslandContract (ctx : Ctx) (pe : Bool) (Owned : BitVec 64 → Prop) (l
   unwind : ∀ isl tpl fp ops lends st w x x', IslandAt ctx pe isl fp ops st w x →
     Safe ⟨.island isl tpl fp ops lends, w⟩ → Unw x x' →
     ∃ a exc, a.result = .unwind exc ∧ IslandEnd pe Owned lo fp lends w x x' a ∧
-      Landed pe padOf (x.rsp + 8 + BitVec.ofNat 64 (shadow pe)) x x' exc
+      Landed pe padOf (x.rsp + 8) x x' exc
 
 /-- No initialized private frame byte outside the `Lend` extents is where the template may
 write. Only initialized ones: an `Uninit` byte relates to any x86 byte, and over all private
@@ -158,18 +153,19 @@ def IslandApart (Owned : BitVec 64 → Prop) (lo sp0 : BitVec 64) (fp : Nat)
     (∀ l ∈ lends, ¬ (l.1 ≤ o ∧ o < l.1 + l.2)) →
     ¬ IslandMayWrite Owned lo sp0 fp lends ⟨st.mem, st.exposed⟩ (lendAddr fp o)
 
-/-- `IslandApart` from the frame separation over the window `[-F, K)`: an initialized
-private byte lies in the window (`FrameSep.init`), so at or above `fp - F`, not below the
-caller's `rsp` (`hsp`); outside the `Lend` extents its address is outside theirs (`hlends`
-bounds them, so no wrap); it is in no live allocation (`FrameApart`) and not runtime-owned
-(`hown`, an environment fact). -/
-theorem FrameSep.islandApart {Owned : BitVec 64 → Prop} {lo sp0 : BitVec 64} {F fp : Nat}
-    {K : Int} {L : List (Int × Nat)} {st : OpSem.State} {x : X86.State}
-    (hs : ScopeMem.FrameSep (-(F : Int)) K st x) (hw : ScopeMem.Window (-(F : Int)) K fp)
-    (hK : 0 ≤ K) (hb : x.reg .rbp = BitVec.ofNat 64 fp) (hF : F ≤ fp) (hsp : sp0.toNat ≤ fp - F)
-    (hlends : ∀ l ∈ L, -2 ^ 62 < l.1 ∧ l.1 + l.2 < 2 ^ 62)
-    (hown : ∀ o, -(F : Int) ≤ o → o < K → ¬ Owned (fpAddr x o)) :
-    IslandApart Owned lo sp0 fp L st := by
+/-- `IslandApart` from the frame separation over the window `[L, K)`: an initialized
+private byte lies in the window (`FrameSep.init`), so at or above `fp + L`, not below `sp0`
+(`hsp`); outside the `Lend` extents its address is outside theirs (`hlends` bounds them, so no
+wrap); it is in no live allocation (`FrameApart`) and not runtime-owned (`hown`, an environment
+fact). For an island `L = -F + shadow`: the template's writes reach `fp - F + shadow`. -/
+theorem FrameSep.islandApart {Owned : BitVec 64 → Prop} {lo sp0 : BitVec 64} {fp : Nat}
+    {L K : Int} {ls : List (Int × Nat)} {st : OpSem.State} {x : X86.State}
+    (hs : ScopeMem.FrameSep L K st x) (hw : ScopeMem.Window L K fp)
+    (hK : 0 ≤ K) (hb : x.reg .rbp = BitVec.ofNat 64 fp) (hF : 0 ≤ (fp : Int) + L)
+    (hsp : (sp0.toNat : Int) ≤ fp + L)
+    (hlends : ∀ l ∈ ls, -2 ^ 62 < l.1 ∧ l.1 + l.2 < 2 ^ 62)
+    (hown : ∀ o, L ≤ o → o < K → ¬ Owned (fpAddr x o)) :
+    IslandApart Owned lo sp0 fp ls st := by
   intro o h1 h2 he hu hout hmw
   obtain ⟨i1, i2⟩ := hs.init o he hu
   have htop := hw.top
@@ -195,19 +191,6 @@ theorem saved_rbp (pe : Bool) : Saved pe 5 := Or.inl (by simp [CalleeSaved])
 
 theorem saved_ne_rsp {pe : Bool} {i : Fin 16} (h : Saved pe i) : i ≠ 4 := by
   rintro rfl; rcases h with h | ⟨-, h⟩ <;> revert h <;> simp [CalleeSaved]
-
-/-- `islandPost`: on PE `add rsp, 32`. -/
-theorem exec_post (ctx : Ctx) (mode : Ryo.Obj.Mode) (y : X86.State) :
-    ∃ y', execItems ctx (islandPost mode) y = .ok y' ∧ y'.mem = y.mem ∧
-      y'.rip = y.rip + BitVec.ofNat 64 ((islandPost mode).map Item.size).sum ∧
-      y'.rsp = y.rsp + BitVec.ofNat 64 (shadow mode.pe) ∧ ∀ i, i ≠ 4 → y'.regs i = y.regs i := by
-  unfold islandPost shadow
-  cases mode.pe
-  · exact ⟨y, rfl, rfl, by simp, by simp, fun _ _ => rfl⟩
-  · refine ⟨_, rfl, rfl, by simp [State.jump, State.setFlags, State.setReg], ?_, ?_⟩
-    · simp [State.rsp, State.reg, State.jump, State.setFlags, State.setReg]
-    · intro i hi
-      simp [State.jump, State.setFlags, State.setReg, hi]
 
 /-- The answer's writes over the `Lend` extents, and the relations after them. -/
 theorem answer_core {pe : Bool} {Owned : BitVec 64 → Prop} {lo : BitVec 64} {s : R.RState}
@@ -237,7 +220,7 @@ theorem island_query (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.State}
     (hf : op.full = some f) (hsh : f.info.shape = .island)
     (hr : RRel s x) (hm : MemRel s.st x) (hsz : ∀ sc ∈ c.scopesAt s.pc, sc.size < 2 ^ 62)
     (hsp : x.rsp = x.reg .rbp - BitVec.ofNat 64 c.d.frameSize)
-    (hlo : lo.toNat + 8 + shadow c.mode.pe ≤ x.rsp.toNat)
+    (hlo : lo.toNat + 8 ≤ x.rsp.toNat)
     (hro : OpsAt x.mem (ctx.addrOf (.ro o)) (ws.map (·.toInt)))
     (hroA : ∀ i < 4 * (ws.length + 1), ¬ InStack lo x.rsp (ctx.addrOf (.ro o) - 4 + BitVec.ofNat 64 i))
     (hsym : SymsApart ctx lo x.rsp x.mem)
@@ -248,7 +231,7 @@ theorem island_query (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.State}
       execItems ctx (islandPre c.mode isl o) x = .ok x1 ∧
       IslandAt ctx c.mode.pe isl s.fp (ws.map (·.toInt)) s'.st s'.world x1 ∧
       RRel s' x1 ∧ MemRel s'.st x1 ∧ s'.pc = s.pc ∧ s'.fp = s.fp ∧ s'.args = s.args ∧
-      x1.rsp + 8 + BitVec.ofNat 64 (shadow c.mode.pe) = x.rsp ∧
+      x1.rsp + 8 = x.rsp ∧
       x1.mem.read64 x1.rsp = x.rip + BitVec.ofNat 64 ((islandPre c.mode isl o).map Item.size).sum ∧
       (∀ i, Saved c.mode.pe i → x1.regs i = x.regs i) ∧
       (∀ b, ¬ InStack lo x.rsp b → x1.mem b = x.mem b) := by
@@ -271,12 +254,9 @@ theorem island_query (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.State}
         | (rcases h with rfl | rfl <;> decide)
         | cases hp
   obtain ⟨x1, hex, hmem, hrip, hregs⟩ := IslandLemmas.exec_pre ctx c.mode (islandRegs c.mode.pe).1
-    (islandRegs c.mode.pe).2 isl o x c.mode.pe rfl hne1 hne2
-  have hsh' : (if c.mode.pe = true then (32 : BitVec 64) else 0) =
-      BitVec.ofNat 64 (shadow c.mode.pe) := by unfold shadow; cases c.mode.pe <;> rfl
-  rw [hsh'] at hmem hregs
+    (islandRegs c.mode.pe).2 isl o x hne1 hne2
   have hreg : ∀ i, x1.regs i = _ := fun i => congrFun hregs i
-  have hrsp1 : x1.rsp = x.rsp - BitVec.ofNat 64 (shadow c.mode.pe) - 8 := by
+  have hrsp1 : x1.rsp = x.rsp - 8 := by
     simp only [State.rsp, State.reg, hreg, ↓reduceIte]
   have hrbp1 : x1.reg .rbp = x.reg .rbp := by
     simp only [State.reg, hreg]
@@ -286,10 +266,9 @@ theorem island_query (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.State}
     intro b hb
     rw [hmem]
     exact Mem.write_other _ _ _ _ _
-      (IslandLemmas.push_other' lo x.rsp b _ (shadow_le _) (by omega) hb)
+      (IslandLemmas.push_other' lo x.rsp b hlo hb)
   have hpre : islandPre c.mode isl o = [fpItem (islandRegs c.mode.pe).1 c.mode,
-      .lea (islandRegs c.mode.pe).2 (.ro o)] ++ (if c.mode.pe then [Item.subRsp 32] else []) ++
-      [.callMem (.sym isl)] := rfl
+      .lea (islandRegs c.mode.pe).2 (.ro o), .callMem (.sym isl)] := rfl
   obtain ⟨hR1, hM1⟩ := hap.rel hr1.rel hm1 hrbp1 hmemS
   have hrbpS : x1.reg .rbp = BitVec.ofNat 64 s.fp := hrbp1.trans hr.rbp
   refine ⟨x1, by rw [hk.pc, hk.fp], by rw [hpre]; exact hex, ⟨?_, ?_, ?_, hrbpS, hR1, hM1⟩,
@@ -317,7 +296,7 @@ theorem island_query (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.State}
           exact IslandLemmas.bv_add4 _ _ _
         rw [e]; exact hmemS _ (hroA _ (by omega)))]
       exact hro.2 i hi
-  · rw [hrsp1]; exact IslandLemmas.bv_subadd _ _
+  · rw [hrsp1]; exact IslandLemmas.bv_subadd _
   · rw [hrsp1, hmem]
     exact IslandLemmas.read64_write_self _ _ _
   · intro i hi
@@ -326,7 +305,7 @@ theorem island_query (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.State}
     simp [saved_ne_rsp hi, h1, h2]
 
 /-- A template's return, from its entry `x1` related to the waiting state `s`'s query, continues
-per `R.answer` through `islandPost` (see the module comment). -/
+per `R.answer`, the return state `x'` at the item after the call (see the module comment). -/
 theorem island_return (ctx : Ctx) {c : R.Code} {s : R.RState} {x1 x' : X86.State}
     {op : Reduced.Opcode} {f : Full.Opcode} {isl : Nat} {ws : List (BitVec 32)}
     {Owned : BitVec 64 → Prop} {lo : BitVec 64} {padOf : BitVec 64 → Option (BitVec 64)}
@@ -342,26 +321,22 @@ theorem island_return (ctx : Ctx) {c : R.Code} {s : R.RState} {x1 x' : X86.State
     (hap : IslandApart Owned lo (x1.rsp + 8 + BitVec.ofNat 64 (shadow c.mode.pe)) s.fp
       (c.lendsAt s.pc) s.st)
     (hR : Ret x1 x') :
-    ∃ a s'' x'', IslandReturn c.mode.pe Owned lo s.fp (c.lendsAt s.pc) s.world x1 x' a ∧
+    ∃ a s'', IslandReturn c.mode.pe Owned lo s.fp (c.lendsAt s.pc) s.world x1 x' a ∧
       R.answer c s a = .ok (.step s'') ∧
-      execItems ctx (islandPost c.mode) x' = .ok x'' ∧
-      RRel s'' x'' ∧ MemRel s''.st x'' ∧ s''.pc = s.pc + 1 ∧ s''.fp = s.fp ∧
+      RRel s'' x' ∧ MemRel s''.st x' ∧ s''.pc = s.pc + 1 ∧ s''.fp = s.fp ∧
       s''.args = s.args ∧
-      x''.rip = x1.mem.read64 x1.rsp + BitVec.ofNat 64 ((islandPost c.mode).map Item.size).sum ∧
-      x''.rsp = x1.rsp + 8 + BitVec.ofNat 64 (shadow c.mode.pe) ∧
-      (∀ i, Saved c.mode.pe i → x''.regs i = x1.regs i) := by
+      x'.rip = x1.mem.read64 x1.rsp ∧ x'.rsp = x1.rsp + 8 ∧
+      (∀ i, Saved c.mode.pe i → x'.regs i = x1.regs i) := by
   obtain ⟨a, hret⟩ := hC.ret _ _ _ _ _ _ _ x1 x' he hsafe hR
   obtain ⟨st, hw, hrel⟩ := answer_core hret.toIslandEnd hr hlends hap
   obtain ⟨regs, hres⟩ := hret.result
-  obtain ⟨x'', hx, hmem, hrip, hrsp, hregs⟩ := exec_post ctx c.mode x'
-  have hrbp : x''.reg .rbp = BitVec.ofNat 64 s.fp := by
-    show x''.regs 5 = _
-    rw [hregs 5 (by decide), hret.saved 5 (saved_rbp _)]; exact hr.rbp
-  obtain ⟨hR1, hM1, hW1⟩ := hrel x'' hmem hrbp
-  refine ⟨a, { s.withWorld a.world with st, pc := s.pc + 1 }, x'', hret, ?_, hx,
-    ⟨hR1, hrbp, hW1⟩, hM1, rfl, rfl, rfl, by rw [hrip, hret.rip], by rw [hrsp, hret.rsp], ?_⟩
-  · rw [IslandLemmas.answer_island a hi hf hsh, hw, hres]; rfl
-  · intro i hi; rw [hregs i (saved_ne_rsp hi), hret.saved i hi]
+  have hrbp : x'.reg .rbp = BitVec.ofNat 64 s.fp := by
+    show x'.regs 5 = _
+    rw [hret.saved 5 (saved_rbp _)]; exact hr.rbp
+  obtain ⟨hR1, hM1, hW1⟩ := hrel x' rfl hrbp
+  refine ⟨a, { s.withWorld a.world with st, pc := s.pc + 1 }, hret, ?_,
+    ⟨hR1, hrbp, hW1⟩, hM1, rfl, rfl, rfl, hret.rip, hret.rsp, hret.saved⟩
+  rw [IslandLemmas.answer_island a hi hf hsh, hw, hres]; rfl
 
 /-- The full R step of an island that returns: `island_query` then `island_return`. -/
 theorem island_sound (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.State}
@@ -374,26 +349,25 @@ theorem island_sound (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.State}
     (hf : op.full = some f) (hsh : f.info.shape = .island)
     (hr : RRel s x) (hm : MemRel s.st x) (hsz : ∀ sc ∈ c.scopesAt s.pc, sc.size < 2 ^ 62)
     (hsp : x.rsp = x.reg .rbp - BitVec.ofNat 64 c.d.frameSize)
-    (hlo : lo.toNat + 8 + shadow c.mode.pe ≤ x.rsp.toNat)
+    (hlo : lo.toNat + 8 ≤ x.rsp.toNat)
     (hro : OpsAt x.mem (ctx.addrOf (.ro o)) (ws.map (·.toInt)))
     (hroA : ∀ i < 4 * (ws.length + 1), ¬ InStack lo x.rsp (ctx.addrOf (.ro o) - 4 + BitVec.ofNat 64 i))
     (hsym : SymsApart ctx lo x.rsp x.mem)
     (hlends : ∀ l ∈ c.lendsAt s.pc, -2 ^ 62 < l.1 ∧ l.1 + l.2 < 2 ^ 62)
     (h : R.step c s ch = .ok (.ext q s')) (hsafe : Safe q)
     (hap : Handler.StackApart lo s'.st x)
-    (hia : IslandApart Owned lo x.rsp s.fp (c.lendsAt s.pc) s'.st) :
+    (hia : IslandApart Owned lo (x.rsp + BitVec.ofNat 64 (shadow c.mode.pe)) s.fp
+      (c.lendsAt s.pc) s'.st) :
     ∃ x1, q = ⟨.island isl (c.islandTemplate s.pc) s.fp (ws.map (·.toInt)) (c.lendsAt s.pc),
         s'.world⟩ ∧
       execItems ctx (islandPre c.mode isl o) x = .ok x1 ∧
       IslandAt ctx c.mode.pe isl s.fp (ws.map (·.toInt)) s'.st s'.world x1 ∧
-      ∀ x', Ret x1 x' → ∃ a s'' x'',
+      ∀ x', Ret x1 x' → ∃ a s'',
         IslandReturn c.mode.pe Owned lo s.fp (c.lendsAt s.pc) s'.world x1 x' a ∧
         R.answer c s' a = .ok (.step s'') ∧
-        execItems ctx (islandPost c.mode) x' = .ok x'' ∧
-        RRel s'' x'' ∧ MemRel s''.st x'' ∧ s''.pc = s.pc + 1 ∧
-        x''.rip = x.rip +
-          BitVec.ofNat 64 ((islandPre c.mode isl o ++ islandPost c.mode).map Item.size).sum ∧
-        x''.rsp = x.rsp ∧ (∀ i, Saved c.mode.pe i → x''.regs i = x.regs i) := by
+        RRel s'' x' ∧ MemRel s''.st x' ∧ s''.pc = s.pc + 1 ∧
+        x'.rip = x.rip + BitVec.ofNat 64 ((islandPre c.mode isl o).map Item.size).sum ∧
+        x'.rsp = x.rsp ∧ (∀ i, Saved c.mode.pe i → x'.regs i = x.regs i) := by
   obtain ⟨x1, hq, hex, hat, hrr, hmm, hpc, hfp, -, hrsp, hret, hsaved, -⟩ :=
     island_query ctx hi hf hsh hr hm hsz hsp hlo hro hroA hsym h hap
   refine ⟨x1, hq, hex, hat, fun x' hR => ?_⟩
@@ -404,11 +378,11 @@ theorem island_sound (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.State}
       (c.lendsAt s'.pc), s'.world⟩ := by rw [hpc, hfp, ← hq]; exact hsafe
   have hap' : IslandApart Owned lo (x1.rsp + 8 + BitVec.ofNat 64 (shadow c.mode.pe)) s'.fp
       (c.lendsAt s'.pc) s'.st := by rw [hrsp, hpc, hfp]; exact hia
-  obtain ⟨a, s'', x'', hA, hans, hpost, hrel, hmem, hpc', -, -, hrip, hrsp', hsv⟩ :=
+  obtain ⟨a, s'', hA, hans, hrel, hmem, hpc', -, -, hrip, hrsp', hsv⟩ :=
     island_return ctx hC hi' hf hsh hat' hrr hmm (by rw [hpc]; exact hlends) hsafe' hap' hR
-  refine ⟨a, s'', x'', by rw [← hfp, ← hpc]; exact hA, hans, hpost, hrel, hmem,
-    by rw [hpc', hpc], ?_, by rw [hrsp', hrsp], fun i hi => by rw [hsv i hi, hsaved i hi]⟩
-  rw [hrip, hret, List.map_append, List.sum_append, BitVec.ofNat_add, BitVec.add_assoc]
+  refine ⟨a, s'', by rw [← hfp, ← hpc]; exact hA, hans, hrel, hmem,
+    by rw [hpc', hpc], by rw [hrip, hret], by rw [hrsp', hrsp],
+    fun i hi => by rw [hsv i hi, hsaved i hi]⟩
 
 /-- Unwinding out of a template into the island's landing pad `pad` (`pos pad` its position). -/
 theorem island_unwind (ctx : Ctx) {c : R.Code} {s : R.RState} {x1 x' : X86.State}
@@ -435,7 +409,7 @@ theorem island_unwind (ctx : Ctx) {c : R.Code} {s : R.RState} {x1 x' : X86.State
       R.answer c s a = .ok (.step s'') ∧ s''.pc = pad ∧ s''.st.exception = exc ∧
       RRel s'' x' ∧ MemRel s''.st x' ∧ s''.fp = s.fp ∧ s''.args = s.args ∧
       x'.rip = ctx.base + (pos pad).setWidth 64 ∧ x'.reg .rax = BitVec.ofNat 64 exc.addr ∧
-      x'.rsp = x1.rsp + 8 + BitVec.ofNat 64 (shadow c.mode.pe) ∧
+      x'.rsp = x1.rsp + 8 ∧
       (∀ i, Saved c.mode.pe i → x'.regs i = x1.regs i) := by
   obtain ⟨a, exc, hres, hend, hland⟩ := hC.unwind _ _ _ _ _ _ _ x1 x' he hsafe hU
   obtain ⟨st, hw, hrel⟩ := answer_core hend hr hlends hap

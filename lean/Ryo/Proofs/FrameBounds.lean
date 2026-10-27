@@ -8,9 +8,9 @@ with `F` and `K` at most `2^31`.
 It also bounds the frame writes the decoded code's steps make outside `opSem`'s native
 footprints: a handler call's (its handler's footprint), a call's result slot; and it keeps every
 frame write (the native and handler footprints', `arg`'s destination, a call's result parts) off
-the frame's link slots `[linkLo, 16)` (`OffLink`; `arg`'s destination below them), which
-`FrameFacts`-style invariants over the saved `rbp`, the return address and PE's saved
-`rsi`/`rdi` need: the window alone doesn't keep a write off them.
+the frame's link slots `[0, 16)` (`OffLink`; `arg`'s destination below them), which
+`FrameFacts`-style invariants over the saved `rbp` and the return address need: the window
+alone doesn't keep a write off them.
 
 - `FrameBounds.window`, `FrameBounds.scopesIn`, `FrameBounds.scope_size`, `FrameBounds.wrIn`:
   the hypotheses of `CacheMem`'s `_sep` steps (`Window` also needs `fp + K ≤ 2^64`: the frame
@@ -36,11 +36,11 @@ namespace Ryo.Proofs.FrameBounds
 open Ryo.Spec Ryo.Vm Ryo.Vm.OpSem Ryo.X86 Ryo.Vm.Asm Ryo.Proofs.Inline Ryo.Proofs.Scope
   Ryo.Proofs.Step Ryo.Proofs.RegCache Ryo.Proofs.ScopeMem Ryo.Proofs.CacheMem
 
-/-- The frame range `r` misses the frame's link slots `[linkLo, 16)` (the saved `rbp`, the
-return address, PE's saved `rsi`/`rdi`), `Vm.offLink` as a `Prop`. -/
-def OffLink (pe : Bool) (r : Int × Nat) : Prop := r.1 + r.2 ≤ linkLo pe ∨ 16 ≤ r.1
+/-- The frame range `r` misses the frame's link slots `[0, 16)` (the saved `rbp`, the return
+address), `Vm.offLink` as a `Prop`. -/
+def OffLink (r : Int × Nat) : Prop := r.1 + r.2 ≤ 0 ∨ 16 ≤ r.1
 
-theorem offLink_iff {pe : Bool} {r : Int × Nat} : offLink pe r = true ↔ OffLink pe r := by
+theorem offLink_iff {r : Int × Nat} : offLink r = true ↔ OffLink r := by
   simp [offLink, OffLink]
 
 /-- The decoded code's frame accesses lie in `[-F, K)`, its frame writes off the link slots
@@ -63,7 +63,7 @@ structure FrameBounds (c : R.Code) (K : Int) : Prop where
   /-- A handler call's frame writes. -/
   handler : ∀ (k : Nat) (h : Full.Opcode) (args : List R.Arg) (t : R.Then Nat) (vals : Operands),
     c.d.insns[k]? = some (.handler h args t) →
-    R.unpack c.ρ h c.mode.fpArg args = some vals → WrIn (-(c.d.frameSize : Int)) K h vals
+    R.unpack c.ρ h c.mode args = some vals → WrIn (-(c.d.frameSize : Int)) K h vals
   /-- A call's 16-byte result slot. -/
   result : ∀ (k : Nat) (op : Reduced.Opcode) (d : BitVec 32) (fo : R.Opnd Nat) (kk : BitVec 64)
     (ws : List (BitVec 32)) (f : Full.Opcode),
@@ -72,22 +72,22 @@ structure FrameBounds (c : R.Code) (K : Int) : Prop where
   /-- The frame writes miss the link slots: a native instruction's, -/
   writesOff : ∀ (k : Nat) (op : Reduced.Opcode) (ops : List (R.Opnd Nat)) (f : Full.Opcode)
     (vals : Operands), c.d.insns[k]? = some (.native op ops) → op.full = some f →
-    nativeVals c.ρ f ops = some vals → ∀ r ∈ wranges f vals, OffLink c.mode.pe r
+    nativeVals c.ρ f ops = some vals → ∀ r ∈ wranges f vals, OffLink r
   /-- a handler call's, -/
   handlerOff : ∀ (k : Nat) (h : Full.Opcode) (args : List R.Arg) (t : R.Then Nat) (vals : Operands),
     c.d.insns[k]? = some (.handler h args t) →
-    R.unpack c.ρ h c.mode.fpArg args = some vals → ∀ r ∈ wranges h vals, OffLink c.mode.pe r
+    R.unpack c.ρ h c.mode args = some vals → ∀ r ∈ wranges h vals, OffLink r
   /-- a call's result parts, -/
   resultOff : ∀ (k : Nat) (op : Reduced.Opcode) (d : BitVec 32) (fo : R.Opnd Nat) (kk : BitVec 64)
     (ws : List (BitVec 32)) (f : Full.Opcode),
     c.d.insns[k]? = some (.native op [.slot d, fo, .imm kk, .words ws]) →
     op.full = some f → f.info.shape = .call → ∀ parts, R.retRegs kk.toNat false = .ok parts →
-    ∀ q ∈ parts, OffLink c.mode.pe (d.toInt + q.1.off, q.1.size)
+    ∀ q ∈ parts, OffLink (d.toInt + q.1.off, q.1.size)
   /-- and `arg`'s destination lies below them. -/
   argBelow : ∀ (k : Nat) (op : Reduced.Opcode) (d : BitVec 32) (r : BitVec 64) (f : Full.Opcode)
     (a : ArgReg), c.d.insns[k]? = some (.native op [.slot d, .imm r]) →
     op.full = some f → f.info.shape = .arg → ArgReg.of? r.toNat true = some a →
-    d.toInt + a.size ≤ linkLo c.mode.pe
+    d.toInt + a.size ≤ 0
 
 variable {c : R.Code} {K : Int}
 
