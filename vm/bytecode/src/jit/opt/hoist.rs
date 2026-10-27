@@ -60,7 +60,7 @@ fn through_heads(f: &mut Func) {
             let p = f.insts[i.idx()].args[0];
             let ValueDef::Param(h, n) = f.def(p) else { continue };
             let preds = f.blocks[h.idx()].preds.clone();
-            let args: Vec<Value> = preds.iter().map(|&(q, k)| f.blocks[q.idx()].term.edges().nth(k as usize).unwrap().args[n as usize]).collect();
+            let args: Vec<Value> = preds.iter().map(|&(q, k)| f.blocks[q.idx()].term.edge(k as usize).args[n as usize]).collect();
             // Around the loop at least once, and a splat placeable at every other edge's source.
             let ok = args.contains(&p)
                 && preds.iter().zip(&args).all(|(&(q, _), &a)| {
@@ -79,7 +79,7 @@ fn through_heads(f: &mut Func) {
                     f.result(s)
                 };
                 let mut t = core::mem::replace(&mut f.blocks[q.idx()].term, Term::None);
-                t.edges_mut().nth(k as usize).unwrap().args.push(v);
+                t.edge_mut(k as usize).args.push(v);
                 f.blocks[q.idx()].term = t;
             }
             f.blocks[b.idx()].insts.retain(|&k| k != i);

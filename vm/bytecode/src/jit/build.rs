@@ -758,7 +758,7 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
                 })
                 .collect();
             let mut t = core::mem::replace(&mut s.f.blocks[p.idx()].term, Term::None);
-            t.edges_mut().nth(k as usize).unwrap().args = args;
+            t.edge_mut(k as usize).args = args;
             s.f.blocks[p.idx()].term = t;
         }
     }

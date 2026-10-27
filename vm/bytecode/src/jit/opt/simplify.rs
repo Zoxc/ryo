@@ -53,35 +53,6 @@ fn meet(a: Lat, b: Lat) -> Lat {
     }
 }
 
-/// The number of edges of `t` ([`Term::edges`], without allocating).
-fn n_edges(t: &Term) -> usize {
-    match t {
-        Term::None | Term::Ret { .. } | Term::TailCall { .. } | Term::Trap => 0,
-        Term::Jmp(_) => 1,
-        Term::Br { .. } | Term::BrCmp { .. } | Term::BrOvf { .. } => 2,
-        Term::Switch { targets, .. } => targets.len(),
-        Term::Invoke { normal, .. } => 1 + normal.is_some() as usize,
-    }
-}
-
-/// Edge `k` of `t` ([`Term::edges`], without allocating).
-fn edge_at(t: &Term, k: usize) -> &Edge {
-    match t {
-        Term::Jmp(e) => e,
-        Term::Br { t, f, .. } | Term::BrCmp { t, f, .. } | Term::BrOvf { t, f } => {
-            if k == 0 {
-                t
-            } else {
-                f
-            }
-        }
-        Term::Switch { targets, .. } => &targets[k],
-        Term::Invoke { normal: Some(e), .. } if k == 0 => e,
-        Term::Invoke { pad, .. } => pad,
-        _ => unreachable!("no edge {k}"),
-    }
-}
-
 /// The propagation's state.
 struct Sccp {
     lat: Vec<Lat>,
@@ -250,7 +221,7 @@ impl Sccp {
                             continue;
                         }
                         normal = true;
-                        let a = edge_at(&f.blocks[pb.idx()].term, k as usize).args[n];
+                        let a = f.blocks[pb.idx()].term.edge(k as usize).args[n];
                         l = meet(l, self.at(a, f.w(p)));
                     }
                     if osr && !normal && self.osr_only[b] {
@@ -264,11 +235,11 @@ impl Sccp {
             self.eval(f, i);
         }
         match self.taken(f, b) {
-            Some(k) => self.mark(b, k, edge_at(&bd.term, k).to),
+            Some(k) => self.mark(b, k, bd.term.edge(k).to),
             None if self.undecided(f, b) => {}
             None => {
-                for k in 0..n_edges(&bd.term) {
-                    self.mark(b, k, edge_at(&bd.term, k).to);
+                for k in 0..bd.term.edges().len() {
+                    self.mark(b, k, bd.term.edge(k).to);
                 }
             }
         }
@@ -283,7 +254,7 @@ fn sccp(f: &mut Func) -> bool {
     let mut ne = 0;
     for bd in &f.blocks {
         base.push(ne);
-        ne += n_edges(&bd.term);
+        ne += bd.term.edges().len();
     }
     let lat = f
         .values
@@ -350,7 +321,7 @@ fn sccp(f: &mut Func) -> bool {
             continue;
         }
         if let Some(k) = s.taken(f, b.idx()) {
-            let e = edge_at(&f.blocks[b.idx()].term, k).clone();
+            let e = f.blocks[b.idx()].term.edge(k).clone();
             f.set_term(b, Term::Jmp(e));
             folded = true;
         }
@@ -440,7 +411,7 @@ fn alias_params(f: &mut Func) -> bool {
                 let mut same = None;
                 let mut ok = true;
                 for &(pb, k) in &bd.preds {
-                    let a = f.resolve(edge_at(&f.blocks[pb.idx()].term, k as usize).args[n]);
+                    let a = f.resolve(f.blocks[pb.idx()].term.edge(k as usize).args[n]);
                     if a == p {
                         continue;
                     }
@@ -499,8 +470,8 @@ fn merge_blocks(f: &mut Func) -> bool {
             }
             f.blocks[b].insts.extend(insts);
             let t = core::mem::replace(&mut f.blocks[s].term, Term::Trap);
-            for k in 0..n_edges(&t) {
-                let to = edge_at(&t, k).to.idx();
+            for k in 0..t.edges().len() {
+                let to = t.edge(k).to.idx();
                 for pr in f.blocks[to].preds.iter_mut() {
                     if *pr == (Block(s as u32), k as u16) {
                         *pr = (Block(b as u32), k as u16);

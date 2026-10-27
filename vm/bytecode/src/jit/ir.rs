@@ -596,6 +596,15 @@ impl Term {
         EdgesMut { two: two.into_iter().flatten(), rest: rest.iter_mut() }
     }
 
+    /// Edge `k` ([`Term::edges`] order).
+    pub fn edge(&self, k: usize) -> &Edge {
+        self.edges().nth(k).unwrap_or_else(|| panic!("no edge {k}"))
+    }
+
+    pub fn edge_mut(&mut self, k: usize) -> &mut Edge {
+        self.edges_mut().nth(k).unwrap_or_else(|| panic!("no edge {k}"))
+    }
+
     /// The values it reads, but for its edges' arguments.
     pub fn uses(&self) -> Vec<Value> {
         match self {
