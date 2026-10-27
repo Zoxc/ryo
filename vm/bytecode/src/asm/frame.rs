@@ -235,8 +235,7 @@ fn handler(h: full::Opcode, w: &[u32], at: usize, mode: Mode, f: &mut InsnFrame)
     let imm = |k: usize| -> Result<u64, &'static str> {
         let loc = l.locs[k];
         match arg(loc.reg) {
-            Arg::Imm(v) if loc.shared => Ok((v >> loc.shift) as u32 as u64),
-            Arg::Imm(v) => Ok(v),
+            Arg::Imm(v) => Ok(loc.field(v)),
             _ => Err("handler argument"),
         }
     };
@@ -261,7 +260,7 @@ fn handler(h: full::Opcode, w: &[u32], at: usize, mode: Mode, f: &mut InsnFrame)
         }
         // Each argument is three words, a tag and the value, low word first; a slot is the
         // value's low half, or its high one in a shared register.
-        let word = at + 3 + 3 * loc.reg as usize + 1 + (loc.shift / 32) as usize;
+        let word = at + 3 + 3 * loc.reg as usize + 1 + loc.half() as usize;
         let access = match (o.kind, o.name) {
             (OperandKind::Mem, _) | (_, "p") => Access::Read(8),
             (_, "d") => Access::Clobber(ext),

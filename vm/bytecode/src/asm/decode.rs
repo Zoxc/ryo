@@ -1326,7 +1326,7 @@ fn handler_operands(op: Opcode, setup: &[(u32, Item)], fr: &Frame, ro: &[u8], co
     for (i, o) in info.operands.iter().enumerate() {
         let loc = l.locs[i];
         let narrow = |v: u64, bits: u32| -> Result<u64, AsmError> {
-            let v = if loc.shared { (v >> loc.shift) & 0xffff_ffff } else { v };
+            let v = loc.field(v);
             if bits < 64 && v >> bits != 0 { Err(err("immediate out of range")) } else { Ok(v) }
         };
         if loc.count == 0 {
