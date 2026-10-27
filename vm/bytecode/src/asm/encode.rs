@@ -15,7 +15,7 @@ use super::list::Hint;
 use super::reduced::Then;
 use super::x86::{ARGS, Cond, Item, M, Reg, Sh, W, island_args, padding};
 use super::{ArgReg, Layout, Loc, Mode, RetPart, layout, ret_parts};
-use crate::full::{Const, Data, DecodeError, ElemKind, Func, Opcode, OperandKind, Shape, Site, Sym, insn_len};
+use crate::full::{Const, Data, DecodeError, ElemKind, Func, Opcode, OperandKind, Shape, Site, Sym};
 use crate::image::{CATCH, CONTINUE, CleanupEntry};
 use crate::reduced::Arg;
 
@@ -725,21 +725,25 @@ impl Rodata {
 /// scopes (sorted, at word offsets of instructions or the end): decodes the words and feeds
 /// them to an [`Asm`] (slots are already frame offsets).
 pub fn encode(code: &[u32], frame_size: u32, cleanup: &[CleanupEntry], scopes: &[Scope], mode: Mode) -> Result<Encoded, EncodeError> {
-    let mut starts = Vec::new();
+    // Each instruction's start and opcode; `arg`s must be a prefix.
+    let mut starts: Vec<(usize, Opcode)> = Vec::new();
     let mut index = vec![usize::MAX; code.len() + 1];
     let mut at = 0;
+    let mut non_arg = false;
     while at < code.len() {
         index[at] = starts.len();
-        starts.push(at);
-        at += insn_len(&code[at..]).map_err(EncodeError::Decode)?;
-        crate::full::Insn::decode(&code[starts[starts.len() - 1]..]).map_err(EncodeError::Decode)?;
-        let start = starts[starts.len() - 1];
-        if !super::return_ok(&code[start..]) {
-            return Err(EncodeError::BadReturn(start as u32));
+        let (insn, len) = crate::full::Insn::decode(&code[at..]).map_err(EncodeError::Decode)?;
+        let op = insn.opcode();
+        starts.push((at, op));
+        if !super::return_ok(&code[at..]) {
+            return Err(EncodeError::BadReturn(at as u32));
         }
-        if code[start] == Opcode::Arg as u32 && starts[..starts.len() - 1].iter().any(|&a| code[a] != Opcode::Arg as u32) {
-            return Err(EncodeError::ArgNotFirst(start as u32));
+        if op != Opcode::Arg {
+            non_arg = true;
+        } else if non_arg {
+            return Err(EncodeError::ArgNotFirst(at as u32));
         }
+        at += len;
     }
     let idx = |w: u32| -> Result<usize, EncodeError> { index.get(w as usize).copied().filter(|&i| i != usize::MAX).ok_or(EncodeError::BadTarget(w)) };
 
@@ -747,15 +751,14 @@ pub fn encode(code: &[u32], frame_size: u32, cleanup: &[CleanupEntry], scopes: &
     let mut action: Vec<Option<Unwind>> = vec![None; starts.len()];
     for e in cleanup {
         let i = idx(e.offset).map_err(|_| EncodeError::BadCleanup(e.offset))?;
-        let op = Opcode::from_u16(code[starts[i]] as u16).unwrap();
-        if !crate::image::op_may_unwind(op) || action[i].is_some() {
+        if !crate::image::op_may_unwind(starts[i].1) || action[i].is_some() {
             return Err(EncodeError::BadCleanup(e.offset));
         }
         action[i] = Some(if e.target == CONTINUE {
             Unwind::Continue
         } else {
             let p = idx(e.target & !CATCH).map_err(|_| EncodeError::BadCleanup(e.offset))?;
-            if Opcode::from_u16(code[starts[p]] as u16) != Some(Opcode::Lpad) {
+            if starts[p].1 != Opcode::Lpad {
                 return Err(EncodeError::BadCleanup(e.offset));
             }
             Unwind::Pad { pad: Label(p as u32), catch: e.target & CATCH != 0 }
@@ -780,10 +783,9 @@ pub fn encode(code: &[u32], frame_size: u32, cleanup: &[CleanupEntry], scopes: &
         }
         Ok(())
     };
-    for (i, &at) in starts.iter().enumerate() {
+    for (i, &(at, op)) in starts.iter().enumerate() {
         asm.bind(Label(i as u32));
         scopes_at(&mut asm, at)?;
-        let op = Opcode::from_u16(code[at] as u16).unwrap();
         let ops = operands(code, at).into_iter().map(|o| o.map_targets(|t| idx(t).map(|i| Label(i as u32)))).collect::<Result<Vec<_>, _>>()?;
         let id = asm.insn(op, &ops);
         if let Some(a) = action[i] {
