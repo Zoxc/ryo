@@ -119,33 +119,19 @@ pub fn insns(code: &[u32], mode: Mode) -> Result<Vec<InsnFrame>, FrameError> {
 /// The frame operands of the native instruction `w` (opcode `op`) at word `at`.
 fn native(op: full::Opcode, w: &[u32], at: usize, f: &mut InsnFrame) -> Result<(), &'static str> {
     let info = op.info();
-    let ext = op.ext();
-    // The operand width (an extension's source width), 8 bytes for the others.
-    let n = match (op.width(), ext) {
-        (Some(w), _) => w.bytes() as u32,
-        (None, Some(e)) => e.from.bytes(),
-        (None, None) => 8,
-    };
-    let compare = op.family().is_some_and(|f| f.cc().is_some() && !f.is_branch());
-    let (addr, ptr) = (op == full::Opcode::Addr, matches!(op, full::Opcode::PtrAdd | full::Opcode::PtrIndex));
-    let named = |name: &str| -> usize {
-        let mut pos = 1;
-        for o in info.operands {
-            if o.name == name {
-                return pos;
-            }
-            pos += o.kind.words().expect("fixed operands first");
-        }
-        unreachable!("operand {name}")
+    // The word of the operand `name`, which the shape gives.
+    let named = |name: &str| -> Result<usize, &'static str> {
+        let k = info.operand_index(name).ok_or("operand name")?;
+        Ok(1 + info.operands[..k].iter().map(|o| o.kind.words().ok_or("operand after a list")).sum::<Result<usize, _>>()?)
     };
     let mut push = |word: usize, access| f.opnds.push(FrameOpnd { word: at + word, access });
     match info.shape {
         Shape::Call | Shape::TailCall => {
             if info.operand_index("p").is_some() {
-                push(named("p"), Access::Read(8));
+                push(named("p")?, Access::Read(8));
             }
             if info.shape == Shape::Call {
-                let k = w[named("k")];
+                let k = w[named("k")?];
                 if k != 0 {
                     // The result's stores: an exact write of the parts if they are
                     // contiguous, else a clobber of their whole extent (so that a layout moves
@@ -156,10 +142,10 @@ fn native(op: full::Opcode, w: &[u32], at: usize, f: &mut InsnFrame) -> Result<(
                         [Some(a), None] => Access::Write(a.size),
                         _ => Access::Write(0),
                     };
-                    push(named("d"), access);
+                    push(named("d")?, access);
                 }
             }
-            let a = named("a");
+            let a = named("a")?;
             // A count of words, then (slot, register) pairs.
             let cnt = w[a] as usize / 2;
             for i in 0..cnt {
@@ -169,45 +155,37 @@ fn native(op: full::Opcode, w: &[u32], at: usize, f: &mut InsnFrame) -> Result<(
             }
         }
         Shape::Ret => {
-            let k = w[named("k")];
+            let k = w[named("k")?];
             if k != 0 {
                 let parts = ret_parts(k, true).ok_or("return kind")?;
                 let hi = parts.into_iter().flatten().map(|p| p.off + p.size).max().unwrap_or(0);
-                push(named("s"), Access::Read(hi));
+                push(named("s")?, Access::Read(hi));
             }
         }
         Shape::Arg => {
-            let reg = super::ArgReg::of(w[named("r")], true).ok_or("argument register")?;
-            push(named("d"), Access::Write(reg.size));
+            let reg = super::ArgReg::of(w[named("r")?], true).ok_or("argument register")?;
+            push(named("d")?, Access::Write(reg.size));
         }
         Shape::Island => {
-            let o = named("ops");
+            let o = named("ops")?;
             for i in 0..w[o] as usize {
                 push(o + 1 + i, Access::Opaque);
             }
         }
         _ => {
-            // An extension or truncation writes its second width.
+            // Inline instructions (and `jmp`, `unreachable`, which have no slots).
+            let mut accesses = super::inline::frame_access(op).unwrap_or_default().into_iter();
             let mut pos = 1;
             for o in info.operands {
-                let access = match (o.kind, o.name) {
-                    (OperandKind::Slot, "d") if addr || ptr => Some(Access::Write(8)),
-                    (OperandKind::Slot, "d") if let Some(e) = ext => Some(Access::Write(e.to.bytes())),
-                    // An overflow flag.
-                    (OperandKind::Slot, "o") => Some(Access::Write(1)),
-                    (OperandKind::Slot, "d") => Some(Access::Write(if compare { 1 } else { n })),
-                    (OperandKind::Slot, "s") if addr => Some(Access::Addr),
-                    (OperandKind::Slot, "s") if op == full::Opcode::Br => Some(Access::Read(1)),
-                    (OperandKind::Slot, "p" | "i") => Some(Access::Read(8)),
-                    (OperandKind::Slot, _) => Some(Access::Read(n)),
-                    (OperandKind::Mem, _) => Some(Access::Read(8)),
-                    (OperandKind::List(_), _) => return Err("a list operand"),
-                    _ => None,
-                };
-                if let Some(a) = access {
-                    push(pos, a);
+                match o.kind {
+                    OperandKind::Slot | OperandKind::Mem => push(pos, accesses.next().ok_or("operand accesses")?),
+                    OperandKind::List(_) => return Err("a list operand"),
+                    _ => {}
                 }
                 pos += o.kind.words().expect("fixed");
+            }
+            if accesses.next().is_some() {
+                return Err("operand accesses");
             }
         }
     }

@@ -14,6 +14,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use super::encode::{Opnd, Ref};
+use super::frame::Access;
 use super::x86::{Alu, Cond, Item, M, Reg, Rm, Sh, W};
 use crate::full::{ALL_OPCODES, Cc, Family, Opcode, OperandKind, Width};
 
@@ -187,6 +188,37 @@ const fn class_of(op: Opcode) -> Option<Class> {
             (None, Some(a), false) => Class::Bin(a, w),
             (None, None, _) => return None,
         },
+    })
+}
+
+/// How the inline opcode `op` uses its slot and memory operands, in operand order (a memory
+/// operand reads its 8-byte base pointer slot), or `None` if `op` has no inline form.
+pub(super) fn frame_access(op: Opcode) -> Option<Vec<Access>> {
+    use Access::{Read as R, Write as Wr};
+    let n = |w: W| w.bytes();
+    Some(match class(op)? {
+        Class::Mov(w) | Class::Bswap(w) => vec![Wr(n(w)), R(n(w))],
+        Class::Mov128 => vec![Wr(16), R(16)],
+        Class::Imm(w) => vec![Wr(n(w))],
+        Class::Addr => vec![Wr(8), Access::Addr],
+        Class::AddrConst | Class::AddrSym | Class::AddrSymInd => vec![Wr(8)],
+        Class::PtrAdd => vec![Wr(8), R(8)],
+        Class::PtrIndex => vec![Wr(8), R(8), R(8)],
+        Class::Load(w) => vec![Wr(n(w)), R(8)],
+        Class::Store(w) => vec![R(8), R(n(w))],
+        Class::Bin(_, w) | Class::Mul(w) | Class::ShiftVar(_, w) | Class::Div { w, .. } => vec![Wr(n(w)), R(n(w)), R(n(w))],
+        Class::BinImm(_, w) | Class::MulImm(w) | Class::ShiftImm(_, w) => vec![Wr(n(w)), R(n(w))],
+        // The count is a `u32`, the three-way compare an `i8`, at any width.
+        Class::Count { w, .. } => vec![Wr(4), R(n(w))],
+        Class::Cmp3(_, w) => vec![Wr(1), R(n(w)), R(n(w))],
+        Class::Cmp(_, w) => vec![Wr(1), R(n(w)), R(n(w))],
+        Class::CmpImm(_, w) => vec![Wr(1), R(n(w))],
+        Class::Br => vec![R(1)],
+        Class::BrCmp(_, w) => vec![R(n(w)), R(n(w))],
+        Class::BrCmpImm(_, w) => vec![R(n(w))],
+        // The result, then its overflow flag.
+        Class::Ovf(_, _, w) | Class::MulOvf(_, w) => vec![Wr(n(w)), Wr(1), R(n(w)), R(n(w))],
+        Class::Ext { from, to, .. } => vec![Wr(n(to)), R(n(from))],
     })
 }
 

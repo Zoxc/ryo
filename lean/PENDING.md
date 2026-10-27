@@ -201,3 +201,11 @@ remove it once a Lean session has handled it.
   test` pass. Not rechecked: `RyoProofs` (`RyoProofs.InlineOps`'s `decide +kernel` was
   OOM-killed on a loaded machine). Optional: export `Family`/`OpWidth` (`Opcode::fw`) to the
   generated tables, for statements over every width of a family.
+
+- Inline frame accesses come from `inline::Class` (Commit: "Asm: Inline frame accesses from
+  inline::Class"). `frame::native` no longer parses mnemonics and operand names for inline
+  opcodes: `inline::frame_access` lists each slot/memory operand's access by class. Two widths
+  changed: `cmp3.*` writes 1 byte of `d` (was the opcode width) and `cttz`/`ctlz` write 4 (a
+  `u32`, was the width), as the handlers and inline sequences do. `Frame.lean`'s `native`
+  (the `_` arm, `widthOfMnemonic`/`secondWidth` there) should match; `droppedStore` already
+  had these widths.
