@@ -43,14 +43,25 @@ elab "#ryo_axioms" : command => do
 #print axioms Ryo.Spec.Theorems.decode_encode   -- [propext, Classical.choice, Quot.sound]
 ```
 
-Its output at this commit: the seven opaque instances of §1.2, nothing else (no `sorry`). Every proved theorem depends only on Lean's three standard axioms
+Its output at this commit: the seven opaque instances of §1.2 and the `sorry`s of §1.1's
+`decode_sound` list. Every proved theorem depends only on Lean's three standard axioms
 (`propext`, `Classical.choice`, `Quot.sound`).
 
 ## 1. Logical and implementation assumptions
 
-### 1.1 `sorry`: none (the representation theorems)
+### 1.1 `sorry`: only `decode_sound`'s open glue (the representation theorems have none)
 
-`Ryo` has no `sorry`. The five representation laws of MiniRust's `representation.md`
+`Ryo`'s `sorry`s are all in `Ryo/Proofs/DecodeSound.lean`, the glue of M3's `decode_sound`
+from the per-shape step lemmas (aot.md §C2 "Composition"): the bodies `bodySim_arg`,
+`bodySim_call`, `bodySim_inline`, `bodySim_handler`, `bodySim_ret`, `bodySim_island`, the counter
+check `reach_counter`, and four facts of the decoder not yet exposed by `DecodeLink`
+(`read_instructions_prologue`: the prologue read item by item; `pad_lpad`: landing pads are
+`lpad`s; `posOf_le_size`: protos lie within the code; `frameSize_pe`: PE frames are at least 16
+bytes); so `decode_sound` depends on them. Its open prerequisites are hypotheses (`Hyps`), not
+`sorry`s. The work files `Ryo/Proofs/DSWork/*.lean` (outside the default build) hold the open
+proofs and their remaining `sorry` lemmas.
+
+The five representation laws of MiniRust's `representation.md`
 § Generic properties are proved, depending only on Lean's standard axioms:
 
 | Theorem | File | States |

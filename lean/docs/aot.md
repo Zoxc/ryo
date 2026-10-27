@@ -418,6 +418,34 @@ follows the decoder's structure:
   outcome (a transfer into JIT code, `FnSim`'s business).
 - **Prologue, epilogue, probe**: the `ryo_probe_stack` contract; the prologue establishes
   `fp` and `F` as the FDE says (§C4 checks the FDE against it).
+- **Composition** (`Ryo/Proofs/DecodeSound.lean`, `decode_sound`): for a function the decoder
+  accepts (`Decodes S …`, from `decodeReduced … = .ok d` by `decodes_of_ok`), the fetching
+  machine with its environment (`Reach`: code `Step`s, and at an environment entry every return
+  the contracts allow) simulates R from every boundary whose R runs are safe (`FnSim`, by
+  `fnSim_of_insnSim` one instruction at a time). The boundary relation `BInv`: `rip` at the
+  instruction's start (before its padding) with the cache it was read with, or at its position
+  (a branch target) with the cache used there; `RRel`, `MemRel`, `FrameSep` over `[-F, K)`,
+  `rsp = fp - F`, the code and rodata linked in memory, the frame's link to the caller, and at a
+  leading `arg` (`LeadArg`: it and every instruction before are `arg`s) the incoming registers no
+  earlier `arg` read (`ArgsLive`; an `arg` of 3, 5, 6 or 7 bytes is stored in pieces that shift
+  its own register, so relating all of them, as at entry (`ArgsRel`), fails after it); `ExitRel`
+  for returns and tail calls. Proved: the padding, the dispatch over what the decoder read, the
+  relocation boundaries (`boundary_start`), decoded branches canonical (`branch_canonical`),
+  `unreachable` and `jmp`. `sorry` ([assumptions.md](assumptions.md) §1.1): the other per-shape
+  bodies (`bodySim_*`), the counter check (`reach_counter`), and four facts of the decoder
+  (`read_instructions_prologue`, `pad_lpad`, `posOf_le_size`, `frameSize_pe`); the open proofs
+  are worked on in `Ryo/Proofs/DSWork/`. The frame-pointer mode only. The open prerequisites are
+  named hypotheses (`Hyps`): of the decoded code, checkable (`FrameBounds`, `MoreBounds`: handler
+  writes and call result slots in the window, `RelocsIn`, `ArgsOk`: the leading `arg`s read
+  distinct argument registers of the convention and no branch target is one); privacy after the
+  scopes (`LoadPrivate`, `ArgPrivate`, `ResultPrivate`, `LinkPrivate`: the link slots in no
+  escaped object or `Lend` extent); the environment and layout (`SepAcross`, `EnvApart`: the
+  window not runtime-owned, live allocations neither runtime-owned nor below `rsp`, symbol slots
+  and the JIT record off the stack; `StackSizes`, `CodeApart`, `EnvOutside`); facts of the
+  decoder and linker not yet exposed (`DeadStoreSim`, `CacheCleared`, `PadsLinked`,
+  `StubsLinked`); trusted, beside the other contracts, `ResumeContract` (`resume`'s handler is
+  assembly, outside `opSem`: it comes back only at a landing pad). Not covered: the prologue (the
+  simulation starts at instruction 0's boundary).
 - **Branch relaxation, padding, jump tables**: handled by the decoder (targets are positions),
   so they need no proof of their own beyond `decodeItem`'s.
 - **Unwinding**: the LSDA call-site table (ported `asm::lsda::parse`) maps call sites to

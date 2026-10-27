@@ -33,3 +33,4 @@ import Ryo.Proofs.FrameBounds
 import Ryo.Proofs.Call
 import Ryo.Proofs.Island
 import Ryo.Proofs.DecodeLink
+import Ryo.Proofs.DecodeSound
