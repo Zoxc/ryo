@@ -120,6 +120,18 @@ pub(super) enum Simp {
     Keep,
 }
 
+impl Simp {
+    /// Applies it to `res`, the instruction's result: whether the instruction goes.
+    pub(super) fn apply(self, f: &mut Func, res: Value) -> bool {
+        match self {
+            Simp::Value(v) => f.values[res.idx()].def = ValueDef::Alias(v),
+            Simp::Const(c) => f.alias_const(res, c),
+            Simp::Keep => return false,
+        }
+        true
+    }
+}
+
 /// Folds or rewrites the pure instruction `i` in place.
 pub(super) fn simplify(f: &mut Func, i: Inst) -> Simp {
     let konst = |f: &Func, v: Value| match f.def(v) {
@@ -653,9 +665,7 @@ pub fn lvn(f: &mut Func, pools: Option<&dyn ConstMem>) {
             {
                 super::fold::fold_addr(f, i);
                 if let Some(c) = fold_const_load(f, i, pools) {
-                    let w = f.w(Value(res));
-                    let c = f.konst(mask(c, w), w);
-                    alias(f, c);
+                    f.alias_const(Value(res), c);
                     continue;
                 }
             }
@@ -663,27 +673,15 @@ pub fn lvn(f: &mut Func, pools: Option<&dyn ConstMem>) {
             let (bits, is_pure) = (matches!(op, Op::HCall(h) if bit_count(f, i, h).is_some()), op.pure());
             // A bit count of a constant folds; one of a run-time value stays a handler call.
             if bits && let Simp::Const(c) = simplify(f, i) {
-                let w = f.w(Value(res));
-                let c = f.konst(mask(c, w), w);
-                alias(f, c);
+                f.alias_const(Value(res), c);
                 continue;
             }
             if is_pure && f.insts[i.idx()].op == Op::V(VOp::Pair) && pair_load(f, &mut kept, i) {
                 continue;
             }
             if is_pure {
-                match simplify(f, i) {
-                    Simp::Value(v) => {
-                        alias(f, v);
-                        continue;
-                    }
-                    Simp::Const(c) => {
-                        let w = f.w(Value(res));
-                        let c = f.konst(mask(c, w), w);
-                        alias(f, c);
-                        continue;
-                    }
-                    Simp::Keep => {}
+                if simplify(f, i).apply(f, Value(res)) {
+                    continue;
                 }
                 let id = &f.insts[i.idx()];
                 if let Some(k) = key(&id.op, &id.args) {

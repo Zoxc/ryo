@@ -307,9 +307,7 @@ fn sccp(f: &mut Func) -> bool {
             if let Lat::C(c) = s.lat[v.idx()]
                 && !matches!(f.def(v), ValueDef::Alias(_))
             {
-                let w = f.w(v);
-                let k = f.konst(mask(c, w), w);
-                f.values[v.idx()].def = ValueDef::Alias(k);
+                f.alias_const(v, c);
                 found = true;
             }
         }
@@ -344,19 +342,10 @@ fn sccp(f: &mut Func) -> bool {
                 }
                 let res = Value(f.insts[i.idx()].res);
                 if f.insts[i.idx()].op.pure() && !matches!(f.def(res), ValueDef::Alias(_)) {
-                    match simplify_inst(f, i) {
-                        Simp::Value(v) => {
-                            f.values[res.idx()].def = ValueDef::Alias(v);
-                            continue;
-                        }
-                        Simp::Const(c) => {
-                            let w = f.w(res);
-                            let k = f.konst(mask(c, w), w);
-                            f.values[res.idx()].def = ValueDef::Alias(k);
-                            again = true;
-                            continue;
-                        }
-                        Simp::Keep => {}
+                    let s = simplify_inst(f, i);
+                    again |= matches!(s, Simp::Const(_));
+                    if s.apply(f, res) {
+                        continue;
                     }
                 }
                 kept.push(i);

@@ -854,6 +854,13 @@ impl Func {
         self.value(ValueDef::Const(bits), w)
     }
 
+    /// Makes `v` an alias of the constant `c`, masked to `v`'s width.
+    pub fn alias_const(&mut self, v: Value, c: u64) {
+        let w = self.w(v);
+        let k = self.konst(mask(c, w), w);
+        self.values[v.idx()].def = ValueDef::Alias(k);
+    }
+
     pub fn block(&mut self, kind: BlockKind) -> Block {
         self.blocks.push(BlockData { params: Vec::new(), insts: Vec::new(), term: Term::None, preds: Vec::new(), kind, head: None, cold: false });
         Block(self.blocks.len() as u32 - 1)
