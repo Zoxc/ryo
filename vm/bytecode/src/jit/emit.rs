@@ -175,6 +175,37 @@ fn ret_regs(parts: &[RetPart]) -> Vec<AbiReg> {
         .collect()
 }
 
+/// A code position: an offset in a piece.
+#[derive(Clone, Copy)]
+struct Mark {
+    piece: u32,
+    off: u32,
+}
+
+/// A call site, before layout: the call at `at`, `len` bytes, with its pad's label.
+struct PendingSite {
+    at: Mark,
+    len: u32,
+    pad: Option<u32>,
+    catch: bool,
+}
+
+/// The laid-out code ([`Asm::finish`]).
+struct Laid {
+    code: Vec<u8>,
+    relocs: Vec<Reloc>,
+    /// Each label's position.
+    labels: Vec<u32>,
+    /// Each piece's position.
+    pieces: Vec<u32>,
+}
+
+impl Laid {
+    fn at(&self, m: Mark) -> u32 {
+        self.pieces[m.piece as usize] + m.off
+    }
+}
+
 /// A piece of code being laid out.
 #[derive(Clone, Debug)]
 enum P {
@@ -200,10 +231,10 @@ impl Asm {
         let Some(P::Code(x)) = self.ps.last_mut() else { unreachable!() };
         x
     }
-    /// The current position, as (piece, offset).
-    fn mark(&mut self) -> (u32, u32) {
-        let at = self.x().pos();
-        (self.ps.len() as u32 - 1, at)
+    /// The current position.
+    fn mark(&mut self) -> Mark {
+        let off = self.x().pos();
+        Mark { piece: self.ps.len() as u32 - 1, off }
     }
     fn label(&mut self) -> u32 {
         self.nlabels += 1;
@@ -216,9 +247,8 @@ impl Asm {
         self.ps.push(P::Br { cc, to, long: false });
     }
 
-    /// Lays out the pieces: the code, its relocations, each label's position and each
-    /// piece's.
-    fn finish(mut self) -> (Vec<u8>, Vec<Reloc>, Vec<u32>, Vec<u32>) {
+    /// Lays out the pieces.
+    fn finish(mut self) -> Laid {
         let n = self.ps.len();
         let mut pos = alloc::vec![0u32; n + 1];
         let mut lab = alloc::vec![u32::MAX; self.nlabels as usize];
@@ -293,7 +323,7 @@ impl Asm {
             }
             debug_assert_eq!(code.len() as u32, pos[k + 1], "piece {k}");
         }
-        (code, relocs, lab, pos)
+        Laid { code, relocs, labels: lab, pieces: pos }
     }
 }
 
@@ -447,10 +477,9 @@ struct E<'a> {
     a: Asm,
     rodata: Vec<u8>,
     code_consts: &'a [u8],
-    /// Call sites: (mark of the call, its length, the pad's label, catch).
-    sites: Vec<((u32, u32), u32, Option<u32>, bool)>,
+    sites: Vec<PendingSite>,
     /// Unwind rows: (mark, instructions).
-    cfi: Vec<((u32, u32), Vec<u8>)>,
+    cfi: Vec<(Mark, Vec<u8>)>,
     uses: &'a [u32],
     /// The condition the flags hold an overflow in after the last [`Op::Ovf`].
     ovf_cc: Option<X>,
@@ -780,18 +809,18 @@ impl<'a> E<'a> {
     }
 
     /// Registers a call site at `m` of `len` bytes.
-    fn site(&mut self, m: (u32, u32), len: u32, site: Site, pad: Option<u32>) {
+    fn site(&mut self, at: Mark, len: u32, site: Site, pad: Option<u32>) {
         match site {
             Site::None => {}
-            Site::Continue => self.sites.push((m, len, None, false)),
-            Site::Pad { catch } => self.sites.push((m, len, Some(pad.expect("a pad")), catch)),
+            Site::Continue => self.sites.push(PendingSite { at, len, pad: None, catch: false }),
+            Site::Pad { catch } => self.sites.push(PendingSite { at, len, pad: Some(pad.expect("a pad")), catch }),
         }
     }
 
     fn call_with_site(&mut self, site: Site, pad: Option<u32>, emit: impl FnOnce(&mut X86)) {
         let m = self.a.mark();
         emit(self.a.x());
-        let len = self.a.x().pos() - m.1;
+        let len = self.a.x().pos() - m.off;
         self.site(m, len, site, pad);
     }
 
@@ -807,24 +836,23 @@ impl<'a> E<'a> {
         if fp {
             self.a.x().push(R::Rbp);
             let m = self.a.mark();
-            self.cfi.push((m, alloc::vec![0x0e, 16, 0x86, 2]));
+            let mut v = cfa_offset(16);
+            v.extend(cfa_saved(R::Rbp, 2));
+            self.cfi.push((m, v));
             self.a.x().mov(8, Rm::R(R::Rbp), Rm::R(R::Rsp));
             let m = self.a.mark();
-            self.cfi.push((m, alloc::vec![0x0d, 6]));
+            self.cfi.push((m, alloc::vec![DW_CFA_DEF_CFA_REGISTER, dw(R::Rbp)]));
         }
         if self.fr.frameless {
             return;
         }
         let mut alloc_ = if fp { size } else { size + 8 };
         if self.fr.pushed {
-            for (k, (r, o)) in self.fr.saves.clone().into_iter().enumerate() {
+            for k in 0..self.fr.saves.len() {
+                let (r, o) = self.fr.saves[k];
                 self.a.x().push(r);
                 let m = self.a.mark();
-                let mut v = Vec::new();
-                if !fp {
-                    v.push(0x0e);
-                    uleb(&mut v, 16 + 8 * k as u32);
-                }
+                let mut v = if fp { Vec::new() } else { cfa_offset(16 + 8 * k as u32) };
                 save_rule(&mut v, r, o);
                 self.cfi.push((m, v));
             }
@@ -840,12 +868,11 @@ impl<'a> E<'a> {
         }
         if !fp && (alloc_ != 0 || !self.fr.pushed) {
             let m = self.a.mark();
-            let mut v = alloc::vec![0x0e];
-            uleb(&mut v, size + 16);
-            self.cfi.push((m, v));
+            self.cfi.push((m, cfa_offset(size + 16)));
         }
         if !self.fr.pushed {
-            for (r, o) in self.fr.saves.clone() {
+            for i in 0..self.fr.saves.len() {
+                let (r, o) = self.fr.saves[i];
                 let m = self.fp_mem(o);
                 self.a.x().mov(8, Rm::M(m), Rm::R(r));
                 let mk = self.a.mark();
@@ -894,7 +921,8 @@ impl<'a> E<'a> {
             ops.push((self.a.x().pos(), U::Alloc(rest)));
         }
         if !self.fr.pushed {
-            for (r, o) in self.fr.saves.clone() {
+            for i in 0..self.fr.saves.len() {
+                let (r, o) = self.fr.saves[i];
                 self.a.x().mov(8, Rm::M(Mem::base(R::Rbp, o)), Rm::R(r));
                 ops.push((self.a.x().pos(), U::Save(r.num(), (o + k as i32) as u32)));
             }
@@ -909,13 +937,15 @@ impl<'a> E<'a> {
             // `lea rsp, [rbp - 16 - 8n]` and the pops: a Win64 epilogue (after the saves'
             // loads, which are body code).
             if !self.fr.pushed {
-                for (r, o) in self.fr.saves.clone() {
+                for i in 0..self.fr.saves.len() {
+                    let (r, o) = self.fr.saves[i];
                     self.a.x().mov(8, Rm::R(r), Rm::M(Mem::base(R::Rbp, o)));
                 }
             }
             let n = if self.fr.pushed { self.fr.saves.len() as i32 } else { 0 };
             self.a.x().lea(R::Rsp, Mem::base(R::Rbp, -16 - 8 * n));
-            for (r, _) in self.fr.saves.clone().into_iter().rev().take(n as usize) {
+            for i in (self.fr.saves.len() - n as usize..self.fr.saves.len()).rev() {
+                let r = self.fr.saves[i].0;
                 self.a.x().pop(r);
             }
             for r in [R::Rsi, R::Rdi, R::Rbp] {
@@ -928,7 +958,8 @@ impl<'a> E<'a> {
             return;
         }
         if !self.fr.pushed {
-            for (r, o) in self.fr.saves.clone() {
+            for i in 0..self.fr.saves.len() {
+                let (r, o) = self.fr.saves[i];
                 let m = self.fp_mem(o);
                 self.a.x().mov(8, Rm::R(r), Rm::M(m));
             }
@@ -947,7 +978,8 @@ impl<'a> E<'a> {
                 self.a.x().alu_imm(Alu::Add, 8, Rm::R(R::Rsp), rest as i64);
             }
         }
-        for (r, _) in self.fr.saves.clone().into_iter().rev().take(n as usize) {
+        for i in (self.fr.saves.len() - n as usize..self.fr.saves.len()).rev() {
+            let r = self.fr.saves[i].0;
             self.a.x().pop(r);
         }
         if fp {
@@ -1905,14 +1937,14 @@ pub fn emit(f: &Func, al: &Alloc, uses: &[u32], mode: Mode, code_consts: &[u8], 
     let pe_unwind = if mode.pe { crate::image::pe_unwind_codes(e.pe_prologue, e.fr.pe_fp / 16, &e.pe_ops) } else { Vec::new() };
     let E { a, rodata, sites, cfi, fr, .. } = e;
     // The marks' pieces, to positions.
-    let (code, relocs, lab, pos) = a.finish();
-    let at = |m: (u32, u32)| pos[m.0 as usize] + m.1;
+    let l = a.finish();
     let mut call_sites: Vec<CallSite> =
-        sites.iter().map(|&(m, len, pad, catch)| CallSite { start: at(m), len, pad: pad.map(|l| lab[l as usize]), catch }).collect();
+        sites.iter().map(|s| CallSite { start: l.at(s.at), len: s.len, pad: s.pad.map(|p| l.labels[p as usize]), catch: s.catch }).collect();
     call_sites.sort_by_key(|c| c.start);
-    let cfi = cfi.into_iter().map(|(m, v)| (at(m), v)).collect();
-    let osr_at = (code.len() as u32).next_multiple_of(16);
-    let osr = if !f.osr.is_empty() { Some(osr_code(f, al, mode, &fr, &lab, osr_at)?) } else { None };
+    let cfi = cfi.into_iter().map(|(m, v)| (l.at(m), v)).collect();
+    let osr_at = (l.code.len() as u32).next_multiple_of(16);
+    let osr = if !f.osr.is_empty() { Some(osr_code(f, al, mode, &fr, &l.labels, osr_at)?) } else { None };
+    let Laid { code, relocs, .. } = l;
     Ok(Output { code, relocs, rodata, call_sites, cfi, osr, osr_at, frame_size: fr.size, pe_unwind, dump: None, devirt: 0 })
 }
 
@@ -1920,8 +1952,25 @@ pub fn emit(f: &Func, al: &Alloc, uses: &[u32], mode: Mode, code_consts: &[u8], 
 /// the CIE's data alignment, 8 bytes, so the slot must be 8-aligned.
 fn save_rule(v: &mut Vec<u8>, r: R, o: i32) {
     assert!(o % 8 == 0 && o <= 0, "a save slot at fp{o:+}");
-    v.push(0x80 | dw(r));
-    uleb(v, ((16 - o) / 8) as u32);
+    v.extend(cfa_saved(r, ((16 - o) / 8) as u32));
+}
+
+const DW_CFA_DEF_CFA_OFFSET: u8 = 0x0e;
+const DW_CFA_DEF_CFA_REGISTER: u8 = 0x0d;
+const DW_CFA_OFFSET: u8 = 0x80;
+
+/// `DW_CFA_def_cfa_offset off`.
+fn cfa_offset(off: u32) -> Vec<u8> {
+    let mut v = alloc::vec![DW_CFA_DEF_CFA_OFFSET];
+    uleb(&mut v, off);
+    v
+}
+
+/// `DW_CFA_offset r, n`: `r` saved at `CFA - 8n`.
+fn cfa_saved(r: R, n: u32) -> Vec<u8> {
+    let mut v = alloc::vec![DW_CFA_OFFSET | dw(r)];
+    uleb(&mut v, n);
+    v
 }
 
 /// The OSR dispatcher and entries: each converts the AOT frame at a head into the JIT one
