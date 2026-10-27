@@ -26,7 +26,7 @@ impl Var {
     /// A field of the incoming argument area that nothing writes: its value is loaded at the
     /// entry (an incoming alloca stays memory, at its fixed place).
     pub fn incoming(&self) -> bool {
-        self.off >= 16
+        self.off as i64 >= RET_AREA
     }
 }
 
@@ -71,20 +71,66 @@ impl Uf {
     }
 }
 
+/// The return address and the saved `rbp`, at offsets `[0, 16)`: in no alloca; the
+/// incoming argument area starts past them.
+const RET_AREA: i64 = 16;
+
 const NONE: u16 = u16::MAX;
 const CONFLICT: u16 = u16::MAX - 1;
 
 pub fn analyze(code: &Code, frame_size: u32) -> Result<Frame, Unsupported> {
+    let mut fb = bytes(code, frame_size)?;
+    let (mut allocas, lay) = classify(&mut fb);
+    let (shapes, wshape, mut res) = reaching_shapes(code, &lay, &mut allocas)?;
+    let (mut vars, var_of) = vars(&shapes, &lay, &allocas);
+    resolve(code, &lay, &allocas, &var_of, &mut vars, &mut res)?;
+    pin_escapes(code, &mut allocas);
+    let wvars = wshape.iter().map(|v| v.iter().map(|&s| if s == NONE { u32::MAX } else { var_of[s as usize] }).collect()).collect();
+    Ok(Frame { allocas, vars, res, wvars })
+}
+
+/// The frame's bytes `[-F, hi)`: their classes (union-find) and what touches each.
+struct FrameBytes {
+    /// The frame size `F`.
+    f: i64,
+    uf: Uf,
+    /// Per byte: opaque (a block: island, handler length; an address; a lent object),
+    /// accessed at all, accessed at a size that isn't a field's.
+    opaque: Vec<bool>,
+    accessed: Vec<bool>,
+    odd: Vec<bool>,
+    /// Per byte: in an escaped object.
+    escaped: Vec<bool>,
+    /// The end of the outgoing area, as a byte index.
+    out_end: usize,
+}
+
+/// The allocas' bytes: per byte index, the alloca (`u32::MAX`: none).
+struct Of {
+    f: i64,
+    of: Vec<u32>,
+}
+
+impl Of {
+    /// The alloca at AOT offset `off`.
+    fn at(&self, off: i32) -> Option<AllocaId> {
+        let b = (off as i64 + self.f) as usize;
+        self.of.get(b).copied().filter(|&a| a != u32::MAX).map(AllocaId)
+    }
+}
+
+/// The frame's bytes from the accesses and scopes of `code`.
+fn bytes(code: &Code, frame_size: u32) -> Result<FrameBytes, Unsupported> {
     let f = frame_size as i64;
     // The bytes: `[-F, hi)`, `hi` past the incoming arguments accessed.
-    let mut hi = 16i64;
+    let mut hi = RET_AREA;
     for i in &code.insns {
         for a in i.accs.iter().filter(|a| a.size != 0 || a.how != How::Block) {
             let (lo, end) = (a.off as i64, a.off as i64 + a.size.max(1) as i64);
             if lo < -f {
                 return Err(Unsupported("a frame access below the frame"));
             }
-            if lo < 16 && end > 0 {
+            if lo < RET_AREA && end > 0 {
                 return Err(Unsupported("a frame access at the return address"));
             }
             hi = hi.max(end);
@@ -96,11 +142,11 @@ pub fn analyze(code: &Code, frame_size: u32) -> Result<Frame, Unsupported> {
     let span = |uf: &mut Uf, off: i64, size: u32| {
         let lo = off.max(-f);
         let end = (off + size as i64).min(hi);
-        if (lo < 16 && end > 0 && lo >= 0) || lo >= end {
+        if (lo < RET_AREA && end > 0 && lo >= 0) || lo >= end {
             return;
         }
         for b in lo + 1..end {
-            if b > 0 && b < 16 {
+            if b > 0 && b < RET_AREA {
                 continue;
             }
             uf.union(at(lo) as u32, at(b) as u32);
@@ -175,7 +221,7 @@ pub fn analyze(code: &Code, frame_size: u32) -> Result<Frame, Unsupported> {
         let lo = (s.off as i64).max(-f);
         let end = (s.off as i64 + s.size as i64).min(hi);
         for b in lo..end.max(lo) {
-            if !(0..16).contains(&b) {
+            if !(0..RET_AREA).contains(&b) {
                 if s.kind == ScopeKind::Lend {
                     opaque[at(b)] = true;
                 } else {
@@ -198,7 +244,14 @@ pub fn analyze(code: &Code, frame_size: u32) -> Result<Frame, Unsupported> {
         uf.union(0, b as u32);
     }
 
-    // The allocas: classes in order of their first byte.
+    Ok(FrameBytes { f, uf, opaque, accessed, odd, escaped, out_end })
+}
+
+/// The allocas: the classes of `fb` something touches, in order of their first byte, each
+/// classified.
+fn classify(fb: &mut FrameBytes) -> (Vec<Alloca>, Of) {
+    let FrameBytes { f, ref mut uf, ref opaque, ref accessed, ref odd, ref escaped, out_end, .. } = *fb;
+    let n = accessed.len();
     let mut of = alloc::vec![u32::MAX; n];
     let mut allocas: Vec<Alloca> = Vec::new();
     let mut root_alloca = alloc::vec![u32::MAX; n];
@@ -212,7 +265,7 @@ pub fn analyze(code: &Code, frame_size: u32) -> Result<Frame, Unsupported> {
     }
     for b in 0..n {
         let off = b as i64 - f;
-        if (0..16).contains(&off) {
+        if (0..RET_AREA).contains(&off) {
             continue;
         }
         let r = uf.find(b as u32) as usize;
@@ -233,20 +286,26 @@ pub fn analyze(code: &Code, frame_size: u32) -> Result<Frame, Unsupported> {
         if escaped[b] || opaque[b] || odd[b] {
             al.kind = AllocaKind::Memory;
         }
-        if off >= 16 {
+        if off >= RET_AREA {
             al.kind = AllocaKind::Incoming;
         }
         if b < out_end {
             al.kind = AllocaKind::Outgoing;
         }
     }
-    let alloca_at = |off: i32| -> Option<AllocaId> {
-        let b = (off as i64 + f) as usize;
-        of.get(b).copied().filter(|&a| a != u32::MAX).map(AllocaId)
-    };
 
-    // The reaching shapes of the promoted allocas' bytes: per byte the write shape (an
-    // access `(off, w)`) that wrote it last, `NONE` if none, or `CONFLICT`.
+    (allocas, Of { f, of })
+}
+
+/// What the promoted allocas' accesses name: per byte the write shape (an access `(off, w)`)
+/// that wrote it last, `NONE` if none, or `CONFLICT`, by a forward dataflow. Promoted
+/// allocas read at a shape that doesn't reach become memory. Returns the shapes, each write's
+/// shape (by instruction and access) and what each access reads ([`Res::Var`] of a shape).
+fn reaching_shapes(code: &Code, lay: &Of, allocas: &mut [Alloca]) -> Result<(Vec<(i32, u8)>, Vec<Vec<u16>>, Vec<Vec<Res>>), Unsupported> {
+    let f = lay.f;
+    let n = lay.of.len();
+    let of = &lay.of;
+    let alloca_at = |off: i32| lay.at(off);
     let mut shapes: Vec<(i32, u8)> = Vec::new();
     let shape_id = |shapes: &mut Vec<(i32, u8)>, s: (i32, u8)| -> u16 {
         match shapes.iter().position(|&x| x == s) {
@@ -402,18 +461,29 @@ pub fn analyze(code: &Code, frame_size: u32) -> Result<Frame, Unsupported> {
             allocas[a].kind = AllocaKind::Memory;
         }
     }
-    // Variables: the shapes of promoted allocas still promoted, densely.
+    Ok((shapes, wshape, res))
+}
+
+/// The variables: the shapes of promoted allocas still promoted, densely; and by shape, its
+/// variable (`u32::MAX`: none).
+fn vars(shapes: &[(i32, u8)], lay: &Of, allocas: &[Alloca]) -> (Vec<Var>, Vec<u32>) {
     let mut var_of = alloc::vec![u32::MAX; shapes.len()];
     let mut vars = Vec::new();
     for (s, &(off, w)) in shapes.iter().enumerate() {
-        let a = alloca_at(off).unwrap();
+        let a = lay.at(off).unwrap();
         if allocas[a.idx()].kind == AllocaKind::Promoted {
             var_of[s] = vars.len() as u32;
             vars.push(Var { alloca: a, off, w });
         }
     }
-    // Incoming allocas only read, whole, at fields that don't overlap: their fields are
-    // variables loaded at the entry.
+    (vars, var_of)
+}
+
+/// The incoming allocas only read, whole, at fields that don't overlap: their fields become
+/// variables (appended to `vars`) loaded at the entry. Then resolves `res`: shapes to
+/// variables, memory accesses to their alloca and offset.
+fn resolve(code: &Code, lay: &Of, allocas: &[Alloca], var_of: &[u32], vars: &mut Vec<Var>, res: &mut [Vec<Res>]) -> Result<(), Unsupported> {
+    let alloca_at = |off: i32| lay.at(off);
     let mut ro_in = alloc::vec![true; allocas.len()];
     let mut fields: Vec<Vec<(i32, u32)>> = alloc::vec![Vec::new(); allocas.len()];
     for ri in &code.insns {
@@ -474,7 +544,13 @@ pub fn analyze(code: &Code, frame_size: u32) -> Result<Frame, Unsupported> {
         }
     }
 
-    // Escapes at the enterable heads: a forward may-dataflow over the memory allocas.
+    Ok(())
+}
+
+/// Escapes at the enterable heads, by a forward may-dataflow over the memory allocas: the
+/// allocas that may be escaped at an OSR entry are pinned.
+fn pin_escapes(code: &Code, allocas: &mut [Alloca]) {
+    let nb = code.blocks.len();
     let na = allocas.len();
     let words = na.div_ceil(64);
     let mut ein: Vec<Option<Vec<u64>>> = alloc::vec![None; nb];
@@ -545,6 +621,4 @@ pub fn analyze(code: &Code, frame_size: u32) -> Result<Frame, Unsupported> {
             }
         }
     }
-    let wvars = wshape.iter().map(|v| v.iter().map(|&s| if s == NONE { u32::MAX } else { var_of[s as usize] }).collect()).collect();
-    Ok(Frame { allocas, vars, res, wvars })
 }
