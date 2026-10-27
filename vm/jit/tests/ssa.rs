@@ -1004,6 +1004,58 @@ fn inline_two_unwinding_calls_into_one_pad() {
     check_stats(before, 1);
 }
 
+/// A call in code that an earlier splice made unreachable: `leaf` has no call that unwinds,
+/// so inlining it at `f`'s only unwinding site drops `f`'s cleanup pad, and with it the call
+/// of `bump` there, which was also selected for inlining (as `Vec::extend_with`'s
+/// `SetLenOnDrop` drop in its pad). The SSA tier must compile `f`.
+#[test]
+fn inline_call_in_a_pruned_pad() {
+    let (_g, before) = start();
+    let mut w = ImageWriter::new(unique_scid());
+    let mut defs = Defs::default();
+    // leaf(x) = x + 1. x@-8.
+    let mut a = Asm::new();
+    a.i(arg(-8, 0));
+    a.i(Insn::AddImmW64 { d: Slot(-8), a: Slot(-8), imm: 1 });
+    a.ret(Slot(-8), 8);
+    let leaf = defs.add(&mut w, func(a.done(), 16, 0, 8), vec![]);
+    // bump(p): *p += 1. p@-8, t@-16.
+    let mut a = Asm::new();
+    a.i(arg(-8, 0));
+    a.i(Insn::LoadW64 { d: Slot(-16), m: Mem { p: Slot(-8), k: 0 } });
+    a.i(Insn::AddImmW64 { d: Slot(-16), a: Slot(-16), imm: 1 });
+    a.i(Insn::StoreW64 { m: Mem { p: Slot(-8), k: 0 }, s: Slot(-16) });
+    a.ret(Slot(-16), 8);
+    let bump = defs.add(&mut w, func(a.done(), 16, 0, 8), vec![]);
+    // f(x, log): v = leaf(x); ret v; cleanup pad: bump(log); resume. x@-8, log@-16, v@-24,
+    // exc@-32, r@-40.
+    let mut a = Asm::new();
+    a.i(Insn::MovW64 { d: Slot(-8), s: Slot(16) });
+    a.i(Insn::MovW64 { d: Slot(-16), s: Slot(24) });
+    let site = a.i(Insn::Call { d: Slot(-24), f: leaf, k: 8, a: List::from_words(&regs(&[-8])) });
+    a.ret(Slot(-24), 8);
+    let pad = a.i(Insn::Lpad { x: Slot(-32) });
+    let bs = a.i(Insn::Call { d: Slot(-40), f: bump, k: 8, a: List::from_words(&regs(&[-16])) });
+    let r = a.i(Insn::Resume { x: Slot(-32) });
+    let mut fd = func(a.done(), 48, 16, 8);
+    fd.cleanup =
+        vec![CleanupEntry { offset: site, target: pad }, CleanupEntry { offset: bs, target: CONTINUE }, CleanupEntry { offset: r, target: CONTINUE }];
+    let f = defs.add(&mut w, fd, vec![]);
+    let img = defs.build(w);
+
+    for round in 0..3 {
+        let mut log = [0u64; 1];
+        assert_eq!(ok::<_, u64>(img.id(f), (4u64, log.as_mut_ptr() as u64)), 5, "round {round}");
+        assert_eq!(log[0], 0, "round {round}");
+    }
+    // `f` compiled with `leaf` inlined (a panic would leave `f` in AOT code calling a
+    // compiled `leaf`).
+    if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
+        assert_eq!(state(&img, leaf), JIT_COLD, "leaf inlined");
+    }
+    check_stats(before, 1);
+}
+
 /// Constant-specialized trials: `pick(mode, x)` branches on `mode`, which its two callers in
 /// one unit pass as different constants, and a third passes unknown: each splice uses the
 /// IR specialized to its constants (or the general one), and all give `pick`'s results.

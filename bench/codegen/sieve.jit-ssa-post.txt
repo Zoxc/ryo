@@ -717,7 +717,7 @@ b90(): ; Body
     AStore(AllocaId(128), 16, 8) (0x0)
     v121:8 = AllocaAddr(AllocaId(128), 0) ()
     v122:1 = ALoad(AllocaId(134), 0, 1) ()
-    Call(Call { target: image.fn29.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }], parts: [], site: Pad { catch: false } }) (v121, v3, v122)
+    Call(Call { target: image.fn29, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }], parts: [], site: Pad { catch: false } }) (v121, v3, v122)
     invoke -> b100() unwind b113()
 b91(): ; Body cold
     v108:8 = RefAddr(image.k1605, false) ()
@@ -869,4 +869,216 @@ b15(): ; Body cold
     v17:8 = RefAddr(image.k472, false) ()
     Call(Call { target: image.sym9, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v17)
     invoke -> - unwind b11()
+
+fn std::vec::Vec::<bool>::extend_with
+a0: $-160, 8 bytes, Promoted
+a1: $-152, 8 bytes, Promoted
+a2: $-144, 8 bytes, Promoted
+a3: $-136, 8 bytes, Promoted
+a4: $-128, 8 bytes, Promoted
+a5: $-120, 16 bytes, Promoted, escaped
+a6: $-104, 8 bytes, Promoted
+a7: $-73, 1 bytes, Promoted
+a8: $-48, 8 bytes, Promoted
+a9: $-40, 8 bytes, Promoted
+a10: $-32, 8 bytes, Promoted
+a11: $-17, 1 bytes, Memory, pinned, escaped
+a12: $-16, 8 bytes, Promoted
+a13: $-8, 8 bytes, Promoted
+a14: $-16, 8 bytes, Promoted, inlined
+a15: $-8, 8 bytes, Promoted, inlined
+a16: $-24, 8 bytes, Promoted, inlined
+a17: $-16, 8 bytes, Promoted, inlined
+a18: $-8, 8 bytes, Promoted, inlined
+a19: $-16, 8 bytes, Promoted, inlined
+a20: $-8, 8 bytes, Promoted, inlined
+a21: $-24, 8 bytes, Promoted, inlined
+a22: $-16, 8 bytes, Promoted, inlined
+a23: $-8, 8 bytes, Promoted, inlined
+a24: $-16, 8 bytes, Promoted, inlined
+a25: $-1, 1 bytes, Promoted, inlined
+a26: $-136, 8 bytes, Promoted, inlined
+a27: $-121, 1 bytes, Promoted, inlined
+a28: $-120, 8 bytes, Promoted, inlined
+a29: $-112, 8 bytes, Promoted, inlined
+a30: $-104, 8 bytes, Promoted, inlined
+a31: $-96, 8 bytes, Promoted, inlined
+a32: $-88, 8 bytes, Promoted, inlined
+a33: $-80, 8 bytes, Promoted, inlined
+a34: $-72, 8 bytes, Promoted, inlined
+a35: $-64, 8 bytes, Promoted, inlined
+a36: $-56, 8 bytes, Promoted, inlined
+a37: $-48, 8 bytes, Promoted, inlined
+a38: $-33, 1 bytes, Promoted, inlined
+a39: $-32, 8 bytes, Promoted, inlined
+a40: $-24, 8 bytes, Promoted, inlined
+a41: $-16, 8 bytes, Promoted, inlined
+a42: $-8, 8 bytes, Promoted, inlined
+a43: $-104, 8 bytes, Promoted, inlined
+a44: $-96, 8 bytes, Promoted, inlined
+a45: $-88, 8 bytes, Promoted, inlined
+a46: $-80, 8 bytes, Promoted, inlined
+a47: $-65, 1 bytes, Promoted, inlined
+a48: $-64, 8 bytes, Promoted, inlined
+a49: $-56, 8 bytes, Promoted, inlined
+a50: $-48, 8 bytes, Promoted, inlined
+a51: $-40, 8 bytes, Promoted, inlined
+a52: $-16, 8 bytes, Promoted, inlined
+a53: $-8, 8 bytes, Promoted, inlined
+b0(v0:8, v1:8, v2:1): ; Entry
+    AStore(AllocaId(11), 0, 1) (v2)
+    v95:8 = Load(8, 16) (v0)
+    v96:8 = Load(8, 0) (v0)
+    v97:8 = Bin(Sub, 8) (v96, v95)
+    br LtU.w8 v97, v1 ? b57() : b58()
+b1(): ; Body
+    trap
+b2(v17:8, v18:8, v50:8, v54:8, v103:8, v105:8): ; Body head 0
+    br LtU.w8 v17, v18 ? b53() : b19()
+b3(): ; Body
+    trap
+b4(v20:8, v21:1, v29:8, v31:8, v52:8, v101:8, v106:8): ; Body head 1
+    Store(1, 0) (v20, v21)
+    v24:8 = PtrAdd(1) (v20)
+    v27:8 = Bin(Add, 8) (v101, 0x1)
+    jmp b2(v29, v31, v52, v24, v27, v106)
+b5(): ; Body head 2
+    v33:1 = ALoad(AllocaId(11), 0, 1) ()
+    Store(1, 0) (v54, v33)
+    v37:8 = Bin(Add, 8) (v103, 0x1)
+    Store(8, 0) (v105, v37)
+    jmp b9()
+b6(): ; Body
+    trap
+b7(): ; Body head 3
+    Store(8, 0) (v105, v103)
+    jmp b9()
+b8(): ; Body
+    trap
+b9(): ; Body head 4
+    ret 0x0 ()
+b10(): ; Body head 5 cold
+    trap
+b11(): ; Body
+    trap
+b12(): ; Body head 6 cold
+    hcall resume [(Fp, [None, None]), (Imm(4294967192), [Some(Scratch(0)), None])] ins [0] outs [] (v4)
+    trap
+b13(): ; Body
+    trap
+b14(): ; Body head 7 cold
+    jmp b12()
+b15(): ; Body head 8 cold
+    jmp b14()
+b16(): ; Body
+    trap
+b17(): ; Body
+    trap
+b18(): ; Body
+    trap
+b19(): ; Body
+    br GtU.w8 v50, 0x0 ? b5() : b7()
+b20(): ; Body
+    trap
+b21(): ; Body
+    trap
+b22(): ; Body
+    trap
+b23(): ; Body
+    trap
+b24(): ; Body
+    trap
+b25(): ; Body head 9 cold
+    trap
+b26(): ; Body
+    trap
+b27(): ; Body
+    trap
+b28(): ; Body
+    trap
+b29(): ; Osr(0)
+    v28:8 = OsrLoad(-48, 8) ()
+    v30:8 = OsrLoad(-40, 8) ()
+    v51:8 = OsrLoad(-16, 8) ()
+    v55:8 = OsrLoad(-32, 8) ()
+    v110:8 = OsrLoad(-112, 8) ()
+    v112:8 = OsrLoad(-120, 8) ()
+    jmp b2(v28, v30, v51, v55, v110, v112)
+b30(): ; Osr(1)
+    v68:8 = OsrLoad(-128, 8) ()
+    v69:1 = OsrLoad(-129, 1) ()
+    v71:8 = OsrLoad(-48, 8) ()
+    v72:8 = OsrLoad(-40, 8) ()
+    v74:8 = OsrLoad(-16, 8) ()
+    v109:8 = OsrLoad(-112, 8) ()
+    v111:8 = OsrLoad(-120, 8) ()
+    jmp b4(v68, v69, v71, v72, v74, v109, v111)
+b31(): ; Body
+    trap
+b32(): ; Stub cold
+    v4:8 = LandingPad ()
+    jmp b15()
+b33(): ; Body
+    trap
+b34(): ; Body cold
+    trap
+b35(): ; Body
+    trap
+b36(): ; Body cold
+    trap
+b37(): ; Body cold
+    trap
+b38(): ; Body cold
+    trap
+b39(): ; Body
+    trap
+b40(): ; Body cold
+    trap
+b41(): ; Body
+    trap
+b42(): ; Body
+    trap
+b43(): ; Body
+    trap
+b44(): ; Body
+    trap
+b45(): ; Body
+    trap
+b46(): ; Body
+    trap
+b47(): ; Body
+    trap
+b48(): ; Body
+    trap
+b49(): ; Body
+    trap
+b50(): ; Body
+    trap
+b51(): ; Body
+    trap
+b52(): ; Body
+    trap
+b53(): ; Body
+    v63:8 = Bin(Add, 8) (v17, 0x1)
+    v88:1 = ALoad(AllocaId(11), 0, 1) ()
+    jmp b4(v54, v88, v63, v18, v50, v103, v105)
+b54(): ; Body
+    trap
+b55(): ; Body
+    trap
+b56(): ; Body
+    trap
+b57(): ; Body
+    Call(Call { target: image.sym13, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }, ArgReg { xmm: false, size: 8, index: 4 }], parts: [], site: Pad { catch: false } }) (v0, v95, v1, 0x1, 0x1)
+    invoke -> b60() unwind b32()
+b58(): ; Body
+    v5:8 = Load(8, 8) (v0)
+    v7:8 = Load(8, 16) (v0)
+    v13:8 = PtrIndex(1) (v5, v7)
+    v14:8 = PtrAdd(16) (v0)
+    jmp b2(0x1, v1, v1, v13, v7, v14)
+b59(): ; Body
+    trap
+b60(): ; Body
+    jmp b58()
 

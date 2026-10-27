@@ -11,3 +11,9 @@ remove it once a Lean session has handled it.
   is to cover Mach-O images. Commit: "image: 8-byte .eh_frame pointers for Mach-O images".
   Out of scope for the model: its object readers (`readElf`/`readImageObject`) only read
   ELF objects, so a Mach-O image's `Abs8` `.eh_frame` never reaches `Ryo/Obj/EhFrame.lean`.
+
+- The SSA tier's inliner skips an accepted call site that an earlier splice pruned (the
+  code after a callee that never returns, or a landing pad no copied call unwinds to); it
+  used to panic and leave the whole function in AOT code (`Vec::extend_with`). Only matters
+  if the Lean model covers the SSA tier. Commit: "JIT inliner: skip call sites an earlier
+  splice pruned".

@@ -1038,7 +1038,7 @@ pub fn inline(
     fn build(nodes: &[Node], accepted: &[bool], k: usize, check: bool) -> Result<Func, String> {
         let mut g = (**nodes[k].ir.as_ref().unwrap()).clone();
         for &ch in &nodes[k].children {
-            if accepted[ch] {
+            if accepted[ch] && live(&g, nodes[ch].site) {
                 let sub = build(nodes, accepted, ch, check)?;
                 let before = check.then(|| alloc::format!("; callee\n{sub}\n; caller\n{g}"));
                 splice(&mut g, nodes[ch].site, &sub);
@@ -1058,7 +1058,7 @@ pub fn inline(
     }
     let mut n = 0;
     for &ch in &nodes[0].children.clone() {
-        if accepted[ch] {
+        if accepted[ch] && live(f, nodes[ch].site) {
             let sub = build(&nodes, &accepted, ch, check)?;
             let before = check.then(|| alloc::format!("; callee\n{sub}\n; caller\n{f}"));
             splice(f, nodes[ch].site, &sub);
@@ -1077,6 +1077,13 @@ pub fn inline(
         n += *a as usize;
     }
     Ok(n)
+}
+
+/// Whether the call `site` is still in `f`: a splice prunes the code that became
+/// unreachable (after a callee that never returns, or a landing pad no copied call unwinds
+/// to), and a call there needs no inlining.
+fn live(f: &Func, site: Inst) -> bool {
+    f.blocks[f.insts[site.idx()].block.idx()].insts.contains(&site)
 }
 
 /// Replaces the call `call` in `f` by the body of `c`, the callee's IR (§7).
