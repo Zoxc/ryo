@@ -618,8 +618,9 @@ macro_rules! reg_addr {
 /// must have one entry (checked by `HANDLED`, below).
 macro_rules! handlers {
     (() $($name:ident => $kind:ident ($($p:tt)*) $(-> $ret:tt)?;)*) => {
-        /// The handlers, one per opcode (each `pub`, so tests can call them directly).
-        pub mod h {
+        /// The handlers, one per opcode. Others reach them by their `ryo_h_<Opcode>` symbols
+        /// or through [`handler`].
+        mod h {
             #[allow(unused_imports)]
             use super::*;
             $(
@@ -651,7 +652,8 @@ macro_rules! handlers {
             t
         };
 
-        /// The address of opcode `op`'s handler, for tests that call handlers directly.
+        /// The address of opcode `op`'s handler (for the JIT's handler table, and for tests
+        /// that call handlers directly).
         #[doc(hidden)]
         pub fn handler(op: Opcode) -> Option<*const ()> {
             match op {
