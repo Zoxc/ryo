@@ -43,7 +43,6 @@ pub struct Output {
 
 const S1: R = R::R11;
 const S2: R = R::R10;
-const ARGS: [R; 6] = [R::Rdi, R::Rsi, R::Rdx, R::Rcx, R::R8, R::R9];
 
 /// The DWARF number of a register.
 fn dw(r: R) -> u8 {
@@ -941,7 +940,7 @@ impl<'a> E<'a> {
                 x += 1;
             } else {
                 if let Some(d) = self.dst(v) {
-                    ms.push((d, Src::R([R::Rax, R::Rdx][g])));
+                    ms.push((d, Src::R(R::RETS[g])));
                 }
                 g += 1;
             }
@@ -1321,15 +1320,15 @@ impl<'a> E<'a> {
                 let nin = e.nin as usize;
                 // The `In` values into the first argument registers, then the data registers
                 // after them (which no `In` value's source is in any more).
-                let ms = args.iter().enumerate().map(|(k, &v)| (Rm::R(ARGS[k]), self.src(v))).collect();
+                let ms = args.iter().enumerate().map(|(k, &v)| (Rm::R(R::ARGS[k]), self.src(v))).collect();
                 self.moves(ms);
                 for j in 0..e.ndata as usize {
-                    self.hcall_arg(&h, e.data[j] as usize, ARGS[nin + j])?;
+                    self.hcall_arg(&h, e.data[j] as usize, R::ARGS[nin + j])?;
                 }
                 let hh = h.h;
                 let far = self.mode.far_rt;
                 self.call_with_site(h.site, pad, |x| x.call_rt(Ref::RegHandler(hh), far));
-                let ms = res.iter().enumerate().filter_map(|(k, &v)| Some((self.dst(v)?, Src::R([R::Rax, R::Rdx][k])))).collect();
+                let ms = res.iter().enumerate().filter_map(|(k, &v)| Some((self.dst(v)?, Src::R(R::RETS[k])))).collect();
                 self.moves(ms);
             }
             Op::HCall(h) => {
@@ -1339,7 +1338,7 @@ impl<'a> E<'a> {
                     self.mov(Rm::M(m), s);
                 }
                 for k in 0..h.regs.len() {
-                    self.hcall_arg(&h, k, ARGS[k])?;
+                    self.hcall_arg(&h, k, R::ARGS[k])?;
                 }
                 let hh = h.h;
                 let far = self.mode.far_rt;
@@ -1788,7 +1787,7 @@ impl<'a> E<'a> {
                         self.a.x().movq_to_xmm(x, s, if p.size == 8 { 8 } else { 4 });
                         x += 1;
                     } else {
-                        ms.push((Rm::R([R::Rax, R::Rdx][g]), self.src(v)));
+                        ms.push((Rm::R(R::RETS[g]), self.src(v)));
                         g += 1;
                     }
                 }
@@ -1796,7 +1795,7 @@ impl<'a> E<'a> {
                 // Narrow integer parts zero-extended, as the AOT code loads them.
                 let mut g = 0;
                 for (p, &v) in ps.iter().zip(parts).filter(|(p, _)| !p.xmm) {
-                    let r = [R::Rax, R::Rdx][g];
+                    let r = R::RETS[g];
                     if p.size < 8 && self.zext(v) > p.size as u8 {
                         self.a.x().movzx(r, p.size as u8, Rm::R(r));
                     }
@@ -1856,7 +1855,7 @@ impl<'a> E<'a> {
 /// The integer argument register `i` of VM functions and natives: `rdi rsi rdx rcx r8 r9`,
 /// or on PE (Win64) `rcx rdx r8 r9` ([`check_pe`] rejects the others there).
 pub(super) fn int_arg(pe: bool, i: u32) -> R {
-    if pe { [R::Rcx, R::Rdx, R::R8, R::R9][i as usize] } else { ARGS[i as usize] }
+    if pe { R::PE_ARGS[i as usize] } else { R::ARGS[i as usize] }
 }
 
 /// What the SSA tier doesn't do on PE: arguments past the four Win64 registers (the reduced

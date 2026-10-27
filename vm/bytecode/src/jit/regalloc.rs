@@ -492,7 +492,7 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
                 }
                 Op::HCall(h) if h.reg => {
                     for (k, a) in id.args.iter().enumerate() {
-                        want[a.idx()].get_or_insert([R::Rdi, R::Rsi, R::Rdx, R::Rcx, R::R8, R::R9][k]);
+                        want[a.idx()].get_or_insert(R::ARGS[k]);
                     }
                 }
                 _ => {}
@@ -509,7 +509,7 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
             }
             super::ir::Term::Ret { k, parts } if *k != 0 => {
                 let ps = crate::asm::ret_parts(*k, true).into_iter().flatten().flatten();
-                let mut g = [R::Rax, R::Rdx].into_iter();
+                let mut g = R::RETS.into_iter();
                 for (p, a) in ps.zip(parts) {
                     if !p.xmm
                         && let Some(r) = g.next()
@@ -622,9 +622,9 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
                         _ => None,
                     }
                 }
-                Op::Call(_) => [R::Rax, R::Rdx].get(n as usize).copied(),
+                Op::Call(_) => R::RETS.get(n as usize).copied(),
                 Op::LandingPad => Some(R::Rax),
-                Op::HCall(h) if h.reg => [R::Rax, R::Rdx].get(n as usize).copied(),
+                Op::HCall(h) if h.reg => R::RETS.get(n as usize).copied(),
                 Op::HCall(h) if h.ret && n == h.nout => Some(R::Rax),
                 _ => None,
             },
