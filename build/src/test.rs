@@ -51,10 +51,22 @@ struct Variant {
     no_vm: bool,
     /// The environment the program runs with, such as the JIT's settings.
     env: &'static [(&'static str, &'static str)],
+    /// A variant of the JIT, run by [`Sel::jit`].
+    jit: bool,
 }
 
-const VARIANT: Variant =
-    Variant { name: "", compiler: Compiler::Ryo, flags: &[], final_flags: &[], vm_only: false, ryo_std: false, abort: false, no_vm: false, env: &[] };
+const VARIANT: Variant = Variant {
+    name: "",
+    compiler: Compiler::Ryo,
+    flags: &[],
+    final_flags: &[],
+    vm_only: false,
+    ryo_std: false,
+    abort: false,
+    no_vm: false,
+    env: &[],
+    jit: false,
+};
 
 const REFERENCE: Variant = Variant { name: "rustc", compiler: Compiler::Rustc, ..VARIANT };
 
@@ -79,14 +91,14 @@ const VARIANTS: &[Variant] = &[
     Variant { name: "ryo-std-abort", flags: &["-Cpanic=abort"], ryo_std: true, abort: true, ..VARIANT },
     // Every VM function, std's included, runs its JIT code from its first call
     // (design/jit.md#testing), also with frames the JIT lays out differently.
-    Variant { name: "ryo-std-jit", ryo_std: true, env: JIT_SYNC, ..VARIANT },
-    Variant { name: "ryo-std-jit-shuffle", ryo_std: true, env: JIT_SHUFFLE, ..VARIANT },
-    Variant { name: "ryo-std-jit-reencode", ryo_std: true, env: JIT_REENCODE, ..VARIANT },
+    Variant { name: "ryo-std-jit", ryo_std: true, env: JIT_SYNC, jit: true, ..VARIANT },
+    Variant { name: "ryo-std-jit-shuffle", ryo_std: true, env: JIT_SHUFFLE, jit: true, ..VARIANT },
+    Variant { name: "ryo-std-jit-reencode", ryo_std: true, env: JIT_REENCODE, jit: true, ..VARIANT },
     // The JIT's SSA tier (design/jit.md#the-ssa-tier), with its checkers, on the corpus's
     // own VM functions: from their first call, and entered by OSR at the first loop head.
-    Variant { name: "ryo-jit-ssa", env: JIT_SSA, ..VARIANT },
-    Variant { name: "ryo-jit-ssa-osr", env: JIT_SSA_OSR, ..VARIANT },
-    Variant { name: "ryo-jit-ssa-shuffle", env: JIT_SSA_SHUFFLE, ..VARIANT },
+    Variant { name: "ryo-jit-ssa", env: JIT_SSA, jit: true, ..VARIANT },
+    Variant { name: "ryo-jit-ssa-osr", env: JIT_SSA_OSR, jit: true, ..VARIANT },
+    Variant { name: "ryo-jit-ssa-shuffle", env: JIT_SSA_SHUFFLE, jit: true, ..VARIANT },
     // One image per codegen unit (design/backend.md#pipeline): rustc's default merges the
     // corpus's small crates into one CGU, these ask for many, so calls, fn pointers, vtables
     // and statics cross images, and `#[inline]` functions get a copy per image.
@@ -96,7 +108,7 @@ const VARIANTS: &[Variant] = &[
     Variant { name: "ryo-cgu16-share-generics", flags: &["-Ccodegen-units=16", "-Zshare-generics=yes"], ..VARIANT },
     Variant { name: "ryo-cgu16-lto", flags: &["-Ccodegen-units=16"], final_flags: &["-Clto=fat"], ..VARIANT },
     Variant { name: "ryo-cgu16-thinlto-O3", flags: &["-Ccodegen-units=16", "-Copt-level=3"], final_flags: &["-Clto=thin"], vm_only: true, ..VARIANT },
-    Variant { name: "ryo-cgu16-jit-ssa", flags: &["-Ccodegen-units=16"], env: JIT_SSA, ..VARIANT },
+    Variant { name: "ryo-cgu16-jit-ssa", flags: &["-Ccodegen-units=16"], env: JIT_SSA, jit: true, ..VARIANT },
 ];
 
 /// The JIT's settings for [`Variant::env`]: compile every function at its first call, and
@@ -177,10 +189,6 @@ const FULL_ONLY: &[(&str, &str)] = &[
     ("vm_staticlib", "a C main on a staticlib; vm_cdylib covers the C main"),
 ];
 
-/// The variants of the JIT ([`Sel::jit`]).
-const JIT_VARIANTS: &[&str] =
-    &["ryo-jit-ssa", "ryo-jit-ssa-osr", "ryo-jit-ssa-shuffle", "ryo-cgu16-jit-ssa", "ryo-std-jit", "ryo-std-jit-shuffle", "ryo-std-jit-reencode"];
-
 /// The areas of `test --only`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Area {
@@ -225,7 +233,7 @@ struct Sel {
     /// The fast set: two cargo runs, [`FAST`] and the cheap checks.
     fast: bool,
     lean: bool,
-    /// All six `ryo_jit` runs, the corpus under [`JIT_VARIANTS`], jit-private-std.
+    /// All six `ryo_jit` runs, the corpus under the [`Variant::jit`] variants, jit-private-std.
     jit: bool,
     /// The corpus under `ryo`.
     ryo_corpus: bool,
@@ -243,7 +251,7 @@ struct Sel {
     std: bool,
     /// These programs under every variant.
     programs: Vec<&'static str>,
-    checks: Vec<&'static str>,
+    checks: Vec<Check>,
 }
 
 /// What a changed path adds to the fast set.
@@ -307,7 +315,7 @@ fn rule(path: &str) -> Option<Rule> {
 }
 
 /// The programs and checks a changed `tests/` file belongs to; `None` if none.
-fn test_targets(rel: &str) -> Option<(Vec<&'static str>, Vec<&'static str>)> {
+fn test_targets(rel: &str) -> Option<(Vec<&'static str>, Vec<Check>)> {
     let first = |p: &str| p.split('/').next().unwrap_or(p).to_owned();
     let hit = |src: &str| src == rel || (src.contains('/') && first(src) == first(rel));
     let programs: Vec<&str> = CORPUS
@@ -315,13 +323,13 @@ fn test_targets(rel: &str) -> Option<(Vec<&'static str>, Vec<&'static str>)> {
         .filter(|p| p.crates.iter().any(|c| hit(c.src)) || p.c_main.is_some_and(hit) || p.native_lib.as_ref().is_some_and(|l| hit(l.src)))
         .map(|p| p.name)
         .collect();
-    let checks: Vec<&str> = match rel {
-        "hello.rs" => vec!["cargo-ryo"],
-        "vm_backtrace.rs" => vec!["backtrace"],
-        "vm_exports.rs" => vec!["exports"],
-        "vm_statics.rs" => vec!["dump"],
-        "vm_jit_private.rs" => vec!["jit-private-std"],
-        "incremental/edits.rs" | "incremental/pm.rs" | "incremental/pm_user.rs" => vec!["incremental"],
+    let checks = match rel {
+        "hello.rs" => vec![Check::CargoRyo],
+        "vm_backtrace.rs" => vec![Check::Backtrace],
+        "vm_exports.rs" => vec![Check::Exports],
+        "vm_statics.rs" => vec![Check::Dump],
+        "vm_jit_private.rs" => vec![Check::JitPrivateStd],
+        "incremental/edits.rs" | "incremental/pm.rs" | "incremental/pm_user.rs" => vec![Check::Incremental],
         _ => vec![],
     };
     (!programs.is_empty() || !checks.is_empty()).then_some((programs, checks))
@@ -395,15 +403,8 @@ impl Sel {
         })
     }
 
-    fn cargo_run(&self, name: &str) -> bool {
-        self.full
-            || match name {
-                "vm" => self.fast || self.rt,
-                "vm fp-rbp" => self.fp_rbp,
-                "vm jit" => self.fast || self.jit,
-                "vm jit fp-rbp" => self.jit || self.fp_rbp,
-                _ => self.jit,
-            }
+    fn cargo_run(&self, run: &CargoRun) -> bool {
+        self.full || (run.selected)(self)
     }
 
     fn corpus(&self, program: &Program, variant: &Variant) -> bool {
@@ -412,21 +413,173 @@ impl Sel {
             || self.programs.contains(&program.name)
             || (self.fast && FAST.iter().any(|(p, vs)| *p == program.name && vs.contains(&variant.name)))
             || (self.ryo_corpus && variant.name == "ryo")
-            || (self.jit && JIT_VARIANTS.contains(&variant.name))
+            || (self.jit && variant.jit)
             || (self.backend && !variant.ryo_std)
             || (self.std && variant.ryo_std)
     }
 
-    fn check(&self, name: &str) -> bool {
-        self.full
-            || self.backend
-            || self.checks.contains(&name)
-            || match name {
-                "reject-randomize-layout" | "cgu-deterministic" | "metadata-only" | "dump" | "exports" | "backtrace" => self.fast,
-                "rt-core-only" | "jit-sealed" => self.rt,
-                "jit-private-std" => self.jit,
-                _ => false,
+    fn check(&self, check: Check) -> bool {
+        self.full || self.backend || self.checks.contains(&check) || check.selected(self)
+    }
+}
+
+/// A cargo run of the `vm` workspace.
+struct CargoRun {
+    name: &'static str,
+    args: &'static [&'static str],
+    env: &'static [(&'static str, &'static str)],
+    /// Whether the selection runs it (besides `--full`).
+    selected: fn(&Sel) -> bool,
+    /// Its own target directory under `vm/target/features/`, so the ryo_rt feature sets don't
+    /// rebuild each other.
+    target_subdir: Option<&'static str>,
+    /// It runs vm/rt/tests/codegen.rs ([`CODEGEN_TESTS`], skipped unless [`Sel::codegen`]).
+    codegen_tests: bool,
+    /// It runs [`SLOW_VM_TESTS`] (skipped unless [`Sel::slow_vm`]).
+    slow_tests: bool,
+}
+
+const CARGO_RUN: CargoRun =
+    CargoRun { name: "", args: &[], env: &[], selected: |s| s.jit, target_subdir: None, codegen_tests: false, slow_tests: false };
+
+const JIT_SSA_RUN: &[(&str, &str)] = &[("RYO_JIT_OPT", "ssa"), ("RYO_JIT_CHECK", "1")];
+const JIT_REENCODE_RUN: &[(&str, &str)] = &[("RYO_JIT_OPT", "reencode"), ("RYO_JIT_CHECK", "1")];
+const JIT_NAIVE_RUN: &[(&str, &str)] = &[("RYO_JIT_OPT", "ssa-naive"), ("RYO_JIT_CHECK", "1")];
+
+/// The runtime once more with handlers that read `fp` from `rbp`, so VM code keeps the frame
+/// pointer (design/vm.md#handlers). And the JIT's tests, through the runtime's trips, also with
+/// `fp-rbp` (design/jit.md#testing); the other runtime tests run without the JIT: with it, the
+/// `jit` feature would unify into `ryo_rt`. The JIT's tests run through its SSA tier (the
+/// default) with its checkers, through the naive allocator, and through the re-encoding
+/// pipeline.
+const CARGO_RUNS: &[CargoRun] = &[
+    CargoRun {
+        name: "vm",
+        args: &["test", "--workspace", "--exclude", "ryo_jit"],
+        selected: |s| s.fast || s.rt,
+        codegen_tests: true,
+        slow_tests: true,
+        ..CARGO_RUN
+    },
+    CargoRun {
+        name: "vm fp-rbp",
+        args: &["test", "-p", "ryo_rt", "--features", "fp-rbp"],
+        selected: |s| s.fp_rbp,
+        target_subdir: Some("fp-rbp"),
+        codegen_tests: true,
+        ..CARGO_RUN
+    },
+    CargoRun {
+        name: "vm jit",
+        args: &["test", "-p", "ryo_jit"],
+        env: JIT_SSA_RUN,
+        selected: |s| s.fast || s.jit,
+        target_subdir: Some("jit"),
+        ..CARGO_RUN
+    },
+    CargoRun {
+        name: "vm jit fp-rbp",
+        args: &["test", "-p", "ryo_jit", "--features", "ryo_rt/fp-rbp"],
+        env: JIT_SSA_RUN,
+        selected: |s| s.jit || s.fp_rbp,
+        target_subdir: Some("jit-fp-rbp"),
+        ..CARGO_RUN
+    },
+    CargoRun { name: "vm jit reencode", args: &["test", "-p", "ryo_jit"], env: JIT_REENCODE_RUN, target_subdir: Some("jit"), ..CARGO_RUN },
+    CargoRun {
+        name: "vm jit reencode fp-rbp",
+        args: &["test", "-p", "ryo_jit", "--features", "ryo_rt/fp-rbp"],
+        env: JIT_REENCODE_RUN,
+        target_subdir: Some("jit-fp-rbp"),
+        ..CARGO_RUN
+    },
+    CargoRun { name: "vm jit ssa-naive", args: &["test", "-p", "ryo_jit"], env: JIT_NAIVE_RUN, target_subdir: Some("jit"), ..CARGO_RUN },
+    CargoRun {
+        name: "vm jit ssa-naive fp-rbp",
+        args: &["test", "-p", "ryo_jit", "--features", "ryo_rt/fp-rbp"],
+        env: JIT_NAIVE_RUN,
+        target_subdir: Some("jit-fp-rbp"),
+        ..CARGO_RUN
+    },
+];
+
+/// The checks besides the corpus and the cargo runs.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Check {
+    RtCoreOnly,
+    JitSealed,
+    JitPrivateStd,
+    RejectRandomizeLayout,
+    CguDeterministic,
+    Incremental,
+    MetadataOnly,
+    Dump,
+    Exports,
+    Backtrace,
+    /// It runs the program it builds.
+    CargoRyo,
+}
+
+impl Check {
+    const ALL: [Check; 11] = [
+        Check::RtCoreOnly,
+        Check::JitSealed,
+        Check::JitPrivateStd,
+        Check::RejectRandomizeLayout,
+        Check::CguDeterministic,
+        Check::Incremental,
+        Check::MetadataOnly,
+        Check::Dump,
+        Check::Exports,
+        Check::Backtrace,
+        Check::CargoRyo,
+    ];
+
+    fn name(self) -> &'static str {
+        match self {
+            Check::RtCoreOnly => "rt-core-only",
+            Check::JitSealed => "jit-sealed",
+            Check::JitPrivateStd => "jit-private-std",
+            Check::RejectRandomizeLayout => "reject-randomize-layout",
+            Check::CguDeterministic => "cgu-deterministic",
+            Check::Incremental => "incremental",
+            Check::MetadataOnly => "metadata-only",
+            Check::Dump => "dump",
+            Check::Exports => "exports",
+            Check::Backtrace => "backtrace",
+            Check::CargoRyo => "cargo-ryo",
+        }
+    }
+
+    /// Whether `sel`'s groups run it; `--full`, `--only backend` and a change to its test
+    /// run every check.
+    fn selected(self, sel: &Sel) -> bool {
+        match self {
+            Check::RejectRandomizeLayout | Check::CguDeterministic | Check::MetadataOnly | Check::Dump | Check::Exports | Check::Backtrace => {
+                sel.fast
             }
+            Check::RtCoreOnly | Check::JitSealed => sel.rt,
+            Check::JitPrivateStd => sel.jit,
+            Check::Incremental | Check::CargoRyo => false,
+        }
+    }
+
+    fn run(self, info: &crate::utils::RustcInfo, root: &Path, rustc_ryo: &Path, out: &Path) -> Result<(), String> {
+        let tests = root.join("tests");
+        let hello = tests.join("hello.rs");
+        match self {
+            Check::RtCoreOnly => rt_core_only(info, root, &info.host),
+            Check::JitSealed => jit_sealed(info, root, out),
+            Check::JitPrivateStd => jit_private_std(info, rustc_ryo, &tests.join("vm_jit_private.rs"), out),
+            Check::RejectRandomizeLayout => reject_randomize_layout(rustc_ryo, &hello, out),
+            Check::CguDeterministic => cgu_deterministic(rustc_ryo, &tests.join("vm_cgu.rs"), out),
+            Check::Incremental => incremental(rustc_ryo, &tests.join("incremental"), out),
+            Check::MetadataOnly => metadata_only(rustc_ryo, &hello, out),
+            Check::Dump => dump(rustc_ryo, &tests.join("vm_statics.rs"), out),
+            Check::Exports => same_exports(info, rustc_ryo, &tests.join("vm_exports.rs"), out),
+            Check::Backtrace => backtrace(rustc_ryo, &tests.join("vm_backtrace.rs"), out),
+            Check::CargoRyo => cargo_smoke(info, root, out),
+        }
     }
 }
 
@@ -511,17 +664,6 @@ fn report(name: &str, start: Instant, res: Result<(), String>, failed: &Mutex<Ve
     }
 }
 
-/// The ryo_rt feature sets get their own target directories, so they don't rebuild each other.
-fn cargo_target_dir(root: &Path, name: &str) -> Option<PathBuf> {
-    let sub = match name {
-        "vm" => return None,
-        "vm fp-rbp" => "fp-rbp",
-        n if n.ends_with("fp-rbp") => "jit-fp-rbp",
-        _ => "jit",
-    };
-    Some(root.join("vm").join("target").join("features").join(sub))
-}
-
 /// Tests of the `vm` run that only `--full` and changes to the bytecode encoder or the backend
 /// run: every opcode in every mode through the encoder, which takes about 5 min in a debug build.
 /// (`--skip` matches by name, so vm/bytecode/tests/full.rs's cheap test of that name is skipped too.)
@@ -559,7 +701,7 @@ pub fn run(opts: &Options) -> Result<(), String> {
     if wants_std && let Err(why) = ryo_sysroot_usable(&info, &root) {
         // Only an explicit request fails; the fast suite and an escalation to `--full` from
         // the changed paths skip them.
-        if opts.full || opts.only == Some(Area::Std) || opts.variants.iter().any(|v| v.starts_with("ryo-std")) {
+        if opts.full || opts.only == Some(Area::Std) || opts.variants.iter().any(|n| VARIANTS.iter().any(|v| v.ryo_std && v.name == n)) {
             return Err(format!("the ryo-std variants can't run: {why}"));
         }
         eprintln!("[y] WARNING: the ryo-std variants are SKIPPED: {why}");
@@ -579,39 +721,21 @@ pub fn run(opts: &Options) -> Result<(), String> {
     };
     let failed = Mutex::new(Vec::new());
 
-    // The runtime once more with handlers that read `fp` from `rbp`, so VM code keeps the
-    // frame pointer (design/vm.md#handlers).
-    // And the JIT's tests, through the runtime's trips, also with `fp-rbp` (design/jit.md#testing);
-    // the other runtime tests run without the JIT: with it, the `jit` feature would unify into
-    // `ryo_rt`.
-    // The JIT's tests run through its SSA tier (the default) with its checkers, through the
-    // naive allocator, and through the re-encoding pipeline.
-    let opt = |opt| [("RYO_JIT_OPT", opt), ("RYO_JIT_CHECK", "1")];
-    let vm_runs: [(&str, &[&str], &[(&str, &str)]); 8] = [
-        ("vm", &["test", "--workspace", "--exclude", "ryo_jit"], &[]),
-        ("vm fp-rbp", &["test", "-p", "ryo_rt", "--features", "fp-rbp"], &[]),
-        ("vm jit", &["test", "-p", "ryo_jit"], &opt("ssa")),
-        ("vm jit fp-rbp", &["test", "-p", "ryo_jit", "--features", "ryo_rt/fp-rbp"], &opt("ssa")),
-        ("vm jit reencode", &["test", "-p", "ryo_jit"], &opt("reencode")),
-        ("vm jit reencode fp-rbp", &["test", "-p", "ryo_jit", "--features", "ryo_rt/fp-rbp"], &opt("reencode")),
-        ("vm jit ssa-naive", &["test", "-p", "ryo_jit"], &opt("ssa-naive")),
-        ("vm jit ssa-naive fp-rbp", &["test", "-p", "ryo_jit", "--features", "ryo_rt/fp-rbp"], &opt("ssa-naive")),
-    ];
-    for (name, args, env) in vm_runs {
-        if corpus_only || !sel.cargo_run(name) {
+    for run in CARGO_RUNS {
+        if corpus_only || !sel.cargo_run(run) {
             continue;
         }
         let t = Instant::now();
         let mut c = cmd("cargo");
-        c.current_dir(root.join("vm")).args(args).envs(env.iter().copied());
-        if let Some(dir) = cargo_target_dir(&root, name) {
-            c.arg("--target-dir").arg(dir);
+        c.current_dir(root.join("vm")).args(run.args).envs(run.env.iter().copied());
+        if let Some(sub) = run.target_subdir {
+            c.arg("--target-dir").arg(root.join("vm").join("target").join("features").join(sub));
         }
         let mut skip: Vec<&str> = Vec::new();
-        if !(sel.full || sel.codegen) && (name == "vm" || name == "vm fp-rbp") {
+        if !(sel.full || sel.codegen) && run.codegen_tests {
             skip.extend(CODEGEN_TESTS);
         }
-        if !(sel.full || sel.slow_vm) && name == "vm" {
+        if !(sel.full || sel.slow_vm) && run.slow_tests {
             skip.extend(SLOW_VM_TESTS);
         }
         if !skip.is_empty() {
@@ -620,7 +744,7 @@ pub fn run(opts: &Options) -> Result<(), String> {
                 c.args(["--skip", t]);
             }
         }
-        report(name, t, crate::utils::run(&mut c), &failed);
+        report(run.name, t, crate::utils::run(&mut c), &failed);
     }
     if !corpus_only && (sel.full || sel.lean) {
         if crate::lean::have_lake() {
@@ -670,26 +794,10 @@ pub fn run(opts: &Options) -> Result<(), String> {
     });
 
     if !corpus_only {
-        let hello = root.join("tests").join("hello.rs");
-        type Check<'a> = Box<dyn Fn() -> Result<(), String> + 'a>;
-        let checks: [(&str, Check); 11] = [
-            ("rt-core-only", Box::new(|| rt_core_only(&info, &root, &info.host))),
-            ("jit-sealed", Box::new(|| jit_sealed(&info, &root, &out))),
-            ("jit-private-std", Box::new(|| jit_private_std(&info, &rustc_ryo, &root.join("tests").join("vm_jit_private.rs"), &out))),
-            ("reject-randomize-layout", Box::new(|| reject_randomize_layout(&rustc_ryo, &hello, &out))),
-            ("cgu-deterministic", Box::new(|| cgu_deterministic(&rustc_ryo, &root.join("tests").join("vm_cgu.rs"), &out))),
-            ("incremental", Box::new(|| incremental(&rustc_ryo, &root.join("tests").join("incremental"), &out))),
-            ("metadata-only", Box::new(|| metadata_only(&rustc_ryo, &hello, &out))),
-            ("dump", Box::new(|| dump(&rustc_ryo, &root.join("tests").join("vm_statics.rs"), &out))),
-            ("exports", Box::new(|| same_exports(&info, &rustc_ryo, &root.join("tests").join("vm_exports.rs"), &out))),
-            ("backtrace", Box::new(|| backtrace(&rustc_ryo, &root.join("tests").join("vm_backtrace.rs"), &out))),
-            // It runs the program it builds.
-            ("cargo-ryo", Box::new(|| cargo_smoke(&root, &out))),
-        ];
-        for (name, check) in checks {
-            if sel.check(name) {
+        for check in Check::ALL {
+            if sel.check(check) {
                 let t = Instant::now();
-                report(name, t, check(), &failed);
+                report(check.name(), t, check.run(&info, &root, &rustc_ryo, &out), &failed);
             }
         }
     }
@@ -984,9 +1092,6 @@ mod tests {
         for (name, _) in FULL_ONLY {
             assert!(CORPUS.iter().any(|p| p.name == *name), "FULL_ONLY: unknown program {name}");
         }
-        for v in super::JIT_VARIANTS {
-            assert!(VARIANTS.iter().any(|x| x.name == *v), "JIT_VARIANTS: unknown variant {v}");
-        }
     }
 
     /// Every top- and second-level directory git tracks has a rule, so a new directory can't
@@ -1028,7 +1133,7 @@ mod tests {
         assert!(sel.add_path("tests/vm_jit_private.rs").is_ok());
         assert!(sel.add_path("tests/nothing.rs").is_err());
         assert_eq!(sel.programs, ["vm_cross", "vm_staticlib", "vm_cdylib"]);
-        assert_eq!(sel.checks, ["jit-private-std"]);
+        assert_eq!(sel.checks, [super::Check::JitPrivateStd]);
     }
 
     #[test]

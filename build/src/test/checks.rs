@@ -10,7 +10,7 @@ use crate::utils::{Captured, capture, capture_ok, cmd, dll_name, exe_name, outpu
 /// `cargo-ryo run` on a one-file package wrapping `tests/hello.rs`, then `cargo ryo build`
 /// (cargo's subcommand lookup, with `dist/bin` on `PATH`) between plain `cargo build`s in one
 /// target directory: plain, ryo (rebuilds), ryo again (fresh), plain again (fresh).
-pub(super) fn cargo_smoke(root: &Path, out: &Path) -> Result<(), String> {
+pub(super) fn cargo_smoke(info: &crate::utils::RustcInfo, root: &Path, out: &Path) -> Result<(), String> {
     let pkg = out.join("cargo-hello");
     crate::utils::create_dir(&pkg)?;
     let manifest = format!(
@@ -40,7 +40,7 @@ pub(super) fn cargo_smoke(root: &Path, out: &Path) -> Result<(), String> {
     paths.extend(std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()));
     let path = std::env::join_paths(paths).map_err(|e| e.to_string())?;
     let target_sub = pkg.join("target-sub");
-    let toolchain = crate::utils::RustcInfo::get()?.toolchain;
+    let toolchain = &info.toolchain;
     // Plain cargo (LLVM) and `cargo ryo` in one target directory: `rustc-ryo -vV` names the
     // ryo build, so cargo tells their artifacts apart (design/build.md#the-y-build-tool).
     let build = |ryo: bool| -> Result<(bool, String), String> {
