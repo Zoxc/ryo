@@ -2,11 +2,10 @@
 //! from the pinned toolchain's rustc-dev sources, installed into `dist/` with a `rustc-clif`
 //! wrapper.
 
-use std::fs;
 use std::path::Path;
 
-use crate::dist::{build_wrapper, copy, copy_dir};
 use crate::utils::{RustcInfo, cmd, dist_bin, dll_name, root, run};
+use crate::utils::{build_wrapper, copy, copy_dir};
 
 /// Whether `dist/` has cg_clif and its wrapper (`y build` replaces `dist/`, removing them).
 pub fn installed(root: &Path) -> bool {
@@ -29,9 +28,7 @@ pub fn build() -> Result<(), String> {
     }
     eprintln!("[y] cg_clif: copying {} to build/clif/", src.display());
     let copy_to = root.join("build").join("clif");
-    if copy_to.exists() {
-        fs::remove_dir_all(&copy_to).map_err(|e| format!("removing {}: {e}", copy_to.display()))?;
-    }
+    crate::utils::remove_dir_if_exists(&copy_to)?;
     copy_dir(&src, &copy_to)?;
 
     eprintln!("[y] cg_clif: rustc_codegen_cranelift");

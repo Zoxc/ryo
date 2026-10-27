@@ -22,7 +22,7 @@ pub fn codegen() -> Result<(), String> {
     let dump_dir = root.join("bench").join("codegen");
     let out = root.join("target").join("bench-codegen");
     for dir in [&dump_dir, &out] {
-        fs::create_dir_all(dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
+        crate::utils::create_dir(dir)?;
     }
     for &program in PROGRAMS {
         let src = root.join("bench").join(format!("{program}.rs"));
@@ -41,12 +41,12 @@ pub fn codegen() -> Result<(), String> {
         crate::utils::run(&mut c)?;
         let code = fs::read_to_string(&code).map_err(|e| format!("reading {}: {e}", code.display()))?;
         let s = dump_dir.join(format!("{program}.s"));
-        fs::write(&s, disassemble(&code)?).map_err(|e| format!("writing {}: {e}", s.display()))?;
+        crate::utils::write(&s, disassemble(&code)?)?;
         let jit = out.join(format!("{program}.jit"));
         eprintln!("[y] bench codegen {program}: JIT, {}", jit.display());
         for (name, text) in jit_dumps(&out.join(exe_name(program)), &jit, &code)? {
             let f = dump_dir.join(format!("{program}.{name}"));
-            fs::write(&f, text).map_err(|e| format!("writing {}: {e}", f.display()))?;
+            crate::utils::write(&f, text)?;
         }
     }
     Ok(())
@@ -84,10 +84,8 @@ fn local_names(ir: &str, local: &dyn Fn(&str) -> String) -> String {
 /// allocation gets it, after the folds.
 fn jit_dumps(exe: &Path, dir: &Path, aot: &str) -> Result<Vec<(&'static str, String)>, String> {
     use std::fmt::Write;
-    if dir.exists() {
-        fs::remove_dir_all(dir).map_err(|e| format!("removing {}: {e}", dir.display()))?;
-    }
-    fs::create_dir_all(dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
+    crate::utils::remove_dir_if_exists(dir)?;
+    crate::utils::create_dir(dir)?;
     let mut c = cmd(exe);
     for (k, _) in std::env::vars_os() {
         if k.to_string_lossy().starts_with("RYO_JIT") {

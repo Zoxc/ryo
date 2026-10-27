@@ -569,7 +569,7 @@ pub fn run(opts: &Options) -> Result<(), String> {
     let corpus_only = !opts.programs.is_empty() || !opts.variants.is_empty();
 
     let out = root.join("target").join("tests");
-    fs::create_dir_all(&out).map_err(|e| format!("creating {}: {e}", out.display()))?;
+    crate::utils::create_dir(&out)?;
     let ctx = Ctx {
         tests: root.join("tests"),
         out: out.clone(),
@@ -812,7 +812,7 @@ impl Ctx<'_> {
     fn build_and_run(&self, program: &Program, variant: &Variant) -> Result<RunResult, String> {
         let dir = self.out.join(program.name).join(variant.name);
         let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
+        crate::utils::create_dir(&dir)?;
         if let Some(lib) = &program.native_lib {
             lib.build(self.info, &dir, None)?;
         }

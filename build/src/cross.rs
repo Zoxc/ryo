@@ -109,20 +109,20 @@ pub fn run(target: &str) -> Result<(), String> {
     let out = root.join("target").join("tests-cross").join(target);
     let _ = fs::remove_dir_all(&out);
     let stubs = out.join("stub-libs");
-    fs::create_dir_all(&stubs).map_err(|e| format!("creating {}: {e}", stubs.display()))?;
+    crate::utils::create_dir(&stubs)?;
     let macho = crate::jit::macho(target);
     if macho {
         for lib in STUB_LIBS_MACHO {
-            fs::write(stubs.join(format!("lib{lib}.a")), b"!<arch>\n").map_err(|e| e.to_string())?;
+            crate::utils::write(stubs.join(format!("lib{lib}.a")), b"!<arch>\n")?;
         }
         // std's dylib loads libSystem by its install name, which lld looks up as a text stub
         // under the SDK root (`SDKROOT`, below): one that exports nothing.
         let usr_lib = stubs.join("usr").join("lib");
-        fs::create_dir_all(&usr_lib).map_err(|e| e.to_string())?;
-        fs::write(usr_lib.join("libSystem.B.tbd"), LIBSYSTEM_TBD).map_err(|e| e.to_string())?;
+        crate::utils::create_dir(&usr_lib)?;
+        crate::utils::write(usr_lib.join("libSystem.B.tbd"), LIBSYSTEM_TBD)?;
     } else {
         for lib in STUB_LIBS {
-            fs::write(stubs.join(format!("{lib}.lib")), b"!<arch>\n").map_err(|e| e.to_string())?;
+            crate::utils::write(stubs.join(format!("{lib}.lib")), b"!<arch>\n")?;
         }
     }
     let rt_imports = if macho { RT_IMPORTS_MACHO } else { RT_IMPORTS };
@@ -278,7 +278,7 @@ impl Link<'_> {
         dir: &Path,
         final_flags: &[&str],
     ) -> Result<(BTreeSet<String>, Vec<String>), String> {
-        fs::create_dir_all(dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
+        crate::utils::create_dir(dir)?;
         let tests = root().join("tests");
         let mut undefined = BTreeSet::new();
         let mut vm_fns = Vec::new();
@@ -354,7 +354,7 @@ mod tests {
 /// (design/platforms.md). Returns how many objects it checked.
 fn no_red_zone(info: &RustcInfo, rlib: &Path, dir: &Path) -> Result<usize, String> {
     let _ = fs::remove_dir_all(dir);
-    fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    crate::utils::create_dir(dir)?;
     crate::utils::run(cmd(info.tool("llvm-ar")).arg("x").arg(rlib).arg("--output").arg(dir))?;
     let objdump = info.tool("llvm-objdump");
     let mut n = 0;

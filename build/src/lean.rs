@@ -61,7 +61,7 @@ pub fn generate() -> Result<(), String> {
     tables(true)?;
     run(cmd(lake()).current_dir(root().join("lean")).arg("build"))?;
     let (path, want) = effects_table()?;
-    std::fs::write(&path, want).map_err(|e| format!("{}: {e}", path.display()))
+    crate::utils::write(&path, want)
 }
 
 /// `y lean`, and with `proofs` `y lean --proofs`.

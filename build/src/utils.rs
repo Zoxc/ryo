@@ -34,6 +34,58 @@ pub fn run(cmd: &mut Command) -> Result<(), String> {
     Ok(())
 }
 
+/// `fs::create_dir_all`, with the path in the error.
+pub fn create_dir(dir: impl AsRef<Path>) -> Result<(), String> {
+    let dir = dir.as_ref();
+    std::fs::create_dir_all(dir).map_err(|e| format!("creating {}: {e}", dir.display()))
+}
+
+/// Removes `dir` and its contents, if it exists.
+pub fn remove_dir_if_exists(dir: impl AsRef<Path>) -> Result<(), String> {
+    let dir = dir.as_ref();
+    if dir.exists() {
+        std::fs::remove_dir_all(dir).map_err(|e| format!("removing {}: {e}", dir.display()))?;
+    }
+    Ok(())
+}
+
+/// `fs::write`, with the path in the error.
+pub fn write(path: impl AsRef<Path>, contents: impl AsRef<[u8]>) -> Result<(), String> {
+    let path = path.as_ref();
+    std::fs::write(path, contents).map_err(|e| format!("writing {}: {e}", path.display()))
+}
+
+/// Compiles `scripts/<name>.rs` into `dist/bin/<name>` with plain rustc.
+pub fn build_wrapper(root: &Path, dist_bin: &Path, info: &RustcInfo, name: &str, build_id: &str) -> Result<(), String> {
+    eprintln!("[y] wrapper: {name}");
+    run(cmd("rustc")
+        .args(["--edition=2024", "-Copt-level=1", "-o"])
+        .arg(dist_bin.join(exe_name(name)))
+        .arg(root.join("scripts").join(format!("{name}.rs")))
+        .env("RYO_TOOLCHAIN", &info.toolchain)
+        .env("RYO_RUSTC_DRIVER", &info.driver)
+        .env("RYO_RUSTC_RELEASE", PINNED_VERSION)
+        .env("RYO_BUILD_ID", build_id))
+}
+
+pub fn copy(from: &Path, to: &Path) -> Result<(), String> {
+    std::fs::copy(from, to).map(drop).map_err(|e| format!("copying {} to {}: {e}", from.display(), to.display()))
+}
+
+pub fn copy_dir(from: &Path, to: &Path) -> Result<(), String> {
+    create_dir(to)?;
+    for entry in std::fs::read_dir(from).map_err(|e| format!("{}: {e}", from.display()))? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let dst = to.join(entry.file_name());
+        if entry.file_type().map_err(|e| e.to_string())?.is_dir() {
+            copy_dir(&entry.path(), &dst)?;
+        } else {
+            copy(&entry.path(), &dst)?;
+        }
+    }
+    Ok(())
+}
+
 /// What a [`capture`]d command did.
 pub struct Captured {
     pub status: std::process::ExitStatus,

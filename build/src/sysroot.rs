@@ -12,8 +12,8 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::dist::{copy, copy_dir};
 use crate::utils::{RustcInfo, cmd, exe_name, root, run};
+use crate::utils::{copy, copy_dir};
 
 /// The environment variable that turns `y` into the `RUSTC` of the sysroot build. Its value is
 /// the path of `rustc-ryo`.
@@ -185,9 +185,7 @@ pub fn build(info: &RustcInfo, dist: &Path, jit: Option<&Path>) -> Result<(), St
     let stamp_file = work.join(".ryo-backend");
     if fs::read_to_string(&stamp_file).ok() != Some(stamp.to_string()) {
         for dir in [&target_dir, &stats_dir] {
-            if dir.exists() {
-                fs::remove_dir_all(dir).map_err(|e| format!("removing {}: {e}", dir.display()))?;
-            }
+            crate::utils::remove_dir_if_exists(dir)?;
         }
     }
     let deps = target_dir.join(&info.host).join("release").join("deps");
@@ -223,18 +221,16 @@ pub fn build(info: &RustcInfo, dist: &Path, jit: Option<&Path>) -> Result<(), St
         // Stable `-Cmetadata` hashes, distinct from the prebuilt std's (as cg_clif does).
         .env("__CARGO_DEFAULT_LIB_METADATA", "ryo")
         .env("RUSTUP_TOOLCHAIN", &info.toolchain))?;
-    fs::write(&stamp_file, stamp.to_string()).map_err(|e| e.to_string())?;
+    crate::utils::write(&stamp_file, stamp.to_string())?;
 
     let sysroot = dist.join(SYSROOT_DIR);
     // No stamp while the sysroot is replaced; `inputs` was taken before the build, so input
     // changes during it leave the result stale.
     let _ = fs::remove_file(dist.join(STAMP_FILE));
-    if sysroot.exists() {
-        fs::remove_dir_all(&sysroot).map_err(|e| format!("removing {}: {e}", sysroot.display()))?;
-    }
+    crate::utils::remove_dir_if_exists(&sysroot)?;
     let rel = Path::new("lib").join("rustlib").join(&info.host);
     let dst_lib = sysroot.join(&rel).join("lib");
-    fs::create_dir_all(&dst_lib).map_err(|e| format!("creating {}: {e}", dst_lib.display()))?;
+    crate::utils::create_dir(&dst_lib)?;
     let mut n = 0;
     for entry in fs::read_dir(&deps).map_err(|e| format!("{}: {e}", deps.display()))? {
         let path = entry.map_err(|e| e.to_string())?.path();
@@ -250,7 +246,7 @@ pub fn build(info: &RustcInfo, dist: &Path, jit: Option<&Path>) -> Result<(), St
     if src_bin.is_dir() {
         copy_dir(&src_bin, &sysroot.join(&rel).join("bin"))?;
     }
-    fs::write(dist.join(STAMP_FILE), &inputs).map_err(|e| e.to_string())?;
+    crate::utils::write(dist.join(STAMP_FILE), &inputs)?;
     eprintln!("[y] sysroot: {n} files in {}", sysroot.display());
     print_coverage(&stats_dir)
 }
@@ -328,11 +324,9 @@ fn prepare_sources(info: &RustcInfo, root: &Path, dst: &Path, jit: bool) -> Resu
     let stamp = dst.join(".ryo-source");
     let want = src.to_string_lossy().into_owned();
     if fs::read_to_string(&stamp).ok().as_deref() != Some(want.as_str()) {
-        if dst.exists() {
-            fs::remove_dir_all(dst).map_err(|e| format!("removing {}: {e}", dst.display()))?;
-        }
+        crate::utils::remove_dir_if_exists(dst)?;
         copy_dir(&src, dst)?;
-        fs::write(&stamp, &want).map_err(|e| e.to_string())?;
+        crate::utils::write(&stamp, &want)?;
     }
     // `ryo_rt` and `ryo_bytecode` as members of the library workspace, on its `core`.
     let vm = root.join("vm");
@@ -389,7 +383,7 @@ fn write_if_changed(path: &Path, text: &str) -> Result<(), String> {
         return Ok(());
     }
     if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
+        crate::utils::create_dir(dir)?;
     }
-    fs::write(path, text).map_err(|e| format!("writing {}: {e}", path.display()))
+    crate::utils::write(path, text)
 }

@@ -305,7 +305,7 @@ pub fn run(opts: &Options) -> Result<(), String> {
     let runs = opts.runs;
 
     let out = root.join("target").join("bench");
-    fs::create_dir_all(&out).map_err(|e| format!("creating {}: {e}", out.display()))?;
+    crate::utils::create_dir(&out)?;
     let timer = if opts.metric == Metric::Cachegrind {
         eprintln!("[y] bench: counting instructions of one run with cachegrind");
         Timer::Cachegrind
@@ -330,7 +330,7 @@ pub fn run(opts: &Options) -> Result<(), String> {
         for backend in &backends {
             eprintln!("[y] bench {program} [{}]", backend.name);
             let dir = out.join(program).join(backend.name.replace([' ', '-'], ""));
-            fs::create_dir_all(&dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
+            crate::utils::create_dir(&dir)?;
             let exe = dir.join(exe_name(program));
             let compiler = backend.compiler.rustc(&root);
             let mut args = vec!["--edition=2024".to_owned(), path_str(&src)?];

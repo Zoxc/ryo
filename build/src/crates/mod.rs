@@ -500,7 +500,7 @@ pub fn run(opts: Options) -> Result<(), String> {
 
     let report = Report { backends: opts.backends.clone(), crates: results, header, total_time: started.elapsed().as_secs_f64() };
     let out = opts.out.clone().unwrap_or_else(|| base.join("report.html"));
-    fs::write(&out, html::render(&report)).map_err(|e| format!("writing {}: {e}", out.display()))?;
+    crate::utils::write(&out, html::render(&report))?;
     print!("{}", html::text_summary(&report));
     println!("\nreport: {}", out.display());
     Ok(())
@@ -511,7 +511,7 @@ pub fn run(opts: Options) -> Result<(), String> {
 fn prepare(root: &Path, base: &Path, krate: &Crate) -> Result<PathBuf, String> {
     let id = format!("{}-{}", krate.name, krate.version);
     let cache = base.join("cache");
-    fs::create_dir_all(&cache).map_err(|e| format!("creating {}: {e}", cache.display()))?;
+    crate::utils::create_dir(&cache)?;
     let archive = cache.join(format!("{id}.crate"));
     if !archive.exists() || sha256(&archive)? != krate.sha256 {
         let url = format!("https://static.crates.io/crates/{}/{id}.crate", krate.name);
@@ -526,10 +526,8 @@ fn prepare(root: &Path, base: &Path, krate: &Crate) -> Result<PathBuf, String> {
     }
     let src_root = base.join("src");
     let dir = src_root.join(&id);
-    if dir.exists() {
-        fs::remove_dir_all(&dir).map_err(|e| format!("removing {}: {e}", dir.display()))?;
-    }
-    fs::create_dir_all(&src_root).map_err(|e| e.to_string())?;
+    crate::utils::remove_dir_if_exists(&dir)?;
+    crate::utils::create_dir(&src_root)?;
     crate::utils::run(Command::new("tar").arg("xzf").arg(&archive).arg("-C").arg(&src_root))?;
     if !dir.join("Cargo.lock").exists() {
         return Err(format!("{id} has no Cargo.lock"));
@@ -537,7 +535,7 @@ fn prepare(root: &Path, base: &Path, krate: &Crate) -> Result<PathBuf, String> {
     // Everything the builds need, so they can run `--offline`.
     crate::utils::run(cmd("cargo").current_dir(&dir).args(["fetch", "--locked"]))?;
     let workload = root.join("tests").join("crates").join(format!("{}.rs", krate.name));
-    fs::create_dir_all(dir.join("examples")).map_err(|e| e.to_string())?;
+    crate::utils::create_dir(dir.join("examples"))?;
     fs::copy(&workload, dir.join("examples").join("ryo_bench.rs")).map_err(|e| format!("copying {}: {e}", workload.display()))?;
     // Published manifests set `autoexamples = false`. `[workspace]` keeps cargo from looking
     // for one in the parent directories.
@@ -549,7 +547,7 @@ fn prepare(root: &Path, base: &Path, krate: &Crate) -> Result<PathBuf, String> {
         return Err(format!("{id}'s manifest has a per-package profile override `{l}`"));
     }
     text.push_str("\n[[example]]\nname = \"ryo_bench\"\npath = \"examples/ryo_bench.rs\"\n\n[workspace]\n");
-    fs::write(&manifest, text).map_err(|e| e.to_string())?;
+    crate::utils::write(&manifest, text)?;
     Ok(dir)
 }
 
@@ -660,9 +658,7 @@ struct BuildSample {
 /// the dependencies aren't rebuilt, and a rebuilt one is an error.
 fn build_sample(env: &Env, krate: &Crate, members: &[String], logs: &Path, clean: bool, stats: bool) -> Result<BuildSample, String> {
     if clean {
-        if env.target.exists() {
-            fs::remove_dir_all(env.target).map_err(|e| format!("removing {}: {e}", env.target.display()))?;
-        }
+        crate::utils::remove_dir_if_exists(env.target)?;
     } else {
         let mut c = env.cargo(logs, false);
         c.args(["clean", "--offline"]);
@@ -672,9 +668,7 @@ fn build_sample(env: &Env, krate: &Crate, members: &[String], logs: &Path, clean
         crate::utils::run(&mut c)?;
     }
     let step = |args: &[&str]| -> Result<(Step, String), String> {
-        if logs.exists() {
-            fs::remove_dir_all(logs).map_err(|e| format!("removing {}: {e}", logs.display()))?;
-        }
+        crate::utils::remove_dir_if_exists(logs)?;
         let mut c = env.cargo(logs, stats);
         c.args(["build", "--locked", "--offline", "-Zsection-timings", "--timings"]).args(args);
         let start = Instant::now();

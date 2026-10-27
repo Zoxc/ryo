@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::utils::{RustcInfo, cmd, dll_name, exe_name, output, root, run};
+use crate::utils::{RustcInfo, build_wrapper, cmd, copy, copy_dir, dll_name, output, root, run};
 
 /// Unstable features the backend may use, even though `RUSTC_BOOTSTRAP` allows all.
 const BACKEND_FEATURES: &str = "rustc_private";
@@ -38,7 +38,7 @@ pub fn build(targets: &[String], ryo_std: bool) -> Result<(), String> {
     let dist_lib = dist.join("lib");
     let dist_bin = dist.join("bin");
     for dir in [&dist_lib, &dist_bin] {
-        fs::create_dir_all(dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
+        crate::utils::create_dir(dir)?;
     }
     copy(&backend, &dist_lib.join(dll_name("rustc_codegen_ryo")))?;
     // What `rustc-ryo -vV` identifies the build by (design/build.md#the-y-build-tool).
@@ -48,7 +48,7 @@ pub fn build(targets: &[String], ryo_std: bool) -> Result<(), String> {
     let mut host_jit = None;
     for triple in &all {
         let target_lib = dist_lib.join("rustlib").join(triple).join("lib");
-        fs::create_dir_all(&target_lib).map_err(|e| format!("creating {}: {e}", target_lib.display()))?;
+        crate::utils::create_dir(&target_lib)?;
         install_llvm_sysroot(&info, &dist, triple)?;
         let cross = (*triple != info.host).then_some(triple.as_str());
         let jit = if crate::jit::supported(triple) { Some(crate::jit::build(&root, &target, &info, triple, cross)?) } else { None };
@@ -236,37 +236,6 @@ fn build_id(files: &[PathBuf]) -> Result<String, String> {
 fn build_wrappers(root: &Path, dist_bin: &Path, info: &RustcInfo, build_id: &str) -> Result<(), String> {
     for name in ["rustc-ryo", "cargo-ryo"] {
         build_wrapper(root, dist_bin, info, name, build_id)?;
-    }
-    Ok(())
-}
-
-/// Compiles `scripts/<name>.rs` into `dist/bin/<name>` with plain rustc.
-pub fn build_wrapper(root: &Path, dist_bin: &Path, info: &RustcInfo, name: &str, build_id: &str) -> Result<(), String> {
-    eprintln!("[y] wrapper: {name}");
-    run(cmd("rustc")
-        .args(["--edition=2024", "-Copt-level=1", "-o"])
-        .arg(dist_bin.join(exe_name(name)))
-        .arg(root.join("scripts").join(format!("{name}.rs")))
-        .env("RYO_TOOLCHAIN", &info.toolchain)
-        .env("RYO_RUSTC_DRIVER", &info.driver)
-        .env("RYO_RUSTC_RELEASE", crate::utils::PINNED_VERSION)
-        .env("RYO_BUILD_ID", build_id))
-}
-
-pub fn copy(from: &Path, to: &Path) -> Result<(), String> {
-    fs::copy(from, to).map(drop).map_err(|e| format!("copying {} to {}: {e}", from.display(), to.display()))
-}
-
-pub fn copy_dir(from: &Path, to: &Path) -> Result<(), String> {
-    fs::create_dir_all(to).map_err(|e| format!("creating {}: {e}", to.display()))?;
-    for entry in fs::read_dir(from).map_err(|e| format!("{}: {e}", from.display()))? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let dst = to.join(entry.file_name());
-        if entry.file_type().map_err(|e| e.to_string())?.is_dir() {
-            copy_dir(&entry.path(), &dst)?;
-        } else {
-            copy(&entry.path(), &dst)?;
-        }
     }
     Ok(())
 }

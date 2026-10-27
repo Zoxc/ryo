@@ -12,13 +12,13 @@ use crate::utils::{Captured, capture, capture_ok, cmd, dll_name, exe_name, outpu
 /// target directory: plain, ryo (rebuilds), ryo again (fresh), plain again (fresh).
 pub(super) fn cargo_smoke(root: &Path, out: &Path) -> Result<(), String> {
     let pkg = out.join("cargo-hello");
-    fs::create_dir_all(&pkg).map_err(|e| format!("creating {}: {e}", pkg.display()))?;
+    crate::utils::create_dir(&pkg)?;
     let manifest = format!(
         "[package]\nname = \"cargo-hello\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n\
          [[bin]]\nname = \"hello\"\npath = {:?}\n\n[workspace]\n",
         root.join("tests").join("hello.rs").to_str().ok_or("non-UTF-8 path")?,
     );
-    fs::write(pkg.join("Cargo.toml"), manifest).map_err(|e| e.to_string())?;
+    crate::utils::write(pkg.join("Cargo.toml"), manifest)?;
     let cargo_ryo = crate::utils::dist_bin(&root, "cargo-ryo");
     let res = capture(
         cmd(&cargo_ryo)
@@ -225,7 +225,7 @@ pub(super) fn incremental(rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result
             let build = |rustc: &Path, incr: Option<&Path>, extra: &[&str], sub: &str| -> Result<PathBuf, String> {
                 // The chain's output path stays the same: it is part of the session.
                 let d = if sub == "incr" { dir.join(config).join("chain") } else { dir.join(config).join(&cfg).join(sub) };
-                fs::create_dir_all(&d).map_err(|e| format!("creating {}: {e}", d.display()))?;
+                crate::utils::create_dir(&d)?;
                 let exe = d.join(exe_name("edits"));
                 let mut c = cmd(rustc);
                 c.arg("--edition=2024").arg(&src).args(["--cfg", &cfg]).arg("-o").arg(&exe);
@@ -253,7 +253,7 @@ pub(super) fn incremental(rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result
     }
 
     let pm_dir = dir.join("pm");
-    fs::create_dir_all(&pm_dir).map_err(|e| format!("creating {}: {e}", pm_dir.display()))?;
+    crate::utils::create_dir(&pm_dir)?;
     for (rev, want) in [("rev1", "41\n"), ("rev2", "42\n")] {
         let mut c = cmd(rustc_ryo);
         c.arg("--edition=2024").arg(dir_in.join("pm.rs")).args(["--crate-type", "proc-macro", "--crate-name", "pm", "--cfg", rev]);
@@ -284,7 +284,7 @@ pub(super) fn same_exports(info: &crate::utils::RustcInfo, rustc_ryo: &Path, src
     }
     let nm = info.tool("llvm-nm");
     let dir = out.join("exports");
-    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    crate::utils::create_dir(&dir)?;
     let cases: [(&str, &[&str]); 5] = [
         ("dylib", &["--crate-type=dylib", "-Cprefer-dynamic"]),
         ("cdylib", &["--crate-type=cdylib"]),

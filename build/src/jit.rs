@@ -109,10 +109,8 @@ pub fn build(root: &Path, target: &Path, info: &RustcInfo, triple: &str, cross: 
 fn seal(info: &RustcInfo, staticlib: &Path, out: &Path, triple: &str) -> Result<(), String> {
     let ar = info.tool("llvm-ar");
     let objcopy = info.tool("llvm-objcopy");
-    if out.exists() {
-        fs::remove_dir_all(out).map_err(|e| format!("removing {}: {e}", out.display()))?;
-    }
-    fs::create_dir_all(out).map_err(|e| format!("creating {}: {e}", out.display()))?;
+    crate::utils::remove_dir_if_exists(out)?;
+    crate::utils::create_dir(out)?;
     let members = output(cmd(&ar).arg("t").arg(staticlib))?;
     let lto = lto_member(&members)?;
     run(cmd(&ar).arg("x").arg(staticlib).arg(&lto).arg("--output").arg(out))?;
@@ -127,7 +125,7 @@ fn seal(info: &RustcInfo, staticlib: &Path, out: &Path, triple: &str) -> Result<
         let defined = output(cmd(&nm).args(["--extern-only", "--defined-only", "--no-demangle", "-j"]).arg(out.join(&lto)))?;
         let renames: String = defined.lines().map(str::trim).filter(|s| coff_renamed(s)).map(|s| format!("{s} {COFF_PREFIX}{s}\n")).collect();
         let list = out.join("renames.txt");
-        fs::write(&list, renames).map_err(|e| e.to_string())?;
+        crate::utils::write(&list, renames)?;
         seal.arg(format!("--redefine-syms={}", list.display()));
     } else {
         seal.arg(format!("--keep-global-symbol={}", symbol(triple, START)));
@@ -136,7 +134,7 @@ fn seal(info: &RustcInfo, staticlib: &Path, out: &Path, triple: &str) -> Result<
     fs::remove_file(out.join(&lto)).map_err(|e| e.to_string())?;
     if coff(triple) {
         // The staticlib without its objects: its import members, then the sealed object.
-        crate::dist::copy(staticlib, &lib)?;
+        crate::utils::copy(staticlib, &lib)?;
         let mut objects: Vec<&str> = members.lines().map(str::trim).filter(|m| !m.is_empty() && !m.ends_with(".dll")).collect();
         objects.sort_unstable();
         objects.dedup();
@@ -178,7 +176,7 @@ fn lto_member(members: &str) -> Result<String, String> {
 /// compared without Mach-O's `_` prefix.
 pub fn check_sealed(info: &RustcInfo, rlib: &Path, dir: &Path, triple: &str) -> Result<(), String> {
     let _ = fs::remove_dir_all(dir);
-    fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    crate::utils::create_dir(dir)?;
     let ar = info.tool("llvm-ar");
     let nm = info.tool("llvm-nm");
     run(cmd(&ar).arg("x").arg(rlib).arg(OBJECT).arg("--output").arg(dir)).map_err(|e| format!("no sealed JIT in {}: {e}", rlib.display()))?;
