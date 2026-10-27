@@ -125,6 +125,23 @@ impl Arg {
 
 include!("reduced_ops.rs");
 
+/// The word, from the start of a `handler`, of the argument `k`'s value: its low half, or
+/// with `half` 1 its high one.
+pub const fn handler_arg_value_word(k: usize, half: u8) -> usize {
+    // The count word, then three words per argument: the tag, then the value.
+    off::Handler::args + 1 + k * ElemKind::Arg.words() + 1 + half as usize
+}
+
+impl Insn<'_> {
+    /// The full opcode of the instruction, a handler's for `handler`.
+    pub fn full_opcode(&self) -> full::Opcode {
+        match self {
+            Insn::Handler { h, .. } => h.0,
+            _ => self.opcode().full().expect("a native instruction"),
+        }
+    }
+}
+
 impl Opcode {
     /// The full opcode of the same instruction, `None` for `handler`.
     pub const fn full(self) -> Option<full::Opcode> {

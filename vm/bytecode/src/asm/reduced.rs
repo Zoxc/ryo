@@ -9,7 +9,7 @@ use super::encode::{
     pe_region_start, push_words, word_len,
 };
 use super::{Mode, has_handler};
-use crate::full::{Elem, ElemKind, Opcode, OperandKind, Shape, insn_len};
+use crate::full::{ElemKind, Opcode, OperandKind, Shape, insn_len};
 use crate::image::{Cleanup, CleanupEntry};
 use crate::reduced::{self, Arg};
 
@@ -278,33 +278,29 @@ pub fn encode_reduced_at(
     mode: Mode,
 ) -> Result<(Encoded, Vec<(u32, u32)>), EncodeError> {
     let mut starts = Vec::new();
+    let mut insns = Vec::new();
     let mut at = 0;
     while at < code.len() {
-        reduced::Insn::decode(&code[at..]).map_err(EncodeError::Decode)?;
+        let (insn, len) = reduced::Insn::decode(&code[at..]).map_err(EncodeError::Decode)?;
         starts.push(at as u32);
-        at += reduced::insn_len(&code[at..]).map_err(EncodeError::Decode)?;
+        insns.push(insn);
+        at += len;
     }
     let idx = |w: u32| starts.binary_search(&w).map_err(|_| EncodeError::BadTarget(w));
     let label = |at: u32, t: u32| idx(at.wrapping_add(t)).map(|i| Label(i as u32));
-    // The full opcode of each instruction (a handler's), for the unwind checks.
-    let full_op = |at: u32| {
-        let w = &code[at as usize..];
-        let op = reduced::Opcode::from_u16(w[0] as u16).expect("decoded");
-        op.full().unwrap_or_else(|| Opcode::from_u16(w[1] as u16).expect("decoded"))
-    };
 
     let mut action: Vec<Option<Unwind>> = alloc::vec![None; starts.len()];
     for e in cleanup {
         let bad = EncodeError::BadCleanup(e.offset);
         let i = idx(e.offset).map_err(|_| bad)?;
-        if !crate::image::op_may_unwind(full_op(e.offset)) || action[i].is_some() {
+        if !crate::image::op_may_unwind(insns[i].full_opcode()) || action[i].is_some() {
             return Err(bad);
         }
         action[i] = Some(match e.action() {
             Cleanup::Continue => Unwind::Continue,
             Cleanup::Pad(p, catch) => {
                 let p = idx(p).map_err(|_| bad)?;
-                if full_op(starts[p]) != Opcode::Lpad {
+                if insns[p].full_opcode() != Opcode::Lpad {
                     return Err(bad);
                 }
                 Unwind::Pad { pad: Label(p as u32), catch }
@@ -341,34 +337,11 @@ pub fn encode_reduced_at(
         }
         asm.bind(Label(i as u32));
         scopes_at(&mut asm, at)?;
-        let w = &code[at as usize..];
-        let op = reduced::Opcode::from_u16(w[0] as u16).expect("decoded");
-        let id = match op.full() {
-            Some(f) => {
-                // The full instruction's words, to read its operands.
-                full.clear();
-                full.extend_from_slice(&w[..reduced::insn_len(w).expect("decoded")]);
-                full[0] = f as u32;
-                if !super::return_ok(&full) {
-                    return Err(EncodeError::BadReturn(at));
-                }
-                if f == Opcode::Arg && starts[..i].iter().any(|&a| full_op(a) != Opcode::Arg) {
-                    return Err(EncodeError::ArgNotFirst(at));
-                }
-                let ops = operands(&full, 0).into_iter().map(|o| o.map_targets(|t| label(at, t))).collect::<Result<Vec<_>, _>>()?;
-                if region.is_some() {
-                    let falls = crate::image::op_falls_through(f) && f.info().shape != Shape::Trap;
-                    flow.push((falls, ops.iter().flat_map(opnd_labels).collect::<Vec<_>>()));
-                }
-                asm.insn(f, &ops)
-            }
-            None => {
-                let h = Opcode::from_u16(w[1] as u16).expect("decoded");
-                let n = w[2] as usize;
-                let args: Vec<Arg> = (0..n).map(|k| Arg::get(&w[3 + 3 * k..])).collect();
-                let p = 3 + 3 * n;
-                let neg = w[p] != 0;
-                let ts = w[p + 2..][..w[p + 1] as usize].iter().map(|&t| label(at, t)).collect::<Result<Vec<_>, _>>()?;
+        let id = match insns[i] {
+            reduced::Insn::Handler { h: reduced::Handler(h), args, neg, t } => {
+                let args: Vec<Arg> = args.iter().collect();
+                let neg = neg.0;
+                let ts = t.iter().map(|t| label(at, t.0 as u32)).collect::<Result<Vec<_>, _>>()?;
                 let bad = || EncodeError::BadHandler(at);
                 let then = match h.info().shape {
                     Shape::Br if ts.len() == 1 => Then::Branch { neg, target: ts[0] },
@@ -425,6 +398,25 @@ pub fn encode_reduced_at(
                     flow.push((falls, ts));
                 }
                 asm.handler(h, &args, values, then)
+            }
+            ref insn => {
+                let f = insn.full_opcode();
+                // The full instruction's words, to read its operands.
+                full.clear();
+                full.extend_from_slice(&code[at as usize..starts.get(i + 1).map_or(code.len(), |&e| e as usize)]);
+                full[0] = f as u32;
+                if !super::return_ok(&full) {
+                    return Err(EncodeError::BadReturn(at));
+                }
+                if f == Opcode::Arg && insns[..i].iter().any(|a| a.full_opcode() != Opcode::Arg) {
+                    return Err(EncodeError::ArgNotFirst(at));
+                }
+                let ops = operands(&full, 0).into_iter().map(|o| o.map_targets(|t| label(at, t))).collect::<Result<Vec<_>, _>>()?;
+                if region.is_some() {
+                    let falls = crate::image::op_falls_through(f) && f.info().shape != Shape::Trap;
+                    flow.push((falls, ops.iter().flat_map(opnd_labels).collect::<Vec<_>>()));
+                }
+                asm.insn(f, &ops)
             }
         };
         if let Some(a) = action[i] {

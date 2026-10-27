@@ -14,8 +14,7 @@
 use alloc::vec::Vec;
 
 use super::{ARG_ADDR, Decoded, Mode, ScopeKind, layout, param_reg, ret_parts};
-use crate::full::Elem;
-use crate::full::{self, OperandKind, Shape};
+use crate::full::{self, List, OperandKind, Shape};
 use crate::image::Cleanup;
 use crate::reduced::{self, Arg};
 
@@ -73,14 +72,19 @@ pub fn insns(code: &[u32], mode: Mode) -> Result<Vec<InsnFrame>, FrameError> {
     let mut at = 0usize;
     while at < code.len() {
         let bad = |what| FrameError { at: at as u32, what };
-        let len = reduced::insn_len(&code[at..]).map_err(|_| bad("not a reduced instruction"))?;
-        reduced::Insn::decode(&code[at..]).map_err(|_| bad("not a reduced instruction"))?;
+        let (insn, len) = reduced::Insn::decode(&code[at..]).map_err(|_| bad("not a reduced instruction"))?;
         let w = &code[at..at + len];
-        let op = reduced::Opcode::from_u16(w[0] as u16).ok_or(bad("opcode"))?;
         let mut f = InsnFrame { at: at as u32, len: len as u32, next: true, ..Default::default() };
         let rel = |t: u32| (at as u32).wrapping_add(t);
-        match op.full() {
-            Some(fop) => {
+        match insn {
+            reduced::Insn::Handler { h: reduced::Handler(h), args, t, .. } => {
+                f.op = Some(h);
+                handler(h, args, at, mode, &mut f).map_err(bad)?;
+                f.targets.extend(t.iter().map(|t| rel(t.0 as u32)));
+                f.next = matches!(h.info().shape, Shape::Op | Shape::Br | Shape::Lpad);
+            }
+            _ => {
+                let fop = insn.opcode().full().expect("a native instruction");
                 f.op = Some(fop);
                 native(fop, w, at, &mut f).map_err(bad)?;
                 let info = fop.info();
@@ -98,16 +102,6 @@ pub fn insns(code: &[u32], mode: Mode) -> Result<Vec<InsnFrame>, FrameError> {
                 }
                 f.next = !matches!(info.shape, Shape::Jmp | Shape::Ret | Shape::TailCall);
                 f.reads_all = matches!(info.shape, Shape::Call | Shape::TailCall | Shape::Island);
-            }
-            None => {
-                let h = full::Opcode::from_u16(w[1] as u16).ok_or(bad("handler"))?;
-                f.op = Some(h);
-                handler(h, w, at, mode, &mut f).map_err(bad)?;
-                let n = w[2] as usize;
-                let p = 3 + 3 * n;
-                let ts = &w[p + 2..][..w[p + 1] as usize];
-                f.targets.extend(ts.iter().map(|&t| rel(t)));
-                f.next = matches!(h.info().shape, Shape::Op | Shape::Br | Shape::Lpad);
             }
         }
         out.push(f);
@@ -192,16 +186,15 @@ fn native(op: full::Opcode, w: &[u32], at: usize, f: &mut InsnFrame) -> Result<(
     Ok(())
 }
 
-/// The frame operands of the reduced `handler` `w` of the handler `h` at word `at`: its slot
-/// operands' register values, by `h`'s layout.
-fn handler(h: full::Opcode, w: &[u32], at: usize, mode: Mode, f: &mut InsnFrame) -> Result<(), &'static str> {
+/// The frame operands of the reduced `handler` of the handler `h` with arguments `args` at
+/// word `at`: its slot operands' register values, by `h`'s layout.
+fn handler(h: full::Opcode, args: List<Arg>, at: usize, mode: Mode, f: &mut InsnFrame) -> Result<(), &'static str> {
     let l = layout(h, mode);
     let info = h.info();
-    let n = w[2] as usize;
-    if n != l.regs as usize {
+    if args.len() != l.regs as usize {
         return Err("handler arguments");
     }
-    let arg = |reg: u8| Arg::get(&w[3 + 3 * reg as usize..]);
+    let arg = |reg: u8| args.get(reg as usize).expect("as many as registers");
     let imm = |k: usize| -> Result<u64, &'static str> {
         let loc = l.locs[k];
         match arg(loc.reg) {
@@ -228,9 +221,8 @@ fn handler(h: full::Opcode, w: &[u32], at: usize, mode: Mode, f: &mut InsnFrame)
         if !matches!(arg(loc.reg), Arg::Imm(_)) {
             return Err("a slot operand that isn't an immediate");
         }
-        // Each argument is three words, a tag and the value, low word first; a slot is the
-        // value's low half, or its high one in a shared register.
-        let word = at + 3 + 3 * loc.reg as usize + 1 + loc.half() as usize;
+        // A slot is the argument value's low half, or its high one in a shared register.
+        let word = at + reduced::handler_arg_value_word(loc.reg as usize, loc.half());
         let access = match (o.kind, o.name) {
             (OperandKind::Mem, _) | (_, "p") => Access::Read(8),
             (_, "d") => Access::Clobber(ext),
