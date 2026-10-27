@@ -231,10 +231,24 @@ pub enum CodeError {
     JitOnly,
 }
 
+/// A code reference of an encoded function, resolved once the image layout is known.
+#[derive(Clone, Copy)]
+struct CodeRef {
+    /// Text offset of the field.
+    at: u32,
+    to: Ref,
+    /// Text offset of the function.
+    start: u32,
+    /// Offset of the function's rodata in the code-constants area.
+    ro_base: u32,
+    func: u32,
+}
+
 /// Why [`ImageWriter::finish`] failed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WriteError {
-    /// Instruction at word `offset` of function `func`.
+    /// Instruction at `offset` of function `func`: a word offset in word-level code, a byte
+    /// offset in the function's machine code for encoded functions (the reference's field).
     Code { func: u32, offset: u32, error: CodeError },
     /// A duplicate cleanup entry, one not at a call-like instruction, or one whose landing
     /// pad isn't an `lpad` instruction.
@@ -585,8 +599,8 @@ impl ImageWriter {
         let mut lists: Vec<u8> = Vec::new();
         let mut call_sites: Vec<CallSiteEntry> = Vec::new();
         let mut func_code = Vec::with_capacity(self.functions.len());
-        // (text offset of the field, target): resolved once the layout is known.
-        let mut code_refs: Vec<(u32, Ref, u32, u32)> = Vec::new();
+        // Resolved once the layout is known.
+        let mut code_refs: Vec<CodeRef> = Vec::new();
         for (i, f) in self.functions.iter_mut().enumerate() {
             let i = i as u32;
             let too_large = |_| WriteError::TooLarge;
@@ -602,7 +616,7 @@ impl ImageWriter {
             code_consts.extend_from_slice(&e.rodata);
             text.extend_from_slice(&e.code);
             for r in &e.relocs {
-                code_refs.push((start + r.at, r.to, ro_base, i));
+                code_refs.push(CodeRef { at: start + r.at, to: r.to, start, ro_base, func: i });
             }
             let run = |len: usize, n: usize| -> Result<Span, WriteError> {
                 Ok(Span { off: (len - n).try_into().map_err(too_large)?, count: n.try_into().map_err(too_large)? })
@@ -750,7 +764,7 @@ impl ImageWriter {
             relocs.push(abs(Section::Writable, rec + mem::offset_of!(JitRecord, header) as u64, RelocTarget::Section(Section::ReadOnly), 0));
         }
         // The code's fields. Calls between functions are resolved here.
-        for &(at, to, ro_base, func) in &code_refs {
+        for &CodeRef { at, to, start, ro_base, func } in &code_refs {
             let pc = |target, off: u64| Reloc {
                 section: Section::Text,
                 offset: at as u64,
@@ -759,7 +773,7 @@ impl ImageWriter {
                 kind: RelocKind::Pc32,
             };
             let call = |target| Reloc { section: Section::Text, offset: at as u64, target, addend: -4, kind: RelocKind::Call32 };
-            let bad = |what| WriteError::Code { func: u32::MAX, offset: at, error: what };
+            let bad = |what| WriteError::Code { func, offset: at - start, error: what };
             relocs.push(match to {
                 Ref::Handler(op) => call(RelocTarget::Handler(op)),
                 Ref::Probe => call(RelocTarget::Probe),
