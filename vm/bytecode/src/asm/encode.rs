@@ -1415,11 +1415,6 @@ impl Asm {
     }
 }
 
-/// The prologue of a function with frame size `F`: `push rbp; mov rbp, rsp`, then for
-/// `F > 0` `sub rsp, F`; or without a frame pointer `sub rsp, F + 8`. On PE, the top 16 bytes
-/// of the frame hold `rdi` and `rsi` ([`Item::WinPrologue`], so `F` is at least 16), and the
-/// `sub` is of `F - 16`. A stack probe of the `sub`'s size comes before it for `F` from
-/// [`PROBE_FROM`].
 /// A call of a handler or the probe (`to`): `call rel32`, or with [`Mode::far_rt`] through
 /// `r11`.
 fn rt_call(to: Ref, mode: Mode) -> Item {
@@ -1440,6 +1435,14 @@ fn func_call(f: Func, tail: bool) -> Item {
     }
 }
 
+/// Functions with frames of at least this size probe the stack in the prologue.
+pub const PROBE_FROM: u32 = 4096;
+
+/// The prologue of a function with frame size `F`: `push rbp; mov rbp, rsp`, then for
+/// `F > 0` `sub rsp, F`; or without a frame pointer `sub rsp, F + 8`. On PE, the top 16 bytes
+/// of the frame hold `rdi` and `rsi` ([`Item::WinPrologue`], so `F` is at least 16), and the
+/// `sub` is of `F - 16`. A stack probe of the `sub`'s size comes before it for `F` from
+/// [`PROBE_FROM`].
 pub(super) fn prologue(frame_size: u32, mode: Mode) -> Vec<Item> {
     let mut out = Vec::with_capacity(4);
     let alloc = if mode.pe {
@@ -1599,9 +1602,6 @@ fn layout_code(mut pieces: Vec<Laid>, [prologue, entry_stub]: [usize; 2], marks:
     let marks = marks.iter().map(|&m| if m == usize::MAX { u32::MAX } else { pos[m] }).collect();
     (out, marks)
 }
-
-/// Functions with frames of at least this size probe the stack in the prologue.
-pub const PROBE_FROM: u32 = 4096;
 
 /// The values of `op`'s handler argument registers for operands `ops`, from `rdi` on: `fp`
 /// (with [`Mode::fp_arg`]), the exception object (`lpad`), then the operands' ([`layout`]).
