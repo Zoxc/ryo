@@ -24,7 +24,6 @@ pub use interp::{FP_ARG, MODE, RegRet, handler, probe_stack, reg_handler};
 #[cfg(feature = "jit")]
 pub use jit::{JIT_ENTRY_PREFIX, configure_jit, jit_shuffle_image, jit_stats};
 pub use jit::{trip_entry, trip_osr};
-pub use registry::ImageRt;
 
 /// Registers the images whose header addresses are the non-null entries of `[start, end)`.
 /// Called by each link unit's registry stub constructor with the bounds of the link unit's

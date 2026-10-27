@@ -2,7 +2,7 @@
 //!
 //! Registered images are kept in immutable snapshots, published through one atomic pointer.
 //! Readers load the pointer and never block. Writers (registration, lazy table builds) take
-//! the runtime lock. Snapshots, image records and tables are allocated with
+//! the runtime lock. Snapshots and tables are allocated with
 //! [`sys::alloc_forever`] and never freed, so `&'static` references to them stay valid.
 
 use core::ptr;
@@ -12,24 +12,20 @@ use ryo_bytecode::image::Image;
 
 use super::sys::{alloc_forever, fatal, lock};
 
-/// A registered image: the reader view. Immutable once published.
-pub struct ImageRt {
-    pub view: Image<'static>,
-}
-
 struct Snapshot {
-    /// Images sorted by crate hash (then CGU hash).
-    by_hash: *const *const ImageRt,
+    /// The registered images, sorted by crate hash (then CGU hash). Immutable once published.
+    by_hash: *const Image<'static>,
     n: usize,
 }
 
-static SNAPSHOT: AtomicPtr<Snapshot> = AtomicPtr::new(ptr::null_mut());
-
-fn images(s: &Snapshot, sorted: *const *const ImageRt) -> &'static [&'static ImageRt] {
-    // SAFETY: both arrays hold `n` pointers to published, never-freed ImageRts. A
-    // `*const ImageRt` and a `&ImageRt` have the same layout.
-    unsafe { core::slice::from_raw_parts(sorted.cast::<&'static ImageRt>(), s.n) }
+impl Snapshot {
+    fn images(&self) -> &'static [Image<'static>] {
+        // SAFETY: `by_hash` holds `n` initialized images, published and never freed.
+        unsafe { core::slice::from_raw_parts(self.by_hash, self.n) }
+    }
 }
+
+static SNAPSHOT: AtomicPtr<Snapshot> = AtomicPtr::new(ptr::null_mut());
 
 fn snapshot() -> Option<&'static Snapshot> {
     // SAFETY: published snapshots are fully initialized before the Release store (paired with
@@ -45,62 +41,22 @@ fn snapshot() -> Option<&'static Snapshot> {
 pub unsafe fn register(start: *const *const u8, end: *const *const u8) {
     let n = (end as usize).saturating_sub(start as usize) / size_of::<*const u8>();
     let g = lock();
-    let old: &[&ImageRt] = match snapshot() {
-        Some(s) => images(s, s.by_hash),
-        None => &[],
-    };
+    let old = snapshot().map_or(&[][..], Snapshot::images);
     let cap = old.len() + n;
-    let by_hash = alloc_forever(&g, cap * size_of::<*const ImageRt>(), align_of::<*const ImageRt>()).cast::<&ImageRt>();
-    // SAFETY: fresh, suitably sized and aligned allocations. Elements are written before
+    let by_hash = alloc_forever(&g, cap * size_of::<Image<'static>>(), align_of::<Image<'static>>()).cast::<Image<'static>>();
+    // SAFETY: fresh, suitably sized and aligned allocation. Elements are written before
     // they are viewed: `done(len)` covers only the first `len`, which are initialized.
     unsafe { ptr::copy_nonoverlapping(old.as_ptr(), by_hash, old.len()) };
-    let done = |len: usize| -> &[&ImageRt] { unsafe { core::slice::from_raw_parts(by_hash, len) } };
+    let done = |len: usize| -> &[Image<'static>] { unsafe { core::slice::from_raw_parts(by_hash, len) } };
     let mut len = old.len();
     for i in 0..n {
         // SAFETY: the caller passes `n` readable header pointers.
         let h = unsafe { *start.add(i) };
-        if h.is_null() {
-            continue; // the stub's entry, or linker padding (PE incremental linking)
-        }
-        if done(len).iter().any(|im| ptr::eq(im.view.header(), h.cast())) {
-            continue; // registered before (e.g. a library loaded twice)
-        }
-        // SAFETY: per the caller, `h` is a linked image's header, valid forever.
-        let view = match unsafe { Image::from_header(h) } {
-            Ok(v) => v,
-            Err(_) => fatal("ryo_vm_register: invalid image"),
-        };
-        let hdr = view.header();
-        if let Some(o) = done(len).iter().find(|im| im.view.crate_hash() == view.crate_hash() && im.view.header().cgu_hash == hdr.cgu_hash) {
-            if o.view.header().stable_crate_id == hdr.stable_crate_id {
-                fatal("ryo_vm_register: an image is registered twice (two copies of one crate)");
-            }
-            fatal("ryo_vm_register: crate hash collision between two images");
-        }
-        if view.data_ptr().is_null() && hdr.data_size != 0 {
-            fatal("ryo_vm_register: image is not linked");
-        }
-        if !view.fixups().is_empty() {
-            if view.validate().is_err() {
-                fatal("ryo_vm_register: invalid image tables");
-            }
-            // SAFETY: validated; the image was just linked/loaded, its writable section is
-            // not yet used by anyone (it isn't published), and its indirect symbol slots
-            // point at import slots (per the caller).
-            unsafe { view.apply_fixups() };
-        }
-        if view.text_ptr().is_null() && hdr.text_size != 0 {
-            fatal("ryo_vm_register: image is not linked");
-        }
+        // SAFETY: per the caller.
+        let Some(view) = (unsafe { admit(h, done(len)) }) else { continue };
         super::jit::registered(&view);
-        let rt = ImageRt { view };
-        let p = alloc_forever(&g, size_of::<ImageRt>(), align_of::<ImageRt>()).cast::<ImageRt>();
-        // SAFETY: fresh allocation for one ImageRt; it is never freed, so `&'static` is valid.
-        // `by_hash` has room for `cap > len` entries.
-        unsafe {
-            p.write(rt);
-            by_hash.add(len).write(&*p);
-        }
+        // SAFETY: `by_hash` has room for `cap > len` entries.
+        unsafe { by_hash.add(len).write(view) };
         len += 1;
     }
     if len == old.len() {
@@ -108,11 +64,52 @@ pub unsafe fn register(start: *const *const u8, end: *const *const u8) {
     }
     // SAFETY: the first `len` entries are initialized, and nothing else views them.
     let list = unsafe { core::slice::from_raw_parts_mut(by_hash, len) };
-    sort_by_key(list, |im| (im.view.crate_hash(), im.view.header().cgu_hash));
+    sort_by_key(list, |im| (im.crate_hash(), im.header().cgu_hash));
     let snap = alloc_forever(&g, size_of::<Snapshot>(), align_of::<Snapshot>()).cast::<Snapshot>();
     // SAFETY: fresh allocation; fully written before it is published.
-    unsafe { snap.write(Snapshot { by_hash: by_hash.cast(), n: len }) };
+    unsafe { snap.write(Snapshot { by_hash, n: len }) };
     SNAPSHOT.store(snap, Ordering::Release);
+}
+
+/// The admission checks for header `h` against the images already registered (`existing`):
+/// `None` to skip it (a null entry, or an image registered before); aborts on an invalid,
+/// duplicate or unlinked image. Applies the image's fixups.
+///
+/// # Safety
+/// `h` is null or a linked image's header, valid forever (as for `ryo_vm_register`), and the
+/// runtime lock is held.
+unsafe fn admit(h: *const u8, existing: &[Image<'static>]) -> Option<Image<'static>> {
+    if h.is_null() {
+        return None; // the stub's entry, or linker padding (PE incremental linking)
+    }
+    if existing.iter().any(|im| ptr::eq(im.header(), h.cast())) {
+        return None; // registered before (e.g. a library loaded twice)
+    }
+    // SAFETY: per the caller, `h` is a linked image's header, valid forever.
+    let view = match unsafe { Image::from_header(h) } {
+        Ok(v) => v,
+        Err(_) => fatal("ryo_vm_register: invalid image"),
+    };
+    let hdr = view.header();
+    if let Some(o) = existing.iter().find(|im| im.crate_hash() == view.crate_hash() && im.header().cgu_hash == hdr.cgu_hash) {
+        if o.header().stable_crate_id == hdr.stable_crate_id {
+            fatal("ryo_vm_register: an image is registered twice (two copies of one crate)");
+        }
+        fatal("ryo_vm_register: crate hash collision between two images");
+    }
+    if (view.data_ptr().is_null() && hdr.data_size != 0) || (view.text_ptr().is_null() && hdr.text_size != 0) {
+        fatal("ryo_vm_register: image is not linked");
+    }
+    if !view.fixups().is_empty() {
+        if view.validate().is_err() {
+            fatal("ryo_vm_register: invalid image tables");
+        }
+        // SAFETY: validated; the image was just linked/loaded, its writable section is
+        // not yet used by anyone (it isn't published), and its indirect symbol slots
+        // point at import slots (per the caller).
+        unsafe { view.apply_fixups() };
+    }
+    Some(view)
 }
 
 /// The header of the registered image whose text or read-only section holds `addr`, or
@@ -124,11 +121,11 @@ pub unsafe fn register(start: *const *const u8, end: *const *const u8) {
 #[cfg_attr(not(feature = "jit"), allow(dead_code))]
 pub fn image_at(addr: usize) -> *const u8 {
     let Some(s) = snapshot() else { return ptr::null() };
-    for im in images(s, s.by_hash) {
-        let text = im.view.text_ptr() as usize;
-        let ro = im.view.bytes();
-        if addr.wrapping_sub(text) < im.view.header().text_size as usize || addr.wrapping_sub(ro.as_ptr() as usize) < ro.len() {
-            return (im.view.header() as *const ryo_bytecode::image::Header).cast();
+    for im in s.images() {
+        let text = im.text_ptr() as usize;
+        let ro = im.bytes();
+        if addr.wrapping_sub(text) < im.header().text_size as usize || addr.wrapping_sub(ro.as_ptr() as usize) < ro.len() {
+            return (im.header() as *const ryo_bytecode::image::Header).cast();
         }
     }
     ptr::null()
@@ -137,13 +134,13 @@ pub fn image_at(addr: usize) -> *const u8 {
 /// An insertion sort: core's sorts reference its panic path (`panic_on_ord_violation`), which
 /// the runtime must not reach (design/vm.md, "No re-entry"). Lists are short (one entry per
 /// image).
-fn sort_by_key<K: Ord>(list: &mut [&ImageRt], key: impl Fn(&ImageRt) -> K) {
+fn sort_by_key<K: Ord>(list: &mut [Image<'static>], key: impl Fn(&Image<'static>) -> K) {
     let p = list.as_mut_ptr();
     for i in 1..list.len() {
         let mut j = i;
         // SAFETY: `j` and `j - 1` are below `list.len()`.
         unsafe {
-            while j > 0 && key(*p.add(j - 1)) > key(*p.add(j)) {
+            while j > 0 && key(&*p.add(j - 1)) > key(&*p.add(j)) {
                 ptr::swap(p.add(j - 1), p.add(j));
                 j -= 1;
             }
