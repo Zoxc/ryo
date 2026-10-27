@@ -114,12 +114,12 @@ def f0Items (back stub : Nat) : List Item :=
   [.ctrInc false, .branch .ns (bv32 stub) true] ++ Ryo.Vm.Asm.prologue frameSize mode ++
   [.leaM .rdi ⟨.rsp, bv32 frameSize⟩, .setReg .rsi (BitVec.ofNat 64 0xfffffff0), .lea .rdx (.sym 0),
    .call (.handler addrSym), .call (.func 1)] ++
-  [Ryo.Vm.Asm.epilogue frameSize mode, .ret] ++ entryStub (bv32 back) true
+  (Ryo.Vm.Asm.epilogue frameSize mode ++ [.ret]) ++ entryStub (bv32 back) true
 
 /-- Function 1: the counter check, a frame of 0, `ret`, the stub. -/
 def f1Items (back stub : Nat) : List Item :=
   [.ctrInc false, .branch .ns (bv32 stub) true] ++ Ryo.Vm.Asm.prologue 0 mode ++
-  [Ryo.Vm.Asm.epilogue 0 mode, .ret] ++ entryStub (bv32 back) true
+  (Ryo.Vm.Asm.epilogue 0 mode ++ [.ret]) ++ entryStub (bv32 back) true
 
 def len (items : List Item) : Nat := (encodeItems items).1.length
 

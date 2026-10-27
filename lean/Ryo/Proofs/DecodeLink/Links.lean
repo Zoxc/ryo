@@ -18,7 +18,7 @@ indices with `pos32 r t = tgt`.
   `entries_codeAt`: the entries in memory given a boundary at `tb`, i.e. no relocation starting
   in the `int3` padding, which the decoder doesn't check).
 - `link_jmp`, `link_unreachable`, `link_ret`, `link_island`: `jmp tgt` (`jmp_step`), `ud2`
-  (`unreachable_step`), `retLoads k.toNat src ++ [epilogue F mode, ret]` with `F` the frame size
+  (`unreachable_step`), `retLoads k.toNat src ++ epilogue F mode ++ [ret]` with `F` the frame size
   (`ret_step`), `islandPre ++ islandPost` and the rodata operand words (`island_sound`).
 - `link_arg`: `argStore a d pe` with `r = word a`, `ArgReg.of? r` defined; `of_word_eq`: its
   result is `a` when `a.size < 32` and `a.index < 2 ^ 24` (what `ArgRet.arg_step` needs). That
@@ -224,13 +224,13 @@ theorem link_unreachable {ctx : Ctx} {m : Mem} {c c' : Cursor} {rs : Array Reloc
     exact ⟨rfl, rfl, hca, hq, hb'⟩
 
 /-- `ret src, k`: the return value loads, the epilogue of the frame and `ret` (`ArgRet.ret_step`'s
-items `retLoads k.toNat src ++ [epilogue F mode, ret]`, `F` the frame size). -/
+items `retLoads k.toNat src ++ epilogue F mode ++ [ret]`, `F` the frame size). -/
 theorem link_ret {ctx : Ctx} {m : Mem} {c c' : Cursor} {rs : Array Reloc} {fr : Frame}
     {ro : ByteArray} {q : Proto} (hk : LinkOk ctx m c rs) (hb : Boundary rs c.pos)
     (h : (insn fr ro).run c = .ok (q, c')) (hop : q.op = .ret) :
     ∃ (src : BitVec 32) (k : BitVec 64), q.ops = [.slot src, .imm k] ∧ q.handler = none ∧
-      CodeAt ctx m (retLoads k.toNat src ++ [epilogue fr.size fr.mode, .ret]) c.pos ∧
-      c'.pos = c.pos + codeSize (retLoads k.toNat src ++ [epilogue fr.size fr.mode, .ret]) ∧
+      CodeAt ctx m (retLoads k.toNat src ++ (epilogue fr.size fr.mode ++ [.ret])) c.pos ∧
+      c'.pos = c.pos + codeSize (retLoads k.toNat src ++ (epilogue fr.size fr.mode ++ [.ret])) ∧
       Boundary rs c'.pos := by
   cases insn_read h with
   | @handler _ _ _ _ _ op _ _ _ _ _ _ hn hhh =>

@@ -7,6 +7,9 @@ registers set in order, and recovers every operand, the frame size and the unwin
 
 - the prologue and epilogue of the frame size (`push rbp; mov rbp, rsp; sub rsp, F`, or
   `sub rsp, F + 8` without a frame pointer, or the PE forms; a stack probe from 4096 bytes);
+  the PE prologue and epilogue are their instructions (`winPrologue`, `winEpilogue`), which
+  `decodeItem` reads only inside the whole sequence, as Rust reads it as one item
+  (`Cursor.winPiece`), and a mismatch in the prologue is at its start, as Rust's;
 - with `Mode.counters`, the entry's and each loop head's counter check
   (`inc qword [rip + rec]; jns stub`, a loop head's on the loop counter, `rec + 56`) and the
   stubs after the code, in order;
@@ -123,6 +126,14 @@ def tableEntry (base : Nat) : DM Nat := do
   | some t => setPos (c.pos + 4); return t.toNat
   | none => err c.pos "not a canonical instruction"
 
+/-- Whether the items at the cursor are `want`, read one after the other (the cursor past those
+that are). -/
+def expectItems : List Item → DM Bool
+  | [] => return true
+  | w :: want => do
+    if (← tryItem) != some w then return false
+    expectItems want
+
 /-- The items at the cursor while `f` takes them (`take`). -/
 def take (f : Item → Bool) : DM (List Item) := do
   let mut out : Array Item := #[]
@@ -161,7 +172,7 @@ structure Frame where
   size : Nat
   mode : Mode
 
-def Frame.epilogue (fr : Frame) : Item := Asm.epilogue fr.size fr.mode
+def Frame.epilogue (fr : Frame) : List Item := Asm.epilogue fr.size fr.mode
 def Frame.fp (fr : Frame) (r : Reg) : Item := fpItem r fr.mode
 
 /-- An instruction being decoded (`Proto`): operands with byte-position targets, and its calls
@@ -255,7 +266,7 @@ def retSeq (fr : Frame) : DM (BitVec 32 × Nat) := do
   let some (s, parts) := (partsOf items).filter (·.2.length ≤ 2) | err at_ "return value loads"
   let k := retKind parts
   if retLoads k s != items || ((retParts k true).isNone && k != 0) then err at_ "return value loads"
-  for want in [fr.epilogue, Item.ret] do
+  for want in fr.epilogue ++ [Item.ret] do
     let a ← pos
     if (← item) != want then err a "not the return sequence"
   return (s, k)
@@ -325,7 +336,9 @@ def callInsn (fr : Frame) (dropped : List DroppedStore) : DM (Option Proto) := d
     | some .callMemRax, .sym s => return some (.callSymInd, [.sym s], true)
     | some .callRax, .ptr p => return some (.callPtr, [.slot p], true)
     | some it, _ =>
-      if it == fr.epilogue then
+      if fr.epilogue.head? == some it then
+        -- The rest of the epilogue (on PE `winEpilogue`'s, there whenever its first is).
+        if !(← expectItems fr.epilogue.tail) then return none
         match ← tryItem, pre with
         | some (.jmp (.func f)), .none => return some (.tailCall, [.func f, aOp], false)
         | some .jmpRax, .ptr p => return some (.tailCallPtr, [.slot p, aOp], false)
@@ -563,7 +576,7 @@ def insn (fr : Frame) (ro : ByteArray) : DM Proto := do
     let (t, sites) ← thenSeq op n hat
     return { op, handler := some (args, t), pos := p0, sites }
   match h with
-  | .ld .. | .sse .. | .leave | .winEpilogue | .addRsp _ =>
+  | .ld .. | .sse .. | .leave | .leaRspRbp16 | .addRsp _ =>
     if setup.isEmpty then
       setPos p0
       let (s, k) ← retSeq fr
@@ -666,7 +679,7 @@ def read (ro : ByteArray) (callSites : Array CallSite) (dropped : List DroppedSt
   for _ in [0:← fuel] do
     match ← tryItem with
     | some (.subRsp n) => alloc := n.toNat; break
-    | some .pushRbp | some .winPrologue | some (.mov .rbp .rsp) | some (.setReg .rax _)
+    | some .pushRbp | some (.push _) | some .leaRbpRsp16 | some (.mov .rbp .rsp) | some (.setReg .rax _)
     | some (.call .probe) => continue
     | _ => break
   if mode.pe && alloc + 16 ≥ 2 ^ 32 then err 0 "frame size out of range"
@@ -676,7 +689,9 @@ def read (ro : ByteArray) (callSites : Array CallSite) (dropped : List DroppedSt
   setPos start
   for want in prologue frameSize mode do
     let at_ ← pos
-    if (← tryItem) != some want then err at_ "not the prologue of the frame size"
+    -- Rust reads `winPrologue` as one item: a mismatch in it is at its start.
+    if (← tryItem) != some want then
+      err (if winPrologue.contains want then start else at_) "not the prologue of the frame size"
   if !mode.framePointer then modify fun c => { c with spFrame := some (BitVec.ofNat 32 frameSize) }
   let fr : Frame := ⟨frameSize, mode⟩
   -- Twice: the cache is cleared at branch targets, known once the whole function is read.

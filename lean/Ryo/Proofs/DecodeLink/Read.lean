@@ -251,7 +251,7 @@ theorem islandCall_read {fr : Frame} {c c' : Cursor} {isl ops : Nat} {site : Nat
 /-- `ret`'s sequence as `retSeq` reads it: `retLoads k s`, the epilogue, `ret`; `k` a `u32`. -/
 theorem retSeq_read {fr : Frame} {c c' : Cursor} {s : BitVec 32} {k : Nat}
     (h : (retSeq fr).run c = .ok ((s, k), c')) :
-    Dec c c.pos (retLoads k s ++ [fr.epilogue, .ret]) c'.pos ∧ c' = atPos c c'.pos ∧
+    Dec c c.pos (retLoads k s ++ (fr.epilogue ++ [.ret])) c'.pos ∧ c' = atPos c c'.pos ∧
       k < 2 ^ 32 := by
   unfold retSeq at h
   obtain ⟨at_, c1, h1, h⟩ := bind_ok h
@@ -274,7 +274,7 @@ theorem retSeq_read {fr : Frame} {c c' : Cursor} {s : BitVec 32} {k : Nat}
   cases he
   let I : List Item → PUnit → Cursor → Prop := fun pre _ cur =>
     Dec c c.pos (items ++ pre) cur.pos ∧ cur = atPos c cur.pos
-  have key := forIn_list_pre I (fun _ _ => False) _ ?step [fr.epilogue, .ret] [] PUnit.unit c2 c3 u
+  have key := forIn_list_pre I (fun _ _ => False) _ ?step (fr.epilogue ++ [.ret]) [] PUnit.unit c2 c3 u
     ⟨by simpa using d2, e2⟩ h3
   case step =>
     intro pre want b cur r cur' hI hr
@@ -567,7 +567,7 @@ theorem insn_read {fr : Frame} {ro : ByteArray} {c c' : Cursor} {q : Proto}
             obtain ⟨rfl, rfl⟩ := pure_ok h
             exact hret _ _ h5 _ _ h6 _ rfl
           · exact (err_ok h).elim
-        case winEpilogue =>
+        case leaRspRbp16 =>
           split at h
           · obtain ⟨u, c5, h5, h⟩ := bind_ok h
             obtain ⟨x, c6, h6, h⟩ := bind_ok h

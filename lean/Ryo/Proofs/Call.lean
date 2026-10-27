@@ -11,7 +11,7 @@ for `call.ptr`, nothing otherwise (`callHead`); `params` loads each argument reg
 slot (`paramItems`, the inverse of the decoder's `params`: `mov`/`movzx` of the register's size
 into `intArg pe i`, `lea` of the slot for `ARG_ADDR`, `movss`/`movsd`/`movups`, or a 2-byte `xmm`
 through `r11`); the call is `call f`, `call [rip + slot]`, `call [rax]` or `call rax`. A tail call
-is `pre ++ params ++ [epilogue F mode, jmp]` (`tailSeq`), the jump `jmp f` or `jmp rax`.
+is `pre ++ params ++ epilogue F mode ++ [jmp]` (`tailSeq`), the jump `jmp f` or `jmp rax`.
 
 **The call boundary** (`EntryAt`, the callee's entry: the state just after the `call`, or after
 the tail call's `jmp`): `rip` is the callee's address (`calleeTarget`: the function's linked
@@ -165,7 +165,7 @@ def tailSeq (F : Nat) (mode : Ryo.Obj.Mode) (f : Full.Opcode) (fo : R.Opnd Nat)
     (ws : List (BitVec 32)) : Option (List Item) := do
   let (pre, j) ← tailHead f fo
   let ps ← paramItems mode.pe ws
-  pure (pre ++ ps ++ [epilogue F mode, j])
+  pure (pre ++ ps ++ (epilogue F mode ++ [j]))
 
 /-! ### The boundary -/
 
@@ -321,8 +321,8 @@ the flags. -/
 theorem exec_epilogue_only (ctx : Ctx) (F : Nat) (m : Ryo.Obj.Mode) (y : X86.State)
     (hsp : m.pe = false → m.framePointer = false →
       y.rsp = y.reg .rbp - BitVec.ofNat 64 F ∧ F + 8 < 2 ^ 31) :
-    ∃ y', execItems ctx [epilogue F m] y = .ok y' ∧ y'.mem = y.mem ∧ y'.xmm = y.xmm ∧
-      y'.rsp = y.reg .rbp + 8 ∧ y'.rip = y.rip + BitVec.ofNat 64 (epilogue F m).size ∧
+    ∃ y', execItems ctx (epilogue F m) y = .ok y' ∧ y'.mem = y.mem ∧ y'.xmm = y.xmm ∧
+      y'.rsp = y.reg .rbp + 8 ∧
       (∀ i : Fin 16, i ≠ 4 → i ≠ 5 → i ≠ 6 → i ≠ 7 → y'.regs i = y.regs i) ∧
       (m.pe = true ∨ m.framePointer = true → y'.reg .rbp = y.mem.read64 (y.reg .rbp)) ∧
       (m.pe = false → m.framePointer = false → y'.reg .rbp = y.reg .rbp) ∧
@@ -331,7 +331,7 @@ theorem exec_epilogue_only (ctx : Ctx) (F : Nat) (m : Ryo.Obj.Mode) (y : X86.Sta
       (m.pe = false → y'.reg .rsi = y.reg .rsi ∧ y'.reg .rdi = y.reg .rdi) := by
   unfold epilogue
   cases hpe : m.pe <;> cases hfp : m.framePointer <;>
-    simp only [hpe, hfp, Bool.false_eq_true, ↓reduceIte, execItems_cons, execItems_nil,
+    simp only [hpe, hfp, Bool.false_eq_true, ↓reduceIte, winEpilogue, execItems_cons, execItems_nil,
       Item.exec, pure, Except.pure, ex_bind_ok', false_implies, forall_const,
       true_or, or_true] at hsp ⊢
   all_goals refine ⟨_, rfl, ?_⟩
@@ -1373,7 +1373,7 @@ theorem tail_call_step (ctx : Ctx) {c : R.Code} {s : R.RState} {x : X86.State}
     show y.regs 4 = x.regs 4; rw [hkeep 4 (by simp), rs0 4 (by decide)]
   have hyrbp : y.reg .rbp = x.reg .rbp := by
     show y.regs 5 = x.regs 5; rw [hkeep 5 (by simp), rs0 5 (by decide)]
-  obtain ⟨y', ex, mx, xx, rspx, ripx, regsx, rbpx, rbpx2, rsix, rsix2⟩ :=
+  obtain ⟨y', ex, mx, xx, rspx, regsx, rbpx, rbpx2, rsix, rsix2⟩ :=
     exec_epilogue_only ctx c.d.frameSize c.mode y (fun h1 h2 => by
       rw [hyrsp, hyrbp]; exact hsp h1 h2)
   have hyrax' : y'.reg .rax = y0.reg .rax := by
@@ -1393,11 +1393,10 @@ theorem tail_call_step (ctx : Ctx) {c : R.Code} {s : R.RState} {x : X86.State}
   refine ⟨s1, cal, regs, stack, x', hfin.trans (by rw [hk.fp]), hr1, hm1, hk.fp, hstl, ?_,
     ⟨?_, ?_, ?_, ?_, ?_⟩, hx'mem, ?_, ?_, ?_, ?_, ?_⟩
   · rw [ArgRet.execItems_append, ArgRet.execItems_append, e0]
-    show (execItems ctx ps y0 >>= fun s1 => execItems ctx [epilogue c.d.frameSize c.mode, j] s1) = _
+    show (execItems ctx ps y0 >>= fun s1 => execItems ctx (epilogue c.d.frameSize c.mode ++ [j]) s1) = _
     rw [e1]
-    show execItems ctx [epilogue c.d.frameSize c.mode, j] y = _
-    rw [show [epilogue c.d.frameSize c.mode, j] = [epilogue c.d.frameSize c.mode] ++ [j] from rfl,
-      ArgRet.execItems_append, ex]
+    show execItems ctx (epilogue c.d.frameSize c.mode ++ [j]) y = _
+    rw [ArgRet.execItems_append, ex]
     show execItems ctx [j] y' = _
     rw [ArgRet.execItems_cons_ok ej]; rfl
   · rw [← hx']; rfl

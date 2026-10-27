@@ -401,13 +401,19 @@ impl Gen<'_> {
             }
             2 => {
                 stack(self);
-                self.item(r#""winPrologue""#.into());
+                // Rust's one `WinPrologue` item is four in Lean.
+                for it in [r#""pushRbp""#, r#"{"push":{"r":"rdi"}}"#, r#"{"push":{"r":"rsi"}}"#, r#""leaRbpRsp16""#] {
+                    self.item(it.into());
+                }
                 "winPrologue".into()
             }
             3 => {
                 let off = 16 + self.off(24);
                 self.set("rbp", self.data + off as u64);
-                self.item(r#""winEpilogue""#.into());
+                // Rust's one `WinEpilogue` item is four in Lean.
+                for it in [r#""leaRspRbp16""#, r#"{"pop":{"r":"rsi"}}"#, r#"{"pop":{"r":"rdi"}}"#, r#"{"pop":{"r":"rbp"}}"#] {
+                    self.item(it.into());
+                }
                 "winEpilogue".into()
             }
             4 => {

@@ -285,9 +285,11 @@ follows the decoder's structure:
 - **Fetching from memory** (`Ryo/X86/Fetch.lean`): `Step ctx x x'` runs a canonical item whose
   linked bytes are at `rip`; `steps_of_run` turns an `execItems` run over code in memory
   (unchanged by the run) into `Steps`. Determinism: `ExecUnique` (canonical
-  encodings at one address execute alike) is false as stated, `push rbp` being a prefix of
-  `winPrologue` (`Ryo/X86/Unique.lean`, `not_execUnique`); without `winPrologue` it holds given
-  `RefsNear` (`execUniqueNoPrologue`).
+  encodings at one address execute alike) holds given `RefsNear`, every reference within the
+  4 GiB from the function's address up (`Ryo/X86/Unique.lean`, `execUnique`; necessary too,
+  `refsNear_of_execUnique`), so `Step` is a function (`step_deterministic_of_refsNear`). It
+  needs every item to be one instruction: the PE prologue and epilogue are their four
+  instructions each in Lean (`winPrologue`, `winEpilogue`), one item each in Rust.
 - **Decoder links** (`Ryo/Proofs/DecodeLink/`): an instruction the decoder accepts at a
   position has, in memory holding the code with its relocated fields patched (`RelocLoaded`),
   exactly the items the shape lemma takes, with the R instruction's operands (`link_handler`,

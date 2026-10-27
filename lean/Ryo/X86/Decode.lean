@@ -17,6 +17,11 @@ the linker's business), so `encode` inverts `decodeItem` on what it accepts by c
 (`Cursor.matchesItem`; `decodeItem_pos`: an accepted element is never empty). The converse, `decodeItem (encode i) = some (i, len)` for `Item.wf` items,
 is tested over the Rust encoder's vectors and generated item sets in `RyoTest/X86.lean`.
 
+The PE prologue and epilogue, one item each in Rust (`Item::WinPrologue`, `Item::WinEpilogue`),
+are their instructions here (`Ryo.X86.Item`); `Cursor.winPiece` reads those past `push rbp`
+only inside the whole sequence, so the decoder accepts what Rust's does, an instruction at a
+time.
+
 `Cursor.spFrame`: without a frame pointer, frame slots are `[rsp + F + d]`, which the decoder
 returns as `[rbp + d]` (the encoder's form); `[rbp + _]` is then invalid, as `[rsp + _]` is with a
 frame pointer.
@@ -143,12 +148,27 @@ def accept (c : Cursor) (post : Item → Option Item) (i : Item) : Option (Item 
   | some n, some j => some (j, n)
   | _, _ => none
 
+/-- An instruction of the PE prologue or epilogue past `push rbp`, read only inside the whole
+sequence: Rust reads `winPrologueBytes` and `winEpilogueBytes` as one item each
+(`Item::WinPrologue`, `Item::WinEpilogue`), so it reads none of these instructions elsewhere.
+The sequence is the bytes around the cursor, `k` bytes back for the instruction `k` bytes in. -/
+def winPiece (c : Cursor) : Option Item :=
+  let seqAt (k : Nat) (bs : List UInt8) : Bool :=
+    k ≤ c.pos && { c with pos := c.pos - k }.bytes bs.length == some bs
+  if seqAt 1 winPrologueBytes then some (.push .rdi)
+  else if seqAt 2 winPrologueBytes then some (.push .rsi)
+  else if seqAt 3 winPrologueBytes then some .leaRbpRsp16
+  else if seqAt 0 winEpilogueBytes then some .leaRspRbp16
+  else if seqAt 4 winEpilogueBytes then some (.pop .rsi)
+  else if seqAt 5 winEpilogueBytes then some (.pop .rdi)
+  else if seqAt 6 winEpilogueBytes then some (.pop .rbp)
+  else none
+
 /-- `Cursor::base_item`'s parse: the candidate item, before the canonical check. -/
 def baseCandidate (c : Cursor) : Option Item := do
   let b0 ← c.get 0
   let g := c.get
-  if (c.bytes 8) == some winPrologueBytes then return .winPrologue
-  if (c.bytes 7) == some winEpilogueBytes then return .winEpilogue
+  if let some i := c.winPiece then return i
   let (rex, at_) : UInt8 × Nat := if 0x40 ≤ b0 && b0 ≤ 0x4f then (b0, 1) else (0, 0)
   let (rw, rr, rx, rb) := (rex &&& 8 != 0, rex &&& 4 != 0, rex &&& 2 != 0, rex &&& 1 != 0)
   let ext (c : Bool) : Nat := if c then 8 else 0

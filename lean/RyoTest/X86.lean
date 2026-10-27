@@ -115,10 +115,51 @@ def expectEq {α : Type} [BEq α] [Repr α] (what : String) (got want : α) : Ex
 
 /-! ### The Rust vectors -/
 
+/-- Reads `items` one after the other from `c` (`decodeItem`), each to itself. -/
+def decodeSeq (c : Cursor) (items : List Item) : Except String Unit := do
+  let mut pos := c.pos
+  for i in items do
+    match decodeItem { c with pos } with
+    | some (j, n) =>
+      if j != i then throw s!"at {pos}: decoded {repr j}, want {repr i}"
+      pos := pos + n
+    | none => throw s!"at {pos}: no item, want {repr i}"
+  if pos != c.pos + (encodeItems items c.pos).1.length then throw "decoded length"
+
+/-- An encoding vector of Rust's `Item::WinPrologue` or `Item::WinEpilogue`: `items`, their
+instructions here, encode to its bytes and decode back one after the other, unlinked and linked;
+and none past the first decodes alone (Rust reads the sequence only as a whole). -/
+def checkWinSeq (j : Json) (items : List Item) : Except String Unit := do
+  let pos : Nat ← get j "pos"
+  let len : Nat ← get j "len"
+  let bytes ← (unhex (← get j "bytes")).elim (throw "bad hex") pure
+  let linked : Option String ← getOpt j "linked"
+  let (bs, rs) := encodeItems items pos
+  expectEq "bytes" (hex bs) (hex bytes)
+  expectEq "relocs" rs []
+  let mut p := pos
+  for i in items do
+    if !i.wf (BitVec.ofNat 32 p) then throw s!"{repr i} not wf"
+    p := p + i.len
+  let code := placed pos len bytes
+  decodeSeq { code, pos, fields := .relocs #[] } items
+  if let some l := linked then
+    expectEq "linked bytes" l (hex bytes)
+    decodeSeq { code, pos, fields := .linked code0 record0 resolve } items
+  let mut q := pos
+  for i in items do
+    let alone := placed q (q + i.len + 4) (i.encode (BitVec.ofNat 32 q)).1
+    if q != pos && ((decodeItem { code := alone, pos := q, fields := .relocs #[] }).map (·.1)) == some i then
+      throw s!"{repr i} decoded alone"
+    q := q + i.len
+
 /-- An encoding vector: `encode` (of the item, or its `sp_frame` form) gives the bytes and
 relocations; `link` the linked bytes; `decodeItem` (or the padding/table readers) reads it
 back. -/
 def checkEnc (j : Json) : Except String Unit := do
+  if let .ok (name : String) := get (α := String) j "item" then
+    if name == "winPrologue" then return ← checkWinSeq j winPrologue
+    if name == "winEpilogue" then return ← checkWinSeq j winEpilogue
   let item : Item ← get j "item"
   let pos : Nat ← get j "pos"
   let len : Nat ← get j "len"
@@ -211,7 +252,7 @@ def rms : List Rm := usableRegs.map .reg ++ mems.map .mem
 /-- Every native form over every register, width, base, displacement and immediate class (the
 `wf` ones), and the fixed forms over their parameters. -/
 def generated : List Item :=
-  let fixed : List Item := [.pushRbp, .winPrologue, .winEpilogue, .callRax, .callMemRax, .jmpRax,
+  let fixed : List Item := [.pushRbp, .callRax, .callMemRax, .jmpRax,
     .testAl, .testRax, .leave, .ret, .ud2, .loadTableEntry, .addRaxRcx]
   let refs : List Ref := [.handler 7, .probe, .func 3, .sym 9, .site 2, .const 64, .data 8,
     .ro 32, .record, .recordLoopCtr]
@@ -240,7 +281,8 @@ def generated : List Item :=
 
 /-- `decodeItem (encode i) = some (i, len)` for the generated `wf` items, unlinked and in the
 `sp_frame` form; and `decodeItem` rejects the encodings of the non-`wf` ones (or reads another
-item). -/
+item). (The PE prologue's and epilogue's instructions, which decode only inside their sequence,
+are `checkWinSeq`'s.) -/
 def roundTrip (frame : Option (BitVec 32)) : Except String Unit := do
   let pos : Nat := 100
   let fails := generated.filterMap fun i =>
@@ -463,7 +505,7 @@ def execTests : List TestCase := [
     expectEq "rsp" (s.reg .rsp) 0x7fff0000
     expectEq "rbp" (s.reg .rbp) 0x7fff0100⟩,
   ⟨"x86 exec win prologue epilogue", fun () => do
-    let s ← run [.winPrologue, .subRsp 200, .winEpilogue]
+    let s ← run (winPrologue ++ [.subRsp 200] ++ winEpilogue)
     expectEq "rsp" (s.reg .rsp) 0x7fff0000
     expectEq "rbp" (s.reg .rbp) 0x7fff0100
     expectEq "rsi" (s.reg .rsi) (st0.reg .rsi)

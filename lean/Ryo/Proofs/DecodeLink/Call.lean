@@ -314,7 +314,7 @@ inductive CallRead (fr : Frame) (c : Cursor) : Proto → Cursor → Prop
   | tail {f : Full.Opcode} {fo : Opnd Nat} {pre ps : List Item} {j : Item} {ws : List (BitVec 32)}
       {c' : Cursor} :
       Call.tailHead f fo = some (pre, j) →
-      Dec c c.pos (pre ++ ps ++ [fr.epilogue, j]) c'.pos → c' = atPos c c'.pos →
+      Dec c c.pos (pre ++ ps ++ (fr.epilogue ++ [j])) c'.pos → c' = atPos c c'.pos →
       ((∀ it ∈ ps, XmmOk it) → Call.paramItems fr.mode.pe ws = some ps) →
       CallRead fr c { op := f, ops := [fo, .words ws], pos := c.pos } c'
 
@@ -413,21 +413,21 @@ theorem callInsn_read {fr : Frame} {dropped : List DroppedStore} {c c' : Cursor}
       have := (dpp.append (Dec.single hn)).trans' (Dec.at_iff.mpr (Dec.at_iff.mp d8))
       simpa using this
     · rw [e8, eps']
-  have fin_tail : ∀ f fo j n1 n2, Call.tailHead f fo = some (preItems pr, j) →
-      decodeItem c3 = some (fr.epilogue, n1) →
-      decodeItem (atPos c3 (c3.pos + n1)) = some (j, n2) →
-      r = some (f, [fo, .words ws], false) → c6 = atPos c3 (c3.pos + n1 + n2) →
+  have fin_tail : ∀ f fo j (cE : Cursor) n2, Call.tailHead f fo = some (preItems pr, j) →
+      Dec c c3.pos fr.epilogue cE.pos → cE = atPos c cE.pos →
+      decodeItem cE = some (j, n2) →
+      r = some (f, [fo, .words ws], false) → c6 = atPos cE (cE.pos + n2) →
       CallRead fr c q c' := by
-    intro f fo j n1 n2 hhead hn1 hn2 hr hc6
+    intro f fo j cE n2 hhead dE eE hn2 hr hc6
     subst hr hc6
     dsimp only at h
     obtain ⟨he, rfl⟩ := pure_ok h
     cases he
     refine .tail hhead ?_ ?_ hps
-    · rw [eps'] at hn1 hn2
-      have := (dpp.append (Dec.single hn1)).append (Dec.single hn2)
+    · rw [eE] at hn2
+      have := (dpp.append dE).append (Dec.single hn2)
       simpa using this
-    · rw [eps']
+    · rw [eE]
   split at h6
   · obtain ⟨rfl, rfl⟩ := pure_ok h6
     obtain ⟨n, hn, rfl⟩ := run_tryItem_some h5
@@ -445,16 +445,29 @@ theorem callInsn_read {fr : Frame} {dropped : List DroppedStore} {c c' : Cursor}
     obtain ⟨n1, hn1, rfl⟩ := run_tryItem_some h5
     split at h6
     · rename_i hep
-      have : it0 = fr.epilogue := by simpa using hep
-      subst this
+      have hcons : fr.epilogue = it0 :: fr.epilogue.tail := by
+        revert hep; cases fr.epilogue <;> simp
+      obtain ⟨b, cE, hE, h6⟩ := bind_ok h6
+      split at h6
+      · obtain ⟨rfl, rfl⟩ := pure_ok h6
+        exact (hnone rfl).elim
+      rename_i hb
+      have hb : b = true := by simpa using hb
+      subst hb
+      obtain ⟨dE, eE⟩ := expectItems_dec hE
+      have dE' : Dec c c3.pos fr.epilogue cE.pos := by
+        rw [hcons]
+        obtain ⟨p3, rfl⟩ : ∃ p, c3 = atPos c p := ⟨_, eps'⟩
+        exact .cons hn1 (Dec.at_iff.mp (Dec.at_iff.mp dE))
+      have eE' : cE = atPos c cE.pos := by rw [eE, eps']
       obtain ⟨y, c7, h7, h6⟩ := bind_ok h6
       split at h6
       · obtain ⟨rfl, rfl⟩ := pure_ok h6
         obtain ⟨n2, hn2, rfl⟩ := run_tryItem_some h7
-        exact fin_tail _ _ _ n1 n2 (head_tailCall _) hn1 hn2 rfl rfl
+        exact fin_tail _ _ _ cE n2 (head_tailCall _) dE' eE' hn2 rfl rfl
       · obtain ⟨rfl, rfl⟩ := pure_ok h6
         obtain ⟨n2, hn2, rfl⟩ := run_tryItem_some h7
-        exact fin_tail _ _ _ n1 n2 (head_tailCallPtr _) hn1 hn2 rfl rfl
+        exact fin_tail _ _ _ cE n2 (head_tailCallPtr _) dE' eE' hn2 rfl rfl
       · obtain ⟨rfl, rfl⟩ := pure_ok h6
         exact (hnone rfl).elim
     · obtain ⟨rfl, rfl⟩ := pure_ok h6
@@ -489,7 +502,7 @@ theorem link_call {ctx : Ctx} {m : Mem} {c c' : Cursor} {rs : Array Reloc} {fr :
     · rw [hkk]; exact ⟨hca, hq, hb'⟩
   | @tail f fo pre ps j ws c'' hhead hd _ hps =>
     obtain ⟨hca, hq, hb'⟩ := hk.dec hd hb
-    refine .inr ⟨fo, ws, pre ++ ps ++ [fr.epilogue, j], rfl, rfl, fun hx => ?_, hca, hq, hb'⟩
+    refine .inr ⟨fo, ws, pre ++ ps ++ (fr.epilogue ++ [j]), rfl, rfl, fun hx => ?_, hca, hq, hb'⟩
     have := hps fun it hit => hx it (by simp [hit])
     simp [Call.tailSeq, hhead, this, bind, Option.bind, pure, Frame.epilogue]
 

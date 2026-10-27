@@ -39,7 +39,9 @@ def nops : List (List UInt8) := [
   [0x0f, 0x1f, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00],
   [0x66, 0x0f, 0x1f, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00]]
 
+/-- `winPrologue`'s bytes (`x86.rs` `WIN_PROLOGUE`). -/
 def winPrologueBytes : List UInt8 := [0x55, 0x57, 0x56, 0x48, 0x8d, 0x6c, 0x24, 0x10]
+/-- `winEpilogue`'s bytes (`x86.rs` `WIN_EPILOGUE`). -/
 def winEpilogueBytes : List UInt8 := [0x48, 0x8d, 0x65, 0xf0, 0x5e, 0x5f, 0x5d]
 
 /-- The padding items for `n` bytes: 9-byte `nop`s, then the remainder (`x86.rs` `padding`). -/
@@ -138,8 +140,10 @@ def encode (i : Item) (pos : BitVec 32) : List UInt8 × List Reloc :=
   let plain (bs : List UInt8) : List UInt8 × List Reloc := (bs, [])
   match i with
   | pushRbp => plain [0x55]
-  | winPrologue => plain winPrologueBytes
-  | winEpilogue => plain winEpilogueBytes
+  | push r => plain ((if r.ext then [(0x41 : UInt8)] else []) ++ [byte (0x50 ||| r.low)])
+  | pop r => plain ((if r.ext then [(0x41 : UInt8)] else []) ++ [byte (0x58 ||| r.low)])
+  | leaRbpRsp16 => plain [0x48, 0x8d, 0x6c, 0x24, 0x10]
+  | leaRspRbp16 => plain [0x48, 0x8d, 0x65, 0xf0]
   | subRsp v | addRsp v =>
     let ext : UInt8 := if i matches subRsp _ then 0xec else 0xc4
     if v.toNat < 128 then plain [0x48, 0x83, ext, byte v.toNat]
@@ -252,5 +256,8 @@ def encodeItems (items : List Item) (pos : Nat := 0) : List UInt8 × List Reloc 
     let (b, r) := i.encode (BitVec.ofNat 32 p)
     (bs ++ b, rs ++ r, p + b.length)) ([], [], pos)
   (bs, rs)
+
+theorem encodeItems_winPrologue : encodeItems winPrologue = (winPrologueBytes, []) := by decide
+theorem encodeItems_winEpilogue : encodeItems winEpilogue = (winEpilogueBytes, []) := by decide
 
 end Ryo.X86

@@ -2,7 +2,7 @@
 Ryo.Proofs.ArgRet — R's `arg` and `ret` steps against their fixed sequences (aot.md §C2
 "Shapes", toward M3 `decode_sound`; reduced.md §C0.4 for the registers, §C0.7 for the
 relation): `arg d, r` against `Asm.argStore`, `ret src, k` against
-`Asm.retLoads k src ++ [Asm.epilogue F mode, ret]`.
+`Asm.retLoads k src ++ Asm.epilogue F mode ++ [ret]`.
 
 **Registers.** R's registers at a call boundary are abstract bytes (`R.Regs`, a register not
 listed is `Uninit`); they relate to the x86 registers byte for byte as frame bytes do
@@ -1031,7 +1031,7 @@ jumped to, `rsp = fp + 16`, the saved registers restored; nothing else changed b
 theorem exec_epilogue (ctx : Ctx) (F : Nat) (m : Ryo.Obj.Mode) (y : X86.State)
     (hsp : m.pe = false → m.framePointer = false →
       y.rsp = y.reg .rbp - BitVec.ofNat 64 F ∧ F + 8 < 2 ^ 31) :
-    ∃ y', execItems ctx [epilogue F m, .ret] y = .ok y' ∧ y'.mem = y.mem ∧ y'.xmm = y.xmm ∧
+    ∃ y', execItems ctx (epilogue F m ++ [.ret]) y = .ok y' ∧ y'.mem = y.mem ∧ y'.xmm = y.xmm ∧
       y'.rsp = y.reg .rbp + 16 ∧ y'.rip = y.mem.read64 (y.reg .rbp + 8) ∧
       (∀ i : Fin 16, i ≠ 4 → i ≠ 5 → i ≠ 6 → i ≠ 7 → y'.regs i = y.regs i) ∧
       (m.pe = true ∨ m.framePointer = true → y'.reg .rbp = y.mem.read64 (y.reg .rbp)) ∧
@@ -1041,7 +1041,8 @@ theorem exec_epilogue (ctx : Ctx) (F : Nat) (m : Ryo.Obj.Mode) (y : X86.State)
       (m.pe = false → y'.reg .rsi = y.reg .rsi ∧ y'.reg .rdi = y.reg .rdi) := by
   unfold epilogue
   cases hpe : m.pe <;> cases hfp : m.framePointer <;>
-    simp only [hpe, hfp, Bool.false_eq_true, ↓reduceIte, execItems_cons, execItems_nil,
+    simp only [hpe, hfp, Bool.false_eq_true, ↓reduceIte, winEpilogue, List.cons_append,
+      List.nil_append, execItems_cons, execItems_nil,
       Item.exec, pure, Except.pure, ex_bind_ok', false_implies, forall_const,
       true_or, or_true] at hsp ⊢
   all_goals refine ⟨_, rfl, ?_⟩
@@ -1087,7 +1088,7 @@ theorem retBytes_congr {x y : X86.State} (h0 : x.regs 0 = y.regs 0) (h2 : x.regs
 
 /-- One R step of `ret src, k` (after the scopes: the parts of `k` read from `src` into the
 return registers, zero-extended, the incoming area read, and the function's end) against
-`retLoads k src ++ [epilogue F mode, ret]`: the x86 return registers relate to R's (`RetRel`),
+`retLoads k src ++ epilogue F mode ++ [ret]`: the x86 return registers relate to R's (`RetRel`),
 memory is unchanged, `rsp` is the frame's `fp + 16` (the caller's, past the return address)
 and `rip` the return address at `fp + 8`; with a frame pointer (or PE) the saved `rbp` is
 restored from `[fp]`, PE's `rsi`/`rdi` from `[fp - 16]`/`[fp - 8]`. Without a frame pointer,
@@ -1105,7 +1106,7 @@ theorem ret_step (ctx : Ctx) (F : Nat) {c : R.Code} {s : R.RState} {x : X86.Stat
       fin = R.exit s1 (.ret regs incoming) ∧
       s1.st.readFrame 16 c.argSize = .ok incoming ∧
       (16 + c.argSize ≤ 2 ^ 63 → BytesRel incoming (bytesAt x.mem (fpAddr x 16) c.argSize)) ∧
-      execItems ctx (retLoads k.toNat src ++ [epilogue F c.mode, .ret]) x = .ok x' ∧
+      execItems ctx (retLoads k.toNat src ++ (epilogue F c.mode ++ [.ret])) x = .ok x' ∧
       RetRel regs x' ∧ x'.mem = x.mem ∧
       x'.rsp = x.reg .rbp + 16 ∧ x'.rip = x.mem.read64 (x.reg .rbp + 8) ∧
       (c.mode.pe = true ∨ c.mode.framePointer = true → x'.reg .rbp = x.mem.read64 (x.reg .rbp)) ∧

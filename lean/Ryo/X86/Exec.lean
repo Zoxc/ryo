@@ -21,7 +21,7 @@ Flags (SDM Vol. 2, per instruction; `none` = undefined, see `Ryo.X86.State`):
 - `xor r32, r32` (`setReg r 0`) sets `ZF` and clears `CF OF SF`; the `mov` forms of `setReg`
   leave the flags alone. `sub rsp`/`add rsp` (`subRsp`/`addRsp`) set them as `sub`/`add`
   do; `inc` (`ctrInc`) as `add` of 1, but `CF`, which it keeps.
-- `lea`, `mov`, `movzx`/`movsx`, `setcc`, `push`/`pop`, `call`/`ret`, `leave`, `jmp`/`jcc`,
+- `lea` (`leaRbpRsp16`, `leaRspRbp16` too), `mov`, `movzx`/`movsx`, `setcc`, `push`/`pop`, `call`/`ret`, `leave`, `jmp`/`jcc`,
   SSE moves: no flags.
 
 Partial register writes: a 32-bit destination zero-extends into the 64-bit register; 8- and
@@ -179,16 +179,10 @@ def Item.exec (ctx : Ctx) (i : Item) (s : State) : Except Fault State :=
   let inFn (t : BitVec 32) : BitVec 64 := ctx.base + t.setWidth 64
   match i with
   | .pushRbp => pure (s0.push (s0.reg .rbp))
-  | .winPrologue =>
-    let s1 := ((s0.push (s0.reg .rbp)).push (s0.reg .rdi))
-    let s2 := s1.push (s1.reg .rsi)
-    pure (s2.setReg .rbp (s2.rsp + 16))
-  | .winEpilogue =>
-    let s1 := s0.setReg .rsp (s0.reg .rbp - 16)
-    let (rsi, s2) := s1.pop
-    let (rdi, s3) := (s2.setReg .rsi rsi).pop
-    let (rbp, s4) := (s3.setReg .rdi rdi).pop
-    pure (s4.setReg .rbp rbp)
+  | .push r => pure (s0.push (s0.reg r))
+  | .pop r => let (v, s1) := s0.pop; pure (s1.setReg r v)
+  | .leaRbpRsp16 => pure (s0.setReg .rbp (s0.rsp + 16))
+  | .leaRspRbp16 => pure (s0.setReg .rsp (s0.reg .rbp - 16))
   | .subRsp v =>
     let (r, f) := subF s0.rsp (v.signExtend 64)
     pure ((s0.setReg .rsp r).setFlags f)

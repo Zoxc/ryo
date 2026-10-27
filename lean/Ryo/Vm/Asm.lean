@@ -178,18 +178,18 @@ def probeFrom : Nat := 4096
 /-- `prologue` (`u32` arithmetic wrapping). -/
 def prologue (frameSize : Nat) (m : Mode) : List Item :=
   let (pre, alloc) : List Item × Nat :=
-    if m.pe then ([.winPrologue], u32 (frameSize + 2 ^ 32 - 16))
+    if m.pe then (winPrologue, u32 (frameSize + 2 ^ 32 - 16))
     else if m.framePointer then ([.pushRbp, .mov .rbp .rsp], frameSize)
     else ([], u32 (frameSize + 8))
   let probe : List Item :=
     if frameSize ≥ probeFrom then [.setReg .rax (BitVec.ofNat 64 alloc), .call .probe] else []
   pre ++ probe ++ (if alloc != 0 then [.subRsp (BitVec.ofNat 32 alloc)] else [])
 
-/-- `epilogue`. -/
-def epilogue (frameSize : Nat) (m : Mode) : Item :=
-  if m.pe then .winEpilogue
-  else if m.framePointer then .leave
-  else .addRsp (BitVec.ofNat 32 (frameSize + 8))
+/-- `epilogue`: one item, but on PE `winEpilogue`'s four (Rust's one `Item::WinEpilogue`). -/
+def epilogue (frameSize : Nat) (m : Mode) : List Item :=
+  if m.pe then winEpilogue
+  else if m.framePointer then [.leave]
+  else [.addRsp (BitVec.ofNat 32 (frameSize + 8))]
 
 /-- `Frame::fp`: `reg = fp` as the decoder reads it (`mov reg, rbp`, or `lea reg, [rsp + F]`
 read as `[rbp + 0]`). -/

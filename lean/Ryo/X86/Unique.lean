@@ -4,11 +4,8 @@ import Ryo.X86.Fetch
 Ryo.X86.Unique — when canonical items at one address execute alike (`ExecUnique`,
 `Ryo.X86.Fetch`).
 
-`ExecUnique ctx` is false, for every `ctx` (`not_execUnique`, and so `not_stepDeterministic`):
-`winPrologue` is four instructions, the first `push rbp`, so `pushRbp`'s linked bytes (`0x55`)
-are a prefix of `winPrologue`'s and both items are canonical; from a state with the prologue's
-bytes at `rip` both step, `rip` 1 or 8 bytes on. Every other pair is fine, given one hypothesis
-on the context:
+`execUnique`: `ExecUnique ctx` holds given one hypothesis on the context, and so `Step ctx` is a
+function (`step_deterministic_of_refsNear`, by `step_deterministic`):
 
 - `RefsNear ctx`: every reference (`ctx.addrOf r`) lies in the 4 GiB from the function's address
   up, `[ctx.base, ctx.base + 2^32)`. A linked `rel32` field holds only the low 32 bits of
@@ -17,23 +14,24 @@ on the context:
   long `jmp` of `branch .always t true` (`t` the low 32 bits of `ctx.addrOf r - ctx.base`) have
   the same bytes, as `lea rcx, r` and `leaTable t` do, and execute alike exactly when
   `ctx.addrOf r = ctx.base + t`. The hypothesis is the weakest on `ctx` that works:
-  `refsNear_of_execUniqueNoPrologue` derives it back. (It is not the linker's guarantee, a
-  target within ±2 GiB of each field: that one bounds `target - field`, this one the target's
-  offset from the function's start, which the model's unsigned in-function targets need.)
-- `ExecUniqueNoPrologue ctx`: `ExecUnique ctx` for items other than `winPrologue`;
-  `execUniqueNoPrologue` proves it under `RefsNear ctx`, and `step_deterministic_or_prologue`
-  gives the corresponding determinism of `Step`: two steps from one state agree, or the state has
-  `winPrologue`'s bytes at `rip`. (Excluding `winPrologue` from `Item.Canonical`, or fetching it
-  as its four instructions, would give `ExecUnique` under `RefsNear`, and `step_deterministic`.)
+  `refsNear_of_execUnique` derives it back (`execUnique_iff_refsNear`). (It is not the linker's
+  guarantee, a target within ±2 GiB of each field: that one bounds `target - field`, this one
+  the target's offset from the function's start, which the model's unsigned in-function targets
+  need.)
+
+That needs every item to be one instruction: the PE prologue and epilogue, one item each in
+Rust (`Item::WinPrologue`, whose first instruction is `push rbp`), are their four instructions
+here (`winPrologue`, `winEpilogue`, `Ryo.X86.Item`); as one item, `pushRbp`'s byte would be a
+prefix of the prologue's and both would step from the same state to different ones.
 
 The proof is a decoder (`Uniq.dec`, a proof device: not `Ryo.X86.Decode`'s `decodeItem`, whose
 round trip stays tested). It reads a byte list from the item's address and function position and
 returns a `Uniq.Key`: the item itself, or, for a `rel32` reference field, the kind of item and
 the low 32 bits of the target. `Uniq.dec_linked`: for an item `Uniq.Ok` at its position (which
-`Item.Canonical`, without `winPrologue`, implies: `Uniq.ok_of_canonical`), `dec` of its linked
-bytes followed by anything returns `Uniq.keyOf` of it and the rest. So of two canonical items at
-one address (one's bytes a prefix of the other's, `Uniq.prefix_of_bytesAt`) the keys agree, and
-under `RefsNear` the key determines `Item.exec` (`Uniq.exec_key`).
+`Item.Canonical` implies: `Uniq.ok_of_canonical`), `dec` of its linked bytes followed by anything
+returns `Uniq.keyOf` of it and the rest. So of two canonical items at one address (one's bytes a
+prefix of the other's, `Uniq.prefix_of_bytesAt`) the keys agree, and under `RefsNear` the key
+determines `Item.exec` (`Uniq.exec_key`).
 
 The decoder lemmas go by item family (`Uniq.fam_*`): prefixes (`0x66`, REX, through
 `Uniq.rexOf_spec`: the REX bits are the operands' extension bits), opcode, ModRM/SIB/displacement
@@ -322,9 +320,9 @@ def native (a : BitVec 64) (pl : Nat) (p66 : Bool) (rex : Nat) : List Nat → Op
         match o with
         | .mem m =>
           if reg = .rsp then
-            match r with
-            | 0x5e :: 0x5f :: 0x5d :: r => some (.item .winEpilogue, r)
-            | _ => none
+            if m = ⟨.rbp, 0xfffffff0⟩ then pure (.item .leaRspRbp16, r) else none
+          else if reg = .rbp then
+            if m = ⟨.rsp, 16⟩ then pure (.item .leaRbpRsp16, r) else none
           else pure (.item (.leaM reg m), r)
         | .rip d => pure (.ref (.lea reg) (tgt d), r)
         | .reg _ => none
@@ -421,6 +419,11 @@ def dec (a : BitVec 64) (p : BitVec 32) : List Nat → Option (Key × List Nat)
     if 0x40 ≤ b ∧ b < 0x50 then native a 1 false b r
     else if b = 0x66 then dec66 a r
     else if b = 0x55 then some (.item .pushRbp, r)
+    else if b = 0x56 then some (.item (.push .rsi), r)
+    else if b = 0x57 then some (.item (.push .rdi), r)
+    else if b = 0x5d then some (.item (.pop .rbp), r)
+    else if b = 0x5e then some (.item (.pop .rsi), r)
+    else if b = 0x5f then some (.item (.pop .rdi), r)
     else if b = 0x90 then some (.item (.nop 1), r)
     else if b = 0xcc then some (.item .int3, r)
     else if b = 0xc9 then some (.item .leave, r)
@@ -497,13 +500,14 @@ def keyOf (ctx : Ctx) : Item → Key
 
 /-- What `dec` needs of an item at position `pos`. -/
 def Ok (pos : BitVec 32) : Item → Prop
-  | .winPrologue => False
   | .tableEntry .. => False
   | .branch _ t l => l = false → fitsSigned 8 (t - (pos + 2)) = true
   | .nop n => 1 ≤ n ∧ n ≤ 9
   | .ld w sx _ _ => w = .b ∨ w = .w ∨ sx = false
   | .stImm w _ imm => (w = .b → fitsSigned 8 imm = true) ∧ (w = .w → fitsSigned 16 imm = true)
-  | .leaM dst _ => dst ≠ .rsp
+  | .leaM dst _ => dst ≠ .rsp ∧ dst ≠ .rbp
+  | .push r => r = .rdi ∨ r = .rsi
+  | .pop r => r = .rsi ∨ r = .rdi ∨ r = .rbp
   | .aluImm _ w rm imm =>
     rm ≠ .reg .rsp ∧ (w = .b → fitsSigned 8 imm = true) ∧ (w = .w → fitsSigned 16 imm = true)
   | .imul w _ _ | .imulImm w _ _ _ | .shift _ w _ _ => w = .d ∨ w = .q
@@ -852,14 +856,28 @@ theorem fam_alu (ctx : Ctx) (pos : Nat) (rest : List Nat) (op : Alu) (w : W) (re
 macro "fixed" : tactic => `(tactic| (
   rw [linkedAt_plain _ _ _ rfl]
   simp [decAt, Item.encode, dec, dec0f, dec66, native, decModrm, regOf, Reg.ofNum?, keyOf,
-    winEpilogueBytes, Opnd.mem?, Opnd.rm?, Opnd.reg?, rd8, rd32]))
+    Opnd.mem?, Opnd.rm?, Opnd.reg?, rd8, rd32, Reg.ext, Reg.low, Reg.num, byte]))
 
 theorem fam_fixed (ctx : Ctx) (pos : Nat) (rest : List Nat) (i : Item)
-    (hi : i = .pushRbp ∨ i = .winEpilogue ∨ i = .callRax ∨ i = .callMemRax ∨ i = .jmpRax ∨
-      i = .testAl ∨ i = .testRax ∨ i = .leave ∨ i = .ret ∨ i = .ud2 ∨ i = .loadTableEntry ∨
-      i = .addRaxRcx ∨ i = .int3) :
+    (hi : i = .pushRbp ∨ i = .leaRbpRsp16 ∨ i = .leaRspRbp16 ∨ i = .callRax ∨ i = .callMemRax ∨
+      i = .jmpRax ∨ i = .testAl ∨ i = .testRax ∨ i = .leave ∨ i = .ret ∨ i = .ud2 ∨
+      i = .loadTableEntry ∨ i = .addRaxRcx ∨ i = .int3) :
     decAt ctx pos ((i.linkedAt ctx pos).map UInt8.toNat ++ rest) = some (keyOf ctx i, rest) := by
-  rcases hi with rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl <;> fixed
+  rcases hi with rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl <;> fixed
+
+theorem fam_push (ctx : Ctx) (pos : Nat) (rest : List Nat) (r : Reg)
+    (h : Ok (BitVec.ofNat 32 pos) (.push r)) :
+    decAt ctx pos (((Item.push r).linkedAt ctx pos).map UInt8.toNat ++ rest) =
+      some (keyOf ctx (.push r), rest) := by
+  simp only [Ok] at h
+  rcases h with rfl | rfl <;> fixed
+
+theorem fam_pop (ctx : Ctx) (pos : Nat) (rest : List Nat) (r : Reg)
+    (h : Ok (BitVec.ofNat 32 pos) (.pop r)) :
+    decAt ctx pos (((Item.pop r).linkedAt ctx pos).map UInt8.toNat ++ rest) =
+      some (keyOf ctx (.pop r), rest) := by
+  simp only [Ok] at h
+  rcases h with rfl | rfl | rfl <;> fixed
 
 theorem fam_callR11 (ctx : Ctx) (pos : Nat) (rest : List Nat) (d : BitVec 8) :
     decAt ctx pos (((Item.callR11 d).linkedAt ctx pos).map UInt8.toNat ++ rest) =
@@ -1027,7 +1045,7 @@ theorem fam_movd (ctx : Ctx) (pos : Nat) (rest : List Nat) (toX : Bool) (x : Nat
 
 /-! ### Every canonical item decodes -/
 
-theorem ok_of_wf (p : BitVec 32) (i : Item) (hw : i.wf p = true) (hp : i ≠ .winPrologue)
+theorem ok_of_wf (p : BitVec 32) (i : Item) (hw : i.wf p = true)
     (ht : ∀ b e, i ≠ .tableEntry b e) : Ok p i := by
   cases i
   case branch c t l => cases l <;> simp_all [Item.wf, Ok]
@@ -1040,8 +1058,8 @@ theorem ok_of_wf (p : BitVec 32) (i : Item) (hw : i.wf p = true) (hp : i ≠ .wi
   all_goals simp_all [Item.wf, Ok, Item.rmWf, Item.memWf, Reg.usable, or_assoc]
 
 theorem ok_of_spFrame (p : BitVec 32) (j : Item) (f : BitVec 32) (hw : j.wf p = true)
-    (hp : j ≠ .winPrologue) (ht : ∀ b e, j ≠ .tableEntry b e) : Ok p (j.spFrame f) := by
-  have := ok_of_wf p j hw hp ht
+    (ht : ∀ b e, j ≠ .tableEntry b e) : Ok p (j.spFrame f) := by
+  have := ok_of_wf p j hw ht
   cases j
   case aluImm op w rm imm =>
     rcases rm with r | m <;> simp_all [Item.spFrame, Item.mapMem, Ok]
@@ -1057,8 +1075,9 @@ theorem dec_linked (ctx : Ctx) (pos : Nat) (rest : List Nat) (i : Item)
     (h : Ok (BitVec.ofNat 32 pos) i) :
     decAt ctx pos ((i.linkedAt ctx pos).map UInt8.toNat ++ rest) = some (keyOf ctx i, rest) := by
   cases i
-  case winPrologue => exact h.elim
   case tableEntry => exact h.elim
+  case push r => exact fam_push ctx pos rest r h
+  case pop r => exact fam_pop ctx pos rest r h
   case subRsp v => simpa using fam_subRsp ctx pos rest v true
   case addRsp v => simpa using fam_subRsp ctx pos rest v false
   case setReg r v => exact fam_setReg ctx pos rest r v
@@ -1166,85 +1185,15 @@ theorem exec_key (ctx : Ctx) (H : RefsNear ctx) (i : Item) (s : State) :
 
 end Uniq
 
-/-! ### `ExecUnique` fails: `winPrologue` starts with `pushRbp` -/
+/-! ### `ExecUnique` -/
 
 namespace Uniq
 
-/-- A state whose memory holds `winPrologueBytes` at `addrAt ctx 0`, `rip` there. -/
-def prologueState (ctx : Ctx) : State :=
-  { (default : State) with
-    rip := addrAt ctx 0
-    mem := fun a => winPrologueBytes.getD (a - addrAt ctx 0).toNat 0 }
-
-theorem prologue_at (ctx : Ctx) :
-    ItemAt ctx (prologueState ctx).mem .pushRbp 0 ∧ ItemAt ctx (prologueState ctx).mem .winPrologue 0 := by
-  have hm : ∀ j, j < 8 → (prologueState ctx).mem (addrAt ctx 0 + BitVec.ofNat 64 j) =
-      winPrologueBytes.getD j 0 := by
-    intro j hj
-    simp only [prologueState]
-    rw [show addrAt ctx 0 + BitVec.ofNat 64 j - addrAt ctx 0 = BitVec.ofNat 64 j by bv_omega,
-      BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]
-  constructor
-  · unfold ItemAt; rw [linkedAt_plain _ _ _ rfl]
-    intro j hj
-    simp [Item.encode] at hj; subst hj
-    exact hm 0 (by omega)
-  · unfold ItemAt; rw [linkedAt_plain _ _ _ rfl]
-    intro j hj
-    simp [Item.encode, winPrologueBytes] at hj
-    rw [hm j hj]
-    simp [Item.encode, List.getD_eq_getElem?_getD, winPrologueBytes]
-    rw [List.getElem?_eq_getElem (by simp; omega)]; rfl
-
-theorem prologue_canonical : Item.Canonical 0 .pushRbp ∧ Item.Canonical 0 .winPrologue :=
-  ⟨⟨by intros; simp, .inl rfl⟩, ⟨by intros; simp, .inl rfl⟩⟩
-
-/-- Both items run from `prologueState`, to different states (`rip` 1 or 8 bytes on). -/
-theorem prologue_exec (ctx : Ctx) : ∃ y z, Item.pushRbp.exec ctx (prologueState ctx) = .ok y ∧
-    Item.winPrologue.exec ctx (prologueState ctx) = .ok z ∧ y ≠ z := by
-  refine ⟨_, _, rfl, rfl, fun h => ?_⟩
-  have h1 := congrArg State.rip h
-  simp only [Item.exec, State.push, State.setReg, State.setMem, State.jump, State.rsp,
-    State.reg] at h1
-  simp [Item.size, Item.len, Item.encode, winPrologueBytes, prologueState] at h1
-
-end Uniq
-
-/-- `ExecUnique` is false for every `ctx`: `pushRbp`'s byte `0x55` is the first of
-`winPrologue`'s, and both are canonical. -/
-theorem not_execUnique (ctx : Ctx) : ¬ ExecUnique ctx := by
-  intro h
-  obtain ⟨y, z, hy, hz, hne⟩ := Uniq.prologue_exec ctx
-  have := h _ _ _ 0 0 Uniq.prologue_canonical.1 Uniq.prologue_canonical.2
-    (Uniq.prologue_at ctx).1 (Uniq.prologue_at ctx).2 rfl
-  rw [hy, hz] at this
-  exact hne (Except.ok.inj this)
-
-/-- Nor is `Step ctx` a function: from `prologueState` both `pushRbp` and `winPrologue` step. -/
-theorem not_stepDeterministic (ctx : Ctx) : ¬ StepDeterministic ctx := by
-  intro h
-  obtain ⟨y, z, hy, hz, hne⟩ := Uniq.prologue_exec ctx
-  exact hne (h _ y z (.exec _ 0 Uniq.prologue_canonical.1 (Uniq.prologue_at ctx).1 rfl hy)
-    (.exec _ 0 Uniq.prologue_canonical.2 (Uniq.prologue_at ctx).2 rfl hz))
-
-/-! ### Uniqueness without the prologue -/
-
-/-- `ExecUnique` for items other than `winPrologue` (whose bytes start with `pushRbp`'s). -/
-def ExecUniqueNoPrologue (ctx : Ctx) : Prop :=
-  ∀ (x : State) (i j : Item) (p q : Nat), i.Canonical p → j.Canonical q →
-    i ≠ .winPrologue → j ≠ .winPrologue →
-    ItemAt ctx x.mem i p → ItemAt ctx x.mem j q →
-    addrAt ctx p = addrAt ctx q → i.exec ctx x = j.exec ctx x
-
-namespace Uniq
-
-theorem ok_of_canonical (p : Nat) (i : Item) (hc : i.Canonical p) (hp : i ≠ .winPrologue) :
-    Ok (BitVec.ofNat 32 p) i := by
+theorem ok_of_canonical (p : Nat) (i : Item) (hc : i.Canonical p) : Ok (BitVec.ofNat 32 p) i := by
   obtain ⟨ht, hw | ⟨j, f, hw, rfl⟩⟩ := hc
-  · exact ok_of_wf _ i hw hp ht
-  · have hjp : j ≠ .winPrologue := by rintro rfl; exact hp rfl
-    have hjt : ∀ b e, j ≠ .tableEntry b e := by rintro b e rfl; exact ht b e rfl
-    exact ok_of_spFrame _ j f hw hjp hjt
+  · exact ok_of_wf _ i hw ht
+  · have hjt : ∀ b e, j ≠ .tableEntry b e := by rintro b e rfl; exact ht b e rfl
+    exact ok_of_spFrame _ j f hw hjt
 
 theorem canonical_congr {p q : Nat} (h : BitVec.ofNat 32 p = BitVec.ofNat 32 q) (i : Item) :
     i.Canonical p ↔ i.Canonical q := by
@@ -1284,10 +1233,10 @@ theorem key_eq (ctx : Ctx) (m : Mem) (i j : Item) (p : Nat) (hi : Ok (BitVec.ofN
 
 end Uniq
 
-/-- Canonical items other than `winPrologue` whose linked bytes are at the same address execute
-alike, given `RefsNear`. -/
-theorem execUniqueNoPrologue (ctx : Ctx) (H : RefsNear ctx) : ExecUniqueNoPrologue ctx := by
-  intro x i j p q ci cj hpi hpj hi hj ha
+/-- Canonical items whose linked bytes are at the same address execute alike, given
+`RefsNear`. -/
+theorem execUnique (ctx : Ctx) (H : RefsNear ctx) : ExecUnique ctx := by
+  intro x i j p q ci cj hi hj ha
   have h32 : BitVec.ofNat 32 p = BitVec.ofNat 32 q := by
     have : BitVec.ofNat 64 p = BitVec.ofNat 64 q := by
       simpa [addrAt] using ha
@@ -1295,8 +1244,8 @@ theorem execUniqueNoPrologue (ctx : Ctx) (H : RefsNear ctx) : ExecUniqueNoProlog
   rw [(Uniq.canonical_congr h32 j).symm] at cj
   unfold ItemAt at hj
   rw [← Uniq.linkedAt_congr ctx ha h32, ← ha] at hj
-  have hk := Uniq.key_eq ctx x.mem i j p (Uniq.ok_of_canonical p i ci hpi)
-    (Uniq.ok_of_canonical p j cj hpj) hi hj
+  have hk := Uniq.key_eq ctx x.mem i j p (Uniq.ok_of_canonical p i ci)
+    (Uniq.ok_of_canonical p j cj) hi hj
   rw [Uniq.exec_key ctx H i, Uniq.exec_key ctx H j, hk]
 
 namespace Uniq
@@ -1313,7 +1262,7 @@ end Uniq
 
 /-- `RefsNear` is needed: a reference `r` farther away gives `jmp r` the bytes of a long
 `branch .always`, which jumps elsewhere. -/
-theorem refsNear_of_execUniqueNoPrologue (ctx : Ctx) (h : ExecUniqueNoPrologue ctx) : RefsNear ctx := by
+theorem refsNear_of_execUnique (ctx : Ctx) (h : ExecUnique ctx) : RefsNear ctx := by
   intro r
   apply Classical.byContradiction
   intro hr
@@ -1339,8 +1288,7 @@ theorem refsNear_of_execUniqueNoPrologue (ctx : Ctx) (h : ExecUniqueNoPrologue c
     simp [L, List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hj]
   have hm' : ItemAt ctx x.mem (.branch .always t true) 0 := by
     unfold ItemAt; rw [← hl]; exact hm
-  have he := h x _ _ 0 0 ⟨by intros; simp, .inl rfl⟩ ⟨by intros; simp, .inl rfl⟩
-    (by simp) (by simp) hm hm' rfl
+  have he := h x _ _ 0 0 ⟨by intros; simp, .inl rfl⟩ ⟨by intros; simp, .inl rfl⟩ hm hm' rfl
   have h1 := congrArg (fun r => match r with | .ok s => s.rip | .error _ => 0) he
   simp only [Item.exec, pure, Except.pure, Cond.eval, State.jump, bind, Except.bind] at h1
   simp only [t, Uniq.low32] at h1
@@ -1350,22 +1298,12 @@ theorem refsNear_of_execUniqueNoPrologue (ctx : Ctx) (h : ExecUniqueNoPrologue c
   rw [BitVec.lt_def] at this
   simpa using this
 
-/-- `Step` is deterministic but at `winPrologue`'s bytes, given `RefsNear`. -/
-theorem step_deterministic_or_prologue {ctx : Ctx} (H : RefsNear ctx) {x y z : State}
-    (hy : Step ctx x y) (hz : Step ctx x z) :
-    y = z ∨ ∃ p, ItemAt ctx x.mem .winPrologue p ∧ x.rip = addrAt ctx p := by
-  cases hy with
-  | exec i p ci hi hr he =>
-    cases hz with
-    | exec j q cj hj hr' he' =>
-      by_cases hpi : i = .winPrologue
-      · subst hpi; exact .inr ⟨p, hi, hr⟩
-      by_cases hpj : j = .winPrologue
-      · subst hpj; exact .inr ⟨q, hj, hr'⟩
-      left
-      have := execUniqueNoPrologue ctx H x i j p q ci cj hpi hpj hi hj (hr ▸ hr')
-      rw [this, he'] at he
-      cases he
-      rfl
+/-- `ExecUnique` holds exactly when every reference is near (`RefsNear`). -/
+theorem execUnique_iff_refsNear (ctx : Ctx) : ExecUnique ctx ↔ RefsNear ctx :=
+  ⟨refsNear_of_execUnique ctx, execUnique ctx⟩
+
+/-- `Step` is deterministic, given `RefsNear`. -/
+theorem step_deterministic_of_refsNear {ctx : Ctx} (H : RefsNear ctx) : StepDeterministic ctx :=
+  step_deterministic (execUnique ctx H)
 
 end Ryo.X86

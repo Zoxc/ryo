@@ -236,6 +236,23 @@ theorem fuel_run {c c' : Cursor} {n : Nat} (h : DM.fuel.run c = .ok (n, c')) : c
 theorem pos_run' {c c' : Cursor} {n : Nat} (h : DM.pos.run c = .ok (n, c')) : n = c.pos ∧ c' = c := by
   rw [run_pos] at h; cases h; exact ⟨rfl, rfl⟩
 
+/-- `expectItems want` that succeeds read `want`. -/
+theorem expectItems_dec : ∀ {want : List Item} {c c' : Cursor},
+    (DM.expectItems want).run c = .ok (true, c') → Dec c c.pos want c'.pos ∧ c' = atPos c c'.pos
+  | [], c, c', h => by
+    obtain ⟨-, rfl⟩ := pure_ok h; exact ⟨.nil _, rfl⟩
+  | w :: ws, c, c', h => by
+    unfold DM.expectItems at h
+    obtain ⟨y, c1, h1, h⟩ := bind_ok h
+    split at h
+    · obtain ⟨he, -⟩ := pure_ok h; cases he
+    · rename_i hy
+      have : y = some w := by simpa using hy
+      subst this
+      obtain ⟨n, hn, rfl⟩ := run_tryItem_some h1
+      obtain ⟨d, e⟩ := expectItems_dec h
+      exact ⟨.cons hn (Dec.at_iff.mp d), e⟩
+
 theorem item_dec {c c' : Cursor} {i : Item} (h : DM.item.run c = .ok (i, c')) :
     Dec c c.pos [i] c'.pos ∧ c' = atPos c c'.pos := by
   obtain ⟨n, hn, rfl⟩ := run_item h

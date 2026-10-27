@@ -2,12 +2,18 @@
 Ryo.X86.Item — the canonical machine-code elements of ryo's AOT code (x86.md §B.1, §B.2).
 
 Mirrors `vm/bytecode/src/asm/x86.rs` (`Reg`, `Cond`, `W`, `M`, `Rm`, `Alu`, `Sh`, `Item`) and
-`asm/encode.rs` (`Ref`, `Reloc`), constructor for constructor. Rust's fixed-width integers are
+`asm/encode.rs` (`Ref`, `Reloc`), constructor for constructor, but for the PE prologue and
+epilogue: Rust's `Item::WinPrologue` (`push rbp; push rdi; push rsi; lea rbp, [rsp + 16]`) and
+`Item::WinEpilogue` (`lea rsp, [rbp - 16]; pop rsi; pop rdi; pop rbp`) are one item each, here
+their four instructions (`winPrologue`, `winEpilogue`: `pushRbp`, `push`, `pop`, `leaRbpRsp16`,
+`leaRspRbp16`), so that every item is one instruction and the items' encodings are prefix-free
+(`Ryo.X86.Unique`). Same bytes. Rust's fixed-width integers are
 `BitVec`s of the same width (wrapping arithmetic as in Rust), except small enumerations (`Nop`'s
 length, `Sse`'s size and the `xmm` numbers), which are `Nat`s constrained by `Item.wf`.
 
 `Item.wf` says which items the encoder can emit: exactly those whose encoding decodes back to
-them (`decodeItem (encode i) = some i`, tested in `RyoTest/X86.lean`). Rust states the same
+them (`decodeItem (encode i) = some i`, tested in `RyoTest/X86.lean`; the PE prologue's and
+epilogue's instructions inside their sequence, where alone `decodeItem` reads them). Rust states the same
 constraints as `debug_assert`s and as the checks of its decoder.
 -/
 import Lean.Data.Json
@@ -184,10 +190,14 @@ deriving DecidableEq, Repr, Inhabited, ToJson, FromJson
 inductive Item
   /-- `push rbp` -/
   | pushRbp
-  /-- `push rbp; push rdi; push rsi; lea rbp, [rsp + 16]` (PE) -/
-  | winPrologue
-  /-- `lea rsp, [rbp - 16]; pop rsi; pop rdi; pop rbp` (PE) -/
-  | winEpilogue
+  /-- `push r` (`rdi`, `rsi`: the PE prologue's, `winPrologue`) -/
+  | push (r : Reg)
+  /-- `pop r` (`rsi`, `rdi`, `rbp`: the PE epilogue's, `winEpilogue`) -/
+  | pop (r : Reg)
+  /-- `lea rbp, [rsp + 16]` (the end of the PE prologue, `winPrologue`) -/
+  | leaRbpRsp16
+  /-- `lea rsp, [rbp - 16]` (the start of the PE epilogue, `winEpilogue`) -/
+  | leaRspRbp16
   /-- `sub rsp, imm` (`imm8` below 128, else `imm32`) -/
   | subRsp (v : BitVec 32)
   /-- `add rsp, imm` -/
@@ -342,8 +352,17 @@ def wf (pos : BitVec 32) : Item → Bool
   | mulQ rm => rmWf rm
   | sse _ size x m => (size == 4 || size == 8 || size == 16) && x < 8 && m.base == .rbp
   | movd _ x r => x < 8 && r.usable
+  | push r => r == .rdi || r == .rsi
+  | pop r => r == .rsi || r == .rdi || r == .rbp
   | _ => true
 
 end Item
+
+/-- The PE prologue, Rust's `Item::WinPrologue`: `rbp`, `rdi` and `rsi` saved, `rbp` the saved
+`rbp`'s slot (`Ryo.Vm.Asm.prologue`). -/
+def winPrologue : List Item := [.pushRbp, .push .rdi, .push .rsi, .leaRbpRsp16]
+
+/-- The PE epilogue, Rust's `Item::WinEpilogue` (`Ryo.Vm.Asm.epilogue`). -/
+def winEpilogue : List Item := [.leaRspRbp16, .pop .rsi, .pop .rdi, .pop .rbp]
 
 end Ryo.X86

@@ -33,14 +33,12 @@ semantics (`Ryo.X86.Exec`, co-simulated on the CPU, x86.md §B.3) together with 
 share bytes with them but not their meaning: `nop 0` is no bytes at all, `setcc .always` is
 `seto`'s bytes, and a `tableEntry` is any 4 bytes. Even so `Step` is a relation: two items
 whose linked bytes are at the same address (two `call`s whose references the linker put at
-one address) each give a `Step`. Determinism is a separate question, not proved here:
-`ExecUnique ctx` (two canonical items whose linked bytes are at the same address execute alike
-on every state with that memory) is a named hypothesis, and `step_deterministic` derives from
-it that `Step ctx` is a function (`faults_not_step`: nor does a faulting state step). We expect
-it to hold (x86 decoding is prefix-determined, and canonical items with equal linked bytes
-differ only in what the linker resolved to the same address), but proving it means the
-encoding is prefix-free on canonical items, which is a strengthening of the decoder's round
-trip (tested, not proved, `RyoTest/X86.lean`).
+one address) each give a `Step`. Determinism: `ExecUnique ctx` (two canonical items whose
+linked bytes are at the same address execute alike on every state with that memory), from
+which `step_deterministic` derives that `Step ctx` is a function (`faults_not_step`: nor does a
+faulting state step). `Ryo.X86.Unique` proves it given `RefsNear ctx` (`execUnique`: x86
+decoding is prefix-determined, and canonical items with equal linked bytes differ only in what
+the linker resolved to the same address).
 
 Calls leave the function: `Step` executes `call` as `Item.exec` does (a push and a jump); what
 runs at the target is the environment's (`Ryo.Proofs.Handler`'s `Ret` for handlers,
