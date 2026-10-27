@@ -10,11 +10,18 @@ use ryo_bytecode::full::Opcode;
 
 use super::emit::{IntOp, Width, opw};
 use super::place::{Loc, PlaceVal};
-use super::{FnCx, NeedsNative, native};
+use super::{FnCx, LayoutCx, NeedsNative, native};
 
 /// Copies above this size between two memory places go through `memmove` instead of a
 /// temporary slot.
 const MAX_TEMP_COPY: u32 = 256;
+
+/// See [`FnCx::split`].
+enum Split {
+    One(Width),
+    Pieces(Vec<(u32, Width)>),
+    Block,
+}
 
 impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// Copies `size` bytes from `src` to `dst`.
@@ -50,20 +57,20 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 if size == 0 {
                     return;
                 }
-                match Width::of_size(u64::from(size)) {
-                    Some(w) => {
+                // Split unless a piece would overwrite the pointer `p`.
+                match self.split(size, Width::W64, p + 8 <= d || p >= d + size) {
+                    Split::One(w) => {
                         self.op(opw(IntOp::Load, w), &[d, p, k as u32]);
                     }
-                    // Split unless a piece would overwrite the pointer `p`.
-                    None if size <= super::SPLIT_MAX && (p + 8 <= d || p >= d + size) => {
-                        for (o, w) in super::pieces(size, Width::W64, &self.cuts) {
+                    Split::Pieces(ps) => {
+                        for (o, w) in ps {
                             self.op(opw(IntOp::Load, w), &[d + o, p, (k + o as i32) as u32]);
                         }
                     }
-                    None => {
+                    Split::Block => {
                         self.op(Opcode::LoadCopy, &[d, p, k as u32, size]);
                     }
-                };
+                }
             }
         }
     }
@@ -76,20 +83,145 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 if size == 0 {
                     return;
                 }
-                match Width::of_size(u64::from(size)) {
-                    Some(w) => {
+                match self.split(size, Width::W64, true) {
+                    Split::One(w) => {
                         self.op(opw(IntOp::Store, w), &[p, k as u32, s]);
                     }
-                    None if size <= super::SPLIT_MAX => {
-                        for (o, w) in super::pieces(size, Width::W64, &self.cuts) {
+                    Split::Pieces(ps) => {
+                        for (o, w) in ps {
                             self.op(opw(IntOp::Store, w), &[p, (k + o as i32) as u32, s + o]);
                         }
                     }
-                    None => {
+                    Split::Block => {
                         self.op(Opcode::StoreCopy, &[p, k as u32, s, size]);
                     }
-                };
+                }
             }
+        }
+    }
+
+    /// How a `size`-byte copy is emitted: one access if `size` is a width, else (if
+    /// `may_split`, the pieces not clobbering an operand) pieces up to `max` cut at
+    /// [`FnCx::cuts`] when at most [`SPLIT_MAX`] bytes, else the block handler.
+    fn split(&self, size: u32, max: Width, may_split: bool) -> Split {
+        match Width::of_size(u64::from(size)) {
+            Some(w) => Split::One(w),
+            None if size <= SPLIT_MAX && may_split => Split::Pieces(pieces(size, max, &self.cuts)),
+            None => Split::Block,
+        }
+    }
+
+    /// Copies `size` bytes between two frame slots.
+    pub fn mov(&mut self, d: u32, s: u32, size: u32) {
+        if size == 0 || d == s {
+            return;
+        }
+        match self.split(size, Width::W128, d + size <= s || s + size <= d) {
+            Split::One(w) => {
+                self.op(opw(IntOp::Mov, w), &[d, s]);
+            }
+            Split::Pieces(ps) => {
+                for (o, w) in ps {
+                    self.op(opw(IntOp::Mov, w), &[d + o, s + o]);
+                }
+            }
+            Split::Block => {
+                self.op(Opcode::Copy, &[d, s, size]);
+            }
+        }
+    }
+
+    /// Zeroes `size` bytes of slots at `d`: `imm 0` pieces up to [`SPLIT_MAX`] bytes, else
+    /// `zero`.
+    pub fn zero(&mut self, d: u32, size: u32) {
+        if size > SPLIT_MAX {
+            self.op(Opcode::Zero, &[d, size]);
+            return;
+        }
+        for (o, w) in pieces(size, Width::W64, &self.cuts) {
+            self.imm(w, d + o, 0);
+        }
+    }
+
+    /// Runs `f` (a copy of a value of `layout`) with [`FnCx::cuts`] at the layout's field
+    /// offsets.
+    pub fn with_cuts<R>(&mut self, layout: TyAndLayout<'tcx>, f: impl FnOnce(&mut Self) -> R) -> R {
+        let mut cuts = Vec::new();
+        if layout.size.bytes() <= u64::from(SPLIT_MAX) {
+            field_cuts(&self.lcx(), layout, 0, SPLIT_MAX, &mut cuts);
+        }
+        let old = std::mem::replace(&mut self.cuts, cuts);
+        let r = f(self);
+        self.cuts = old;
+        r
+    }
+
+    /// Copies `n` bytes (a constant number of elements of `el`, from [`FnCx::small_block`])
+    /// as pieces, cut at `el`'s fields when it is one element.
+    pub fn mem_copy_elems(&mut self, dst: u32, src: u32, el: TyAndLayout<'tcx>, n: u32) {
+        if u64::from(n) == el.size.bytes() { self.with_cuts(el, |fx| fx.mem_copy_pieces(dst, src, n)) } else { self.mem_copy_pieces(dst, src, n) }
+    }
+
+    /// The bytes of `count` elements of `el` when `count` is a constant small enough for
+    /// [`FnCx::mem_copy_elems`] / [`FnCx::mem_set_pieces`].
+    pub fn small_block(el: TyAndLayout<'tcx>, count: Option<u128>) -> Option<u32> {
+        let n = count?.checked_mul(u128::from(el.size.bytes()))?;
+        (n <= u128::from(SPLIT_MAX)).then_some(n as u32)
+    }
+
+    /// The bytes of `count` (a slot) elements of `el`, in a new temporary: the length of a
+    /// `memcpy`/`memmove`/`memset` handler call.
+    pub fn block_bytes(&mut self, count: u32, el: TyAndLayout<'tcx>) -> u32 {
+        let n = self.temp8();
+        self.op_imm(IntOp::Mul, Width::W64, n, count, u128::from(el.size.bytes()));
+        n
+    }
+
+    /// Copies `n <= SPLIT_MAX` bytes from the memory at `src` to the memory at `dst` as
+    /// `load`/`store` pieces (cut at [`FnCx::cuts`]) through a temporary: every piece is loaded
+    /// before the first store, so overlapping ranges copy as `memmove` does.
+    pub fn mem_copy_pieces(&mut self, dst: u32, src: u32, n: u32) {
+        debug_assert!(n <= SPLIT_MAX);
+        if n == 0 {
+            return;
+        }
+        let t = self.frame.temp(u64::from(n), 16);
+        self.load_pieces(t, src, n);
+        self.store_pieces(dst, t, n);
+    }
+
+    /// `load.wK d+i, [p+i]` pieces (`K` <= 64) for `n` bytes.
+    pub fn load_pieces(&mut self, d: u32, p: u32, n: u32) {
+        for (o, w) in pieces(n, Width::W64, &self.cuts) {
+            self.op(opw(IntOp::Load, w), &[d + o, p, o]);
+        }
+    }
+
+    /// `store.wK [p+i], s+i` pieces (`K` <= 64) for `n` bytes.
+    pub fn store_pieces(&mut self, p: u32, s: u32, n: u32) {
+        for (o, w) in pieces(n, Width::W64, &self.cuts) {
+            self.op(opw(IntOp::Store, w), &[p, o, s + o]);
+        }
+    }
+
+    /// Sets `n <= SPLIT_MAX` bytes of the memory at `dst` to a byte (a constant, or the `u8`
+    /// in a slot) as `store` pieces of a 64-bit pattern.
+    pub fn mem_set_pieces(&mut self, dst: u32, byte: Result<u8, u32>, n: u32) {
+        debug_assert!(n <= SPLIT_MAX);
+        if n == 0 {
+            return;
+        }
+        let ones = 0x0101_0101_0101_0101u128;
+        let t = self.temp8();
+        match byte {
+            Ok(b) => self.imm(Width::W64, t, u128::from(b) * ones),
+            Err(s) => {
+                self.int_cast(t, s, Width::W8, Width::W64, false);
+                self.op_imm(IntOp::Mul, Width::W64, t, t, ones);
+            }
+        }
+        for (o, w) in pieces(n, Width::W64, &[]) {
+            self.op(opw(IntOp::Store, w), &[dst, o, t]);
         }
     }
 
@@ -187,5 +319,50 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             ops.extend_from_slice(srcs);
             fx.op(op, &ops);
         })
+    }
+}
+
+/// Block copies and zeroing of at most this many bytes are split into scalar pieces
+/// (`mov`/`load`/`store`/`imm`), which are inline, instead of the `copy`, `load.copy`,
+/// `store.copy` and `zero` handler calls. Valid since MIR assignments never partially overlap.
+pub const SPLIT_MAX: u32 = 48;
+
+/// The `(offset, width)` pieces of a `size`-byte block: at each offset the widest width up
+/// to `max` that fits and doesn't straddle one of the field offsets `cuts`, so the pieces
+/// match the accesses the rest of the code makes to the fields.
+pub fn pieces(size: u32, max: Width, cuts: &[u32]) -> Vec<(u32, Width)> {
+    let mut v = Vec::new();
+    let mut o = 0;
+    while o < size {
+        let w = [Width::W128, Width::W64, Width::W32, Width::W16, Width::W8]
+            .into_iter()
+            .find(|w| w.bytes() <= max.bytes() && o + w.bytes() <= size && !cuts.iter().any(|&c| o < c && c < o + w.bytes()))
+            .expect("w8 always fits");
+        v.push((o, w));
+        o += w.bytes();
+    }
+    v
+}
+
+/// The offsets of the scalar leaves of `layout` (of every variant), up to `limit` bytes.
+fn field_cuts<'tcx>(cx: &LayoutCx<'tcx>, layout: TyAndLayout<'tcx>, base: u32, limit: u32, out: &mut Vec<u32>) {
+    if layout.size.bytes() > u64::from(limit) {
+        return;
+    }
+    out.push(base);
+    if let rustc_abi::BackendRepr::ScalarPair { b_offset, .. } = layout.backend_repr {
+        out.push(base + b_offset.bytes() as u32);
+        return;
+    }
+    if let rustc_abi::Variants::Multiple { ref variants, .. } = layout.variants {
+        for v in variants.indices() {
+            let vl = layout.for_variant(cx, v);
+            for i in 0..vl.fields.count() {
+                field_cuts(cx, vl.field(cx, i), base + vl.fields.offset(i).bytes() as u32, limit, out);
+            }
+        }
+    }
+    for i in 0..layout.fields.count() {
+        field_cuts(cx, layout.field(cx, i), base + layout.fields.offset(i).bytes() as u32, limit, out);
     }
 }
