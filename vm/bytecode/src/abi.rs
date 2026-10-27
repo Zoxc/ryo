@@ -1,4 +1,4 @@
-//! Frame layout constants and the argument block layout.
+//! Frame layout constants and the argument block check.
 //!
 //! # Frames
 //!
@@ -15,7 +15,7 @@
 //! A callee's `fp` is its caller's `fp - F - 16`, so its argument block (at its `fp + 16`) is
 //! exactly the caller's outgoing block.
 //!
-//! # Why `arg_block` takes offsets instead of computing them
+//! # Why `check_arg_block` takes offsets instead of computing them
 //!
 //! The argument block has the layout of the tuple of the callee's ABI argument types, as
 //! rustc's `tcx.layout_of` computes it (design/lowering.md, "Frame slots"). rustc's tuple
@@ -27,8 +27,8 @@
 //! algorithm also changes between releases, and `-Zrandomize-layout` would change it again.
 //!
 //! So this crate doesn't replicate it. The backend gets the offsets from
-//! `tcx.layout_of(tuple)` and passes them to [`arg_block`], which checks that they form a
-//! valid block and describes where each argument lives in the frame. The VM and the
+//! `tcx.layout_of(tuple)` and passes them to [`check_arg_block`], which checks that they form
+//! a valid block; the backend's frame code places argument `i` at `fp + H + offset`. The VM and the
 //! templates never need the computation: they either run code that already contains the
 //! offsets, or use the real Rust tuple type.
 
@@ -38,12 +38,6 @@ pub const HEADER_SIZE: u32 = 16;
 
 /// Alignment of every frame (`fp`), and of the frame size `F`.
 pub const FRAME_ALIGN: u32 = 16;
-
-/// Byte offset of the caller fp in the frame header.
-pub const CALLER_FP_OFFSET: u32 = 0;
-
-/// Byte offset of the return address in the frame header.
-pub const RETURN_ADDRESS_OFFSET: u32 = 8;
 
 /// The frame size `F` of a function whose locals take `locals` bytes below `fp` and whose
 /// largest outgoing argument block is `outgoing` bytes: their sum rounded up to
@@ -83,21 +77,13 @@ pub enum ArgBlockError {
     BlockOverAligned,
 }
 
-/// A validated argument block layout. Field `i` is the `i`-th ABI argument.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ArgBlock<'a> {
-    fields: &'a [ArgField],
-    size: u32,
-    align: u32,
-}
-
-/// Checks and describes an argument block layout: the fields and the total `size`/`align`
+/// Checks an argument block layout (field `i` is the `i`-th ABI argument): the fields and the total `size`/`align`
 /// of the tuple of the ABI argument types, all taken from `tcx.layout_of` by the backend.
 ///
 /// Checks: power-of-two alignments, `size` a multiple of `align`, every field aligned and in
 /// bounds, no field more aligned than the block, no overlap between non-ZST fields, and
 /// `align <= FRAME_ALIGN`.
-pub fn arg_block(fields: &[ArgField], size: u32, align: u32) -> Result<ArgBlock<'_>, ArgBlockError> {
+pub fn check_arg_block(fields: &[ArgField], size: u32, align: u32) -> Result<(), ArgBlockError> {
     if !align.is_power_of_two() {
         return Err(ArgBlockError::BadAlign);
     }
@@ -128,30 +114,5 @@ pub fn arg_block(fields: &[ArgField], size: u32, align: u32) -> Result<ArgBlock<
     if align > FRAME_ALIGN {
         return Err(ArgBlockError::BlockOverAligned);
     }
-    Ok(ArgBlock { fields, size, align })
-}
-
-impl<'a> ArgBlock<'a> {
-    pub fn fields(&self) -> &'a [ArgField] {
-        self.fields
-    }
-
-    pub fn size(&self) -> u32 {
-        self.size
-    }
-
-    pub fn align(&self) -> u32 {
-        self.align
-    }
-
-    /// Offset of argument `i` from the callee's `fp` (`H + offset`).
-    pub fn frame_offset(&self, i: usize) -> i32 {
-        (HEADER_SIZE + self.fields[i].offset) as i32
-    }
-
-    /// Offset of argument `i` from the *caller's* `fp`, for a caller with frame size `F`
-    /// writing its outgoing block at `fp - F` (design/lowering.md, "Calls").
-    pub fn outgoing_offset(&self, caller_frame_size: u32, i: usize) -> i32 {
-        self.fields[i].offset as i32 - caller_frame_size as i32
-    }
+    Ok(())
 }

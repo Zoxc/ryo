@@ -11,9 +11,8 @@ macro_rules! real {
     ($($i:tt: $t:ty),*) => {{
         type Tup = ($($t,)*);
         let fields: Vec<ArgField> = vec![$(f::<$t>(offset_of!(Tup, $i))),*];
-        let b = arg_block(&fields, size_of::<Tup>() as u32, align_of::<Tup>() as u32).unwrap();
-        assert_eq!(b.size() as usize, size_of::<Tup>());
-        let size = b.size();
+        let size = size_of::<Tup>() as u32;
+        check_arg_block(&fields, size, align_of::<Tup>() as u32).unwrap();
         (fields, size)
     }};
 }
@@ -28,7 +27,7 @@ fn accepts_real_tuple_layouts() {
 }
 
 /// rustc's tuple layout isn't a function of field sizes and alignments: these two tuples
-/// have identical (size, align) field lists but different layouts, which is why `arg_block`
+/// have identical (size, align) field lists but different layouts, which is why `check_arg_block`
 /// takes offsets from the backend instead of computing them.
 #[test]
 fn rustc_layout_depends_on_niches() {
@@ -46,19 +45,16 @@ fn rustc_layout_depends_on_niches() {
 #[test]
 fn rejects_bad_layouts() {
     let x = |offset, size, align| ArgField { offset, size, align };
-    assert_eq!(arg_block(&[x(0, 4, 4), x(2, 4, 4)], 8, 4), Err(ArgBlockError::FieldMisaligned(1)));
-    assert_eq!(arg_block(&[x(0, 4, 4), x(4, 4, 4)], 6, 2), Err(ArgBlockError::FieldOverAligned(0)));
-    assert_eq!(arg_block(&[x(0, 4, 4), x(4, 4, 4)], 4, 4), Err(ArgBlockError::FieldOutOfBounds(1)));
-    assert_eq!(arg_block(&[x(0, 8, 4), x(4, 4, 4)], 8, 4), Err(ArgBlockError::Overlap(0, 1)));
-    assert_eq!(arg_block(&[x(0, 4, 3)], 4, 4), Err(ArgBlockError::BadAlign));
-    assert_eq!(arg_block(&[], 6, 4), Err(ArgBlockError::SizeNotAligned));
-    assert_eq!(arg_block(&[x(0, 32, 32)], 32, 32), Err(ArgBlockError::BlockOverAligned));
+    assert_eq!(check_arg_block(&[x(0, 4, 4), x(2, 4, 4)], 8, 4), Err(ArgBlockError::FieldMisaligned(1)));
+    assert_eq!(check_arg_block(&[x(0, 4, 4), x(4, 4, 4)], 6, 2), Err(ArgBlockError::FieldOverAligned(0)));
+    assert_eq!(check_arg_block(&[x(0, 4, 4), x(4, 4, 4)], 4, 4), Err(ArgBlockError::FieldOutOfBounds(1)));
+    assert_eq!(check_arg_block(&[x(0, 8, 4), x(4, 4, 4)], 8, 4), Err(ArgBlockError::Overlap(0, 1)));
+    assert_eq!(check_arg_block(&[x(0, 4, 3)], 4, 4), Err(ArgBlockError::BadAlign));
+    assert_eq!(check_arg_block(&[], 6, 4), Err(ArgBlockError::SizeNotAligned));
+    assert_eq!(check_arg_block(&[x(0, 32, 32)], 32, 32), Err(ArgBlockError::BlockOverAligned));
     // ZSTs may share offsets with anything.
     let ok = [x(0, 4, 4), x(0, 0, 1), x(4, 0, 4)];
-    let b = arg_block(&ok, 4, 4).unwrap();
-    assert_eq!(b.frame_offset(0), HEADER_SIZE as i32);
-    assert_eq!(b.frame_offset(2), HEADER_SIZE as i32 + 4);
-    assert_eq!(b.outgoing_offset(64, 2), 4 - 64);
+    assert_eq!(check_arg_block(&ok, 4, 4), Ok(()));
 }
 
 #[test]

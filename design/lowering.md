@@ -94,10 +94,10 @@ so a MIR change in a toolchain bump is a compile error. The tables below follow 
 - **Argument blocks** remain for island calls and for checking the inputs' sizes: the
   layout of the tuple of the ABI input types, as `tcx.layout_of` computes it
   (`sig.rs`, `arg_block`). The `call` and `call_cN` templates read their arguments as that
-  tuple. `ryo_bytecode::abi::arg_block` doesn't compute this layout: rustc's tuple field
+  tuple. `ryo_bytecode::abi::check_arg_block` doesn't compute this layout: rustc's tuple field
   order depends on niches, not only on sizes and alignments (`(u32, u8, bool, u8)` and
   `(u32, u8, u8, u8)` differ), and changes between releases; the backend takes the
-  offsets, size and alignment from `tcx.layout_of`, and `arg_block` validates them. The
+  offsets, size and alignment from `tcx.layout_of`, and `check_arg_block` validates them. The
   wrappers reject `-Zrandomize-layout`, so tuple layouts agree between crates. ZST
   arguments take no space.
 - Frames grow downward, and slots are signed offsets from `fp` ([vm.md](vm.md#frames)).

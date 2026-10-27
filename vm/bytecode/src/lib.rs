@@ -4,7 +4,7 @@
 //! - [`full`]: the full instruction set: opcodes ([`Opcode`], [`OP_INFO`]), the decoded
 //!   instruction type [`Insn`], decoder, encoder and disassembler. Generated from the opcode
 //!   list in `src/ops.rs`.
-//! - [`abi`]: frame header constants and [`abi::arg_block`], the argument block layout.
+//! - [`abi`]: frame header constants and [`abi::check_arg_block`], the argument block check.
 //! - [`asm`]: the machine-code form of instructions: handler register layouts, and (`alloc`)
 //!   the x86-64 encoder and decoder, and the mapping to the reduced set ([`asm::reduce`]).
 //! - [`reduced`]: the reduced instruction set, generated from `src/reduced_ops.rs`: the
