@@ -15,18 +15,9 @@ pub extern "C" fn c_main<S, T, const SIGPIPE: u8>(argc: c_int, argv: *const *con
 where
     S: FnOnce(fn() -> T, isize, *const *const u8, u8) -> isize,
 {
+    const { assert!(size_of::<S>() == 0) };
     // SAFETY: `__ryo_main` holds the address of a function with the signature `fn() -> T`.
     let main: fn() -> T = unsafe { core::mem::transmute::<*const (), fn() -> T>(__ryo_main) };
-    start_main::<S, T, SIGPIPE>(main, argc, argv)
-}
-
-/// The body of [`c_main`], with `main` passed in.
-#[inline(always)]
-pub fn start_main<S, T, const SIGPIPE: u8>(main: fn() -> T, argc: c_int, argv: *const *const c_char) -> c_int
-where
-    S: FnOnce(fn() -> T, isize, *const *const u8, u8) -> isize,
-{
-    const { assert!(size_of::<S>() == 0) };
     // SAFETY: `S` is a `FnDef` type: a ZST and inhabited, so its one value needs no bytes and
     // `zeroed` produces it.
     let start: S = unsafe { core::mem::zeroed() };

@@ -196,8 +196,7 @@ where
 }
 ```
 
-- The body after loading `__ryo_main` is the `pub` helper `entry::start_main::<S, T, SIGPIPE>(main,
-  argc, argv)`, which tests call directly; a test binary can also define `__ryo_main` itself.
+- A test binary can define `__ryo_main` itself.
 - `lang_start` is private in std, so the template can't name it. The backend resolves the
   `start` lang item as cg_ssa does (`require_lang_item(LangItem::Start)` +
   `Instance::expect_resolve` with `[T]`, `rustc_codegen_ssa/src/base.rs:566-583`), and passes
