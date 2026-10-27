@@ -1075,15 +1075,16 @@ impl<'a> E<'a> {
     }
 
     fn inst(&mut self, i: Inst, pad: Option<u32>) -> Result<(), Unsupported> {
-        let id = &self.f.insts[i.idx()];
+        let f = self.f;
+        let id = &f.insts[i.idx()];
         let res: Vec<Value> = id.results().collect();
-        let bd = &self.f.blocks[id.block.idx()];
+        let bd = &f.blocks[id.block.idx()];
         let fused = matches!(bd.term, Term::BrOvf { .. }) && bd.insts.last() == Some(&i);
         if id.op.pure() && !fused && res.iter().all(|r| self.uses[r.idx()] == 0) {
             return Ok(());
         }
-        let args = id.args.clone();
-        match id.op.clone() {
+        let args = &id.args[..];
+        match id.op {
             Op::Bin(op, 16) => {
                 let p = match op {
                     BinOp::And => Packed::Pand,
@@ -1095,21 +1096,7 @@ impl<'a> E<'a> {
             Op::V(VOp::Eq) => self.vbin(Packed::Pcmpeqb, true, args[0], args[1], res[0]),
             // `a < b` is `b > a`.
             Op::V(VOp::LtS) => self.vbin(Packed::Pcmpgtb, false, args[1], args[0], res[0]),
-            Op::V(VOp::Splat) => {
-                // The byte times `0x01010101` in every dword.
-                let x = res[0];
-                let rx = self.xwork(x, &[]);
-                match self.src(args[0]) {
-                    Src::R(r) => self.a.x().movzx(S1, 1, Rm::R(r)),
-                    Src::M(m) => self.a.x().movzx(S1, 1, Rm::M(m)),
-                    Src::Imm(c) => self.a.x().mov_imm(4, Rm::R(S1), c & 0xff),
-                    Src::Undef => {}
-                }
-                self.a.x().imul_imm(4, S1, Rm::R(S1), 0x0101_0101);
-                self.a.x().movq_to_xmm(rx, Rm::R(S1), 4);
-                self.a.x().pshufd(rx, rx, 0);
-                self.xput(x, rx);
-            }
+            Op::V(VOp::Splat) => self.vsplat(args[0], res[0]),
             Op::V(VOp::Msb) => {
                 let x = res[0];
                 let rd = self.work(x, &[]);
@@ -1117,43 +1104,8 @@ impl<'a> E<'a> {
                 self.a.x().pmovmskb(rd, ra);
                 self.put(x, rd);
             }
-            Op::V(VOp::Half(n)) => {
-                let x = res[0];
-                let rd = self.work(x, &[]);
-                match self.xsrc(args[0]) {
-                    // From memory: the half's bytes.
-                    XSrc::M(Mem::Base { base, disp, .. }) => self.a.x().mov(8, Rm::R(rd), Rm::M(Mem::base(base, disp + 8 * n as i32))),
-                    XSrc::Imm(c) => self.a.x().mov_imm(8, Rm::R(rd), if n == 0 { c } else { 0 }),
-                    XSrc::Undef => {}
-                    s => {
-                        let XSrc::X(ra) = s else { unreachable!("a frame slot") };
-                        let ra = if n == 0 {
-                            ra
-                        } else {
-                            let t = self.xs()[1];
-                            self.a.x().pshufd(t, ra, 0xee);
-                            t
-                        };
-                        self.a.x().movq_from_xmm(Rm::R(rd), ra, 8);
-                    }
-                }
-                self.put(x, rd);
-            }
-            Op::V(VOp::Pair) => {
-                let x = res[0];
-                let rd = self.xwork(x, &[]);
-                let t = self.xs()[1];
-                for (k, r) in [(0, rd), (1, t)] {
-                    match self.src(args[k]) {
-                        Src::R(g) => self.a.x().movq_to_xmm(r, Rm::R(g), 8),
-                        Src::M(m) => self.a.x().movq_to_xmm(r, Rm::M(m), 8),
-                        Src::Imm(c) => self.vconst(r, c as u128),
-                        Src::Undef => {}
-                    }
-                }
-                self.a.x().packed(Packed::Punpcklqdq, rd, t);
-                self.xput(x, rd);
-            }
+            Op::V(VOp::Half(n)) => self.vhalf(n, args[0], res[0]),
+            Op::V(VOp::Pair) => self.vpair(args, res[0]),
             Op::VConst(c) => {
                 let x = res[0];
                 let rd = self.xwork(x, &[]);
@@ -1191,138 +1143,9 @@ impl<'a> E<'a> {
             Op::Bin(op @ (BinOp::Shl | BinOp::ShrS | BinOp::ShrU | BinOp::Rotl | BinOp::Rotr), w) if !matches!(self.src(args[1]), Src::Imm(_)) => {
                 self.shift_var(op, w, args[0], args[1], res[0])
             }
-            Op::Bin(op, w) => {
-                let x = res[0];
-                let (mut a, mut b) = (args[0], args[1]);
-                if op.commutative()
-                    && self.src(b) == self.dst(x).and_then(|d| if let Rm::R(r) = d { Some(Src::R(r)) } else { None }).unwrap_or(Src::Undef)
-                {
-                    core::mem::swap(&mut a, &mut b);
-                }
-                let rd = self.work(x, &[b]);
-                let ww = w.max(4);
-                // Three operands: `lea` (no flags are read after a `Bin`).
-                if let (BinOp::Add | BinOp::Sub, Src::R(ra)) = (op, self.src(a))
-                    && ra != rd
-                    && ww >= 4
-                {
-                    let m = match self.src(b) {
-                        Src::Imm(c) if op == BinOp::Add && fits32(sext(c, ww)) => Some(Mem::base(ra, sext(c, ww) as i32)),
-                        Src::Imm(c) if op == BinOp::Sub && fits32(sext(c, ww).wrapping_neg()) => {
-                            Some(Mem::base(ra, sext(c, ww).wrapping_neg() as i32))
-                        }
-                        Src::R(rb) if op == BinOp::Add => Some(Mem::Base { base: ra, index: Some((rb, 1)), disp: 0 }),
-                        _ => None,
-                    };
-                    if let Some(m) = m {
-                        if ww == 8 {
-                            self.a.x().lea(rd, m);
-                        } else {
-                            self.a.x().lea32(rd, m);
-                        }
-                        self.put(x, rd);
-                        return Ok(());
-                    }
-                }
-                match op {
-                    BinOp::ShrU | BinOp::ShrS if w < 4 => {
-                        let s = self.rm(a, rd).unwrap_or(Rm::R(rd));
-                        if op == BinOp::ShrU {
-                            self.a.x().movzx(rd, w, s);
-                        } else {
-                            self.a.x().movsx(rd, w, s);
-                        }
-                    }
-                    _ => self.load(rd, a),
-                }
-                match op {
-                    BinOp::Add | BinOp::Sub | BinOp::And | BinOp::Or | BinOp::Xor => {
-                        let alu = match op {
-                            BinOp::Add => Alu::Add,
-                            BinOp::Sub => Alu::Sub,
-                            BinOp::And => Alu::And,
-                            BinOp::Or => Alu::Or,
-                            _ => Alu::Xor,
-                        };
-                        match self.alu_src(b, ww) {
-                            Ok(s) => self.a.x().alu(alu, ww, Rm::R(rd), s),
-                            Err(imm) => self.a.x().alu_imm(alu, ww, Rm::R(rd), imm),
-                        }
-                    }
-                    BinOp::Mul => match self.alu_src(b, ww) {
-                        Ok(s) => self.a.x().imul(ww, rd, s),
-                        Err(imm) => self.a.x().imul_imm(ww, rd, Rm::R(rd), imm as i32),
-                    },
-                    BinOp::Shl | BinOp::ShrU | BinOp::ShrS => {
-                        let Src::Imm(n) = self.src(b) else { unreachable!("a shift by a variable") };
-                        let n = n & (8 * w as u64 - 1);
-                        let sh = match op {
-                            BinOp::Shl => Shift::Shl,
-                            BinOp::ShrU => Shift::Shr,
-                            _ => Shift::Sar,
-                        };
-                        let sw = if w < 4 { if op == BinOp::Shl { 4 } else { 8 } } else { w };
-                        let sw = if op == BinOp::ShrU && w < 4 { 4 } else { sw };
-                        self.a.x().shift_imm(sh, sw, Rm::R(rd), n as u8);
-                    }
-                    BinOp::Rotl | BinOp::Rotr => {
-                        // At the exact width: the low `w` bytes of `rd` are `a`.
-                        let Src::Imm(n) = self.src(b) else { unreachable!("a rotate by a variable") };
-                        let n = n & (8 * w as u64 - 1);
-                        if n != 0 {
-                            let sh = if op == BinOp::Rotl { Shift::Rol } else { Shift::Ror };
-                            self.a.x().shift_imm(sh, w, Rm::R(rd), n as u8);
-                        }
-                    }
-                    _ => unreachable!(),
-                }
-                self.put(x, rd);
-            }
-            // As the AOT form: `bsf`/`bsr` leave their destination undefined on 0, so a
-            // `cmovz` gives that case, or below 32 bits a guard bit above the value for `cttz`.
-            Op::Count { lz, w } => {
-                let x = res[0];
-                let rd = self.work(x, &[]);
-                let n = 8 * w as u64;
-                self.ext_into(rd, args[0], w, false);
-                let bw = if w == 8 { 8 } else { 4 };
-                if !lz && w < 4 {
-                    self.a.x().alu_imm(Alu::Or, 4, Rm::R(rd), 1 << n);
-                    self.a.x().bsf(false, 4, rd, Rm::R(rd));
-                } else {
-                    self.a.x().bsf(lz, bw, rd, Rm::R(rd));
-                    // `S2`: `rd` may be `S1`.
-                    self.a.x().mov_imm(4, Rm::R(S2), if lz { 2 * n - 1 } else { n });
-                    self.a.x().cmov(X::E, 4, rd, Rm::R(S2));
-                    if lz {
-                        self.a.x().alu_imm(Alu::Xor, 4, Rm::R(rd), n as i64 - 1);
-                    }
-                }
-                self.put(x, rd);
-            }
-            // As the AOT form: the wrapped difference, then `cmovae` of the default's index.
-            Op::SwitchIdx { w, base, n } => {
-                let x = res[0];
-                let rd = self.work(x, &[]);
-                self.ext_into(rd, args[0], w, false);
-                if mask(base, w) != 0 {
-                    let b = sext(base, w);
-                    if w == 8 && !fits32(b) {
-                        self.a.x().mov_imm(8, Rm::R(S2), base);
-                        self.a.x().alu(Alu::Sub, 8, Rm::R(rd), Rm::R(S2));
-                    } else {
-                        self.a.x().alu_imm(Alu::Sub, w.max(4), Rm::R(rd), if w == 8 { b } else { b as i32 as i64 });
-                    }
-                    if w < 4 {
-                        self.a.x().alu_imm(Alu::And, 4, Rm::R(rd), mask(u64::MAX, w) as i64);
-                    }
-                }
-                // `S2`: `rd` may be `S1`.
-                self.a.x().mov_imm(4, Rm::R(S2), n as u64);
-                self.a.x().alu(Alu::Cmp, if w == 8 { 8 } else { 4 }, Rm::R(rd), Rm::R(S2));
-                self.a.x().cmov(X::Ae, 4, rd, Rm::R(S2));
-                self.put(x, rd);
-            }
+            Op::Bin(op, w) => self.bin(op, w, args, res[0]),
+            Op::Count { lz, w } => self.count(lz, w, args[0], res[0]),
+            Op::SwitchIdx { w, base, n } => self.switch_idx(w, base, n, args[0], res[0]),
             // `(a > b) - (a < b)` from one compare, as the AOT form.
             Op::Cmp3(signed, w) => {
                 let x = res[0];
@@ -1347,7 +1170,7 @@ impl<'a> E<'a> {
                 self.put(x, rd);
             }
             Op::Ovf(op, signed, w) => {
-                let cc = self.ovf(op, signed, w, &args, res[0]);
+                let cc = self.ovf(op, signed, w, args, res[0]);
                 self.ovf_cc = Some(cc);
                 if let Some(d) = self.dst(res[1]) {
                     self.a.x().setcc(cc, d);
@@ -1383,29 +1206,7 @@ impl<'a> E<'a> {
                 }
                 self.put(x, rd);
             }
-            Op::PtrIndex(s) => {
-                let x = res[0];
-                if matches!(s, 1 | 2 | 4 | 8) {
-                    let rp = self.reg(args[0], S1);
-                    let ri = self.reg(args[1], S2);
-                    let rd = self.work(x, &[]);
-                    self.a.x().lea(rd, Mem::Base { base: rp, index: Some((ri, s as u8)), disp: 0 });
-                    self.put(x, rd);
-                } else {
-                    self.load(S1, args[1]);
-                    if s <= i32::MAX as u32 {
-                        self.a.x().imul_imm(8, S1, Rm::R(S1), s as i32);
-                    } else {
-                        self.a.x().mov_imm(8, Rm::R(S2), s as u64);
-                        self.a.x().imul(8, S1, Rm::R(S2));
-                    }
-                    match self.alu_src(args[0], 8) {
-                        Ok(p) => self.a.x().alu(Alu::Add, 8, Rm::R(S1), p),
-                        Err(imm) => self.a.x().alu_imm(Alu::Add, 8, Rm::R(S1), imm),
-                    }
-                    self.put(x, S1);
-                }
-            }
+            Op::PtrIndex(s) => self.ptr_index(s, args, res[0]),
             Op::RefAddr(to, ind) => {
                 let x = res[0];
                 let rd = self.work(x, &[]);
@@ -1445,129 +1246,356 @@ impl<'a> E<'a> {
                 let rp = self.reg(args[0], S1);
                 self.store_mem(Mem::base(rp, k), w, args[1]);
             }
-            Op::AStore(a, k, n) => {
-                let m = self.fp_mem(self.fr.alloca[a.idx()] + k);
-                if n.is_power_of_two() {
-                    self.store_mem(m, n, args[0]);
-                } else {
-                    // 3, 5, 6 or 7 bytes: 4, 2, 1 pieces, shifting a copy down.
-                    self.load(S2, args[0]);
-                    let (mut done, mut prev) = (0u8, 0u8);
-                    for c in [4u8, 2, 1] {
-                        if n - done >= c {
-                            if prev != 0 {
-                                self.a.x().shift_imm(Shift::Shr, 8, Rm::R(S2), 8 * prev);
-                            }
-                            let Mem::Base { base, disp, .. } = m else { unreachable!() };
-                            self.a.x().mov(c, Rm::M(Mem::base(base, disp + done as i32)), Rm::R(S2));
-                            done += c;
-                            prev = c;
-                        }
-                    }
-                }
-            }
+            Op::AStore(a, k, n) => self.astore(a, k, n, args[0]),
             Op::OsrLoad(..) => return Err(Unsupported("an OSR load outside an OSR entry")),
             Op::LandingPad => {
                 self.put(res[0], R::Rax);
             }
-            Op::HCall(h) if h.reg => {
-                let e = super::effects::reg_entry(h.h, self.mode).ok_or(Unsupported("a register entry"))?;
-                let nin = e.nin as usize;
-                // The `In` values into the first argument registers, then the data registers
-                // after them (which no `In` value's source is in any more).
-                let pe = self.mode.pe;
-                let reg = |k: usize| handler_arg_reg(pe, k).ok_or(Unsupported("a register entry's argument"));
-                let mut ms = Vec::with_capacity(args.len());
-                for (k, &v) in args.iter().enumerate() {
-                    ms.push((Rm::R(reg(k)?), self.src(v)));
-                }
-                self.moves(ms);
-                for j in 0..e.ndata as usize {
-                    self.hcall_arg(&h, e.data[j] as usize, reg(nin + j)?)?;
-                }
-                let hh = h.h;
-                let far = self.mode.far_rt;
-                self.call_with_site(h.site, pad, |x| x.call_rt(Ref::RegHandler(hh), far));
-                if pe && e.nout as usize + e.ret as usize == 2 {
-                    // Win64 entries return two values in `xmm0` (`ryo_rt`'s `RegRetOf`):
-                    // `movq rax, xmm0; punpckhqdq xmm0, xmm0; movq rdx, xmm0`.
-                    self.a.x().bytes(&[0x66, 0x48, 0x0f, 0x7e, 0xc0, 0x66, 0x0f, 0x6d, 0xc0, 0x66, 0x48, 0x0f, 0x7e, 0xc2]);
-                }
-                let ms = res.iter().enumerate().filter_map(|(k, &v)| Some((self.dst(v)?, Src::R(R::RETS[k])))).collect();
-                self.moves(ms);
+            Op::HCall(ref h) if h.reg => self.hcall_reg(h, args, &res, pad)?,
+            Op::HCall(ref h) => self.hcall_mem(h, args, &res, pad)?,
+            Op::Call(ref c) => self.call(c, args, &res, pad),
+            Op::Island(ref isl) => self.island(isl, pad),
+        }
+        Ok(())
+    }
+
+    /// `V(Splat)`: the byte `a` in every byte of `x`.
+    fn vsplat(&mut self, a: Value, x: Value) {
+        // The byte times `0x01010101` in every dword.
+        let rx = self.xwork(x, &[]);
+        match self.src(a) {
+            Src::R(r) => self.a.x().movzx(S1, 1, Rm::R(r)),
+            Src::M(m) => self.a.x().movzx(S1, 1, Rm::M(m)),
+            Src::Imm(c) => self.a.x().mov_imm(4, Rm::R(S1), c & 0xff),
+            Src::Undef => {}
+        }
+        self.a.x().imul_imm(4, S1, Rm::R(S1), 0x0101_0101);
+        self.a.x().movq_to_xmm(rx, Rm::R(S1), 4);
+        self.a.x().pshufd(rx, rx, 0);
+        self.xput(x, rx);
+    }
+
+    /// `V(Half(n))`: the `n`th 8-byte half of `a`.
+    fn vhalf(&mut self, n: u8, a: Value, x: Value) {
+        let rd = self.work(x, &[]);
+        match self.xsrc(a) {
+            // From memory: the half's bytes.
+            XSrc::M(Mem::Base { base, disp, .. }) => self.a.x().mov(8, Rm::R(rd), Rm::M(Mem::base(base, disp + 8 * n as i32))),
+            XSrc::Imm(c) => self.a.x().mov_imm(8, Rm::R(rd), if n == 0 { c } else { 0 }),
+            XSrc::Undef => {}
+            s => {
+                let XSrc::X(ra) = s else { unreachable!("a frame slot") };
+                let ra = if n == 0 {
+                    ra
+                } else {
+                    let t = self.xs()[1];
+                    self.a.x().pshufd(t, ra, 0xee);
+                    t
+                };
+                self.a.x().movq_from_xmm(Rm::R(rd), ra, 8);
             }
-            Op::HCall(h) => {
-                for (k, &v) in args.iter().enumerate() {
-                    let m = self.fp_mem(self.fr.scratch + h.ins[k] as i32);
-                    let s = self.src(v);
-                    self.mov(Rm::M(m), s);
+        }
+        self.put(x, rd);
+    }
+
+    /// `V(Pair)`: a vector of two 8-byte halves.
+    fn vpair(&mut self, args: &[Value], x: Value) {
+        let rd = self.xwork(x, &[]);
+        let t = self.xs()[1];
+        for (k, r) in [(0, rd), (1, t)] {
+            match self.src(args[k]) {
+                Src::R(g) => self.a.x().movq_to_xmm(r, Rm::R(g), 8),
+                Src::M(m) => self.a.x().movq_to_xmm(r, Rm::M(m), 8),
+                Src::Imm(c) => self.vconst(r, c as u128),
+                Src::Undef => {}
+            }
+        }
+        self.a.x().packed(Packed::Punpcklqdq, rd, t);
+        self.xput(x, rd);
+    }
+
+    /// A scalar `Bin` other than a division or a shift by a variable.
+    fn bin(&mut self, op: BinOp, w: u8, args: &[Value], x: Value) {
+        let (mut a, mut b) = (args[0], args[1]);
+        if op.commutative() && self.src(b) == self.dst(x).and_then(|d| if let Rm::R(r) = d { Some(Src::R(r)) } else { None }).unwrap_or(Src::Undef) {
+            core::mem::swap(&mut a, &mut b);
+        }
+        let rd = self.work(x, &[b]);
+        let ww = w.max(4);
+        // Three operands: `lea` (no flags are read after a `Bin`).
+        if let (BinOp::Add | BinOp::Sub, Src::R(ra)) = (op, self.src(a))
+            && ra != rd
+            && ww >= 4
+        {
+            let m = match self.src(b) {
+                Src::Imm(c) if op == BinOp::Add && fits32(sext(c, ww)) => Some(Mem::base(ra, sext(c, ww) as i32)),
+                Src::Imm(c) if op == BinOp::Sub && fits32(sext(c, ww).wrapping_neg()) => Some(Mem::base(ra, sext(c, ww).wrapping_neg() as i32)),
+                Src::R(rb) if op == BinOp::Add => Some(Mem::Base { base: ra, index: Some((rb, 1)), disp: 0 }),
+                _ => None,
+            };
+            if let Some(m) = m {
+                if ww == 8 {
+                    self.a.x().lea(rd, m);
+                } else {
+                    self.a.x().lea32(rd, m);
                 }
-                for k in 0..h.regs.len() {
-                    match handler_arg_reg(self.mode.pe, k) {
-                        Some(r) => self.hcall_arg(&h, k, r)?,
-                        None => {
-                            // PE's stack argument, a 32-bit operand past the shadow space.
-                            self.hcall_arg(&h, k, S1)?;
-                            self.a.x().mov(4, Rm::M(Mem::base(R::Rsp, 32)), Rm::R(S1));
-                        }
-                    }
-                }
-                let hh = h.h;
-                let far = self.mode.far_rt;
-                self.call_with_site(h.site, pad, |x| x.call_rt(Ref::Handler(hh), far));
-                let nout = h.nout as usize;
-                if h.ret {
-                    self.put(res[nout], R::Rax);
-                }
-                // At their widths: a wider load of what the handler just stored narrower would
-                // miss the store forwarding.
-                for (k, &o) in h.outs.iter().enumerate() {
-                    let m = self.fp_mem(self.fr.scratch + o as i32);
-                    let w = self.f.w(res[k]);
-                    match self.dst(res[k]) {
-                        Some(Rm::R(r)) => self.load_mem(r, w, m),
-                        Some(d) => {
-                            self.load_mem(S1, w, m);
-                            self.a.x().mov(8, d, Rm::R(S1));
-                        }
-                        None => {}
-                    }
+                self.put(x, rd);
+                return;
+            }
+        }
+        match op {
+            BinOp::ShrU | BinOp::ShrS if w < 4 => {
+                let s = self.rm(a, rd).unwrap_or(Rm::R(rd));
+                if op == BinOp::ShrU {
+                    self.a.x().movzx(rd, w, s);
+                } else {
+                    self.a.x().movsx(rd, w, s);
                 }
             }
-            Op::Call(c) => {
-                let (callee, rest) = if c.target == CallTarget::Ptr { (Some(args[0]), &args[1..]) } else { (None, &args[..]) };
-                let regs = self.arg_regs(&c.regs);
-                self.to_abi(&regs, rest, callee);
-                match c.target {
-                    CallTarget::Func(g) => self.call_with_site(c.site, pad, |x| x.call_func(g)),
-                    CallTarget::Sym(s) => self.call_with_site(c.site, pad, |x| x.call_mem(Mem::Rip(Ref::Sym(s)))),
-                    CallTarget::SymInd(s) => {
-                        self.a.x().mov(8, Rm::R(S1), Rm::M(Mem::Rip(Ref::Sym(s))));
-                        self.call_with_site(c.site, pad, |x| x.call_mem(Mem::base(S1, 0)));
-                    }
-                    CallTarget::Ptr => self.call_with_site(c.site, pad, |x| x.call_r(R::Rax)),
+            _ => self.load(rd, a),
+        }
+        match op {
+            BinOp::Add | BinOp::Sub | BinOp::And | BinOp::Or | BinOp::Xor => {
+                let alu = match op {
+                    BinOp::Add => Alu::Add,
+                    BinOp::Sub => Alu::Sub,
+                    BinOp::And => Alu::And,
+                    BinOp::Or => Alu::Or,
+                    _ => Alu::Xor,
+                };
+                match self.alu_src(b, ww) {
+                    Ok(s) => self.a.x().alu(alu, ww, Rm::R(rd), s),
+                    Err(imm) => self.a.x().alu_imm(alu, ww, Rm::R(rd), imm),
                 }
-                self.from_abi(&ret_regs(&c.parts), &res);
             }
-            Op::Island(isl) => {
-                let mut b = Vec::with_capacity(4 + 4 * isl.ops.len());
-                b.extend_from_slice(&(isl.ops.len() as u32).to_le_bytes());
-                for &o in &isl.ops {
-                    b.extend_from_slice(&(self.slot_off(o) as u32).to_le_bytes());
+            BinOp::Mul => match self.alu_src(b, ww) {
+                Ok(s) => self.a.x().imul(ww, rd, s),
+                Err(imm) => self.a.x().imul_imm(ww, rd, Rm::R(rd), imm as i32),
+            },
+            BinOp::Shl | BinOp::ShrU | BinOp::ShrS => {
+                let Src::Imm(n) = self.src(b) else { unreachable!("a shift by a variable") };
+                let n = n & (8 * w as u64 - 1);
+                let sh = match op {
+                    BinOp::Shl => Shift::Shl,
+                    BinOp::ShrU => Shift::Shr,
+                    _ => Shift::Sar,
+                };
+                let sw = if w < 4 { if op == BinOp::Shl { 4 } else { 8 } } else { w };
+                let sw = if op == BinOp::ShrU && w < 4 { 4 } else { sw };
+                self.a.x().shift_imm(sh, sw, Rm::R(rd), n as u8);
+            }
+            BinOp::Rotl | BinOp::Rotr => {
+                // At the exact width: the low `w` bytes of `rd` are `a`.
+                let Src::Imm(n) = self.src(b) else { unreachable!("a rotate by a variable") };
+                let n = n & (8 * w as u64 - 1);
+                if n != 0 {
+                    let sh = if op == BinOp::Rotl { Shift::Rol } else { Shift::Ror };
+                    self.a.x().shift_imm(sh, w, Rm::R(rd), n as u8);
                 }
-                let o = self.ro(&b, 4) + 4;
-                // Win64 on PE (`rcx`, `rdx`), into the frame's shadow space ([`layout`]).
-                let (fp, ops) = if self.mode.pe { (R::Rcx, R::Rdx) } else { (R::Rdi, R::Rsi) };
-                self.fp_into(fp);
-                self.a.x().lea(ops, Mem::Rip(Ref::Ro(o)));
-                match isl.isl {
-                    CallTarget::Sym(s) => self.call_with_site(isl.site, pad, |x| x.call_mem(Mem::Rip(Ref::Sym(s)))),
-                    CallTarget::Func(g) => self.call_with_site(isl.site, pad, |x| x.call_func(g)),
-                    t => unreachable!("an island called through {t:?}"),
+            }
+            _ => unreachable!(),
+        }
+        self.put(x, rd);
+    }
+
+    /// `Count { lz, w }`, as the AOT form: `bsf`/`bsr` leave their destination undefined on
+    /// 0, so a `cmovz` gives that case, or below 32 bits a guard bit above the value for
+    /// `cttz`.
+    fn count(&mut self, lz: bool, w: u8, a: Value, x: Value) {
+        let rd = self.work(x, &[]);
+        let n = 8 * w as u64;
+        self.ext_into(rd, a, w, false);
+        let bw = if w == 8 { 8 } else { 4 };
+        if !lz && w < 4 {
+            self.a.x().alu_imm(Alu::Or, 4, Rm::R(rd), 1 << n);
+            self.a.x().bsf(false, 4, rd, Rm::R(rd));
+        } else {
+            self.a.x().bsf(lz, bw, rd, Rm::R(rd));
+            // `S2`: `rd` may be `S1`.
+            self.a.x().mov_imm(4, Rm::R(S2), if lz { 2 * n - 1 } else { n });
+            self.a.x().cmov(X::E, 4, rd, Rm::R(S2));
+            if lz {
+                self.a.x().alu_imm(Alu::Xor, 4, Rm::R(rd), n as i64 - 1);
+            }
+        }
+        self.put(x, rd);
+    }
+
+    /// `SwitchIdx { w, base, n }`, as the AOT form: the wrapped difference, then `cmovae` of
+    /// the default's index.
+    fn switch_idx(&mut self, w: u8, base: u64, n: u32, a: Value, x: Value) {
+        let rd = self.work(x, &[]);
+        self.ext_into(rd, a, w, false);
+        if mask(base, w) != 0 {
+            let b = sext(base, w);
+            if w == 8 && !fits32(b) {
+                self.a.x().mov_imm(8, Rm::R(S2), base);
+                self.a.x().alu(Alu::Sub, 8, Rm::R(rd), Rm::R(S2));
+            } else {
+                self.a.x().alu_imm(Alu::Sub, w.max(4), Rm::R(rd), if w == 8 { b } else { b as i32 as i64 });
+            }
+            if w < 4 {
+                self.a.x().alu_imm(Alu::And, 4, Rm::R(rd), mask(u64::MAX, w) as i64);
+            }
+        }
+        // `S2`: `rd` may be `S1`.
+        self.a.x().mov_imm(4, Rm::R(S2), n as u64);
+        self.a.x().alu(Alu::Cmp, if w == 8 { 8 } else { 4 }, Rm::R(rd), Rm::R(S2));
+        self.a.x().cmov(X::Ae, 4, rd, Rm::R(S2));
+        self.put(x, rd);
+    }
+
+    /// `PtrIndex(s)`: `args[0] + s * args[1]`.
+    fn ptr_index(&mut self, s: u32, args: &[Value], x: Value) {
+        if matches!(s, 1 | 2 | 4 | 8) {
+            let rp = self.reg(args[0], S1);
+            let ri = self.reg(args[1], S2);
+            let rd = self.work(x, &[]);
+            self.a.x().lea(rd, Mem::Base { base: rp, index: Some((ri, s as u8)), disp: 0 });
+            self.put(x, rd);
+        } else {
+            self.load(S1, args[1]);
+            if s <= i32::MAX as u32 {
+                self.a.x().imul_imm(8, S1, Rm::R(S1), s as i32);
+            } else {
+                self.a.x().mov_imm(8, Rm::R(S2), s as u64);
+                self.a.x().imul(8, S1, Rm::R(S2));
+            }
+            match self.alu_src(args[0], 8) {
+                Ok(p) => self.a.x().alu(Alu::Add, 8, Rm::R(S1), p),
+                Err(imm) => self.a.x().alu_imm(Alu::Add, 8, Rm::R(S1), imm),
+            }
+            self.put(x, S1);
+        }
+    }
+
+    /// `AStore(a, k, n)` of a scalar.
+    fn astore(&mut self, a: AllocaId, k: i32, n: u8, v: Value) {
+        let m = self.fp_mem(self.fr.alloca[a.idx()] + k);
+        if n.is_power_of_two() {
+            self.store_mem(m, n, v);
+        } else {
+            // 3, 5, 6 or 7 bytes: 4, 2, 1 pieces, shifting a copy down.
+            self.load(S2, v);
+            let (mut done, mut prev) = (0u8, 0u8);
+            for c in [4u8, 2, 1] {
+                if n - done >= c {
+                    if prev != 0 {
+                        self.a.x().shift_imm(Shift::Shr, 8, Rm::R(S2), 8 * prev);
+                    }
+                    let Mem::Base { base, disp, .. } = m else { unreachable!() };
+                    self.a.x().mov(c, Rm::M(Mem::base(base, disp + done as i32)), Rm::R(S2));
+                    done += c;
+                    prev = c;
                 }
             }
         }
+    }
+
+    /// A handler call through its register entry.
+    fn hcall_reg(&mut self, h: &HCall, args: &[Value], res: &[Value], pad: Option<u32>) -> Result<(), Unsupported> {
+        let e = super::effects::reg_entry(h.h, self.mode).ok_or(Unsupported("a register entry"))?;
+        let nin = e.nin as usize;
+        // The `In` values into the first argument registers, then the data registers
+        // after them (which no `In` value's source is in any more).
+        let pe = self.mode.pe;
+        let reg = |k: usize| handler_arg_reg(pe, k).ok_or(Unsupported("a register entry's argument"));
+        let mut ms = Vec::with_capacity(args.len());
+        for (k, &v) in args.iter().enumerate() {
+            ms.push((Rm::R(reg(k)?), self.src(v)));
+        }
+        self.moves(ms);
+        for j in 0..e.ndata as usize {
+            self.hcall_arg(h, e.data[j] as usize, reg(nin + j)?)?;
+        }
+        let hh = h.h;
+        let far = self.mode.far_rt;
+        self.call_with_site(h.site, pad, |x| x.call_rt(Ref::RegHandler(hh), far));
+        if pe && e.nout as usize + e.ret as usize == 2 {
+            // Win64 entries return two values in `xmm0` (`ryo_rt`'s `RegRetOf`):
+            // `movq rax, xmm0; punpckhqdq xmm0, xmm0; movq rdx, xmm0`.
+            self.a.x().bytes(&[0x66, 0x48, 0x0f, 0x7e, 0xc0, 0x66, 0x0f, 0x6d, 0xc0, 0x66, 0x48, 0x0f, 0x7e, 0xc2]);
+        }
+        let ms = res.iter().enumerate().filter_map(|(k, &v)| Some((self.dst(v)?, Src::R(R::RETS[k])))).collect();
+        self.moves(ms);
         Ok(())
+    }
+
+    /// A handler call with its operands in the scratch area.
+    fn hcall_mem(&mut self, h: &HCall, args: &[Value], res: &[Value], pad: Option<u32>) -> Result<(), Unsupported> {
+        for (k, &v) in args.iter().enumerate() {
+            let m = self.fp_mem(self.fr.scratch + h.ins[k] as i32);
+            let s = self.src(v);
+            self.mov(Rm::M(m), s);
+        }
+        for k in 0..h.regs.len() {
+            match handler_arg_reg(self.mode.pe, k) {
+                Some(r) => self.hcall_arg(h, k, r)?,
+                None => {
+                    // PE's stack argument, a 32-bit operand past the shadow space.
+                    self.hcall_arg(h, k, S1)?;
+                    self.a.x().mov(4, Rm::M(Mem::base(R::Rsp, 32)), Rm::R(S1));
+                }
+            }
+        }
+        let hh = h.h;
+        let far = self.mode.far_rt;
+        self.call_with_site(h.site, pad, |x| x.call_rt(Ref::Handler(hh), far));
+        let nout = h.nout as usize;
+        if h.ret {
+            self.put(res[nout], R::Rax);
+        }
+        // At their widths: a wider load of what the handler just stored narrower would
+        // miss the store forwarding.
+        for (k, &o) in h.outs.iter().enumerate() {
+            let m = self.fp_mem(self.fr.scratch + o as i32);
+            let w = self.f.w(res[k]);
+            match self.dst(res[k]) {
+                Some(Rm::R(r)) => self.load_mem(r, w, m),
+                Some(d) => {
+                    self.load_mem(S1, w, m);
+                    self.a.x().mov(8, d, Rm::R(S1));
+                }
+                None => {}
+            }
+        }
+        Ok(())
+    }
+
+    /// A call of a VM function, a native or a function pointer.
+    fn call(&mut self, c: &Call, args: &[Value], res: &[Value], pad: Option<u32>) {
+        let (callee, rest) = if c.target == CallTarget::Ptr { (Some(args[0]), &args[1..]) } else { (None, &args[..]) };
+        let regs = self.arg_regs(&c.regs);
+        self.to_abi(&regs, rest, callee);
+        match c.target {
+            CallTarget::Func(g) => self.call_with_site(c.site, pad, |x| x.call_func(g)),
+            CallTarget::Sym(s) => self.call_with_site(c.site, pad, |x| x.call_mem(Mem::Rip(Ref::Sym(s)))),
+            CallTarget::SymInd(s) => {
+                self.a.x().mov(8, Rm::R(S1), Rm::M(Mem::Rip(Ref::Sym(s))));
+                self.call_with_site(c.site, pad, |x| x.call_mem(Mem::base(S1, 0)));
+            }
+            CallTarget::Ptr => self.call_with_site(c.site, pad, |x| x.call_r(R::Rax)),
+        }
+        self.from_abi(&ret_regs(&c.parts), &res);
+    }
+
+    /// An island call: the frame pointer and the operands' offsets as arguments.
+    fn island(&mut self, isl: &Island, pad: Option<u32>) {
+        let mut b = Vec::with_capacity(4 + 4 * isl.ops.len());
+        b.extend_from_slice(&(isl.ops.len() as u32).to_le_bytes());
+        for &o in &isl.ops {
+            b.extend_from_slice(&(self.slot_off(o) as u32).to_le_bytes());
+        }
+        let o = self.ro(&b, 4) + 4;
+        // Win64 on PE (`rcx`, `rdx`), into the frame's shadow space ([`layout`]).
+        let (fp, ops) = if self.mode.pe { (R::Rcx, R::Rdx) } else { (R::Rdi, R::Rsi) };
+        self.fp_into(fp);
+        self.a.x().lea(ops, Mem::Rip(Ref::Ro(o)));
+        match isl.isl {
+            CallTarget::Sym(s) => self.call_with_site(isl.site, pad, |x| x.call_mem(Mem::Rip(Ref::Sym(s)))),
+            CallTarget::Func(g) => self.call_with_site(isl.site, pad, |x| x.call_func(g)),
+            t => unreachable!("an island called through {t:?}"),
+        }
     }
 
     /// How many low bytes of `v`'s location can be nonzero (8: unknown): what the
@@ -1832,10 +1860,7 @@ impl<'a> E<'a> {
         let bd = &self.f.blocks[b.idx()];
         if bd.kind == BlockKind::Entry {
             self.prologue();
-            // The arguments into their locations.
-            let params = bd.params.clone();
-            let regs = self.arg_regs(&self.f.entry_regs);
-            self.from_abi(&regs, &params);
+            self.entry_args(b);
         }
         let insts = bd.insts.clone();
         let pad = match &bd.term {
@@ -1846,8 +1871,20 @@ impl<'a> E<'a> {
             self.inst(i, pad)?;
         }
         let term = self.f.blocks[b.idx()].term.clone();
+        self.term(&term, next)
+    }
+
+    /// The arguments of the entry block `b` from the ABI registers into their locations.
+    fn entry_args(&mut self, b: Block) {
+        let params = self.f.blocks[b.idx()].params.clone();
+        let regs = self.arg_regs(&self.f.entry_regs);
+        self.from_abi(&regs, &params);
+    }
+
+    /// The terminator `term` of a block laid out before `next`, and its edges' move stubs.
+    fn term(&mut self, term: &Term, next: Option<Block>) -> Result<(), Unsupported> {
         let mut stubs = Vec::new();
-        match &term {
+        match term {
             Term::None => return Err(Unsupported("an unterminated block")),
             Term::Jmp(e) => {
                 self.edge_moves(e);
@@ -1891,30 +1928,9 @@ impl<'a> E<'a> {
             }
             Term::Switch { idx, targets } => {
                 let ls: Vec<u32> = targets.iter().map(|e| self.edge_label(e, &mut stubs)).collect();
-                if ls.len() == 1 {
-                    self.a.br(None, ls[0]);
-                } else {
-                    let ri = self.reg(*idx, S2);
-                    if ri != S2 {
-                        self.a.x().mov(8, Rm::R(S2), Rm::R(ri));
-                    }
-                    let tl = self.a.label();
-                    self.a.x().lea(S1, Mem::RipLabel(tl));
-                    self.a.x().movsxd_table(S2, S1, S2);
-                    self.a.x().alu(Alu::Add, 8, Rm::R(S2), Rm::R(S1));
-                    self.a.x().jmp_r(S2);
-                    self.a.ps.push(P::Align4);
-                    self.a.bind(tl);
-                    self.a.ps.push(P::Table(ls));
-                }
+                self.switch(*idx, ls);
             }
-            Term::Ret { k, parts } => {
-                let ps: Vec<RetPart> =
-                    if *k == 0 { Vec::new() } else { asm::ret_parts(*k, true).ok_or(Unsupported("return kind"))?.into_iter().flatten().collect() };
-                self.to_abi(&ret_regs(&ps), parts, None);
-                self.epilogue();
-                self.a.x().ret();
-            }
+            Term::Ret { k, parts } => self.ret(*k, parts)?,
             Term::TailCall { call, args } => {
                 let (callee, rest) = if call.target == CallTarget::Ptr { (Some(args[0]), &args[1..]) } else { (None, &args[..]) };
                 let regs = self.arg_regs(&call.regs);
@@ -1941,6 +1957,36 @@ impl<'a> E<'a> {
             },
         }
         self.emit_stubs(stubs);
+        Ok(())
+    }
+
+    /// A jump through a table to the labels `ls` by the index `idx`.
+    fn switch(&mut self, idx: Value, ls: Vec<u32>) {
+        if ls.len() == 1 {
+            self.a.br(None, ls[0]);
+        } else {
+            let ri = self.reg(idx, S2);
+            if ri != S2 {
+                self.a.x().mov(8, Rm::R(S2), Rm::R(ri));
+            }
+            let tl = self.a.label();
+            self.a.x().lea(S1, Mem::RipLabel(tl));
+            self.a.x().movsxd_table(S2, S1, S2);
+            self.a.x().alu(Alu::Add, 8, Rm::R(S2), Rm::R(S1));
+            self.a.x().jmp_r(S2);
+            self.a.ps.push(P::Align4);
+            self.a.bind(tl);
+            self.a.ps.push(P::Table(ls));
+        }
+    }
+
+    /// A return of the `parts` of return kind `k`.
+    fn ret(&mut self, k: u32, parts: &[Value]) -> Result<(), Unsupported> {
+        let ps: Vec<RetPart> =
+            if k == 0 { Vec::new() } else { asm::ret_parts(k, true).ok_or(Unsupported("return kind"))?.into_iter().flatten().collect() };
+        self.to_abi(&ret_regs(&ps), parts, None);
+        self.epilogue();
+        self.a.x().ret();
         Ok(())
     }
 
