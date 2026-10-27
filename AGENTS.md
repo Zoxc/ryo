@@ -3,7 +3,9 @@
 - Committing. Whatever is uncommitted when you start stays uncommitted.
 - Don't reference an uncommitted file from a committed one.
 - Commit messages. Keep the title brief -- a line, not a paragraph -- and start it with an
-  uppercase letter (`Add …`, `JIT: …`, not `add …` or `backend: …`); put what needs saying
+  uppercase letter (`Add …`, `JIT: …`, not `add …` or `backend: …`). Prefer an area prefix
+  naming what the change is about: `Backend:`, `JIT:`, `JIT SSA:`, `Image:`, `Rt:`,
+  `Build:`, `Test:`, `Bench:`, `Lean:`, `Scripts:`, `CI:`, `Docs:`. Put what needs saying
   under it, ideally in one short paragraph
 - Codegen dumps. After every change that can affect the generated code (AOT or JIT), run
   `./y.sh build && ./y.sh bench codegen` and commit the regenerated `bench/codegen/`
