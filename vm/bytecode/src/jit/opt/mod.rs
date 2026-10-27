@@ -35,6 +35,48 @@ pub mod thread;
 use alloc::vec::Vec;
 
 use super::ir::*;
+
+/// A step of [`DomWalk`].
+pub enum Dom {
+    /// Entering a block, after its dominator's entry.
+    Enter(Block),
+    /// Leaving the block entered last that wasn't left yet.
+    Leave,
+}
+
+/// A preorder walk over a dominator tree, children in reverse postorder, with the way back
+/// up marked so scoped state can be undone.
+pub struct DomWalk {
+    kids: Vec<Vec<Block>>,
+    stack: Vec<Option<Block>>,
+}
+
+impl DomWalk {
+    /// The walk over the tree of `idom`, given the reverse postorder `rpo` it was computed
+    /// over; blocks with no dominator are roots.
+    pub fn new(idom: &[Option<Block>], rpo: &[Block]) -> DomWalk {
+        let mut kids: Vec<Vec<Block>> = alloc::vec![Vec::new(); idom.len()];
+        let mut roots = Vec::new();
+        for &b in rpo {
+            match idom[b.idx()] {
+                Some(d) => kids[d.idx()].push(b),
+                None => roots.push(b),
+            }
+        }
+        DomWalk { kids, stack: roots.into_iter().rev().map(Some).collect() }
+    }
+}
+
+impl Iterator for DomWalk {
+    type Item = Dom;
+
+    fn next(&mut self) -> Option<Dom> {
+        let Some(b) = self.stack.pop()? else { return Some(Dom::Leave) };
+        self.stack.push(None);
+        self.stack.extend(self.kids[b.idx()].iter().rev().map(|&k| Some(k)));
+        Some(Dom::Enter(b))
+    }
+}
 pub use crate::image::PoolRead;
 
 /// A constant address the IR names: an offset in the constant pool of the IR's image (its

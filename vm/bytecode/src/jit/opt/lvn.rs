@@ -616,12 +616,6 @@ pub fn lvn(f: &mut Func, pools: Option<&dyn ConstMem>) {
     let aliasable: Vec<bool> = f.allocas.iter().map(|a| a.escaped || a.pinned).collect();
     let rpo = f.rpo();
     let idom = f.idoms(&rpo);
-    let mut kids: Vec<Vec<Block>> = alloc::vec![Vec::new(); f.blocks.len()];
-    for &b in &rpo {
-        if let Some(d) = idom[b.idx()] {
-            kids[d.idx()].push(b);
-        }
-    }
     // The pure operations of the dominating blocks, with their block, and an undo log.
     let mut pure: BTreeMap<Key, (Value, Block)> = BTreeMap::new();
     let mut undo: Vec<(Key, Option<(Value, Block)>)> = Vec::new();
@@ -629,11 +623,9 @@ pub fn lvn(f: &mut Func, pools: Option<&dyn ConstMem>) {
     // start from it.
     let mut end: Vec<Option<Vec<(Loc, u8, Value)>>> = alloc::vec![None; f.blocks.len()];
     let mut mem: Vec<(Loc, u8, Value)> = Vec::new();
-    // Preorder over the dominator tree: `Some(b)` enters `b`, `None` leaves the last entered.
-    let mut stack: Vec<Option<Block>> = rpo.iter().rev().filter(|b| idom[b.idx()].is_none()).map(|&b| Some(b)).collect();
     let mut marks: Vec<usize> = Vec::new();
-    while let Some(e) = stack.pop() {
-        let Some(b) = e else {
+    for e in super::DomWalk::new(&idom, &rpo) {
+        let super::Dom::Enter(b) = e else {
             let m = marks.pop().expect("a mark");
             for (k, old) in undo.drain(m..).rev() {
                 match old {
@@ -644,8 +636,6 @@ pub fn lvn(f: &mut Func, pools: Option<&dyn ConstMem>) {
             continue;
         };
         marks.push(undo.len());
-        stack.push(None);
-        stack.extend(kids[b.idx()].iter().rev().map(|&k| Some(k)));
         mem.clear();
         if let [(p, _)] = f.blocks[b.idx()].preds[..]
             && let Some(m) = &end[p.idx()]

@@ -406,26 +406,15 @@ fn decide_ranges(cc: Cc, x: Range, y: Range) -> Option<bool> {
 pub fn checks(f: &mut Func) {
     let rpo = f.rpo();
     let idom = f.idoms(&rpo);
-    let n = f.blocks.len();
-    let mut kids: Vec<Vec<Block>> = alloc::vec![Vec::new(); n];
-    let mut roots = Vec::new();
-    for &b in &rpo {
-        match idom[b.idx()] {
-            Some(d) => kids[d.idx()].push(b),
-            None => roots.push(b),
-        }
-    }
     let mut w = Walk { facts: Vec::new() };
     let mut changed = false;
-    // (block, fact stack height to return to) on the way down; `None` marks the way up.
-    let mut stack: Vec<(Block, Option<usize>)> = roots.into_iter().rev().map(|b| (b, None)).collect();
-    while let Some((b, mark)) = stack.pop() {
-        if let Some(m) = mark {
-            w.facts.truncate(m);
+    let mut marks: Vec<usize> = Vec::new();
+    for e in super::DomWalk::new(&idom, &rpo) {
+        let super::Dom::Enter(b) = e else {
+            w.facts.truncate(marks.pop().expect("a mark"));
             continue;
-        }
-        let m = w.facts.len();
-        stack.push((b, Some(m)));
+        };
+        marks.push(w.facts.len());
         let bd = &f.blocks[b.idx()];
         if let [(p, k)] = bd.preds[..]
             && idom[b.idx()] == Some(p)
@@ -433,9 +422,6 @@ pub fn checks(f: &mut Func) {
             w.edge_facts(f, p, k);
         }
         changed |= block(f, &mut w, b);
-        for &c in kids[b.idx()].iter().rev() {
-            stack.push((c, None));
-        }
     }
     if changed {
         f.prune(false);
