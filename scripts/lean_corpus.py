@@ -40,11 +40,16 @@ def programs(names):
     return out
 
 
-def variants(opt, frame_pointer=False):
-    """`(label suffix, flags)`: -O0, with `opt` -O3, with `frame_pointer` each also with frame pointers."""
+def variants(opt, frame_pointer=False, codegen_units=None):
+    """`(label suffix, flags)`: -O0, with `opt` -O3, with `frame_pointer` each also with frame
+    pointers; with `codegen_units` every one built with -Ccodegen-units=N (rustc's default puts
+    a small program in one CGU, so one image; more CGUs give one image each, cross-image
+    `call.sym`s and per-image `#[inline]` copies)."""
     vs = [("", [])] + ([("-O3", ["-Copt-level=3"])] if opt else [])
     if frame_pointer:
         vs += [(v + "-fp", f + ["-Cforce-frame-pointers=yes"]) for v, f in vs]
+    if codegen_units:
+        vs = [(v, f + [f"-Ccodegen-units={codegen_units}"]) for v, f in vs]
     return vs
 
 
@@ -79,8 +84,8 @@ def build_all(names, variants, work, jobs, build):
 
 
 def sysroot_images(names, out_dir):
-    """The ryo sysroot's rlibs' image objects, extracted to `out_dir/<crate>/`, as
-    `(sysroot/<crate>, path)`, those `names` picks."""
+    """The ryo sysroot's rlibs' image objects (one per CGU with VM code), extracted to
+    `out_dir/<crate>/`, as `(sysroot/<crate>, path)` in member order, those `names` picks."""
     out = []
     for rlib in sorted((ROOT / "dist" / "sysroot-ryo" / "lib" / "rustlib").glob("*/lib/*.rlib")):
         crate = re.sub(r"^lib|-[0-9a-f]+$", "", rlib.stem)
@@ -103,6 +108,7 @@ def add_common_args(ap):
     ap.add_argument("--ryo-lean", default=str(RYO_LEAN))
     ap.add_argument("--opt", action="store_true")
     ap.add_argument("--keep")
+    ap.add_argument("--codegen-units", type=int, metavar="N", help="build the programs with -Ccodegen-units=N")
     ap.add_argument("-j", type=int, default=os.cpu_count() or 4)
 
 

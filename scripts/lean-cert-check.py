@@ -7,9 +7,11 @@ don't build alone, or have no `main` and so no dump, are skipped) is built with
 dist/bin/rustc-ryo, -Csave-temps (which keeps `<name>.<cgu>.ryo_image.rcgu.o`) and RYO_DUMP_LEAN
 (the MIR dump `<dir>/<name>.json` and the certificate `<dir>/<name>.cert.json`), at -O0 and with
 --opt also at -O3. Then `ryo-lean check-cert <dump> <cert> <objects>` checks the certificate
-against the objects' decoded code and the dump: the function map, each function's own
-signature, its instruction ranges, its calls and their plans, its islands, the escape coverage
-of the frame addresses it takes. This tabulates per object: functions, those with a
+against the objects' decoded code and the dump: the function map (with several images, one
+per CGU, the certificate's functions in CGU then image order; a copy of an `#[inline]`
+function in a later image is not checked), each function's own signature, its instruction
+ranges, its calls and their plans, its islands, the escape coverage of the frame addresses it
+takes. This tabulates per object: functions, copies, those with a
 certificate, those whose symbol is a dumped body, functions not decoded, functions whose own
 plan the dump's ABI confirmed, blocks, blocks the dumper truncated, calls and how their plans
 were verified (by the callee's `FuncEntry`, by the dump's ABI, neither), islands, the frame
@@ -18,10 +20,13 @@ object escaped on every path, at such an object's end, a zero-sized local; `addr
 are call arguments), errors, and the dead-store check with the certificate's facts (dropped
 stores, those not shown dead); then the totals and each error.
 
-Usage: scripts/lean-cert-check.py [names...] [--opt] [--corpus DIR] [--keep DIR] [--ryo-lean PATH] [-j N] [-v]
+Usage: scripts/lean-cert-check.py [names...] [--opt] [--codegen-units N] [--corpus DIR] [--keep DIR]
+                                  [--ryo-lean PATH] [-j N] [-v]
 
     names         programs (file stems, e.g. `ints`, `fib`, or `tests/lean/ints`); default: all
     --opt         also build with -Copt-level=3
+    --codegen-units N
+                  build the programs with -Ccodegen-units=N (several images per program)
     --corpus DIR  don't build: check DIR/<program>/ (its image objects and dump/), as --keep
                   (here or in scripts/lean-pool-check.py) leaves them
     --keep DIR    keep the builds, dumps and outputs in DIR (default: a temporary directory)
@@ -40,11 +45,11 @@ from pathlib import Path
 
 from lean_corpus import IMAGE_GLOB, add_common_args, build_all, compile_program, require, run, variants, work_dir
 LINE = re.compile(
-    r"^cert-check (\S+): funcs (\d+) certs (\d+) in-dump (\d+) undecoded (\d+) sig-abi (\d+) blocks (\d+) truncated (\d+) "
+    r"^cert-check (\S+): funcs (\d+) copies (\d+) certs (\d+) in-dump (\d+) undecoded (\d+) sig-abi (\d+) blocks (\d+) truncated (\d+) "
     r"calls (\d+) by-entry (\d+) by-abi (\d+) unverified (\d+) islands (\d+) "
     r"addrs (\d+) by-escape (\d+) at-end (\d+) zero-sized (\d+) addr-args (\d+) errors (\d+)$"
 )
-FIELDS = ["funcs", "certs", "in_dump", "undecoded", "sig_abi", "blocks", "truncated", "calls", "by_entry", "by_abi", "unverified",
+FIELDS = ["funcs", "copies", "certs", "in_dump", "undecoded", "sig_abi", "blocks", "truncated", "calls", "by_entry", "by_abi", "unverified",
           "islands", "addrs", "by_escape", "at_end", "zero_sized", "addr_args", "errors"]
 DEAD_LINE = re.compile(r"^dead-check (\S+): dropped (\d+) not-shown-dead (\d+) \(without facts (\d+)\)$")
 DEAD_FIELDS = ["dropped", "not_dead", "not_dead_plain"]
@@ -115,7 +120,7 @@ def main():
                 if d.is_dir() and (not args.names or d.name in args.names or d.name.removesuffix("-O3").split("_", 1)[-1] in args.names)]
     else:
         work = work_dir(args.keep, "lean-cert-check-")
-        dirs, skipped = build_all(args.names, variants(args.opt), work, args.j, build)
+        dirs, skipped = build_all(args.names, variants(args.opt, codegen_units=args.codegen_units), work, args.j, build)
     with concurrent.futures.ThreadPoolExecutor(args.j) as pool:
         jobs = {pool.submit(check, args.ryo_lean, label, d, args.v): label for label, d in dirs}
         for f in concurrent.futures.as_completed(jobs):

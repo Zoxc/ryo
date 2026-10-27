@@ -342,6 +342,11 @@ allocation of the world is exposed (`worldWith_exposed`). So:
   environment's world contains every loaded image's parts and natives, exposed and
   disjoint (`drop_exposed_mono`, `resolve_of_fits`). The multi-image world itself (each
   image at its own addresses, ids renumbered) is the environment's, not built in Lean.
+  Since a crate has an image per CGU, a `call.sym` (or `tail_call.ptr` through `addr.sym`)
+  slot may also name a VM function of another image of the same crate: R keeps such a call
+  an outgoing `Query` the environment answers, like a native call, so nothing changes; a
+  proof that wants to run it as a VM call (as `Run.lean` runs `call`s of the image's own
+  functions) needs this multi-image code memory first.
 
 **Provenance obligations not addressed yet** (design/provenance.md, "gaps"):
 

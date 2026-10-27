@@ -7,15 +7,17 @@ The programs are those of scripts/lean-decode-diff.py: tests/lean/*.rs, tests/*.
 bench/*.rs, compiled with dist/bin/rustc-ryo and -Csave-temps, which keeps each program's image
 objects (`<name>.<cgu>.ryo_image.rcgu.o`) and its registry object
 (`<name>.<name>.ryo_registry.bin.rcgu.o`); each program's objects are checked together, as one
-link. With a ryo sysroot (`./y.sh build --sysroot ryo`), the image object of each of its rlibs
-is checked alone (no registry object).
+link. With a ryo sysroot (`./y.sh build --sysroot ryo`), the image objects of each of its rlibs
+(one per CGU with VM code) are checked together, without a registry object.
 
-Usage: scripts/lean-image-check.py [names...] [--opt] [--frame-pointer] [--no-sysroot] [--corpus DIR]
-                                   [--keep DIR] [--ryo-lean PATH] [-j N]
+Usage: scripts/lean-image-check.py [names...] [--opt] [--frame-pointer] [--codegen-units N]
+                                   [--no-sysroot] [--corpus DIR] [--keep DIR] [--ryo-lean PATH] [-j N]
 
     names         programs (file stems, e.g. `ints`, `fib`) or sysroot crates (`std`); default:
                   all
     --opt         also build the programs with -Copt-level=3
+    --codegen-units N
+                  build the programs with -Ccodegen-units=N (several images per program)
     --frame-pointer
                   also build them with -Cforce-frame-pointers=yes (the frame-pointer mode)
     --corpus DIR  don't build: check DIR/<group>/ (each group's image and registry objects
@@ -93,10 +95,13 @@ def main():
                     groups.append((label, images, reg))
     else:
         work = work_dir(args.keep, "lean-image-check-")
-        built, skipped = build_all(args.names, variants(args.opt, args.frame_pointer), work, args.j, build)
+        built, skipped = build_all(args.names, variants(args.opt, args.frame_pointer, args.codegen_units), work, args.j, build)
         groups = [(label, images, reg) for label, (images, reg) in built]
         if not args.no_sysroot:
-            groups += [(label, [obj], None) for label, obj in sysroot_images(args.names, work / "sysroot")]
+            crates = {}
+            for label, obj in sysroot_images(args.names, work / "sysroot"):
+                crates.setdefault(label, []).append(obj)
+            groups += [(label, objs, None) for label, objs in crates.items()]
     groups.sort(key=lambda g: g[0])
 
     rows, reports = [], []

@@ -56,8 +56,11 @@
                                            escape coverage of the addresses taken), a
                                            `dead-check` line (the dead-store check with the
                                            certificate's facts) and the errors; then a
-                                           `cert-map` line (certificates without a function);
-                                           exit status 1 on an error. `-v` prints every error
+                                           `cert-map` line (certificates without a function,
+                                           and the certificate's order against the objects'
+                                           functions); exit status 1 on an error. `-v` prints
+                                           every error. A crate's image objects (one per CGU)
+                                           go in CGU order, as their sorted file names are
                                            (default: the first 50 per object)
   ryo-lean check-image <image object>... [--registry <registry object>]
                                            the image checks that need no dump (aot.md §C4,
@@ -184,20 +187,25 @@ def checkCert (dump certPath : String) (objs : List String) (verbose : Bool) : I
   let p : Program ← IO.ofExcept (Program.ofJsonString (← IO.FS.readFile dump))
   let cert ← IO.ofExcept (Ryo.Check.Lower.Cert.ofJsonString (← IO.FS.readFile certPath))
   let mut status : UInt32 := 0
-  let mut reps := #[]
+  let mut read : Array (String × Ryo.Obj.ImageObject) := #[]
   for path in objs do
     match Ryo.Obj.readImageObject (← IO.FS.readBinFile path) with
-    | .ok o =>
-      let r := Ryo.Check.Lower.checkObject p cert o
-      let ls := r.render path
-      for l in if verbose then ls else ls.extract 0 52 do IO.println l
-      if !verbose && ls.size > 52 then IO.println s!"error: ... and {ls.size - 52} more"
-      unless r.ok do status := 1
-      reps := reps.push r
+    | .ok o => read := read.push (path, o)
     | .error e =>
       IO.println s!"cert-check {path}: error: {e}"
       status := 1
-  let un := Ryo.Check.Lower.unmatched cert reps
+  let (own, order) := Ryo.Check.Lower.owned cert (read.map (·.2))
+  let mut reps := #[]
+  for h : k in [0:read.size] do
+    let (path, o) := read[k]
+    let fs := own[k]?.getD #[]
+    let r := Ryo.Check.Lower.checkObject p cert o (fs[·]?.getD true)
+    let ls := r.render path
+    for l in if verbose then ls else ls.extract 0 52 do IO.println l
+    if !verbose && ls.size > 52 then IO.println s!"error: ... and {ls.size - 52} more"
+    unless r.ok do status := 1
+    reps := reps.push r
+  let un := Ryo.Check.Lower.unmatched cert reps ++ order.toArray
   IO.println s!"cert-map: certificates {cert.functions.size} unmatched {un.size}"
   for e in un do IO.println s!"error: {e}"
   unless un.isEmpty do status := 1

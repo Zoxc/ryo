@@ -15,10 +15,12 @@ errors; then functions, those whose symbol is a dumped instance's, symbol slots,
 a dumped instance or static, and the dump check's errors (`main`: the object has
 `__ryo_main`), with each mismatch's and error's details.
 
-Usage: scripts/lean-pool-check.py [names...] [--opt] [--keep DIR] [--ryo-lean PATH] [-j N] [-v]
+Usage: scripts/lean-pool-check.py [names...] [--opt] [--codegen-units N] [--keep DIR] [--ryo-lean PATH] [-j N] [-v]
 
     names         programs (file stems, e.g. `ints`, `fib`, or `tests/lean/ints`); default: all
     --opt         also build with -Copt-level=3
+    --codegen-units N
+                  build the programs with -Ccodegen-units=N (several images per program)
     --keep DIR    keep the builds, dumps and outputs in DIR (default: a temporary directory)
     -v            also list the references not in the dump
 
@@ -94,7 +96,7 @@ def main():
 
     require(args.ryo_lean)
     work = work_dir(args.keep, "lean-pool-check-")
-    built, skipped = build_all(args.names, variants(args.opt), work, args.j, build)
+    built, skipped = build_all(args.names, variants(args.opt, codegen_units=args.codegen_units), work, args.j, build)
     rows, reports = [], []
     with concurrent.futures.ThreadPoolExecutor(args.j) as pool:
         jobs = {pool.submit(check, args.ryo_lean, l, objs, dump, args.v): l for l, (objs, dump) in built}

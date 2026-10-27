@@ -198,7 +198,13 @@ writes the certificate next to the dump (`RYO_DUMP_LEAN`, `<crate>.cert.json`: p
 the frame map, its own `ArgPlan`, the ranges, and per call instruction its kind, return kind
 and size and the callee's `ArgPlan`; the islands' templates by symbol). The check, short of
 the relational spec: each image function has exactly one certificate (by symbol) and each
-certificate a function. Own signature: `argSize = plan.stackSize = FuncEntry.arg_size`,
+certificate a function. A crate has an image object per CGU with VM functions, and the
+certificate file covers them all: its functions in CGU then image order, each symbol once, so
+an `#[inline]` function's copy in a later CGU's image (lowered there again, its calls of that
+CGU's VM functions direct, of another image's `call.sym`) has none. `check-cert` takes the
+objects in CGU order (rustc sorts the CGUs by name; the scripts pass the file names sorted),
+checks the certificate's order against them (`owned`), and counts the copies without checking
+them. Own signature: `argSize = plan.stackSize = FuncEntry.arg_size`,
 `ret_kind` the entry's, the frame size the decoded one, an sret slot iff `RET_SRET`, and the
 `arg` instructions are exactly the prologue's, the plan's register pieces in order; for a
 dumped body with an ABI, the return kind and plan recomputed from the dumped `FnAbiSummary`
@@ -509,7 +515,11 @@ data area; the JIT records (`ctr_e` = −625, `ctr_l` = −10000, `func`, zeros,
 `entry`/`osr`/`header` relocations); the header (image symbol from `stable_crate_id`,
 `crate_hash`, section sizes, RELRO); the anchor; `__ryo_main` (one slot naming one of the image's functions or an undefined symbol).
 Registry: the constructor decoded with `decodeX` from its relocations, `.init_array.00000`,
-the list, and per link each image symbol listed once, at most one `__ryo_main`. Unwind: the
+the list, and per link each image symbol listed once, at most one `__ryo_main`. A link's image
+objects include a crate's several images (one per CGU with VM functions, each with its own
+`ryo_images` entry), so the distinct `(crate_hash, cgu_hash)` check covers them; a call into
+another image of the crate is a `call.sym` through a slot naming the callee's hidden symbol,
+which these checks treat as any undefined symbol. Unwind: the
 CIE (`zPLR`, entry rules, the personality through the slot naming `rust_eh_personality`), one
 FDE per function of range `code_len`, whose row table equals at every offset the rules the
 code establishes, derived from the counter check and prologue items read from the bytes
