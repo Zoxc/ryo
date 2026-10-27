@@ -391,8 +391,12 @@ impl Jit {
     ) -> Result<(), CompileError> {
         let h = img.header();
         let mode = jit_mode(img, place.far_rt);
-        let Gen { code: enc_code, relocs, rodata, call_sites, body, osr, osr_at, region } = out;
+        let Gen { code: enc_code, mut relocs, rodata, call_sites, body, osr, osr_at, region } = out;
         let code_len = enc_code.len();
+        // The OSR code's stack probes, relocated as the body's.
+        if let Some(o) = &osr {
+            relocs.extend(o.probes.iter().map(|&p| asm::Reloc { at: (osr_at + p as usize) as u32, to: Ref::Probe }));
+        }
         let osr_len = osr.as_ref().map_or(0, |o| o.code.len());
 
         // Unwind information. ELF: the CIE, the FDE, the OSR code's FDE, the terminator, then
@@ -582,31 +586,15 @@ impl Jit {
             };
             if abs {
                 code[field - base..][..8].copy_from_slice(&(target as u64).to_le_bytes());
-                continue;
-            }
-            let d = i32::try_from((target as i64).wrapping_sub(field as i64 + 4)).map_err(|_| "out of reach")?;
-            code[field - base..][..4].copy_from_slice(&d.to_le_bytes());
-        }
-        if let Some(o) = &osr {
-            let probe = self.rt.probe as usize;
-            for &p in &o.probes {
-                let field = jit_f + osr_at + p as usize;
-                if place.far_rt {
-                    code[field - base..][..8].copy_from_slice(&(probe as u64).to_le_bytes());
-                    continue;
-                }
-                let d = i32::try_from((probe as i64).wrapping_sub(field as i64 + 4)).map_err(|_| "out of reach")?;
-                code[field - base..][..4].copy_from_slice(&d.to_le_bytes());
+            } else {
+                patch_rel32(&mut code[field - base..], field + 4, target)?;
             }
         }
         if let Some(dir) = &self.dump {
             self.dump_code(dir, func, header, ext, &enc_code, &relocs, osr.as_ref().map(|o| (osr_at, o)), tier);
         }
-        let pc = |eh: &mut Vec<u8>, at: usize, target: usize| -> Result<(), &'static str> {
-            let d = i32::try_from((target as i64).wrapping_sub((eh_base + at) as i64)).map_err(|_| "out of reach")?;
-            eh[at..at + 4].copy_from_slice(&d.to_le_bytes());
-            Ok(())
-        };
+        // `.eh_frame`'s PC-relative fields: relative to the field itself.
+        let pc = |eh: &mut Vec<u8>, at: usize, target: usize| patch_rel32(&mut eh[at..], eh_base + at, target);
         if let Some(fields) = fields {
             pc(&mut eh, pers_field, personality)?;
             pc(&mut eh, fields.pc_begin, jit_f)?;
@@ -693,6 +681,13 @@ impl Jit {
         let (func, header) = unsafe { ((*rec).func, (*rec).header) };
         std::format!("ryo-jit: f{func} of image {header:p}: {what}\n")
     }
+}
+
+/// Writes the 32-bit field at the start of `field` as `target` relative to `from`.
+fn patch_rel32(field: &mut [u8], from: usize, target: usize) -> Result<(), &'static str> {
+    let d = i32::try_from((target as i64).wrapping_sub(from as i64)).map_err(|_| "out of reach")?;
+    field[..4].copy_from_slice(&d.to_le_bytes());
+    Ok(())
 }
 
 /// The mode JIT code of `img` is encoded in: without counters, calling the handlers through

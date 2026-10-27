@@ -68,11 +68,6 @@ impl Jit {
             };
             let _ = writeln!(s, "ext {} {form} {name}", Func(e.kind | k as u32));
         }
-        if let Some((at, o)) = osr {
-            for &p in &o.probes {
-                let _ = writeln!(s, "reloc {} ryo_probe_stack", at + p as usize);
-            }
-        }
         let _ = std::fs::write(std::format!("{dir}/f{func}-{header:x}.code"), s);
     }
 }
