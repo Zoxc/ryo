@@ -785,6 +785,21 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Re
 
 /// Decodes `d` into instructions and blocks.
 pub fn decode(d: &Decoded, mode: Mode, mem: Option<&dyn super::opt::ConstMem>) -> Result<Code, Unsupported> {
+    let (insns, scopes, heads) = decode_insns(d, mode, mem)?;
+    let (blocks, block_of) = form_blocks(&insns, &heads)?;
+    let cyclic = cyclic_blocks(blocks.len(), |b| &blocks[b].succ);
+    let mut enterable = alloc::vec![false; heads.len()];
+    for (b, bl) in blocks.iter().enumerate() {
+        let Some(h) = bl.head else { continue };
+        let first = &insns[bl.start as usize].kind;
+        enterable[h as usize] = cyclic[b] && !matches!(first, Kind::Arg(_) | Kind::Lpad);
+    }
+    Ok(Code { insns, scopes, blocks, block_of, enterable })
+}
+
+/// The instructions of `d` with their targets, unwinding and copy pieces, its scopes, and
+/// its loop heads, all by instruction index.
+fn decode_insns(d: &Decoded, mode: Mode, mem: Option<&dyn super::opt::ConstMem>) -> Result<(Vec<RInsn>, Vec<ScopeAt>, Vec<u32>), Unsupported> {
     // Instruction starts first, for the scopes' positions.
     let mut starts = Vec::new();
     let mut at = 0;
@@ -843,7 +858,14 @@ pub fn decode(d: &Decoded, mode: Mode, mem: Option<&dyn super::opt::ConstMem>) -
             return Err(Unsupported("an arg after the start"));
         }
     }
+    let heads = d.heads.iter().map(|&h| idx(h)).collect::<Result<_, _>>()?;
+    Ok((insns, scopes, heads))
+}
 
+/// Cuts the instructions into blocks, with their CFG and loop heads (`heads`, instruction
+/// indices): the blocks and the block of each instruction.
+fn form_blocks(insns: &[RInsn], heads: &[u32]) -> Result<(Vec<RBlock>, Vec<u32>), Unsupported> {
+    let n = insns.len();
     // Leaders: the start, targets, after terminators, branches, calls with a landing pad,
     // landing pads and the instruction after them, and loop heads.
     let mut leader = alloc::vec![false; n + 1];
@@ -866,8 +888,8 @@ pub fn decode(d: &Decoded, mode: Mode, mem: Option<&dyn super::opt::ConstMem>) -
             leader[pad as usize + 1] = true;
         }
     }
-    for &h in &d.heads {
-        leader[idx(h)? as usize] = true;
+    for &h in heads {
+        leader[h as usize] = true;
     }
     let mut blocks: Vec<RBlock> = Vec::new();
     let mut block_of = alloc::vec![0u32; n];
@@ -879,8 +901,8 @@ pub fn decode(d: &Decoded, mode: Mode, mem: Option<&dyn super::opt::ConstMem>) -
         blocks[b].end = i as u32 + 1;
         block_of[i] = b as u32;
     }
-    for (k, &h) in d.heads.iter().enumerate() {
-        let b = block_of[idx(h)? as usize] as usize;
+    for (k, &h) in heads.iter().enumerate() {
+        let b = block_of[h as usize] as usize;
         blocks[b].head = Some(k as u32);
     }
     for b in 0..blocks.len() {
@@ -902,9 +924,13 @@ pub fn decode(d: &Decoded, mode: Mode, mem: Option<&dyn super::opt::ConstMem>) -
         }
     }
 
-    // Cyclic heads: in a strongly connected component of more than one block, or with a
-    // self edge (Tarjan, iteratively).
-    let nb = blocks.len();
+    Ok((blocks, block_of))
+}
+
+/// By block of a CFG of `nb` blocks with successors `succ`, whether it lies on a cycle: in
+/// a strongly connected component of more than one block, or with a self edge (Tarjan,
+/// iteratively).
+fn cyclic_blocks<'a>(nb: usize, succ: impl Fn(usize) -> &'a [u32]) -> Vec<bool> {
     let mut index = alloc::vec![u32::MAX; nb];
     let mut low = alloc::vec![0u32; nb];
     let mut on = alloc::vec![false; nb];
@@ -923,8 +949,8 @@ pub fn decode(d: &Decoded, mode: Mode, mem: Option<&dyn super::opt::ConstMem>) -
         stack.push(root);
         on[root] = true;
         while let Some(&mut (v, ref mut k)) = work.last_mut() {
-            if *k < blocks[v].succ.len() {
-                let w = blocks[v].succ[*k] as usize;
+            if *k < succ(v).len() {
+                let w = succ(v)[*k] as usize;
                 *k += 1;
                 if index[w] == u32::MAX {
                     index[w] = next;
@@ -958,12 +984,5 @@ pub fn decode(d: &Decoded, mode: Mode, mem: Option<&dyn super::opt::ConstMem>) -
             }
         }
     }
-    let mut enterable = alloc::vec![false; d.heads.len()];
-    for (b, bl) in blocks.iter().enumerate() {
-        let Some(h) = bl.head else { continue };
-        let cyclic = comp_size[comp[b] as usize] > 1 || bl.succ.contains(&(b as u32));
-        let first = &insns[bl.start as usize].kind;
-        enterable[h as usize] = cyclic && !matches!(first, Kind::Arg(_) | Kind::Lpad);
-    }
-    Ok(Code { insns, scopes, blocks, block_of, enterable })
+    (0..nb).map(|b| comp_size[comp[b] as usize] > 1 || succ(b).contains(&(b as u32))).collect()
 }
