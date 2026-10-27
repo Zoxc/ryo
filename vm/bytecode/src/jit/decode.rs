@@ -310,11 +310,7 @@ fn arg_list(a: &[u32], accs: &mut Vec<Acc>, regs: &mut Vec<ArgReg>) -> Result<()
 fn small_copy(h: full::Opcode, args: &[Arg], l: &asm::Layout, pool: bool) -> Option<(u32, Side, Side, Option<i32>)> {
     let info = h.info();
     let m = info.mnemonic;
-    let reg = |name: &str, part: u8| -> Option<u64> {
-        let loc = l.locs[info.operand_index(name)?];
-        let Arg::Imm(v) = *args.get((loc.reg + part) as usize)? else { return None };
-        Some(if loc.shared { (v >> loc.shift) as u32 as u64 } else { v })
-    };
+    let reg = |name: &str, part: u8| l.locs[info.operand_index(name)?].imm(args, part);
     let slot = |name: &str| Some(reg(name, 0)? as u32 as i32);
     let disp = || Some(reg("m", 1)? as u32 as i32);
     let (len, dst, src, p) = match m {
@@ -598,9 +594,7 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Re
             falls = matches!(info.shape, Shape::Op | Shape::Br | Shape::Lpad);
             if info.shape == Shape::Lpad {
                 let x = info.operand_index("x").expect("x");
-                let loc = l.locs[x];
-                let Arg::Imm(v) = args[loc.reg as usize] else { return Err(Unsupported("handler arguments")) };
-                let off = if loc.shared { (v >> loc.shift) as u32 } else { v as u32 } as i32;
+                let off = l.locs[x].imm(&args, 0).ok_or(Unsupported("handler arguments"))? as u32 as i32;
                 accs.push(acc(off, 8, How::Write));
                 Kind::Lpad
             } else if let Some((len, dst, src, p)) = small_copy(h, &args, &l, pool) {
@@ -611,15 +605,7 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Re
             } else {
                 let e = effects(h).ok_or(Unsupported("handler"))?;
                 // The extent of block operands: the lengths the operands give.
-                let imm_of = |name: &str| -> Option<u64> {
-                    let k = info.operand_index(name)?;
-                    let loc = l.locs[k];
-                    match args[loc.reg as usize] {
-                        Arg::Imm(v) if loc.shared => Some((v >> loc.shift) as u32 as u64),
-                        Arg::Imm(v) => Some(v),
-                        _ => None,
-                    }
-                };
+                let imm_of = |name: &str| l.locs[info.operand_index(name)?].imm(&args, 0);
                 let block = imm_of("len").or_else(|| Some(imm_of("elem_size")?.saturating_mul(imm_of("count")?))).unwrap_or(16);
                 let block = u32::try_from(block).map_err(|_| Unsupported("a block too large"))?;
                 let mut slots = Vec::new();
@@ -628,8 +614,7 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Re
                     if loc.count == 0 || !matches!(o.kind, OperandKind::Slot | OperandKind::Mem) {
                         continue;
                     }
-                    let Arg::Imm(v) = args[loc.reg as usize] else { return Err(Unsupported("a slot operand that isn't an immediate")) };
-                    let off = if loc.shared { (v >> loc.shift) as u32 } else { v as u32 } as i32;
+                    let off = loc.imm(&args, 0).ok_or(Unsupported("a slot operand that isn't an immediate"))? as u32 as i32;
                     let (size, how) = match e.opnds[k] {
                         Some(Effect::Read(n)) => (n as u32, How::Read),
                         Some(Effect::Write(n)) => (n as u32, How::Write),
@@ -648,7 +633,7 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Re
                         how => how,
                     };
                     accs.push(acc(off, size, how));
-                    slots.push((loc.reg, loc.shift / 32));
+                    slots.push((loc.reg, loc.half()));
                 }
                 Kind::Handler { h, args, slots, then }
             }

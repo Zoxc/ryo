@@ -170,6 +170,23 @@ pub struct Loc {
 
 impl Loc {
     const NONE: Loc = Loc { reg: 0, shift: 0, count: 0, shared: false };
+
+    /// The operand's value in its register's value `v`: the 32-bit half for a shared one.
+    pub const fn field(&self, v: u64) -> u64 {
+        if self.shared { (v >> self.shift) as u32 as u64 } else { v }
+    }
+
+    /// The operand's value in the reduced handler call's arguments `args`, from its
+    /// register `part` (0 or 1): `None` when that isn't an immediate.
+    pub fn imm(&self, args: &[crate::reduced::Arg], part: u8) -> Option<u64> {
+        let crate::reduced::Arg::Imm(v) = *args.get((self.reg + part) as usize)? else { return None };
+        Some(self.field(v))
+    }
+
+    /// The half of its register the operand is in (1: the high one of a shared register).
+    pub const fn half(&self) -> u8 {
+        self.shift / 32
+    }
 }
 
 /// The argument registers of an instruction's handler call.
