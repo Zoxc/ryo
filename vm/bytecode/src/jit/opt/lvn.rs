@@ -43,34 +43,60 @@ enum Loc {
 /// At most this many remembered memory values per block, to keep the pass linear.
 const MAX_MEM: usize = 32;
 
-/// A pure operation's key for common subexpressions: a tag, its immediates, its operands.
-type Key = (u8, u64, u64, u32, u32);
+/// A pure operation's key for common subexpressions: its kind, its immediates, its operands.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Key {
+    Bin(BinOp, u8, Value, Value),
+    Cmp(Cc, u8, Value, Value),
+    Ext {
+        from: u8,
+        to: u8,
+        sx: bool,
+        x: Value,
+    },
+    Bswap(u8, Value),
+    Count {
+        lz: bool,
+        w: u8,
+        x: Value,
+    },
+    Cmp3(bool, u8, Value, Value),
+    SwitchIdx {
+        w: u8,
+        base: u64,
+        n: u32,
+        x: Value,
+    },
+    PtrAdd(i64, Value),
+    PtrIndex(u32, Value, Value),
+    AllocaAddr(AllocaId, i32),
+    /// The [`Ref`] kind (constant, data, symbol), its index, and whether indirect.
+    RefAddr(u8, u32, bool),
+    V(VOp, Value, Option<Value>),
+    VConst(u128),
+}
+
+impl Key {
+    /// Addresses are cheaper to recompute than to keep live across blocks.
+    fn block_local(&self) -> bool {
+        matches!(self, Key::AllocaAddr(..) | Key::RefAddr(..))
+    }
+}
 
 fn key(op: &Op, args: &[Value]) -> Option<Key> {
-    let a = |n: usize| args.get(n).map_or(u32::MAX, |v| v.0);
     Some(match *op {
-        Op::Bin(o, w) => (0, o as u64, w as u64, a(0), a(1)),
-        Op::Cmp(cc, w) => (1, cc as u64, w as u64, a(0), a(1)),
-        Op::Bswap(w) => (9, w as u64, 0, a(0), u32::MAX),
-        Op::Count { lz, w } => (10, lz as u64, w as u64, a(0), u32::MAX),
-        Op::Cmp3(signed, w) => (12, signed as u64, w as u64, a(0), a(1)),
-        Op::SwitchIdx { w, base, n } => (11 | w << 4, base, n as u64, a(0), u32::MAX),
-        Op::Ext { from, to, sx } => (2, from as u64 | (to as u64) << 8 | (sx as u64) << 16, 0, a(0), u32::MAX),
-        Op::PtrAdd(k) => (3, k as u64, 0, a(0), u32::MAX),
-        Op::PtrIndex(s) => (4, s as u64, 0, a(0), a(1)),
-        Op::AllocaAddr(al, k) => (5, al.0 as u64, k as u32 as u64, u32::MAX, u32::MAX),
-        Op::V(o) => {
-            let (t, n) = match o {
-                VOp::Splat => (0, 0),
-                VOp::Eq => (1, 0),
-                VOp::LtS => (2, 0),
-                VOp::Msb => (3, 0),
-                VOp::Half(n) => (4, n),
-                VOp::Pair => (5, 0),
-            };
-            (7, t, n as u64, a(0), a(1))
-        }
-        Op::VConst(c) => (8, c as u64, (c >> 64) as u64, u32::MAX, u32::MAX),
+        Op::Bin(o, w) => Key::Bin(o, w, args[0], args[1]),
+        Op::Cmp(cc, w) => Key::Cmp(cc, w, args[0], args[1]),
+        Op::Bswap(w) => Key::Bswap(w, args[0]),
+        Op::Count { lz, w } => Key::Count { lz, w, x: args[0] },
+        Op::Cmp3(signed, w) => Key::Cmp3(signed, w, args[0], args[1]),
+        Op::SwitchIdx { w, base, n } => Key::SwitchIdx { w, base, n, x: args[0] },
+        Op::Ext { from, to, sx } => Key::Ext { from, to, sx, x: args[0] },
+        Op::PtrAdd(k) => Key::PtrAdd(k, args[0]),
+        Op::PtrIndex(s) => Key::PtrIndex(s, args[0], args[1]),
+        Op::AllocaAddr(al, k) => Key::AllocaAddr(al, k),
+        Op::V(o) => Key::V(o, args[0], args.get(1).copied()),
+        Op::VConst(c) => Key::VConst(c),
         Op::RefAddr(to, ind) => {
             let (kind, x) = match to {
                 Ref::Const(k) => (0, k.0),
@@ -78,7 +104,7 @@ fn key(op: &Op, args: &[Value]) -> Option<Key> {
                 Ref::Sym(s) => (2, s.0),
                 _ => return None,
             };
-            (6, kind | (ind as u64) << 8, x as u64, u32::MAX, u32::MAX)
+            Key::RefAddr(kind, x, ind)
         }
         _ => return None,
     })
@@ -664,10 +690,9 @@ pub fn lvn(f: &mut Func, pools: Option<&dyn ConstMem>) {
                 }
                 let id = &f.insts[i.idx()];
                 if let Some(k) = key(&id.op, &id.args) {
-                    // Addresses are cheaper to recompute than to keep live across blocks.
                     if let Some(&(v, db)) = pure.get(&k)
                         && f.w(v) >= f.w(Value(res))
-                        && (db == b || !matches!(k.0, 5 | 6))
+                        && (db == b || !k.block_local())
                     {
                         alias(f, v);
                         continue;

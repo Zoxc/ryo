@@ -61,7 +61,7 @@ pub struct ValueData {
     pub w: u8,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BinOp {
     Add,
     Sub,
@@ -143,7 +143,7 @@ impl BinOp {
 }
 
 /// A comparison, signed (`S`) or unsigned (`U`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Cc {
     Eq,
     Ne,
@@ -323,7 +323,7 @@ pub struct Island {
 /// A vector operation on 16 × 8-bit lanes ([`Op::V`]; the `vsplat`, `veq`, `vlt.s` and
 /// `vmsb` instructions, design/instructions.md "SIMD"), or between a vector and its two
 /// 64-bit halves.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum VOp {
     /// A byte (1-byte operand) in every lane.
     Splat,
