@@ -284,7 +284,6 @@ const RULES: &[(&str, Rule)] = &[
     ("lean/", Rule::Lean),
     ("tests/lean/", Rule::Lean),
     ("vm/bytecode/src/asm/", Rule::Bytecode),
-    ("vm/bytecode/src/asm.rs", Rule::Bytecode),
     ("vm/bytecode/src/full.rs", Rule::Bytecode),
     ("vm/bytecode/src/reduced.rs", Rule::Bytecode),
     ("vm/bytecode/src/abi.rs", Rule::Bytecode),
@@ -1158,6 +1157,16 @@ mod tests {
             }
         }
         assert!(missing.is_empty(), "directories without a rule in RULES: {missing:?}");
+    }
+
+    /// Every RULES prefix matches some tracked file: a rule whose path was renamed or removed
+    /// would stop matching and leave its changes to a later, broader rule. `notes/` is the
+    /// local, untracked notes directory.
+    #[test]
+    fn every_rule_matches_a_file() {
+        let files = crate::utils::output(crate::utils::cmd("git").current_dir(crate::utils::root()).arg("ls-files")).unwrap();
+        let dead: Vec<&str> = super::RULES.iter().map(|(p, _)| *p).filter(|p| *p != "notes/" && !files.lines().any(|f| f.starts_with(p))).collect();
+        assert!(dead.is_empty(), "RULES prefixes that match no file: {dead:?}");
     }
 
     #[test]
