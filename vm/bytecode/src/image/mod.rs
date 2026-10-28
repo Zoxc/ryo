@@ -783,6 +783,21 @@ impl<'a> Image<'a> {
         self.part(self.header.code_consts)
     }
 
+    /// The linked address of function `g`'s AOT entry (its first code byte).
+    pub fn entry(&self, g: u32) -> usize {
+        (self.header.text as usize).wrapping_add(self.functions()[g as usize].code_off as usize)
+    }
+
+    /// The function whose code starts at text byte `off`.
+    pub fn func_at_entry(&self, off: u32) -> Option<u32> {
+        self.functions().binary_search_by_key(&off, |f| f.code_off).ok().map(|i| i as u32)
+    }
+
+    /// The JIT record of function `g` (not checked against the record count).
+    pub fn jit_record(&self, g: u32) -> *mut JitRecord {
+        self.jit_records().wrapping_add(g as usize)
+    }
+
     /// The function whose code contains text byte `off`, and the offset within it.
     pub fn function_at(&self, off: u32) -> Option<(u32, u32)> {
         let fs = self.functions();

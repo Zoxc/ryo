@@ -241,10 +241,7 @@ impl Jit {
         // AOT code's (design/vm.md#pe-seh).
         let personality = if img.mode().pe { 0 } else { info.personality.ok_or("no personality slot")? };
         let place = self.place(info.span).ok_or("no code memory near the image")?;
-        // SAFETY: a linked image's text section.
-        let text = unsafe { core::slice::from_raw_parts(h.text as usize as *const u8, h.text_size as usize) };
-        let res = ImageResolver { image: img, handlers: &self.handlers, probe: self.rt.probe as usize };
-        let d = res.decode(func, text).ok_or("no such function")?.map_err(|e| e.what)?;
+        let d = callees::decode(img, &self.handlers, self.rt.probe as usize, func).ok_or("no such function")?.map_err(|e| e.what)?;
         let mode = jit_mode(&img, place.far_rt);
         let shuffled = (self.rt.shuffled)(h as *const _ as *const u8);
 
@@ -493,7 +490,7 @@ impl Jit {
         let (rec, func) = (cx.rec, cx.func);
         let h = cx.img.header();
         if let Some(m) = &mut self.perfmap {
-            let aot = h.text as usize + cx.img.functions()[func as usize].code_off as usize;
+            let aot = cx.img.entry(func);
             let _ = writeln!(m, "{jit_f:x} {code_len:x} ryo-jit:f{func}@{aot:x}");
         }
 

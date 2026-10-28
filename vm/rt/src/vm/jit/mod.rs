@@ -738,8 +738,8 @@ fn fail(rec: *mut JitRecord) {
 pub(crate) fn registered(img: &Image<'_>) {
     // The records' slots start at this copy's trips, also for an image of another copy that
     // merged into this one (`merge`), whose slots were linked against that copy's.
-    for i in 0..img.header().jit_records.count as usize {
-        let r = img.jit_records().wrapping_add(i);
+    for i in 0..img.header().jit_records.count {
+        let r = img.jit_record(i);
         JitRecord::entry_slot(r).store(trip_entry as *const () as *mut u8, Relaxed);
         JitRecord::osr_slot(r).store(trip_osr as *const () as *mut u8, Relaxed);
     }
@@ -753,8 +753,8 @@ pub(crate) fn registered(img: &Image<'_>) {
         (true, Some(_)) => 0,
         (true, None) => return,
     };
-    for i in 0..img.header().jit_records.count as usize {
-        let r = img.jit_records().wrapping_add(i);
+    for i in 0..img.header().jit_records.count {
+        let r = img.jit_record(i);
         JitRecord::ctr_e(r).store(bias - e, Relaxed);
         JitRecord::ctr_l(r).store(bias - l, Relaxed);
     }

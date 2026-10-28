@@ -30,7 +30,7 @@ impl ImageResolver<'_> {
         let addr = self.image.header().text.wrapping_add(f.code_off as u64);
         // Only with counters has the function a JIT record.
         let mode = self.image.mode();
-        let record = mode.counters.then(|| self.image.jit_records().wrapping_add(func as usize) as u64);
+        let record = mode.counters.then(|| self.image.jit_record(func) as u64);
         Some(crate::asm::decode_linked(code, addr, record, self, &sites, &list, mode))
     }
 
@@ -55,8 +55,7 @@ impl ImageResolver<'_> {
         // The fixup area ends where the JIT records start.
         let data = (h.data, if h.jit_records.count != 0 { h.jit_records.off } else { h.data_size } as u64);
         if let Some(o) = within(h.text, h.text_size as u64, false) {
-            let fs = self.image.functions();
-            return Ok(fs.binary_search_by_key(&o, |f| f.code_off).ok().map(|i| Ref::Func(Func(i as u32))));
+            return Ok(self.image.func_at_entry(o).map(|g| Ref::Func(Func(g))));
         }
         if let Some(o) = within(ro.wrapping_add(h.symbols.off as u64), h.symbols.count as u64 * 8, false) {
             return Ok((o % 8 == 0).then_some(Ref::Sym(Sym(o / 8))));

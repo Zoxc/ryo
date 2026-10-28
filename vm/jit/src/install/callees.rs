@@ -64,6 +64,15 @@ pub(super) struct InlineEnv<'a> {
     pub(super) ext_vm: HashMap<u32, (usize, u32)>,
 }
 
+/// Decodes function `func` of the registered image `img` to the reduced set, `None` if it
+/// has no such function.
+pub(super) fn decode(img: Image<'_>, handlers: &[(usize, Opcode)], probe: usize, func: u32) -> Option<Result<asm::Decoded, asm::AsmError>> {
+    let h = img.header();
+    // SAFETY: a registered image's text section.
+    let text = unsafe { core::slice::from_raw_parts(h.text as usize as *const u8, h.text_size as usize) };
+    ImageResolver { image: img, handlers, probe }.decode(func, text)
+}
+
 /// The registered image whose header is at `header`.
 pub(super) fn image_of(header: usize) -> Image<'static> {
     // SAFETY: a registered image's header: registered images stay forever.
@@ -87,11 +96,7 @@ impl jit::inline::Env for InlineEnv<'_> {
         if self.cache.len() >= IR_CACHE_MAX {
             self.cache.clear();
         }
-        let h = img.header();
-        // SAFETY: a registered image's text section.
-        let text = unsafe { core::slice::from_raw_parts(h.text as usize as *const u8, h.text_size as usize) };
-        let res = ImageResolver { image: img, handlers: self.handlers, probe: self.probe };
-        let f = match res.decode(g.func.0, text) {
+        let f = match decode(img, self.handlers, self.probe, g.func.0) {
             Some(Ok(d)) => jit::ir_of(&d, self.mode, Some(&PoolMem { header: g.img, rt: self.rt })).ok().map(std::rc::Rc::new),
             _ => None,
         };
@@ -106,7 +111,7 @@ impl jit::inline::Env for InlineEnv<'_> {
     fn counts(&self, g: VmFunc) -> Option<(u64, u64)> {
         let img = image_of(g.img);
         (g.func.0 < img.header().jit_records.count).then(|| {
-            let c = counts(img.jit_records().wrapping_add(g.func.0 as usize), self.thresholds);
+            let c = counts(img.jit_record(g.func.0), self.thresholds);
             (c.calls, c.iters)
         })
     }
@@ -237,12 +242,12 @@ pub(super) enum Target {
 /// [`Target`] of function `g` of the registered image at `header`, which has a record.
 pub(super) fn vm_target(header: usize, g: u32) -> Target {
     let img = image_of(header);
-    let r = img.jit_records().wrapping_add(g as usize);
+    let r = img.jit_record(g);
     if JitRecord::state(r).load(Acquire) == JIT_DONE {
         // SAFETY: published before `Done`.
         Target::Jit(unsafe { (*r).jit_code as usize })
     } else {
-        Target::Aot(img.header().text as usize + img.functions()[g as usize].code_off as usize)
+        Target::Aot(img.entry(g))
     }
 }
 
@@ -252,11 +257,10 @@ pub(super) fn vm_callee(rt: &RtApi, addr: usize) -> Option<Callee> {
     if header.is_null() {
         return None;
     }
-    // SAFETY: a registered image's header.
-    let img = unsafe { Image::from_header(header) }.ok()?;
+    let img = image_of(header as usize);
     let h = img.header();
     let off = u32::try_from(addr.checked_sub(h.text as usize)?).ok()?;
-    let g = img.functions().binary_search_by_key(&off, |f| f.code_off).ok()? as u32;
+    let g = img.func_at_entry(off)?;
     (g < h.jit_records.count).then_some(Callee::Vm(header as usize, g))
 }
 
