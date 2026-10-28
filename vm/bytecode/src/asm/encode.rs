@@ -351,7 +351,7 @@ pub(super) fn int_arg(pe: bool, i: u32) -> Reg {
 }
 
 /// `f16` values move between SSE registers and memory through this register (`movd`).
-const F16_TMP: Reg = Reg::R11;
+pub(super) const F16_TMP: Reg = Reg::R11;
 
 /// The operand width of 1, 2, 4 or 8 bytes.
 fn width(size: u32) -> W {
@@ -387,6 +387,15 @@ fn sse_store(size: u32, x: u8, m: M, out: &mut Vec<Item>) {
     }
 }
 
+/// The load of `size` bytes at `m` into SSE register `x` (`xmm`) or into `r`.
+fn reg_load(xmm: bool, size: u32, r: Reg, x: u8, m: M, out: &mut Vec<Item>) {
+    match (xmm, size) {
+        (false, size) => out.push(Item::Ld { w: width(size), sx: false, dst: r, m }),
+        (true, 2) => out.extend([Item::Ld { w: W::W, sx: false, dst: F16_TMP, m }, Item::Movd { to_xmm: true, x, r: F16_TMP }]),
+        (true, size) => out.push(Item::Sse { st: false, size: size as u8, x, m }),
+    }
+}
+
 /// The store of the low `size` bytes (1 to 8) of `r` at `m`: in pieces of 4, 2 and 1 bytes,
 /// shifting `r` down between them, unless it is 1, 2, 4 or 8.
 fn int_store(size: u32, r: Reg, m: M, out: &mut Vec<Item>) {
@@ -413,11 +422,7 @@ pub(super) fn ret_loads(k: u32, s: i32) -> Vec<Item> {
     let mut out = Vec::new();
     for (p, r, x) in part_regs(k, true) {
         let m = M::frame(s.wrapping_add(p.off as i32));
-        match (p.xmm, p.size) {
-            (false, size) => out.push(Item::Ld { w: width(size), sx: false, dst: r, m }),
-            (true, 2) => out.extend([Item::Ld { w: W::W, sx: false, dst: F16_TMP, m }, Item::Movd { to_xmm: true, x, r: F16_TMP }]),
-            (true, size) => out.push(Item::Sse { st: false, size: size as u8, x, m }),
-        }
+        reg_load(p.xmm, p.size, r, x, m, &mut out);
     }
     out
 }
@@ -452,11 +457,11 @@ pub(super) fn param_load(s: i32, w: u32, pe: bool) -> Vec<Item> {
     if w & super::ARG_ADDR != 0 {
         return vec![Item::LeaM { dst: int_arg(pe, a.index), m }];
     }
-    match (a.xmm, a.size) {
-        (false, size) => vec![Item::Ld { w: width(size), sx: false, dst: int_arg(pe, a.index), m }],
-        (true, 2) => vec![Item::Ld { w: W::W, sx: false, dst: F16_TMP, m }, Item::Movd { to_xmm: true, x: a.index as u8, r: F16_TMP }],
-        (true, size) => vec![Item::Sse { st: false, size: size as u8, x: a.index as u8, m }],
-    }
+    let mut out = Vec::new();
+    // An xmm argument has no integer register: its index may be past the last one.
+    let r = if a.xmm { F16_TMP } else { int_arg(pe, a.index) };
+    reg_load(a.xmm, a.size, r, a.index as u8, m, &mut out);
+    out
 }
 
 /// A branch target of [`Asm`]: a position in the code, bound with [`Asm::bind`].

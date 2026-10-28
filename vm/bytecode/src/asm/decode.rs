@@ -9,8 +9,8 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use super::encode::{
-    ArgVal, CallSite, DroppedStore, Encoded, Opnd, Ref, Scope, arg_store, counter_stub, epilogue, fp_item, int_arg, pe_region_entry, prologue,
-    push_words, result_stores, ret_loads, word_len,
+    ArgVal, CallSite, DroppedStore, Encoded, F16_TMP, Opnd, Ref, Scope, arg_store, counter_stub, epilogue, fp_item, int_arg, pe_region_entry,
+    prologue, push_words, result_stores, ret_loads, word_len,
 };
 use super::inline::Cache;
 use super::list::{Hint, InsnList};
@@ -834,7 +834,7 @@ fn parts_of(items: &[Item]) -> Option<(i32, Vec<RetPart>)> {
             }
             Item::Shift { reg, .. } if last_int == Some(reg) => continue,
             Item::Sse { size, m, .. } => parts.push(RetPart { xmm: true, size: size as u32, off: off(m)? }),
-            Item::Ld { w: super::x86::W::W, sx: false, dst: Reg::R11, m } => {
+            Item::Ld { w: super::x86::W::W, sx: false, dst: F16_TMP, m } => {
                 it.next()?;
                 parts.push(RetPart { xmm: true, size: 2, off: off(m)? });
             }
@@ -877,7 +877,7 @@ fn result(c: &mut Cursor<'_>) -> (i32, u32) {
     let items = take(c, |it| {
         matches!(
             it,
-            Item::St { src: Reg::Rax | Reg::Rdx | Reg::R11, .. }
+            Item::St { src: Reg::Rax | Reg::Rdx | F16_TMP, .. }
                 | Item::Shift { reg: Reg::Rax | Reg::Rdx, .. }
                 | Item::Sse { st: true, .. }
                 | Item::Movd { to_xmm: false, .. }
@@ -912,8 +912,8 @@ fn params(c: &mut Cursor<'_>, mode: Mode) -> Vec<u32> {
                 (m.disp, ArgReg { xmm: false, size: 8, index: int_index(dst, mode).unwrap() }.word() | ARG_ADDR)
             }
             Ok(Item::Sse { st: false, size, x, m }) => (m.disp, ArgReg { xmm: true, size: size as u32, index: x as u32 }.word()),
-            Ok(Item::Ld { w: super::x86::W::W, sx: false, dst: Reg::R11, m }) if m.base == Reg::Rbp => match c.item() {
-                Ok(Item::Movd { to_xmm: true, x, r: Reg::R11 }) => (m.disp, ArgReg { xmm: true, size: 2, index: x as u32 }.word()),
+            Ok(Item::Ld { w: super::x86::W::W, sx: false, dst: F16_TMP, m }) if m.base == Reg::Rbp => match c.item() {
+                Ok(Item::Movd { to_xmm: true, x, r: F16_TMP }) => (m.disp, ArgReg { xmm: true, size: 2, index: x as u32 }.word()),
                 _ => {
                     c.pos = at;
                     return out;
@@ -1014,7 +1014,7 @@ fn arg(c: &mut Cursor<'_>, mode: Mode) -> Option<Proto> {
             (int_index(src, mode).map(|index| ArgReg { xmm: false, size, index }), m)
         }
         Item::Sse { st: true, size, x, m } => (Some(ArgReg { xmm: true, size: size as u32, index: x as u32 }), m),
-        Item::Movd { to_xmm: false, x, r: Reg::R11 } => match c.item().ok()? {
+        Item::Movd { to_xmm: false, x, r: F16_TMP } => match c.item().ok()? {
             Item::St { m, .. } => (Some(ArgReg { xmm: true, size: 2, index: x as u32 }), m),
             _ => (None, M::frame(0)),
         },
