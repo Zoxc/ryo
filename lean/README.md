@@ -122,7 +122,9 @@ Ryo/Obj/                           object readers (docs/aot.md §C3): Elf (ELF64
                                    image, `Image::parse`/`validate`, per-function inputs, the
                                    `ryo-lean obj` summary), Lsda (`asm::lsda`'s parse and
                                    write), EhFrame (CIEs, FDEs, row tables), Unwind (each
-                                   function's FDE and LSDA)
+                                   function's FDE and LSDA). ELF only: Mach-O images'
+                                   `.eh_frame` with 8-byte pointers
+                                   (`EhPointers::Abs8`) is out of scope
 Ryo/Vm/R/Syntax.lean               R (reduced.md §C0.1): instructions, side data, `Decoded`
                                    and its text (`reduced::Disasm` and the side data)
 Ryo/Vm/R/Islands.lean              the island contracts' operand roles (read, only written,

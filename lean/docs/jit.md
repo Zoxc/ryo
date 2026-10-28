@@ -201,20 +201,44 @@ of every inlined callee. Composed with the AOT theorem, the JIT code refines L0.
   native `BinOp`s (`DivS`/`DivU`/`RemS`/`RemU`; shift amounts masked to the width), allocated
   with fixed-register clobbers (`regalloc::clobbers`). Rule: the op equals `opSem` where the
   handler doesn't trap (division by zero and `MIN / -1` stay checked before). ("JIT SSA: fixed
-  registers for div, rem, variable shifts and mul".)
+  registers for div, rem, variable shifts and mul".) Likewise `rotl.wN`/`rotr.wN` (and the
+  inline forms the decoder takes as them) as `BinOp::Rotl`/`Rotr` at `w` bytes, the 4-byte
+  amount extended or truncated to `w` and taken modulo the width, emitted as `rol`/`ror r,
+  cl` with `rcx` a fixed clobber, or the immediate rotate for a constant amount; rule as for
+  the shifts ("JIT SSA: native rotates"). Of the AOT inline forms, the tier takes only the
+  variable shifts, rotates and division as their handler calls (`asm::ssa_as_handler`).
+- **Native bit ops and compares** (instead of handler calls; `Op::fold` folds constants):
+  `bswap.w16-w64` as `Op::Bswap(w)` (`bswap r`; at 16 bits the 32-bit swap and `shr 16`;
+  "JIT SSA: bswap"); `cttz`/`ctlz` (W8–W64) as `Op::Count { lz, w }`, a 4-byte count, emitted
+  as the AOT form (`bsf`/`bsr` with `cmovz`, or the guard bit for 8/16-bit `cttz`; `ctlz`'s
+  `xor` by N-1; "JIT SSA: cttz and ctlz"); `switch.dense.w8-w64` as `Op::SwitchIdx { w,
+  base, n }` (`(s - base) mod 2^N`, or `n` if not below `n`; 8 bytes) feeding `Term::Switch`,
+  emitted as `sub`/`cmp`/`cmovae` ("JIT SSA: dense switch index"); `cmp3.s/u.w8-w64` as
+  `Op::Cmp3(signed, w)`, a byte, emitted as `cmp`, `setl`/`setb` into `r10b`,
+  `setg`/`seta`, `sub`, with LVN folding `x <=> x` ("JIT SSA: cmp3"). Rule: each op equals
+  `opSem` of its handler at the op's result width (`cmp3` writes 1 byte, `cttz`/`ctlz` 4),
+  and its emission is the AOT inline class's sequence, so the emission template reuses that
+  class's `Sound` lemma (`Ryo/Proofs/Inline.lean`, still open for these classes).
 - **Frame cut, end pointers** (`jit/alloca.rs`): an `addr` at an escaped object's end is
   joined to that object's alloca (the one escaping at that `addr`, unless one escaping there
   starts at that address; with none escaping there, any escaped object ending there), so the
   one-past-the-end pointer keeps its place under any layout. For the checker comparing the
   frame-object tables, R's table must join it the same way. ("JIT: keep end pointers with
   their escaped object".)
-- **PE frames**: SSA frames on PE save `rdi`/`rsi` at `fp - 8`/`fp - 16`, set `rbp` by
-  `lea rbp, [rsp + K]` after the pushes, store saves that can't be pushed into the caller's
-  home space or free slots within 240 bytes below `rbp`, give calls 32 bytes of shadow space
-  and use the Win64 argument registers, described by a PE `UNWIND_INFO` from
-  `image::pe_unwind_codes` (shared with the AOT `pe_unwind_info`). The Lean unwind model
+- **PE frames**: SSA frames on PE treat `rdi`/`rsi` as callee-saved like `rbx` and
+  `r12`–`r15` (saved only when used, no fixed slots), push only `rbp` before the saves, set
+  `rbp` by `lea rbp, [rsp + K]` (`K = 8n` rounded to 16), store saves that can't be pushed
+  into the caller's home space or free slots within 240 bytes below `rbp`, give calls 32
+  bytes of shadow space and use the Win64 argument registers, described by a PE
+  `UNWIND_INFO` from `image::pe_unwind_codes` (shared with the AOT `pe_unwind_info`). Handler
+  calls take the Win64 positions (a fifth argument as `mov [rsp + 32], r11d`), calls clobber
+  only Win64's volatile registers, and register entries take at most four arguments and
+  return two values in `xmm0`, moved to `rax`/`rdx` after the call. The Lean unwind model
   (`Ryo/Obj/Unwind.lean`) covers only ELF `.eh_frame`; LIR → L2+ emission on PE needs the
-  Win64 frame and an `UNWIND_INFO` reader. ("JIT SSA: compile PE code with Win64 frames".)
+  Win64 frame, the Win64 handler and register-entry conventions (the handler contract's
+  register clauses, [assumptions.md](assumptions.md) §6, per platform ABI) and an
+  `UNWIND_INFO` reader. ("JIT SSA: compile PE code with Win64 frames"; "Asm, Rt, JIT,
+  Backend: Win64 handlers on PE".)
 - **Promotion** (`jit::opt::promote`): allocas whose address no longer escapes, also when
   accessed at overlapping widths: fields are the pieces the accesses' bounds cut (power-of-two
   widths); a store covering several pieces stores each (shifted down), a load covering several
@@ -226,9 +250,30 @@ of every inlined callee. Composed with the AOT theorem, the JIT code refines L0.
   overflow into `Bin` (flag constant 0, `BrOvf` a jump) and folds the compares and
   compare-branches the facts decide. A validator per fold: the fact holds on the edge, and
   implies the fold (`bv_decide`). ("JIT: eliminate checks dominating branches decide".)
-- **Bit-count folds** (LVN): a register-entry `ctpop`/`ctlz`/`cttz` handler call (W8 to W64,
-  no site) of a constant folds to the handler's count (`ctlz`/`cttz` of 0 the width): a
-  rewrite rule against `opSem`'s bit counts. ("JIT SSA: fold bit counts of constants".)
+- **Bit-count folds** (LVN): a register-entry `ctpop` handler call (W8 to W64, no site) of a
+  constant folds to the handler's count, and `Op::Count` of a constant through `Op::fold`
+  (`ctlz`/`cttz` of 0 the width): a rewrite rule against `opSem`'s bit counts. ("JIT SSA:
+  fold bit counts of constants"; "JIT SSA: cttz and ctlz".)
+- **Loop-invariant code motion** (`jit::opt::hoist`, after `opt::checks`; general only with
+  `RYO_JIT_LICM=1`, otherwise only the `vsplat` hoist above): pure operations, loads nothing
+  in the loop may write, and divisions, loads through pointers and effect-free handler calls
+  only where they run whenever the head does, move to the head's entry predecessor or a new
+  preheader. At a head with an OSR entry the value becomes a new head parameter, recomputed
+  for the entry in a *landing* block between the entry and the head (`osr::osr_landing`; its
+  edge is the OSR edge, `osr_edge`; `osr::through_landings` passes the entry values it uses
+  as its parameters after promotion); `simplify` never merges a block into an OSR entry.
+  Rules: availability for the moved values (step 3), the fault condition (a hoisted
+  faulting op runs whenever the head does), and for the landing, that the recomputed value
+  equals the normal edges' at the head (invariant parameters are their normal value there;
+  a load nothing in the loop writes reads the same bytes), so step 7's relation holds at
+  the landing's target. ("JIT SSA: loop-invariant code motion, with OSR landings".)
+- **Loop rotation** (`jit::opt::rotate`, only with `RYO_JIT_ROTATE=1`, once after
+  `opt::run`'s last round, before `regalloc::remat`): a head that is only a compare branch
+  gets the branch copied to the end of its one latch, which then branches to the body or
+  the exit; the body and exit blocks take the head's values as new parameters. The head
+  stays, and the OSR entry still targets it. Rule: a block duplication with SSA repair
+  (per-block symbolic evaluation; the copied branch reads the latch's arguments for the
+  head's parameters). ("JIT SSA: Loop rotation behind RYO_JIT_ROTATE".)
 
 **`cpuid`.** The theorem is relative to the CPU having the logged features: the generic
 decoder accepts a form only if its feature is in the set, and L2+ faults on a form whose
@@ -243,7 +288,10 @@ and the development machine's set).
   establishes the relation from the AOT frame. The emitted entry reads everything it needs
   from the AOT frame into a scratch area below both frames before writing the JIT frame, so
   the two layouts may overlap. Inlined callees' heads are ordinary blocks, so they add no
-  OSR obligation.
+  OSR obligation. With LICM the entry's target may be a *landing* (`osr::osr_landing`), not
+  the head: a block only the entry reaches that computes the hoisted head parameters from
+  the entry's values, then jumps to the head; the obligation is then that the entry plus its
+  landing establish the relation at the head. Loop rotation keeps the entry on the head.
 - **Landing pads** are exceptional successors. Values live into a pad are in callee-saved
   registers or slots at each unwinding call (allocation checker), and the FDE says where
   (step 8).

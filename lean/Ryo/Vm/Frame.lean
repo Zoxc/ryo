@@ -161,6 +161,14 @@ def widthOfMnemonic (m : String) : Option Nat :=
     | "w8" => some 1 | "w16" => some 2 | "w32" => some 4 | "w64" => some 8 | "w128" => some 16
     | _ => none
 
+/-- The width an inline opcode writes its `d` at regardless of its own width
+(`inline::frame_access`): `cmp3`'s result is an `i8`, `cttz`/`ctlz`'s count a `u32`. -/
+def fixedDestWidth (m : String) : Option Nat :=
+  match (m.splitOn ".").headD "" with
+  | "cmp3" => some 1
+  | "cttz" | "ctlz" => some 4
+  | _ => none
+
 /-- The second width of a mnemonic (`zext.w8.w32`: 4). -/
 def secondWidth (m : String) : Option Nat :=
   ((m.splitOn ".").filterMap fun
@@ -276,7 +284,9 @@ def native (op : Reduced.Opcode) (ops : List (Opnd Nat)) (pe : Bool := false)
           if o.name == "d" && ext then .write to
           -- An overflow flag.
           else if o.name == "o" then .write 1
-          else if o.name == "d" then (if m == "addr" || first == "ptr" then .write 8 else .write (if compare then 1 else n))
+          else if o.name == "d" then
+            (if m == "addr" || first == "ptr" then .write 8
+             else .write (if compare then 1 else (fixedDestWidth m).getD n))
           else if o.name == "s" && m == "addr" then .addr
           else if o.name == "s" && m == "br" then .read 1
           else if o.name == "p" || o.name == "i" then .read 8
@@ -671,12 +681,10 @@ def droppedStore (d : Decoded) (k : Nat) : Option (BitVec 32 × Nat) :=
   | some (.native op ops) =>
     match (op.info.operands.zip ops).find? (·.1.name == "d") with
     | some (_, .slot s) =>
-      let first := (op.info.mnemonic.splitOn ".").headD ""
       let w := if op.info.mnemonic == "mov.w128" then 8
         else if op.info.mnemonic == "addr" || op.info.mnemonic.startsWith "ptr" then 8
         -- `cmp3` stores a byte, `cttz`/`ctlz` a `u32`, at any width.
-        else if first == "cmp3" then 1
-        else if first == "cttz" || first == "ctlz" then 4
+        else if let some w := fixedDestWidth op.info.mnemonic then w
         else ((secondWidth op.info.mnemonic).orElse fun _ => widthOfMnemonic op.info.mnemonic).getD 8
       some (s, w)
     | _ => none

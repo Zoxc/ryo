@@ -28,7 +28,11 @@ Per object:
 - **Ranges.** Prologue, blocks (statements, terminator), stubs and pads, in that order, are
   consecutive and cover the instructions; as many blocks as the dumped body, each with its
   statement count (the fused statement counted), except blocks the dumper truncated (their
-  terminator calls an `ext` instance `ryo-dump: unsupported …`).
+  terminator calls an `ext` instance `ryo-dump: unsupported …`) and dead blocks. A `dead`
+  block (unreachable after monomorphization) must be a lone `unreachable`: no statement
+  ranges, not fused, a one-instruction terminator range that is `unreachable`. That it is
+  dead (never entered under the instance's constants) is trusted, not checked against the
+  MIR spec (`BlockCert.dead`, `lean/docs/assumptions.md`).
 - **Calls.** Each decoded `call*` / `tail_call*` instruction has exactly one call entry and vice
   versa; the kind fits the opcode; `k` is the return kind (0 for sret); the argument list's
   register words are what `call.rs`'s `pass_args` builds from the plan (registers, integer
@@ -377,6 +381,16 @@ def checkFunc (c : Ctx) (i : Nat) (d : Decoded) (fc : FuncCert) : FuncCheck := I
       break
     at_ := hi
   if at_ != d.insns.size then r := err r s!"the ranges end at {at_}, the code at {d.insns.size}"
+  -- Dead blocks: a lone `unreachable` (their being dead is trusted, `BlockCert.dead`).
+  for h : bi in [0:fc.blocks.size] do
+    let blk := fc.blocks[bi]
+    if blk.dead then
+      let (lo, hi) := blk.term
+      let isUnreachable := match d.insns[lo]? with
+        | some (.native op _) => op.info.mnemonic == "unreachable"
+        | _ => false
+      if !blk.stmts.isEmpty || blk.fused || hi != lo + 1 || !isUnreachable then
+        r := err r s!"bb{bi}: dead, but not a lone `unreachable` ({blk.stmts.size} statements, terminator {rangeText blk.term})"
   r := { r with blocks := fc.blocks.size }
   if let some b := body then
     if fc.blocks.size != b.blocks.size then r := err r s!"{fc.blocks.size} blocks, the body {b.blocks.size}"
@@ -386,6 +400,8 @@ def checkFunc (c : Ctx) (i : Nat) (d : Decoded) (fc : FuncCert) : FuncCheck := I
         let db := b.blocks[bi]!
         if truncated c.prog db.term then
           r := { r with truncated := r.truncated + 1 }
+        else if blk.dead then
+          pure ()
         else if blk.stmts.size + (if blk.fused then 1 else 0) != db.stmts.length then
           r := err r s!"bb{bi}: {blk.stmts.size} statements{if blk.fused then " + a fused statement" else ""}, the body {db.stmts.length}"
   -- Calls.

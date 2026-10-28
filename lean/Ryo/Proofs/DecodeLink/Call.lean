@@ -9,10 +9,11 @@ M3 `decode_sound`), against `Ryo.Proofs.Call`'s items.
   words is `ps`, given the loads' `xmm` fields in range (`XmmOk`).
 - `resultSeq_read`: the result stores are `resultStores k d` (none: `k = 0`, `d = 0`, no items).
 - `callInsn_read` (`CallRead`): a call is `callHead`'s items, the loads, the call and the result
-  stores; a tail call `tailHead`'s items, the loads, the epilogue and the jump.
+  stores; a tail call `tailHead`'s items, the loads, the epilogue and the jump (`jmp rax` or
+  `rex.w jmp rax`: `tailHead`'s `w`, either in any mode).
 - `link_call`: in memory (`LinkOk`), with the operands `Call.call_sound` and
-  `Call.tail_call_step` take, `callSeq`/`tailSeq` of them being the items (given `XmmOk` of
-  each of those items).
+  `Call.tail_call_step` take, `callSeq`/`tailSeq` (for some `w`) of them being the items (given
+  `XmmOk` of each of those items).
 
 **Hypothesis `XmmOk`.** `params` builds an argument word from an `xmm` load's register number
 and size, and from a `movss`/`movsd`/`movups` load's memory operand only its displacement:
@@ -311,9 +312,9 @@ inductive CallRead (fr : Frame) (c : Cursor) : Proto → Cursor → Prop
       Dec c c.pos (pre ++ ps ++ [ci] ++ resultStores k d) c'.pos → c' = atPos c c'.pos →
       ((∀ it ∈ ps, XmmOk it) → Call.paramItems fr.mode.pe ws = some ps) → k < 2 ^ 32 →
       CallRead fr c (callProto f fo d k ws c.pos site) c'
-  | tail {f : Full.Opcode} {fo : Opnd Nat} {pre ps : List Item} {j : Item} {ws : List (BitVec 32)}
-      {c' : Cursor} :
-      Call.tailHead f fo = some (pre, j) →
+  | tail {w : Bool} {f : Full.Opcode} {fo : Opnd Nat} {pre ps : List Item} {j : Item}
+      {ws : List (BitVec 32)} {c' : Cursor} :
+      Call.tailHead w f fo = some (pre, j) →
       Dec c c.pos (pre ++ ps ++ (fr.epilogue ++ [j])) c'.pos → c' = atPos c c'.pos →
       ((∀ it ∈ ps, XmmOk it) → Call.paramItems fr.mode.pe ws = some ps) →
       CallRead fr c { op := f, ops := [fo, .words ws], pos := c.pos } c'
@@ -332,10 +333,11 @@ theorem head_callSymInd (s : Nat) :
 theorem head_callPtr (p : BitVec 32) :
     Call.callHead .callPtr (.slot p) = some (preItems (.ptr p), .callRax) := by
   simp [Call.callHead, preItems]
-theorem head_tailCall (g : Nat) : Call.tailHead .tailCall (.func g) = some (preItems .none, .jmp (.func g)) := by
+theorem head_tailCall (w : Bool) (g : Nat) :
+    Call.tailHead w .tailCall (.func g) = some (preItems .none, .jmp (.func g)) := by
   simp [Call.tailHead, preItems]
-theorem head_tailCallPtr (p : BitVec 32) :
-    Call.tailHead .tailCallPtr (.slot p) = some (preItems (.ptr p), .jmpRax) := by
+theorem head_tailCallPtr (w : Bool) (p : BitVec 32) :
+    Call.tailHead w .tailCallPtr (.slot p) = some (preItems (.ptr p), Call.jmpRaxOf w) := by
   simp [Call.tailHead, preItems]
 
 set_option maxRecDepth 100000 in
@@ -413,12 +415,12 @@ theorem callInsn_read {fr : Frame} {dropped : List DroppedStore} {c c' : Cursor}
       have := (dpp.append (Dec.single hn)).trans' (Dec.at_iff.mpr (Dec.at_iff.mp d8))
       simpa using this
     · rw [e8, eps']
-  have fin_tail : ∀ f fo j (cE : Cursor) n2, Call.tailHead f fo = some (preItems pr, j) →
+  have fin_tail : ∀ w f fo j (cE : Cursor) n2, Call.tailHead w f fo = some (preItems pr, j) →
       Dec c c3.pos fr.epilogue cE.pos → cE = atPos c cE.pos →
       decodeItem cE = some (j, n2) →
       r = some (f, [fo, .words ws], false) → c6 = atPos cE (cE.pos + n2) →
       CallRead fr c q c' := by
-    intro f fo j cE n2 hhead dE eE hn2 hr hc6
+    intro w f fo j cE n2 hhead dE eE hn2 hr hc6
     subst hr hc6
     dsimp only at h
     obtain ⟨he, rfl⟩ := pure_ok h
@@ -463,17 +465,21 @@ theorem callInsn_read {fr : Frame} {dropped : List DroppedStore} {c c' : Cursor}
     split at h6
     · obtain ⟨rfl, rfl⟩ := pure_ok h6
       obtain ⟨n2, hn2, rfl⟩ := run_tryItem_some h8
-      exact fin_tail _ _ _ cE n2 (head_tailCall _) dE' eE' hn2 rfl rfl
+      exact fin_tail false _ _ _ cE n2 (head_tailCall false _) dE' eE' hn2 rfl rfl
     · obtain ⟨rfl, rfl⟩ := pure_ok h6
       obtain ⟨n2, hn2, rfl⟩ := run_tryItem_some h8
-      exact fin_tail _ _ _ cE n2 (head_tailCallPtr _) dE' eE' hn2 rfl rfl
+      exact fin_tail false _ _ _ cE n2 (head_tailCallPtr false _) dE' eE' hn2 rfl rfl
+    · obtain ⟨rfl, rfl⟩ := pure_ok h6
+      obtain ⟨n2, hn2, rfl⟩ := run_tryItem_some h8
+      exact fin_tail true _ _ _ cE n2 (head_tailCallPtr true _) dE' eE' hn2 rfl rfl
     · obtain ⟨rfl, rfl⟩ := pure_ok h6
       exact (hnone rfl).elim
 
 /-- A call the decoder read at `c.pos` (`callInsn`): `Call.callSeq`'s items (given the argument
 loads' `xmm` fields in range, `XmmOk`), then the result stores, with the operands
 `Call.call_sound` takes (`[.slot d, fo, .imm k, .words ws]`); or a tail call, `Call.tailSeq`'s
-items for the frame size `fr.size`, operands `[fo, .words ws]` (`Call.tail_call_step`). -/
+items for the frame size `fr.size` and the jump's `w`, operands `[fo, .words ws]`
+(`Call.tail_call_step`). -/
 theorem link_call {ctx : Ctx} {m : Mem} {c c' : Cursor} {rs : Array Reloc} {fr : Frame}
     {dropped : List DroppedStore} {q : Proto} (hk : LinkOk ctx m c rs) (hb : Boundary rs c.pos)
     (h : (callInsn fr dropped).run c = .ok (some q, c')) :
@@ -484,7 +490,7 @@ theorem link_call {ctx : Ctx} {m : Mem} {c c' : Cursor} {rs : Array Reloc} {fr :
       c'.pos = c.pos + codeSize (items ++ resultStores k.toNat d) ∧ Boundary rs c'.pos) ∨
     (∃ (fo : Opnd Nat) (ws : List (BitVec 32)) (items : List Item),
       q.ops = [fo, .words ws] ∧ q.handler = none ∧
-      ((∀ it ∈ items, XmmOk it) → Call.tailSeq fr.size fr.mode q.op fo ws = some items) ∧
+      ((∀ it ∈ items, XmmOk it) → ∃ w, Call.tailSeq fr.size fr.mode w q.op fo ws = some items) ∧
       CodeAt ctx m items c.pos ∧ c'.pos = c.pos + codeSize items ∧ Boundary rs c'.pos) := by
   cases callInsn_read h with
   | @call f fo pre ps ci ws d k site c'' hhead hd _ hps hk32 =>
@@ -495,9 +501,10 @@ theorem link_call {ctx : Ctx} {m : Mem} {c c' : Cursor} {rs : Array Reloc} {fr :
     · have := hps fun it hit => hx it (by simp [hit])
       simp [Call.callSeq, hhead, this, bind, Option.bind, pure]
     · rw [hkk]; exact ⟨hca, hq, hb'⟩
-  | @tail f fo pre ps j ws c'' hhead hd _ hps =>
+  | @tail w f fo pre ps j ws c'' hhead hd _ hps =>
     obtain ⟨hca, hq, hb'⟩ := hk.dec hd hb
-    refine .inr ⟨fo, ws, pre ++ ps ++ (fr.epilogue ++ [j]), rfl, rfl, fun hx => ?_, hca, hq, hb'⟩
+    refine .inr ⟨fo, ws, pre ++ ps ++ (fr.epilogue ++ [j]), rfl, rfl, fun hx => ⟨w, ?_⟩, hca, hq,
+      hb'⟩
     have := hps fun it hit => hx it (by simp [hit])
     simp [Call.tailSeq, hhead, this, bind, Option.bind, pure, Frame.epilogue]
 

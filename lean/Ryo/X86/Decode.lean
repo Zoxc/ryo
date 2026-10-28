@@ -154,13 +154,16 @@ def baseCandidate (c : Cursor) : Option Item := do
   match rex, op with
   | 0, 0x55 => pure .pushRbp
   | 0, 0x5d => pure .popRbp
-  -- A counter's `inc`: of the record's call counter or its loop counter.
+  -- `rex.w jmp rax`, or a counter's `inc`: of the record's call counter or its loop counter.
   | 0x48, 0xff =>
-    if (← g 2) != 0x05 then none
-    match ← c.field 3 7 with
-    | .ref .record => pure (.ctrInc false)
-    | .ref .recordLoopCtr => pure (.ctrInc true)
-    | _ => none
+    let m ← g 2
+    if m == 0xe0 then pure .jmpRaxW
+    else if m != 0x05 then none
+    else
+      match ← c.field 3 7 with
+      | .ref .record => pure (.ctrInc false)
+      | .ref .recordLoopCtr => pure (.ctrInc true)
+      | _ => none
   | 0x48, 0x83 =>
     let e ← g 2
     let v ← g 3

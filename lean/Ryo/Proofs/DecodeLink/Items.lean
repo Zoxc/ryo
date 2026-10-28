@@ -251,7 +251,7 @@ theorem link_call_ok {ctx : Ctx} {m : Mem} {c c' : Cursor} {rs : Array Reloc} {f
       c'.pos = c.pos + codeSize (items ++ resultStores k.toNat d) ∧ Boundary rs c'.pos) ∨
     (∃ (fo : Opnd Nat) (ws : List (BitVec 32)) (items : List Item),
       q.ops = [fo, .words ws] ∧ q.handler = none ∧
-      Call.tailSeq fr.size fr.mode q.op fo ws = some items ∧
+      (∃ w, Call.tailSeq fr.size fr.mode w q.op fo ws = some items) ∧
       CodeAt ctx m items c.pos ∧ c'.pos = c.pos + codeSize items ∧ Boundary rs c'.pos) := by
   cases callInsn_read h with
   | @call f fo pre ps ci ws d k site c'' hhead hd _ hps hk32 =>
@@ -263,10 +263,10 @@ theorem link_call_ok {ctx : Ctx} {m : Mem} {c c' : Cursor} {rs : Array Reloc} {f
     · have := hps fun it hit => hx it (by simp [hit])
       simp [Call.callSeq, hhead, this, bind, Option.bind, pure]
     · rw [hkk]; exact ⟨hca, hq, hb'⟩
-  | @tail f fo pre ps j ws c'' hhead hd _ hps =>
+  | @tail w f fo pre ps j ws c'' hhead hd _ hps =>
     have hx := hd.xmmOk
     obtain ⟨hca, hq, hb'⟩ := hk.dec hd hb
-    refine .inr ⟨fo, ws, pre ++ ps ++ (fr.epilogue ++ [j]), rfl, rfl, ?_, hca, hq, hb'⟩
+    refine .inr ⟨fo, ws, pre ++ ps ++ (fr.epilogue ++ [j]), rfl, rfl, ⟨w, ?_⟩, hca, hq, hb'⟩
     have := hps fun it hit => hx it (by simp [hit])
     simp [Call.tailSeq, hhead, this, bind, Option.bind, pure, Frame.epilogue]
 

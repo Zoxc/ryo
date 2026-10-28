@@ -1,4 +1,4 @@
-import Ryo.Proofs.DecodeSound
+import Ryo.Proofs.DecodeSound.Basic
 import Ryo.Proofs.NoArgCursor
 
 set_option linter.constructorNameAsVariable false
@@ -142,21 +142,18 @@ set_option maxRecDepth 100000 in
 /-- `bodySim_ret`. Proof idea: `noArg_insn`; `InsnRead.ret` and `link_ret` give
 `retLoads k src ++ epilogue F mode ++ [ret]` in memory at `p` (canonical: `call_epilogue_canon`
 as in `DSWork/Call.lean`), fetched as `Steps`; `ArgRet.ret_step` (`FrameBounds.ret_step_fb_disp`,
-`FrameInv.rsp` and `H.fp`, on PE `hF8`) gives `.done (exit s1 (.ret regs incoming))` with `RetRel`; `ExitRel`: `WorldRel` from
+`FrameInv.rsp` and `H.fp`, on PE `H.peFrame`) gives `.done (exit s1 (.ret regs incoming))` with `RetRel`; `ExitRel`: `WorldRel` from
 `MemRel`, `rip` the return address and `rsp = x0.rsp + 8` and the callee-saved registers from
 `FrameFacts` (`retAddr`, `rbp`, `savedRbp`, and `saved`: `ret_step` keeps every register but
 `rax`, `rdx`, `r11`, `rsp`, `rbp`, so PE's `rsi`/`rdi` too), the incoming area from
 `Rel` over `[16, 16 + argSize)` (`H.argSizeK`, in the window). R's step is safe: no error but
-`noBehavior` (`RSafe`), the scopes never stop so (`noNB_scopes`).
-
-`hF8` (not in `bodySim_ret`): PE's epilogue `add rsp, F` needs `F + 8 < 2 ^ 31`, which nothing
-in `Decodes`/`Hyps` gives (`boundsOk` checks `F ≤ 2 ^ 31` only). -/
-theorem bodySim_ret' (hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
+`noBehavior` (`RSafe`), the scopes never stop so (`noNB_scopes`). -/
+theorem bodySim_ret (hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
     {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
     (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
-    (hr : InsnRead S.fr S.ro cur q c') (hop : q.op = .ret)
-    (hF8 : S.c.mode.pe = true → S.F + 8 < 2 ^ 31) :
+    (hr : InsnRead S.fr S.ro cur q c') (hop : q.op = .ret) :
     BodySim S k p (S.used k) := by
+  have hF8 : S.c.mode.pe = true → S.F + 8 < 2 ^ 31 := H.peFrame
   intro s x hs hf hrip _ hsafe
   have hcur := noArg_insn hn hr
   subst hcur

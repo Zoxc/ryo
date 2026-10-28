@@ -230,6 +230,9 @@ inductive Item
   | callMemRax
   /-- `jmp rax` -/
   | jmpRax
+  /-- `rex.w jmp rax`: PE's `tail_call.ptr`, the form the Win64 unwinder takes for an
+  epilogue's end (`Item::JmpRaxW`); executes as `jmpRax`. -/
+  | jmpRaxW
   /-- `jmp r11`: the PE pad region's entry, after `sub rsp, 40` (`Item::JmpR11`). -/
   | jmpR11
   /-- `jmp rel32` to another function (a tail call). -/

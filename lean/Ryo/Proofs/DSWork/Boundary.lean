@@ -1,4 +1,4 @@
-import Ryo.Proofs.DecodeSound
+import Ryo.Proofs.DecodeSound.Basic
 import Ryo.Proofs.NoArgCursor
 
 set_option linter.constructorNameAsVariable false
@@ -13,8 +13,10 @@ open Ryo.Proofs.ArgRet (ArgsRel RetRel)
 open Ryo.Proofs.Call (WorldRel Saved EntryAt CallContract)
 open Ryo.Proofs.Island (IslandContract)
 
-/-! The decoder facts `DecodeSound` states with `sorry` (its boundary lemma `boundary_start`
-is proved there, from `Decodes.prologue`). -/
+/-! The decoder facts `decode_sound` uses: the prologue read item by item
+(`read_instructions_prologue`, for `decodes_of_ok`), landing pads are `lpad`s (`pad_lpad`, so
+not leading `arg`s, `pad_not_leadArg`), protos lie within the code (`posOf_le_size`, so
+`posOf_lt_32`). (`boundary_start` is in `DecodeSound/Basic.lean`, from `Decodes.prologue`.) -/
 
 section Insn
 
@@ -755,7 +757,7 @@ theorem readFrame_dec {mode : Mode} {c c' : Cursor} {entry : Option (Nat × Nat)
   · obtain ⟨-, rfl⟩ := pure_ok h
     exact ⟨_, d⟩
 
-theorem read_instructions_prologue' {ro : ByteArray} {callSites : Array CallSite}
+theorem read_instructions_prologue {ro : ByteArray} {callSites : Array CallSite}
     {dropped : List DroppedStore} {scopes : Array R.Scope} {mode : Ryo.Obj.Mode} {c c' : Cursor}
     {r : ReadResult} (h : (Vm.read ro callSites dropped scopes mode).run c = .ok (r, c'))
     (hnr : regionPad mode callSites = none) :
@@ -925,7 +927,7 @@ theorem reducedOf_cleanup {r : ReadResult} {pe : Bool} {d : Decoded} (h : reduce
 /-- Proof idea: `hD.read` and `decodeReduced_read`'s `reducedOf`: `Code.cleanupAt` is
 `r.actions`' entry, set by `read`'s call-site loop only after its `protos[j]!.op != .lpad`
 check (unroll `read` past `instructions` as `read_instructions` does). -/
-theorem pad_lpad' (hD : Decodes S code relocs rodata callSites dropped scopes mode) {k pad : Nat}
+theorem pad_lpad (hD : Decodes S code relocs rodata callSites dropped scopes mode) {k pad : Nat}
     {cat : Bool} (h : S.c.cleanupAt k = some (some pad, cat)) :
     ∃ hp : pad < S.r.protos.size, S.r.protos[pad].op = .lpad := by
   obtain ⟨c', hr⟩ := hD.read
@@ -951,11 +953,27 @@ theorem pad_lpad' (hD : Decodes S code relocs rodata callSites dropped scopes mo
 /-- Proof idea: `hD.iters`: each `Iter` starts at a position `p` where `PadRead`/the dropped
 store read; induction with `hD.run`'s `instructions` ending at most at the code's size
 (`instructions_read`), positions only grow (`Dec.le`). -/
-theorem posOf_le_size' (hD : Decodes S code relocs rodata callSites dropped scopes mode) {k : Nat}
+theorem posOf_le_size (hD : Decodes S code relocs rodata callSites dropped scopes mode) {k : Nat}
     (hk : k < S.r.protos.size) : posOf S.r k ≤ S.body.code.size := by
   obtain ⟨stub, padded, c1, hrun⟩ := hD.run
   rw [posOf_eq hk]
   exact instructions_pos_le hrun (Nat.le_refl _) _ (Array.getElem_mem_toList hk)
+
+/-- A landing pad is not a leading `arg`: it is an `lpad`. -/
+theorem pad_not_leadArg (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    {k pad : Nat} {cat : Bool} (h : S.c.cleanupAt k = some (some pad, cat)) : ¬ LeadArg S pad := by
+  rintro ⟨-, ha⟩
+  obtain ⟨hp, hop⟩ := pad_lpad hD h
+  have e := hD.argsSucc pad (by simpa using hp)
+  simp only [Array.getElem_toList, hop] at e
+  have hne : (Full.Opcode.lpad == Full.Opcode.arg) = false := by decide
+  rw [hne, Bool.and_false, ha] at e
+  exact Bool.noConfusion e
+
+/-- Proto positions fit 32 bits (the code does, `LinkOk.small`). -/
+theorem posOf_lt_32 (hD : Decodes S code relocs rodata callSites dropped scopes mode) {m : Mem}
+    (hL : LinkOk S.ctx m S.body S.rs) {k : Nat} (hk : k < S.r.protos.size) : posOf S.r k < 2 ^ 32 :=
+  Nat.lt_of_le_of_lt (posOf_le_size hD hk) hL.small
 
 end Insn
 

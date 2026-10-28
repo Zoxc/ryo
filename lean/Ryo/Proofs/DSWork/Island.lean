@@ -1,4 +1,4 @@
-import Ryo.Proofs.DecodeSound
+import Ryo.Proofs.DSWork.Boundary
 import Ryo.Proofs.NoArgCursor
 
 set_option linter.constructorNameAsVariable false
@@ -563,18 +563,18 @@ set_option maxHeartbeats 1000000 in
 /-- `island isl, ops` (`Island.island_query` and the return / unwind continuations of
 `island_return`/`island_unwind` against the answers `SepAcross.island` gives, with
 `DecodeLink.link_island`'s reads and `opsAt_of_opsArray`; on PE the `nop` after the call,
-`NopRead`). `hshadow`: on PE the template's 32-byte shadow space at the frame's bottom,
+`NopRead`). On PE the template's 32-byte shadow space at the frame's bottom,
 `[fp - F, fp - F + 32)`, lies below the link slots (`32 ≤ F`) and holds no initialized private
 byte after the scopes (the frame separation with the lower bound `-F + 32`), which
-`Island.FrameSep.islandApart` and `island_kept'` need; not yet facts of `Hyps`. -/
-theorem bodySim_island' (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+`Island.FrameSep.islandApart` and `island_kept'` need (`hshadow`, `H.peShadow`). -/
+theorem bodySim_island (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (H : Hyps S) {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
     (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
-    (hr : InsnRead S.fr S.ro cur q c') (hop : q.op = .island)
-    (hshadow : S.c.mode.pe = true → 32 ≤ S.F ∧ ∀ s x s1, FrameInv S s x →
-      (S.c.scopesAt s.pc).foldlM R.applyScope s = .ok s1 →
-      FrameSep (-(S.F : Int) + 32) S.K s1.st x) :
+    (hr : InsnRead S.fr S.ro cur q c') (hop : q.op = .island) :
     BodySim S k p (S.used k) := by
+  have hshadow : S.c.mode.pe = true → 32 ≤ S.F ∧ ∀ s x s1, FrameInv S s x →
+      (S.c.scopesAt s.pc).foldlM R.applyScope s = .ok s1 →
+      FrameSep (-(S.F : Int) + 32) S.K s1.st x := H.peShadow
   have HI := island_hyps hD H (fun h => (hshadow h).1)
   intro s x hs hfi hrip hci hsafe
   have hcur := noArg_insn hn hr

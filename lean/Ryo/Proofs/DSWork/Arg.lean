@@ -1,4 +1,4 @@
-import Ryo.Proofs.DecodeSound
+import Ryo.Proofs.DecodeSound.Basic
 import Ryo.Proofs.NoArgCursor
 
 set_option linter.constructorNameAsVariable false
@@ -484,7 +484,7 @@ allocation holds a written byte, `FrameOwn`; `FrameSep` with `frameInit_writeFra
 slots, the code and the rodata are outside the written range; `arg_argsLive_succ` the
 registers at `k + 1` (none callee-saved, nor PE's `rsi`/`rdi`: `arg_clobbers_ok`,
 `arg_clobbers_pe`); `rip` at `S.start (k + 1)` with the cache empty. -/
-theorem bodySim_arg' (hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
+theorem bodySim_arg (hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
     {k p : Nat} {q : Proto} {c' : Cursor} (ha : S.args k = true)
     (hP : ProtoFacts S k p q c' (S.used k))
     (hr : (argInsn S.fr.mode).run (atPos S.body p) = .ok (some q, c')) :

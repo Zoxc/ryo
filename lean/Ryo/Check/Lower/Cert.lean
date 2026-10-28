@@ -43,12 +43,28 @@ deriving Repr, Inhabited, FromJson
 
 /-- One block's ranges: per statement lowered on its own, the terminator; `fused` if the
 block's last statement (a compare, or a niche enum's `Discriminant`) is lowered with the
-terminator. -/
+terminator.
+
+`dead`: the block is unreachable after monomorphization (`mir::traversal::mono_reachable`
+doesn't reach it: only through a `SwitchInt` edge on a constant or `ub_checks()` that the
+instance never takes) and is lowered as a lone `unreachable`, its `term`, with no statement
+ranges. This is *trusted*: nothing here models the MIR spec's reachability under the
+instance's constants, so the check only takes the block's shape (`CertCheck.lean`), not that it
+is never entered (`lean/docs/assumptions.md`). Absent in the JSON: `false`. -/
 structure BlockCert where
   stmts : Array Range
   term : Range
   fused : Bool
-deriving Repr, Inhabited, FromJson
+  dead : Bool := false
+deriving Repr, Inhabited
+
+instance : FromJson BlockCert where
+  fromJson? j := do
+    let dead ← match j.getObjVal? "dead" with
+      | .ok d => fromJson? (α := Bool) d
+      | .error _ => pure false
+    return { stmts := ← j.getObjValAs? _ "stmts", term := ← j.getObjValAs? _ "term",
+             fused := ← j.getObjValAs? Bool "fused", dead }
 
 /-- A terminate stub (`reason` as the dump names `UnwindTerminateReason`). -/
 structure StubCert where

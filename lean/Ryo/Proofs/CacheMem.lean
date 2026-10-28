@@ -264,6 +264,76 @@ theorem cached_of (ctx : Ctx) {T : Type} {cls : Class} {ops : List (R.Opnd T)} {
   have hyf : y.flags = x1.flags := by rw [hyz]; exact hzf
   exact ⟨y, hy, hQ y x1 hyb hym hyf hq1, hcy, execItems_rip ctx _ x y (emit_safe hinv.1 hsafe) hy⟩
 
+/-- `swapI xr` fixes the indices other than `rax`'s and `xr`'s. -/
+theorem swapI_other {xr : Reg} {i : Fin 16} (h0 : i ≠ 0) (hx : i ≠ xr.idx) : swapI xr i = i := by
+  have ha : Reg.rax.idx = 0 := rfl
+  unfold swapI
+  rw [ha]
+  simp only [h0, hx, ↓reduceIte]
+
+/-- `cached_of`, also keeping the registers: when every run of the sequence (on the swapped state)
+keeps the registers outside `Clob` (which holds `rax`), the emitted run keeps those outside
+`Clob` and the register `emit` computes in. -/
+theorem cached_of_regs (ctx : Ctx) {T : Type} {cls : Class} {ops : List (R.Opnd T)}
+    {cand : List Item} {br : Option Cond} {cache : Cache} {x : X86.State} {Q : X86.State → Prop}
+    {Clob : Fin 16 → Prop} (h0 : Clob 0)
+    (hinv : CacheInv cache x) (hext : ∀ b, cls ≠ .ext .q b true) (hlater : laterClass cls = false)
+    (hseq : sequence cls ops = some (cand, br))
+    (hQ : ∀ y z, y.reg .rbp = z.reg .rbp → y.mem = z.mem → y.flags = z.flags → Q z → Q y)
+    (hrun : ∀ xr, xr ≠ .rbp → ∃ x1, execItems ctx cand (swapS xr x) = .ok x1 ∧ Q x1 ∧
+      ∀ i, ¬ Clob i → x1.regs i = (swapS xr x).regs i) :
+    ∃ y, execItems ctx (cache.emit cand).1 x = .ok y ∧ Q y ∧ CacheInv (cache.emit cand).2 y ∧
+      y.rip = x.rip + BitVec.ofNat 64 ((cache.emit cand).1.map Item.size).sum ∧
+      ∀ i, ¬ Clob i → i ≠ (pool[(emitHead { cache with tick := cache.tick + 1 } cand).1]!).idx →
+        y.regs i = x.regs i := by
+  have hok' := sequence_ok hext hlater hseq
+  have hsafe : ∀ it ∈ cand, cacheSafe it = true := fun it hit => by
+    have := hok' it hit; simp only [seqItemOk, Bool.and_eq_true] at this; exact this.1
+  generalize hxr : pool[(emitHead { cache with tick := cache.tick + 1 } cand).1]! = xr
+  have hb : xr ≠ .rbp := hxr ▸ pool_ne_rbp' _
+  have hc : xr ≠ .rcx := hxr ▸ pool_ne_rcx _
+  obtain ⟨x1, hx1, hq1, hr1⟩ := hrun xr hb
+  have hn0 : ∀ i, ¬ Clob i → i ≠ 0 := fun i hi he => hi (he ▸ h0)
+  have hren : ∃ z, execItems ctx (cand.map (ren xr)) x = .ok z ∧
+      z.reg .rbp = x1.reg .rbp ∧ z.mem = x1.mem ∧ z.flags = x1.flags ∧
+      ∀ i, ¬ Clob i → i ≠ xr.idx → z.regs i = x.regs i := by
+    by_cases hq : ∃ it ∈ cand, isMulQ it = true
+    · have hx : xr = .rax := by rw [← hxr, emitHead_mulQ _ _ hq]; rfl
+      subst hx
+      have hs0 : swapS .rax x = x := by
+        cases x; simp only [swapS, X86.State.mk.injEq, and_true]
+        funext i; simp only [swapI]; split <;> simp_all
+      rw [hs0] at hx1 hr1
+      refine ⟨x1, ?_, rfl, rfl, rfl, fun i hi _ => hr1 i hi⟩
+      rw [List.map_congr_left (fun it _ => ren_rax it), List.map_id']
+      exact hx1
+    · have hm : ∀ it ∈ cand, cacheSafe it = true ∧ isMulQ it = false := fun it hit =>
+        ⟨hsafe it hit, by cases e : isMulQ it; rfl; exact absurd ⟨it, hit, e⟩ hq⟩
+      obtain ⟨z, hz, hze⟩ := execItems_swap ctx hc hb cand (swapS xr x) x1 x.rip hm hx1
+      rw [swapS_swapS, jump_rip] at hz
+      refine ⟨z, ?_, ?_, ?_, ?_, ?_⟩
+      · rw [List.map_congr_left (fun it hit => ren_eq_swap hc hb (by
+          have := hok' it hit; simp only [seqItemOk, Bool.and_eq_true] at this; exact this.2))]
+        exact hz
+      · rw [hze]
+        show (swapS xr x1).reg .rbp = _
+        exact swapS_rbp hb x1
+      · rw [hze]; rfl
+      · rw [hze]; rfl
+      · intro i hi hix
+        have hsw := swapI_other (hn0 i hi) hix
+        have e1 : z.regs i = x1.regs (swapI xr i) := by rw [hze]; rfl
+        have e2 : (swapS xr x).regs i = x.regs (swapI xr i) := rfl
+        rw [e1, hsw, hr1 i hi, e2, hsw]
+  obtain ⟨z, hz, hzb, hzm, hzf, hzr⟩ := hren
+  obtain ⟨y, hy, hyz, hcy⟩ := emit_sound hinv hsafe (hxr ▸ hz)
+  have hyb : y.reg .rbp = x1.reg .rbp := by rw [hyz]; exact hzb
+  have hym : y.mem = x1.mem := by rw [hyz]; exact hzm
+  have hyf : y.flags = x1.flags := by rw [hyz]; exact hzf
+  have hyr : y.regs = z.regs := by rw [hyz]; rfl
+  exact ⟨y, hy, hQ y x1 hyb hym hyf hq1, hcy, execItems_rip ctx _ x y (emit_safe hinv.1 hsafe) hy,
+    fun i hi hix => by rw [hyr]; exact hzr i hi hix⟩
+
 /-- The step's conclusion on the control, kept by equal flags. -/
 theorem brOk_congr {f : Full.Opcode} {ops : List (R.Opnd Nat)} {s s' : R.RState}
     {y z : X86.State} {br : Option Cond} (hf : y.flags = z.flags) (h : BrOk f ops s s' br z) :

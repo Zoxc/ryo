@@ -354,6 +354,8 @@ def callInsn (fr : Frame) (dropped : List DroppedStore) : DM (Option Proto) := d
       match ← tryItem, pre with
       | some (.jmp (.func f)), .none => return some (.tailCall, [.func f, aOp], false)
       | some .jmpRax, .ptr p => return some (.tailCallPtr, [.slot p, aOp], false)
+      -- PE's form; either is accepted in any mode.
+      | some .jmpRaxW, .ptr p => return some (.tailCallPtr, [.slot p, aOp], false)
       | _, _ => return none)
   let some (op, ops, call) := r | setPos p0; return none
   if call then

@@ -10,13 +10,32 @@ uses too): the code is placed at a made-up address, its relocated fields pointed
 addresses of their references, one range per kind, and the `LinkMap` maps those back, and
 function starts to `Ref.func`. The side data comes from the function's instruction list
 (`Ryo.Obj.List`): its dropped stores and scopes. Rust's `decode_linked` also takes the list's
-branch targets and instruction entries as an index, read in one pass and checked against the
-code; the Lean decoder reads the code in two passes as `decode_reduced` does, without them,
-which gives the same result on a list that passes Rust's checks.
+branch targets and inline sequences' instruction entries as an index, read in one pass and
+checked against the code; the Lean decoder reads the code in two passes as `decode_reduced`
+does, without them, which gives the same result on a list that passes Rust's checks.
+
+**Handler calls.** Handlers are linked at a handler table's addresses (`HandlerTable`,
+`Resolver::handlers`), which needn't be distinct: LLVM's MergeFunctions or a linker's ICF fold
+handlers with the same code, so an address alone doesn't say which opcode a call calls. As in
+Rust, the opcode comes from the call's handler entry in the instruction list (`Hint.isHandler`,
+`HANDLER_SEL`), which must be one of the opcodes the table registers at the call's target
+(`registers`): `Fields::Linked` resolves such a target through the entry at the item's
+position, else to `Field::Bad`. The Lean `LinkMap` sees only the target, not the item's
+position, so `linkHandlerCalls` does that resolution ahead of decoding: it points each entry's
+`call rel32` whose target registers the entry's opcode at that opcode's own slot (`opSlot`),
+which `resolve` maps to `Ref.handler`; table addresses resolve to nothing, so a handler call
+without its entry (or with one naming an opcode the table doesn't register there) is a bad
+field, as in Rust. The decoded opcode's layout must then match the call's argument setup, as
+for any handler call (`insnCore`). After reading, the handler calls must be exactly the
+entries, position and opcode (`checkEntries`): a decoded handler call without its entry, or
+an entry left over (stray), fails the decode with Rust's errors. The default table
+(`distinctTable`) puts each opcode at its own address, as `scripts/lean-decode-ref` does;
+nothing relies on it being injective.
 -/
 import Ryo.Vm.DecodeReduced
 import Ryo.Vm.Frame
 import Ryo.Obj
+import Ryo.Obj.List
 
 namespace Ryo.Vm.DecodeObj
 
@@ -24,8 +43,12 @@ open Ryo.X86 Ryo.Vm.R Ryo.Vm.Asm
 
 /-- The made-up address map: the text at `text`, each kind of reference in a range below it. -/
 def text : Nat := 0x4000_0000
+/-- The opcodes' slots (`opSlot`): a handler call's target once its entry resolved it. -/
+def opSlots : Nat := 0x0e00_0000
 def probe : Nat := 0x0f00_0000
+/-- The handler table's range (`handlersLen` bytes, `HandlerTable`). -/
 def handlers : Nat := 0x1000_0000
+def handlersLen : Nat := 0x0100_0000
 def syms : Nat := 0x1100_0000
 def consts : Nat := 0x1400_0000
 def datas : Nat := 0x1800_0000
@@ -45,9 +68,29 @@ def toRef : Ryo.Obj.Ref → Ref
   | .record => .record
   | .recordLoopCtr => .recordLoopCtr
 
-/-- The made-up address of a reference, if it fits its range. -/
-def addrOf (funcStarts : Array Nat) : Ref → Option Nat
-  | .handler op => some (handlers + 16 * op)
+/-- The handler table (`Resolver::handlers`' entries): each opcode's handler address, by
+opcode value, in `[handlers, handlers + handlersLen)`. Several opcodes may share an address
+(folded handlers). -/
+abbrev HandlerTable := Nat → Nat
+
+/-- Each opcode's handler at its own address, as `scripts/lean-decode-ref` places them. -/
+def distinctTable : HandlerTable := fun op => handlers + 16 * op
+
+/-- Whether `a` lies in the handler table's range. -/
+def inTable (a : Nat) : Bool := handlers ≤ a && a < handlers + handlersLen
+
+/-- Whether `op` is among the opcodes `table` registers at address `a` (`Resolver::handlers(a)`,
+several for folded handlers). -/
+def registers (table : HandlerTable) (a op : Nat) : Bool :=
+  op < Full.count && inTable a && table op == a
+
+/-- The slot standing for opcode `op`'s handler once a call's entry resolved it. -/
+def opSlot (op : Nat) : Nat := opSlots + 16 * op
+
+/-- The made-up address of a reference, if it fits its range: a handler's is its table
+address (`linkHandlerCalls` resolves the calls). -/
+def addrOf (funcStarts : Array Nat) (table : HandlerTable) : Ref → Option Nat
+  | .handler op => if inTable (table op) then some (table op) else none
   | .probe => some probe
   | .func i => funcStarts[i]?.map (text + ·)
   | .sym s => if 8 * s < 0x0100_0000 then some (syms + 8 * s) else none
@@ -57,13 +100,16 @@ def addrOf (funcStarts : Array Nat) : Ref → Option Nat
   | .record => some record
   | .recordLoopCtr => some (record + loopCtr)
 
-/-- The inverse of `addrOf`. -/
+/-- The inverse of `addrOf`, the `LinkMap` of the decoding (`Resolver::resolve`). A handler
+table address resolves to nothing: a call there needs its entry (`linkHandlerCalls`, which
+points it at its opcode's slot, resolved here). -/
 def resolve (funcStarts : Array Nat) (a : BitVec 64) : Option Ref :=
   let a := a.toNat
   let inRange (base len : Nat) : Option Nat := if base ≤ a && a < base + len then some (a - base) else none
   if a == probe then some .probe
-  else if let some d := inRange handlers 0x0100_0000 then
-    if d % 16 == 0 && d / 16 < Full.count then some (.handler (d / 16)) else none
+  else if let some d := inRange opSlots (16 * Full.count) then
+    if d % 16 == 0 then some (.handler (d / 16)) else none
+  else if inTable a then none
   else if let some d := inRange syms 0x0100_0000 then
     if d % 8 == 0 then some (.sym (d / 8)) else none
   else if let some d := inRange consts span then some (.const d)
@@ -72,20 +118,49 @@ def resolve (funcStarts : Array Nat) (a : BitVec 64) : Option Ref :=
   else if a ≥ text then (funcStarts.findIdx? (· == a - text)).map .func
   else none
 
-/-- Function `f`'s decoder inputs, its code linked at the made-up addresses: the arguments of
-`decodeReducedWith` after the code; `none` for inputs the reference can't decode either (a
-malformed instruction list). -/
-def funcArgs (f : Ryo.Obj.FuncInputs) :
+/-- `code`, at address `addr`, with its `rel32` field at `pos` pointing at `target`. -/
+def putRel32 (code : ByteArray) (addr pos target : Nat) : ByteArray := Id.run do
+  let d := BitVec.ofInt 32 ((target : Int) - (addr + pos + 4 : Nat))
+  let mut code := code
+  for k in [0:4] do
+    if pos + k < code.size then
+      code := code.set! (pos + k) (UInt8.ofNat ((d.toNat >>> (8 * k)) % 256))
+  return code
+
+/-- `Fields::Linked`'s handler targets, resolved ahead of decoding (the `LinkMap` doesn't see
+the item's position): for the first handler entry at each position (`hints`, by position), a
+`call rel32` there whose target `table` registers the entry's opcode at (`registers`) is
+pointed at that opcode's slot (`opSlot`). Any other call into the table keeps its target,
+which `resolve` leaves unresolved (`Field::Bad`). -/
+def linkHandlerCalls (table : HandlerTable) (addr : Nat) (code : ByteArray)
+    (hints : Array Ryo.Obj.Hint) : ByteArray := Id.run do
+  let mut code := code
+  let mut last : Option Nat := none
+  for h in hints do
+    if !h.isHandler || last == some h.pos then continue
+    last := some h.pos
+    if code.data[h.pos]? != some 0xe8 || h.pos + 5 > code.size then continue
+    let d := BitVec.ofNat 32 (ofLeBytes (code.extract (h.pos + 1) (h.pos + 5)).toList)
+    let to := (BitVec.ofNat 64 (addr + h.pos + 5) + d.signExtend 64).toNat
+    let op := h.op.val.toNat
+    if registers table to op then
+      code := putRel32 code addr (h.pos + 1) (opSlot op)
+  return code
+
+/-- Function `f`'s decoder inputs, its code linked at the made-up addresses (handlers at
+`table`'s, its handler calls resolved by the instruction entries `hints`,
+`linkHandlerCalls`): the arguments of `decodeReducedWith` after the code; `none` for inputs
+the reference can't decode either (a malformed instruction list). -/
+def funcArgs (f : Ryo.Obj.FuncInputs) (hints : Array Ryo.Obj.Hint)
+    (table : HandlerTable := distinctTable) :
     Except String (Option (ByteArray × Fields × Array DroppedStore × Array Scope)) := do
   let addr := text + f.codeOff
   let mut code := f.code
   for r in f.relocs do
     let to := toRef r.to
-    let some t := addrOf f.funcStarts to | throw s!"reference {repr to} past the made-up address map"
-    let d := BitVec.ofInt 32 ((t : Int) - (addr + r.pos + 4 : Nat))
-    for k in [0:4] do
-      if r.pos + k < code.size then
-        code := code.set! (r.pos + k) (UInt8.ofNat ((d.toNat >>> (8 * k)) % 256))
+    let some t := addrOf f.funcStarts table to | throw s!"reference {repr to} past the made-up address map"
+    code := putRel32 code addr r.pos t
+  code := linkHandlerCalls table addr code hints
   let kind (k : Ryo.Obj.ScopeKind) : ScopeKind := match k with
     | .escape a => .escape a
     | .end => .end
@@ -96,24 +171,81 @@ def funcArgs (f : Ryo.Obj.FuncInputs) :
   let fields := Fields.linked (BitVec.ofNat 64 addr) (BitVec.ofNat 64 record) (resolve f.funcStarts)
   return some (code, fields, dropped, scopes)
 
-/-- Function `f`'s decoding (`decodeReducedWith`, trusting the dropped stores as Rust does);
-`none` as for `funcArgs`. -/
-def decodeFunc (f : Ryo.Obj.FuncInputs) : Except String (Option (Except AsmError Decoded)) := do
-  let some (code, fields, dropped, scopes) ← funcArgs f | return none
-  return some (decodeReducedWith code fields f.rodata f.callSites dropped scopes f.mode)
+/-- Function `i`'s instruction entries (`InsnList::hints`) from its instruction list; none if
+the list is malformed (`funcInputs` then fails). -/
+def listHints (o : Ryo.Obj.ImageObject) (i : Nat) : Array Ryo.Obj.Hint :=
+  match o.image.function? i with
+  | some f => ((Ryo.Obj.InsnList.read (o.image.list f) f.codeLen).map (·.hints)).getD #[]
+  | none => #[]
 
-/-- Function `f`'s checked decoding (`Frame.decodeChecked`, given `facts`); `none` as for
-`funcArgs`. -/
-def decodeFuncChecked (f : Ryo.Obj.FuncInputs) (facts : Frame.Facts := {}) :
+/-- The handler call heading the instruction read from `p0` (`insn`'s head, after the
+register setup and PE's stack argument), with cursor `c` (the decoding's, for its fields and
+frame): its position and opcode value; `none` if it isn't one. -/
+def handlerCallAt (c : Cursor) (pe : Bool) (p0 : Nat) : Option (Nat × Nat) := Id.run do
+  let mut p := p0
+  for _ in [0:c.code.size + 2] do
+    let some (it, n) := decodeItem { c with pos := p } | return none
+    match it with
+    | .setReg .. | .lea .. | .mov .. | .leaM .. => p := p + n
+    | .call (.handler op) => return some (p, op)
+    | _ => if pe && it.isStackArg then p := p + n else return none
+  return none
+
+/-- The handler entries of `hints` are exactly the handler calls read (`r`, with the decoding's
+cursor `c`), by position and opcode, in order: `insn`'s check that a handler call has its
+entry ("handler call without its instruction list entry") and `instructions`' that no entry
+is left over ("instruction list entry not at its inline sequence"), at the first mismatch.
+A handler call's position is past its loop head's counter check. -/
+def checkEntries (r : ReadResult) (c : Cursor) (pe : Bool) (hints : Array Ryo.Obj.Hint) :
+    Except AsmError Unit := do
+  let entries := hints.filterMap fun h => if h.isHandler then some (h.pos, h.op.val.toNat) else none
+  let calls := r.protos.filterMap fun p =>
+    if p.handler.isNone then none
+    else handlerCallAt c pe (match p.counter with | some (_, after) => after | none => p.pos)
+  for k in [0:max calls.size entries.size] do
+    match calls[k]?, entries[k]? with
+    | some (a, op), some (b, op') =>
+      if a == b && op == op' then continue
+      if a ≤ b then throw ⟨a, "handler call without its instruction list entry"⟩
+      throw ⟨b, "instruction list entry not at its inline sequence"⟩
+    | some (a, _), none => throw ⟨a, "handler call without its instruction list entry"⟩
+    | none, some (b, _) => throw ⟨b, "instruction list entry not at its inline sequence"⟩
+    | none, none => pure ()
+
+/-- `decode_linked` on code `linkHandlerCalls` resolved: `decodeReducedWith`, the handler
+calls checked against the handler entries of `hints` (`checkEntries`) before the reduced
+form is built. -/
+def decodeLinked (code : ByteArray) (fields : Fields) (rodata : ByteArray)
+    (callSites : Array CallSite) (dropped : Array DroppedStore) (scopes : Array Scope)
+    (mode : Mode) (hints : Array Ryo.Obj.Hint) : Except AsmError Decoded := do
+  let c : Cursor := { code := code.data, pos := 0, fields }
+  let (r, c) ← (Ryo.Vm.read rodata callSites dropped.toList scopes mode).run c
+  checkEntries r c mode.pe hints
+  reducedOf r mode.pe
+
+/-- Function `f`'s decoding (`decodeLinked`, trusting the dropped stores as Rust does), with
+its instruction entries `hints` (`listHints`) and handlers at `table`'s addresses; `none` as
+for `funcArgs`. -/
+def decodeFunc (f : Ryo.Obj.FuncInputs) (hints : Array Ryo.Obj.Hint)
+    (table : HandlerTable := distinctTable) : Except String (Option (Except AsmError Decoded)) := do
+  let some (code, fields, dropped, scopes) ← funcArgs f hints table | return none
+  return some (decodeLinked code fields f.rodata f.callSites dropped scopes f.mode hints)
+
+/-- Function `f`'s checked decoding (`Frame.decodeChecked`, given `facts`), once its handler
+calls pass `decodeLinked`'s check; `none` as for `funcArgs`. -/
+def decodeFuncChecked (f : Ryo.Obj.FuncInputs) (hints : Array Ryo.Obj.Hint)
+    (facts : Frame.Facts := {}) (table : HandlerTable := distinctTable) :
     Except String (Option (Except String Decoded)) := do
-  let some (code, fields, dropped, scopes) ← funcArgs f | return none
+  let some (code, fields, dropped, scopes) ← funcArgs f hints table | return none
+  if let .error e := decodeLinked code fields f.rodata f.callSites dropped scopes f.mode hints then
+    return some (.error s!"{e.what} at {e.at_}")
   return some (Frame.decodeChecked code fields f.rodata f.callSites dropped scopes f.mode facts)
 
 /-- Each function of the image decoded (`decodeFunc`), `none` where it isn't. -/
 def decodeAll (o : Ryo.Obj.ImageObject) : Array (Option (Ryo.Obj.FuncInputs × Decoded)) :=
   (Array.range o.funcs.size).map fun i => do
     let fi ← (o.funcInputs i).toOption
-    let .ok (some (.ok d)) := decodeFunc fi | none
+    let .ok (some (.ok d)) := decodeFunc fi (listHints o i) | none
     pure (fi, d)
 
 /-- What the image itself says of decoded function `d`'s calls of image functions
@@ -170,7 +302,7 @@ def objLines (o : Ryo.Obj.ImageObject) : Array String := Id.run do
       out := out.push (if (e.splitOn "malformed instruction list").length > 1 then "  error: malformed instruction list"
         else s!"  error: {e}")
     | .ok fi =>
-      match decodeFunc fi with
+      match decodeFunc fi (listHints o i) with
       | .error e => out := out.push s!"  error: {e}"
       | .ok none => out := out.push "  error: malformed instruction list"
       | .ok (some (.error e)) => out := out.push s!"  error: {e.what} at {e.at_}"
@@ -195,7 +327,7 @@ def deadLines (o : Ryo.Obj.ImageObject) (extra : Nat → Frame.Facts := fun _ =>
     if d.dropped.isEmpty then continue
     total := total + d.dropped.size
     let facts := (imageFacts o extents d islands).merge (extra i)
-    let .ok (some r) := decodeFuncChecked fi facts | continue
+    let .ok (some r) := decodeFuncChecked fi (listHints o i) facts | continue
     let .error e := r | continue
     let wpos := d.wordPos
     match Frame.droppedNotDead d fi.mode facts with

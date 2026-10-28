@@ -11,7 +11,8 @@ for `call.ptr`, nothing otherwise (`callHead`); `params` loads each argument reg
 slot (`paramItems`, the inverse of the decoder's `params`: `mov`/`movzx` of the register's size
 into `intArg pe i`, `lea` of the slot for `ARG_ADDR`, `movss`/`movsd`/`movups`, or a 2-byte `xmm`
 through `r11`); the call is `call f`, `call [rip + slot]`, `call [rax]` or `call rax`. A tail call
-is `pre ++ params ++ epilogue F mode ++ [jmp]` (`tailSeq`), the jump `jmp f` or `jmp rax`.
+is `pre ++ params ++ epilogue F mode ++ [jmp]` (`tailSeq`), the jump `jmp f` or `jmp rax` (`w`:
+`rex.w jmp rax`, PE's form; the decoder accepts either in any mode, `jmpRaxOf`).
 
 **The call boundary** (`EntryAt`, the callee's entry: the state just after the `call`, or after
 the tail call's `jmp`): `rip` is the callee's address (`calleeTarget`: the function's linked
@@ -154,17 +155,22 @@ def callSeq (pe : Bool) (f : Full.Opcode) (fo : R.Opnd Nat) (ws : List (BitVec 3
   let ps ← paramItems pe ws
   pure (pre ++ ps ++ [ci])
 
+/-- `tail_call.ptr`'s jump: `rex.w jmp rax` (`w`, PE's form) or `jmp rax`. -/
+def jmpRaxOf : Bool → Item
+  | true => .jmpRaxW
+  | false => .jmpRax
+
 /-- A tail call's items before the argument loads, and its jump: `jmp f`, or
-`mov rax, [rbp + p]; …; jmp rax`. -/
-def tailHead (f : Full.Opcode) : R.Opnd Nat → Option (List Item × Item)
+`mov rax, [rbp + p]; …; jmp rax` (`jmpRaxOf w`). -/
+def tailHead (w : Bool) (f : Full.Opcode) : R.Opnd Nat → Option (List Item × Item)
   | .func g => if f == .tailCall then some ([], .jmp (.func g)) else none
-  | .slot p => if f == .tailCallPtr then some ([.ld .q false .rax (M.frame p)], .jmpRax) else none
+  | .slot p => if f == .tailCallPtr then some ([.ld .q false .rax (M.frame p)], jmpRaxOf w) else none
   | _ => none
 
-/-- A tail call's items: the loads, the epilogue, the jump. -/
-def tailSeq (F : Nat) (mode : Ryo.Obj.Mode) (f : Full.Opcode) (fo : R.Opnd Nat)
+/-- A tail call's items: the loads, the epilogue, the jump (`w`: `tailHead`'s). -/
+def tailSeq (F : Nat) (mode : Ryo.Obj.Mode) (w : Bool) (f : Full.Opcode) (fo : R.Opnd Nat)
     (ws : List (BitVec 32)) : Option (List Item) := do
-  let (pre, j) ← tailHead f fo
+  let (pre, j) ← tailHead w f fo
   let ps ← paramItems mode.pe ws
   pure (pre ++ ps ++ (epilogue F mode ++ [j]))
 
@@ -318,6 +324,15 @@ theorem exec_jmp (ctx : Ctx) (to : Ref) (x : X86.State) :
 
 theorem exec_jmpRax (ctx : Ctx) (x : X86.State) :
     Item.jmpRax.exec ctx x = .ok (x.jump (x.reg .rax)) := rfl
+
+theorem exec_jmpRaxW (ctx : Ctx) (x : X86.State) :
+    Item.jmpRaxW.exec ctx x = .ok (x.jump (x.reg .rax)) := rfl
+
+theorem exec_jmpRaxOf (ctx : Ctx) (w : Bool) (x : X86.State) :
+    (jmpRaxOf w).exec ctx x = .ok (x.jump (x.reg .rax)) := by
+  cases w
+  · exact exec_jmpRax ctx x
+  · exact exec_jmpRaxW ctx x
 
 /-- The epilogue alone (a tail call's: no `ret`): `rsp = fp + 8`, where the caller's return
 address is; the saved `rbp` restored as in `ArgRet.exec_epilogue`; nothing else changed but
@@ -1017,9 +1032,9 @@ theorem rel_push {st : OpSem.State} {x x1 : X86.State} {lo : BitVec 64} (hr : Re
   hap.rel hr hm hb hmem
 
 /-- A tail call's head and its jump: the jump goes to the callee's address. -/
-theorem tailHead_exec (ctx : Ctx) {f : Full.Opcode} {fo : R.Opnd Nat} {pre : List Item} {j : Item}
-    {st : OpSem.State} {x : X86.State} {cal : R.Callee}
-    (hh : tailHead f fo = some (pre, j)) (hc : R.callee st f fo = .ok cal) (hr : Rel st x) :
+theorem tailHead_exec (ctx : Ctx) {w : Bool} {f : Full.Opcode} {fo : R.Opnd Nat} {pre : List Item}
+    {j : Item} {st : OpSem.State} {x : X86.State} {cal : R.Callee}
+    (hh : tailHead w f fo = some (pre, j)) (hc : R.callee st f fo = .ok cal) (hr : Rel st x) :
     ∃ y0, execItems ctx pre x = .ok y0 ∧ y0.mem = x.mem ∧
       (∀ i : Fin 16, i ≠ 0 → y0.regs i = x.regs i) ∧ y0.xmm = x.xmm ∧
       y0.rip = x.rip + BitVec.ofNat 64 (pre.map Item.size).sum ∧
@@ -1062,8 +1077,7 @@ theorem tailHead_exec (ctx : Ctx) {f : Full.Opcode} {fo : R.Opnd Nat} {pre : Lis
       obtain ⟨y0, e0, m0, r0, rs0, x0, p0⟩ := ArgRet.exec_ld ctx .q .rax (M.frame p) x
       refine ⟨y0, by rw [ArgRet.execItems_cons_ok e0]; rfl, m0, fun i hi => rs0 i hi, x0,
         by rw [p0]; simp, fun y hra m => ?_⟩
-      show Except.ok (y.jump (y.reg .rax)) = _
-      rw [hra, r0, ea_frame, show W.q.bits / 8 = 8 from rfl, readNat_eq, ← hpa]
+      rw [exec_jmpRaxOf, hra, r0, ea_frame, show W.q.bits / 8 = 8 from rfl, readNat_eq, ← hpa]
       rfl
     · cases hh
   | _ => simp [tailHead] at hh
@@ -1365,11 +1379,11 @@ theorem call_unwind (ctx : Ctx) {c : R.Code} {s : R.RState} {x1 x' : X86.State}
 /-- A tail call: the loads, the epilogue and the jump reach the callee's entry related to R's
 `Exit.tailCall` (see the module comment). Without a frame pointer `hsp` gives `rsp = fp - F`. -/
 theorem tail_call_step (ctx : Ctx) {c : R.Code} {s : R.RState} {x : X86.State}
-    {ch : OpSem.Choice} {op : Reduced.Opcode} {f : Full.Opcode} {fo : R.Opnd Nat}
+    {ch : OpSem.Choice} {op : Reduced.Opcode} {w : Bool} {f : Full.Opcode} {fo : R.Opnd Nat}
     {ws : List (BitVec 32)} {items : List Item} {fin : R.Final}
     (hi : c.d.insns[s.pc]? = some (.native op [fo, .words ws]))
     (hf : op.full = some f) (hsh : f.info.shape = .tailCall)
-    (hs : tailSeq c.d.frameSize c.mode f fo ws = some items)
+    (hs : tailSeq c.d.frameSize c.mode w f fo ws = some items)
     (hr : RRel s x) (hm : MemRel s.st x) (hsz : ∀ sc ∈ c.scopesAt s.pc, sc.size < 2 ^ 62)
     (hsp : c.mode.pe = true ∨ c.mode.framePointer = false →
       x.rsp = x.reg .rbp - BitVec.ofNat 64 c.d.frameSize ∧ c.d.frameSize + 8 < 2 ^ 31)
@@ -1388,7 +1402,7 @@ theorem tail_call_step (ctx : Ctx) {c : R.Code} {s : R.RState} {x : X86.State}
   obtain ⟨hr1, hm1⟩ := ScopeMem.memRel_foldlM _ hsz hr hm hsc
   rw [hk.pc] at hrd
   simp only [tailSeq, Option.bind_eq_bind, Option.pure_def] at hs
-  cases hh : tailHead f fo with
+  cases hh : tailHead w f fo with
   | none => simp [hh] at hs
   | some pc =>
   obtain ⟨pre, j⟩ := pc

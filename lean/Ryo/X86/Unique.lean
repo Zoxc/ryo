@@ -374,7 +374,8 @@ def native (a : BitVec 64) (pl : Nat) (p66 : Bool) (rex : Nat) : List Nat → Op
         match o with
         | .reg b =>
           if g = 2 then pure (.item .callRax, r)
-          else if b = .r11 then pure (.item .jmpR11, r) else pure (.item .jmpRax, r)
+          else if b = .r11 then pure (.item .jmpR11, r)
+          else if bW then pure (.item .jmpRaxW, r) else pure (.item .jmpRax, r)
         | .mem m =>
           if m.base = .rax then pure (.item .callMemRax, r)
           else pure (.item (.callR11 (m.disp.setWidth 8)), r)
@@ -963,10 +964,10 @@ macro "fixed" : tactic => `(tactic| (
 
 theorem fam_fixed (ctx : Ctx) (pos : Nat) (rest : List Nat) (i : Item)
     (hi : i = .pushRbp ∨ i = .popRbp ∨ i = .jmpR11 ∨ i = .callRax ∨ i = .callMemRax ∨
-      i = .jmpRax ∨ i = .testAl ∨ i = .testRax ∨ i = .leave ∨ i = .ret ∨ i = .ud2 ∨
-      i = .loadTableEntry ∨ i = .addRaxRcx ∨ i = .int3) :
+      i = .jmpRax ∨ i = .jmpRaxW ∨ i = .testAl ∨ i = .testRax ∨ i = .leave ∨ i = .ret ∨
+      i = .ud2 ∨ i = .loadTableEntry ∨ i = .addRaxRcx ∨ i = .int3) :
     decAt ctx pos ((i.linkedAt ctx pos).map UInt8.toNat ++ rest) = some (keyOf ctx i, rest) := by
-  rcases hi with rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl <;> fixed
+  rcases hi with rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl <;> fixed
 
 theorem fam_callR11 (ctx : Ctx) (pos : Nat) (rest : List Nat) (d : BitVec 8) :
     decAt ctx pos (((Item.callR11 d).linkedAt ctx pos).map UInt8.toNat ++ rest) =

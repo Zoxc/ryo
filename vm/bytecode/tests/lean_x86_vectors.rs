@@ -184,6 +184,7 @@ fn gen_items(rng: &mut Rng) -> Vec<Item> {
         Item::CallRax,
         Item::CallMemRax,
         Item::JmpRax,
+        Item::JmpRaxW,
         Item::JmpR11,
         // PE's handler stack argument (with a frame pointer).
         Item::StImm { w: W::D, m: M { base: Reg::Rsp, disp: 32 }, imm: 7 },
@@ -417,7 +418,6 @@ fn item(i: &Item) -> String {
         Item::LoadRip(r, to) => c("loadRip", &[("dst", reg(r)), ("to", rf(to))]),
         Item::CallMemRax => "\"callMemRax\"".into(),
         Item::JmpRax => "\"jmpRax\"".into(),
-        // Not generated yet: the Lean model has no `jmpRaxW` (lean/PENDING.md).
         Item::JmpRaxW => "\"jmpRaxW\"".into(),
         Item::JmpR11 => "\"jmpR11\"".into(),
         Item::Jmp(to) => c("jmp", &[("to", rf(to))]),

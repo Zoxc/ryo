@@ -469,7 +469,7 @@ def codeRefs (o : ImageObject) : Array CodeRef := Id.run do
     let ks := fi.relocs.filterMap fun r => match r.to with | .const k => some k | _ => none
     if ks.isEmpty then continue
     let mut uses : Array (Nat × Use) := #[]
-    if let .ok (some (.ok d)) := Ryo.Vm.DecodeObj.decodeFunc fi then
+    if let .ok (some (.ok d)) := Ryo.Vm.DecodeObj.decodeFunc fi (Ryo.Vm.DecodeObj.listHints o i) then
       for insn in d.insns do
         match insn with
         | .handler op args _ =>

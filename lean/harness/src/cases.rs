@@ -468,7 +468,13 @@ impl Gen<'_> {
                 if call {
                     stack(self);
                 }
-                let k = if call { "callRax" } else { "jmpRax" };
+                let k = if call {
+                    "callRax"
+                } else if self.rng.chance(1, 2) {
+                    "jmpRax"
+                } else {
+                    "jmpRaxW"
+                };
                 self.item(format!(r#""{k}""#));
                 k.into()
             }

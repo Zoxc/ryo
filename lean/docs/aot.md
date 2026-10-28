@@ -435,10 +435,10 @@ follows the decoder's structure:
   its own register, so relating all of them, as at entry (`ArgsRel`), fails after it); `ExitRel`
   for returns and tail calls. Proved: the padding, the dispatch over what the decoder read, the
   relocation boundaries (`boundary_start`), decoded branches canonical (`branch_canonical`),
-  `unreachable` and `jmp`. `sorry` ([assumptions.md](assumptions.md) §1.1): the other per-shape
-  bodies (`bodySim_*`), the counter check (`reach_counter`), and three facts of the decoder
-  (`read_instructions_prologue`, `pad_lpad`, `posOf_le_size`); the open proofs are worked on in
-  `Ryo/Proofs/DSWork/`. The frame-pointer mode only, without a PE pad region
+  `unreachable` and `jmp`. Also proved (`Ryo/Proofs/DSWork/`):
+  `arg`, `ret`, islands, the counter check and the decoder facts. `sorry`
+  ([assumptions.md](assumptions.md) §1.1): `bodySim_call`, `bodySim_inline`, `bodySim_handler`,
+  `bodySim_dense`, worked on in `DSWork/{Call,Inline,Handler}.lean`. The frame-pointer mode only, without a PE pad region
   (`Decodes.noRegion`: PE's cleanup code after the body, entered by the exception dispatcher on
   its own stack, is decoded but not simulated), and handler calls with their arguments in
   registers (`Hyps.regArgs`: PE's stack argument, the `atomic.cxchg` handlers', writes the

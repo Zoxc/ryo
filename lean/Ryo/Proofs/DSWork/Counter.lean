@@ -1,4 +1,4 @@
-import Ryo.Proofs.DecodeSound
+import Ryo.Proofs.DecodeSound.Basic
 import Ryo.Proofs.NoArgCursor
 
 set_option linter.constructorNameAsVariable false
@@ -477,17 +477,19 @@ memory (`LinkOk.dec`, `branch_canonical`); `Counter.counter_noop` under `H.trip`
 through to `p2`; a trip branches to the stub (`H.stubsLinked`), whose `call [r11 + 16]` is an
 environment step (`H.envOutside.trip`) returning to its `jmp back` (`back = p2`); `ctr_frameInv`
 with `ctr_apart hD H` keeps `FrameInv` (a loop head isn't a leading `arg`, `CounterApart.heads`),
-and the cache there is empty (`heads`, `CacheInv.empty`). -/
-theorem reach_counter' (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+and the cache there is empty (`heads`, `CacheInv.empty`); on PE the trip keeps `rsi`/`rdi`
+(`H.peSaved`). -/
+theorem reach_counter (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (H : Hyps S) {k p1 p2 stub : Nat} (hk : k < S.r.protos.size)
     (hq : S.r.protos[k].counter = some (stub, p2))
     (hctr : CounterRead S.fr S.body p1 (some (stub, p2)) p2) (hb : Boundary S.rs p1)
     {Q : X86.State → Prop} {s : R.RState} {x : X86.State} (hs : s.pc = k)
     (hf : FrameInv S s x) (hrip : x.rip = addrAt S.ctx p1) (hci : CacheInv (S.used k) x)
     (kont : ∀ y, FrameInv S s y → y.rip = addrAt S.ctx p2 → CacheInv (S.used k) y →
-      Reach S.ctx S.E Q y)
-    (htrip : S.c.mode.pe = true → ∀ a b, S.E.ret a b → b.regs 6 = a.regs 6 ∧ b.regs 7 = a.regs 7) :
+      Reach S.ctx S.E Q y) :
     Reach S.ctx S.E Q x := by
+  have htrip : S.c.mode.pe = true → ∀ a b, S.E.ret a b → b.regs 6 = a.regs 6 ∧ b.regs 7 = a.regs 7 :=
+    H.peSaved
   have HC := ctr_apart hD H
   obtain ⟨huk, hnl⟩ := HC.heads k hk (by rw [hq]; rfl)
   have hci0 : ∀ y, CacheInv (S.used k) y := fun y => by rw [huk]; exact CacheInv.empty y

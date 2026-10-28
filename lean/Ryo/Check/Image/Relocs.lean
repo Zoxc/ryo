@@ -10,7 +10,12 @@ so each function is decoded a second time from its unlinked bytes with `Fields.r
 object's relocations as `ImageObject.refOf` maps them (`R_X86_64_PLT32` with addend −4 against
 `ryo_h_<op>` or `ryo_probe_stack`; `R_X86_64_PC32` into the symbol slots, the code constants,
 the pool, the data area or the function's JIT record; anything else is a
-mismatch). Calls between the image's functions carry no relocation (the writer resolves
+mismatch). Here a handler call's opcode is its relocation's symbol; in the linked program
+(Rust's `decode_linked`, since "JIT: Handler opcodes in the instruction list", ff3b0cf) a
+handler call's target resolves to the set of opcodes registered at that address (several
+when MergeFunctions or ICF folded handlers, also through a PLT stub or import thunk), and the
+opcode comes from the call's `HANDLER_SEL` entry in the instruction list, which must be in
+that set, as `DecodeObj` models it (`HandlerTable`, `linkHandlerCalls`, `checkEntries`). Calls between the image's functions carry no relocation (the writer resolves
 them), so for that decode a `Ref.func` field is added at every `call`/`jmp rel32` (`e8`/`e9`)
 whose unrelocated displacement leaves the function for a function's first byte. With
 `Fields.relocs` `decodeItem` accepts an item only if the relocations starting in its bytes are

@@ -19,10 +19,11 @@ Numbers are LEB128, frame offsets zigzag-encoded. At one position the entries co
 order target, scopes, dropped stores, instructions (a target once).
 
 `walk` ports `list::walk` (the well-formedness `Image::validate` checks), `InsnList.read`
-`InsnList::read`. The Lean decoder (`decodeReduced`) uses the list's dropped stores and scopes
-only: it reads the code in two passes, as `asm::decode_reduced` does, and doesn't take the
-targets and instruction entries as an index (`asm::decode_linked`, which checks them against
-the code).
+`InsnList::read`. The Lean decoder (`decodeReduced`) uses the list's dropped stores and scopes,
+and the handler entries for the opcodes of handler calls (`Ryo.Vm.DecodeObj`, as
+`asm::decode_linked`): it reads the code in two passes, as `asm::decode_reduced` does, and
+doesn't take the targets and inline sequences' entries as an index (`asm::decode_linked`,
+which checks them against the code).
 -/
 import Ryo.Obj.Reloc
 
@@ -51,6 +52,10 @@ structure Hint where
   op : Full.Opcode
   sel : Nat
   deriving Repr, DecidableEq, Inhabited
+
+/-- Whether it names a handler call (`Hint::is_handler`, `handlerSel`), not an inline
+sequence. -/
+def Hint.isHandler (h : Hint) : Bool := h.sel == handlerSel
 
 /-- A function's instruction list, its entries by kind, each sorted by position
 (`list::InsnList`). -/

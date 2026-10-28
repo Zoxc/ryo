@@ -61,13 +61,13 @@ def addrOf : RefAddr
   | .record => record0
   | .recordLoopCtr => record0 + BitVec.ofNat 64 loopCtr
 
-/-- Its inverse (`Link::resolve`); handlers below the opcode count the vectors use. -/
+/-- Its inverse (`Link::resolve`); handlers of opcodes only (`Opcode::from_u16`). -/
 def resolve : LinkMap := fun a =>
   let base := a.toNat / 0x800_0000 * 0x800_0000
   let off := a.toNat % 0x800_0000
   let idx (k : Nat) : Option Nat := if off % k == 0 then some (off / k) else none
   match base with
-  | 0x1000_0000 => (idx 16).bind fun op => if op < 0x10000 then some (.handler op) else none
+  | 0x1000_0000 => (idx 16).bind fun op => if op < Ryo.Vm.Full.count then some (.handler op) else none
   | 0x1800_0000 => if off == 0 then some .probe else none
   | 0x2000_0000 => (idx 16).map .func
   | 0x2800_0000 => (idx 8).map .sym
@@ -209,7 +209,7 @@ def rms : List Rm := usableRegs.map .reg ++ mems.map .mem
 /-- Every native form over every register, width, base, displacement and immediate class (the
 `wf` ones), and the fixed forms over their parameters. -/
 def generated : List Item :=
-  let fixed : List Item := [.pushRbp, .popRbp, .callRax, .callMemRax, .jmpRax, .jmpR11,
+  let fixed : List Item := [.pushRbp, .popRbp, .callRax, .callMemRax, .jmpRax, .jmpRaxW, .jmpR11,
     .testAl, .testRax, .leave, .ret, .ud2, .loadTableEntry, .addRaxRcx]
   let refs : List Ref := [.handler 7, .probe, .func 3, .sym 9, .const 64, .data 8,
     .ro 32, .record, .recordLoopCtr]

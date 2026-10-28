@@ -261,6 +261,7 @@ def Item.exec (ctx : Ctx) (i : Item) (s : State) : Except Fault State :=
     let target := s0.mem.read64 (s0.reg .rax)
     pure ((s0.push next).jump target)
   | .jmpRax => pure (s0.jump (s0.reg .rax))
+  | .jmpRaxW => pure (s0.jump (s0.reg .rax))
   | .jmpR11 => pure (s0.jump (s0.reg .r11))
   | .jmp to => pure (s0.jump (ctx.addrOf to))
   | .branch cond target _ => do
