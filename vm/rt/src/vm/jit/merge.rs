@@ -24,6 +24,7 @@
 
 use core::sync::atomic::Ordering::{Acquire, Release};
 use core::sync::atomic::{AtomicU32, AtomicUsize};
+use ryo_bytecode::vmem::PAGE;
 
 /// A registration function: `ryo_vm_register` (`C-unwind`, but it never unwinds), called as
 /// `C`: a call through a `C-unwind` pointer would make `ryo_rt` require `panic=unwind`.
@@ -43,7 +44,6 @@ struct Page {
 
 const MAGIC: u64 = u64::from_le_bytes(*b"RYOMERGE");
 const READY: u32 = 1;
-const PAGE_SIZE: usize = 4096;
 
 /// What this copy decided: [`UNDECIDED`], [`PRIVATE`] (this copy is its own instance: the
 /// winner, or not merged), or the winner's [`RegisterFn`].
@@ -145,38 +145,31 @@ fn probe(i: usize) -> usize {
 #[cfg(target_os = "linux")]
 fn rendezvous() -> Option<(*mut Page, bool)> {
     use core::ffi::{c_int, c_long, c_void};
+    use ryo_bytecode::vmem;
     #[repr(C)]
     struct IoVec {
         base: *mut c_void,
         len: usize,
     }
     unsafe extern "C" {
-        fn mmap(addr: *mut c_void, len: usize, prot: c_int, flags: c_int, fd: c_int, off: i64) -> *mut c_void;
-        fn munmap(addr: *mut c_void, len: usize) -> c_int;
         fn process_vm_readv(pid: c_int, local: *const IoVec, ln: c_long, remote: *const IoVec, rn: c_long, flags: c_long) -> isize;
-        fn getpid() -> c_int;
     }
-    const PROT_RW: c_int = 0x1 | 0x2;
-    const MAP_PRIVATE_ANON: c_int = 0x02 | 0x20;
-    const MAP_FIXED_NOREPLACE: c_int = 0x10_0000;
     for i in 0..8 {
         let at = probe(i);
-        // SAFETY: an exclusive mapping request; it never replaces an existing mapping.
-        let p = unsafe { mmap(at as *mut c_void, PAGE_SIZE, PROT_RW, MAP_PRIVATE_ANON | MAP_FIXED_NOREPLACE, -1, 0) };
-        if p as usize == at {
-            return Some((p.cast(), true));
-        }
-        if p as isize != -1 {
+        if let Some(p) = vmem::reserve(at, PAGE) {
+            if p as usize == at {
+                return Some((p.cast(), true));
+            }
             // A kernel before 4.17 took the address as a hint: not ours to use.
             // SAFETY: the mapping just made.
-            unsafe { munmap(p, PAGE_SIZE) };
+            unsafe { vmem::release(p, PAGE) };
             continue;
         }
         let mut head = [0u64; 2];
         let local = IoVec { base: head.as_mut_ptr().cast(), len: 16 };
         let remote = IoVec { base: at as *mut c_void, len: 16 };
         // SAFETY: reads 16 bytes of this process, failing (not faulting) where unreadable.
-        let n = unsafe { process_vm_readv(getpid(), &local, 1, &remote, 1, 0) };
+        let n = unsafe { process_vm_readv(super::super::sys::pid() as c_int, &local, 1, &remote, 1, 0) };
         if n == 16 && is_ours(head) {
             return Some((at as *mut Page, false));
         }
@@ -197,7 +190,7 @@ fn rendezvous() -> Option<(*mut Page, bool)> {
         // SAFETY: plain Mach calls on this task; `VM_FLAGS_FIXED` (0) fails on a taken range.
         unsafe {
             let task = mach_task_self_;
-            if mach_vm_allocate(task, &mut addr, PAGE_SIZE as u64, 0) == 0 {
+            if mach_vm_allocate(task, &mut addr, PAGE as u64, 0) == 0 {
                 return Some((at as *mut Page, true));
             }
             let mut head = [0u64; 2];
@@ -226,7 +219,7 @@ fn rendezvous() -> Option<(*mut Page, bool)> {
         // SAFETY: plain kernel32 calls on this process. `VirtualAlloc` at a given address fails
         // on a taken range; `ReadProcessMemory` fails (not faults) on an unreadable one.
         unsafe {
-            let p = VirtualAlloc(at as *mut c_void, PAGE_SIZE, MEM_COMMIT_RESERVE, PAGE_READWRITE);
+            let p = VirtualAlloc(at as *mut c_void, PAGE, MEM_COMMIT_RESERVE, PAGE_READWRITE);
             if p as usize == at {
                 return Some((p.cast(), true));
             }
