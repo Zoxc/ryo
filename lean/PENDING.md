@@ -3,12 +3,6 @@
 Rust-side changes that the Lean model or proofs don't reflect yet. Add an entry per change;
 remove it once a Lean session has handled it.
 
-- The register cache no longer records zero-extension after `bsf`/`bsr` at any width (Commit:
-  "Asm: No zero-extension known after bsf/bsr"); a zero source leaves the destination
-  unmodified (SDM BSF/BSR), so at 32 bits the upper half isn't known to be zero until the
-  following `cmovz`. `cacheSafe` can accept 32-bit `bsf`/`bsr`, and the `hcount` hypothesis on
-  `inline_step_cached` can go.
-
 - Several ryo runtimes (Commit: "Rt: ABI tag, private runtime per module, run-time merge"):
   the image header gains `abi` (u64 at 160, FNV-1a of the ABI tag) and `anchor` (u64 at 168,
   relocated against `__ryo_registry_anchor_<tag>`; the separate `ryo_anchor` slot section is
@@ -25,7 +19,4 @@ remove it once a Lean session has handled it.
   index" 7915238, "Inline cmp3" d91a246): `SoundC` for every class is proved
   (`Ryo/Proofs/Inline/All.lean`), the register cache covers the new items (`hlater` replaced by
   `hcount`), and the dense switch is in `decode_sound` (`Ryo/Proofs/Dense.lean`,
-  `bodySim_dense`). Left: `count` at 8-32 bits isn't `cacheSafe` (`bsf`/`bsr` of zero write
-  `ctx.undef`, 64 bits, in the model, while `Cache.update` records a zero-extended register:
-  needs the model to write a zero-extended or unchanged register, or Rust to record no
-  zero-extension), so `inline_step_cached` takes `hcount`.
+  `bodySim_dense`)..

@@ -398,9 +398,18 @@ def execTests : List TestCase := [
     expectFlags s (flagsOf none false none none)
     let s ← run [.bsr .q .rax (.reg .rcx)] (setup [(.rcx, 0x50)])
     expectEq "bsr" (s.reg .rax) 6
-    let s ← run [.bsf .q .rax (.reg .rcx)] (setup [(.rcx, 0)])
-    expectEq "bsf of 0: the oracle" (s.reg .rax) ctx.undef
+    let s ← run [.bsf .q .rax (.reg .rcx)] (setup [(.rax, 0xdeadbeef00000005), (.rcx, 0)])
+    expectEq "bsf64 of 0 keeps" (s.reg .rax) 0xdeadbeef00000005
     expectFlags s (flagsOf none true none none)
+    let s ← run [.bsr .d .rax (.reg .rcx)] (setup [(.rax, 0xdeadbeef00000005), (.rcx, 0xffffffff00000000)])
+    expectEq "bsr32 of 0 keeps" (s.reg .rax) 0xdeadbeef00000005
+    expectFlags s (flagsOf none true none none)
+    let s ← (execItems { ctx with bsZeroClears := true } [.bsf .d .rax (.reg .rcx)]
+      (setup [(.rax, 0xdeadbeef00000005), (.rcx, 0)])).mapError fun f => s!"fault {repr f}"
+    expectEq "bsf32 of 0 on a clearing processor" (s.reg .rax) 5
+    let s ← (execItems { ctx with bsZeroClears := true } [.bsf .q .rax (.reg .rcx)]
+      (setup [(.rax, 0xdeadbeef00000005), (.rcx, 0)])).mapError fun f => s!"fault {repr f}"
+    expectEq "bsf64 of 0 on a clearing processor keeps" (s.reg .rax) 0xdeadbeef00000005
     let s ← run [.aluImm .cmp .d (.reg .rcx) 0, .cmov .nz .d .rax (.reg .rcx)]
       (setup [(.rax, 0xffffffff00000005), (.rcx, 0)])
     expectEq "cmov not taken zero-extends" (s.reg .rax) 5

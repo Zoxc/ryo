@@ -26,8 +26,9 @@ the facts `emit` and the decoder rely on (aot.md §C2, "Register cache"; milesto
   `emit_eq` restates `emit`'s loop as a fold (`emitStep`), `loop_sound` proves the loop.
 
 Also covered: the later inline items (`shiftCl`, `bswap`, `cmov`, `setcc r8`, `cdq`, `div`
-writing `rax` and `rdx`), and `bsf`/`bsr` at 64 bits only: at 32 bits a zero source writes
-`ctx.undef`, which the 32-bit `zx` `update` records doesn't cover.
+writing `rax` and `rdx`), and `bsf`/`bsr`, at every width: `update` records no zero-extension
+after them, as a zero source leaves the register's old value (`Ctx.bsZero`; at 32 bits its
+upper half either kept or cleared).
 
 Left: that the items of `Asm.sequence` are `cacheSafe` (by inspection they are: no `rbp` or
 64-bit `movsx` destination, no memory `aluImm` but `cmp`), `unemit`'s completeness (that the
@@ -471,12 +472,12 @@ theorem update_setccR (cc : Cond) (r : Reg) :
 theorem update_cdq (w : W) : c.update (.cdq w) = setRegEntry c .rdx none none := by
   simp [Cache.update, setRegEntry, poolIdx_eq] <;> rfl
 
-theorem update_bsf_q (r : Reg) (rm : Rm) :
-    c.update (.bsf .q r rm) = setRegEntry c r none none := by
+theorem update_bsf (w : W) (r : Reg) (rm : Rm) :
+    c.update (.bsf w r rm) = setRegEntry c r none none := by
   cases hp : poolIdx r <;> simp [Cache.update, setRegEntry, hp] <;> rfl
 
-theorem update_bsr_q (r : Reg) (rm : Rm) :
-    c.update (.bsr .q r rm) = setRegEntry c r none none := by
+theorem update_bsr (w : W) (r : Reg) (rm : Rm) :
+    c.update (.bsr w r rm) = setRegEntry c r none none := by
   cases hp : poolIdx r <;> simp [Cache.update, setRegEntry, hp] <;> rfl
 
 /-- `div` writes the quotient to `rax` and the remainder to `rdx`, both zero-extended. -/
@@ -504,9 +505,7 @@ def cacheSafe : Item → Bool
     | .mem _ => op == .cmp
   | .shiftCl _ _ r | .bswap _ r | .setccR _ r | .cmov _ _ r _ => r != .rbp
   | .cdq _ | .div .. => true
-  -- At 32 bits `bsf`/`bsr` of zero write `ctx.undef`, which `update`'s 32-bit `zx` doesn't
-  -- cover (the sequences overwrite it with a `cmov` or rule it out with a guard bit).
-  | .bsf w r _ | .bsr w r _ => r != .rbp && w == .q
+  | .bsf _ r _ | .bsr _ r _ => r != .rbp
   | _ => false
 
 theorem ea_frame_of {x : X86.State} {m : M} (h : m.base = .rbp) : x.ea m = x.ea (M.frame m.disp) := by
@@ -794,27 +793,25 @@ theorem update_inv {ctx : Ctx} {it : Item} {c : Cache} {x x' : X86.State}
         rw [inv_setFlags, setRegW_comm_dq (r := .rax) (r' := .rdx) hwide _ (by decide), ← hww]
         exact inv_setRegW (inv_setRegW (by simpa using h) (by decide)) (by decide)
   | bsf w r rm =>
-    simp only [cacheSafe, bne_iff_ne, ne_eq, Bool.and_eq_true, beq_iff_eq] at hs
-    obtain ⟨hs, rfl⟩ := hs
-    rw [update_bsf_q]
+    simp only [cacheSafe, bne_iff_ne, ne_eq] at hs
+    rw [update_bsf]
     simp only [Item.exec, pure, Except.pure, Except.ok.injEq] at hx
     subst hx
     rw [inv_setFlags]
     split
     · exact inv_setReg (by simpa using h) hs (fun _ _ h => nomatch h) (fun _ h => nomatch h)
-    · simp only [State.setRegW]
-      exact inv_setReg (by simpa using h) hs (fun _ _ h => nomatch h) (fun _ h => nomatch h)
+    · cases w <;> simp only [State.setRegW] <;>
+        exact inv_setReg (by simpa using h) hs (fun _ _ h => nomatch h) (fun _ h => nomatch h)
   | bsr w r rm =>
-    simp only [cacheSafe, bne_iff_ne, ne_eq, Bool.and_eq_true, beq_iff_eq] at hs
-    obtain ⟨hs, rfl⟩ := hs
-    rw [update_bsr_q]
+    simp only [cacheSafe, bne_iff_ne, ne_eq] at hs
+    rw [update_bsr]
     simp only [Item.exec, pure, Except.pure, Except.ok.injEq] at hx
     subst hx
     rw [inv_setFlags]
     split
     · exact inv_setReg (by simpa using h) hs (fun _ _ h => nomatch h) (fun _ h => nomatch h)
-    · simp only [State.setRegW]
-      exact inv_setReg (by simpa using h) hs (fun _ _ h => nomatch h) (fun _ h => nomatch h)
+    · cases w <;> simp only [State.setRegW] <;>
+        exact inv_setReg (by simpa using h) hs (fun _ _ h => nomatch h) (fun _ h => nomatch h)
   | _ => simp [cacheSafe] at hs
 
 /-! ### Reading through the cache -/

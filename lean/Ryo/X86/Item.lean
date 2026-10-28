@@ -289,7 +289,7 @@ inductive Item
   /-- `cdq` (`D`) or `cqo` (`Q`): `rdx` the sign of `rax`. -/
   | cdq (w : W)
   /-- `bsf reg, r/m` (`D` or `Q`): the lowest set bit's index; on zero, `ZF` set and `reg`
-  undefined. -/
+  unmodified, but its upper half maybe cleared at `D` (`Ctx.bsZero`). -/
   | bsf (w : W) (reg : Reg) (rm : Rm)
   /-- `bsr reg, r/m` (`D` or `Q`): the highest set bit's index, as `bsf`. -/
   | bsr (w : W) (reg : Reg) (rm : Rm)

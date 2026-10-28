@@ -29,10 +29,17 @@ Flags (SDM Vol. 2, per instruction; `none` = undefined, see `Ryo.X86.State`):
   count of 1 (`rol`: `MSB xor CF`, `ror`: the XOR of the two top bits), and `SF`/`ZF` are kept.
 - `div`/`idiv`: all flags undefined; a zero divisor, or a quotient out of range, faults
   (`Fault.divide`, `#DE`). `cdq`/`cqo`, `bswap`, `cmovcc`, `setcc r8`: no flags.
-- `bsf`/`bsr`: `ZF` is whether the source is zero; `CF`, `OF`, `SF` undefined. On a zero source
-  the destination is undefined: it gets `ctx.undef`, a value the context chooses (an oracle), so a
-  proof over every `ctx` holds whatever the CPU leaves there (as a later `cmovz` overwriting it
-  makes the inline `cttz`/`ctlz` do).
+- `bsf`/`bsr`: `ZF` is whether the source is zero; `CF`, `OF`, `SF` undefined (cleared, but kept
+  on older processors, SDM footnote 2). On a zero source the destination is unmodified (this
+  SDM edition; older ones said undefined), except that on some older processors a 32-bit
+  operand size clears its upper half, keeping the low 32 bits (footnote 1): `Ctx.bsZero`.
+  Whether it does is `ctx.bsZeroClears`, a property of the processor; a proof over every `ctx`
+  holds on both kinds. The value left is the register's own old value, so no two `bsf`s share
+  an undefined result. (A per-step choice, a function of the state, would also cover a
+  processor that changed its mind between runs of the same code, but it doesn't commute with
+  `rip` or a renaming of registers, which the register cache's proofs need: the emitted code
+  runs elsewhere, on renamed registers, and must make the same choice. A choice sequence in the
+  state would do both; no processor is documented to need it.)
 - `lea`, `mov`, `movzx`/`movsx`, `setcc`, `push rbp`/`pop rbp`, `call`/`ret`, `leave`, `jmp`/`jcc`,
   SSE moves: no flags.
 
@@ -72,9 +79,16 @@ deriving DecidableEq, Repr, ToJson, FromJson
 structure Ctx where
   base : BitVec 64
   addrOf : RefAddr
-  /-- What an instruction writes where the SDM leaves its destination undefined (`bsf`/`bsr`
-  of zero): an oracle, so that facts proved for every `ctx` hold whatever the CPU writes. -/
-  undef : BitVec 64 := 0
+  /-- Whether a 32-bit `bsf`/`bsr` of zero clears the destination's upper half (some older
+  processors, SDM footnote 1) rather than leaving it unmodified: facts proved for every `ctx`
+  hold on both kinds of processor (`Ctx.bsZero`). -/
+  bsZeroClears : Bool := false
+
+/-- What `bsf`/`bsr` at width `w` of a zero source leave in a destination that held `old`: `old`
+(SDM: "the destination operand is unmodified"), but with the upper half cleared at 32 bits on
+the processors that do so (`ctx.bsZeroClears`). The low 32 bits are `old`'s either way. -/
+def Ctx.bsZero (ctx : Ctx) (w : W) (old : BitVec 64) : BitVec 64 :=
+  if w == .d && ctx.bsZeroClears then (old.setWidth 32).setWidth 64 else old
 
 /-! ### Flag computations, at any width -/
 
@@ -347,11 +361,13 @@ def Item.exec (ctx : Ctx) (i : Item) (s : State) : Except Fault State :=
   | .cdq w => pure (s0.setRegW w .rdx ((s0.regW w .rax).sshiftRight (w.bits - 1)))
   | .bsf w reg rm =>
     let v := s0.rmW w rm
-    let s1 := if v == 0 then s0.setReg reg ctx.undef else s0.setRegW w reg (BitVec.ofNat _ (lowestSet v))
+    let s1 := if v == 0 then s0.setReg reg (ctx.bsZero w (s0.reg reg))
+      else s0.setRegW w reg (BitVec.ofNat _ (lowestSet v))
     pure (s1.setFlags { zf := some (v == 0) })
   | .bsr w reg rm =>
     let v := s0.rmW w rm
-    let s1 := if v == 0 then s0.setReg reg ctx.undef else s0.setRegW w reg (BitVec.ofNat _ (highestSet v))
+    let s1 := if v == 0 then s0.setReg reg (ctx.bsZero w (s0.reg reg))
+      else s0.setRegW w reg (BitVec.ofNat _ (highestSet v))
     pure (s1.setFlags { zf := some (v == 0) })
   | .cmov cond w reg rm => do
     let b ← cond.eval s0.flags

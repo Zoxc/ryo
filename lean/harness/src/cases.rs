@@ -522,12 +522,16 @@ impl Gen<'_> {
                 format!("cdq.{w}")
             }
             24 | 25 => {
-                // bsf/bsr: never a zero source (the model writes `ctx.undef` there, the CPU
-                // keeps the destination).
+                // bsf/bsr, a quarter of them of zero: the destination is unmodified (the model's
+                // default `Ctx`; a processor that clears its upper half at 32 bits, SDM
+                // footnote 1, shows as mismatches in `bsf.d.*.zero`/`bsr.d.*.zero`).
                 let (k, w, reg) = (*self.rng.pick(&["bsf", "bsr"]), *self.rng.pick(&["d", "q"]), r(self));
                 let n = bits(w);
                 let src = if self.rng.chance(1, 2) { Ok(r(self)) } else { Err(self.mem_avoid((n / 8) as usize, fixed, &[])) };
-                let v = if fixed && src.is_err() {
+                let zero = self.rng.chance(1, 4);
+                let v = if zero {
+                    0
+                } else if fixed && src.is_err() {
                     // An `stImm` puts it: a sign-extended `imm32`.
                     let v = self.imm32();
                     (if v == 0 { 1 << self.rng.below(31) } else { v }) as u64
@@ -540,7 +544,7 @@ impl Gen<'_> {
                     Err((m, _)) => (format!(r#"{{"mem":{{"m":{m}}}}}"#), "mem"),
                 };
                 self.item(format!(r#"{{"{k}":{{"w":"{w}","reg":"{reg}","rm":{rm}}}}}"#));
-                format!("{k}.{w}.{kind}")
+                format!("{k}.{w}.{kind}{}", if zero { ".zero" } else { "" })
             }
             26 => {
                 // div/idiv: a nonzero divisor and a quotient that fits (no `#DE`). The divisor

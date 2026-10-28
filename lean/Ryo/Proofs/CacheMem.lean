@@ -226,7 +226,7 @@ theorem cached_of (ctx : Ctx) {T : Type} {cls : Class} {ops : List (R.Opnd T)} {
     (hrun : ∀ xr, xr ≠ .rbp → ∃ x1, execItems ctx cand (swapS xr x) = .ok x1 ∧ Q x1) :
     ∃ y, execItems ctx (cache.emit cand).1 x = .ok y ∧ Q y ∧ CacheInv (cache.emit cand).2 y ∧
       y.rip = x.rip + BitVec.ofNat 64 ((cache.emit cand).1.map Item.size).sum := by
-  have hok' := sequence_ok2 hext hcount hseq
+  have hok' := sequence_ok2 hext hseq
   have hsafe : ∀ it ∈ cand, cacheSafe it = true := fun it hit => (hok' it hit).1
   generalize hxr : pool[(emitHead { cache with tick := cache.tick + 1 } cand).1]! = xr
   have hb : xr ≠ .rbp := hxr ▸ pool_ne_rbp' _
@@ -287,7 +287,7 @@ theorem cached_of_regs (ctx : Ctx) {T : Type} {cls : Class} {ops : List (R.Opnd 
       y.rip = x.rip + BitVec.ofNat 64 ((cache.emit cand).1.map Item.size).sum ∧
       ∀ i, ¬ Clob i → i ≠ (pool[(emitHead { cache with tick := cache.tick + 1 } cand).1]!).idx →
         y.regs i = x.regs i := by
-  have hok' := sequence_ok2 hext hcount hseq
+  have hok' := sequence_ok2 hext hseq
   have hsafe : ∀ it ∈ cand, cacheSafe it = true := fun it hit => (hok' it hit).1
   generalize hxr : pool[(emitHead { cache with tick := cache.tick + 1 } cand).1]! = xr
   have hb : xr ≠ .rbp := hxr ▸ pool_ne_rbp' _

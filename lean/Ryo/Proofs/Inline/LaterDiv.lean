@@ -9,8 +9,9 @@ Ryo.Proofs.Inline.LaterDiv — the inline `div`/`rem` (class `div`) and `cttz`/`
   `xor edx, edx`, and the remainder), so the result is `SoundX [0, 1, 2]`: `SoundC` with `rdx`
   among the changed registers (`clobbers` in `Ovf.lean` doesn't list `div` yet; `SoundX.toC`
   gives `SoundC` once it does).
-- `count lz w`: `bsf`/`bsr` of zero leave `ctx.undef` in the register, which the `cmovz`
-  overwrites (`cttz` at 32 and 64 bits, every `ctlz`); for `cttz` at 8 and 16 bits the guard bit
+- `count lz w`: `bsf`/`bsr` of zero leave the register's old value (`Ctx.bsZero`: at 32 bits
+  maybe with its upper half cleared), which the `cmovz` overwrites, all 64 bits as its operand
+  size is 32 bits (`cttz` at 32 and 64 bits, every `ctlz`); for `cttz` at 8 and 16 bits the guard bit
   `2 ^ n` makes the source non-zero (`lowest_guard`). Only `rax`, `rcx` and the flags change:
   `Sound`.
 
@@ -210,31 +211,34 @@ theorem exec_div (ctx : Ctx) (sg : Bool) (w : W) (rm : Rm) (s : Ryo.X86.State)
 theorem exec_bsf (ctx : Ctx) (w : W) (reg : Reg) (rm : Rm) (s : Ryo.X86.State) :
     (Item.bsf w reg rm).exec ctx s =
       .ok ((if s.rmW w rm == 0 then
-          (s.jump (s.rip + BitVec.ofNat 64 (Item.bsf w reg rm).size)).setReg reg ctx.undef
+          (s.jump (s.rip + BitVec.ofNat 64 (Item.bsf w reg rm).size)).setReg reg
+            (ctx.bsZero w (s.reg reg))
         else (s.jump (s.rip + BitVec.ofNat 64 (Item.bsf w reg rm).size)).setRegW w reg
           (BitVec.ofNat w.bits (lowestSet (s.rmW w rm)))).setFlags
         { zf := some (s.rmW w rm == 0) }) := by
   first
   | rfl
-  | simp only [Item.exec, rmW_jump, pure, Except.pure]
+  | simp only [Item.exec, rmW_jump, X86S.reg_jump, pure, Except.pure]
 
 theorem exec_bsr (ctx : Ctx) (w : W) (reg : Reg) (rm : Rm) (s : Ryo.X86.State) :
     (Item.bsr w reg rm).exec ctx s =
       .ok ((if s.rmW w rm == 0 then
-          (s.jump (s.rip + BitVec.ofNat 64 (Item.bsr w reg rm).size)).setReg reg ctx.undef
+          (s.jump (s.rip + BitVec.ofNat 64 (Item.bsr w reg rm).size)).setReg reg
+            (ctx.bsZero w (s.reg reg))
         else (s.jump (s.rip + BitVec.ofNat 64 (Item.bsr w reg rm).size)).setRegW w reg
           (BitVec.ofNat w.bits (highestSet (s.rmW w rm)))).setFlags
         { zf := some (s.rmW w rm == 0) }) := by
   first
   | rfl
-  | simp only [Item.exec, rmW_jump, pure, Except.pure]
+  | simp only [Item.exec, rmW_jump, X86S.reg_jump, pure, Except.pure]
 
-/-- `bsf` of zero: the register gets `ctx.undef`, `ZF` is set. -/
+/-- `bsf` of zero: the register keeps its value (but maybe its upper half at 32 bits,
+`Ctx.bsZero`), `ZF` is set. -/
 theorem exec_bsf_z (ctx : Ctx) (w : W) (reg : Reg) (rm : Rm) (s : Ryo.X86.State)
     (hv : s.rmW w rm = 0) :
     (Item.bsf w reg rm).exec ctx s =
       .ok (((s.jump (s.rip + BitVec.ofNat 64 (Item.bsf w reg rm).size)).setReg reg
-        ctx.undef).setFlags { zf := some true }) := by
+        (ctx.bsZero w (s.reg reg))).setFlags { zf := some true }) := by
   have h0 : ((0 : BitVec w.bits) == 0) = true := beq_self_eq_true _
   rw [exec_bsf, hv, if_pos h0, h0]
 
@@ -251,7 +255,7 @@ theorem exec_bsr_z (ctx : Ctx) (w : W) (reg : Reg) (rm : Rm) (s : Ryo.X86.State)
     (hv : s.rmW w rm = 0) :
     (Item.bsr w reg rm).exec ctx s =
       .ok (((s.jump (s.rip + BitVec.ofNat 64 (Item.bsr w reg rm).size)).setReg reg
-        ctx.undef).setFlags { zf := some true }) := by
+        (ctx.bsZero w (s.reg reg))).setFlags { zf := some true }) := by
   have h0 : ((0 : BitVec w.bits) == 0) = true := beq_self_eq_true _
   rw [exec_bsr, hv, if_pos h0, h0]
 
@@ -930,7 +934,7 @@ theorem body_tzW (ctx : Ctx) (x : Ryo.X86.State) (w : W) (hw : w = .d ∨ w = .q
     rw [rmW_reg, regW_setReg_self, ldVal_dq hw, back64, hA]
   refine chain e1 f1 ?_
   by_cases h0 : A = 0
-  · -- `bsf` leaves `ctx.undef`; `cmovz` takes `n`
+  · -- `bsf` leaves `bsZero`; `cmovz` takes `n`
     obtain ⟨s2, e2, f2, z2⟩ : ∃ s2, (Item.bsf w .rax (.reg .rax)).exec ctx s1 = .ok s2 ∧
         Facts [0, 1] s1 s2 [Item.bsf w .rax (.reg .rax)] ∧ s2.flags.zf = some true :=
       ⟨_, exec_bsf_z ctx w .rax (.reg .rax) s1 (v1.trans h0), by ld_fone, rfl⟩
@@ -1047,7 +1051,7 @@ theorem body_lz (ctx : Ctx) (x : Ryo.X86.State) (w : W) (a : BitVec 32) :
     exact Nat.mod_eq_of_lt (Nat.lt_of_lt_of_le A.isLt (Nat.pow_le_pow_right (by decide) hnb))
   refine chain e1 f1 ?_
   by_cases h0 : A.toNat = 0
-  · -- `bsr` leaves `ctx.undef`; `cmovz` takes `2n - 1`, and `(2n - 1) ^ (n - 1)` is `n`
+  · -- `bsr` leaves `bsZero`; `cmovz` takes `2n - 1`, and `(2n - 1) ^ (n - 1)` is `n`
     have hv0 : s1.rmW (bwOf w) (.reg .rax) = 0 := by
       apply BitVec.eq_of_toNat_eq
       rw [v1, h0]

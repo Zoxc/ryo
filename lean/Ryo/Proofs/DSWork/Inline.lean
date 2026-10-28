@@ -806,8 +806,7 @@ theorem inline_cls_step (H : Hyps S) {s s' : R.RState} {x : X86.State} {ch : OpS
       x'.rip = x.rip + BitVec.ofNat 64 ((cache.emit cand).1.map Item.size).sum ∧
       BrOk f ops s s' br x' := fun hsc => by
     obtain ⟨x', h1, h2, h3, h4, h5⟩ :=
-      CacheStep.inline_step_cached S.ctx hsc hci hf.rrel hi hfull hok hext
-        (fun _ _ he => by subst he; simp [laterClass] at hlater) hseq h
+      CacheStep.inline_step_cached S.ctx hsc hci hf.rrel hi hfull hok hext hseq h
     exact ⟨x', h1, h2, h3, h4, by cases br <;> exact h5⟩
   cases cls with
   | load w =>

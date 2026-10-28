@@ -9,7 +9,7 @@ of that shape, cover it. Proved as `inlineOps_shape` in the slow library `RyoPro
 shifts and rotates, `div`/`rem`, `cttz`/`ctlz`, `cmp3`, `bswap`) run by `Item.exec` on frame
 slots with garbage above their width, against the handlers' Rust methods (`wrapping_shl`,
 `rotate_left`, `unchecked_div`, `trailing_zeros`, `cmp`, `swap_bytes`, …) at every inline
-width, for two values of the context's undefined-destination oracle (`Ctx.undef`).
+width, on both kinds of processor for `bsf`/`bsr` of zero (`Ctx.bsZeroClears`).
 -/
 import RyoTest.Harness
 import Ryo.Proofs.Inline.Shape
@@ -36,7 +36,7 @@ def slotB : BitVec 32 := BitVec.ofInt 32 (-16)
 def slotBytes (k v : Nat) : Nat := v % 2 ^ (8 * k) + (0xa5a5a5a5a5a5a5a5 / 2 ^ (8 * k)) * 2 ^ (8 * k)
 
 /-- Runs `cls`'s sequence on `a` (and `b`), the result's `out` bytes at `d`. -/
-def runSeq (undef : BitVec 64) (cls : Asm.Class) (n a b out : Nat) : Except String Nat := do
+def runSeq (bsZeroClears : Bool) (cls : Asm.Class) (n a b out : Nat) : Except String Nat := do
   let ops : List (R.Opnd Nat) := [.slot slotD, .slot slotA, .slot slotB]
   let some (items, _) := Asm.sequence cls ops | throw s!"{repr cls}: no sequence"
   let s0 : State := { (default : State) with regs := fun i => BitVec.ofNat 64 (0x0123456789abcdef * (i.val + 3)) }
@@ -44,7 +44,7 @@ def runSeq (undef : BitVec 64) (cls : Asm.Class) (n a b out : Nat) : Except Stri
   let s0 := s0.setMem (fp + slotA.signExtend 64) 8 (slotBytes (n / 8) a)
   let s0 := s0.setMem (fp + slotB.signExtend 64) 8 (slotBytes (max (n / 8) 4) b)
   let s0 := s0.setMem (fp + slotD.signExtend 64) 8 0x5a5a5a5a5a5a5a5a
-  let ctx : Ctx := { base := 0x1000, addrOf := fun _ => 0, undef }
+  let ctx : Ctx := { base := 0x1000, addrOf := fun _ => 0, bsZeroClears }
   match execItems ctx items s0 with
   | .ok s => pure (s.mem.readNat (fp + slotD.signExtend 64) out)
   | .error f => throw s!"{repr cls} {a} {b}: fault {repr f}"
@@ -93,8 +93,8 @@ def later : Except String Unit := do
     for a in samples n do
       for b in samples n do
         let some (want, out) := reference cls n a b | continue
-        for undef in [0, 0xdeadbeefcafef00d] do
-          let got ← runSeq undef cls n a b out
+        for clears in [false, true] do
+          let got ← runSeq clears cls n a b out
           if got != want then throw s!"{op.mnemonic} {a} {b}: got {got}, want {want}"
 
 def tests : List TestCase := [

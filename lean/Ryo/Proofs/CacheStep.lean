@@ -8,8 +8,7 @@ cache emits it (aot.md §C2 "Register cache", "Inline steps"; milestone M3 `deco
   no register but `rax`, `rcx` and `rbp` (`onlyARB`), given that `cls` isn't a sign extension
   from 64 bits (whose `movsx` at 64 bits `update` doesn't track; no inline opcode is one,
   `inlineOps_ext`) nor one of the classes added later (`laterClass`). `sequence_ok2` covers
-  those too (but `count` below 64 bits, whose `bsf`/`bsr` aren't `cacheSafe`): `div`'s items
-  may name `rdx`, but its `div` keeps `emit` on `rax` (`isMulQ`).
+  those too: `div`'s items may name `rdx`, but its `div` keeps `emit` on `rax` (`isMulQ`).
 - `exec_swap`/`execItems_swap`: renaming is a register swap. With `rax` and `xr` swapped in the
   state (`swapS`) and the items (`swapR`), a `cacheSafe` sequence without `mulQ` (whose `rax`
   and `rdx` are fixed) runs as before, but for `rip` (a renamed item may be longer). On the
@@ -103,17 +102,14 @@ theorem sequence_ok {T : Type} {cls : Class} {ops : List (R.Opnd T)} {items : Li
   all_goals exact Classical.or_iff_not_imp_right.2 fun h => hext (Classical.not_not.1 h)
 
 set_option maxHeartbeats 1000000 in
-/-- The later classes but `div` (`count` at 64 bits only: at 32 bits `bsf`/`bsr` aren't
-`cacheSafe`). -/
+/-- The later classes but `div`. -/
 theorem sequence_ok_later {T : Type} {cls : Class} {ops : List (R.Opnd T)} {items : List Item}
     {br : Option Cond} (hl : laterClass cls = true) (hdiv : ∀ a b c, cls ≠ .div a b c)
-    (hcount : ∀ lz w, cls = .count lz w → w = .q)
     (h : sequence cls ops = some (items, br)) :
     ∀ it ∈ items, seqItemOk it = true := by
   intro it hit
   cases cls <;> simp [laterClass] at hl
   all_goals (try exact absurd rfl (hdiv _ _ _))
-  all_goals (try (have hq := hcount _ _ rfl; subst hq))
   all_goals simp only [sequence, bind, Option.bind_eq_some_iff, pure] at h
   all_goals (repeat' (first
     | (obtain ⟨_, hs, h⟩ := h
@@ -168,11 +164,10 @@ theorem sequence_div_pinned {T : Type} {sg rem : Bool} {w : W} {ops : List (R.Op
   all_goals (try obtain ⟨rfl, _⟩ := h)
   all_goals (try (cases ‹W›)) <;> simp [isMulQ, ld, st, R, C]
 
-/-- The items of every inline sequence (but `count` at 8 to 32 bits) are `cacheSafe`, and name
+/-- The items of every inline sequence are `cacheSafe`, and name
 only `rax`, `rcx` and `rbp` unless the sequence has a `mul`/`div`, which keeps it on `rax`. -/
 theorem sequence_ok2 {T : Type} {cls : Class} {ops : List (R.Opnd T)} {items : List Item}
     {br : Option Cond} (hext : ∀ b, cls ≠ .ext .q b true)
-    (hcount : ∀ lz w, cls = .count lz w → w = .q)
     (h : sequence cls ops = some (items, br)) :
     ∀ it ∈ items, cacheSafe it = true ∧ (onlyARB it = true ∨ ∃ d ∈ items, isMulQ d = true) := by
   intro it hit
@@ -184,7 +179,7 @@ theorem sequence_ok2 {T : Type} {cls : Class} {ops : List (R.Opnd T)} {items : L
     · obtain ⟨a, b, c, rfl⟩ := hdv
       exact ⟨sequence_div_safe h it hit, .inr (sequence_div_pinned h)⟩
     · have hd : ∀ a b c, cls ≠ .div a b c := fun a b c e => hdv ⟨a, b, c, e⟩
-      have := sequence_ok_later hl hd hcount h it hit
+      have := sequence_ok_later hl hd h it hit
       simp only [seqItemOk, Bool.and_eq_true] at this
       exact ⟨this.1, .inl this.2⟩
 
@@ -544,7 +539,6 @@ theorem inline_step_cached (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.S
     {cls : Class} {cand : List Item} {br : Option Cond} {cache : Cache} (hsound : SoundC cls)
     (hinv : CacheInv cache x) (hr : RRel s x) (hi : c.d.insns[s.pc]? = some (.native op ops))
     (hf : op.full = some f) (hok : InlineOk f cls) (hext : ∀ b, cls ≠ .ext .q b true)
-    (hcount : ∀ lz w, cls = .count lz w → w = .q)
     (hseq : sequence cls ops = some (cand, br)) (h : R.step c s ch = .ok (.step s')) :
     ∃ x', execItems ctx (cache.emit cand).1 x = .ok x' ∧ RRel s' x' ∧
       CacheInv (cache.emit cand).2 x' ∧
@@ -553,7 +547,7 @@ theorem inline_step_cached (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.S
       | none => s'.pc = s.pc + 1
       | some cond => ∃ neg t b, R.nativeCtl f ops = some (.branch neg t) ∧
           cond.eval x'.flags = .ok b ∧ s'.pc = if b then t else s.pc + 1 := by
-  have hok' := sequence_ok2 hext hcount hseq
+  have hok' := sequence_ok2 hext hseq
   have hsafe : ∀ it ∈ cand, cacheSafe it = true := fun it hit => (hok' it hit).1
   -- The register `emit` puts the sequence in.
   generalize hxr : pool[(emitHead { cache with tick := cache.tick + 1 } cand).1]! = xr

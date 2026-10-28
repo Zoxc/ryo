@@ -920,9 +920,9 @@ def update (c : Cache) (item : Item) : Cache := Id.run do
     | .shiftCl _ w reg | .bswap w reg | .cmov _ w reg _ => some (reg, none, wide w)
     | .cdq _ => some (.rdx, none, none)
     | .setccR _ reg => some (reg, none, none)
-    -- Undefined on zero at 64 bits (the 32-bit forms are followed by a `cmov`, or their source
-    -- isn't zero).
-    | .bsf w reg _ | .bsr w reg _ => some (reg, none, if w == .d then some .d else none)
+    -- A zero source leaves the old value (at 32 bits maybe with its upper half cleared): no
+    -- zero-extension known.
+    | .bsf _ reg _ | .bsr _ reg _ => some (reg, none, none)
     | .div _ w _ => some (.rax, none, some w)
     | _ => none
   -- `mul` writes `rdx` too, `div` its remainder there.
