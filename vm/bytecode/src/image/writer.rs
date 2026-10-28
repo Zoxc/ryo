@@ -606,51 +606,70 @@ impl ImageWriter {
     pub fn finish_encoded(mut self, encoded: Vec<Encoded>) -> Result<ImageObject, WriteError> {
         assert_eq!(encoded.len(), self.functions.len());
         let mode = self.mode.expect("prepare before finish_encoded");
-        let pe = mode.pe;
-        let nsyms = self.symbols.len() as u32;
+        let mut text = self.layout_text(&encoded)?;
+        let data = self.layout_data(mode, text.funcs.len())?;
+        let (ro, header) = self.layout_ro(mode, &text, &data)?;
+        let mut relocs = self.relocs(mode, &header, &mut text, &data)?;
+        let unwind = if mode.pe {
+            assert!(mode.frame_pointer, "PE unwind info needs the frame pointer");
+            unwind_pe(&text.func_code, mode, &mut relocs)
+        } else {
+            let slot = header.symbols.off as u64 + 8 * self.personality.expect("prepare").0 as u64;
+            unwind_elf(&text.func_code, slot, mode, self.eh_pointers, &mut relocs)
+        };
 
-        // Function table and text.
-        let mut funcs = Vec::with_capacity(self.functions.len());
-        let mut text: Vec<u8> = Vec::new();
-        let mut code_consts: Vec<u8> = Vec::new();
-        let mut lists: Vec<u8> = Vec::new();
-        let mut call_sites: Vec<CallSiteEntry> = Vec::new();
-        let mut func_code = Vec::with_capacity(self.functions.len());
-        // Resolved once the layout is known.
-        let mut code_refs: Vec<CodeRef> = Vec::new();
-        for (i, f) in self.functions.iter_mut().enumerate() {
-            let i = i as u32;
-            let too_large = |_| WriteError::TooLarge;
-            let e = &encoded[i as usize];
-            while text.len() % 16 != 0 {
-                text.push(0xcc);
+        Ok(ImageObject {
+            rodata: ro,
+            rodata_align: (self.const_align as u64).max(16),
+            data: data.data,
+            data_align: data.align as u64,
+            text: text.text,
+            functions: text.func_code,
+            unwind,
+            symbols: self.symbols,
+            relocs,
+        })
+    }
+
+    /// The text, the function table and what goes with each function's code (its constants,
+    /// cleanup list and call sites).
+    fn layout_text(&mut self, encoded: &[Encoded]) -> Result<TextLayout, WriteError> {
+        let mut t = TextLayout {
+            text: Vec::new(),
+            code_consts: Vec::new(),
+            lists: Vec::new(),
+            call_sites: Vec::new(),
+            funcs: Vec::with_capacity(self.functions.len()),
+            func_code: Vec::with_capacity(self.functions.len()),
+            code_refs: Vec::new(),
+        };
+        for (i, (f, e)) in self.functions.iter_mut().zip(encoded).enumerate() {
+            while t.text.len() % 16 != 0 {
+                t.text.push(0xcc);
             }
-            let start: u32 = text.len().try_into().map_err(too_large)?;
-            while code_consts.len() % 16 != 0 {
-                code_consts.push(0);
+            let start = to_u32(t.text.len())?;
+            while t.code_consts.len() % 16 != 0 {
+                t.code_consts.push(0);
             }
-            let ro_base = code_consts.len() as u32;
-            code_consts.extend_from_slice(&e.rodata);
-            text.extend_from_slice(&e.code);
+            let ro_base = t.code_consts.len() as u32;
+            t.code_consts.extend_from_slice(&e.rodata);
+            t.text.extend_from_slice(&e.code);
             for r in &e.relocs {
-                code_refs.push(CodeRef { at: start + r.at, to: r.to, start, ro_base, func: i });
+                t.code_refs.push(CodeRef { at: start + r.at, to: r.to, start, ro_base, func: i as u32 });
             }
-            let run = |len: usize, n: usize| -> Result<Span, WriteError> {
-                Ok(Span { off: (len - n).try_into().map_err(too_large)?, count: n.try_into().map_err(too_large)? })
-            };
             let list = e.list().write();
-            lists.extend_from_slice(&list);
-            call_sites.extend(e.call_sites.iter().map(CallSiteEntry::from));
-            funcs.push(FuncEntry {
+            t.lists.extend_from_slice(&list);
+            t.call_sites.extend(e.call_sites.iter().map(CallSiteEntry::from));
+            t.funcs.push(FuncEntry {
                 code_off: start,
-                code_len: e.code.len().try_into().map_err(too_large)?,
+                code_len: to_u32(e.code.len())?,
                 arg_size: f.arg_size,
                 ret_size: f.ret_size,
                 ret_kind: f.ret_kind,
-                list: run(lists.len(), list.len())?,
-                call_sites: run(call_sites.len(), e.call_sites.len())?,
+                list: Span::new(t.lists.len() - list.len(), list.len())?,
+                call_sites: Span::new(t.call_sites.len() - e.call_sites.len(), e.call_sites.len())?,
             });
-            func_code.push(FuncCode {
+            t.func_code.push(FuncCode {
                 name: core::mem::take(&mut f.name),
                 symbol: f.symbol,
                 start,
@@ -662,20 +681,24 @@ impl ImageWriter {
                 region: e.region,
             });
         }
+        Ok(t)
+    }
 
-        // Writable section: site cache, then the fixup area, then the JIT records (past the
-        // fixup area's one-past-the-end address, which `addr.const` may take).
-        let data_align = self.data_align.max(if mode.counters { 64 } else { 8 }) as usize;
-        let fixup_area = align_to(self.sites as usize * 8, data_align);
+    /// The writable section: site cache, then the fixup area, then the JIT records (past the
+    /// fixup area's one-past-the-end address, which `addr.const` may take); and the checked
+    /// fixups.
+    fn layout_data(&self, mode: Mode, nfuncs: usize) -> Result<DataLayout, WriteError> {
+        let align = self.data_align.max(if mode.counters { 64 } else { 8 }) as usize;
+        let fixup_area = align_to(self.sites as usize * 8, align);
         let mut data = vec![0u8; fixup_area];
         data.extend_from_slice(&self.data);
         let jit_records = if mode.counters {
             let off = align_to(data.len() + 1, 64);
             data.resize(off, 0);
-            for i in 0..funcs.len() as u32 {
+            for i in 0..nfuncs as u32 {
                 data.extend_from_slice(&JitRecord::image_bytes(i));
             }
-            Span { off: off.try_into().map_err(|_| WriteError::TooLarge)?, count: funcs.len() as u32 }
+            Span::new(off, nfuncs)?
         } else {
             Span::default()
         };
@@ -683,6 +706,7 @@ impl ImageWriter {
         if fixup_offsets.len() != self.fixups.len() || self.data_relocs.iter().any(|r| fixup_offsets.contains(&r.offset)) {
             return Err(WriteError::AllocReloc);
         }
+        let nsyms = self.symbols.len() as u32;
         let mut fixups = Vec::with_capacity(self.fixups.len());
         for x in &self.fixups {
             if x.sym.0 >= nsyms
@@ -694,24 +718,27 @@ impl ImageWriter {
             }
             fixups.push(FixupEntry { offset: (fixup_area + x.offset as usize) as u32, sym: x.sym.0, addend: x.addend });
         }
+        Ok(DataLayout { data, align, fixup_area, jit_records, fixups })
+    }
 
-        // Read-only layout.
+    /// The read-only section, starting with its header.
+    fn layout_ro(&self, mode: Mode, t: &TextLayout, d: &DataLayout) -> Result<(Vec<u8>, Header), WriteError> {
         let mut off = mem::size_of::<Header>();
         let mut span = |count: usize, size: usize, align: usize| -> Result<Span, WriteError> {
             off = align_to(off, align);
-            let s = Span { off: off.try_into().map_err(|_| WriteError::TooLarge)?, count: count.try_into().map_err(|_| WriteError::TooLarge)? };
+            let s = Span::new(off, count)?;
             off += count * size;
             Ok(s)
         };
-        let functions = span(funcs.len(), mem::size_of::<FuncEntry>(), 4)?;
-        let consts_code = span(code_consts.len(), 1, 16)?;
-        let fixups_span = span(fixups.len(), mem::size_of::<FixupEntry>(), 8)?;
+        let functions = span(t.funcs.len(), mem::size_of::<FuncEntry>(), 4)?;
+        let code_consts = span(t.code_consts.len(), 1, 16)?;
+        let fixups = span(d.fixups.len(), mem::size_of::<FixupEntry>(), 8)?;
         let sym_flags = span(self.symbols.len(), 1, 1)?;
-        let func_flags = span(funcs.len(), 1, 1)?;
+        let func_flags = span(t.funcs.len(), 1, 1)?;
         let symbols = span(self.symbols.len(), 8, 8)?;
         let consts = span(self.consts.len(), 1, self.const_align as usize)?;
-        let call_sites_span = span(call_sites.len(), mem::size_of::<CallSiteEntry>(), 4)?;
-        let lists_span = span(lists.len(), 1, 1)?;
+        let call_sites = span(t.call_sites.len(), mem::size_of::<CallSiteEntry>(), 4)?;
+        let lists = span(t.lists.len(), 1, 1)?;
         let mut const_reloc_offs: Vec<u32> = self.const_relocs.iter().map(|r| r.offset).collect();
         const_reloc_offs.sort_unstable();
         if const_reloc_offs.windows(2).any(|w| w[1] < w[0] + 8) {
@@ -725,23 +752,23 @@ impl ImageWriter {
             crate_hash: crate_hash(self.stable_crate_id),
             stable_crate_id: self.stable_crate_id,
             data: 0,
-            size: size.try_into().map_err(|_| WriteError::TooLarge)?,
-            data_size: data.len().try_into().map_err(|_| WriteError::TooLarge)?,
+            size: to_u32(size)?,
+            data_size: to_u32(d.data.len())?,
             functions,
             text: 0,
-            text_size: text.len().try_into().map_err(|_| WriteError::TooLarge)?,
-            code_consts: consts_code,
-            fixups: fixups_span,
+            text_size: to_u32(t.text.len())?,
+            code_consts,
+            fixups,
             sym_flags,
             func_flags,
             symbols,
             consts,
-            lists: lists_span,
-            call_sites: call_sites_span,
+            lists,
+            call_sites,
             site_count: self.sites,
-            fixup_area: fixup_area as u32,
+            fixup_area: d.fixup_area as u32,
             mode: mode.to_header_bits(),
-            jit_records,
+            jit_records: d.jit_records,
             const_relocs,
             cgu_hash: self.cgu_hash,
             abi: crate::ABI,
@@ -754,111 +781,151 @@ impl ImageWriter {
         // SAFETY: all of these are padding-free plain-data types.
         unsafe {
             put(&mut ro, 0, slice::from_ref(&header));
-            put(&mut ro, functions.off, &funcs);
-            put(&mut ro, consts_code.off, &code_consts);
-            put(&mut ro, fixups_span.off, &fixups);
+            put(&mut ro, functions.off, &t.funcs);
+            put(&mut ro, code_consts.off, &t.code_consts);
+            put(&mut ro, fixups.off, &d.fixups);
             put(&mut ro, sym_flags.off, &flags);
             put(&mut ro, func_flags.off, &fflags);
             put(&mut ro, consts.off, &self.consts);
-            put(&mut ro, call_sites_span.off, &call_sites);
-            put(&mut ro, lists_span.off, &lists);
+            put(&mut ro, call_sites.off, &t.call_sites);
+            put(&mut ro, lists.off, &t.lists);
             put(&mut ro, const_relocs.off, &const_reloc_offs);
         }
+        Ok((ro, header))
+    }
 
-        // Relocations.
+    /// The relocations of the header and symbol slots, the JIT records, the code (patching
+    /// calls between functions into `t.text`) and the allocations.
+    fn relocs(&self, mode: Mode, h: &Header, t: &mut TextLayout, d: &DataLayout) -> Result<Vec<Reloc>, WriteError> {
         let mut relocs = Vec::new();
-        let abs = |section, offset, target, addend| Reloc { section, offset, target, addend, kind: RelocKind::Abs64 };
-        relocs.push(abs(Section::ReadOnly, mem::offset_of!(Header, data) as u64, RelocTarget::Section(Section::Writable), 0));
-        relocs.push(abs(Section::ReadOnly, mem::offset_of!(Header, text) as u64, RelocTarget::Section(Section::Text), 0));
-        for i in 0..nsyms {
-            relocs.push(abs(Section::ReadOnly, symbols.off as u64 + i as u64 * 8, RelocTarget::Symbol(Sym(i)), 0));
+        let abs = |section, offset, target| Reloc { section, offset, target, addend: 0, kind: RelocKind::Abs64 };
+        relocs.push(abs(Section::ReadOnly, mem::offset_of!(Header, data) as u64, RelocTarget::Section(Section::Writable)));
+        relocs.push(abs(Section::ReadOnly, mem::offset_of!(Header, text) as u64, RelocTarget::Section(Section::Text)));
+        for i in 0..self.symbols.len() as u32 {
+            relocs.push(abs(Section::ReadOnly, h.symbols.off as u64 + i as u64 * 8, RelocTarget::Symbol(Sym(i))));
         }
-        for i in 0..jit_records.count as u64 {
-            let rec = jit_records.off as u64 + 64 * i;
+        for i in 0..d.jit_records.count as u64 {
+            let rec = d.jit_records.off as u64 + 64 * i;
             for (field, target) in JIT_RECORD_RELOCS {
-                relocs.push(abs(Section::Writable, rec + field as u64, target, 0));
+                relocs.push(abs(Section::Writable, rec + field as u64, target));
             }
         }
-        // The code's fields. Calls between functions are resolved here.
-        for &CodeRef { at, to, start, ro_base, func } in &code_refs {
-            let pc = |target, off: u64| Reloc {
-                section: Section::Text,
-                offset: at as u64,
-                target: RelocTarget::Section(target),
-                addend: off as i64 - 4,
-                kind: RelocKind::Pc32,
-            };
-            let call = |target| Reloc { section: Section::Text, offset: at as u64, target, addend: -4, kind: RelocKind::Call32 };
-            let bad = |what| WriteError::Code { func, offset: at - start, error: what };
-            relocs.push(match to {
-                Ref::Handler(op) => call(RelocTarget::Handler(op)),
-                Ref::Probe => call(RelocTarget::Probe),
-                Ref::Func(Func(f)) => {
-                    let f = funcs.get(f as usize).ok_or(bad(CodeError::FuncOutOfRange))?;
-                    let d = f.code_off.wrapping_sub(at + 4);
-                    text[at as usize..at as usize + 4].copy_from_slice(&d.to_le_bytes());
-                    continue;
-                }
-                Ref::Sym(Sym(s)) if s < nsyms => pc(Section::ReadOnly, symbols.off as u64 + 8 * s as u64),
-                Ref::Site(Site(s)) if s < self.sites => pc(Section::Writable, 8 * s as u64),
-                Ref::Const(Const(k)) if (k as usize) <= self.consts.len() => pc(Section::ReadOnly, consts.off as u64 + k as u64),
-                Ref::Data(Data(d)) if (d as usize) <= self.data.len() => pc(Section::Writable, (fixup_area + d as usize) as u64),
-                Ref::Ro(o) => pc(Section::ReadOnly, (consts_code.off + ro_base + o) as u64),
-                Ref::Rec | Ref::RecLoopCtr if mode.counters => {
-                    let rec = jit_records.off as u64 + 64 * func as u64;
-                    pc(Section::Writable, if to == Ref::RecLoopCtr { rec + JIT_LOOP_CTR as u64 } else { rec })
-                }
-                Ref::Rec | Ref::RecLoopCtr => return Err(bad(CodeError::NoJitRecord)),
-                Ref::RegHandler(_) => return Err(bad(CodeError::JitOnly)),
-                Ref::Sym(_) => return Err(bad(CodeError::SymOutOfRange)),
-                Ref::Site(_) => return Err(bad(CodeError::SiteOutOfRange)),
-                Ref::Const(_) => return Err(bad(CodeError::ConstOutOfRange)),
-                Ref::Data(_) => return Err(bad(CodeError::DataOutOfRange)),
-            });
-        }
-        let map = |r: &AllocReloc, section: Section, base: usize, len: usize| -> Result<Reloc, WriteError> {
-            if r.offset as usize + 8 > len || (base + r.offset as usize) % 8 != 0 {
-                return Err(WriteError::AllocReloc);
+        for r in &t.code_refs {
+            if let Some(reloc) = self.code_ref_reloc(mode, h, d, &t.funcs, &mut t.text, r)? {
+                relocs.push(reloc);
             }
-            let (target, addend) = match r.target {
-                // A pointer to an indirect symbol's target is only known at registration: it
-                // must be a fixup. So relocations against indirect symbols are all slots'.
-                AllocTarget::Symbol(s) if s.0 < nsyms && self.symbols[s.0 as usize].flags & SYM_INDIRECT == 0 => (RelocTarget::Symbol(s), r.addend),
-                AllocTarget::Const(k) if (k.0 as usize) <= self.consts.len() => {
-                    (RelocTarget::Section(Section::ReadOnly), consts.off as i64 + k.0 as i64 + r.addend)
-                }
-                AllocTarget::Data(d) if (d.0 as usize) <= self.data.len() => {
-                    (RelocTarget::Section(Section::Writable), fixup_area as i64 + d.0 as i64 + r.addend)
-                }
-                _ => return Err(WriteError::AllocReloc),
-            };
-            Ok(Reloc { section, offset: (base + r.offset as usize) as u64, target, addend, kind: RelocKind::Abs64 })
-        };
+        }
         for r in &self.const_relocs {
-            relocs.push(map(r, Section::ReadOnly, consts.off as usize, self.consts.len())?);
+            relocs.push(self.alloc_reloc(h, d, r, Section::ReadOnly, h.consts.off as usize, self.consts.len())?);
         }
         for r in &self.data_relocs {
-            relocs.push(map(r, Section::Writable, fixup_area, self.data.len())?);
+            relocs.push(self.alloc_reloc(h, d, r, Section::Writable, d.fixup_area, self.data.len())?);
         }
-        let unwind = if pe {
-            assert!(mode.frame_pointer, "PE unwind info needs the frame pointer");
-            unwind_pe(&func_code, mode, &mut relocs)
-        } else {
-            let slot = symbols.off as u64 + 8 * self.personality.expect("prepare").0 as u64;
-            unwind_elf(&func_code, slot, mode, self.eh_pointers, &mut relocs)
-        };
+        Ok(relocs)
+    }
 
-        Ok(ImageObject {
-            rodata: ro,
-            rodata_align: (self.const_align as u64).max(16),
-            data,
-            data_align: data_align as u64,
-            text,
-            functions: func_code,
-            unwind,
-            symbols: self.symbols,
-            relocs,
-        })
+    /// The relocation of a code field, or `None` for a call between functions, resolved here
+    /// in `text`.
+    fn code_ref_reloc(
+        &self,
+        mode: Mode,
+        h: &Header,
+        d: &DataLayout,
+        funcs: &[FuncEntry],
+        text: &mut [u8],
+        r: &CodeRef,
+    ) -> Result<Option<Reloc>, WriteError> {
+        let &CodeRef { at, to, start, ro_base, func } = r;
+        let pc = |target, off: u64| Reloc {
+            section: Section::Text,
+            offset: at as u64,
+            target: RelocTarget::Section(target),
+            addend: off as i64 - 4,
+            kind: RelocKind::Pc32,
+        };
+        let call = |target| Reloc { section: Section::Text, offset: at as u64, target, addend: -4, kind: RelocKind::Call32 };
+        let bad = |what| WriteError::Code { func, offset: at - start, error: what };
+        Ok(Some(match to {
+            Ref::Handler(op) => call(RelocTarget::Handler(op)),
+            Ref::Probe => call(RelocTarget::Probe),
+            Ref::Func(Func(f)) => {
+                let f = funcs.get(f as usize).ok_or(bad(CodeError::FuncOutOfRange))?;
+                let disp = f.code_off.wrapping_sub(at + 4);
+                text[at as usize..at as usize + 4].copy_from_slice(&disp.to_le_bytes());
+                return Ok(None);
+            }
+            Ref::Sym(Sym(s)) if (s as usize) < self.symbols.len() => pc(Section::ReadOnly, h.symbols.off as u64 + 8 * s as u64),
+            Ref::Site(Site(s)) if s < self.sites => pc(Section::Writable, 8 * s as u64),
+            Ref::Const(Const(k)) if (k as usize) <= self.consts.len() => pc(Section::ReadOnly, h.consts.off as u64 + k as u64),
+            Ref::Data(Data(x)) if (x as usize) <= self.data.len() => pc(Section::Writable, (d.fixup_area + x as usize) as u64),
+            Ref::Ro(o) => pc(Section::ReadOnly, (h.code_consts.off + ro_base + o) as u64),
+            Ref::Rec | Ref::RecLoopCtr if mode.counters => {
+                let rec = d.jit_records.off as u64 + 64 * func as u64;
+                pc(Section::Writable, if to == Ref::RecLoopCtr { rec + JIT_LOOP_CTR as u64 } else { rec })
+            }
+            Ref::Rec | Ref::RecLoopCtr => return Err(bad(CodeError::NoJitRecord)),
+            Ref::RegHandler(_) => return Err(bad(CodeError::JitOnly)),
+            Ref::Sym(_) => return Err(bad(CodeError::SymOutOfRange)),
+            Ref::Site(_) => return Err(bad(CodeError::SiteOutOfRange)),
+            Ref::Const(_) => return Err(bad(CodeError::ConstOutOfRange)),
+            Ref::Data(_) => return Err(bad(CodeError::DataOutOfRange)),
+        }))
+    }
+
+    /// The relocation of a pointer at `r.offset` in an allocation of `len` bytes placed at
+    /// `base` in `section`.
+    fn alloc_reloc(&self, h: &Header, d: &DataLayout, r: &AllocReloc, section: Section, base: usize, len: usize) -> Result<Reloc, WriteError> {
+        if r.offset as usize + 8 > len || (base + r.offset as usize) % 8 != 0 {
+            return Err(WriteError::AllocReloc);
+        }
+        let (target, addend) = match r.target {
+            // A pointer to an indirect symbol's target is only known at registration: it
+            // must be a fixup. So relocations against indirect symbols are all slots'.
+            AllocTarget::Symbol(s) if (s.0 as usize) < self.symbols.len() && self.symbols[s.0 as usize].flags & SYM_INDIRECT == 0 => {
+                (RelocTarget::Symbol(s), r.addend)
+            }
+            AllocTarget::Const(k) if (k.0 as usize) <= self.consts.len() => {
+                (RelocTarget::Section(Section::ReadOnly), h.consts.off as i64 + k.0 as i64 + r.addend)
+            }
+            AllocTarget::Data(x) if (x.0 as usize) <= self.data.len() => {
+                (RelocTarget::Section(Section::Writable), d.fixup_area as i64 + x.0 as i64 + r.addend)
+            }
+            _ => return Err(WriteError::AllocReloc),
+        };
+        Ok(Reloc { section, offset: (base + r.offset as usize) as u64, target, addend, kind: RelocKind::Abs64 })
+    }
+}
+
+/// [`ImageWriter::layout_text`]'s result: the text and the read-only data that goes with it.
+struct TextLayout {
+    text: Vec<u8>,
+    code_consts: Vec<u8>,
+    lists: Vec<u8>,
+    call_sites: Vec<CallSiteEntry>,
+    funcs: Vec<FuncEntry>,
+    func_code: Vec<FuncCode>,
+    /// Resolved once the layout is known.
+    code_refs: Vec<CodeRef>,
+}
+
+/// [`ImageWriter::layout_data`]'s result.
+struct DataLayout {
+    /// The writable section.
+    data: Vec<u8>,
+    align: usize,
+    /// Offset of the allocations (past the site cache).
+    fixup_area: usize,
+    jit_records: Span,
+    fixups: Vec<FixupEntry>,
+}
+
+fn to_u32(v: usize) -> Result<u32, WriteError> {
+    v.try_into().map_err(|_| WriteError::TooLarge)
+}
+
+impl Span {
+    fn new(off: usize, count: usize) -> Result<Span, WriteError> {
+        Ok(Span { off: to_u32(off)?, count: to_u32(count)? })
     }
 }
 
