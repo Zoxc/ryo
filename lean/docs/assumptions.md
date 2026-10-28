@@ -208,7 +208,7 @@ Assumptions:
 
 The spec's input is a `Program` (Mir/Syntax.lean): MIR bodies, types with layouts, globals
 and instances. It comes from the `Builder` DSL in the tests and from the backend's JSON dump
-(`RYO_DUMP_LEAN=<dir>`, `backend/src/rustc_api/dump_lean.rs`, M1b: the program reachable
+(`RYO_DUMP_LEAN=<dir>`, `backend/src/dump_lean.rs`, M1b: the program reachable
 from the crate's `main`), whose schema is the derived `FromJson` instances
 (Mir/Json.lean). **The dump is the one trusted input** (aot.md §C6). It must faithfully
 reflect rustc 1.99.1 (`MirPhase::Runtime(Optimized)`, after drop elaboration, monomorphized;

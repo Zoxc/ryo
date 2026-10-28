@@ -729,7 +729,7 @@ fn prologue_code(insn: &Insn<'_>, eax: Option<u64>) -> Option<String> {
 
 /// Functions of the Rust ABI with `i128`s, each moving one argument (or half) to `rax` or
 /// building an `i128` return, and the code LLVM gives them on windows-msvc: the placement
-/// `backend/src/rustc_api/lower/sig.rs` assumes (`arg_plan`, `ret_kind`).
+/// `backend/src/lower/sig.rs` assumes (`arg_plan`, `ret_kind`).
 const WIN64_I128: &[(&str, &str, &[&str])] = &[
     ("lo1", "(a: u128) -> u64 { a as u64 }", &["mov rax, rcx"]),
     ("hi1", "(a: u128) -> u64 { (a >> 64) as u64 }", &["mov rax, rdx"]),

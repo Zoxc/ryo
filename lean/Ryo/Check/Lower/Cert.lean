@@ -2,7 +2,7 @@
 Ryo.Check.Lower.Cert — the lowering's certificate (aot.md §C1) and its JSON reader.
 
 `RYO_DUMP_LEAN=<dir>` makes the backend write `<dir>/<crate>.cert.json` next to the MIR dump
-(`backend/src/rustc_api/dump_lean.rs`, `write_certs`; per function `lower/cert.rs`,
+(`backend/src/dump_lean.rs`, `write_certs`; per function `lower/cert.rs`,
 `cert_json` and `plan_json`): `{"images": [{"cgu", "functions": [{"symbol", "cert"}]}],
 "islands": [{"symbol", "template"}]}`, per image of the crate (one per CGU with VM functions,
 named by its CGU) its functions in image order. It is untrusted: `CertCheck.lean` checks what it uses against the decoded code

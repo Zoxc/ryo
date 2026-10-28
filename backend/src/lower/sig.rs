@@ -224,7 +224,7 @@ fn ret_kind<'tcx>(tcx: TyCtxt<'tcx>, ret: &ArgAbi<'tcx, Ty<'tcx>>) -> Result<u32
     let Some(pieces) = reg_pieces(tcx, ret) else {
         return native(format!("return passed as {:?} ({:?})", ret.mode, ret.layout.backend_repr));
     };
-    let pe = crate::rustc_api::symbols::is_pe(tcx);
+    let pe = crate::symbols::is_pe(tcx);
     if pe && pieces.iter().any(|p| p.float && p.size == 16) {
         // Win64: LLVM returns an `f128` in memory the caller passes the address of, like an
         // sret (`i128` comes back in `rax:rdx` as on SysV, `f16` in `xmm0`).
@@ -258,7 +258,7 @@ fn ret_kind<'tcx>(tcx: TyCtxt<'tcx>, ret: &ArgAbi<'tcx, Ty<'tcx>>) -> Result<u32
 /// takes two positions, an `f128` is passed by reference (as LLVM 23 lowers them for the Rust
 /// ABI on x86_64-pc-windows-msvc). An sret return takes the first integer register.
 fn arg_plan<'tcx>(tcx: TyCtxt<'tcx>, fn_abi: &FnAbi<'tcx, Ty<'tcx>>, sret: bool) -> Result<ArgPlan, NeedsNative> {
-    let pe = crate::rustc_api::symbols::is_pe(tcx);
+    let pe = crate::symbols::is_pe(tcx);
     struct State {
         pe: bool,
         gpr: u32,

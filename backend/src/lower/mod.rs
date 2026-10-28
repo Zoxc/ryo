@@ -517,8 +517,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// instruction takes its `.ind` form.
     pub fn sym_indirect(&self, r: &CodeReloc<'tcx>) -> bool {
         let flags = match *r {
-            CodeReloc::Symbol { target } => crate::rustc_api::symbols::symbol_flags(self.tcx, target, crate::rustc_api::symbols::SymRole::Target),
-            CodeReloc::Static { def_id } => crate::rustc_api::symbols::static_symbol_flags(self.tcx, def_id),
+            CodeReloc::Symbol { target } => crate::symbols::symbol_flags(self.tcx, target, crate::symbols::SymRole::Target),
+            CodeReloc::Static { def_id } => crate::symbols::static_symbol_flags(self.tcx, def_id),
             _ => unreachable!("not a symbol"),
         };
         flags & ryo_bytecode::image::SYM_INDIRECT != 0

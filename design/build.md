@@ -13,9 +13,8 @@
   their sources under `lib/rustlib/rustc-src/rust/compiler`. Those sources are the reference
   for every compiler API the backend uses.
 - Compiler APIs change every release, so a toolchain bump is a porting task. All rustc API
-  use goes through the `backend/src/rustc_api/` module (the backend impl, the pipeline, the
-  lowering, the link step), so ports stay local. The `extern crate`s for the compiler crates
-  are in `lib.rs`, since they must be at the crate root, and only `rustc_api` uses them.
+  use is in the `backend` crate (the backend impl, the pipeline, the lowering, the link
+  step), so ports stay local; only `objfile.rs` is free of compiler types.
 - Every rustc/cargo invocation runs with `RUSTC_BOOTSTRAP=1`.
 
 ## The `y` build tool

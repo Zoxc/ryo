@@ -2,7 +2,7 @@
 # The constant-pool and vtable check (aot.md §C4)
 
 The image's constant pool (`Header::consts`, in the read-only section) holds copies of rustc's
-constant and vtable allocations (`Pool::intern` in `backend/src/rustc_api/partition.rs`), their
+constant and vtable allocations (`Pool::intern` in `backend/src/partition.rs`), their
 pointers zeroed and relocated by `R_X86_64_64` relocations: into the pool (against the
 read-only section's symbol) or against a symbol (a function instance's or a static's), and raw
 byte constants (`fill` operands, `Pool::bytes`). This module checks the pool against the

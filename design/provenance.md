@@ -21,7 +21,7 @@ the proofs ([verification.md](verification.md)) must justify. The model is R's
 - **Aliasing models** (Stacked/Tree Borrows, `noalias`) are ignored everywhere: no tier
   uses reference-ness, and the proofs exclude them (verification.md, non-goals).
 
-## Lowering (`backend/src/rustc_api/lower/`)
+## Lowering (`backend/src/lower/`)
 
 - **Casts** (`cast.rs`, [lowering.md](lowering.md#casts)): `PtrToPtr`, `FnPtrToPtr`,
   `Transmute`, `PointerExposeProvenance`, `PointerWithExposedProvenance` are all

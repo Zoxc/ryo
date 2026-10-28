@@ -194,10 +194,8 @@ fn check_static(tcx: TyCtxt<'_>, def_id: DefId) -> Result<(), NeedsNative> {
 /// slot (design/platforms.md), so its address isn't a link-time constant of the image.
 pub fn is_import<'tcx>(tcx: TyCtxt<'tcx>, target: &GlobalAlloc<'tcx>) -> bool {
     match target {
-        GlobalAlloc::Function { instance } => {
-            crate::rustc_api::symbols::symbol_flags(tcx, *instance, crate::rustc_api::symbols::SymRole::Target) != 0
-        }
-        GlobalAlloc::Static(def_id) => crate::rustc_api::symbols::static_symbol_flags(tcx, *def_id) != 0,
+        GlobalAlloc::Function { instance } => crate::symbols::symbol_flags(tcx, *instance, crate::symbols::SymRole::Target) != 0,
+        GlobalAlloc::Static(def_id) => crate::symbols::static_symbol_flags(tcx, *def_id) != 0,
         GlobalAlloc::Memory(_) | GlobalAlloc::VTable(..) | GlobalAlloc::TypeId { .. } => false,
     }
 }
@@ -206,7 +204,7 @@ pub fn is_import<'tcx>(tcx: TyCtxt<'tcx>, target: &GlobalAlloc<'tcx>) -> bool {
 /// constant pool: it points directly at an import (PE only, design/lowering.md#constants).
 /// Allocations that only point at such allocations stay in the pool.
 pub fn needs_fixup(tcx: TyCtxt<'_>, id: AllocId) -> bool {
-    if !crate::rustc_api::symbols::is_pe(tcx) {
+    if !crate::symbols::is_pe(tcx) {
         return false;
     }
     let alloc = match tcx.global_alloc(id) {

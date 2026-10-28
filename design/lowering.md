@@ -10,7 +10,7 @@ frame size is known `Asm::finish` resolves slots to frame offsets, lays out the 
 writes it.
 
 The entry point is `lower(tcx, cx, instance) -> Result<LoweredFn, NeedsNative>`
-(`backend/src/rustc_api/lower/mod.rs`), where `cx: LowerCx` holds the set of functions
+(`backend/src/lower/mod.rs`), where `cx: LowerCx` holds the set of functions
 assumed to be VM functions of this image (a call of one of them is a `call`, any other local
 callee an island). A `LoweredFn` holds:
 
@@ -456,7 +456,7 @@ by its code offset, which the encoder turns into the function's LSDA call-site t
 
 ## Status
 
-The lowering lives in `backend/src/rustc_api/lower/`, one module per concern (`mod.rs` lists
+The lowering lives in `backend/src/lower/`, one module per concern (`mod.rs` lists
 them). Implemented: everything above for integers, `bool`, `char`, `f32`/`f64`, places,
 references, aggregates, enums, all casts (`f16`/`f128` ones through `as_cast`), field-by-field
 unsizing, unsized tails at dynamic offsets, `size_of_val` of any unsized type, `Repeat`, wide

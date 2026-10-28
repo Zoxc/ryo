@@ -47,8 +47,8 @@ code that calls the VM's handlers; cg_llvm compiles everything else. Start at
 
 ## Repo map
 
-- `backend/` (workspace): `rustc_codegen_ryo` dylib. All rustc API use is in
-  `src/rustc_api/`; `lower/` is MIR -> bytecode (`design/lowering.md`), `partition.rs`
+- `backend/` (workspace): `rustc_codegen_ryo` dylib. `src/lib.rs` is the
+  `CodegenBackend` impl; `lower/` is MIR -> bytecode (`design/lowering.md`), `partition.rs`
   the pipeline, `link.rs` the registry object (`design/backend.md`).
 - `vm/` (workspace, everything that ends up in the output program, `design/vm.md`):
   - `bytecode/` `ryo_bytecode` (`no_std`): the format shared by writer and reader. `ops.rs`

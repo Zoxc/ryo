@@ -521,7 +521,7 @@ The calls (`call`, `call.sym`, `call.sym.ind`, `call.ptr`), `tail_call`, `ret`, 
   no handler, stub or lookup in between. A function whose signature the VM can't follow
   stays native ([lowering.md](lowering.md#frame-slots)).
 - **Arguments** go where LLVM puts rustc's `PassMode`s of the ABI inputs
-  (`backend/src/rustc_api/lower/sig.rs`, `arg_plan`): each input's scalar pieces (`Direct`,
+  (`backend/src/lower/sig.rs`, `arg_plan`): each input's scalar pieces (`Direct`,
   `Pair`, the Rust ABI's integer `Cast`) take the next argument register of their class,
   SysV `rdi, rsi, rdx, rcx, r8, r9` and `xmm0`–`xmm7`, or else an 8-byte slot of the stack
   argument area. An `i128` takes two integer registers if two are left, else a 16-aligned

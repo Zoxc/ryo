@@ -1,6 +1,6 @@
 /-
 Ryo.Proofs.NicheDiscr — the lowered decoding of a niche-encoded enum's discriminant
-(`FnCx::niche_discr`, `backend/src/rustc_api/lower/adt.rs`, after cg_ssa's
+(`FnCx::niche_discr`, `backend/src/lower/adt.rs`, after cg_ssa's
 `codegen_get_discr`) against the spec's `tagToVariant` (`Spec/Lang/Representation.lean`).
 
 `nicheDiscr tw dw untagged start end_ ns tag` is the value the emitted plain ops leave in the

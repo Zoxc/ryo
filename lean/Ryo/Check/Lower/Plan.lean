@@ -1,7 +1,7 @@
 /-
 Ryo.Check.Lower.Plan — where the platform calling convention puts a signature's inputs and
 how it returns its value, recomputed from the dumped ABI (`FnAbiSummary`): a port of
-`backend/src/rustc_api/lower/sig.rs`'s `ArgLoc`, `ArgPlan`, `arg_plan` and `ret_kind`.
+`backend/src/lower/sig.rs`'s `ArgLoc`, `ArgPlan`, `arg_plan` and `ret_kind`.
 
 The dump gives each argument's `PassMode` kind and, for a `Direct` scalar, a `Pair` and an
 integer `Cast` without prefix, its LLVM-level scalars (`ArgAbi.scalars`: class, size, offset),
