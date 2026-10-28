@@ -41,16 +41,7 @@ pub const ABI_TAG: &str = match option_env!("RYO_ABI") {
 };
 
 /// [`ABI_TAG`]'s 64-bit FNV-1a hash: `image::Header::abi`, which registration compares.
-pub const ABI: u64 = {
-    let b = ABI_TAG.as_bytes();
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    let mut i = 0;
-    while i < b.len() {
-        h = (h ^ b[i] as u64).wrapping_mul(0x0000_0100_0000_01b3);
-        i += 1;
-    }
-    h
-};
+pub const ABI: u64 = image::fnv1a(ABI_TAG.as_bytes());
 
 #[macro_use]
 pub mod full;

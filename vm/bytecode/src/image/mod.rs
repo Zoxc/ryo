@@ -341,11 +341,15 @@ pub const fn crate_hash(stable_crate_id: u64) -> u32 {
 /// The 64-bit hash of a codegen unit name (FNV-1a) the image header and symbol carry. CGU
 /// names are stable across sessions, so is the hash.
 pub const fn cgu_hash(name: &[u8]) -> u64 {
+    fnv1a(name)
+}
+
+/// The 64-bit FNV-1a hash of `bytes`: [`cgu_hash`] and [`crate::ABI`].
+pub const fn fnv1a(bytes: &[u8]) -> u64 {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     let mut i = 0;
-    while i < name.len() {
-        h ^= name[i] as u64;
-        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    while i < bytes.len() {
+        h = (h ^ bytes[i] as u64).wrapping_mul(0x0000_0100_0000_01b3);
         i += 1;
     }
     h
