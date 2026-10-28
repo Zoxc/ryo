@@ -281,8 +281,8 @@ impl CodegenBackend for RyoBackend {
             match img.save {
                 ImageSave::Fresh(side) => {
                     if let Some(incr) = incr_comp_session {
-                        let mut files = vec![("ryo", side.as_path())];
-                        files.extend(img.path.as_deref().map(|p| ("o", p)));
+                        let mut files = vec![(partition::WP_SIDE, side.as_path())];
+                        files.extend(img.path.as_deref().map(|p| (partition::WP_OBJECT, p)));
                         let (id, wp) = rustc_incremental::copy_cgu_workproduct_to_incr_comp_cache_dir(sess, incr, &wp_name, &files, &[]);
                         work_products.insert(id, wp);
                     }
@@ -490,7 +490,7 @@ fn write_fresh_image(
         let _ = std::fs::remove_file(p);
         link::write_or_fatal(tcx.sess, p, bytes);
     };
-    let side_path = image_path.with_extension("ryo");
+    let side_path = image_path.with_extension(partition::WP_SIDE);
     write(&side_path, side);
     if let Some(image) = image {
         let scid = symbols::local_stable_crate_id(tcx);
@@ -506,7 +506,7 @@ fn write_fresh_image(
 /// (`execute_copy_from_cache_work_item`).
 fn place_reused_image(tcx: TyCtxt<'_>, wp: &rustc_middle::dep_graph::WorkProduct, image_path: &std::path::Path) -> ImageSave {
     let incr = tcx.incr_comp_session.expect("a reused image without an incremental session");
-    let from = wp.saved_files.get("o").map(|f| rustc_incremental::in_incr_comp_dir_sess(incr, f));
+    let from = wp.saved_files.get(partition::WP_OBJECT).map(|f| rustc_incremental::in_incr_comp_dir_sess(incr, f));
     if let Some(from) = &from {
         let _ = std::fs::remove_file(image_path);
         link::link_or_copy(tcx.sess, from, image_path);

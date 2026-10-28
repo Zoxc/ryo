@@ -350,7 +350,7 @@ impl<'tcx> CguVm<'tcx> {
 
     /// The side data: a byte saying whether the CGU has an image object (it has VM
     /// functions), readable before the image's dep node is green, a checksum of that byte and
-    /// the rest ([`CguVm::intact`]), then the encoded fields.
+    /// the rest ([`CguVm::split`]), then the encoded fields.
     fn save(&self, tcx: TyCtxt<'tcx>) -> Vec<u8> {
         let body = persist::encode(tcx, &(&self.vm, &self.islands, &self.refs, &self.main));
         let has_object = u8::from(!self.vm.is_empty());
@@ -360,30 +360,35 @@ impl<'tcx> CguVm<'tcx> {
         out
     }
 
-    /// Whether saved side data is whole: its checksum matches. Checked before the image's
-    /// dep node is marked green, so a corrupted file rebuilds the image rather than panicking
-    /// in the decoder (`MemDecoder`'s footer check only catches truncation).
-    fn intact(data: &[u8]) -> bool {
-        match (data.first(), data.get(1..17), data.get(17..)) {
-            (Some(&has_object), Some(sum), Some(body)) => sum == side_checksum(has_object, body),
-            _ => false,
-        }
+    /// Saved side data's has-object byte and encoded fields, if it is whole: its checksum
+    /// matches. Checked before the image's dep node is marked green, so a corrupted file
+    /// rebuilds the image rather than panicking in the decoder (`MemDecoder`'s footer check
+    /// only catches truncation).
+    fn split(data: &[u8]) -> Option<(bool, &[u8])> {
+        let (head, body) = data.split_at_checked(SIDE_HEADER)?;
+        (head[1..] == side_checksum(head[0], body)).then_some((head[0] != 0, body))
     }
 
-    fn load(tcx: TyCtxt<'tcx>, data: &[u8]) -> Option<Self> {
-        let (vm, islands, refs, main): CguVmData<'tcx> = persist::decode(tcx, data.get(17..)?)?;
+    /// Decodes the encoded fields ([`CguVm::split`]'s body).
+    fn load(tcx: TyCtxt<'tcx>, body: &[u8]) -> Option<Self> {
+        let (vm, islands, refs, main): CguVmData<'tcx> = persist::decode(tcx, body)?;
         Some(CguVm { vm, islands, refs, main })
     }
 }
 
+/// The length of [`CguVm::save`]'s header: the has-object byte and the checksum.
+const SIDE_HEADER: usize = 17;
+
+/// The stable hash of `v`.
+fn stable_fingerprint<T: std::hash::Hash + ?Sized>(v: &T) -> rustc_data_structures::fingerprint::Fingerprint {
+    let mut h = rustc_data_structures::stable_hash::StableHasher::new();
+    v.hash(&mut h);
+    h.finish()
+}
+
 /// [`CguVm::save`]'s checksum of the side data: its first byte and the encoded fields.
 fn side_checksum(has_object: u8, body: &[u8]) -> [u8; 16] {
-    use std::hash::Hash;
-    let mut h = rustc_data_structures::stable_hash::StableHasher::new();
-    has_object.hash(&mut h);
-    body.hash(&mut h);
-    let f: rustc_data_structures::fingerprint::Fingerprint = h.finish();
-    f.to_le_bytes()
+    stable_fingerprint(&(has_object, body)).to_le_bytes()
 }
 
 /// Where a CGU's image object comes from.
@@ -401,7 +406,7 @@ impl CguImage {
     pub fn has_object(&self) -> bool {
         match &self.image {
             ImageSrc::Fresh { image, .. } => image.is_some(),
-            ImageSrc::Reused(wp) => wp.saved_files.contains_key("o"),
+            ImageSrc::Reused(wp) => wp.saved_files.contains_key(WP_OBJECT),
         }
     }
 }
@@ -1074,29 +1079,23 @@ fn image_part<'tcx>(
     for (i, d) in &cands {
         key.push_str(&format!("{} {:?} {:?}\n", tcx.symbol_name(*i).name, d.linkage, d.visibility));
     }
-    let fp = {
-        use std::hash::Hash;
-        let mut h = rustc_data_structures::stable_hash::StableHasher::new();
-        key.hash(&mut h);
-        let f: rustc_data_structures::fingerprint::Fingerprint = h.finish();
-        f.to_hex()
-    };
+    let fp = stable_fingerprint(&key).to_hex();
     let node = CodegenUnit::new(Symbol::intern(&format!("{}.ryo.{fp}", cgu.name()))).codegen_dep_node(tcx);
     let wp = image_work_product_name(cgu.name());
     let prev = tcx.dep_graph.previous_work_product(&WorkProductId::from_cgu_name(&wp));
     let side = prev
         .as_ref()
-        .and_then(|p| p.saved_files.get("ryo"))
+        .and_then(|p| p.saved_files.get(WP_SIDE))
         .zip(tcx.incr_comp_session)
         .and_then(|(f, incr)| std::fs::read(rustc_incremental::in_incr_comp_dir_sess(incr, f)).ok());
     // A work product saved without its object (rustc only warns when a file fails to copy
     // into the cache) can't be reused; the side data says whether it had one.
     if let (Some(prev), Some(side)) = (prev, side)
-        && (side.first() == Some(&0) || prev.saved_files.contains_key("o"))
-        && CguVm::intact(&side)
+        && let Some((has_object, body)) = CguVm::split(&side)
+        && (!has_object || prev.saved_files.contains_key(WP_OBJECT))
         && tcx.dep_graph.try_mark_green(tcx, &node).is_some()
     {
-        let vm = CguVm::load(tcx, &side).unwrap_or_else(|| tcx.dcx().fatal(format!("ryo: the saved image of `{}` is unreadable", cgu.name())));
+        let vm = CguVm::load(tcx, body).unwrap_or_else(|| tcx.dcx().fatal(format!("ryo: the saved image of `{}` is unreadable", cgu.name())));
         return ImagePart { vm, image: Some(ImageSrc::Reused(prev)), fresh: None };
     }
     tcx.dep_graph.with_task(node, tcx, build, None).0
@@ -1106,6 +1105,11 @@ fn image_part<'tcx>(
 pub fn image_work_product_name(cgu: Symbol) -> String {
     format!("{cgu}.ryo")
 }
+
+/// The image work product's file keys (and the side data's extension): the side data
+/// ([`CguVm::save`]) and the image object (none if the CGU has no VM function).
+pub const WP_SIDE: &str = "ryo";
+pub const WP_OBJECT: &str = "o";
 
 /// Classifies, lowers and builds CGU `cgu`'s image from its candidates `cands` (in image
 /// order).
@@ -1684,12 +1688,12 @@ mod tests {
         let mut data = vec![1u8];
         data.extend_from_slice(&side_checksum(1, &body));
         data.extend_from_slice(&body);
-        assert!(CguVm::intact(&data));
-        for i in [0, 1, 17, data.len() - 1] {
+        assert_eq!(CguVm::split(&data), Some((true, &body[..])));
+        for i in [0, 1, SIDE_HEADER, data.len() - 1] {
             let mut bad = data.clone();
             bad[i] ^= 1;
-            assert!(!CguVm::intact(&bad), "byte {i}");
+            assert!(CguVm::split(&bad).is_none(), "byte {i}");
         }
-        assert!(!CguVm::intact(&data[..10]));
+        assert!(CguVm::split(&data[..10]).is_none());
     }
 }
