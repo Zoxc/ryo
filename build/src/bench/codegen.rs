@@ -66,13 +66,17 @@ pub fn codegen() -> Result<(), String> {
     Ok(())
 }
 
+/// The image references the JIT dumps name, as the SSA IR's Debug spelling and the name's
+/// prefix (`Func(Func(8))`, `fn8`).
+const IMAGE_REFS: [(&str, &str); 4] = [("Func(Func(", "fn"), ("Sym(Sym(", "sym"), ("Const(Const(", "k"), ("Data(Data(", "data")];
+
 /// `ir` with the image's references that the IR prints as `Func(Func(8))` named as the
 /// function's code names them (`local("fn8")`, `fn2`).
 fn local_names(ir: &str, local: &dyn Fn(&str) -> String) -> String {
     let mut out = String::new();
     let mut rest = ir;
     'scan: while !rest.is_empty() {
-        for (debug, name) in [("Func(Func(", "fn"), ("Sym(Sym(", "sym"), ("Site(Site(", "site"), ("Const(Const(", "k"), ("Data(Data(", "data")] {
+        for (debug, name) in IMAGE_REFS {
             if let Some(after) = rest.strip_prefix(debug) {
                 let n = after.bytes().take_while(u8::is_ascii_digit).count();
                 if n > 0 && after[n..].starts_with("))") {
@@ -179,11 +183,9 @@ fn jit_dumps(exe: &Path, dir: &Path, aot: &str) -> Result<Vec<(&'static str, Str
                 }
             } else if let Some(r) = line.strip_prefix("reloc ") {
                 let (at, to) = r.split_once(' ').ok_or("RYO_JIT_DUMP: bad reloc")?;
-                // The image's functions (and retargeted callees), symbols, sites, constants and
-                // data.
-                let image_ref = ["fn", "sym", "site", "k", "data"]
-                    .iter()
-                    .any(|p| to.strip_prefix(p).is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())));
+                // The image's functions (and retargeted callees), symbols, constants and data.
+                let image_ref =
+                    IMAGE_REFS.iter().any(|(_, p)| to.strip_prefix(p).is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())));
                 let to = if image_ref { local(to) } else { to.to_owned() };
                 writeln!(code, "reloc {at} {to}").unwrap();
             } else {
