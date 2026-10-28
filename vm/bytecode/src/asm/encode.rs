@@ -778,7 +778,7 @@ pub fn encode(code: &[u32], frame_size: u32, cleanup: &[CleanupEntry], scopes: &
         scopes_at(&mut asm, at)?;
         let ops = operands(code, at).into_iter().map(|o| o.map_targets(|t| idx(t).map(|i| Label(i as u32)))).collect::<Result<Vec<_>, _>>()?;
         if region.is_some() {
-            let falls = crate::image::op_falls_through(op) && op.info().shape != Shape::Trap;
+            let falls = op.info().shape.falls_through();
             flow.push((falls, ops.iter().flat_map(opnd_labels).collect::<Vec<_>>()));
         }
         let id = asm.insn(op, &ops);

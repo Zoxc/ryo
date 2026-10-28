@@ -286,11 +286,6 @@ pub struct CodeLimits {
     pub data: u32,
 }
 
-pub(crate) fn op_falls_through(op: Opcode) -> bool {
-    !matches!(op, Opcode::Jmp | Opcode::Unreachable | Opcode::Abort | Opcode::Ret | Opcode::Resume | Opcode::TailCall | Opcode::TailCallPtr)
-        && !op.mnemonic().starts_with("switch.")
-}
-
 /// Whether `op` calls code that may unwind, so it can have a cleanup entry.
 pub fn op_may_unwind(op: Opcode) -> bool {
     matches!(op, Opcode::Call | Opcode::CallSym | Opcode::CallSymInd | Opcode::CallPtr | Opcode::Island | Opcode::Resume)
@@ -308,7 +303,7 @@ pub fn validate_code(code: &[u32], lim: &CodeLimits) -> Result<Vec<bool>, (u32, 
         last = Some(insn.opcode());
     }
     if let Some(op) = last {
-        if op_falls_through(op) {
+        if op.info().shape.falls_through() {
             return Err((code.len() as u32, CodeError::FallsOffEnd));
         }
     }

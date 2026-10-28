@@ -768,6 +768,14 @@ pub enum Shape {
     Arg,
 }
 
+impl Shape {
+    /// Whether an instruction of this shape can continue at the next one: everything but
+    /// jumps, returns, tail calls, switches and traps.
+    pub const fn falls_through(self) -> bool {
+        !matches!(self, Shape::Jmp | Shape::Ret | Shape::TailCall | Shape::Switch | Shape::Trap)
+    }
+}
+
 /// Maps a shape name in the opcode list to its [`Shape`].
 macro_rules! shape {
     (op) => {

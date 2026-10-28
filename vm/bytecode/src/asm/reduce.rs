@@ -448,7 +448,7 @@ pub fn encode_reduced_at(
                 }
                 let ops = operands(&full, 0).into_iter().map(|o| o.map_targets(|t| label(at, t))).collect::<Result<Vec<_>, _>>()?;
                 if region.is_some() {
-                    let falls = crate::image::op_falls_through(f) && f.info().shape != Shape::Trap;
+                    let falls = f.info().shape.falls_through();
                     flow.push((falls, ops.iter().flat_map(opnd_labels).collect::<Vec<_>>()));
                 }
                 asm.insn(f, &ops)
