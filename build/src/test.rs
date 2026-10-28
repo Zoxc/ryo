@@ -485,6 +485,15 @@ const CARGO_RUNS: &[CargoRun] = &[
         target_subdir: Some("jit"),
         ..CARGO_RUN
     },
+    // The runtime's own unit tests of its JIT side (`vm::jit`: the merge rendezvous etc.),
+    // which the `vm` run builds without the `jit` feature.
+    CargoRun {
+        name: "vm rt jit",
+        args: &["test", "-p", "ryo_rt", "--features", "jit", "--lib"],
+        selected: |s| s.fast || s.rt,
+        target_subdir: Some("jit"),
+        ..CARGO_RUN
+    },
     CargoRun {
         name: "vm jit fp-rbp",
         args: &["test", "-p", "ryo_jit", "--features", "ryo_rt/fp-rbp"],

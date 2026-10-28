@@ -925,7 +925,7 @@ private copy of the runtime (`ryo_rt`, `ryo_bytecode` and the sealed JIT):
   error (`ryo_rt`'s crate hash).
 - **Nothing of the runtime is exported**: `ryo_vm_register` is internal, so a cdylib exports
   none of it, and the backend leaves `ryo_rt`/`ryo_bytecode` out of upstream Rust dylibs
-  (`dylib_dependency_formats`) and out of a Rust dylib's export list. So no module binds to
+  (`dylib_dependency_formats`) and out of a Rust dylib's export list (the runtime crates' exported symbols by exact name, `symbols::runtime_exports`). So no module binds to
   another's runtime, sibling Rust dylibs build, and no dynamic symbol is defined twice.
 - **Same-build staticlibs in one C link** each carry the same `ryo_rt`/`ryo_bytecode`
   objects, with identically named strong symbols. Nothing guarantees the linker takes only
@@ -940,14 +940,19 @@ private copy of the runtime (`ryo_rt`, `ryo_bytecode` and the sealed JIT):
   personality (one std: an executable and its Rust dylibs with `-Cprefer-dynamic`, the ryo
   sysroot's `libstd` included) merge into one instance. At its first registration a copy
   maps a rendezvous page at a fixed address derived from the tag (Linux
-  `MAP_FIXED_NOREPLACE`, macOS `mach_vm_allocate` without `VM_FLAGS_ANYWHERE`; a named file
-  mapping `Local\ryo-<pid>-<tag>` on Windows) and publishes its `ryo_vm_register` there; later
-  copies with the same personality forward their registrations to it. The winner's
+  `MAP_FIXED_NOREPLACE`, macOS `mach_vm_allocate` without `VM_FLAGS_ANYWHERE`, Windows
+  `VirtualAlloc` at that address: private to the process, no named object another user
+  could create first) and publishes its `ryo_vm_register` there; later copies with the same
+  personality forward their registrations to it. A later copy reads a taken address only
+  through a call that fails on an unmapped one, waits a bounded time for it to be READY,
+  and joins only if it then has this build's magic and tag; otherwise it stays private. The winner's
   registration points the images' JIT record slots at its own trips, so its registry, queue,
   JIT thread and code allocator serve all of them, and JIT code calls and inlines across
   modules; handlers keep no state. Copies with another personality (cdylibs, localized
   blobs) stay separate instances. `RYO_JIT_MERGE=0` keeps every copy separate.
-- **Unloading** stays unsupported; the module whose JIT starts is pinned.
+- **Unloading** stays unsupported: a module that merges (the winner, whose function the page
+  names, and each copy that joins, whose images the winner's registry holds) is pinned when
+  it merges, and the module whose JIT starts is pinned.
 
 ## Runtime crate: `ryo_rt`
 
@@ -956,9 +961,11 @@ templates and the `main` wrapper. It is a normal Rust dependency of every ryo-bu
 
 - **Generic templates** get instantiated per program, with that program's types, from MIR in
   `ryo_rt`'s metadata.
-- **Linking** follows Rust's normal rules: a Rust dylib contains one copy of `ryo_rt`, and the
-  exe linking it uses that copy (`dependency_format`). Each cdylib or staticlib gets its own
-  copy, with the usual Rust symbol hygiene.
+- **Linking**: every final artifact (executable, Rust dylib, cdylib, staticlib) links a
+  private copy: the backend's `dylib_dependency_formats` makes `ryo_rt` static everywhere,
+  and a Rust dylib doesn't export it (its exports leave out the runtime crates' exported
+  symbols, by exact name). Copies of one build merge at run time ([Several ryo runtimes in
+  one process](#several-ryo-runtimes-in-one-process)).
 - **std**: `ryo_rt` is `#![no_std]`: it uses only `core` (its tests use std). With
   `--sysroot ryo`, alloc and std are ryo-built and depend on `ryo_rt`
   ([build.md](build.md#build)), so it can't depend on them, and it must not call into them

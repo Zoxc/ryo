@@ -6,6 +6,7 @@
 use std::sync::OnceLock;
 
 use rustc_data_structures::fx::{FxHashMap, FxHashSet, FxIndexMap};
+use rustc_data_structures::unord::UnordSet;
 use rustc_hir::attrs::Linkage;
 use rustc_hir::def_id::{CrateNum, DefId, LOCAL_CRATE};
 use rustc_middle::middle::exported_symbols::{ExportedSymbol, SymbolExportInfo, SymbolExportKind, SymbolExportLevel};
@@ -133,6 +134,15 @@ struct Exports<'tcx> {
 
 static RESULTS: SessionCell<Results> = SessionCell::new();
 
+/// The upstream statics this crate defines (an upstream EII static implemented here), recorded
+/// from rustc's CGUs before lowering. Symbol names, sorted, for the image key.
+static CODEGENED_UPSTREAM: SessionCell<(UnordSet<DefId>, String)> = SessionCell::new();
+
+/// Whether the upstream static `def_id` is defined by this crate.
+pub fn is_defined_upstream_static(tcx: TyCtxt<'_>, def_id: DefId) -> bool {
+    CODEGENED_UPSTREAM.get(tcx).is_some_and(|(set, _)| set.contains(&def_id))
+}
+
 pub fn results(tcx: TyCtxt<'_>) -> Option<&'static Results> {
     RESULTS.get(tcx)
 }
@@ -180,6 +190,21 @@ pub fn collect_and_partition_mono_items<'tcx>(tcx: TyCtxt<'tcx>, original: super
     let partitions = original(tcx, ());
     let Some(rt) = rt_items(tcx) else { tcx.dcx().fatal("the ryo backend needs `ryo_rt` (`--extern force:ryo_rt`); run it through `rustc-ryo`") };
 
+    // The upstream EII statics a local static implements (`foreign_item_symbol_aliases`): cg_llvm
+    // defines the declaration's symbol as an alias next to it, so references to it are
+    // direct (no `dllimport` on an already defined global).
+    let upstream: UnordSet<DefId> = partitions
+        .codegen_units
+        .iter()
+        .flat_map(|cgu| cgu.items().keys())
+        .filter_map(|item| if let MonoItem::Static(d) = *item { d.is_local().then_some(d) } else { None })
+        .flat_map(|d| tcx.codegen_fn_attrs(d).foreign_item_symbol_aliases.iter().map(|a| a.0))
+        .filter(|d| !d.is_local())
+        .collect();
+    let names = upstream.items().map(|&d| static_symbol(tcx, d).name.to_owned()).into_sorted_stable_ord();
+    if CODEGENED_UPSTREAM.set(tcx, (upstream, names.join(" "))).is_err() {
+        tcx.dcx().fatal("collect_and_partition_mono_items ran twice in one process");
+    }
     let (native, results) = {
         let _t = tcx.prof.generic_activity("ryo_partition");
         Partitioner::new(tcx, rt, &switches, partitions.codegen_units).run()
@@ -321,12 +346,13 @@ impl<'tcx> CguVm<'tcx> {
     }
 
     /// The side data: a byte saying whether the CGU has an image object (it has VM
-    /// functions), readable before the image's dep node is green, a checksum of the rest
-    /// ([`CguVm::intact`]), then the encoded fields.
+    /// functions), readable before the image's dep node is green, a checksum of that byte and
+    /// the rest ([`CguVm::intact`]), then the encoded fields.
     fn save(&self, tcx: TyCtxt<'tcx>) -> Vec<u8> {
         let body = persist::encode(tcx, &(&self.vm, &self.islands, &self.refs, &self.main));
-        let mut out = vec![u8::from(!self.vm.is_empty())];
-        out.extend_from_slice(&side_checksum(&body));
+        let has_object = u8::from(!self.vm.is_empty());
+        let mut out = vec![has_object];
+        out.extend_from_slice(&side_checksum(has_object, &body));
         out.extend(body);
         out
     }
@@ -335,7 +361,10 @@ impl<'tcx> CguVm<'tcx> {
     /// dep node is marked green, so a corrupted file rebuilds the image rather than panicking
     /// in the decoder (`MemDecoder`'s footer check only catches truncation).
     fn intact(data: &[u8]) -> bool {
-        data.get(1..17).zip(data.get(17..)).is_some_and(|(sum, body)| sum == side_checksum(body))
+        match (data.first(), data.get(1..17), data.get(17..)) {
+            (Some(&has_object), Some(sum), Some(body)) => sum == side_checksum(has_object, body),
+            _ => false,
+        }
     }
 
     fn load(tcx: TyCtxt<'tcx>, data: &[u8]) -> Option<Self> {
@@ -344,10 +373,11 @@ impl<'tcx> CguVm<'tcx> {
     }
 }
 
-/// [`CguVm::save`]'s checksum of the encoded side data.
-fn side_checksum(body: &[u8]) -> [u8; 16] {
+/// [`CguVm::save`]'s checksum of the side data: its first byte and the encoded fields.
+fn side_checksum(has_object: u8, body: &[u8]) -> [u8; 16] {
     use std::hash::Hash;
     let mut h = rustc_data_structures::stable_hash::StableHasher::new();
+    has_object.hash(&mut h);
     body.hash(&mut h);
     let f: rustc_data_structures::fingerprint::Fingerprint = h.finish();
     f.to_le_bytes()
@@ -401,7 +431,10 @@ fn image_settings(tcx: TyCtxt<'_>, rt: RtItems, mode: asm::Mode, switches: &Swit
     // replace while this session runs. And `ryo_rt`'s crate hash: what its handlers expect
     // may change without the backend changing, and an image that calls no island reads
     // nothing else of it.
-    format!("{:?} {} {} {} {}", mode, local_stable_crate_id(tcx), switches.asm_align, env!("RYO_BACKEND_ID"), tcx.crate_hash(rt.krate))
+    // And the upstream statics this crate defines, which references reach directly on PE
+    // (`symbols::static_symbol_flags`).
+    let upstream = CODEGENED_UPSTREAM.get(tcx).map_or("", |(_, names)| names.as_str());
+    format!("{:?} {} {} {} {} {upstream}", mode, local_stable_crate_id(tcx), switches.asm_align, env!("RYO_BACKEND_ID"), tcx.crate_hash(rt.krate))
 }
 
 struct Partitioner<'a, 'tcx> {
@@ -1635,4 +1668,25 @@ pub fn exported_generic_symbols<'tcx>(
     }
     out.sort_by_cached_key(|s| s.0.symbol_name_for_local_instance(tcx));
     tcx.arena.alloc_from_iter(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The checksum covers the has-object byte, which gates reuse, as well as the fields.
+    #[test]
+    fn side_checksum_covers_every_byte() {
+        let body = [1u8, 2, 3, 4];
+        let mut data = vec![1u8];
+        data.extend_from_slice(&side_checksum(1, &body));
+        data.extend_from_slice(&body);
+        assert!(CguVm::intact(&data));
+        for i in [0, 1, 17, data.len() - 1] {
+            let mut bad = data.clone();
+            bad[i] ^= 1;
+            assert!(!CguVm::intact(&bad), "byte {i}");
+        }
+        assert!(!CguVm::intact(&data[..10]));
+    }
 }

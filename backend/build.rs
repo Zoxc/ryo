@@ -37,15 +37,18 @@ fn main() {
 }
 
 /// Hashes the file `path`, or each file under the directory `path` in name order, with its
-/// path relative to the crate.
+/// path relative to the crate. Fails on one it can't read: a build ID that left it out could
+/// reuse images across a change to it.
 fn hash_path(h: &mut impl Hasher, root: &Path, path: &Path) {
+    let fail = |e: std::io::Error| -> ! { panic!("reading {}: {e}", path.display()) };
     if path.is_dir() {
-        let mut entries: Vec<_> = std::fs::read_dir(path).unwrap().map(|e| e.unwrap().path()).collect();
+        let mut entries: Vec<_> = std::fs::read_dir(path).unwrap_or_else(|e| fail(e)).map(|e| e.unwrap_or_else(|e| fail(e)).path()).collect();
         entries.sort();
         for e in entries {
             hash_path(h, root, &e);
         }
-    } else if let Ok(bytes) = std::fs::read(path) {
+    } else {
+        let bytes = std::fs::read(path).unwrap_or_else(|e| fail(e));
         h.write(path.strip_prefix(root).unwrap_or(path).as_os_str().as_encoded_bytes());
         h.write_usize(bytes.len());
         h.write(&bytes);

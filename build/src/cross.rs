@@ -54,9 +54,7 @@ const RT_IMPORTS: &[&str] = &[
     "__declspec(dllimport) FlsSetValue",
     "__declspec(dllimport) GetEnvironmentVariableA",
     // The run-time merge's rendezvous and module pinning (`vm/rt/src/vm/jit/merge.rs`, `sys.rs`).
-    "__declspec(dllimport) CreateFileMappingW",
-    "__declspec(dllimport) MapViewOfFile",
-    "__declspec(dllimport) GetLastError",
+    "__declspec(dllimport) ReadProcessMemory",
     "__declspec(dllimport) GetModuleHandleExW",
     // The PE exception handler's unwind to a terminate stub (`vm/rt/src/vm/seh.rs`).
     "__declspec(dllimport) RtlUnwindEx",

@@ -132,8 +132,15 @@ pub(super) fn multi_staticlib(info: &RustcInfo, rustc_ryo: &Path, src: &Path, ou
 /// `ryo_bytecode`, its tagged entry points) must stay private to every module.
 fn exported_runtime(info: &RustcInfo, so: &Path) -> Result<Vec<String>, String> {
     let mut syms = crate::utils::nm_symbols(info, &["-D", "--defined-only"], so, &info.host)?;
-    syms.retain(|s| s.contains("ryo_vm_register") || s.contains("6ryo_rt") || s.contains("12ryo_bytecode") || super::is_rt_internal(s));
+    syms.retain(|s| s.contains("ryo_vm_register") || ["6ryo_rt", "12ryo_bytecode"].iter().any(|c| in_crate(s, c)) || super::is_rt_internal(s));
     Ok(syms)
+}
+
+/// Whether the mangled `sym` is a path in the crate `krate` (its length-prefixed name): at the
+/// root of a legacy path, or after a v0 crate root's `C` (and disambiguator). A user module
+/// of that name (`da::ryo_rt`) isn't.
+fn in_crate(sym: &str, krate: &str) -> bool {
+    sym.starts_with(&format!("_ZN{krate}")) || sym.contains(&format!("C{krate}")) || sym.contains(&format!("_{krate}"))
 }
 
 /// The `jit threads: <n>` line of `tests/multi_ryo`'s programs.
@@ -149,7 +156,7 @@ fn jit_threads(stdout: &str) -> Option<usize> {
 /// - sibling Rust dylibs (neither depends on the other) under an executable, with
 ///   `-Cprefer-dynamic`: they build (each module links a private runtime copy), export
 ///   nothing of the runtime, and merge into one instance (one JIT thread), or stay three with
-///   `RYO_JIT_MERGE=0`.
+///   `RYO_JIT_MERGE=0`; `dlclose`d by a C program after merging, they stay loaded.
 pub(super) fn multi_dylib(info: &RustcInfo, root: &Path, rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
     if !applies(info) {
         return Ok(());
@@ -201,6 +208,16 @@ pub(super) fn multi_dylib(info: &RustcInfo, root: &Path, rustc_ryo: &Path, src: 
         if first(&jit) != first(&plain) || jit_threads(&jit) != Some(threads) {
             return Err(format!("sibling dylibs, RYO_JIT_MERGE={merge}: with the JIT {jit:?}, without {plain:?} (expected {threads} JIT threads)"));
         }
+    }
+    // Merged copies closed again: both the winner (closed before its JIT starts) and a joiner
+    // stay loaded.
+    let host = dir.join("dlhost");
+    run(cc(info, false).arg(src.join("dlhost.c")).arg("-o").arg(&host).arg("-ldl"))?;
+    let (da, db) = (dir.join("libda.so"), dir.join("libdb.so"));
+    let args = [da.to_str().ok_or("non-UTF-8 path")?, db.to_str().ok_or("non-UTF-8 path")?];
+    let out = run_out(&host, &args, &[lib_path, JIT_NOW[0], JIT_NOW[1]])?;
+    if out != "990000\nloaded after dlclose: 1 1\n" {
+        return Err(format!("dlclose of merged dylibs: {out:?}, expected both pinned"));
     }
     Ok(())
 }

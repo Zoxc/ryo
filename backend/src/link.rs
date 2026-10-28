@@ -8,7 +8,6 @@ use rustc_codegen_ssa::back::archive::{AddArchiveKind, ArArchiveBuilderBuilder, 
 use rustc_codegen_ssa::traits::CodegenBackend;
 use rustc_codegen_ssa::{CompiledModule, CompiledModules, CrateInfo};
 use rustc_metadata::EncodedMetadata;
-use rustc_middle::middle::dependency_format::Linkage;
 use rustc_session::Session;
 use rustc_session::config::{CrateType, OutputFilenames, OutputType};
 
@@ -23,6 +22,21 @@ pub struct LinkInfo {
     pub macho: bool,
     /// The symbol of `ryo_rt`'s `ryo_vm_register` (tagged and mangled).
     pub register: String,
+    /// For a Rust dylib: the runtime crates' exported symbols, which it doesn't export
+    /// ([`crate::symbols::runtime_exports`]); empty for other crate types.
+    pub runtime_exports: rustc_data_structures::fx::FxHashSet<String>,
+}
+
+impl LinkInfo {
+    pub fn new(tcx: rustc_middle::ty::TyCtxt<'_>, images: Vec<String>) -> Self {
+        let dylib = tcx.crate_types().contains(&CrateType::Dylib);
+        LinkInfo {
+            images,
+            macho: tcx.sess.target.binary_format == rustc_target::spec::BinaryFormat::MachO,
+            register: crate::symbols::rt_symbol(tcx, objfile::REGISTER_SYMBOL),
+            runtime_exports: if dylib { crate::symbols::runtime_exports(tcx) } else { Default::default() },
+        }
+    }
 }
 
 pub fn link(
@@ -86,7 +100,7 @@ pub fn link(
         if crate_type == CrateType::Dylib
             && let Some(list) = single.exported_symbols.get_mut(&crate_type)
         {
-            list.retain(|e| !is_runtime_symbol(&e.name));
+            list.retain(|e| !info.runtime_exports.contains(&e.name));
         }
         drop(prep_t);
         llvm.link(sess, these, single, this_metadata, outputs);
@@ -107,15 +121,6 @@ pub fn link(
     }
 }
 
-/// Whether `name` is one of the runtime crates' symbols (`ryo_rt`, `ryo_bytecode`): a path in
-/// them (legacy or v0 mangling), or one of `ryo_rt`'s tagged internal entry points (mangled
-/// under the `__rustc` root).
-fn is_runtime_symbol(name: &str) -> bool {
-    let internal = name.contains("7___rustc")
-        && ["ryo_h_", "ryo_hr_", "ryo_probe_stack_", "ryo_jit_trip_", "ryo_vm_register_", "ryo_seh_handler_"].iter().any(|p| name.contains(p));
-    internal || name.contains("6ryo_rt") || name.contains("12ryo_bytecode")
-}
-
 /// Writes the registry object for an output of `crate_type`. It lists no images: each image
 /// object linked brings its own entry.
 fn registry_module(
@@ -127,11 +132,9 @@ fn registry_module(
     crate_type: CrateType,
 ) -> CompiledModule {
     let _t = sess.prof.generic_activity("ryo_registry");
-    let import = register_is_imported(crate_info, crate_type);
-    // Hidden where this output links `ryo_rt` itself, which every output does: each has a
-    // private copy (design/vm.md#several-ryo-runtimes-in-one-process).
-    let hidden = !import;
-    let bytes = objfile::write_registry(fmt, &info.register, import, hidden).unwrap_or_else(|e| sess.dcx().fatal(e));
+    // Every output has a private copy of `ryo_rt`
+    // (design/vm.md#several-ryo-runtimes-in-one-process), which the stub calls.
+    let bytes = objfile::write_registry(fmt, &info.register).unwrap_or_else(|e| sess.dcx().fatal(e));
     let name = format!("{}.ryo_registry.{}", crate_info.local_crate_name, crate_type);
     let path = outputs.temp_path_for_cgu(OutputType::Object, &name);
     write_or_fatal(sess, &path, &bytes);
@@ -167,16 +170,6 @@ fn append_to_rlib(sess: &Session, rlib: &Path, objects: &[PathBuf]) {
     if let Err(e) = fs::rename(&tmp, rlib) {
         sess.dcx().fatal(format!("writing {}: {e}", rlib.display()));
     }
-}
-
-/// Whether `ryo_vm_register` lives in another shared object for an output of `crate_type`:
-/// `ryo_rt` is linked as a dylib or included in an upstream Rust dylib. On PE the registry
-/// constructor then calls it through its `__imp_` slot (design/platforms.md).
-fn register_is_imported(crate_info: &CrateInfo, crate_type: CrateType) -> bool {
-    let Some(deps) = crate_info.dependency_formats.get(&crate_type) else { return false };
-    deps.iter_enumerated().any(|(cnum, linkage)| {
-        matches!(linkage, Linkage::Dynamic | Linkage::IncludedFromDylib) && crate_info.crate_name.get(&cnum).is_some_and(|n| n.as_str() == "ryo_rt")
-    })
 }
 
 /// Copies the metadata file (and its stub) into `dir`, so later `link_binary` calls can reload

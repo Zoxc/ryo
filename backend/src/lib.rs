@@ -135,7 +135,7 @@ fn upstream_monomorphizations<'tcx>(tcx: TyCtxt<'tcx>, (): ()) -> partition::Ups
 /// An upstream Rust dylib's dependency formats without the runtime crates (`ryo_rt`,
 /// `ryo_bytecode`): every final artifact links its own, private copy of the runtime, never
 /// one included in a dylib, so sibling dylibs don't both provide it (rustc's "only shows up
-/// once" error), and no dylib exports it ([`link::LinkInfo::hidden`]). Copies of one ryo build
+/// once" error), and no dylib exports it ([`link::LinkInfo::runtime_exports`]). Copies of one ryo build
 /// merge at run time (design/vm.md#several-ryo-runtimes-in-one-process).
 fn dylib_dependency_formats<'tcx>(
     tcx: TyCtxt<'tcx>,
@@ -246,18 +246,17 @@ impl CodegenBackend for RyoBackend {
         // Usually already computed (metadata encoding, `exported_generic_symbols`); this forces
         // it otherwise, so the results are set.
         let partitions = tcx.collect_and_partition_mono_items(());
-        let macho = tcx.sess.target.binary_format == rustc_target::spec::BinaryFormat::MachO;
         // A crate with no VM code has no image (`partition::vm_enabled`); its output still
         // registers its upstream crates' images.
         let Some(results) = partition::results(tcx) else {
-            let _ = self.link_info.set(link::LinkInfo { images: Vec::new(), macho, register: symbols::rt_symbol(tcx, objfile::REGISTER_SYMBOL) });
+            let _ = self.link_info.set(link::LinkInfo::new(tcx, Vec::new()));
             let llvm = self.llvm.codegen_crate(tcx);
             return Box::new(RyoOngoingCodegen { llvm, images: Vec::new() });
         };
         let _ = partitions;
         let images = write_images(tcx, results);
         let modules = images.iter().filter(|i| i.path.is_some()).map(|i| i.name.clone()).collect();
-        let _ = self.link_info.set(link::LinkInfo { images: modules, macho, register: symbols::rt_symbol(tcx, objfile::REGISTER_SYMBOL) });
+        let _ = self.link_info.set(link::LinkInfo::new(tcx, modules));
         dump_lean::dump(tcx, &self.switches, results);
         // The native CGUs (step 4), compiled by cg_llvm as usual.
         let llvm = self.llvm.codegen_crate(tcx);
@@ -424,7 +423,36 @@ fn unsupported_features(sess: &Session) -> Option<String> {
     if !features.contains(&Symbol::intern("sse2")) {
         return Some("disabling the `sse2` target feature (soft-float)".to_owned());
     }
-    None
+    // LLVM's Spectre and LVI hardening, which rustc passes to LLVM by their LLVM names (it
+    // only warns that they aren't Rust features): VM code would silently lack it, as with
+    // `-Zretpoline`. The target's features, then `-Ctarget-feature`; the last sign wins.
+    const HARDENING: [&str; 9] = [
+        "retpoline",
+        "retpoline-indirect-calls",
+        "retpoline-indirect-branches",
+        "retpoline-external-thunk",
+        "lvi-cfi",
+        "lvi-load-hardening",
+        "seses",
+        "harden-sls-ret",
+        "harden-sls-ijmp",
+    ];
+    let mut on: Vec<&str> = Vec::new();
+    for f in sess.target.features.split(',').chain(sess.opts.cg.target_feature.split(',')) {
+        let f = f.trim();
+        let (enable, name) = match f.split_at_checked(1) {
+            Some(("+", n)) => (true, n),
+            Some(("-", n)) => (false, n),
+            _ => continue,
+        };
+        if let Some(&h) = HARDENING.iter().find(|&&h| h == name) {
+            on.retain(|&o| o != h);
+            if enable {
+                on.push(h);
+            }
+        }
+    }
+    on.first().map(|h| format!("the `{h}` target feature"))
 }
 
 /// Step 5 (design/backend.md#pipeline): writes the image objects, one per CGU with VM

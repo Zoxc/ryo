@@ -727,8 +727,8 @@ pub(super) fn pe_imports(info: &crate::utils::RustcInfo, root: &Path, rustc_ryo:
         return Ok(());
     }
     // The items, by a unique part of their (mangled) name.
-    const ITEMS: [&str; 12] =
-        ["5up_fn", "6up_gen", "5dy_fn", "9UP_STATIC", "S_NONE", "S_STATIC", "S_DYLIB", "S_UNSP", "f_none", "f_static", "f_dylib", "f_unsp"];
+    const ITEMS: [&str; 13] =
+        ["5up_fn", "6up_gen", "5dy_fn", "9UP_STATIC", "5EII_S", "S_NONE", "S_STATIC", "S_DYLIB", "S_UNSP", "f_none", "f_static", "f_dylib", "f_unsp"];
     let dir = out.join("pe-imports");
     let _ = fs::remove_dir_all(&dir);
     crate::utils::create_dir(&dir)?;
@@ -849,6 +849,9 @@ pub(super) fn reject_unsupported(rustc_ryo: &Path, src: &Path, out: &Path) -> Re
         (&["-Zstack-protector=strong"], "-Zstack-protector"),
         (&["-Zretpoline"], "-Zretpoline"),
         (&["-Zretpoline-external-thunk"], "-Zretpoline-external-thunk"),
+        (&["-Ctarget-feature=+retpoline-indirect-calls"], "retpoline-indirect-calls"),
+        (&["-Ctarget-feature=+sse2,+lvi-cfi"], "lvi-cfi"),
+        (&["-Ctarget-feature=+harden-sls-ret"], "harden-sls-ret"),
         (&["-Zfunction-return=thunk-extern"], "-Zfunction-return"),
         (&["-Zindirect-branch-cs-prefix"], "-Zindirect-branch-cs-prefix"),
         (&["--target=aarch64-unknown-linux-gnu"], "x86_64"),

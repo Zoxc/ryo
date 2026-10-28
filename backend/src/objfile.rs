@@ -91,11 +91,10 @@ pub trait ObjectFormat {
     fn entry_section(&self, obj: &mut Object<'static>) -> object::write::SectionId;
     /// The registry stub's part: a null entry of the entry list (so the list exists in every
     /// link unit), and a constructor that calls `register` (`ryo_vm_register`'s symbol) as
-    /// `(start, end, anchor)` with the list's bounds and the registry anchor `anchor`. With
-    /// `register_import`, `register` is in another DLL and is called through its import slot.
-    /// With `register_hidden` (ELF), the reference is hidden, so the linker binds it to the
-    /// link unit's own `ryo_rt` (which it then doesn't export).
-    fn add_registry_ctor(&self, obj: &mut Object<'static>, register: &str, anchor: &str, register_import: bool, register_hidden: bool);
+    /// `(start, end, anchor)` with the list's bounds and the registry anchor `anchor`. Every
+    /// link unit links its own `ryo_rt` (design/vm.md#several-ryo-runtimes-in-one-process), so
+    /// the reference binds to it at link time (hidden on ELF, so it isn't exported either).
+    fn add_registry_ctor(&self, obj: &mut Object<'static>, register: &str, anchor: &str);
     /// Defines the hidden registry anchor `name`, such that several stubs in one link (two
     /// ryo staticlibs in a C program) don't clash: weak, or a COMDAT on PE.
     fn define_anchor(&self, obj: &mut Object<'static>, name: &str) {
@@ -230,11 +229,10 @@ impl ObjectFormat for Elf {
         });
     }
 
-    fn add_registry_ctor(&self, obj: &mut Object<'static>, register: &str, anchor: &str, _register_import: bool, register_hidden: bool) {
+    fn add_registry_ctor(&self, obj: &mut Object<'static>, register: &str, anchor: &str) {
         let entries = self.entry_section(obj);
         obj.append_section_data(entries, &[0; 8], 8);
-        // The dynamic linker resolves the PLT entry if `ryo_rt` is in a shared object. A
-        // hidden reference binds to this link unit's own `ryo_rt` at link time.
+        // A hidden reference: it binds to this link unit's own `ryo_rt` at link time.
         // lea rdi, [rip + __start_ryo_images_<tag>]; lea rsi, [rip + __stop_ryo_images_<tag>];
         // lea rdx, [rip + anchor]; jmp ryo_vm_register
         let code = [0x48, 0x8d, 0x3d, 0, 0, 0, 0, 0x48, 0x8d, 0x35, 0, 0, 0, 0, 0x48, 0x8d, 0x15, 0, 0, 0, 0, 0xe9, 0, 0, 0, 0];
@@ -250,7 +248,7 @@ impl ObjectFormat for Elf {
         let start = bound(obj, format!("__start_{}", elf_entries()));
         let stop = bound(obj, format!("__stop_{}", elf_entries()));
         let anchor = obj.symbol_id(anchor.as_bytes()).expect("the anchor is defined first");
-        let register = if register_hidden { bound(obj, register.to_owned()) } else { undefined(obj, register, SymbolKind::Text) };
+        let register = bound(obj, register.to_owned());
         let rel = |offset, symbol, r_type| Relocation { offset, symbol, addend: -4, flags: RelocationFlags::Elf { r_type } };
         obj.add_relocation(text, rel(3, start, elf::R_X86_64_PC32)).unwrap();
         obj.add_relocation(text, rel(10, stop, elf::R_X86_64_PC32)).unwrap();
@@ -344,7 +342,7 @@ impl ObjectFormat for Coff {
         coff_entries(obj, "m")
     }
 
-    fn add_registry_ctor(&self, obj: &mut Object<'static>, register: &str, anchor: &str, register_import: bool, _register_hidden: bool) {
+    fn add_registry_ctor(&self, obj: &mut Object<'static>, register: &str, anchor: &str) {
         let start = coff_entries(obj, "a");
         obj.append_section_data(start, &[0; 8], 8);
         let end = coff_entries(obj, "z");
@@ -352,15 +350,9 @@ impl ObjectFormat for Coff {
         // Win64: the first three arguments are in rcx, rdx and r8. The tail jump leaves rsp
         // alone, so this is a leaf function and needs no unwind info (no `.pdata`).
         // lea rcx, [rip + .ryo$<tag>a]; lea rdx, [rip + .ryo$<tag>z]; lea r8, [rip + anchor];
-        // jmp ryo_vm_register / jmp [rip + __imp_ryo_vm_register]
-        let mut code = vec![0x48, 0x8d, 0x0d, 0, 0, 0, 0, 0x48, 0x8d, 0x15, 0, 0, 0, 0, 0x4c, 0x8d, 0x05, 0, 0, 0, 0];
-        let target = if register_import {
-            code.extend_from_slice(&[0xff, 0x25, 0, 0, 0, 0]);
-            undefined(obj, &format!("__imp_{register}"), SymbolKind::Data)
-        } else {
-            code.extend_from_slice(&[0xe9, 0, 0, 0, 0]);
-            undefined(obj, register, SymbolKind::Text)
-        };
+        // jmp ryo_vm_register
+        let code = [0x48, 0x8d, 0x0d, 0, 0, 0, 0, 0x48, 0x8d, 0x15, 0, 0, 0, 0, 0x4c, 0x8d, 0x05, 0, 0, 0, 0, 0xe9, 0, 0, 0, 0];
+        let target = undefined(obj, register, SymbolKind::Text);
         let anchor = obj.symbol_id(anchor.as_bytes()).expect("the anchor is defined first");
         let target_at = code.len() as u64 - 4;
         let text = obj.add_section(Vec::new(), b".text$ryo_registry".to_vec(), SectionKind::Text);
@@ -506,7 +498,7 @@ impl ObjectFormat for MachO {
         s
     }
 
-    fn add_registry_ctor(&self, obj: &mut Object<'static>, register: &str, anchor: &str, _register_import: bool, _register_hidden: bool) {
+    fn add_registry_ctor(&self, obj: &mut Object<'static>, register: &str, anchor: &str) {
         let entries = self.entry_section(obj);
         obj.append_section_data(entries, &[0; 8], 8);
         // As on ELF, with the bounds ld64 and lld define for `section$start$<seg>$<sect>`;
@@ -796,13 +788,12 @@ fn patch_by_address(bytes: &mut [u8], eh: &str, fields: &[(u64, String, i64, u64
 
 /// The registry stub of one final link: the same for every crate. A constructor registering
 /// the link unit's entry list (each image object's entry), and the hidden
-/// `__ryo_registry_anchor_<tag>`. `register_import`, `register_hidden`: see
-/// [`ObjectFormat::add_registry_ctor`].
-pub fn write_registry(fmt: &dyn ObjectFormat, register: &str, register_import: bool, register_hidden: bool) -> Result<Vec<u8>, String> {
+/// `__ryo_registry_anchor_<tag>`.
+pub fn write_registry(fmt: &dyn ObjectFormat, register: &str) -> Result<Vec<u8>, String> {
     let mut obj = fmt.new_object();
     let anchor = fmt.mangle(&anchor_symbol());
     fmt.define_anchor(&mut obj, &anchor);
-    fmt.add_registry_ctor(&mut obj, register, &anchor, register_import, register_hidden);
+    fmt.add_registry_ctor(&mut obj, register, &anchor);
     obj.write().map_err(|e| format!("writing the registry object: {e}"))
 }
 
@@ -1070,7 +1061,7 @@ mod tests {
 
     #[test]
     fn registry() {
-        let bytes = write_registry(&fmt(), "ryo_vm_register_t", false, false).unwrap();
+        let bytes = write_registry(&fmt(), "ryo_vm_register_t").unwrap();
         let file = MachOFile64::<Endianness>::parse(&*bytes).unwrap();
         let init = section(&file, "__mod_init_func");
         let object::SectionFlags::MachO { flags } = init.flags() else { panic!() };

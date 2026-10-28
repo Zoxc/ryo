@@ -208,11 +208,11 @@ and `codegen_crate` reads them.
      a small object, the same for every crate (`objfile.rs`, `write_registry`): a null entry
      (so the list exists in every link unit) and a constructor, `lea` of the list's start,
      `lea` of its end, `jmp ryo_vm_register` (`.init_array.00000` on ELF, `.CRT$XCT` on PE,
-     ahead of other constructors; `__mod_init_func` on Mach-O). On ELF the
-     `ryo_vm_register` reference is hidden where the output links `ryo_rt` itself, except
-     in a Rust dylib (which exports `ryo_rt` to the crates that link it): the linker binds
-     it at link time, and the definition isn't exported, so two ryo cdylibs loaded into
-     one process each register in their own runtime instead of the first one loaded. The
+     ahead of other constructors; `__mod_init_func` on Mach-O). Every output links its own
+     `ryo_rt` (design/vm.md#several-ryo-runtimes-in-one-process), so the stub calls that
+     copy directly; on ELF the reference is hidden, so the linker binds it at link time and
+     the definition isn't exported, and two ryo modules loaded into one process each
+     register in their own runtime instead of the first one loaded. The
      JIT's trip entry points and the handlers are `#[rustc_std_internal_symbol]`s, which a
      cdylib doesn't export. The bounds are the linker's
      `__start_ryo_images`/`__stop_ryo_images` (referenced hidden, so a dylib and the exe
@@ -399,7 +399,10 @@ upstream images.
   images without the IBT/SHSTK property note silently turn CET off for the whole binary),
   `-Ccontrol-flow-guard` and `-Zehcont-guard` (VM functions and landing pads aren't in the
   tables), `-Zstack-protector`, `-Zretpoline`, `-Zretpoline-external-thunk`,
-  `-Zfunction-return` and `-Zindirect-branch-cs-prefix`. `-Cno-redzone` is supported: VM
+  `-Zfunction-return` and `-Zindirect-branch-cs-prefix`, and the same hardening enabled by
+  its LLVM feature names, which rustc passes to LLVM with only a warning (`retpoline*`,
+  `lvi-cfi`, `lvi-load-hardening`, `seses`, `harden-sls-*`, in `-Ctarget-feature` or the
+  target's features; the last sign wins). `-Cno-redzone` is supported: VM
   frames never use a red zone ([platforms.md](platforms.md)).
 - Instrumentation and profiling, which VM functions would silently lack:
   `-Cinstrument-coverage` (they would vanish from the report), `-Cprofile-generate`,

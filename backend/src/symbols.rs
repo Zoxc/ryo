@@ -40,17 +40,30 @@ pub(crate) fn symbol_flags<'tcx>(tcx: TyCtxt<'tcx>, target: Instance<'tcx>, role
 /// kind is `dylib`, `raw-dylib` or unspecified (`rustc_codegen_llvm/src/consts.rs`). One from
 /// a `kind = "static"` library, a `-l` library without `#[link]` or `link-arg` is direct, so
 /// the reference pulls in the archive member defining it. EII statics, encoded as foreign
-/// items but defined by Rust crates, follow the upstream rule. (cg_llvm also makes an upstream
-/// static this crate happens to define, `is_codegened_item`, direct; that query can't be read
-/// during partitioning, so such a reference goes through an `__imp_` the linker synthesizes.)
+/// items but defined by Rust crates, follow the upstream rule. An upstream static this crate
+/// defines (an upstream EII static implemented here, whose symbol cg_llvm defines as an alias
+/// of the implementation) is direct, as in cg_llvm's code next to that definition
+/// ([`partition::is_defined_upstream_static`]), so the linker synthesizes no
+/// `__imp_` (LNK4217).
+///
+/// One difference remains: with `-Crelocation-model=static` or
+/// `-Zdirect-access-external-data=yes`, cg_llvm treats upstream statics as `dso_local` and
+/// accesses them directly (`rustc_codegen_llvm/src/mono_item.rs`, `assume_dso_local`), where
+/// this still goes through `__imp_`. Both link: the rlib defines `__imp_<sym>`
+/// (`create_msvc_imps`) and a Rust dylib exports it, so no warning results.
+///
+/// [`partition::is_defined_upstream_static`]: super::partition::is_defined_upstream_static
 pub(crate) fn static_symbol_flags(tcx: TyCtxt<'_>, def_id: DefId) -> u8 {
     if !is_pe(tcx) {
         return 0;
     }
     use rustc_middle::middle::codegen_fn_attrs::CodegenFnAttrFlags;
     let eii = tcx.codegen_fn_attrs(def_id).flags.contains(CodegenFnAttrFlags::EXTERNALLY_IMPLEMENTABLE_ITEM);
-    let import =
-        if tcx.is_foreign_item(def_id) && !eii { tcx.native_library(def_id).is_some_and(|lib| lib.kind.is_dllimport()) } else { !def_id.is_local() };
+    let import = if tcx.is_foreign_item(def_id) && !eii {
+        tcx.native_library(def_id).is_some_and(|lib| lib.kind.is_dllimport())
+    } else {
+        !def_id.is_local() && !super::partition::is_defined_upstream_static(tcx, def_id)
+    };
     if import { ryo_bytecode::image::SYM_INDIRECT } else { 0 }
 }
 
@@ -120,4 +133,38 @@ pub fn symbol_name<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>, original: 
 /// crate-unique suffix.
 fn symbol_from_attrs<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> bool {
     rustc_symbol_mangling::symbol_name_from_attrs(tcx, instance.def).is_some()
+}
+
+/// The names under which rustc would export the runtime crates' symbols ([`RUNTIME_CRATES`]'
+/// `exported_non_generic_symbols` and `exported_generic_symbols`, named as
+/// `symbol_name_for_instance_in_crate` does), for a Rust dylib's export filter (link.rs):
+/// exact names, so no user item that merely mentions `ryo_rt` is dropped.
+///
+/// [`RUNTIME_CRATES`]: super::partition::RUNTIME_CRATES
+pub fn runtime_exports(tcx: TyCtxt<'_>) -> rustc_data_structures::fx::FxHashSet<String> {
+    use rustc_middle::middle::exported_symbols::ExportedSymbol;
+    let mut out = rustc_data_structures::fx::FxHashSet::default();
+    for &cnum in tcx.crates(()) {
+        if !super::partition::is_runtime_crate(tcx, cnum) {
+            continue;
+        }
+        for &(sym, _) in tcx.exported_non_generic_symbols(cnum).iter().chain(tcx.exported_generic_symbols(cnum)) {
+            let instance = match sym {
+                ExportedSymbol::NonGeneric(def_id) => Instance::mono(tcx, def_id),
+                ExportedSymbol::Generic(def_id, args) => Instance::new_raw(def_id, args),
+                ExportedSymbol::ThreadLocalShim(def_id) => {
+                    Instance { def: InstanceKind::Shim(ty::ShimKind::ThreadLocal(def_id)), args: ty::GenericArgs::empty() }
+                }
+                ExportedSymbol::DropGlue(ty) => Instance::resolve_drop_glue(tcx, ty),
+                ExportedSymbol::AsyncDropGlueCtorShim(ty) => Instance::resolve_async_drop_in_place(tcx, ty),
+                ExportedSymbol::AsyncDropGlue(def_id, ty) => Instance::resolve_async_drop_in_place_poll(tcx, def_id, ty),
+                ExportedSymbol::NoDefId(name) => {
+                    out.insert(name.to_string());
+                    continue;
+                }
+            };
+            out.insert(rustc_symbol_mangling::symbol_name_for_instance_in_crate(tcx, instance, cnum));
+        }
+    }
+    out
 }

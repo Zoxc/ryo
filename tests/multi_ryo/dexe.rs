@@ -16,7 +16,7 @@ fn main() {
     for _ in 0..200 {
         a += da::da_work(1000);
         b += db::db_work(100);
-        c += work(100);
+        c += work(100) + da::ryo_rt::rt_work(1);
     }
     println!("{a} {b} {c} {}", db::DB_COUNT.load(std::sync::atomic::Ordering::Relaxed));
     println!("jit threads: {}", jit_threads());
