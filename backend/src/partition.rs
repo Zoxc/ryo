@@ -918,9 +918,13 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
     }
 
     /// Instantiates the island templates CGU `u`'s image calls (design/stubs.md): linked to an
-    /// upstream copy where one is exported, otherwise added to the CGU as `WeakODR` +
-    /// `Hidden`, so every CGU that uses an island has its own copy and the linker keeps one.
-    /// `all` collects every island, for the stats.
+    /// upstream copy where one is exported, otherwise defined once in the crate, `External` +
+    /// `Hidden`, by the first CGU that calls it (`owners`), which the others link to. Not a
+    /// `WeakODR` copy per CGU: LLVM's function merging (`-Zmerge-functions=aliases`, on at
+    /// `-O2` and up) turns a copy identical to another function into an alias of it, which is
+    /// a strong symbol on Mach-O (ld64: duplicate symbol) and a weak external whose default
+    /// differs per object on COFF (link.exe: LNK1227). `all` collects every island, for the
+    /// stats.
     fn add_islands(&mut self, u: usize, all: &mut FxHashSet<Instance<'tcx>>) {
         let tcx = self.tcx;
         for island in self.units[u].vm.islands.clone() {
@@ -937,8 +941,24 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             if island.upstream_monomorphization(tcx).is_some() || !tcx.should_codegen_locally(island) || elsewhere {
                 continue;
             }
+            if let Some(&h) = self.owners.get(&item)
+                && h != u
+            {
+                // (An addition of a stub walk there is internal until now.)
+                let owner = &mut self.units[h];
+                if let Some(data) = owner.added.get_mut(&item)
+                    && data.linkage == Linkage::Internal
+                {
+                    data.linkage = Linkage::External;
+                    data.visibility = Visibility::Hidden;
+                    owner.hidden_added.push(island);
+                }
+                continue;
+            }
+            self.owners.insert(item, u);
+            let unit = &mut self.units[u];
             let data =
-                MonoItemData { inlined: false, linkage: Linkage::WeakODR, visibility: Visibility::Hidden, size_estimate: item.size_estimate(tcx) };
+                MonoItemData { inlined: false, linkage: Linkage::External, visibility: Visibility::Hidden, size_estimate: item.size_estimate(tcx) };
             unit.added.insert(item, data);
             unit.hidden_added.push(island);
             unit.work.push(island);

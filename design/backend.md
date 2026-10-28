@@ -109,8 +109,11 @@ and `codegen_crate` reads them.
    image needs (islands, and `c_main` in the CGU of the entry fn) added. Our override returns
    exactly these CGUs, so `self.llvm.codegen_crate(tcx)` compiles only what we ask for, in
    parallel as usual.
-   - **Islands** are `WeakODR` + `Hidden`, defined in every CGU whose image calls them:
-     cg_llvm puts them in a comdat, and the linker keeps one.
+   - **Islands** are `External` + `Hidden`, defined by the first CGU whose image calls them
+     and linked to by the others. Not `WeakODR` copies in every CGU: LLVM's function merging
+     (`-Zmerge-functions=aliases` from `-O2`) makes a copy identical to another function an
+     alias, a strong symbol on Mach-O and a weak external with a per-object default on COFF,
+     so two CGUs' copies clash there.
    - **Stub neighbors**: the collector never saw the stubs, so whatever a template body uses
      is missing. Examples: `f.call_once(args)` on a FnDef resolves to a `Shim(FnPtr)`
      (`rustc_ty_utils/src/instance.rs:338`), and `ptr::read::<Args>`, `MaybeUninit` methods
