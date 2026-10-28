@@ -69,18 +69,8 @@ fn usage() -> String {
 }
 
 #[derive(Debug, PartialEq)]
-enum Sysroot {
-    Llvm,
-    Ryo,
-}
-
-#[derive(Debug, PartialEq)]
 enum Cmd {
-    /// `targets`: extra targets (besides the host) to install std and `ryo_rt` for.
-    Build {
-        sysroot: Sysroot,
-        targets: Vec<String>,
-    },
+    Build(dist::BuildOptions),
     BuildClif,
     Test(test::Options),
     /// `test --cross <target>`.
@@ -119,23 +109,14 @@ fn parse_args(args: &[String]) -> Result<Cmd, String> {
     };
     match cmd.as_str() {
         "build" => {
-            let mut sysroot = Sysroot::Llvm;
-            let mut targets = Vec::new();
+            let mut o = dist::BuildOptions::default();
             let mut args = crate::utils::Flags::new(&rest);
             while let Some(flag) = args.next()? {
-                match flag {
-                    "--sysroot" => {
-                        sysroot = match args.value()? {
-                            "llvm" => Sysroot::Llvm,
-                            "ryo" => Sysroot::Ryo,
-                            other => return Err(format!("unknown sysroot `{other}`")),
-                        }
-                    }
-                    "--target" => targets.push(args.value()?.to_owned()),
-                    _ => return Err(args.unexpected()),
+                if !o.parse_flag(flag, &mut args)? {
+                    return Err(args.unexpected());
                 }
             }
-            Ok(Cmd::Build { sysroot, targets })
+            Ok(Cmd::Build(o))
         }
         "build-clif" => no_args(Cmd::BuildClif),
         "test" => parse_test(&rest),
@@ -211,7 +192,7 @@ fn main() -> ExitCode {
             print!("{}", usage());
             Ok(())
         }
-        Cmd::Build { sysroot, targets } => dist::build(&targets, sysroot == Sysroot::Ryo),
+        Cmd::Build(o) => dist::build(&o),
         Cmd::BuildClif => clif::build(),
         Cmd::Test(opts) => test::run(&opts),
         Cmd::CrossTest { target } => cross::run(&target),
@@ -245,13 +226,14 @@ mod tests {
     #[test]
     fn commands() {
         assert_eq!(parse(&[]), Ok(Cmd::Help));
-        let build = |sysroot, targets: &[&str]| Ok(Cmd::Build { sysroot, targets: targets.iter().map(|t| t.to_string()).collect() });
-        assert_eq!(parse(&["build"]), build(Sysroot::Llvm, &[]));
-        assert_eq!(parse(&["build", "--sysroot", "llvm"]), build(Sysroot::Llvm, &[]));
-        assert_eq!(parse(&["build", "--sysroot=ryo"]), build(Sysroot::Ryo, &[]));
+        let build =
+            |sysroot, targets: &[&str]| Ok(Cmd::Build(dist::BuildOptions { sysroot, targets: targets.iter().map(|t| t.to_string()).collect() }));
+        assert_eq!(parse(&["build"]), build(dist::Sysroot::Llvm, &[]));
+        assert_eq!(parse(&["build", "--sysroot", "llvm"]), build(dist::Sysroot::Llvm, &[]));
+        assert_eq!(parse(&["build", "--sysroot=ryo"]), build(dist::Sysroot::Ryo, &[]));
         assert_eq!(
             parse(&["build", "--target", "x86_64-pc-windows-msvc", "--sysroot=llvm", "--target=a"]),
-            build(Sysroot::Llvm, &["x86_64-pc-windows-msvc", "a"])
+            build(dist::Sysroot::Llvm, &["x86_64-pc-windows-msvc", "a"])
         );
         assert!(parse(&["build", "--sysroot", "gcc"]).is_err());
         assert!(parse(&["build", "--target"]).is_err());

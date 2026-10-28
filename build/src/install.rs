@@ -7,6 +7,7 @@ use std::io::{IsTerminal, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
+use crate::dist::{BuildOptions, Sysroot};
 use crate::utils::{PINNED_VERSION, capture, cmd, copy_dir, create_dir, root, run, write};
 
 /// The components ryo needs besides the minimal profile.
@@ -14,10 +15,8 @@ const COMPONENTS: [&str; 3] = ["rustc-dev", "rust-src", "llvm-tools"];
 
 #[derive(Debug, Default, PartialEq)]
 pub struct InstallOptions {
-    /// Extra targets (besides the host), as for `y build --target`.
-    pub targets: Vec<String>,
-    /// `--sysroot ryo`.
-    pub ryo_std: bool,
+    /// `y build`'s `--sysroot` and `--target`.
+    pub build: BuildOptions,
     pub no_toolchain_install: bool,
     pub yes: bool,
     pub dry_run: bool,
@@ -34,15 +33,10 @@ pub fn parse_install(rest: &[&str]) -> Result<InstallOptions, String> {
     let mut o = InstallOptions::default();
     let mut args = crate::utils::Flags::new(rest);
     while let Some(flag) = args.next()? {
+        if o.build.parse_flag(flag, &mut args)? {
+            continue;
+        }
         match flag {
-            "--target" => o.targets.push(args.value()?.to_owned()),
-            "--sysroot" => {
-                o.ryo_std = match args.value()? {
-                    "llvm" => false,
-                    "ryo" => true,
-                    other => return Err(format!("unknown sysroot `{other}`")),
-                }
-            }
             "--no-toolchain-install" => o.no_toolchain_install = true,
             "--yes" | "-y" => o.yes = true,
             "--dry-run" => o.dry_run = true,
@@ -473,13 +467,14 @@ struct InstallPlan {
     toolchain_present: bool,
     /// All targets (the host first).
     targets: Vec<String>,
+    /// What to build.
+    build: BuildOptions,
     /// Components and targets to add.
     add_components: Vec<String>,
     add_targets: Vec<String>,
     /// Components and targets already there: the user's, or recorded by an earlier install.
     have_components: Vec<(String, bool)>,
     have_targets: Vec<(String, bool)>,
-    ryo_std: bool,
     install: PathBuf,
     scripts: PathBuf,
     cargo_root: PathBuf,
@@ -536,7 +531,7 @@ impl InstallPlan {
         p(&mut s, "     (separate from dist/ and target/; your development builds are not affected)".to_owned());
         p(&mut s, "     - target/              cargo build output: backend, runtime, JIT".to_owned());
         p(&mut s, format!("     - build/               the built ryo: backend, wrappers, std for {}", list(&self.targets)));
-        if self.ryo_std {
+        if self.build.sysroot == Sysroot::Ryo {
             p(&mut s, "                            and std compiled by ryo".to_owned());
         }
         p(&mut s, format!("     - {:<20} the installed copy; current names it", format!("{}/", self.version)));
@@ -585,7 +580,7 @@ fn plan_install(o: &InstallOptions) -> Result<InstallPlan, String> {
     let previous = read_manifest(&install)?;
     let prev_record = previous.as_ref().map(|m| m.toolchain.clone()).filter(|r| r.name == toolchain).unwrap_or_default();
     let mut targets = vec![host.clone()];
-    for t in &o.targets {
+    for t in &o.build.targets {
         if !targets.contains(t) {
             targets.push(t.clone());
         }
@@ -653,7 +648,7 @@ fn plan_install(o: &InstallOptions) -> Result<InstallPlan, String> {
         add_targets,
         have_components,
         have_targets,
-        ryo_std: o.ryo_std,
+        build: o.build.clone(),
         previous_version: current_version(&install),
         install,
         scripts: root().join("scripts"),
@@ -710,7 +705,7 @@ fn do_install(plan: &InstallPlan) -> Result<(), String> {
     // SAFETY: `y` is single-threaded here.
     unsafe { std::env::set_var("RUSTUP_TOOLCHAIN", t) };
     let build = install.join("build");
-    let build_id = crate::dist::build_in(&build, &install.join("target"), &plan.targets[1..], plan.ryo_std)?;
+    let build_id = crate::dist::build_in(&build, &install.join("target"), &plan.build)?;
 
     // 4. Copy to `install/<version>/` (fresh mtimes, a new wrapper path), switch `current`.
     let partial = install.join(format!("{}.partial", plan.version));
@@ -724,7 +719,7 @@ fn do_install(plan: &InstallPlan) -> Result<(), String> {
     manifest.version = plan.version.clone();
     manifest.build_id = build_id;
     manifest.targets = plan.targets.clone();
-    manifest.sysroots = if plan.ryo_std { vec!["llvm".into(), "ryo".into()] } else { vec!["llvm".into()] };
+    manifest.sysroots = if plan.build.sysroot == Sysroot::Ryo { vec!["llvm".into(), "ryo".into()] } else { vec!["llvm".into()] };
     manifest.save(install)?;
 
     // 5. Launchers.
@@ -979,7 +974,12 @@ mod tests {
     fn options() {
         assert_eq!(
             parse_install(&["--target", "a", "--sysroot=ryo", "-y", "--dry-run"]),
-            Ok(InstallOptions { targets: vec!["a".into()], ryo_std: true, yes: true, dry_run: true, ..Default::default() })
+            Ok(InstallOptions {
+                build: BuildOptions { sysroot: Sysroot::Ryo, targets: vec!["a".into()] },
+                yes: true,
+                dry_run: true,
+                ..Default::default()
+            })
         );
         assert!(parse_install(&["--force"]).is_err());
         assert_eq!(parse_uninstall(&["--keep-toolchain", "--yes"]), Ok(UninstallOptions { keep_toolchain: true, yes: true, dry_run: false }));
@@ -998,7 +998,7 @@ mod tests {
             add_targets: vec![],
             have_components: vec![],
             have_targets: vec![],
-            ryo_std: false,
+            build: BuildOptions::default(),
             install: "/r/install".into(),
             scripts: "/r/scripts".into(),
             cargo_root: "/h/.cargo".into(),

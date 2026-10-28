@@ -9,15 +9,47 @@ use crate::utils::{RustcInfo, build_wrapper, cmd, copy, copy_dir, dll_name, outp
 /// (`macro_metavar_expr_concat`: `ryo_bytecode`'s opcode families).
 const BACKEND_FEATURES: &str = "rustc_private,macro_metavar_expr_concat";
 
-/// `targets`: extra targets to install std and `ryo_rt` for, for cross-compiling with
-/// `rustc-ryo --target` (their rust-std component must be installed).
-/// With `ryo_std`, also builds std with the ryo backend into `dist/sysroot-ryo`
-/// (`--sysroot ryo`).
-pub fn build(targets: &[String], ryo_std: bool) -> Result<(), String> {
+/// What `y build` builds; `y install` takes the same flags for its build.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct BuildOptions {
+    pub sysroot: Sysroot,
+    /// Extra targets (besides the host) to install std and `ryo_rt` for, for cross-compiling
+    /// with `rustc-ryo --target` (their rust-std component must be installed).
+    pub targets: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub enum Sysroot {
+    #[default]
+    Llvm,
+    /// Also build std with the ryo backend into `dist/sysroot-ryo` (`--sysroot ryo`).
+    Ryo,
+}
+
+impl BuildOptions {
+    /// Takes `--sysroot` and `--target`; `false` for any other flag.
+    pub fn parse_flag(&mut self, flag: &str, args: &mut crate::utils::Flags) -> Result<bool, String> {
+        match flag {
+            "--sysroot" => {
+                self.sysroot = match args.value()? {
+                    "llvm" => Sysroot::Llvm,
+                    "ryo" => Sysroot::Ryo,
+                    other => return Err(format!("unknown sysroot `{other}`")),
+                }
+            }
+            "--target" => self.targets.push(args.value()?.to_owned()),
+            _ => return Ok(false),
+        }
+        Ok(true)
+    }
+}
+
+/// `y build`.
+pub fn build(o: &BuildOptions) -> Result<(), String> {
     let root = root();
     // Tests build a second `dist/` of another ryo build elsewhere (`RYO_ABI_OVERRIDE`).
     let dir = |var: &str, default: &str| std::env::var_os(var).map_or_else(|| root.join(default), PathBuf::from);
-    build_in(&dir(DIST_DIR_VAR, "dist"), &dir(TARGET_DIR_VAR, "target"), targets, ryo_std).map(drop)
+    build_in(&dir(DIST_DIR_VAR, "dist"), &dir(TARGET_DIR_VAR, "target"), o).map(drop)
 }
 
 /// `y build`'s output directory instead of `dist/` (tests).
@@ -28,7 +60,7 @@ pub const TARGET_DIR_VAR: &str = "RYO_Y_TARGET_DIR";
 /// [`build`] with `dist` as the output directory (what `dist/` is for `y build`) and `target`
 /// as cargo's target directory (`y install` uses `install/build/` and `install/target/`).
 /// Returns the build id.
-pub fn build_in(dist: &Path, target: &Path, targets: &[String], ryo_std: bool) -> Result<String, String> {
+pub fn build_in(dist: &Path, target: &Path, o: &BuildOptions) -> Result<String, String> {
     let info = RustcInfo::get()?;
     let root = root();
     let (dist, target) = (dist.to_path_buf(), target.to_path_buf());
@@ -66,7 +98,7 @@ pub fn build_in(dist: &Path, target: &Path, targets: &[String], ryo_std: bool) -
     // What `rustc-ryo -vV` identifies the build by (design/build.md#the-y-build-tool).
     let mut build_files = vec![backend.clone()];
     let mut all = vec![info.host.clone()];
-    all.extend(targets.iter().filter(|t| **t != info.host).cloned());
+    all.extend(o.targets.iter().filter(|t| **t != info.host).cloned());
     let mut host_jit = None;
     for triple in &all {
         let target_lib = dist_lib.join("rustlib").join(triple).join("lib");
@@ -93,7 +125,7 @@ pub fn build_in(dist: &Path, target: &Path, targets: &[String], ryo_std: bool) -
 
     let build_id = build_id(&build_files)?;
     build_wrappers(&root, &dist_bin, &info, &build_id)?;
-    if ryo_std {
+    if o.sysroot == Sysroot::Ryo {
         crate::sysroot::build(&info, &dist, &target, host_jit.as_ref().map(|(j, c)| (j.as_path(), c.as_path())))?;
     }
     eprintln!("[y] done: {}", dist.display());

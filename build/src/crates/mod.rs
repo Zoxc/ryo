@@ -175,7 +175,7 @@ impl Backend {
 pub fn ensure_tools(root: &Path, cmd: &str, mut backends: impl Iterator<Item = Backend>) -> Result<(), String> {
     if !Backend::Ryo.rustc(root).exists() {
         eprintln!("[y] {cmd}: dist/ is missing, building it");
-        crate::dist::build(&[], false)?;
+        crate::dist::build(&Default::default())?;
     }
     if backends.any(|b| b == Backend::Clif) {
         crate::clif::ensure()?;
