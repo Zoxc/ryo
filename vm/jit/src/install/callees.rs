@@ -284,19 +284,11 @@ pub(super) fn callee(place: Place, c: Callee, name: Name, ext: &mut Vec<Ext>, me
 }
 
 impl Jit {
-    /// Rewrites the `call`s, `call.sym`s and `tail_call`s of `words` (the code of `func` of
-    /// `img`) to their callees' forms for `place` ([`callee`]): every call but a
+    /// Rewrites the `call`s, `call.sym`s and `tail_call`s of `words` (the code of `job`'s
+    /// function) to their callees' forms for its region ([`callee`]): every call but a
     /// self-call, and those through a symbol whose slot holds no address.
-    #[allow(clippy::too_many_arguments)]
-    pub(super) fn retarget(
-        &self,
-        words: &mut [u32],
-        func: u32,
-        img: &Image<'_>,
-        place: Place,
-        ext: &mut Vec<Ext>,
-        memo: &mut HashMap<Callee, u32>,
-    ) -> Result<(), &'static str> {
+    pub(super) fn retarget(&self, job: &Job<'_>, words: &mut [u32], ext: &mut Vec<Ext>, memo: &mut HashMap<Callee, u32>) -> Result<(), &'static str> {
+        let Job { func, img, place, .. } = *job;
         let h = img.header();
         let header = h as *const _ as usize;
         let mut at = 0;

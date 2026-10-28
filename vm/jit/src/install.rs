@@ -244,6 +244,7 @@ impl Jit {
         let d = callees::decode(img, &self.handlers, self.rt.probe as usize, func).ok_or("no such function")?.map_err(|e| e.what)?;
         let mode = jit_mode(&img, place.far_rt);
         let shuffled = (self.rt.shuffled)(h as *const _ as *const u8);
+        let job = Job { rec, func, img: &img, d: &d, mode, shuffled, place, personality };
 
         // The SSA tier (`RYO_JIT_OPT`), else, or where it doesn't compile the function, the
         // re-encoding pipeline.
@@ -255,31 +256,21 @@ impl Jit {
             self.ssa_tried += 1;
             // The AOT layout's words (the SSA tier lays out its own frame); the calls are
             // retargeted after inlining, by the rules `reencode` uses.
-            if let Some((out, ssa_ext)) = self.compile_ssa(rec, func, &img, &d, mode, shuffled, place)? {
-                return self.install(&Install { rec, func, img: &img, place, mode, personality, ext: &ssa_ext, tier: Tier::Ssa }, out);
+            if let Some((out, ssa_ext)) = self.compile_ssa(&job)? {
+                return self.install(&job, &ssa_ext, Tier::Ssa, out);
             }
         } else if settings.opt == JitOpt::Reencode {
             stats::add(&STATS.opt_reencode, 1);
         } else {
             stats::add(&STATS.ssa_limit, 1);
         }
-        let (out, ext) = self.reencode(rec, func, &img, &d, mode, shuffled, place)?;
-        self.install(&Install { rec, func, img: &img, place, mode, personality, ext: &ext, tier: Tier::Reencode }, out)
+        let (out, ext) = self.reencode(&job)?;
+        self.install(&job, &ext, Tier::Reencode, out)
     }
 
-    /// Compiles `d`, the function `func` of `img` (record `rec`), for `place` through the
-    /// re-encoding pipeline: its code and callees.
-    #[allow(clippy::too_many_arguments)]
-    fn reencode(
-        &self,
-        rec: *mut JitRecord,
-        func: u32,
-        img: &Image<'_>,
-        d: &asm::Decoded,
-        mode: Mode,
-        shuffled: bool,
-        place: Place,
-    ) -> Result<(Gen, Vec<Ext>), CompileError> {
+    /// Compiles `job`'s function through the re-encoding pipeline: its code and callees.
+    fn reencode(&self, job: &Job<'_>) -> Result<(Gen, Vec<Ext>), CompileError> {
+        let Job { rec, d, mode, shuffled, img, .. } = *job;
         // The JIT frame layout: the AOT one, or with `RYO_JIT_SHUFFLE` one that moves every
         // slot it can (frame::shuffle_map), to catch reliance on matching frames.
         let mut map = SlotMap::identity(d.frame_size);
@@ -305,24 +296,14 @@ impl Jit {
         // code, native code) directly, or through `r11` out of reach.
         let mut ext = Vec::new();
         let mut memo = HashMap::new();
-        self.retarget(&mut words, func, img, place, &mut ext, &mut memo)?;
+        self.retarget(job, &mut words, &mut ext, &mut memo)?;
         Ok((compile_reencode(d, &words, &map, img, mode)?, ext))
     }
 
-    /// Compiles `d`, the function `func` of `img` (record `rec`), for `place` through the SSA
-    /// tier: its code and callees, or `None` where the tier doesn't handle it (the
-    /// re-encoding pipeline does).
-    #[allow(clippy::too_many_arguments)]
-    fn compile_ssa(
-        &mut self,
-        rec: *mut JitRecord,
-        func: u32,
-        img: &Image<'_>,
-        d: &asm::Decoded,
-        mode: Mode,
-        shuffled: bool,
-        place: Place,
-    ) -> Result<Option<(Gen, Vec<Ext>)>, CompileError> {
+    /// Compiles `job`'s function through the SSA tier: its code and callees, or `None` where
+    /// the tier doesn't handle it (the re-encoding pipeline does).
+    fn compile_ssa(&mut self, job: &Job<'_>) -> Result<Option<(Gen, Vec<Ext>)>, CompileError> {
+        let Job { rec, func, img, d, mode, shuffled, place, .. } = *job;
         let h = img.header();
         let opts = jit::Options {
             alloc: if self.rt.settings.opt == JitOpt::Ssa { jit::Allocator::LinearScan } else { jit::Allocator::Naive },
@@ -390,10 +371,10 @@ impl Jit {
         }
     }
 
-    /// Installs the code `out` of `cx`'s function: code memory, relocation, unwind
-    /// information, the perf map and the publication.
-    fn install(&mut self, cx: &Install<'_>, out: Gen) -> Result<(), CompileError> {
-        let mode = cx.mode;
+    /// Installs the code `out` of `job`'s function, compiled by `tier` with the callees `ext`:
+    /// code memory, relocation, unwind information, the perf map and the publication.
+    fn install(&mut self, job: &Job<'_>, ext: &[Ext], tier: Tier, out: Gen) -> Result<(), CompileError> {
+        let mode = job.mode;
         let Gen { code: enc_code, mut relocs, rodata, call_sites, body, osr, osr_at, region } = out;
         let code_len = enc_code.len();
         // The OSR code's stack probes, relocated as the body's.
@@ -412,29 +393,30 @@ impl Jit {
         if size + eh_size > REGION / 2 {
             return Err("too large".into());
         }
-        let (base, eh_base, slot_of) = self.alloc(cx.place, cx.ext, &relocs, size, eh_size)?;
+        let (base, eh_base, slot_of) = self.alloc(job.place, ext, &relocs, size, eh_size)?;
         let mut code = assemble(&enc_code, osr.as_ref().map(|o| (osr_at, &o.code[..])), &rodata, size, ro_at);
         let jit_f = base + CODE_AT;
-        self.relocate(cx, &mut code, base, ro_at, &relocs, &slot_of)?;
-        if let Some(dir) = &self.dump {
-            let header = cx.img.header() as *const _ as usize;
-            self.dump_code(dir, cx.func, header, cx.ext, &enc_code, &relocs, osr.as_ref().map(|o| (osr_at, o)), cx.tier);
+        self.relocate(job, ext, &mut code, base, ro_at, &relocs, &slot_of)?;
+        if self.dump.is_some() {
+            self.dump_code(job, ext, tier, &enc_code, &relocs, osr.as_ref().map(|o| (osr_at, o)));
         }
-        eh.patch(eh_base, cx.personality, jit_f, osr.is_some().then_some(osr_at), base, base + thunk_at)?;
+        eh.patch(eh_base, job.personality, jit_f, osr.is_some().then_some(osr_at), base, base + thunk_at)?;
         if mode.pe {
             code[thunk_at..][..6].copy_from_slice(&[0xff, 0x25, 0, 0, 0, 0]);
             code[thunk_at + 6..][..8].copy_from_slice(&(self.rt.seh_handler as u64).to_le_bytes());
         }
         map_and_register(&code, &eh, base, eh_base, mode)?;
-        self.publish(cx, jit_f, osr.is_some().then(|| jit_f + osr_at), code_len, ro_at + rodata.len());
+        self.publish(job, tier, jit_f, osr.is_some().then(|| jit_f + osr_at), code_len, ro_at + rodata.len());
         Ok(())
     }
 
     /// Patches the fields `relocs` of `code`, to be at `base`, with its code constants at
-    /// `ro_at` and the call slots `slot_of` of `cx.ext`.
+    /// `ro_at` and the call slots `slot_of` of `ext`.
+    #[allow(clippy::too_many_arguments)]
     fn relocate(
         &self,
-        cx: &Install<'_>,
+        job: &Job<'_>,
+        ext: &[Ext],
         code: &mut [u8],
         base: usize,
         ro_at: usize,
@@ -442,9 +424,9 @@ impl Jit {
         slot_of: &[usize],
     ) -> Result<(), CompileError> {
         let jit_f = base + CODE_AT;
-        let rec = cx.rec as usize;
+        let rec = job.rec as usize;
         // The handlers of the image's form: PE code's own set if the runtime has one.
-        let (hs, rhs) = match (cx.img.mode().pe, self.rt.pe_handlers.is_null()) {
+        let (hs, rhs) = match (job.img.mode().pe, self.rt.pe_handlers.is_null()) {
             // SAFETY: the runtime's tables, non-null.
             (true, false) => unsafe { (&*self.rt.pe_handlers, &*self.rt.pe_reg_handlers) },
             _ => (&self.rt.handlers, &self.rt.reg_handlers),
@@ -453,7 +435,7 @@ impl Jit {
             let field = jit_f + r.at as usize;
             // Fields of 8 bytes: an `imm64` of a call through `r11`.
             let abs = match r.to {
-                Ref::Handler(_) | Ref::RegHandler(_) | Ref::Probe => cx.place.far_rt,
+                Ref::Handler(_) | Ref::RegHandler(_) | Ref::Probe => job.place.far_rt,
                 Ref::Func(Func(g)) => g & FUNC_KINDS == FUNC_FAR,
                 _ => false,
             };
@@ -461,14 +443,14 @@ impl Jit {
                 Ref::Handler(op) => Some(hs[op as usize]).filter(|h| !h.is_null()).ok_or("no handler")? as usize,
                 Ref::RegHandler(op) => Some(rhs[op as usize]).filter(|h| !h.is_null()).ok_or("no register entry")? as usize,
                 Ref::Probe => self.rt.probe as usize,
-                Ref::Func(Func(g)) if g == cx.func => jit_f,
+                Ref::Func(Func(g)) if g == job.func => jit_f,
                 Ref::Func(Func(g)) if g & FUNC_KINDS != 0 => {
                     let k = (g & !FUNC_KINDS) as usize;
-                    if g & FUNC_KINDS == FUNC_SLOT { slot_of[k] } else { cx.ext[k].addr }
+                    if g & FUNC_KINDS == FUNC_SLOT { slot_of[k] } else { ext[k].addr }
                 }
                 // Every other call was retargeted.
                 Ref::Func(_) => return Err("an unexpected call".into()),
-                Ref::Sym(_) | Ref::Const(_) | Ref::Data(_) => image_ref_addr(cx.img, r.to).ok_or("no such symbol")?,
+                Ref::Sym(_) | Ref::Const(_) | Ref::Data(_) => image_ref_addr(job.img, r.to).ok_or("no such symbol")?,
                 Ref::Ro(o) => base + ro_at + o as usize,
                 Ref::Rec => rec,
                 Ref::RecLoopCtr => rec + ryo_bytecode::image::JIT_LOOP_CTR as usize,
@@ -482,14 +464,14 @@ impl Jit {
         Ok(())
     }
 
-    /// Publishes the installed code of `cx`'s function, at `jit_f` with its OSR dispatcher at
+    /// Publishes the installed code of `job`'s function, compiled by `tier`, at `jit_f` with its OSR dispatcher at
     /// `osr_entry`: the perf map, the record, the call slots of it, and the log. `bytes` is
     /// the size of its code memory, for the statistics.
-    fn publish(&mut self, cx: &Install<'_>, jit_f: usize, osr_entry: Option<usize>, code_len: usize, bytes: usize) {
-        let (rec, func) = (cx.rec, cx.func);
-        let h = cx.img.header();
+    fn publish(&mut self, job: &Job<'_>, tier: Tier, jit_f: usize, osr_entry: Option<usize>, code_len: usize, bytes: usize) {
+        let (rec, func) = (job.rec, job.func);
+        let h = job.img.header();
         if let Some(m) = &mut self.perfmap {
-            let aot = cx.img.entry(func);
+            let aot = job.img.entry(func);
             let _ = writeln!(m, "{jit_f:x} {code_len:x} ryo-jit:f{func}@{aot:x}");
         }
 
@@ -497,12 +479,12 @@ impl Jit {
         // `thread::oom_panics`) would report a published record as failed.
         let line = self.rt.settings.log.then(|| {
             let c = counts(rec, self.rt.thresholds);
-            self.log_text(rec, &std::format!("compiled ({}, {} calls, {} loop iterations)", cx.tier.name(), c.calls, c.iters))
+            self.log_text(rec, &std::format!("compiled ({}, {} calls, {} loop iterations)", tier.name(), c.calls, c.iters))
         });
         // Counted before the record's `Done`, whose `SeqCst` store makes the counts visible
         // to a `RYO_JIT_SYNC` waiter (stats.rs); after it, a test could miss them.
         stats::add(&STATS.compiled, 1);
-        let (n, b) = match cx.tier {
+        let (n, b) = match tier {
             Tier::Ssa => (&STATS.ssa, &STATS.code_ssa),
             Tier::Reencode => (&STATS.reencode, &STATS.code_reencode),
         };
@@ -536,18 +518,19 @@ impl Jit {
     }
 }
 
-/// What [`Jit::install`] installs: the function `func` of `img` (record `rec`), compiled by
-/// `tier` in `mode` for the region `place` with the callees `ext`, and its image's
-/// personality slot.
-struct Install<'a> {
+/// A function being compiled: the function `func` of `img` (record `rec`), decoded as `d`, to
+/// be compiled in `mode` (`shuffled`: `RYO_JIT_SHUFFLE`) for the region `place`, and its
+/// image's personality slot.
+#[derive(Clone, Copy)]
+struct Job<'a> {
     rec: *mut JitRecord,
     func: u32,
     img: &'a Image<'a>,
-    place: Place,
+    d: &'a asm::Decoded,
     mode: Mode,
+    shuffled: bool,
+    place: Place,
     personality: usize,
-    ext: &'a [Ext],
-    tier: Tier,
 }
 
 /// A function's unwind information, before its PC-relative fields are patched
