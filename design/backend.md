@@ -284,10 +284,11 @@ depends on changed (`partition.rs`, `image_part`).
 - **The image's dep node** is a `CompileCodegenUnit` node named
   `<cgu>.ryo.<fingerprint>`, the fingerprint covering the CGU name, its candidates' symbols,
   linkage and visibility, the entry fn's symbol (only in the entry's own CGU's key), the
-  `asm::Mode`, the crate's `StableCrateId`, `RYO_ASM_ALIGN`, a hash of the backend dylib's
-  contents (the loaded dylib's own file, found with `dladdr`, so also for a
-  `-Zcodegen-backend=<name>` found in the sysroot; under incremental, an unreadable file is
-  an error), and `ryo_rt`'s crate
+  `asm::Mode`, the crate's `StableCrateId`, `RYO_ASM_ALIGN`, the backend's build ID
+  (`RYO_BACKEND_ID`, baked in by `backend/build.rs`: a hash of the backend's and
+  `ryo_bytecode`'s sources and manifests, the lock file, the compiler's `-vV` and the build
+  settings; baked in rather than read from the dylib's file, which a rebuild may replace
+  while a session runs, and the same for a `-Zcodegen-backend=<name>`), and `ryo_rt`'s crate
   hash (an image that calls no island reads nothing else of `ryo_rt`). `RYO_ASM_CHECK` is
   not in it: it only checks the code it encodes, without changing it. A change to any of
   these gives a node the previous session didn't have. The lowering runs inside
@@ -303,7 +304,10 @@ depends on changed (`partition.rs`, `image_part`).
   hard-links the cached object into place. A reused image is byte-identical to a fresh one.
   A CGU whose candidates all stay native has a product too, with side data only (no `o`):
   reusing it saves lowering them again only to find that out. The side data's first byte
-  says whether the CGU has an object; a product that should have one but lacks it (rustc
+  says whether the CGU has an object, the next 16 a checksum of the rest: side data whose
+  checksum doesn't match (corrupted with its end marker intact, which `MemDecoder` alone
+  wouldn't catch) is a cache miss, checked before `try_mark_green`, so the image is rebuilt
+  (the `incremental` check flips a byte); a product that should have one but lacks it (rustc
   only warns when a file fails to copy into the cache) isn't reused. The `incremental`
   check's revision 11 adds an unused item ahead of `main` and expects every image reused.
 - **Saving.** cg_ssa saves only its own modules' products, inside cg_llvm's join, so our
@@ -413,7 +417,12 @@ upstream images.
   handlers and VM code use SSE. The target features are only known after `init`, so
   `codegen_crate` checks them (`sse2` must be in `sess.internal_target_features`,
   `soft-float` must not).
-- `-Ccode-model` other than `small` (the default): the images reach handlers, other
+- PE targets other than windows-msvc (MinGW: `windows-gnu`, `windows-gnullvm`): the PE
+  import rules match cg_llvm on MSVC, which on `Env::Gnu` leaves functions' `dllimport` to
+  the linker, GNU ld doesn't synthesize `__imp_` for static definitions, and the SEH handler
+  assumes MSVC ([platforms.md](platforms.md)).
+- A code model other than `small` (the default), from `-Ccode-model` or the target's
+  (`sess.code_model()`, so a target JSON's `code-model` too): the images reach handlers, other
   images and native items with rel32 calls and RIP-relative addressing, which assume the
   small model's 2 GiB reach. `large` and `medium` place code or data beyond it (a link
   error at best), `kernel` is for kernels, which need soft-float anyway.
@@ -432,8 +441,11 @@ upstream images.
 
 Runtime-internal crates aren't rejected but stay native as a whole, like proc macros and
 panic runtimes ([Pipeline](#pipeline), step 1): `compiler_builtins`, `#![profiler_runtime]`
-and `#![no_builtins]` crates, and the runtime's own `ryo_rt`, `ryo_bytecode` and `ryo_jit`
-(as when built with `-Zbuild-std`).
+and `#![no_builtins]` crates (also every crate of a target that sets `no_builtins`), `core`
+and its `-Zbuild-std` alias `rustc-std-workspace-core` (the handlers call its non-generic
+functions, which must not re-enter VM code), and the runtime's own `ryo_rt`, `ryo_bytecode`
+and `ryo_jit` (`partition::RUNTIME_CRATES`, the same list the `upstream_monomorphizations`
+override filters; as when built with `-Zbuild-std`).
 
 `y test`'s `reject-unsupported` check runs each (`-Zrandomize-layout` also through an
 `@argfile`).

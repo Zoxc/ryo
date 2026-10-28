@@ -16,35 +16,42 @@ pub(crate) enum SymRole {
     Island,
 }
 
-/// The image slot flags for `target` used as `role`: on PE, a [`SymRole::Target`] symbol
-/// defined outside this crate (an upstream crate's, or a foreign item) gets an indirect slot
-/// ([`SYM_INDIRECT`](ryo_bytecode::image::SYM_INDIRECT)), relocated against its `__imp_`
-/// import slot, and the instruction must be the `.ind` form (`addr.sym.ind`,
-/// `call.ext.ind`). Islands are always direct: a direct reference to a function in another
-/// DLL resolves to its import thunk, which is fine to call. The writer keys slots by name and
-/// flags, so one symbol can have both. A foreign function is indirect only where cg_llvm
-/// declares it `dllimport` (its library's kind is `dylib`, `raw-dylib` or unspecified,
-/// `NativeLibKind::is_dllimport`, `rustc_codegen_llvm/src/callee.rs`): one from a
-/// `kind = "static"` library or without `#[link]` is direct, as in native code, with no
-/// `__imp_` the linker must synthesize (LNK4217).
+/// The image slot flags for `target` used as `role`: on PE, an indirect slot
+/// ([`SYM_INDIRECT`](ryo_bytecode::image::SYM_INDIRECT)), relocated against the `__imp_`
+/// import slot, exactly where cg_llvm declares the function `dllimport`
+/// (`rustc_codegen_llvm/src/callee.rs`): a foreign function whose library's kind is `dylib`,
+/// `raw-dylib` or unspecified (`NativeLibKind::is_dllimport`). The instruction must then be
+/// the `.ind` form (`addr.sym.ind`, `call.ext.ind`). Everything else is direct, as in native
+/// code: upstream Rust functions (also generic instances and Rust dylibs' functions, which
+/// resolve to the import thunk), and foreign functions from a `kind = "static"` library or
+/// without `#[link]`. So no `__imp_` is left for the linker to synthesize (LNK4217). Islands
+/// are always direct.
 pub(crate) fn symbol_flags<'tcx>(tcx: TyCtxt<'tcx>, target: Instance<'tcx>, role: SymRole) -> u8 {
     let def_id = target.def_id();
-    let import = !tcx.should_codegen_locally(target)
-        && (!tcx.is_foreign_item(def_id) || tcx.native_library(def_id).is_some_and(|lib| lib.kind.is_dllimport()));
-    if is_pe(tcx) && role == SymRole::Target && import { ryo_bytecode::image::SYM_INDIRECT } else { 0 }
+    let import =
+        is_pe(tcx) && role == SymRole::Target && tcx.is_foreign_item(def_id) && tcx.native_library(def_id).is_some_and(|lib| lib.kind.is_dllimport());
+    if import { ryo_bytecode::image::SYM_INDIRECT } else { 0 }
 }
 
-/// [`symbol_flags`] for a static used as an address: on PE, statics of upstream crates and
-/// foreign statics are imports.
+/// [`symbol_flags`] for a static used as an address, also as cg_llvm decides `dllimport`
+/// (`rustc_codegen_llvm/src/consts.rs`): on PE, statics of upstream crates are imports
+/// (rustc defines `__imp_<sym>` for the data of rlibs, and a Rust dylib exports it), and
+/// foreign statics are where cg_llvm declares them `dllimport`: only when their library's
+/// kind is `dylib`, `raw-dylib` or unspecified (`rustc_codegen_llvm/src/consts.rs`). One from
+/// a `kind = "static"` library, a `-l` library without `#[link]` or `link-arg` is direct, so
+/// the reference pulls in the archive member defining it. EII statics, encoded as foreign
+/// items but defined by Rust crates, follow the upstream rule. (cg_llvm also makes an upstream
+/// static this crate happens to define, `is_codegened_item`, direct; that query can't be read
+/// during partitioning, so such a reference goes through an `__imp_` the linker synthesizes.)
 pub(crate) fn static_symbol_flags(tcx: TyCtxt<'_>, def_id: DefId) -> u8 {
-    if is_pe(tcx) && (!def_id.is_local() || tcx.is_foreign_item(def_id)) { ryo_bytecode::image::SYM_INDIRECT } else { 0 }
-}
-
-/// Whether a static with an indirect slot also needs a direct one: a foreign static from a
-/// static library. Upstream Rust statics don't (rustc defines `__imp_<sym>` for the data of
-/// rlibs), and data in a DLL can't be referenced directly.
-pub(crate) fn static_needs_direct_slot(tcx: TyCtxt<'_>, def_id: DefId) -> bool {
-    tcx.is_foreign_item(def_id) && tcx.native_library(def_id).is_some_and(|lib| matches!(lib.kind, rustc_hir::attrs::NativeLibKind::Static { .. }))
+    if !is_pe(tcx) {
+        return 0;
+    }
+    use rustc_middle::middle::codegen_fn_attrs::CodegenFnAttrFlags;
+    let eii = tcx.codegen_fn_attrs(def_id).flags.contains(CodegenFnAttrFlags::EXTERNALLY_IMPLEMENTABLE_ITEM);
+    let import =
+        if tcx.is_foreign_item(def_id) && !eii { tcx.native_library(def_id).is_some_and(|lib| lib.kind.is_dllimport()) } else { !def_id.is_local() };
+    if import { ryo_bytecode::image::SYM_INDIRECT } else { 0 }
 }
 
 /// Whether the target uses PE/COFF objects.

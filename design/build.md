@@ -40,7 +40,11 @@ modeled on cg_clif's `build_system/`.
    even though `RUSTC_BOOTSTRAP` would allow all. The release profile is forced to
    `CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1` and `CARGO_PROFILE_RELEASE_LTO=fat`, so the
    backend's own crates are optimized as one unit whatever the user's settings;
-   `librustc_driver` stays a dynamic dependency, outside LTO.
+   `librustc_driver` stays a dynamic dependency, outside LTO. `backend/build.rs` bakes in
+   the backend's build ID (`RYO_BACKEND_ID`: a hash of its and `ryo_bytecode`'s sources and
+   manifests, the lock file, the compiler's `-vV`, the build settings and the ABI tag
+   `RYO_ABI`, [below](#the-abi-tag)), which incremental
+   image reuse keys on ([backend.md](backend.md#incremental)).
 2. **Sysroot**: a self-contained `dist/` directory:
    ```
    dist/bin/rustc-ryo, cargo-ryo          wrappers
@@ -48,6 +52,9 @@ modeled on cg_clif's `build_system/`.
    dist/lib/rustlib/<target>/lib/         std rlibs + libryo_rt.rlib, libryo_bytecode.rlib
    dist/lib/rustlib/<target>/bin/         the toolchain's self-contained linker (rust-lld)
    ```
+   Files are installed into `dist/` by copying to a temporary name and renaming it into
+   place (`utils::copy`), so a rustc still running the previous backend keeps its mapped
+   file instead of seeing it overwritten (which could crash it).
    - `--sysroot llvm` (default): copy the toolchain's prebuilt std rlibs, skipping the
      `rustc_*`/LLVM rustc-dev libs, as cg_clif does. The target's `bin/` is copied too, since
      x86_64 Linux links with the sysroot's `rust-lld` by default.
@@ -129,8 +136,6 @@ modeled on cg_clif's `build_system/`.
    - `-Zunstable-options --extern force:ryo_rt`
    - nothing about codegen units: the backend makes one image per CGU
      ([backend.md](backend.md#pipeline))
-   - on windows-msvc targets (`--target *-msvc`, or none on an msvc host),
-     `-Clink-arg=/IGNORE:4217 -Clink-arg=/IGNORE:4286` ([platforms.md](platforms.md))
 
    They add no MIR optimization flags: ryo gets rustc's defaults, like the other backends
    ([lowering.md](lowering.md#input)).

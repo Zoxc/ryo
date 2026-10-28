@@ -332,6 +332,7 @@ fn test_targets(rel: &str) -> Option<(Vec<&'static str>, Vec<Check>)> {
         "vm_backtrace.rs" => vec![Check::Backtrace],
         "vm_exports.rs" => vec![Check::Exports],
         "vm_statics.rs" => vec![Check::Dump],
+        "pe_imports/up.rs" | "pe_imports/dy.rs" | "pe_imports/pe_imports.rs" => vec![Check::PeImports],
         "vm_cgu_owner.rs" => vec![Check::CguOwnership],
         "vm_jit_private.rs" => vec![Check::JitPrivateStd],
         "vm_jit_atomics.rs" => vec![Check::JitAtomics],
@@ -529,12 +530,13 @@ enum Check {
     MultiDylib,
     /// A second full `y build`, of another ABI tag.
     MultiVersion,
+    PeImports,
     /// It runs the program it builds.
     CargoRyo,
 }
 
 impl Check {
-    const ALL: [Check; 16] = [
+    const ALL: [Check; 17] = [
         Check::RtCoreOnly,
         Check::JitSealed,
         Check::JitPrivateStd,
@@ -550,6 +552,7 @@ impl Check {
         Check::MultiStaticlib,
         Check::MultiDylib,
         Check::MultiVersion,
+        Check::PeImports,
         Check::CargoRyo,
     ];
 
@@ -570,6 +573,7 @@ impl Check {
             Check::MultiStaticlib => "multi-staticlib",
             Check::MultiDylib => "multi-dylib",
             Check::MultiVersion => "multi-version",
+            Check::PeImports => "pe-imports",
             Check::CargoRyo => "cargo-ryo",
         }
     }
@@ -584,7 +588,8 @@ impl Check {
             | Check::MetadataOnly
             | Check::Dump
             | Check::Exports
-            | Check::Backtrace => sel.fast,
+            | Check::Backtrace
+            | Check::PeImports => sel.fast,
             Check::RtCoreOnly | Check::JitSealed | Check::MultiStaticlib | Check::MultiDylib => sel.rt,
             Check::JitPrivateStd | Check::JitAtomics => sel.jit,
             Check::Incremental | Check::CargoRyo | Check::MultiVersion => false,
@@ -610,6 +615,7 @@ impl Check {
             Check::MultiStaticlib => multi::multi_staticlib(info, rustc_ryo, &tests.join("multi_ryo"), out),
             Check::MultiDylib => multi::multi_dylib(info, root, rustc_ryo, &tests.join("multi_ryo"), out),
             Check::MultiVersion => multi::multi_version(info, root, rustc_ryo, &tests.join("multi_ryo"), out),
+            Check::PeImports => pe_imports(info, root, rustc_ryo, &tests.join("pe_imports"), out),
             Check::CargoRyo => cargo_smoke(info, root, out),
         }
     }

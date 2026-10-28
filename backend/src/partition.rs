@@ -81,12 +81,6 @@ pub fn is_rt_crate(tcx: TyCtxt<'_>, krate: CrateNum) -> bool {
     tcx.crate_name(krate).as_str() == "ryo_rt"
 }
 
-/// Whether `krate` is one of the runtime crates, `ryo_rt` or `ryo_bytecode`, which every final
-/// artifact links a private copy of (`dylib_dependency_formats`).
-pub fn is_runtime_crate(tcx: TyCtxt<'_>, krate: CrateNum) -> bool {
-    matches!(tcx.crate_name(krate).as_str(), "ryo_rt" | "ryo_bytecode")
-}
-
 /// [`rt_items`], given `ryo_rt`'s crate.
 pub fn rt_items_in(tcx: TyCtxt<'_>, krate: CrateNum) -> Option<RtItems> {
     let items = tcx.diagnostic_items(krate);
@@ -237,15 +231,31 @@ fn check_outputs(tcx: TyCtxt<'_>) {
 /// Unwinding), so that must be native, and the rest of the runtime gains nothing from the VM.
 /// Runtime-internal crates too (design/backend.md#unsupported-options): `compiler_builtins`
 /// and `#![no_builtins]` crates implement `memcpy` and friends, which the handlers call (VM
-/// code there would recurse), `#![profiler_runtime]`, and the VM's own crates.
+/// code there would recurse), as does a target that sets `no_builtins` (rustc treats every
+/// crate as `#![no_builtins]` then), `#![profiler_runtime]`, the VM's own crates
+/// ([`RUNTIME_CRATES`]), and `core` (and its `-Zbuild-std` alias): the handlers call its
+/// non-generic functions, which must not re-enter VM code.
 fn vm_enabled(tcx: TyCtxt<'_>, switches: &Switches) -> bool {
     !switches.no_vm
         && !tcx.crate_types().contains(&CrateType::ProcMacro)
         && !tcx.is_panic_runtime(LOCAL_CRATE)
         && !tcx.is_compiler_builtins(LOCAL_CRATE)
         && !rustc_hir::find_attr!(tcx.hir_krate_attrs(), NoBuiltins)
+        && !tcx.sess.target.no_builtins
         && !rustc_hir::find_attr!(tcx.hir_krate_attrs(), ProfilerRuntime)
-        && !matches!(tcx.crate_name(LOCAL_CRATE).as_str(), "ryo_rt" | "ryo_bytecode" | "ryo_jit")
+        && !is_runtime_crate(tcx, LOCAL_CRATE)
+        && !matches!(tcx.crate_name(LOCAL_CRATE).as_str(), "core" | "rustc_std_workspace_core")
+}
+
+/// The VM's own crates: always native ([`vm_enabled`]), their copies of other crates'
+/// generics are never linked to ([`upstream_monomorphizations`]), and every final artifact
+/// links a private copy of them (`dylib_dependency_formats`). (`ryo_jit` is sealed into
+/// `ryo_rt`, so it is a crate only when built on its own, as with `-Zbuild-std`.)
+pub const RUNTIME_CRATES: [&str; 3] = ["ryo_rt", "ryo_bytecode", "ryo_jit"];
+
+/// Whether `krate` is one of [`RUNTIME_CRATES`].
+pub fn is_runtime_crate(tcx: TyCtxt<'_>, krate: CrateNum) -> bool {
+    RUNTIME_CRATES.contains(&tcx.crate_name(krate).as_str())
 }
 
 /// How the image's machine code is generated: as `ryo_rt`'s handlers expect `fp`, with a
@@ -311,17 +321,36 @@ impl<'tcx> CguVm<'tcx> {
     }
 
     /// The side data: a byte saying whether the CGU has an image object (it has VM
-    /// functions), readable before the image's dep node is green, then the encoded fields.
+    /// functions), readable before the image's dep node is green, a checksum of the rest
+    /// ([`CguVm::intact`]), then the encoded fields.
     fn save(&self, tcx: TyCtxt<'tcx>) -> Vec<u8> {
+        let body = persist::encode(tcx, &(&self.vm, &self.islands, &self.refs, &self.main));
         let mut out = vec![u8::from(!self.vm.is_empty())];
-        out.extend(persist::encode(tcx, &(&self.vm, &self.islands, &self.refs, &self.main)));
+        out.extend_from_slice(&side_checksum(&body));
+        out.extend(body);
         out
     }
 
+    /// Whether saved side data is whole: its checksum matches. Checked before the image's
+    /// dep node is marked green, so a corrupted file rebuilds the image rather than panicking
+    /// in the decoder (`MemDecoder`'s footer check only catches truncation).
+    fn intact(data: &[u8]) -> bool {
+        data.get(1..17).zip(data.get(17..)).is_some_and(|(sum, body)| sum == side_checksum(body))
+    }
+
     fn load(tcx: TyCtxt<'tcx>, data: &[u8]) -> Option<Self> {
-        let (vm, islands, refs, main): CguVmData<'tcx> = persist::decode(tcx, data.get(1..)?)?;
+        let (vm, islands, refs, main): CguVmData<'tcx> = persist::decode(tcx, data.get(17..)?)?;
         Some(CguVm { vm, islands, refs, main })
     }
+}
+
+/// [`CguVm::save`]'s checksum of the encoded side data.
+fn side_checksum(body: &[u8]) -> [u8; 16] {
+    use std::hash::Hash;
+    let mut h = rustc_data_structures::stable_hash::StableHasher::new();
+    body.hash(&mut h);
+    let f: rustc_data_structures::fingerprint::Fingerprint = h.finish();
+    f.to_le_bytes()
 }
 
 /// Where a CGU's image object comes from.
@@ -367,59 +396,12 @@ struct ImagePart<'tcx> {
 /// The session's settings an image depends on beyond its CGU's items and the queries its
 /// lowering reads (which its dep node tracks), for the reuse fingerprint.
 fn image_settings(tcx: TyCtxt<'_>, rt: RtItems, mode: asm::Mode, switches: &Switches) -> String {
-    // The backend itself, by a hash of its file: a rebuilt backend may lower differently,
-    // even with the same size and mtime (`cp -p`). Only read under incremental, where a
-    // backend that can't be read is an error: images of an older one would be reused.
-    let backend = tcx
-        .dep_graph
-        .is_fully_enabled()
-        .then(|| {
-            let path = backend_path().or_else(|| tcx.sess.opts.unstable_opts.codegen_backend.as_deref().map(std::path::PathBuf::from));
-            let Some(path) = path else { tcx.dcx().fatal("incremental: can't find the ryo backend's file to hash") };
-            std::fs::read(&path).unwrap_or_else(|e| tcx.dcx().fatal(format!("incremental: reading the ryo backend {}: {e}", path.display())))
-        })
-        .map(|bytes| {
-            use std::hash::Hash;
-            let mut h = rustc_data_structures::stable_hash::StableHasher::new();
-            bytes.hash(&mut h);
-            let f: rustc_data_structures::fingerprint::Fingerprint = h.finish();
-            f.to_hex()
-        });
-    // `ryo_rt`'s crate hash: what its handlers expect may change without the backend
-    // changing, and an image that calls no island reads nothing else of it.
-    format!("{:?} {} {} {backend:?} {} {}", mode, local_stable_crate_id(tcx), switches.asm_align, env!("CARGO_PKG_VERSION"), tcx.crate_hash(rt.krate))
-}
-
-/// The file of the loaded backend dylib, from the address of one of its functions: the same
-/// for a `-Zcodegen-backend=<path>` and a `<name>` found in the sysroot.
-#[cfg(unix)]
-fn backend_path() -> Option<std::path::PathBuf> {
-    use std::os::unix::ffi::OsStrExt;
-    #[repr(C)]
-    struct DlInfo {
-        fname: *const std::ffi::c_char,
-        fbase: *mut std::ffi::c_void,
-        sname: *const std::ffi::c_char,
-        saddr: *mut std::ffi::c_void,
-    }
-    unsafe extern "C" {
-        fn dladdr(addr: *const std::ffi::c_void, info: *mut DlInfo) -> std::ffi::c_int;
-    }
-    let mut info = DlInfo { fname: std::ptr::null(), fbase: std::ptr::null_mut(), sname: std::ptr::null(), saddr: std::ptr::null_mut() };
-    // SAFETY: `dladdr` fills `info`; `fname` is a C string while the dylib stays loaded.
-    let name = unsafe {
-        if dladdr(backend_path as *const std::ffi::c_void, &mut info) == 0 || info.fname.is_null() {
-            return None;
-        }
-        std::ffi::CStr::from_ptr(info.fname)
-    };
-    Some(std::path::PathBuf::from(std::ffi::OsStr::from_bytes(name.to_bytes())))
-}
-
-/// Elsewhere, only the `-Zcodegen-backend` path.
-#[cfg(not(unix))]
-fn backend_path() -> Option<std::path::PathBuf> {
-    None
+    // The backend itself by its build ID (`build.rs`): a rebuilt backend may lower
+    // differently. Baked in rather than read from the backend's file, which a rebuild may
+    // replace while this session runs. And `ryo_rt`'s crate hash: what its handlers expect
+    // may change without the backend changing, and an image that calls no island reads
+    // nothing else of it.
+    format!("{:?} {} {} {} {}", mode, local_stable_crate_id(tcx), switches.asm_align, env!("RYO_BACKEND_ID"), tcx.crate_hash(rt.krate))
 }
 
 struct Partitioner<'a, 'tcx> {
@@ -1048,6 +1030,7 @@ fn image_part<'tcx>(
     // into the cache) can't be reused; the side data says whether it had one.
     if let (Some(prev), Some(side)) = (prev, side)
         && (side.first() == Some(&0) || prev.saved_files.contains_key("o"))
+        && CguVm::intact(&side)
         && tcx.dep_graph.try_mark_green(tcx, &node).is_some()
     {
         let vm = CguVm::load(tcx, &side).unwrap_or_else(|| tcx.dcx().fatal(format!("ryo: the saved image of `{}` is unreadable", cgu.name())));
@@ -1299,24 +1282,11 @@ fn build_image<'tcx>(
                 CodeReloc::Symbol { target } => {
                     let flags = symbols::symbol_flags(tcx, target, symbols::SymRole::Target);
                     let Sym(s) = w.symbol(tcx.symbol_name(target).name, flags);
-                    if flags & ryo_bytecode::image::SYM_INDIRECT != 0 {
-                        // A direct reference too, so the linker extracts the archive member
-                        // defining a statically linked function: `__imp_<sym>` is only
-                        // synthesized for symbols that are already defined
-                        // (design/platforms.md). Functions in DLLs resolve to their thunk.
-                        w.symbol(tcx.symbol_name(target).name, 0);
-                    }
                     s
                 }
                 CodeReloc::Static { def_id } => {
                     let flags = symbols::static_symbol_flags(tcx, def_id);
                     let Sym(s) = w.symbol(static_symbol(tcx, def_id).name, flags);
-                    if flags & ryo_bytecode::image::SYM_INDIRECT != 0 && symbols::static_needs_direct_slot(tcx, def_id) {
-                        // As for functions: lld synthesizes `__imp_<sym>` only for a
-                        // defined symbol, and a C static library has no `__imp_` of its own
-                        // (design/platforms.md).
-                        w.symbol(static_symbol(tcx, def_id).name, 0);
-                    }
                     s
                 }
                 CodeReloc::Const { alloc, offset } => pool.intern(tcx, &mut w, alloc).0 + offset,
@@ -1500,16 +1470,11 @@ impl Pool {
             let target_alloc = tcx.global_alloc(prov.alloc_id());
             if lower::is_import(tcx, &target_alloc) {
                 // Patched at registration from the `__imp_` slot (design/platforms.md).
-                let (name, direct) = match target_alloc {
-                    GlobalAlloc::Function { instance } => (tcx.symbol_name(instance).name, true),
-                    GlobalAlloc::Static(def_id) => (static_symbol(tcx, def_id).name, symbols::static_needs_direct_slot(tcx, def_id)),
+                let name = match target_alloc {
+                    GlobalAlloc::Function { instance } => tcx.symbol_name(instance).name,
+                    GlobalAlloc::Static(def_id) => static_symbol(tcx, def_id).name,
                     _ => unreachable!("only functions and statics are imports"),
                 };
-                if direct {
-                    // So the linker extracts the archive member defining it, as for code
-                    // references (`build_image`).
-                    w.symbol(name, 0);
-                }
                 bytes[at..at + 8].fill(0);
                 fixups.push(AllocFixup { offset: at as u32, sym: w.symbol(name, SYM_INDIRECT), addend });
                 continue;
@@ -1565,12 +1530,12 @@ fn alloc_refs<'tcx>(tcx: TyCtxt<'tcx>, id: AllocId, seen: &mut FxHashSet<AllocId
 pub type UpstreamMonos<'tcx> = rustc_hir::def_id::DefIdMap<rustc_data_structures::unord::UnordMap<ty::GenericArgsRef<'tcx>, CrateNum>>;
 
 /// Our `upstream_monomorphizations` (design/backend.md#query-overrides): rustc's, without the
-/// copies in `ryo_rt` and `ryo_bytecode` of other crates' generics. rustc shares
+/// copies in the runtime crates ([`RUNTIME_CRATES`]) of other crates' generics. rustc shares
 /// `#[inline(never)]` instances even without share-generics; linking to them would turn the
 /// program's own instances into the runtime's native code. A guard: the runtime used to
 /// instantiate std's in its JIT, which is now a sealed object of its own (design/jit.md#packaging).
 pub fn upstream_monomorphizations<'tcx>(tcx: TyCtxt<'tcx>, map: UpstreamMonos<'tcx>) -> UpstreamMonos<'tcx> {
-    let runtime = |c: CrateNum| matches!(tcx.crate_name(c).as_str(), "ryo_rt" | "ryo_bytecode");
+    let runtime = |c: CrateNum| is_runtime_crate(tcx, c);
     map.into_items()
         .filter_map(|(def, args)| {
             let args: rustc_data_structures::unord::UnordMap<_, _> =

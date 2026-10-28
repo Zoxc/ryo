@@ -82,17 +82,8 @@ pub fn ryo_args(dist: &Path, passed: Vec<OsString>, checked: bool) -> Result<Vec
         args.push(a.into());
     }
     args.push(rt);
-    let msvc = targets_msvc(&passed);
     // Any number of codegen units: one image per CGU (design/backend.md#pipeline).
     args.extend(passed);
-    if msvc {
-        // Image symbol slots of upstream symbols relocate against `__imp_<sym>` even when the
-        // definition is linked statically; link.exe and lld-link then resolve it locally and
-        // warn (LNK4217, LNK4286). That is intended (design/platforms.md).
-        for a in ["-Clink-arg=/IGNORE:4217", "-Clink-arg=/IGNORE:4286"] {
-            args.push(a.into());
-        }
-    }
     Ok(args)
 }
 
@@ -181,15 +172,6 @@ fn checked_rt(sysroot: &Path) -> Result<PathBuf, String> {
     found.ok_or_else(|| format!("RYO_JIT_CHECKED: no ryo_rt rlib in {}; run `./y.sh build`", dir.display()))
 }
 
-/// Whether the compilation targets windows-msvc: the last `--target=` of the normalized
-/// `args` names an `-msvc` triple, or there is none and the host is one.
-fn targets_msvc(args: &[OsString]) -> bool {
-    match args.iter().filter_map(|a| opt_value(a, "--target=")).last() {
-        Some(t) => t.ends_with("-msvc"),
-        None => cfg!(target_env = "msvc"),
-    }
-}
-
 // Run by `cargo test` in `build/`, which includes this file as a module.
 #[cfg(test)]
 mod tests {
@@ -207,22 +189,7 @@ mod tests {
         let backend = dist.join("lib").join(crate::utils::dll_name("rustc_codegen_ryo"));
         let backend = format!("-Zcodegen-backend={}", backend.display());
         let mut want = args(&["--sysroot", "/d", &backend, "-Zunstable-options", "--extern", "force:ryo_rt", "foo.rs", "-Ccodegen-units=16"]);
-        if cfg!(target_env = "msvc") {
-            want.extend(args(&["-Clink-arg=/IGNORE:4217", "-Clink-arg=/IGNORE:4286"]));
-        }
         assert_eq!(got, want);
-    }
-
-    #[test]
-    fn silences_import_warnings_on_msvc() {
-        let ignore = |list: &[&str]| {
-            let got = ryo_args(Path::new("/d"), args(list), false).unwrap();
-            got.iter().any(|a| a == "-Clink-arg=/IGNORE:4217")
-        };
-        assert!(ignore(&["x.rs", "--target", "x86_64-pc-windows-msvc"]));
-        assert!(ignore(&["x.rs", "--target=x86_64-pc-windows-msvc"]));
-        assert!(!ignore(&["x.rs", "--target", "x86_64-unknown-linux-gnu"]));
-        assert_eq!(ignore(&["x.rs"]), cfg!(target_env = "msvc"));
     }
 
     #[test]

@@ -68,8 +68,19 @@ pub fn build_wrapper(root: &Path, dist_bin: &Path, info: &RustcInfo, name: &str,
         .env("RYO_BUILD_ID", build_id))
 }
 
+/// Copies `from` to `to` through a temporary file renamed into place, so a process that has
+/// `to` mapped (a rustc running the backend dylib) keeps the old file instead of seeing it
+/// overwritten (design/build.md).
 pub fn copy(from: &Path, to: &Path) -> Result<(), String> {
-    std::fs::copy(from, to).map(drop).map_err(|e| format!("copying {} to {}: {e}", from.display(), to.display()))
+    let err = |e: std::io::Error| format!("copying {} to {}: {e}", from.display(), to.display());
+    let mut tmp = to.as_os_str().to_owned();
+    tmp.push(format!(".tmp{}", std::process::id()));
+    let tmp = PathBuf::from(tmp);
+    std::fs::copy(from, &tmp).map_err(err)?;
+    std::fs::rename(&tmp, to).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        err(e)
+    })
 }
 
 pub fn copy_dir(from: &Path, to: &Path) -> Result<(), String> {

@@ -401,6 +401,13 @@ fn unsupported(sess: &Session) -> Option<String> {
     if let Some(abi) = target.rustc_abi {
         return Some(format!("the target `{}` with the `{abi:?}` ABI (soft-float)", target.llvm_target));
     }
+    // The PE import rules (`symbols::symbol_flags`, cg_llvm's on MSVC) and the SEH handler
+    // assume MSVC: on MinGW cg_llvm leaves functions' `dllimport` to GNU ld, which doesn't
+    // synthesize `__imp_` for static definitions, and its targets unwind with the GCC
+    // personality.
+    if target.binary_format == rustc_target::spec::BinaryFormat::Coff && target.env != rustc_target::spec::Env::Msvc {
+        return Some(format!("the target `{}`: PE is supported for windows-msvc only", target.llvm_target));
+    }
     let (c, z) = (&sess.opts.cg, &sess.opts.unstable_opts);
     let flags = [
         // LTO: the images are separate objects LTO doesn't see, so it would internalize or
@@ -438,7 +445,11 @@ fn unsupported(sess: &Session) -> Option<String> {
         (z.randomize_layout, "`-Zrandomize-layout`"),
         // The images use rel32 calls and RIP-relative addressing, which need the small
         // model's 2 GiB reach (`kernel` is for kernels, which are soft-float anyway).
-        (c.code_model.is_some_and(|m| m != rustc_target::spec::CodeModel::Small), "`-Ccode-model` other than `small`"),
+        // The effective model: `-Ccode-model`, else the target's.
+        (
+            sess.code_model().is_some_and(|m| m != rustc_target::spec::CodeModel::Small),
+            "a code model other than `small` (`-Ccode-model` or the target's)",
+        ),
         // cg_llvm's Enzyme and offload passes see only its own modules, not VM code.
         (!z.autodiff.is_empty(), "`-Zautodiff`"),
         (!z.offload.is_empty(), "`-Zoffload`"),

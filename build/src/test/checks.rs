@@ -236,6 +236,8 @@ pub(super) fn incremental(rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result
         ("O2", &["-Copt-level=2"], &[], &[]),
         ("no-vm-16", &["-Ccodegen-units=16"], reuse, &[("RYO_NO_VM", "1")]),
     ];
+    // Set for the rebuild after corrupting side data, which reuses all but that image.
+    let corrupted = std::cell::Cell::new(false);
     for (config, flags, chain_flags, env) in configs {
         let incr = dir.join(config).join("incr");
         for rev in 1..=REVISIONS {
@@ -252,7 +254,7 @@ pub(super) fn incremental(rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result
                     c.arg(format!("-Cincremental={}", incr.display())).arg("-Zincremental-verify-ich");
                 }
                 // rev11 only shifts `main`'s `DefIndex`: the chain must reuse every image.
-                let check_reuse = sub == "incr" && rev == 11 && env.is_empty();
+                let check_reuse = sub == "incr" && rev == 11 && env.is_empty() && !corrupted.get();
                 if check_reuse {
                     c.env("RYO_STATS", "1");
                 }
@@ -303,6 +305,17 @@ pub(super) fn incremental(rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result
             let read = |p: &Path| fs::read(p).map_err(|e| format!("reading {}: {e}", p.display()));
             if read(&exe)? != read(&clean)? {
                 return Err(format!("{config} {cfg}: {} differs from the clean build {}", exe.display(), clean.display()));
+            }
+            // Corrupt side data with an intact footer: the image is rebuilt, not an ICE.
+            if config == "O0" && rev == REVISIONS {
+                corrupt_side_data(&incr)?;
+                corrupted.set(true);
+                let exe = build(rustc_ryo, Some(&incr), chain_flags, "incr").map_err(|e| format!("after corrupting side data: {e}"))?;
+                let got = run(&exe, &[])?;
+                if got != reference {
+                    return Err(format!("{config} {cfg} after corrupting side data: output {got:?}, plain rustc's {reference:?}"));
+                }
+                corrupted.set(false);
             }
         }
     }
@@ -697,12 +710,100 @@ pub(super) fn dump(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), Strin
     Ok(())
 }
 
+/// On PE, references go through `__imp_` exactly where plain rustc's do (design/platforms.md):
+/// [`tests/pe_imports`](../../../tests/pe_imports) built for `x86_64-pc-windows-msvc` as an
+/// rlib, by ryo and by plain rustc, refers to each upstream and foreign item with the same
+/// indirection (`llvm-objdump -r` of its objects). Skipped when `dist/` has no std for that
+/// target (`./y.sh build --target x86_64-pc-windows-msvc`).
+pub(super) fn pe_imports(info: &crate::utils::RustcInfo, root: &Path, rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result<(), String> {
+    const TARGET: &str = "x86_64-pc-windows-msvc";
+    if !root.join("dist/lib/rustlib").join(TARGET).join("lib").exists() {
+        eprintln!("[y] pe-imports: skipped, dist/ has no {TARGET} (`./y.sh build --target {TARGET}`)");
+        return Ok(());
+    }
+    // The items, by a unique part of their (mangled) name.
+    const ITEMS: [&str; 12] =
+        ["5up_fn", "6up_gen", "5dy_fn", "9UP_STATIC", "S_NONE", "S_STATIC", "S_DYLIB", "S_UNSP", "f_none", "f_static", "f_dylib", "f_unsp"];
+    let dir = out.join("pe-imports");
+    let _ = fs::remove_dir_all(&dir);
+    crate::utils::create_dir(&dir)?;
+    // The `kind = "static"` library must exist to build the rlib.
+    crate::utils::run(cmd(info.tool("llvm-ar")).arg("rc").arg(dir.join("pe_static.lib")))?;
+    let mut found = Vec::new();
+    for (who, compiler) in [("rustc", Path::new("rustc")), ("ryo", rustc_ryo)] {
+        let d = dir.join(who);
+        crate::utils::create_dir(&d)?;
+        let rustc = |src: &str, args: &[&str]| {
+            let mut c = cmd(compiler);
+            c.args(["--edition=2024", "-Zshare-generics=yes", "-Cprefer-dynamic", &format!("--target={TARGET}")]).arg(dir_in.join(src));
+            c.args(args).arg("-L").arg(&d).arg("-L").arg(&dir).arg("--out-dir").arg(&d);
+            crate::utils::run(&mut c).map_err(|e| format!("{who} {src}: {e}"))
+        };
+        rustc("up.rs", &["--crate-type=rlib"])?;
+        // Only the metadata: linking a dylib needs the target's linker and libraries.
+        rustc("dy.rs", &["--crate-type=dylib", "--emit=metadata", "-Zalways-encode-mir"])?;
+        let dy = format!("dy={}", d.join("libdy.rmeta").display());
+        rustc("pe_imports.rs", &["--crate-type=rlib", "--extern", "up", "--extern", &dy])?;
+        let members = d.join("members");
+        crate::utils::create_dir(&members)?;
+        crate::utils::run(cmd(info.tool("llvm-ar")).current_dir(&members).arg("x").arg(d.join("libpe_imports.rlib")))?;
+        let mut refs = std::collections::BTreeSet::new();
+        for e in fs::read_dir(&members).map_err(|e| e.to_string())?.flatten() {
+            if e.path().extension().is_none_or(|x| x != "o") {
+                continue;
+            }
+            for line in output(cmd(info.tool("llvm-objdump")).arg("-r").arg(e.path()))?.lines() {
+                let Some(sym) = line.split_whitespace().nth(2) else { continue };
+                let sym = sym.split(['+', '-']).next().unwrap_or(sym);
+                let (imp, name) = sym.strip_prefix("__imp_").map_or((false, sym), |n| (true, n));
+                if let Some(item) = ITEMS.iter().find(|i| if i.starts_with(|c: char| c.is_ascii_digit()) { name.contains(*i) } else { name == **i }) {
+                    refs.insert((*item, imp));
+                }
+            }
+        }
+        found.push(refs);
+    }
+    for item in ITEMS {
+        let of = |refs: &std::collections::BTreeSet<(&str, bool)>| [false, true].map(|imp| refs.contains(&(item, imp)));
+        let (want, got) = (of(&found[0]), of(&found[1]));
+        if want == [false, false] {
+            return Err(format!("pe-imports: plain rustc's object doesn't refer to `{item}`"));
+        }
+        if got != want {
+            return Err(format!("pe-imports: `{item}` referred to (direct, `__imp_`) {got:?}, plain rustc {want:?}"));
+        }
+    }
+    Ok(())
+}
+
+/// Flips a byte in the middle of the largest saved image side data (`*.ryo`) under the
+/// incremental directory `incr`, leaving its end marker intact.
+fn corrupt_side_data(incr: &Path) -> Result<(), String> {
+    fn walk(dir: &Path, found: &mut Vec<(u64, PathBuf)>) {
+        for e in fs::read_dir(dir).into_iter().flatten().flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                walk(&p, found);
+            } else if p.extension().is_some_and(|x| x == "ryo") {
+                found.push((e.metadata().map_or(0, |m| m.len()), p));
+            }
+        }
+    }
+    let mut found = Vec::new();
+    walk(incr, &mut found);
+    let Some((_, path)) = found.into_iter().max() else { return Err(format!("no saved side data under {}", incr.display())) };
+    let mut bytes = fs::read(&path).map_err(|e| format!("reading {}: {e}", path.display()))?;
+    let mid = bytes.len() / 2;
+    bytes[mid] ^= 0xff;
+    fs::write(&path, bytes).map_err(|e| format!("writing {}: {e}", path.display()))
+}
+
 /// The backend fails with a clear error, naming the option, where VM code can't honour it
 /// (design/backend.md#unsupported-options): LTO in any form; sanitizers, control-flow
 /// protection and other hardening, instrumentation and profiling, which VM code would
 /// silently lack, including a target's default sanitizers; `-Zrandomize-layout` (also
-/// through an `@argfile`, past the wrapper); `-Zautodiff`, `-Zoffload`, `-Ccode-model`
-/// other than `small`; unsupported targets, soft-float ones and `+soft-float`/`-sse2`; outputs without the images (`--emit=obj`, `bc`, an rlib without
+/// through an `@argfile`, past the wrapper); `-Zautodiff`, `-Zoffload`, a code model
+/// other than `small` (also a target JSON's); unsupported targets (also MinGW), soft-float ones and `+soft-float`/`-sse2`; outputs without the images (`--emit=obj`, `bc`, an rlib without
 /// `link`, `-o -`); and the options that bypass ryo's link step.
 pub(super) fn reject_unsupported(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
     let dir = out.join("reject");
@@ -753,9 +854,9 @@ pub(super) fn reject_unsupported(rustc_ryo: &Path, src: &Path, out: &Path) -> Re
         // Autodiff (Enzyme) and offload run in cg_llvm on its own modules only.
         (&["-Zautodiff=Enable"], "-Zautodiff"),
         (&["-Zoffload=Test"], "-Zoffload"),
-        (&["-Ccode-model=large"], "-Ccode-model"),
-        (&["-Ccode-model=medium"], "-Ccode-model"),
-        (&["-Ccode-model=kernel"], "-Ccode-model"),
+        (&["-Ccode-model=large"], "code model"),
+        (&["-Ccode-model=medium"], "code model"),
+        (&["-Ccode-model=kernel"], "code model"),
     ];
     for &(flags, needle) in cases {
         expect_reject(cmd(rustc_ryo).arg("--edition=2024").arg(src).args(flags).arg("-o").arg(&o), needle)?;
@@ -769,6 +870,27 @@ pub(super) fn reject_unsupported(rustc_ryo: &Path, src: &Path, out: &Path) -> Re
     {
         expect_reject(cmd(rustc_ryo).arg("--crate-type=lib").arg(format!("--target={target}")).arg(&no_core).arg("--out-dir").arg(&dir), needle)?;
     }
+    // PE for MinGW (the import rules assume MSVC's linkers).
+    for target in ["x86_64-pc-windows-gnu", "x86_64-pc-windows-gnullvm"] {
+        expect_reject(
+            cmd(rustc_ryo).arg("--crate-type=lib").arg(format!("--target={target}")).arg(&no_core).arg("--out-dir").arg(&dir),
+            "windows-msvc",
+        )?;
+    }
+    // A target JSON's code model, with no `-Ccode-model`.
+    let spec = output(cmd("rustc").args(["-Zunstable-options", "--print=target-spec-json", "--target=x86_64-unknown-linux-gnu"]))?;
+    let Some(spec) = spec.trim_start().strip_prefix('{') else { return Err(format!("unexpected target spec: {spec}")) };
+    let json = dir.join("x86_64-large.json");
+    fs::write(&json, format!("{{\n  \"code-model\": \"large\",{spec}")).map_err(|e| format!("writing {}: {e}", json.display()))?;
+    expect_reject(
+        cmd(rustc_ryo)
+            .args(["--crate-type=lib", "-Zunstable-options"])
+            .arg(format!("--target={}", json.display()))
+            .arg(&no_core)
+            .arg("--out-dir")
+            .arg(&dir),
+        "code model",
+    )?;
     // A library with VM code (`hello.rs`'s `main` is dead code in an rlib). An rlib is
     // written only with `link`, and one written to stdout can't have the images appended.
     let lib = dir.join("reject_lib.rs");
