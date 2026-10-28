@@ -1376,7 +1376,6 @@ fn build_image<'tcx>(
     }
 }
 
-/// `instance` for stats output: untrimmed paths, since trimming needs a diagnostic.
 /// The instance of `ryo_rt`'s island template `template` for `args`.
 fn island_instance<'tcx>(tcx: TyCtxt<'tcx>, rt: CrateNum, template: Symbol, args: ty::GenericArgsRef<'tcx>) -> Instance<'tcx> {
     let Some(&def_id) = tcx.diagnostic_items(rt).name_to_id.get(&template) else {
@@ -1385,6 +1384,7 @@ fn island_instance<'tcx>(tcx: TyCtxt<'tcx>, rt: CrateNum, template: Symbol, args
     Instance::new_raw(def_id, args)
 }
 
+/// `instance` for stats output: untrimmed paths, since trimming needs a diagnostic.
 pub(super) fn path(instance: Instance<'_>) -> String {
     rustc_middle::ty::print::with_no_trimmed_paths!(instance.to_string())
 }

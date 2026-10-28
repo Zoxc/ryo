@@ -488,7 +488,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     }
 
     /// The template and generic args of a `call_cN` island for `sig`.
-    fn ptr_island(&self, sig: &AbiSig<'tcx>, conv: CallConv) -> Result<(&'static str, Vec<GenericArg<'tcx>>), NeedsNative> {
+    fn ptr_island(&self, sig: &AbiSig<'tcx>, conv: CallConv) -> Result<(String, Vec<GenericArg<'tcx>>), NeedsNative> {
         let n = sig.inputs.len();
         let name = match conv {
             CallConv::C => templates::call_c(n),

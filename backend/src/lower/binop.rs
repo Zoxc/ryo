@@ -6,21 +6,10 @@ use rustc_middle::ty;
 
 use super::cast::ScalarKind;
 use super::emit::{FloatOp, FloatWidth, IntOp, Width, opf, opw};
+use super::island::templates;
 use super::place::PlaceVal;
 use super::{FnCx, NeedsNative, native};
 use ryo_bytecode::full::Opcode;
-
-/// Island templates for the 128-bit operations the VM has no instruction for
-/// (`vm/rt/src/island.rs`). `ops`: `[a, b, dest]`.
-mod templates {
-    pub const MUL_W128: &str = "ryo_island_mul_w128";
-    pub const DIV_U_W128: &str = "ryo_island_div_u_w128";
-    pub const DIV_S_W128: &str = "ryo_island_div_s_w128";
-    pub const REM_U_W128: &str = "ryo_island_rem_u_w128";
-    pub const REM_S_W128: &str = "ryo_island_rem_s_w128";
-    pub const MUL_OVF_U_W128: &str = "ryo_island_mul_ovf_u_w128";
-    pub const MUL_OVF_S_W128: &str = "ryo_island_mul_ovf_s_w128";
-}
 
 /// An integer comparison, before operand swapping.
 #[derive(Clone, Copy)]

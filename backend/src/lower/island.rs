@@ -14,6 +14,9 @@ use super::{CodeReloc, FnCx};
 
 /// Template diagnostic item names (`vm/rt/src/island.rs`).
 pub mod templates {
+    use rustc_middle::ty::TyCtxt;
+    use rustc_span::Symbol;
+
     /// `call<F, Args, R>`: a safe Rust fn item through `FnOnce`.
     pub const CALL: &str = "ryo_island_call";
     /// `drop_in_place<T>`.
@@ -25,89 +28,28 @@ pub mod templates {
     /// `raw_eq<T>`: the intrinsic.
     pub const RAW_EQ: &str = "ryo_island_raw_eq";
 
-    /// The arity of the SIMD intrinsic `name` if `ryo_rt` has a wrapper for it,
-    /// `ryo_island_<name>`, generic like the intrinsic.
-    pub fn simd(name: &str) -> Option<usize> {
-        Some(match name {
-            "simd_add"
-            | "simd_sub"
-            | "simd_mul"
-            | "simd_div"
-            | "simd_rem"
-            | "simd_shl"
-            | "simd_shr"
-            | "simd_and"
-            | "simd_or"
-            | "simd_xor"
-            | "simd_saturating_add"
-            | "simd_saturating_sub"
-            | "simd_minimum_number_nsz"
-            | "simd_maximum_number_nsz"
-            | "simd_eq"
-            | "simd_ne"
-            | "simd_lt"
-            | "simd_le"
-            | "simd_gt"
-            | "simd_ge"
-            | "simd_reduce_add_ordered"
-            | "simd_reduce_mul_ordered"
-            | "simd_arith_offset" => 2,
-            "simd_neg"
-            | "simd_fabs"
-            | "simd_bswap"
-            | "simd_bitreverse"
-            | "simd_ctlz"
-            | "simd_ctpop"
-            | "simd_cttz"
-            | "simd_ceil"
-            | "simd_floor"
-            | "simd_round"
-            | "simd_round_ties_even"
-            | "simd_trunc"
-            | "simd_fsqrt"
-            | "simd_splat"
-            | "simd_cast"
-            | "simd_as"
-            | "simd_bitmask"
-            | "simd_reduce_add_unordered"
-            | "simd_reduce_mul_unordered"
-            | "simd_reduce_max"
-            | "simd_reduce_min"
-            | "simd_reduce_and"
-            | "simd_reduce_or"
-            | "simd_reduce_xor"
-            | "simd_reduce_all"
-            | "simd_reduce_any"
-            | "simd_cast_ptr"
-            | "simd_expose_provenance"
-            | "simd_with_exposed_provenance" => 1,
-            "simd_fma" | "simd_relaxed_fma" | "simd_funnel_shl" | "simd_funnel_shr" | "simd_select" | "simd_select_bitmask" => 3,
-            _ => return None,
-        })
+    /// `as_cast<A, B>`: numeric casts from or to `f16`/`f128`. `ops`: `[src, dest]`.
+    pub const AS_CAST: &str = "ryo_island_as_cast";
+    /// The 128-bit operations the VM has no instruction for. `ops`: `[a, b, dest]`.
+    pub const MUL_W128: &str = "ryo_island_mul_w128";
+    pub const DIV_U_W128: &str = "ryo_island_div_u_w128";
+    pub const DIV_S_W128: &str = "ryo_island_div_s_w128";
+    pub const REM_U_W128: &str = "ryo_island_rem_u_w128";
+    pub const REM_S_W128: &str = "ryo_island_rem_s_w128";
+    pub const MUL_OVF_U_W128: &str = "ryo_island_mul_ovf_u_w128";
+    pub const MUL_OVF_S_W128: &str = "ryo_island_mul_ovf_s_w128";
+
+    /// The wrapper of the SIMD intrinsic `name`, `ryo_island_<name>` (generic like the
+    /// intrinsic), if `ryo_rt` has one.
+    pub fn simd(tcx: TyCtxt<'_>, name: &str) -> Option<String> {
+        let rt = *tcx.crates(()).iter().find(|&&c| crate::partition::is_rt_crate(tcx, c))?;
+        let template = format!("ryo_island_{name}");
+        tcx.diagnostic_items(rt).name_to_id.contains_key(&Symbol::intern(&template)).then_some(template)
     }
 
     /// `call_cN<A0, …, R>` (`extern "C"` through a fn pointer), N ≤ 16.
-    pub fn call_c(n: usize) -> Option<&'static str> {
-        const NAMES: [&str; 17] = [
-            "ryo_island_call_c0",
-            "ryo_island_call_c1",
-            "ryo_island_call_c2",
-            "ryo_island_call_c3",
-            "ryo_island_call_c4",
-            "ryo_island_call_c5",
-            "ryo_island_call_c6",
-            "ryo_island_call_c7",
-            "ryo_island_call_c8",
-            "ryo_island_call_c9",
-            "ryo_island_call_c10",
-            "ryo_island_call_c11",
-            "ryo_island_call_c12",
-            "ryo_island_call_c13",
-            "ryo_island_call_c14",
-            "ryo_island_call_c15",
-            "ryo_island_call_c16",
-        ];
-        NAMES.get(n).copied()
+    pub fn call_c(n: usize) -> Option<String> {
+        (n <= 16).then(|| format!("ryo_island_call_c{n}"))
     }
 }
 

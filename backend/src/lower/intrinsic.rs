@@ -427,16 +427,13 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 if self.strict_simd {
                     return native("simd_* without an opcode in a #[target_feature] fn");
                 }
-                let Some(arity) = templates::simd(n) else { return Ok(false) };
+                let Some(template) = templates::simd(self.tcx, n) else { return Ok(false) };
                 let ins = self.island_args(args)?;
-                if ins.len() != arity {
-                    return native("intrinsic argument count");
-                }
                 let generics: Vec<GenericArg<'tcx>> = callee.args.iter().collect();
                 if generics.iter().any(|g| g.as_type().is_none()) {
                     return Ok(false);
                 }
-                self.wrapper(&format!("ryo_island_{n}"), &generics, &ins, cont)?
+                self.wrapper(&template, &generics, &ins, cont)?
             }
             _ => false,
         })

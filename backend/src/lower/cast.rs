@@ -11,10 +11,6 @@ use super::place::{Loc, PlaceVal};
 use super::{CodeReloc, FnCx, NeedsNative, native};
 use ryo_bytecode::full::{Opcode, cvt_f2f, cvt_f2i, cvt_i2f, int_cast_op};
 
-/// `as_cast<A, B>` (`vm/rt/src/island.rs`): numeric casts from or to `f16`/`f128`.
-/// `ops`: `[src, dest]`.
-const AS_CAST: &str = "ryo_island_as_cast";
-
 /// The VM's view of a scalar type.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScalarKind {
@@ -56,7 +52,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     let (s, _) = self.operand_slot(op)?;
                     let (sn, dn) = (src.size.bytes() as u32, to_layout.size.bytes() as u32);
                     return self.into_place(dst, |fx, d| {
-                        fx.island(AS_CAST, &[src.ty.into(), to.into()], &[(s, sn), (d, dn)], None);
+                        fx.island(super::island::templates::AS_CAST, &[src.ty.into(), to.into()], &[(s, sn), (d, dn)], None);
                     });
                 }
                 let from = self.scalar_kind(src)?;
