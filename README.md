@@ -127,8 +127,8 @@ dist\bin\cargo-ryo.exe build
 `./y.sh build` builds into `dist/` and `./y.sh test` runs the tests; `./y.sh --help` lists
 the other commands (benchmarks, the Lean model, cross builds). Development builds and
 `./y.sh install` don't affect each other; to make the installed launchers use your `dist/`,
-set `RYO_HOME=<checkout>/dist`. The design docs start at [design/README.md](design/README.md),
-and [AGENTS.md](AGENTS.md) has the repository map and working rules.
+set `RYO_HOME=<checkout>/dist`. [CHEATSHEET.md](CHEATSHEET.md) lists the common commands and
+settings, and the design docs start at [design/README.md](design/README.md).
 
 ## License
 
