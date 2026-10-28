@@ -180,8 +180,15 @@ impl Walk {
 
     /// Whether `a < b` (`strict`) or `a <= b` is known on the low `w` bytes.
     fn rel(&self, a: Value, b: Value, w: u8, signed: bool, strict: bool) -> bool {
+        self.has_rel(Some(a), Some(b), w, signed, strict)
+    }
+
+    /// [`Self::rel`] with `None` for a side that may be any value.
+    fn has_rel(&self, a: Option<Value>, b: Option<Value>, w: u8, signed: bool, strict: bool) -> bool {
         self.facts.iter().any(|fact| match *fact {
-            Fact::Rel { a: x, b: y, w: fw, signed: s, strict: st } => x == a && y == b && fw == w && s == signed && (st || !strict),
+            Fact::Rel { a: x, b: y, w: fw, signed: s, strict: st } => {
+                a.is_none_or(|a| x == a) && b.is_none_or(|b| y == b) && fw == w && s == signed && (st || !strict)
+            }
             _ => false,
         })
     }
@@ -216,33 +223,19 @@ impl Walk {
     /// `a cc b` from the relational facts.
     fn decide_rel(&self, cc: Cc, w: u8, a: Value, b: Value) -> Option<bool> {
         let s = cc.signed();
-        match cc {
-            Cc::LtU | Cc::LtS => {
-                if self.rel(a, b, w, s, true) {
-                    Some(true)
-                } else if self.rel(b, a, w, s, false) {
-                    Some(false)
-                } else {
-                    None
-                }
+        if let Some((a, b, strict)) = as_lt(cc, a, b) {
+            // `a < b` is refuted by `b <= a`, `a <= b` by `b < a`.
+            if self.rel(a, b, w, s, strict) {
+                Some(true)
+            } else if self.rel(b, a, w, s, !strict) {
+                Some(false)
+            } else {
+                None
             }
-            Cc::LeU | Cc::LeS => {
-                if self.rel(a, b, w, s, false) {
-                    Some(true)
-                } else if self.rel(b, a, w, s, true) {
-                    Some(false)
-                } else {
-                    None
-                }
-            }
-            Cc::GtU | Cc::GtS | Cc::GeU | Cc::GeS => self.decide_rel(cc.swap(), w, b, a),
-            Cc::Eq | Cc::Ne => {
-                let ne = self.rel(a, b, w, false, true)
-                    || self.rel(b, a, w, false, true)
-                    || self.rel(a, b, w, true, true)
-                    || self.rel(b, a, w, true, true);
-                ne.then_some(cc == Cc::Ne)
-            }
+        } else {
+            let ne =
+                self.rel(a, b, w, false, true) || self.rel(b, a, w, false, true) || self.rel(a, b, w, true, true) || self.rel(b, a, w, true, true);
+            ne.then_some(cc == Cc::Ne)
         }
     }
 
@@ -251,31 +244,10 @@ impl Walk {
         let one = |v: Value| matches!(f.def(v), ValueDef::Const(c) if mask(c, w) == 1);
         // Relational: `x + 1` with `x < z`, and `x - y` with `y <= x`.
         match (o, signed) {
-            (BinOp::Add, s)
-                if one(b)
-                    && self
-                        .facts
-                        .iter()
-                        .any(|fa| matches!(*fa, Fact::Rel { a: x, w: fw, signed: fs, strict: true, .. } if x == a && fw == w && fs == s)) =>
-            {
-                return true;
-            }
-            (BinOp::Add, s)
-                if one(a)
-                    && self
-                        .facts
-                        .iter()
-                        .any(|fa| matches!(*fa, Fact::Rel { a: x, w: fw, signed: fs, strict: true, .. } if x == b && fw == w && fs == s)) =>
-            {
-                return true;
-            }
+            (BinOp::Add, s) if one(b) && self.has_rel(Some(a), None, w, s, true) => return true,
+            (BinOp::Add, s) if one(a) && self.has_rel(Some(b), None, w, s, true) => return true,
             (BinOp::Sub, false) if self.rel(b, a, w, false, false) => return true,
-            (BinOp::Sub, true)
-                if one(b)
-                    && self.facts.iter().any(|fa| matches!(*fa, Fact::Rel { b: x, w: fw, signed: true, strict: true, .. } if x == a && fw == w)) =>
-            {
-                return true;
-            }
+            (BinOp::Sub, true) if one(b) && self.has_rel(None, Some(a), w, true, true) => return true,
             _ => {}
         }
         let (x, y) = (self.range(f, a, w, DEPTH), self.range(f, b, w, DEPTH));
@@ -355,15 +327,9 @@ impl Walk {
             self.facts.push(Fact::In(a, w, r));
             return;
         }
-        let signed = cc.signed();
-        let (a, b, strict) = match cc {
-            Cc::LtU | Cc::LtS => (a, b, true),
-            Cc::LeU | Cc::LeS => (a, b, false),
-            Cc::GtU | Cc::GtS => (b, a, true),
-            Cc::GeU | Cc::GeS => (b, a, false),
-            Cc::Eq | Cc::Ne => return,
-        };
-        self.facts.push(Fact::Rel { a, b, w, signed, strict });
+        if let Some((a, b, strict)) = as_lt(cc, a, b) {
+            self.facts.push(Fact::Rel { a, b, w, signed: cc.signed(), strict });
+        }
     }
 
     /// The facts the edge `k` of `p`'s terminator brings.
@@ -381,6 +347,17 @@ impl Walk {
             }
             _ => {}
         }
+    }
+}
+
+/// `a cc b` as `a' < b'` (`strict`) or `a' <= b'`: `(a', b', strict)`, `None` for `==`/`!=`.
+fn as_lt(cc: Cc, a: Value, b: Value) -> Option<(Value, Value, bool)> {
+    match cc {
+        Cc::LtU | Cc::LtS => Some((a, b, true)),
+        Cc::LeU | Cc::LeS => Some((a, b, false)),
+        Cc::GtU | Cc::GtS => Some((b, a, true)),
+        Cc::GeU | Cc::GeS => Some((b, a, false)),
+        Cc::Eq | Cc::Ne => None,
     }
 }
 
