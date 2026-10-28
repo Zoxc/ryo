@@ -719,56 +719,16 @@ const SLOW_VM_TESTS: [&str; 1] = ["every_opcode_round_trips"];
 const CODEGEN_TESTS: [&str; 2] = ["win64_handlers_preserve_xmm6_to_15", "handlers_read_rbp_first_and_hot_ones_have_no_prologue"];
 
 pub fn run(opts: &Options) -> Result<(), String> {
-    use crate::wrapper_common::{JIT_CHECKED_VAR, jit_checked_value};
     let start = Instant::now();
     let root = root();
     let rustc_ryo = crate::utils::require_dist(&root)?;
     let info = crate::utils::RustcInfo::get()?;
-    // The checked JIT (debug assertions, overflow checks; design/build.md#build) unless the
-    // caller set `RYO_JIT_CHECKED`; `rustc-ryo` reads it, for host compilations.
-    let checked = match std::env::var_os(JIT_CHECKED_VAR) {
-        Some(v) => jit_checked_value(&v),
-        None => {
-            // SAFETY: no other thread runs yet.
-            unsafe { std::env::set_var(JIT_CHECKED_VAR, "1") };
-            true
-        }
-    };
-    if checked && !root.join("dist").join(crate::jit::CHECKED_DIR).is_dir() {
-        return Err("dist/jit-checked/ is missing; run `./y.sh build`".to_owned());
-    }
-    eprintln!(
-        "[y] test: JIT: {}",
-        if checked { "checked (debug assertions, overflow checks; dist/jit-checked/)" } else { "release (RYO_JIT_CHECKED=0)" }
-    );
+    jit_checked_preflight(&root)?;
     if opts.clif {
         crate::clif::ensure()?;
     }
-    let mut variants = variants(opts.clif);
-    for v in &opts.variants {
-        if !variants.iter().any(|x| x.name == v) {
-            return Err(format!("unknown variant `{v}`"));
-        }
-    }
-    for p in &opts.programs {
-        if !CORPUS.iter().any(|x| x.name == p) {
-            return Err(format!("unknown program `{p}`"));
-        }
-    }
     let sel = select(&root, opts)?;
-    // Whether any ryo-std variant is selected (also through `--only jit`, the JIT variants, or
-    // a changed test program, which runs under every variant).
-    let wants_std = variants.iter().any(|v| v.ryo_std && CORPUS.iter().any(|p| sel.corpus(p, v)));
-    if wants_std && let Err(why) = ryo_sysroot_usable(&info, &root) {
-        // Only an explicit request fails; the fast suite and an escalation to `--full` from
-        // the changed paths skip them.
-        if opts.full || opts.only == Some(Area::Std) || opts.variants.iter().any(|n| VARIANTS.iter().any(|v| v.ryo_std && v.name == n)) {
-            return Err(format!("the ryo-std variants can't run: {why}"));
-        }
-        eprintln!("[y] WARNING: the ryo-std variants are SKIPPED: {why}");
-        variants.retain(|v| !v.ryo_std);
-    }
-    variants.retain(|v| opts.variants.is_empty() || opts.variants.iter().any(|n| n == v.name));
+    let variants = gate_variants(opts, &sel, &info, &root)?;
     let corpus_only = !opts.programs.is_empty() || !opts.variants.is_empty();
 
     let out = root.join("target").join("tests");
@@ -783,29 +743,10 @@ pub fn run(opts: &Options) -> Result<(), String> {
     let failed = Mutex::new(Vec::new());
 
     for run in CARGO_RUNS {
-        if corpus_only || !sel.cargo_run(run) {
-            continue;
+        if !corpus_only && sel.cargo_run(run) {
+            let t = Instant::now();
+            report(run.name, t, cargo_run(run, &sel, &root), &failed);
         }
-        let t = Instant::now();
-        let mut c = cmd("cargo");
-        c.current_dir(root.join("vm")).args(run.args).envs(run.env.iter().copied());
-        if let Some(sub) = run.target_subdir {
-            c.arg("--target-dir").arg(root.join("vm").join("target").join("features").join(sub));
-        }
-        let mut skip: Vec<&str> = Vec::new();
-        if !(sel.full || sel.codegen) && run.codegen_tests {
-            skip.extend(CODEGEN_TESTS);
-        }
-        if !(sel.full || sel.slow_vm) && run.slow_tests {
-            skip.extend(SLOW_VM_TESTS);
-        }
-        if !skip.is_empty() {
-            c.arg("--");
-            for t in skip {
-                c.args(["--skip", t]);
-            }
-        }
-        report(run.name, t, crate::utils::run(&mut c), &failed);
     }
     if !corpus_only && (sel.full || sel.lean) {
         if crate::lean::have_lake() {
@@ -818,48 +759,7 @@ pub fn run(opts: &Options) -> Result<(), String> {
 
     // The corpus, one program per job; each builds its references and variants in its own
     // directories.
-    let cc = [c_compiler(false).is_some(), c_compiler(true).is_some()];
-    let mut work: Vec<(&Program, Vec<&Variant>)> = Vec::new();
-    for program in CORPUS {
-        if !opts.programs.is_empty() && !opts.programs.iter().any(|p| p == program.name) {
-            continue;
-        }
-        let vs: Vec<&Variant> = variants
-            .iter()
-            .copied()
-            .filter(|v| sel.corpus(program, v))
-            .filter(|v| !(v.vm_only && program.vm.is_empty()))
-            .filter(|v| !((!v.final_flags.is_empty() || v.abort) && program.has_dylib()))
-            .filter(|v| !(v.abort && program.foreign_unwind))
-            // Two LTO'd (or abort) staticlibs each carry all of std: one C link can't take both.
-            .filter(|v| !((!v.final_flags.is_empty() || v.abort) && program.crates.iter().filter(|c| c.kind == CrateKind::Staticlib).count() > 1))
-            .collect();
-        if vs.is_empty() {
-            continue;
-        }
-        if program.msvc_only && !MSVC {
-            continue;
-        }
-        if let Some(c_main) = program.c_main
-            && !cc[usize::from(is_cxx(c_main))]
-        {
-            // On Windows the SEH and C++ exception tests are C mains: a missing `cl` must not
-            // let the run pass without them.
-            let msg = format!("no `{}`", c_compiler_name(is_cxx(c_main)));
-            if MSVC {
-                report(
-                    program.name,
-                    Instant::now(),
-                    Err(format!("{msg} (run from a Visual Studio developer shell, or install the C++ tools)")),
-                    &failed,
-                );
-            } else {
-                eprintln!("[y] test {}: skipped ({msg})", program.name);
-            }
-            continue;
-        }
-        work.push((program, vs));
-    }
+    let work = corpus_work(opts, &sel, &variants, &failed);
     let jobs = std::thread::available_parallelism().map_or(1, |n| (n.get() / 2).max(1));
     let next = AtomicUsize::new(0);
     std::thread::scope(|s| {
@@ -886,6 +786,134 @@ pub fn run(opts: &Options) -> Result<(), String> {
         return Err(format!("failed tests: {}", failed.join(", ")));
     }
     Ok(())
+}
+
+/// Picks the JIT the tests run: the checked one (debug assertions, overflow checks;
+/// design/build.md#build): yes unless the caller set `RYO_JIT_CHECKED` otherwise. Sets the
+/// variable when unset, for `rustc-ryo`'s host compilations, and checks that `dist/` has it.
+fn jit_checked_preflight(root: &Path) -> Result<(), String> {
+    use crate::wrapper_common::{JIT_CHECKED_VAR, jit_checked_value};
+    let checked = match std::env::var_os(JIT_CHECKED_VAR) {
+        Some(v) => jit_checked_value(&v),
+        None => {
+            // SAFETY: no other thread runs yet.
+            unsafe { std::env::set_var(JIT_CHECKED_VAR, "1") };
+            true
+        }
+    };
+    if checked && !root.join("dist").join(crate::jit::CHECKED_DIR).is_dir() {
+        return Err("dist/jit-checked/ is missing; run `./y.sh build`".to_owned());
+    }
+    eprintln!(
+        "[y] test: JIT: {}",
+        if checked { "checked (debug assertions, overflow checks; dist/jit-checked/)" } else { "release (RYO_JIT_CHECKED=0)" }
+    );
+    Ok(())
+}
+
+/// The variants to run: `--variant`'s (checked, as are `--program`'s names), without the
+/// ryo-std ones if the ryo sysroot can't be used and nothing asked for them explicitly.
+fn gate_variants(opts: &Options, sel: &Sel, info: &crate::utils::RustcInfo, root: &Path) -> Result<Vec<&'static Variant>, String> {
+    let mut variants = variants(opts.clif);
+    for v in &opts.variants {
+        if !variants.iter().any(|x| x.name == v) {
+            return Err(format!("unknown variant `{v}`"));
+        }
+    }
+    for p in &opts.programs {
+        if !CORPUS.iter().any(|x| x.name == p) {
+            return Err(format!("unknown program `{p}`"));
+        }
+    }
+    // Whether any ryo-std variant is selected (also through `--only jit`, the JIT variants, or
+    // a changed test program, which runs under every variant).
+    let wants_std = variants.iter().any(|v| v.ryo_std && CORPUS.iter().any(|p| sel.corpus(p, v)));
+    if wants_std && let Err(why) = ryo_sysroot_usable(info, root) {
+        // Only an explicit request fails; the fast suite and an escalation to `--full` from
+        // the changed paths skip them.
+        if opts.full || opts.only == Some(Area::Std) || opts.variants.iter().any(|n| VARIANTS.iter().any(|v| v.ryo_std && v.name == n)) {
+            return Err(format!("the ryo-std variants can't run: {why}"));
+        }
+        eprintln!("[y] WARNING: the ryo-std variants are SKIPPED: {why}");
+        variants.retain(|v| !v.ryo_std);
+    }
+    variants.retain(|v| opts.variants.is_empty() || opts.variants.iter().any(|n| n == v.name));
+    Ok(variants)
+}
+
+/// Runs `run`'s cargo command, skipping the slow and codegen tests unless selected.
+fn cargo_run(run: &CargoRun, sel: &Sel, root: &Path) -> Result<(), String> {
+    let mut c = cmd("cargo");
+    c.current_dir(root.join("vm")).args(run.args).envs(run.env.iter().copied());
+    if let Some(sub) = run.target_subdir {
+        c.arg("--target-dir").arg(root.join("vm").join("target").join("features").join(sub));
+    }
+    let mut skip: Vec<&str> = Vec::new();
+    if !(sel.full || sel.codegen) && run.codegen_tests {
+        skip.extend(CODEGEN_TESTS);
+    }
+    if !(sel.full || sel.slow_vm) && run.slow_tests {
+        skip.extend(SLOW_VM_TESTS);
+    }
+    if !skip.is_empty() {
+        c.arg("--");
+        for t in skip {
+            c.args(["--skip", t]);
+        }
+    }
+    crate::utils::run(&mut c)
+}
+
+impl Variant {
+    /// Whether this variant can build `p` at all.
+    fn applies_to(&self, p: &Program) -> bool {
+        let lto_or_abort = !self.final_flags.is_empty() || self.abort;
+        !(self.vm_only && p.vm.is_empty())
+            && !(lto_or_abort && p.has_dylib())
+            && !(self.abort && p.foreign_unwind)
+            // Two LTO'd (or abort) staticlibs each carry all of std: one C link can't take both.
+            && !(lto_or_abort && p.crates.iter().filter(|c| c.kind == CrateKind::Staticlib).count() > 1)
+    }
+}
+
+/// The corpus programs to test, each with its variants: those selected that apply to it,
+/// without programs this host can't build (MSVC-only ones, a C main without a C compiler,
+/// which fails on Windows).
+fn corpus_work<'v>(opts: &Options, sel: &Sel, variants: &[&'v Variant], failed: &Mutex<Vec<String>>) -> Vec<(&'static Program, Vec<&'v Variant>)> {
+    let cc = [c_compiler(false).is_some(), c_compiler(true).is_some()];
+    let mut work = Vec::new();
+    for program in CORPUS {
+        if !opts.programs.is_empty() && !opts.programs.iter().any(|p| p == program.name) {
+            continue;
+        }
+        let vs: Vec<&Variant> = variants.iter().copied().filter(|v| sel.corpus(program, v) && v.applies_to(program)).collect();
+        if vs.is_empty() {
+            continue;
+        }
+        if program.msvc_only && !MSVC {
+            continue;
+        }
+        if let Some(c_main) = program.c_main
+            && !cc[usize::from(is_cxx(c_main))]
+        {
+            // On Windows the SEH and C++ exception tests are C mains: a missing `cl` must not
+            // let the run pass without them.
+            let msg = format!("no `{}`", c_compiler_name(is_cxx(c_main)));
+            if MSVC {
+                report(
+                    program.name,
+                    Instant::now(),
+                    Err(format!("{msg} (run from a Visual Studio developer shell, or install the C++ tools)")),
+                    failed,
+                );
+            } else {
+                eprintln!("[y] test {}: skipped ({msg})", program.name);
+            }
+            continue;
+        }
+        work.push((program, vs));
+    }
+    work
 }
 
 struct Ctx<'a> {
@@ -1171,6 +1199,20 @@ mod tests {
         let files = crate::utils::output(crate::utils::cmd("git").current_dir(crate::utils::root()).arg("ls-files")).unwrap();
         let dead: Vec<&str> = super::RULES.iter().map(|(p, _)| *p).filter(|p| *p != "notes/" && !files.lines().any(|f| f.starts_with(p))).collect();
         assert!(dead.is_empty(), "RULES prefixes that match no file: {dead:?}");
+    }
+
+    #[test]
+    fn variant_applies_to() {
+        use super::corpus::PROGRAM;
+        use super::{CORPUS, VARIANTS};
+        let v = |n: &str| VARIANTS.iter().find(|v| v.name == n).unwrap();
+        let p = |n: &str| CORPUS.iter().find(|p| p.name == n).unwrap();
+        // `vm_only` variants need named VM functions.
+        assert!(!v("ryo-O3").applies_to(&PROGRAM));
+        assert!(v("ryo").applies_to(&PROGRAM));
+        // Aborting can't unwind through foreign frames.
+        assert!(!v("ryo-abort").applies_to(p("vm_cxx")));
+        assert!(v("ryo").applies_to(p("vm_cxx")));
     }
 
     #[test]
