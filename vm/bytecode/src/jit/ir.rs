@@ -653,6 +653,14 @@ impl Term {
         self.edges_mut().nth(k).unwrap_or_else(|| panic!("no edge {k}"))
     }
 
+    /// Applies `g` to every value it reads: [`Term::uses_mut`], then its edges' arguments.
+    pub fn operands_mut(&mut self, mut g: impl FnMut(&mut Value)) {
+        self.uses_mut().into_iter().for_each(&mut g);
+        for e in self.edges_mut() {
+            e.args.iter_mut().for_each(&mut g);
+        }
+    }
+
     /// The values it reads, but for its edges' arguments.
     pub fn uses(&self) -> Vec<Value> {
         match self {
@@ -938,6 +946,15 @@ impl Func {
         self.terminate(b, t);
     }
 
+    /// Applies `g` to every value block `b` reads: its insts' arguments, then its terminator's
+    /// operands.
+    pub fn rename_in_block(&mut self, b: Block, mut g: impl FnMut(&mut Value)) {
+        for &i in &self.blocks[b.idx()].insts {
+            self.insts[i.idx()].args.iter_mut().for_each(&mut g);
+        }
+        self.blocks[b.idx()].term.operands_mut(g);
+    }
+
     /// Replaces every use of an alias by its target, and drops the block parameters that are
     /// aliases with their edges' arguments.
     pub fn resolve_aliases(&mut self) {
@@ -948,14 +965,7 @@ impl Func {
         }
         for b in 0..self.blocks.len() {
             let mut t = core::mem::replace(&mut self.blocks[b].term, Term::None);
-            for u in t.uses_mut() {
-                *u = self.resolve(*u);
-            }
-            for e in t.edges_mut() {
-                for a in e.args.iter_mut() {
-                    *a = self.resolve(*a);
-                }
-            }
+            t.operands_mut(|u| *u = self.resolve(*u));
             self.blocks[b].term = t;
         }
         // Parameters: keep the live ones, renumbered, and their arguments.
@@ -971,12 +981,9 @@ impl Func {
             self.blocks[b].params = params;
             let preds = self.blocks[b].preds.clone();
             for (p, k) in preds {
-                let mut t = core::mem::replace(&mut self.blocks[p.idx()].term, Term::None);
-                let e = t.edges_mut().into_iter().nth(k as usize).expect("an edge");
+                let e = self.blocks[p.idx()].term.edge_mut(k as usize);
                 debug_assert_eq!(e.args.len(), keep.len());
-                let args = e.args.iter().zip(&keep).filter(|(_, k)| **k).map(|(&a, _)| a).collect();
-                e.args = args;
-                self.blocks[p.idx()].term = t;
+                e.args = e.args.iter().zip(&keep).filter(|(_, k)| **k).map(|(&a, _)| a).collect();
             }
         }
     }

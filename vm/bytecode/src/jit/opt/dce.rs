@@ -87,10 +87,8 @@ pub fn dce(f: &mut Func) {
         f.blocks[b].params = params;
         let preds = f.blocks[b].preds.clone();
         for (p, k) in preds {
-            let mut t = core::mem::replace(&mut f.blocks[p.idx()].term, Term::None);
-            let e = t.edges_mut().into_iter().nth(k as usize).expect("an edge");
+            let e = f.blocks[p.idx()].term.edge_mut(k as usize);
             e.args = e.args.iter().zip(&keep).filter(|(_, k)| **k).map(|(&a, _)| a).collect();
-            f.blocks[p.idx()].term = t;
         }
     }
 }

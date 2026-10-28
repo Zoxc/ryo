@@ -331,12 +331,7 @@ pub fn specialize(c: &Func, consts: &[Option<(u64, u8)>], mem: Option<&dyn super
         id.args.iter_mut().for_each(sub);
     }
     for bd in g.blocks.iter_mut() {
-        let mut t = core::mem::replace(&mut bd.term, Term::None);
-        t.uses_mut().into_iter().for_each(sub);
-        for e in t.edges_mut() {
-            e.args.iter_mut().for_each(sub);
-        }
-        bd.term = t;
+        bd.term.operands_mut(sub);
     }
     super::opt::run(&mut g, mem);
     g

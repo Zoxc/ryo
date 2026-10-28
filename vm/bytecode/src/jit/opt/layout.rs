@@ -116,6 +116,7 @@ fn split(f: &mut Func, b: Block, preds: &[Block]) {
     for i in insts {
         f.insts[i.idx()].args.iter_mut().for_each(rename);
     }
+    // Not its edges' arguments: `cross` comes from the terminator's uses and the insts only.
     f.blocks[b.idx()].term.uses_mut().into_iter().for_each(rename);
     let mut done: Vec<Block> = Vec::new();
     for &p in preds {

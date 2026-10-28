@@ -115,12 +115,7 @@ pub fn through_landings(f: &mut Func) {
             f.insts[i.idx()].args = args;
         }
         let mut term = core::mem::replace(&mut f.blocks[t.idx()].term, Term::None);
-        for u in term.uses_mut() {
-            rename(f, u);
-        }
-        for e in term.edges_mut() {
-            e.args.iter_mut().for_each(|a| rename(f, a));
-        }
+        term.operands_mut(|a| rename(f, a));
         f.blocks[t.idx()].term = term;
         if let Term::Jmp(e) = &mut f.blocks[o.idx()].term {
             e.args.extend(moved.iter().map(|m| m.0));

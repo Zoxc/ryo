@@ -297,9 +297,7 @@ fn split_edges(f: &mut Func, h: Block, edges: &[(Block, u16)]) -> Block {
     let ws: Vec<u8> = f.blocks[h.idx()].params.iter().map(|&v| f.w(v)).collect();
     let args: Vec<Value> = ws.iter().map(|&w| f.param(p, w)).collect();
     for &(e, k) in edges {
-        let mut t = core::mem::replace(&mut f.blocks[e.idx()].term, Term::None);
-        t.edge_mut(k as usize).to = p;
-        f.blocks[e.idx()].term = t;
+        f.blocks[e.idx()].term.edge_mut(k as usize).to = p;
     }
     f.blocks[p.idx()].term = Term::Jmp(Edge { to: h, args });
     p
@@ -549,9 +547,7 @@ fn licm(f: &mut Func, an: &Analysis, l: &Loop) -> bool {
                         } else {
                             ph
                         };
-                        let mut term = core::mem::replace(&mut f.blocks[q.idx()].term, Term::None);
-                        term.edge_mut(e as usize).args.push(a);
-                        f.blocks[q.idx()].term = term;
+                        f.blocks[q.idx()].term.edge_mut(e as usize).args.push(a);
                     }
                     ph
                 }

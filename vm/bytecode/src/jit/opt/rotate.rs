@@ -116,11 +116,9 @@ fn rotate_loop(f: &mut Func, s: Shape) -> bool {
         None
     } else {
         let n = f.block(BlockKind::Body);
-        let mut t = core::mem::replace(&mut f.blocks[h.idx()].term, Term::None);
-        let e = t.edge_mut(kout);
+        let e = f.blocks[h.idx()].term.edge_mut(kout);
         let args = core::mem::take(&mut e.args);
         e.to = n;
-        f.blocks[h.idx()].term = t;
         f.blocks[n.idx()].term = Term::Jmp(Edge { to: x, args });
         let at = f.layout.iter().position(|&q| q == l).unwrap() + 1;
         f.layout.insert(at, n);
@@ -198,21 +196,15 @@ fn rotate_loop(f: &mut Func, s: Shape) -> bool {
                 *v = new[k][sd as usize].expect("a parameter for each use");
             }
         };
-        for i in f.blocks[q.idx()].insts.clone() {
-            f.insts[i.idx()].args.iter_mut().for_each(rename);
-        }
-        let mut t = core::mem::replace(&mut f.blocks[q.idx()].term, Term::None);
-        t.uses_mut().into_iter().for_each(rename);
-        t.edges_mut().for_each(|e| e.args.iter_mut().for_each(rename));
-        f.blocks[q.idx()].term = t;
+        f.rename_in_block(q, rename);
     }
     // `h` passes the originals.
     let extra = |sd: Side| -> Vec<(usize, Value)> { new.iter().enumerate().filter_map(|(k, n)| n[sd as usize].map(|_| (k, defs[k]))).collect() };
     let (ein, eout) = (extra(Side::In), extra(Side::Out));
-    let mut t = core::mem::replace(&mut f.blocks[h.idx()].term, Term::None);
-    t.edge_mut(kin).args.extend(ein.iter().map(|e| e.1));
-    t.edge_mut(kout).args.extend(eout.iter().map(|e| e.1));
-    f.blocks[h.idx()].term = t.clone();
+    let ht = &mut f.blocks[h.idx()].term;
+    ht.edge_mut(kin).args.extend(ein.iter().map(|e| e.1));
+    ht.edge_mut(kout).args.extend(eout.iter().map(|e| e.1));
+    let mut t = ht.clone();
 
     // The copy at the end of `l`: `h`'s parameters are the jump's arguments.
     let Term::Jmp(je) = core::mem::replace(&mut f.blocks[l.idx()].term, Term::None) else { unreachable!() };
@@ -230,8 +222,7 @@ fn rotate_loop(f: &mut Func, s: Shape) -> bool {
             *v = m.1;
         }
     };
-    t.uses_mut().into_iter().for_each(sub);
-    t.edges_mut().for_each(|e| e.args.iter_mut().for_each(sub));
+    t.operands_mut(sub);
     f.blocks[l.idx()].term = t;
     f.rebuild_preds();
     true

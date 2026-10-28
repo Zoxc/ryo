@@ -254,9 +254,7 @@ fn try_promote(f: &mut Func, mut ok: Vec<bool>) -> Result<bool, AllocaId> {
         f.blocks[b.idx()].params.push(p);
         let preds = f.blocks[b.idx()].preds.clone();
         for (j, (q, e)) in preds.into_iter().enumerate() {
-            let mut t = core::mem::replace(&mut f.blocks[q.idx()].term, Term::None);
-            t.edge_mut(e as usize).args.push(ops[j]);
-            f.blocks[q.idx()].term = t;
+            f.blocks[q.idx()].term.edge_mut(e as usize).args.push(ops[j]);
         }
     }
     for i in dead {
