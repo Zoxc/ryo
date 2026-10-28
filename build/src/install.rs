@@ -216,7 +216,8 @@ fn read_manifest(install: &Path) -> Result<Option<Manifest>, String> {
     }
 }
 
-/// The installed `<version>` (`install/current`).
+/// The installed `<version>` (`install/current`). The launchers read it the same way
+/// (`installed` in scripts/launcher.rs).
 fn current_version(install: &Path) -> Option<String> {
     let v = fs::read_to_string(install.join("current")).ok()?;
     let v = v.trim();

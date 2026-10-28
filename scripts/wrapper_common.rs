@@ -1,5 +1,6 @@
-//! What the `dist/bin/` wrappers (`rustc-ryo`, `rustc-clif`, `cargo-ryo`) share; each pulls
-//! it in with `#[path = "wrapper_common.rs"] mod common;`. Values baked in by `y build`:
+//! What the `dist/bin/` wrappers (`rustc-ryo`, `rustc-clif`, `cargo-ryo`) and the installed
+//! launchers (`launcher.rs`) share; each pulls it in with `#[path = "wrapper_common.rs"] mod
+//! common;`. Values baked in by `y build`:
 //! `RYO_TOOLCHAIN`, `RYO_RUSTC_DRIVER`, `RYO_RUSTC_RELEASE` (design/build.md#the-y-build-tool).
 
 // Each wrapper uses only some of it.

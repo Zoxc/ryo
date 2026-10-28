@@ -9,6 +9,11 @@ use std::env;
 use std::path::PathBuf;
 use std::process::Command;
 
+#[path = "wrapper_common.rs"]
+mod common;
+
+use common::fail;
+
 pub fn run(name: &str) -> ! {
     let dir = match env::var_os("RYO_HOME").filter(|h| !h.is_empty()) {
         Some(home) => PathBuf::from(home),
@@ -20,20 +25,11 @@ pub fn run(name: &str) -> ! {
     }
     let mut cmd = Command::new(&exe);
     cmd.args(env::args_os().skip(1));
-    #[cfg(unix)]
-    let err = {
-        use std::os::unix::process::CommandExt;
-        cmd.exec()
-    };
-    #[cfg(not(unix))]
-    let err = match cmd.status() {
-        Ok(status) => std::process::exit(status.code().unwrap_or(1)),
-        Err(err) => err,
-    };
-    fail(&format!("failed to run {}: {err}", exe.display()))
+    common::exec(cmd, &exe.display().to_string())
 }
 
-/// `<checkout>/install/<current>`, or `Err(<checkout>/install)` if there is none.
+/// `<checkout>/install/<current>`, or `Err(<checkout>/install)` if there is none. The same
+/// reading of `install/current` as y's `current_version` (build/src/install.rs).
 fn installed() -> Result<PathBuf, PathBuf> {
     let install = PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().expect("scripts/ has a parent").join("install");
     let version = std::fs::read_to_string(install.join("current")).map_err(|_| install.clone())?;
@@ -42,9 +38,4 @@ fn installed() -> Result<PathBuf, PathBuf> {
         return Err(install);
     }
     Ok(dir)
-}
-
-fn fail(msg: &str) -> ! {
-    eprintln!("error: {msg}");
-    std::process::exit(1);
 }
