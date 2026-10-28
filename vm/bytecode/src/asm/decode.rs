@@ -511,11 +511,7 @@ fn resume_slots(protos: &mut [Proto], rs: usize, mode: Mode, reduced: bool) -> R
         if reduced {
             let args = super::encode::handler_args(Opcode::Resume, &[Opnd::<u32>::Slot(x)], mode, |_| 0)
                 .into_iter()
-                .map(|v| match v {
-                    ArgVal::Fp => Arg::Fp,
-                    ArgVal::Imm(v, _) => Arg::Imm(v),
-                    _ => unreachable!("resume takes fp and a slot"),
-                })
+                .map(|v| v.to_arg().expect("resume takes fp and a slot"))
                 .collect();
             p.handler = Some((args, Then::Trap));
         } else {

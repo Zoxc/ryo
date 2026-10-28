@@ -26,14 +26,8 @@ pub fn as_handler(words: &[u32], mode: Mode) -> Vec<u32> {
     let op = reduced::Opcode::from_u16(words[0] as u16).and_then(|op| op.full()).expect("a native instruction");
     full[0] = op as u32;
     let ops: Vec<Opnd> = operands(&full, 0);
-    let args: Vec<Arg> = handler_args(op, &ops, mode, |_| unreachable!("no code constants"))
-        .into_iter()
-        .map(|v| match v {
-            ArgVal::Fp => Arg::Fp,
-            ArgVal::Imm(v, _) => Arg::Imm(v),
-            _ => unreachable!("a slot or immediate argument"),
-        })
-        .collect();
+    let args: Vec<Arg> =
+        handler_args(op, &ops, mode, |_| unreachable!("no code constants")).into_iter().map(|v| v.to_arg().expect("a handler argument")).collect();
     let mut out = alloc::vec![reduced::Opcode::Handler as u32, op as u32, args.len() as u32];
     for a in &args {
         crate::full::Elem::put(a, &mut out);
@@ -71,6 +65,20 @@ pub(super) fn addr_arg(r: Ref) -> Option<Arg> {
         Ref::Ro(o) => Arg::Ro(o),
         Ref::Handler(_) | Ref::RegHandler(_) | Ref::Probe | Ref::Func(_) | Ref::Rec | Ref::RecLoopCtr => return None,
     })
+}
+
+impl ArgVal {
+    /// The reduced `handler`'s argument of this value, if a handler can take it (the
+    /// reverse of `From<Arg>`).
+    pub(super) fn to_arg(self) -> Option<Arg> {
+        Some(match self {
+            ArgVal::Fp => Arg::Fp,
+            ArgVal::Exception => Arg::Exception,
+            ArgVal::Imm(v, _) => Arg::Imm(v),
+            ArgVal::Addr(r) => return addr_arg(r),
+            ArgVal::Ro(off) => Arg::Ro(off),
+        })
+    }
 }
 
 /// The reduced instruction words of `insns`, with cleanup entries (instruction, landing pad
@@ -192,13 +200,7 @@ pub fn reduce(
             RoReq::Ops(_) => unreachable!("handlers take no operand arrays"),
         })
         .into_iter()
-        .map(|v| match v {
-            ArgVal::Fp => Arg::Fp,
-            ArgVal::Exception => Arg::Exception,
-            ArgVal::Imm(v, _) => Arg::Imm(v),
-            ArgVal::Addr(r) => addr_arg(r).expect("a handler argument"),
-            ArgVal::Ro(off) => Arg::Ro(off),
-        })
+        .map(|v| v.to_arg().expect("a handler argument"))
         .collect();
         let named = |name: &str| ops[op.info().operand_index(name).expect("operand")].clone();
         let then = match op.info().shape {
