@@ -324,11 +324,10 @@ pub fn push_words(op: Opcode, ops: &[Opnd], words: &mut Vec<u32>) {
 }
 
 /// The integer argument register `i` of the convention: `rdi rsi rdx rcx r8 r9`, on PE
-/// `rcx rdx r8 r9`.
+/// `rcx rdx r8 r9`, the same registers as a handler call's positions
+/// ([`super::handler_arg`]).
 pub(super) fn int_arg(pe: bool, i: u32) -> Reg {
-    const SYSV: [Reg; 6] = [Reg::Rdi, Reg::Rsi, Reg::Rdx, Reg::Rcx, Reg::R8, Reg::R9];
-    const WIN64: [Reg; 4] = [Reg::Rcx, Reg::Rdx, Reg::R8, Reg::R9];
-    if pe { WIN64[i as usize] } else { SYSV[i as usize] }
+    super::x86::handler_reg(pe, i as u8).expect("an argument register position")
 }
 
 /// `f16` values move between SSE registers and memory through this register (`movd`).

@@ -883,7 +883,7 @@ fn result(c: &mut Cursor<'_>) -> (i32, u32) {
 
 /// The integer argument register index of `r` in the mode's convention.
 fn int_index(r: Reg, mode: Mode) -> Option<u32> {
-    (0..if mode.pe { 4 } else { 6 }).find(|&i| int_arg(mode.pe, i) == r)
+    (0..if mode.pe { super::PE_ARG_REGS } else { super::ARG_REGS } as u32).find(|&i| int_arg(mode.pe, i) == r)
 }
 
 /// A call's argument registers' loads at the cursor ([`super::params_ok`]): (slot, register)
