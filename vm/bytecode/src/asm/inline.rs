@@ -1066,9 +1066,10 @@ impl Cache {
             Item::LeaM { dst, .. } | Item::SetReg(dst, _) | Item::Lea(dst, _) | Item::LoadRip(dst, _) => (dst, None, Some(W::Q)),
             Item::Cdq(_) => (Reg::Rdx, None, None),
             Item::SetccR(_, reg) => (reg, None, None),
-            // Undefined on zero at 64 bits (the 32-bit forms are followed by a `cmov`, or their
-            // source isn't zero).
-            Item::Bsf { w, reg, .. } | Item::Bsr { w, reg, .. } => (reg, None, (w == W::D).then_some(W::D)),
+            // A zero source leaves the destination unmodified, and at 32 bits some processors
+            // clear only its upper half (SDM BSF/BSR), so nothing is known about the register.
+            // The `cmovz` that follows the 32-bit forms zero-extends it.
+            Item::Bsf { reg, .. } | Item::Bsr { reg, .. } => (reg, None, None),
             Item::Div { w, .. } => {
                 let d = pool(Reg::Rdx).unwrap();
                 self.regs[d] = Entry { used: self.regs[d].used, zx: Some(w), ..Entry::default() };

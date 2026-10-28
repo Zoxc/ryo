@@ -4248,7 +4248,8 @@ L3:
     or      eax,10000h
     bsf     eax,eax
     mov     [rsp+10h],eax
-    mov     [rsp+28h],eax
+    mov     edx,[rsp+10h]
+    mov     [rsp+28h],edx
     jmp     L5
 L4:
     lea     rdi,[rsp+0C0h]
@@ -4459,7 +4460,8 @@ L9:
     or      eax,10000h
     bsf     eax,eax
     mov     [rsp+14h],eax
-    mov     [rsp+38h],eax
+    mov     edx,[rsp+14h]
+    mov     [rsp+38h],edx
     jmp     L11
 L10:
     lea     rdi,[rsp+0E0h]
@@ -4507,8 +4509,7 @@ L12:
     test    byte ptr [rsp+17h],0FFh
     je      L18
     jmp     L17
-    nop     [rax+rax]
-    xchg    ax,ax
+    nop     [rax]
 L13:
     inc     qword ptr [jit_record.ctr_l]
     jns     L31
@@ -4744,7 +4745,8 @@ L17:
     or      eax,10000h
     bsf     eax,eax
     mov     [rsp+14h],eax
-    mov     [rsp+40h],eax
+    mov     edx,[rsp+14h]
+    mov     [rsp+40h],edx
     jmp     L19
 L18:
     lea     rdi,[rsp+120h]
@@ -4787,7 +4789,6 @@ L20:
     je      L26
     jmp     L25
     nop     [rax+rax]
-    nop     [rax]
 L21:
     inc     qword ptr [jit_record.ctr_l]
     jns     L42
@@ -5057,7 +5058,8 @@ L9:
     or      eax,10000h
     bsf     eax,eax
     mov     [rsp+14h],eax
-    mov     [rsp+38h],eax
+    mov     edx,[rsp+14h]
+    mov     [rsp+38h],edx
     jmp     L11
 L10:
     lea     rdi,[rsp+0E0h]
@@ -5105,8 +5107,7 @@ L12:
     test    byte ptr [rsp+17h],0FFh
     je      L18
     jmp     L17
-    nop     [rax+rax]
-    xchg    ax,ax
+    nop     [rax]
 L13:
     inc     qword ptr [jit_record.ctr_l]
     jns     L31
@@ -7821,8 +7822,10 @@ L6:
     movzx   esi,word ptr [rsp+5Eh]
     or      esi,10000h
     bsf     esi,esi
-    mov     [rsp+34h],esi
-    add     rdx,rsi
+    mov     [rsp+24h],esi
+    mov     edi,[rsp+24h]
+    mov     [rsp+34h],edi
+    add     rdx,rdi
     mov     [rsp+48h],rdx
     cmp     rdx,10h
     jae     L1
@@ -8121,7 +8124,8 @@ L10:
     or      eax,10000h
     bsf     eax,eax
     mov     [rsp+24h],eax
-    mov     [rsp+2Ch],eax
+    mov     edx,[rsp+24h]
+    mov     [rsp+2Ch],edx
     jmp     L12
 L11:
     lea     rdi,[rsp+100h]
@@ -8396,7 +8400,8 @@ L3:
     or      edx,10000h
     bsf     edx,edx
     mov     [rsp+0Ch],edx
-    mov     [rsp+1Ch],edx
+    mov     edi,[rsp+0Ch]
+    mov     [rsp+1Ch],edi
     jmp     L5
 L4:
     lea     rdi,[rsp+80h]
@@ -8518,7 +8523,8 @@ L8:
     or      eax,10000h
     bsf     eax,eax
     mov     [rsp+14h],eax
-    mov     [rsp+20h],eax
+    mov     edx,[rsp+14h]
+    mov     [rsp+20h],edx
     jmp     L10
 L9:
     lea     rdi,[rsp+0A0h]

@@ -258,3 +258,9 @@ remove it once a Lean session has handled it.
   values as new parameters. The OSR entry still targets the unchanged head. Matters for the
   Lean description of the SSA tier's passes (`lean/docs/jit.md`) if it lists them. Commit:
   "JIT SSA: Loop rotation behind RYO_JIT_ROTATE".
+
+- The register cache no longer records zero-extension after `bsf`/`bsr` at any width (Commit:
+  "Asm: No zero-extension known after bsf/bsr"); a zero source leaves the destination
+  unmodified (SDM BSF/BSR), so at 32 bits the upper half isn't known to be zero until the
+  following `cmovz`. `cacheSafe` can accept 32-bit `bsf`/`bsr`, and the `hcount` hypothesis on
+  `inline_step_cached` can go.
