@@ -39,8 +39,8 @@ pub enum SysrootStatus {
     Current,
 }
 
-/// Checks `dist/sysroot-ryo` against its stamp: the backend in `dist/`, the `vm/` sources
-/// (`ryo_rt`, `ryo_bytecode` and the bundled JIT), the `rust-src` it is built from and how it
+/// Checks `dist/sysroot-ryo` against its stamp: the backend in `dist/`, the runtime's sources
+/// (`ryo_rt`, `ryo_bytecode` and the bundled JIT, as the ABI tag hashes them), the `rust-src` it is built from and how it
 /// is patched, and the rustc version. Doesn't check that `dist/`'s backend is current.
 pub fn ryo_sysroot_status(info: &RustcInfo, dist: &Path) -> SysrootStatus {
     if !dist.join(SYSROOT_DIR).is_dir() {
@@ -66,8 +66,8 @@ pub fn ryo_sysroot_status(info: &RustcInfo, dist: &Path) -> SysrootStatus {
 /// the JIT (as [`build`] gets it).
 fn stamp(info: &RustcInfo, root: &Path, dist: &Path, jit: bool) -> Result<String, String> {
     use std::hash::Hasher;
-    let mut vm = std::hash::DefaultHasher::new();
-    hash_tree(&root.join("vm"), Path::new(""), &mut vm)?;
+    // The runtime's sources even when `RYO_ABI_OVERRIDE` fixes `abi=`.
+    let vm = crate::dist::runtime_hash(root)?;
     // `prepare_sources` (how the library is patched) and the build's flags are in this file.
     let mut y = std::hash::DefaultHasher::new();
     y.write(include_str!("sysroot.rs").as_bytes());
@@ -81,32 +81,10 @@ fn stamp(info: &RustcInfo, root: &Path, dist: &Path, jit: bool) -> Result<String
         },
         src.display(),
         backend_stamp(dist)?,
-        vm.finish(),
+        vm,
         y.finish(),
         crate::dist::dist_abi_tag(dist)?,
     ))
-}
-
-/// Hashes the paths and contents of the files under `dir`, in a fixed order.
-pub fn hash_tree(dir: &Path, rel: &Path, h: &mut std::hash::DefaultHasher) -> Result<(), String> {
-    use std::hash::Hasher;
-    let mut entries: Vec<_> = fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?.flatten().collect();
-    entries.sort_by_key(|e| e.file_name());
-    for entry in entries {
-        let name = entry.file_name();
-        let path = entry.path();
-        let rel = rel.join(&name);
-        if entry.file_type().map_err(|e| e.to_string())?.is_dir() {
-            if name != "target" {
-                hash_tree(&path, &rel, h)?;
-            }
-        } else {
-            h.write(rel.to_string_lossy().as_bytes());
-            h.write_u8(0);
-            h.write(&fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?);
-        }
-    }
-    Ok(())
 }
 
 /// Where the shim leaves each ryo-built crate's `RYO_STATS` summary (`<crate>.txt`).

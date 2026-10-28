@@ -262,6 +262,35 @@ fn find_driver(sysroot: &Path) -> Result<PathBuf, String> {
     Err(format!("no rustc_driver dylib in {}", sysroot.display()))
 }
 
+/// Hashes the paths and contents of the files under `dir` (but `target/`), in a fixed order.
+pub fn hash_tree(dir: &Path, rel: &Path, h: &mut std::hash::DefaultHasher) -> Result<(), String> {
+    use std::hash::Hasher;
+    let mut entries: Vec<_> = std::fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?.flatten().collect();
+    entries.sort_by_key(|e| e.file_name());
+    for entry in entries {
+        let name = entry.file_name();
+        let path = entry.path();
+        let rel = rel.join(&name);
+        if entry.file_type().map_err(|e| e.to_string())?.is_dir() {
+            if name != "target" {
+                hash_tree(&path, &rel, h)?;
+            }
+        } else {
+            h.write(rel.to_string_lossy().as_bytes());
+            h.write_u8(0);
+            hash_file(h, &path)?;
+        }
+    }
+    Ok(())
+}
+
+/// Hashes the contents of `path`.
+pub fn hash_file(h: &mut std::hash::DefaultHasher, path: &Path) -> Result<(), String> {
+    use std::hash::Hasher;
+    h.write(&std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?);
+    Ok(())
+}
+
 /// A `key: value` line from `rustc -vV`.
 pub fn field<'a>(vv: &'a str, key: &str) -> Option<&'a str> {
     vv.lines().find_map(|l| l.strip_prefix(key)?.strip_prefix(": "))

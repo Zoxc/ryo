@@ -308,27 +308,36 @@ pub const ABI_FILE: &str = "abi-tag";
 /// `vm/` crates' sources and manifests, `vm/Cargo.lock` and `RYO_RT_FEATURES`. Or
 /// `RYO_ABI_OVERRIDE`, which must be a C identifier part (alphanumeric or `_`).
 pub fn abi_tag(root: &Path) -> Result<String, String> {
-    use std::hash::Hasher;
     if let Ok(t) = std::env::var(ABI_OVERRIDE_VAR) {
         if t.is_empty() || !t.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
             return Err(format!("{ABI_OVERRIDE_VAR}={t:?}: not a C identifier part"));
         }
         return Ok(t);
     }
+    Ok(format!("{:016x}", runtime_hash(root)?))
+}
+
+/// The hash behind the computed ABI tag: what the runtime is built from (the `vm/` crates'
+/// sources, manifests and build scripts, `vm/Cargo.{toml,lock}`, `RYO_RT_FEATURES`). Also
+/// the ryo sysroot's stamp of the runtime.
+pub fn runtime_hash(root: &Path) -> Result<u64, String> {
+    use crate::utils::{hash_file, hash_tree};
+    use std::hash::Hasher;
     let vm = root.join("vm");
     let mut h = std::hash::DefaultHasher::new();
     for krate in ["bytecode", "rt", "jit"] {
-        crate::sysroot::hash_tree(&vm.join(krate).join("src"), Path::new(krate), &mut h)?;
-        h.write(&fs::read(vm.join(krate).join("Cargo.toml")).map_err(|e| e.to_string())?);
-        if let Ok(b) = fs::read(vm.join(krate).join("build.rs")) {
-            h.write(&b);
+        hash_tree(&vm.join(krate).join("src"), Path::new(krate), &mut h)?;
+        hash_file(&mut h, &vm.join(krate).join("Cargo.toml"))?;
+        let build = vm.join(krate).join("build.rs");
+        if build.exists() {
+            hash_file(&mut h, &build)?;
         }
     }
     for f in ["Cargo.toml", "Cargo.lock"] {
-        h.write(&fs::read(vm.join(f)).map_err(|e| format!("{}: {e}", vm.join(f).display()))?);
+        hash_file(&mut h, &vm.join(f))?;
     }
     h.write(std::env::var("RYO_RT_FEATURES").unwrap_or_default().as_bytes());
-    Ok(format!("{:016x}", h.finish()))
+    Ok(h.finish())
 }
 
 /// The tag `dist` was built with ([`ABI_FILE`]).
