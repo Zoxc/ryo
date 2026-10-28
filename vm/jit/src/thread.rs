@@ -4,6 +4,7 @@
 use core::sync::atomic::AtomicPtr;
 use core::sync::atomic::Ordering::Relaxed;
 
+use ryo_bytecode::image::JitRecord;
 use ryo_bytecode::jit_abi::RtApi;
 
 /// The JIT thread's name.
@@ -56,12 +57,15 @@ fn oom_hook(layout: std::alloc::Layout) {
     prev(layout);
 }
 
+/// Published records awaiting their re-check, each with how many times it was seen settled (`main`).
+type Recheck = Vec<(*mut JitRecord, u8)>;
+
 fn main(rt: &'static RtApi) {
     let mut jit = Jit::new(rt);
     // Records published lately, whose counters' bias a racing AOT increment may have erased
     // (`JitRecord`): re-checked after each batch and, while there are any, after a pause
     // without one, until they are seen settled twice.
-    let mut recheck: Vec<(*mut ryo_bytecode::image::JitRecord, u8)> = Vec::new();
+    let mut recheck: Recheck = Vec::new();
     // `RYO_JIT_STATS=2`: when the last progress line went out.
     let mut last_progress = std::time::Instant::now();
     loop {
@@ -70,22 +74,11 @@ fn main(rt: &'static RtApi) {
             std::thread::sleep(std::time::Duration::from_millis(1));
             list = (rt.next_batch)(false);
         }
-        recheck.retain_mut(|(rec, seen)| {
-            ryo_bytecode::image::JitRecord::settle(*rec);
-            *seen = if crate::install::settled(*rec) { *seen + 1 } else { 0 };
-            *seen < 2
-        });
+        recheck_pass(&mut recheck);
         if !list.is_null() {
-            let mut n = 0;
-            let mut r = list;
-            while !r.is_null() {
-                n += 1;
-                // SAFETY: the records of a batch are this thread's.
-                r = unsafe { (*r).next };
-            }
             stats::add(&STATS.batches, 1);
-            stats::max(&STATS.largest_batch, n);
         }
+        let mut n = 0;
         while !list.is_null() {
             let rec = list;
             // SAFETY: the records of a batch are this thread's until it reports them.
@@ -93,45 +86,60 @@ fn main(rt: &'static RtApi) {
                 list = (*rec).next;
                 (*rec).next = core::ptr::null_mut();
             }
-            stats::add(&STATS.queued, 1);
-            let t0 = rt.settings.count.then(std::time::Instant::now);
-            // Everything that may allocate, and so panic (`oom_panics`), is inside the
-            // `catch_unwind`s: a panic out of this loop would end the thread with records
-            // unreported. The room for `recheck` is made before the compile, so that a
-            // published record is always reported compiled.
-            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                recheck.reserve(1);
-                jit.compile(rec)
-            }));
-            let why = match res {
-                Ok(Ok(())) => None,
-                Ok(Err(why)) => Some(why),
-                Err(_) => Some(Fail::Panicked),
-            };
-            if let Some(t0) = t0 {
-                let ns = t0.elapsed().as_nanos() as u64;
-                stats::add(&STATS.timed, 1);
-                stats::add(&STATS.compile_ns, ns);
-                stats::max(&STATS.compile_max_ns, ns);
-            }
-            // Before `done` fails the record: its `SeqCst` store of `Failed` makes the count
-            // visible to a `RYO_JIT_SYNC` waiter (stats.rs).
-            if let Some(why) = why {
-                STATS.fail(why);
-            }
-            if let Some(why) = why
-                && rt.settings.log
-            {
-                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| jit.log(rec, why.message())));
-            }
-            (rt.done)(rec, why.is_none());
-            if why.is_none() {
-                recheck.push((rec, 0));
-            }
+            n += 1;
+            compile_one(&mut jit, rt, rec, &mut recheck);
         }
+        stats::max(&STATS.largest_batch, n);
         if rt.settings.stats >= 2 && last_progress.elapsed() >= std::time::Duration::from_secs(60) {
             last_progress = std::time::Instant::now();
             stats::write_progress();
         }
+    }
+}
+
+/// Re-checks the records of `recheck`: settles each, and drops those seen settled twice.
+fn recheck_pass(recheck: &mut Recheck) {
+    recheck.retain_mut(|(rec, seen)| {
+        JitRecord::settle(*rec);
+        *seen = if crate::install::settled(*rec) { *seen + 1 } else { 0 };
+        *seen < 2
+    });
+}
+
+/// Compiles `rec`, counts and logs the outcome, and reports it to the runtime; a published
+/// record goes on `recheck`.
+fn compile_one(jit: &mut Jit, rt: &RtApi, rec: *mut JitRecord, recheck: &mut Recheck) {
+    stats::add(&STATS.queued, 1);
+    let t0 = rt.settings.count.then(std::time::Instant::now);
+    // Everything that may allocate, and so panic (`oom_panics`), is inside the
+    // `catch_unwind`s: a panic out of here would end the thread with records unreported.
+    // The room for `recheck` is made before the compile, so that a published record is
+    // always reported compiled.
+    let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        recheck.reserve(1);
+        jit.compile(rec)
+    }));
+    let why = match res {
+        Ok(Ok(())) => None,
+        Ok(Err(why)) => Some(why),
+        Err(_) => Some(Fail::Panicked),
+    };
+    if let Some(t0) = t0 {
+        let ns = t0.elapsed().as_nanos() as u64;
+        stats::add(&STATS.timed, 1);
+        stats::add(&STATS.compile_ns, ns);
+        stats::max(&STATS.compile_max_ns, ns);
+    }
+    if let Some(why) = why {
+        // Before `done` fails the record: its `SeqCst` store of `Failed` makes the count
+        // visible to a `RYO_JIT_SYNC` waiter (stats.rs).
+        STATS.fail(why);
+        if rt.settings.log {
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| jit.log(rec, why.message())));
+        }
+    }
+    (rt.done)(rec, why.is_none());
+    if why.is_none() {
+        recheck.push((rec, 0));
     }
 }
