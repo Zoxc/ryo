@@ -452,6 +452,39 @@ fn unique<'tcx>(tcx: TyCtxt<'tcx>, item: MonoItem<'tcx>) -> bool {
     item.instantiation_mode(tcx) != rustc_middle::mono::InstantiationMode::LocalCopy
 }
 
+impl<'a, 'tcx> Unit<'a, 'tcx> {
+    /// The native CGU: the original's native items (with `flips` applied), then the added
+    /// stubs and their neighbors.
+    fn native_cgu(&self) -> CodegenUnit<'tcx> {
+        let mut native = CodegenUnit::new(self.cgu.name());
+        // Set by `merge_codegen_units` for every CGU (`rustc_monomorphize/src/partitioning.rs:462-507`).
+        native.set_symbol_name(self.cgu.symbol_name());
+        if self.cgu.is_primary() {
+            native.make_primary();
+        }
+        if self.cgu.is_code_coverage_dead_code_cgu() {
+            native.make_code_coverage_dead_code_cgu();
+        }
+        let items = native.items_mut();
+        for (item, data) in self.cgu.items() {
+            let is_vm = matches!(item, MonoItem::Fn(i) if self.index.contains_key(i) && !self.keep_native.contains(i));
+            if !is_vm {
+                let mut data = *data;
+                if let Some(&(linkage, visibility)) = self.flips.get(item) {
+                    data.linkage = linkage;
+                    data.visibility = visibility;
+                }
+                items.insert(*item, data);
+            }
+        }
+        for (item, data) in &self.added {
+            items.insert(*item, *data);
+        }
+        native.compute_size_estimate();
+        native
+    }
+}
+
 impl<'a, 'tcx> Partitioner<'a, 'tcx> {
     fn new(tcx: TyCtxt<'tcx>, rt: RtItems, switches: &'a Switches, cgus: &'a [CodegenUnit<'tcx>]) -> Self {
         let mut homes: FxHashMap<MonoItem<'tcx>, Vec<usize>> = FxHashMap::default();
@@ -478,12 +511,34 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
 
     fn run(mut self) -> (Vec<CodegenUnit<'tcx>>, Results) {
         let tcx = self.tcx;
-        let stats = self.switches.stats;
-
-        // Steps 2, 3 and 5's contents, per CGU and in parallel (over CGUs, and over each one's
-        // functions): classify, lower and build the image, or reuse the previous session's.
-        let settings = image_settings(tcx, self.rt, self.mode, self.switches);
         let entry = tcx.entry_fn(()).map(|(def_id, _)| Instance::mono(tcx, def_id));
+        let (images, fresh) = self.lower(entry);
+        let failed: Vec<(Instance<'tcx>, NeedsNative)> =
+            fresh.iter().flat_map(|f| f.failed.iter().map(|(i, w)| (*i, NeedsNative(w.0.clone())))).collect();
+        if self.switches.stats >= 2 {
+            for (instance, why) in &failed {
+                eprintln!("ryo: native {}: {}", path(*instance), why.0);
+            }
+        }
+        self.stats.native_fns = failed.len();
+
+        let stubs_t = tcx.prof.generic_activity("ryo_stubs");
+        self.add_symbol_needs(entry);
+        let natives: Vec<CodegenUnit<'tcx>> = self.units.iter().map(Unit::native_cgu).collect();
+        drop(stubs_t);
+
+        if self.switches.stats >= 1 {
+            self.print_stats(&natives, &fresh, &failed);
+        }
+        let lean = self.write_dumps(&fresh, &failed);
+        (natives, self.into_results(images, lean))
+    }
+
+    /// Steps 2, 3 and 5's contents, per CGU and in parallel (over CGUs, and over each one's
+    /// functions): classify, lower and build the image, or reuse the previous session's.
+    fn lower(&mut self, entry: Option<Instance<'tcx>>) -> (Vec<CguImage>, Vec<Fresh<'tcx>>) {
+        let tcx = self.tcx;
+        let settings = image_settings(tcx, self.rt, self.mode, self.switches);
         let parts: Vec<ImagePart<'tcx>> = {
             let _t = tcx.prof.generic_activity("ryo_lower");
             let cgus: Vec<&CodegenUnit<'tcx>> = self.units.iter().map(|u| u.cgu).collect();
@@ -504,19 +559,14 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             unit.vm = part.vm;
             fresh.extend(part.fresh);
         }
-        let failed: Vec<(Instance<'tcx>, NeedsNative)> =
-            fresh.iter().flat_map(|f| f.failed.iter().map(|(i, w)| (*i, NeedsNative(w.0.clone())))).collect();
-        if stats >= 2 {
-            for (instance, why) in &failed {
-                eprintln!("ryo: native {}: {}", path(*instance), why.0);
-            }
-        }
-        self.stats.native_fns = failed.len();
+        (images, fresh)
+    }
 
-        // Step 1 (symbols) and 4, per CGU: the native items' references to VM functions,
-        // islands, the entry wrapper, and the native items the image refers to; then, once
-        // every CGU's linkage changes for its image are known, the stub neighbors.
-        let stubs_t = tcx.prof.generic_activity("ryo_stubs");
+    /// Step 1 (symbols) and 4, per CGU: the native items' references to VM functions,
+    /// islands, the entry wrapper, and the native items the image refers to; then, once every
+    /// CGU's linkage changes for its image are known, the stub neighbors.
+    fn add_symbol_needs(&mut self, entry: Option<Instance<'tcx>>) {
+        let tcx = self.tcx;
         let mut islands = FxHashSet::default();
         for u in 0..self.units.len() {
             self.scan_native_items(u);
@@ -536,64 +586,37 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             self.walk_stub_neighbors(u);
         }
         self.stats.islands = islands.len();
+    }
 
-        // The native CGUs: each original's native items, then its stubs and their neighbors.
-        let mut natives = Vec::with_capacity(self.units.len());
+    /// `RYO_STATS=1`'s totals.
+    fn print_stats(&self, natives: &[CodegenUnit<'tcx>], fresh: &[Fresh<'tcx>], failed: &[(Instance<'tcx>, NeedsNative)]) {
+        let mut n_vm = 0;
         for unit in &self.units {
-            let mut native = CodegenUnit::new(unit.cgu.name());
-            // Set by `merge_codegen_units` for every CGU (`rustc_monomorphize/src/partitioning.rs:462-507`).
-            native.set_symbol_name(unit.cgu.symbol_name());
-            if unit.cgu.is_primary() {
-                native.make_primary();
+            for &(v, global) in &unit.vm.vm {
+                let global = if global { " (global)" } else { "" };
+                eprintln!("ryo: vm fn {}{global}", path(v));
             }
-            if unit.cgu.is_code_coverage_dead_code_cgu() {
-                native.make_code_coverage_dead_code_cgu();
-            }
-            let items = native.items_mut();
-            for (item, data) in unit.cgu.items() {
-                let is_vm = matches!(item, MonoItem::Fn(i) if unit.index.contains_key(i) && !unit.keep_native.contains(i));
-                if !is_vm {
-                    let mut data = *data;
-                    if let Some(&(linkage, visibility)) = unit.flips.get(item) {
-                        data.linkage = linkage;
-                        data.visibility = visibility;
-                    }
-                    items.insert(*item, data);
-                }
-            }
-            for (item, data) in &unit.added {
-                items.insert(*item, *data);
-            }
-            native.compute_size_estimate();
-            natives.push(native);
+            n_vm += unit.vm.vm.len();
         }
-        drop(stubs_t);
+        eprintln!(
+            "ryo: {n_vm} VM functions, {} native functions, {} islands, {} native items",
+            self.stats.native_fns,
+            self.stats.islands,
+            natives.iter().map(|n| n.items().len()).sum::<usize>()
+        );
+        let n_images = self.units.iter().filter(|u| !u.vm.vm.is_empty()).count();
+        let cross = self.cross_image_refs(fresh);
+        eprintln!("ryo: {n_images} images in {} codegen units, {cross} cross-image references to VM functions", self.units.len());
+        eprintln!("ryo: {} of {n_images} images reused", self.stats.reused);
+        // Constants are deduplicated per image only: several images may each hold a copy.
+        let pool: usize = fresh.iter().map(|f| f.pool).sum();
+        eprintln!("ryo: {pool} bytes of constant pools in the {} images built", fresh.iter().filter(|f| !f.vm.is_empty()).count());
+        print_coverage(fresh, failed);
+    }
 
-        if stats >= 1 {
-            let mut n_vm = 0;
-            for unit in &self.units {
-                for &(v, global) in &unit.vm.vm {
-                    let global = if global { " (global)" } else { "" };
-                    eprintln!("ryo: vm fn {}{global}", path(v));
-                }
-                n_vm += unit.vm.vm.len();
-            }
-            eprintln!(
-                "ryo: {n_vm} VM functions, {} native functions, {} islands, {} native items",
-                self.stats.native_fns,
-                self.stats.islands,
-                natives.iter().map(|n| n.items().len()).sum::<usize>()
-            );
-            let n_images = self.units.iter().filter(|u| !u.vm.vm.is_empty()).count();
-            let cross = self.cross_image_refs(&fresh);
-            eprintln!("ryo: {n_images} images in {} codegen units, {cross} cross-image references to VM functions", self.units.len());
-            eprintln!("ryo: {} of {n_images} images reused", self.stats.reused);
-            // Constants are deduplicated per image only: several images may each hold a copy.
-            let pool: usize = fresh.iter().map(|f| f.pool).sum();
-            eprintln!("ryo: {pool} bytes of constant pools in the {} images built", fresh.iter().filter(|f| !f.vm.is_empty()).count());
-            print_coverage(&fresh, &failed);
-        }
-
+    /// The `RYO_DUMP*` files, and `RYO_DUMP_LEAN`'s certificates.
+    fn write_dumps(&self, fresh: &[Fresh<'tcx>], failed: &[(Instance<'tcx>, NeedsNative)]) -> Option<LeanCerts> {
+        let tcx = self.tcx;
         let lean = self.switches.dump_lean.is_some().then(|| {
             // `RYO_DUMP_LEAN` turns reuse off, so every image is fresh.
             let images = fresh
@@ -604,7 +627,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                     (f.cgu.to_string(), certs.collect())
                 })
                 .collect();
-            LeanCerts { images, islands: island_names(tcx, self.rt, &fresh) }
+            LeanCerts { images, islands: island_names(tcx, self.rt, fresh) }
         });
         if let Some(path) = &self.switches.dump {
             dump::write(tcx, "RYO_DUMP", path, &fresh.iter().map(|f| f.dump.as_str()).collect::<String>());
@@ -614,8 +637,13 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         }
         if let Some(path) = &self.switches.dump_native {
             let kept: Vec<Instance<'tcx>> = self.units.iter().flat_map(|u| u.keep_native.iter().copied()).collect();
-            dump::write(tcx, "RYO_DUMP_NATIVE", path, &native_text(tcx, &fresh, &failed, &kept));
+            dump::write(tcx, "RYO_DUMP_NATIVE", path, &native_text(tcx, fresh, failed, &kept));
         }
+        lean
+    }
+
+    /// The export lists, with `images` and `lean`.
+    fn into_results(self, images: Vec<CguImage>, lean: Option<LeanCerts>) -> Results {
         let mut vm_exports: Vec<(Instance<'tcx>, Visibility)> = Vec::new();
         let mut hidden: Vec<Instance<'tcx>> = Vec::new();
         for unit in &self.units {
@@ -635,8 +663,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                 }
             }
         }
-        let results = Results::new(images, lean, Exports { vm: vm_exports, hidden_for_image: hidden });
-        (natives, results)
+        Results::new(images, lean, Exports { vm: vm_exports, hidden_for_image: hidden })
     }
 
     /// References of a VM function of another image by the fresh images (a `call.sym` or its
