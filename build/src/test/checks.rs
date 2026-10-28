@@ -230,6 +230,9 @@ pub(super) fn incremental(rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result
         Ok(String::from_utf8_lossy(&res.stdout).into_owned())
     };
     let reuse = &["--cfg", "reuse", "-Zquery-dep-graph"][..];
+    // link.exe stamps the time into the executable (and a random PDB GUID): `/Brepro` derives
+    // both from the contents, so identical builds give identical files.
+    let repro: &[&str] = if cfg!(target_env = "msvc") { &["-Clink-arg=/Brepro"] } else { &[] };
     // Name, flags, flags for the incremental chain only, environment.
     // `O0` gets incremental's default of 256 codegen units, so one image per CGU.
     let configs: [(&str, &[&str], &[&str], &[(&str, &str)]); 4] = [
@@ -250,7 +253,7 @@ pub(super) fn incremental(rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result
                 crate::utils::create_dir(&d)?;
                 let exe = d.join(exe_name("edits"));
                 let mut c = cmd(rustc);
-                c.arg("--edition=2024").arg(&src).args(["--cfg", &cfg]).arg("-o").arg(&exe);
+                c.arg("--edition=2024").arg(&src).args(["--cfg", &cfg]).arg("-o").arg(&exe).args(repro);
                 if let Some(incr) = incr {
                     c.args(flags).args(extra).envs(env.iter().copied());
                     c.arg(format!("-Cincremental={}", incr.display())).arg("-Zincremental-verify-ich");
@@ -281,7 +284,7 @@ pub(super) fn incremental(rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result
                 let read = |p: &Path| fs::read(p).map_err(|e| format!("reading {}: {e}", p.display()));
                 let first = read(&exe)?;
                 let mut c = cmd(rustc_ryo);
-                c.arg("--edition=2024").arg(&src).args(["--cfg", &cfg]).arg("-o").arg(&exe).args(flags).args(chain_flags);
+                c.arg("--edition=2024").arg(&src).args(["--cfg", &cfg]).arg("-o").arg(&exe).args(repro).args(flags).args(chain_flags);
                 c.arg(format!("-Cincremental={}", incr.display())).arg("-Zincremental-verify-ich").env("RYO_STATS", "1");
                 let res = c.output().map_err(|e| format!("{config} {cfg} again: {e}"))?;
                 let stderr = String::from_utf8_lossy(&res.stderr);

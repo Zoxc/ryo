@@ -363,7 +363,7 @@ fn check_frames(o: &Output, what: &str) -> Found {
 /// there is one).
 fn xmm_saved(code: &[u8], saved: &[u8], what: &str) {
     const OBJDUMP: &str = "/usr/bin/objdump";
-    if !std::path::Path::new(OBJDUMP).exists() {
+    if !gnu_objdump() {
         return;
     }
     let dir = std::env::temp_dir().join(format!("ryo-jit-pe-{}", std::process::id()));
@@ -386,7 +386,7 @@ fn xmm_saved(code: &[u8], saved: &[u8], what: &str) {
 fn check_osr(o: &Output, info: &[u8], what: &str) -> usize {
     const OBJDUMP: &str = "/usr/bin/objdump";
     let Some(osr) = &o.osr else { return 0 };
-    if !std::path::Path::new(OBJDUMP).exists() {
+    if !gnu_objdump() {
         return 0;
     }
     // The saves: pushed ones at `rbp - 8n` (`rbp` is `fp`), stored ones from `rbp - K`.
@@ -466,7 +466,7 @@ fn each(insns: &[Insn<'_>], frame: u32, scopes: &[(usize, i32, u32, ScopeKind)],
             let o = compile(insns, frame, scopes, alloc, stress).unwrap_or_else(|e| panic!("{what}: {e:?}"));
             let found = check_frames(&o, &what);
             if o.osr.is_some() {
-                assert!(check_osr(&o, &o.pe_unwind, &what) > 0 || !std::path::Path::new("/usr/bin/objdump").exists(), "{what}: no OSR entry");
+                assert!(check_osr(&o, &o.pe_unwind, &what) > 0 || !gnu_objdump(), "{what}: no OSR entry");
             }
             check(&found, &what);
         }
@@ -671,4 +671,15 @@ fn cleanup_pads_go_to_reencoding() {
             assert!(matches!(r, Err(jit::Error::Unsupported(ref u)) if u.0 == "PE cleanup landing pads"), "a cleanup pad doesn't");
         }
     }
+}
+
+/// Whether `/usr/bin/objdump` is GNU objdump (macOS's is LLVM's, without `-b binary`).
+fn gnu_objdump() -> bool {
+    static GNU: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *GNU.get_or_init(|| {
+        std::process::Command::new("/usr/bin/objdump")
+            .arg("--version")
+            .output()
+            .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).starts_with("GNU objdump"))
+    })
 }

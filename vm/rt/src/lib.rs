@@ -9,6 +9,11 @@
 // (design/build.md), and the runtime must not enter the VM through them (design/vm.md).
 #![cfg_attr(not(test), no_std)]
 
+// The unit tests with the `jit` feature: the JIT's `ryo_jit_start_<tag>`, which the trips
+// reference (link.exe resolves the references of unused functions too).
+#[cfg(all(test, feature = "jit"))]
+extern crate ryo_jit;
+
 /// Unwind directives of a naked function for Windows only (`.seh_*`: its `.pdata`/`.xdata`
 /// entry, without which the unwinder takes the function for a leaf), one per argument, as a
 /// template piece of `naked_asm!`; empty elsewhere.

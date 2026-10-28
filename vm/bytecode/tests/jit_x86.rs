@@ -10,6 +10,17 @@ use ryo_bytecode::jit::x86::*;
 
 const OBJDUMP: &str = "/usr/bin/objdump";
 
+/// Whether `/usr/bin/objdump` is GNU objdump (macOS's is LLVM's, without `-b binary`).
+fn gnu_objdump() -> bool {
+    static GNU: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *GNU.get_or_init(|| {
+        std::process::Command::new("/usr/bin/objdump")
+            .arg("--version")
+            .output()
+            .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).starts_with("GNU objdump"))
+    })
+}
+
 fn reg(r: R, w: u8) -> String {
     const Q: [&str; 8] = ["rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi"];
     const D: [&str; 8] = ["eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi"];
@@ -117,8 +128,8 @@ fn norm(s: &str) -> String {
 
 #[test]
 fn encoder_matches_objdump() {
-    if !std::path::Path::new(OBJDUMP).exists() {
-        eprintln!("note: {OBJDUMP} not found; skipping the x86 encoder cross-check");
+    if !gnu_objdump() {
+        eprintln!("note: {OBJDUMP} isn't GNU objdump; skipping the x86 encoder cross-check");
         return;
     }
     let mut c = Cases::default();

@@ -80,7 +80,7 @@ const LIBSYSTEM_TBD: &str = "--- !tapi-tbd\ntbd-version: 4\ntargets: [ x86_64-ma
 
 /// [`RT_IMPORTS`] on macOS, as lld names them (Mach-O's `_` prefix): libSystem's functions
 /// `ryo_rt` and `ryo_bytecode` call (`vm/rt/src/vm/sys.rs`, the trips' `__ulock` waits,
-/// `vmem`) and the unwinder's `_Unwind_Resume`, which `resume` jumps to.
+/// `vmem`, `jit/merge.rs`) and the unwinder's `_Unwind_Resume`, which `resume` jumps to.
 const RT_IMPORTS_MACHO: &[&str] = &[
     "__Unwind_Resume",
     "___ulock_wait",
@@ -99,6 +99,13 @@ const RT_IMPORTS_MACHO: &[&str] = &[
     "_atexit",
     "_fmod",
     "_fmodf",
+    // Module pinning (`vm/rt/src/vm/sys.rs`) and the run-time merge's rendezvous page
+    // (`vm/rt/src/vm/jit/merge.rs`).
+    "_dladdr",
+    "_dlopen",
+    "_mach_task_self_",
+    "_mach_vm_allocate",
+    "_mach_vm_read_overwrite",
 ];
 
 pub fn run(target: &str) -> Result<(), String> {

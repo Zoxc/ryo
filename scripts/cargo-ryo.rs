@@ -19,5 +19,12 @@ fn main() {
     }
     let mut cmd = common::toolchain_command("cargo");
     cmd.args(args).env("RUSTC", rustc_ryo);
+    // Cargo gives a path package's executables on msvc, and its dylibs and cdylibs everywhere,
+    // no metadata hash, so their directories (fingerprints, outputs) don't tell compilers apart:
+    // `cargo build` and `cargo ryo build` would rebuild each other's. This variable (std's
+    // build sets it too) gives them one, seeded with its value (design/build.md).
+    if env::var_os("__CARGO_DEFAULT_LIB_METADATA").is_none() {
+        cmd.env("__CARGO_DEFAULT_LIB_METADATA", "ryo");
+    }
     common::exec(cmd, "cargo")
 }
