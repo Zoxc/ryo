@@ -353,7 +353,7 @@ impl Jit {
         match r {
             Ok(mut o) => {
                 if let (Some(dir), Some(text)) = (&self.dump, o.dump.take()) {
-                    let _ = std::fs::write(std::format!("{dir}/f{func}-{:x}.txt", h as *const _ as usize), text);
+                    let _ = std::fs::write(dump::dump_path(dir, func, h as *const _ as usize, "txt"), text);
                 }
                 let len = o.code.len();
                 let out = Gen {
@@ -374,7 +374,7 @@ impl Jit {
                 stats::add(&STATS.ssa_unsupported, 1);
                 if let Some(dir) = &self.dump {
                     let text = std::format!("; unsupported: {}\n{}", u.0, reduced::Disasm(&d.words));
-                    let _ = std::fs::write(std::format!("{dir}/f{func}-{:x}.txt", h as *const _ as usize), text);
+                    let _ = std::fs::write(dump::dump_path(dir, func, h as *const _ as usize, "txt"), text);
                 }
                 if self.rt.settings.log {
                     self.log(rec, &std::format!("ssa: {}", u.0));

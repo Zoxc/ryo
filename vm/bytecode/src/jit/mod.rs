@@ -114,43 +114,10 @@ pub fn compile(
     opt::run(&mut f, mem);
     let mut decisions = opts.dump.then(alloc::string::String::new);
     let mut inlined_ir = None;
-    // Calls through constant pointers become direct before and after inlining (the inlined
-    // code's constants can be the callers'). Each round after the first inlines only from
-    // the calls the one before made direct.
-    let mut devirt = 0;
-    let mut inlined = 0;
-    if let Some(env) = env.as_deref_mut() {
-        let (calls, tails) = inline::devirt(&mut f, env);
-        devirt += calls.len() + tails;
-        let mut dirty = devirt > 0;
-        let mut only: Option<alloc::vec::Vec<ir::Inst>> = None;
-        for round in 0..inline::PARAMS.rounds {
-            if opts.check {
-                f.verify().map_err(|e| Error::Check(alloc::format!("IR before inlining: {e}")))?;
-            }
-            if let (Some(d), true) = (decisions.as_mut(), round > 0) {
-                d.push_str(&alloc::format!(";   round {}\n", round + 1));
-            }
-            let n = inline::inline(&mut f, env, mem, &inline::PARAMS, only.as_deref(), opts.check, decisions.as_mut()).map_err(Error::Check)?;
-            inlined += n;
-            if n > 0 {
-                inlined_ir = opts.dump.then(|| alloc::format!("{f}"));
-            }
-            if n > 0 || dirty {
-                opt::run(&mut f, mem);
-            }
-            let (calls, tails) = inline::devirt(&mut f, env);
-            devirt += calls.len() + tails;
-            dirty = calls.len() + tails > 0;
-            if calls.is_empty() {
-                break;
-            }
-            only = Some(calls);
-        }
-        if dirty {
-            opt::run(&mut f, mem);
-        }
-    }
+    let (devirt, inlined) = match env.as_deref_mut() {
+        Some(env) => inline_rounds(&mut f, env, mem, opts, &mut decisions, &mut inlined_ir)?,
+        None => (0, 0),
+    };
     let before = (opts.check && opts.dump).then(|| alloc::format!("{f}"));
     if opt::promote::promote(&mut f) {
         if opts.check {
@@ -188,31 +155,94 @@ pub fn compile(
     out.devirt = devirt;
     out.inlined = inlined;
     if opts.dump {
-        use core::fmt::Write;
-        let mut s = alloc::string::String::new();
-        let _ = writeln!(s, "; reduced code (frame {})\n{}", d.frame_size, crate::reduced::Disasm(&d.words));
-        let _ = writeln!(s, "; IR before value numbering and the folds\n{}", built_ir.unwrap_or_default());
-        if let Some(d) = decisions.filter(|d| !d.is_empty()) {
-            let _ = writeln!(s, "; inlining\n{d}");
-        }
-        if let Some(ir) = inlined_ir {
-            let _ = writeln!(s, "; IR after inlining\n{ir}");
-        }
-        let _ = writeln!(s, "; IR\n{f}");
-        let _ = writeln!(s, "; locations ({} spill slots, saved {:?})", al.spills, al.saved);
-        for (v, l) in al.loc.iter().enumerate() {
-            if *l != regalloc::Loc::None {
-                let _ = writeln!(s, "v{v}: {l:?}");
-            }
-        }
-        let _ = writeln!(s, "; frame {} bytes, code {} bytes, OSR code at {}", out.frame_size, out.code.len(), out.osr_at);
-        for (k, b) in out.code.iter().enumerate() {
-            let _ = write!(s, "{b:02x}{}", if k % 32 == 31 { "\n" } else { " " });
-        }
-        let _ = writeln!(s, "\n; call sites {:?}\n; cfi {:?}", out.call_sites, out.cfi);
-        out.dump = Some(s);
+        let dump = dump_text(d, built_ir, decisions, inlined_ir, &f, &al, &out);
+        out.dump = Some(dump);
     }
     Ok(out)
+}
+
+/// Calls through constant pointers become direct before and after inlining (the inlined
+/// code's constants can be the callers'). Each round after the first inlines only from the
+/// calls the one before made direct. Records the decisions and the IR after the last
+/// inlining for the dump, and returns how many calls became direct and were inlined.
+#[cfg(feature = "alloc")]
+fn inline_rounds(
+    f: &mut ir::Func,
+    env: &mut dyn inline::Env,
+    mem: Option<&dyn opt::ConstMem>,
+    opts: &Options,
+    decisions: &mut Option<alloc::string::String>,
+    inlined_ir: &mut Option<alloc::string::String>,
+) -> Result<(usize, usize), Error> {
+    let (calls, tails) = inline::devirt(f, env);
+    let mut devirt = calls.len() + tails;
+    let mut inlined = 0;
+    let mut dirty = devirt > 0;
+    let mut only: Option<alloc::vec::Vec<ir::Inst>> = None;
+    for round in 0..inline::PARAMS.rounds {
+        if opts.check {
+            f.verify().map_err(|e| Error::Check(alloc::format!("IR before inlining: {e}")))?;
+        }
+        if let (Some(d), true) = (decisions.as_mut(), round > 0) {
+            d.push_str(&alloc::format!(";   round {}\n", round + 1));
+        }
+        let n = inline::inline(f, env, mem, &inline::PARAMS, only.as_deref(), opts.check, decisions.as_mut()).map_err(Error::Check)?;
+        inlined += n;
+        if n > 0 {
+            *inlined_ir = opts.dump.then(|| alloc::format!("{f}"));
+        }
+        if n > 0 || dirty {
+            opt::run(f, mem);
+        }
+        let (calls, tails) = inline::devirt(f, env);
+        devirt += calls.len() + tails;
+        dirty = calls.len() + tails > 0;
+        if calls.is_empty() {
+            break;
+        }
+        only = Some(calls);
+    }
+    if dirty {
+        opt::run(f, mem);
+    }
+    Ok((devirt, inlined))
+}
+
+/// `RYO_JIT_DUMP`'s description of a compilation: the reduced code, the IR as built, after
+/// inlining (with the decisions) and as allocated, the locations and the emitted code.
+#[cfg(feature = "alloc")]
+fn dump_text(
+    d: &crate::asm::Decoded,
+    built_ir: Option<alloc::string::String>,
+    decisions: Option<alloc::string::String>,
+    inlined_ir: Option<alloc::string::String>,
+    f: &ir::Func,
+    al: &regalloc::Alloc,
+    out: &Output,
+) -> alloc::string::String {
+    use core::fmt::Write;
+    let mut s = alloc::string::String::new();
+    let _ = writeln!(s, "; reduced code (frame {})\n{}", d.frame_size, crate::reduced::Disasm(&d.words));
+    let _ = writeln!(s, "; IR before value numbering and the folds\n{}", built_ir.unwrap_or_default());
+    if let Some(d) = decisions.filter(|d| !d.is_empty()) {
+        let _ = writeln!(s, "; inlining\n{d}");
+    }
+    if let Some(ir) = inlined_ir {
+        let _ = writeln!(s, "; IR after inlining\n{ir}");
+    }
+    let _ = writeln!(s, "; IR\n{f}");
+    let _ = writeln!(s, "; locations ({} spill slots, saved {:?})", al.spills, al.saved);
+    for (v, l) in al.loc.iter().enumerate() {
+        if *l != regalloc::Loc::None {
+            let _ = writeln!(s, "v{v}: {l:?}");
+        }
+    }
+    let _ = writeln!(s, "; frame {} bytes, code {} bytes, OSR code at {}", out.frame_size, out.code.len(), out.osr_at);
+    for (k, b) in out.code.iter().enumerate() {
+        let _ = write!(s, "{b:02x}{}", if k % 32 == 31 { "\n" } else { " " });
+    }
+    let _ = writeln!(s, "\n; call sites {:?}\n; cfi {:?}", out.call_sites, out.cfi);
+    s
 }
 
 /// The SSA IR of the decoded function `d`, as register allocation gets it, with the loads

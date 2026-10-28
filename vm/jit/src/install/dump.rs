@@ -67,6 +67,12 @@ impl Jit {
             };
             let _ = writeln!(s, "ext {} {form} {name}", Func(e.kind | k as u32));
         }
-        let _ = std::fs::write(std::format!("{dir}/f{func}-{header:x}.code"), s);
+        let _ = std::fs::write(dump_path(dir, func, header, "code"), s);
     }
+}
+
+/// `RYO_JIT_DUMP`'s file for `func` (by its image `header`) with extension `ext`:
+/// `dir/f<func>-<header>.<ext>`.
+pub(super) fn dump_path(dir: &str, func: u32, header: usize, ext: &str) -> String {
+    std::format!("{dir}/f{func}-{header:x}.{ext}")
 }
