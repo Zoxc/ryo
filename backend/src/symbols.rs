@@ -118,11 +118,9 @@ pub fn local_stable_crate_id(tcx: TyCtxt<'_>) -> u64 {
 pub fn symbol_name<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>, original: impl FnOnce() -> ty::SymbolName<'tcx>) -> ty::SymbolName<'tcx> {
     if let InstanceKind::Item(def_id) = instance.def
         && super::partition::is_rt_crate(tcx, def_id.krate)
-        && let Some(rt) = super::partition::rt_items_in(tcx, def_id.krate)
+        && tcx.is_diagnostic_item(rustc_span::Symbol::intern(super::partition::C_MAIN_ITEM), def_id)
     {
-        if def_id == rt.c_main {
-            return ty::SymbolName::new(tcx, &tcx.sess.target.entry_name);
-        }
+        return ty::SymbolName::new(tcx, &tcx.sess.target.entry_name);
     }
     let name = original();
     if !symbol_from_attrs(tcx, instance)

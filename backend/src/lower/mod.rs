@@ -123,6 +123,8 @@ pub struct LowerCx<'a, 'tcx> {
     /// is a `call`; a VM function of another image is called by symbol (`call.sym`), as a
     /// native Rust function; any other local callee is called through an island.
     pub vm: &'a FxHashSet<Instance<'tcx>>,
+    /// `ryo_rt`'s items (its island templates).
+    pub rt: crate::partition::RtItems,
     /// How the machine code is generated.
     pub mode: asm::Mode,
     /// Whether to record the certificate for the Lean lowering check (`cert.rs`).

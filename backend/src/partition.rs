@@ -36,6 +36,20 @@ pub struct RtItems {
     pub fp_arg: DefId,
 }
 
+impl RtItems {
+    /// `ryo_rt`'s item with diagnostic item name `name` (`#[rustc_diagnostic_item]`).
+    pub fn item(&self, tcx: TyCtxt<'_>, name: Symbol) -> Option<DefId> {
+        rt_item(tcx, self.krate, name)
+    }
+}
+
+fn rt_item(tcx: TyCtxt<'_>, krate: CrateNum, name: Symbol) -> Option<DefId> {
+    tcx.diagnostic_items(krate).name_to_id.get(&name).copied()
+}
+
+/// The diagnostic item name of `ryo_rt::entry::c_main`.
+pub const C_MAIN_ITEM: &str = "ryo_c_main";
+
 /// A value computed once per session and kept in a static. Only [`Results`] needs one: the
 /// partition provider hands it to the exported-symbols providers, and query providers are plain
 /// fns with no per-session slot to reach (rustc_codegen_cranelift overrides no queries, so it
@@ -74,7 +88,8 @@ impl<T> SessionCell<T> {
 /// `ryo_rt` isn't loaded (rustc wasn't run through `rustc-ryo`).
 pub fn rt_items(tcx: TyCtxt<'_>) -> Option<RtItems> {
     let krate = *tcx.crates(()).iter().find(|&&c| is_rt_crate(tcx, c))?;
-    rt_items_in(tcx, krate)
+    let get = |name: &str| rt_item(tcx, krate, Symbol::intern(name));
+    Some(RtItems { krate, c_main: get(C_MAIN_ITEM)?, fp_arg: get("ryo_rt_fp_arg")? })
 }
 
 /// The runtime crate's name.
@@ -83,13 +98,6 @@ pub const RT_CRATE: &str = "ryo_rt";
 /// Whether `krate` is `ryo_rt`.
 pub fn is_rt_crate(tcx: TyCtxt<'_>, krate: CrateNum) -> bool {
     tcx.crate_name(krate).as_str() == RT_CRATE
-}
-
-/// [`rt_items`], given `ryo_rt`'s crate.
-pub fn rt_items_in(tcx: TyCtxt<'_>, krate: CrateNum) -> Option<RtItems> {
-    let items = tcx.diagnostic_items(krate);
-    let get = |name: &str| items.name_to_id.get(&Symbol::intern(name)).copied();
-    Some(RtItems { krate, c_main: get("ryo_c_main")?, fp_arg: get("ryo_rt_fp_arg")? })
 }
 
 /// What the partition provider hands to the other providers and to `codegen_crate`. Set once:
@@ -1122,7 +1130,7 @@ fn build_cgu<'tcx>(
     cgu: &CodegenUnit<'tcx>,
     cands: &[(Instance<'tcx>, MonoItemData)],
 ) -> ImagePart<'tcx> {
-    let (mut ok, failed) = lower_cgu(tcx, cands, mode, switches);
+    let (mut ok, failed) = lower_cgu(tcx, rt, cands, mode, switches);
     let mut vm: Vec<VmFn<'tcx>> = Vec::new();
     for &(instance, data) in cands {
         if let Some(lowered) = ok.remove(&instance) {
@@ -1153,7 +1161,7 @@ fn build_cgu<'tcx>(
                 CodeReloc::Static { def_id, .. } => refs.push(MonoItem::Static(def_id)),
                 CodeReloc::Const { alloc, .. } => alloc_refs(tcx, alloc, &mut seen_allocs, &mut refs),
                 CodeReloc::Data { alloc, .. } => alloc_refs(tcx, alloc, &mut seen_allocs, &mut refs),
-                CodeReloc::Island { template, args } => islands.push(island_instance(tcx, rt.krate, template, args)),
+                CodeReloc::Island { template, args } => islands.push(island_instance(tcx, rt, template, args)),
                 CodeReloc::Call { .. } | CodeReloc::Bytes { .. } => {}
             }
         }
@@ -1300,7 +1308,7 @@ fn island_names<'tcx>(tcx: TyCtxt<'tcx>, rt: RtItems, fresh: &[Fresh<'tcx>]) -> 
     for v in fresh.iter().flat_map(|f| f.vm.iter()) {
         for r in &v.lowered.relocs {
             let CodeReloc::Island { template, args } = *r else { continue };
-            let island = island_instance(tcx, rt.krate, template, args);
+            let island = island_instance(tcx, rt, template, args);
             out.push((tcx.symbol_name(island).name.to_owned(), template.to_string()));
         }
     }
@@ -1324,7 +1332,6 @@ fn build_image<'tcx>(
 ) -> ImageObject {
     let mut w = ImageWriter::new(local_stable_crate_id(tcx));
     w.set_cgu_hash(ryo_bytecode::image::cgu_hash(cgu_name.as_str().as_bytes()));
-    let rt_krate = rt.krate;
     let mut pool = Pool::default();
     w.prepare(mode);
     if symbols::is_macho(tcx.sess) {
@@ -1360,7 +1367,7 @@ fn build_image<'tcx>(
                 CodeReloc::Bytes { ref bytes, align } => pool.bytes(&mut w, bytes, align).0,
                 CodeReloc::Data { alloc, offset } => pool.data(tcx, &mut w, alloc).0 + offset,
                 CodeReloc::Island { template, args } => {
-                    let island = island_instance(tcx, rt_krate, template, args);
+                    let island = island_instance(tcx, rt, template, args);
                     let flags = symbols::symbol_flags(tcx, island, symbols::SymRole::Island);
                     w.symbol(tcx.symbol_name(island).name, flags).0
                 }
@@ -1416,8 +1423,8 @@ fn build_image<'tcx>(
 }
 
 /// The instance of `ryo_rt`'s island template `template` for `args`.
-fn island_instance<'tcx>(tcx: TyCtxt<'tcx>, rt: CrateNum, template: Symbol, args: ty::GenericArgsRef<'tcx>) -> Instance<'tcx> {
-    let Some(&def_id) = tcx.diagnostic_items(rt).name_to_id.get(&template) else {
+fn island_instance<'tcx>(tcx: TyCtxt<'tcx>, rt: RtItems, template: Symbol, args: ty::GenericArgsRef<'tcx>) -> Instance<'tcx> {
+    let Some(def_id) = rt.item(tcx, template) else {
         tcx.dcx().fatal(format!("ryo_rt has no island template `{template}`; rebuild with `./y.sh build`"))
     };
     Instance::new_raw(def_id, args)
@@ -1444,6 +1451,7 @@ fn neighbors<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> Vec<MonoItem<
 #[allow(clippy::type_complexity)]
 fn lower_cgu<'tcx>(
     tcx: TyCtxt<'tcx>,
+    rt: RtItems,
     cands: &[(Instance<'tcx>, MonoItemData)],
     mode: asm::Mode,
     switches: &Switches,
@@ -1453,7 +1461,7 @@ fn lower_cgu<'tcx>(
     let mut failed = Vec::new();
     let mut todo: Vec<Instance<'tcx>> = cands.iter().map(|c| c.0).collect();
     while !todo.is_empty() {
-        let cx = LowerCx { vm: &vm, mode, cert: switches.dump_lean.is_some(), asm_check: switches.asm_check };
+        let cx = LowerCx { vm: &vm, rt, mode, cert: switches.dump_lean.is_some(), asm_check: switches.asm_check };
         let out: Vec<_> = rustc_data_structures::sync::par_map(todo, |instance| (instance, lower::lower(tcx, &cx, instance)));
         let mut removed = false;
         for (instance, r) in out {

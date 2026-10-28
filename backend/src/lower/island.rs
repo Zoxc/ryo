@@ -41,10 +41,9 @@ pub mod templates {
 
     /// The wrapper of the SIMD intrinsic `name`, `ryo_island_<name>` (generic like the
     /// intrinsic), if `ryo_rt` has one.
-    pub fn simd(tcx: TyCtxt<'_>, name: &str) -> Option<String> {
-        let rt = *tcx.crates(()).iter().find(|&&c| crate::partition::is_rt_crate(tcx, c))?;
+    pub fn simd(tcx: TyCtxt<'_>, rt: crate::partition::RtItems, name: &str) -> Option<String> {
         let template = format!("ryo_island_{name}");
-        tcx.diagnostic_items(rt).name_to_id.contains_key(&Symbol::intern(&template)).then_some(template)
+        rt.item(tcx, Symbol::intern(&template)).map(|_| template)
     }
 
     /// `call_cN<A0, …, R>` (`extern "C"` through a fn pointer), N ≤ 16.

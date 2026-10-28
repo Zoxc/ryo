@@ -427,7 +427,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 if self.strict_simd {
                     return native("simd_* without an opcode in a #[target_feature] fn");
                 }
-                let Some(template) = templates::simd(self.tcx, n) else { return Ok(false) };
+                let Some(template) = templates::simd(self.tcx, self.cx.rt, n) else { return Ok(false) };
                 let ins = self.island_args(args)?;
                 let generics: Vec<GenericArg<'tcx>> = callee.args.iter().collect();
                 if generics.iter().any(|g| g.as_type().is_none()) {
