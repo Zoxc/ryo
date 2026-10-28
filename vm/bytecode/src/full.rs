@@ -834,7 +834,23 @@ pub struct OpInfo<O: 'static = Opcode> {
     pub fixed_len: Option<usize>,
 }
 
-impl<O> OpInfo<O> {
+impl<O: 'static> OpInfo<O> {
+    /// Each operand with its words, given the instruction's words after the opcode word (a
+    /// list's include its count word). The single place that knows the operand layout.
+    pub fn operand_words<'a>(&self, mut words: &'a [u32]) -> impl Iterator<Item = (&'static OperandInfo, &'a [u32])> + use<'a, O> {
+        self.operands.iter().map(move |o| {
+            let n = match o.kind {
+                OperandKind::List(e) => 1 + words[0] as usize * e.words(),
+                k => k.words().unwrap(),
+            };
+            let (w, rest) = words.split_at(n);
+            words = rest;
+            (o, w)
+        })
+    }
+}
+
+impl<O: 'static> OpInfo<O> {
     /// Word index (from the instruction start) of operand `i`, if every operand before it
     /// has a fixed size.
     pub const fn operand_offset(&self, i: usize) -> Option<usize> {

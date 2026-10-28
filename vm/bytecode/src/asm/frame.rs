@@ -88,17 +88,10 @@ pub fn insns(code: &[u32], mode: Mode) -> Result<Vec<InsnFrame>, FrameError> {
                 f.op = Some(fop);
                 native(fop, w, at, &mut f).map_err(bad)?;
                 let info = fop.info();
-                let mut pos = 1;
-                for o in info.operands {
-                    match o.kind {
-                        OperandKind::Target => f.targets.push(rel(w[pos])),
-                        OperandKind::List(e) => {
-                            pos += 1 + w[pos] as usize * e.words();
-                            continue;
-                        }
-                        _ => {}
+                for (o, ow) in info.operand_words(&w[1..]) {
+                    if o.kind == OperandKind::Target {
+                        f.targets.push(rel(ow[0]));
                     }
-                    pos += o.kind.words().expect("fixed");
                 }
                 f.next = !matches!(info.shape, Shape::Jmp | Shape::Ret | Shape::TailCall);
                 f.reads_all = matches!(info.shape, Shape::Call | Shape::TailCall | Shape::Island);

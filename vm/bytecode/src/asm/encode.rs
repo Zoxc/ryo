@@ -248,11 +248,10 @@ impl<T> Opnd<T> {
 /// The operands of the instruction at word `at` of `code`, by kind.
 pub fn operands(code: &[u32], at: usize) -> Vec<Opnd> {
     let op = Opcode::from_u16(code[at] as u16).expect("decoded");
-    let mut pos = at + 1;
     let mut out = Vec::new();
     let target = |w: u32| (at as u32).wrapping_add(w);
-    for o in op.info().operands {
-        let w = |i: usize| code[pos + i];
+    for (o, ow) in op.info().operand_words(&code[at + 1..]) {
+        let w = |i: usize| ow[i];
         let wide = |n: usize| (0..n).fold(0u128, |v, i| v | (w(i) as u128) << (32 * i));
         out.push(match o.kind {
             OperandKind::Slot => Opnd::Slot(w(0) as i32),
@@ -273,7 +272,7 @@ pub fn operands(code: &[u32], at: usize) -> Vec<Opnd> {
             OperandKind::Handler | OperandKind::List(ElemKind::Arg) => unreachable!("not in the full set"),
             OperandKind::List(e) => {
                 let n = w(0) as usize;
-                let el = |i: usize, j: usize| code[pos + 1 + i * e.words() + j];
+                let el = |i: usize, j: usize| ow[1 + i * e.words() + j];
                 let o = match e {
                     ElemKind::Target => Opnd::Targets((0..n).map(|i| target(el(i, 0))).collect()),
                     ElemKind::Word => Opnd::Words((0..n).map(|i| el(i, 0)).collect()),
@@ -284,12 +283,9 @@ pub fn operands(code: &[u32], at: usize) -> Vec<Opnd> {
                         Opnd::Cases(vals, (0..n).map(|i| target(el(i, vw))).collect())
                     }
                 };
-                pos += 1 + n * e.words();
-                out.push(o);
-                continue;
+                o
             }
         });
-        pos += o.kind.words().unwrap();
     }
     out
 }

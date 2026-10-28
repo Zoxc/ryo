@@ -329,41 +329,28 @@ pub fn validate_code(code: &[u32], lim: &CodeLimits) -> Result<Vec<bool>, (u32, 
             return fail(CodeError::ArgNotFirst);
         }
         args_only &= insn.opcode() == Opcode::Arg;
-        let mut pos = 1usize;
-        for o in insn.opcode().info().operands {
-            let w = |i: usize| words[pos + i];
+        for (o, w) in insn.opcode().info().operand_words(&words[1..]) {
             match o.kind {
-                OperandKind::Target if !target_ok(at, w(0) as i32) => return fail(CodeError::BadTarget),
-                OperandKind::Func if w(0) >= lim.functions => return fail(CodeError::FuncOutOfRange),
-                OperandKind::Sym if w(0) >= lim.symbols => return fail(CodeError::SymOutOfRange),
-                OperandKind::Site if w(0) >= lim.sites => return fail(CodeError::SiteOutOfRange),
-                OperandKind::Const if w(0) > lim.consts => return fail(CodeError::ConstOutOfRange),
-                OperandKind::Abs => match Abs::from_word(w(0)) {
+                OperandKind::Target if !target_ok(at, w[0] as i32) => return fail(CodeError::BadTarget),
+                OperandKind::Func if w[0] >= lim.functions => return fail(CodeError::FuncOutOfRange),
+                OperandKind::Sym if w[0] >= lim.symbols => return fail(CodeError::SymOutOfRange),
+                OperandKind::Site if w[0] >= lim.sites => return fail(CodeError::SiteOutOfRange),
+                OperandKind::Const if w[0] > lim.consts => return fail(CodeError::ConstOutOfRange),
+                OperandKind::Abs => match Abs::from_word(w[0]) {
                     Abs::Const(k) if k.0 > lim.consts => return fail(CodeError::ConstOutOfRange),
                     Abs::Data(d) if d.0 > lim.data => return fail(CodeError::DataOutOfRange),
                     _ => {}
                 },
                 OperandKind::List(e) => {
-                    let n = w(0) as usize;
-                    let ew = e.words();
-                    for i in 0..n {
-                        let t = match e {
-                            ElemKind::Target => Some(w(1 + i)),
-                            ElemKind::Word => None,
-                            _ => Some(w(1 + i * ew + ew - 1)),
-                        };
-                        if let Some(t) = t
-                            && !target_ok(at, t as i32)
-                        {
+                    for el in w[1..].chunks(e.words()) {
+                        // A case's target is its last word; a word list has none.
+                        if e != ElemKind::Word && !target_ok(at, el[el.len() - 1] as i32) {
                             return fail(CodeError::BadTarget);
                         }
                     }
-                    pos += 1 + n * ew;
-                    continue;
                 }
                 _ => {}
             }
-            pos += o.kind.words().unwrap();
         }
     }
     Ok(starts)
@@ -376,23 +363,14 @@ fn check_indirection(code: &[u32], symbols: &[SymbolDef]) -> Result<(), (u32, Co
     for r in Decoder::new(code) {
         let (at, insn) = r.unwrap();
         let op = insn.opcode();
-        let mut pos = 1usize;
-        for o in op.info().operands {
-            match o.kind {
-                OperandKind::Sym => {
-                    let indirect = symbols[code[at + pos] as usize].flags & SYM_INDIRECT != 0;
-                    let loads_through = matches!(op, Opcode::AddrSymInd | Opcode::CallSymInd) && o.name == "sym";
-                    if indirect != loads_through {
-                        return Err((at as u32, CodeError::SymIndirection));
-                    }
+        for (o, w) in op.info().operand_words(&code[at + 1..]) {
+            if o.kind == OperandKind::Sym {
+                let indirect = symbols[w[0] as usize].flags & SYM_INDIRECT != 0;
+                let loads_through = matches!(op, Opcode::AddrSymInd | Opcode::CallSymInd) && o.name == "sym";
+                if indirect != loads_through {
+                    return Err((at as u32, CodeError::SymIndirection));
                 }
-                OperandKind::List(e) => {
-                    pos += 1 + code[at + pos] as usize * e.words();
-                    continue;
-                }
-                _ => {}
             }
-            pos += o.kind.words().unwrap();
         }
     }
     Ok(())
