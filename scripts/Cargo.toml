@@ -1,0 +1,24 @@
+# The launchers `y install` puts in cargo's bin dir with `cargo install --path scripts`
+# (design/install.md). Not the wrappers in this directory, which `y build` compiles
+# with plain rustc.
+[package]
+name = "cargo-ryo"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+
+[[bin]]
+name = "cargo-ryo"
+path = "launcher/cargo-ryo.rs"
+
+[[bin]]
+name = "rustc-ryo"
+path = "launcher/rustc-ryo.rs"
+
+# Not a member of any workspace.
+[workspace]

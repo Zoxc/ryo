@@ -169,11 +169,12 @@ fn is_ryo_crate(name: &str) -> bool {
 /// JIT has a std of its own, the native one, so it never enters this sysroot's VM code. The
 /// second directory is the checked JIT's, swapped into a copy of `ryo_rt` in
 /// `sysroot-ryo/jit-checked/` as for `dist/`.
-pub fn build(info: &RustcInfo, dist: &Path, jit: Option<(&Path, &Path)>) -> Result<(), String> {
+/// `target`: cargo's target directory (the work directory is `<target>/sysroot-ryo`).
+pub fn build(info: &RustcInfo, dist: &Path, target: &Path, jit: Option<(&Path, &Path)>) -> Result<(), String> {
     let (jit, checked) = (jit.map(|j| j.0), jit.map(|j| j.1));
     eprintln!("[y] sysroot: std with the ryo backend");
     let root = root();
-    let work = root.join("target").join("sysroot-ryo");
+    let work = target.join("sysroot-ryo");
     let lib_src = work.join("library");
     let inputs = stamp(info, &root, dist, jit.is_some())?;
     prepare_sources(info, &root, &lib_src, jit.is_some())?;

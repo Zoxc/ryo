@@ -27,7 +27,11 @@ modeled on cg_clif's `build_system/`.
   run through `./y.sh <cmd>` (or `y.cmd`/`y.ps1` on Windows), which is
   `cargo run --manifest-path build/Cargo.toml -- <cmd>`.
 - Commands: `build [--sysroot llvm|ryo] [--target T]...`, `build-clif`, `test [--clif | --cross T]`, `bench [--runs N] [--llvm L] [--clif [L]] [--ryo M] [--metric time|cachegrind]`, `bench codegen`,
-  `bench crates [...]`, `lean [gen]`, `clean`.
+  `bench crates [...]`, `lean [gen]`, `install`, `uninstall`, `clean`.
+- `install`/`uninstall`: build ryo into the checkout's `install/` (with `dist::build_in`, the
+  same build as `build` into other directories) and put launchers in cargo's bin dir with
+  `cargo install --path scripts` ([install.md](install.md)). Independent of `dist/` and
+  `target/`; `clean` leaves `install/` alone.
 - It sets `RUSTC_BOOTSTRAP=1` on everything it spawns.
 
 ### `build`
@@ -446,7 +450,9 @@ real crates.io crates, in cargo's `dev` profile only. The default is `llvm,ryo`.
 y.sh, y.cmd, y.ps1                         entry points for the build tool
 build/          bin        y                   build tool (own Cargo.lock, no deps)
   clif/                                        cg_clif sources copied by `y build-clif` (not committed)
-scripts/                                       rustc-ryo.rs, cargo-ryo.rs, rustc-clif.rs wrappers
+scripts/                                       rustc-ryo.rs, cargo-ryo.rs, rustc-clif.rs wrappers;
+                                               Cargo.toml, launcher.rs: `y install`'s launchers
+install/                                       `y install`'s build and installed copy (not committed)
 backend/        dylib      rustc_codegen_ryo   #![feature(rustc_private)]
 vm/             cargo workspace for everything that ends up in the output program
   bytecode/     rlib       ryo_bytecode        format: opcodes, machine code, image layout;

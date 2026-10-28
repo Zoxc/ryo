@@ -60,7 +60,8 @@ code that calls the VM's handlers; cg_llvm compiles everything else. Start at
   - `jit/` `ryo_jit`: the JIT thread (compile, install); sealed with its own std by
     `y build`, an rlib in `vm/`'s tests.
 - `build/` (workspace): the `y` build tool, zero deps (`design/build.md`).
-- `scripts/`: `rustc-ryo`/`cargo-ryo`/`rustc-clif` wrappers, `compare-branches.py`,
+- `scripts/`: `rustc-ryo`/`cargo-ryo`/`rustc-clif` wrappers, the `y install` launcher
+  package (`Cargo.toml`, `launcher.rs`), `compare-branches.py`,
   `lean-*` checkers.
 - `tests/`: the corpus `y test` builds with ryo and plain rustc and diffs; `tests/lean/` the
   Lean-checked programs; `tests/crates/` workloads for `y bench crates`.
@@ -96,7 +97,11 @@ code that calls the VM's handlers; cg_llvm compiles everything else. Start at
 - `bench codegen`: rewrites `bench/codegen/` (AOT `.txt`/`.s`, JIT `.jit.s`,
   `.jit-ssa-{pre,post}.txt`) using `dist/`, so `./y.sh build` first.
 - `bench crates [...]`: crates.io crates per backend, HTML report.
-- `lean [gen | --proofs]`, `build-clif`, `clean`.
+- `install [--target T] [--sysroot ryo] [--yes|--dry-run]` / `uninstall`: install ryo for
+  use into the checkout's `install/` plus `cargo install --path scripts` launchers
+  (`design/install.md`). Changes the real rustup and `~/.cargo/bin`: test with `--dry-run`
+  or an isolated `RUSTUP_HOME`/`CARGO_HOME`.
+- `lean [gen | --proofs]`, `build-clif`, `clean` (not `install/`).
 
 ## Env vars
 

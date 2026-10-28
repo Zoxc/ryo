@@ -5,6 +5,7 @@ mod clif;
 mod crates;
 mod cross;
 mod dist;
+mod install;
 mod jit;
 mod lean;
 mod sysroot;
@@ -53,7 +54,13 @@ commands:
                                `lake test` in lean/; `gen` regenerates the tables;
                                `--proofs` also builds the slow proofs (`RyoProofs`)
 {CRATES}
-  clean                        remove dist/ and target/
+  install [--target T]... [--sysroot llvm|ryo] [--no-toolchain-install] [--yes] [--dry-run]
+                               install ryo for use (design/install.md): the pinned toolchain via
+                               rustup, a build in install/, launchers via `cargo install`;
+                               prints the plan and asks first
+  uninstall [--keep-toolchain] [--yes] [--dry-run]
+                               remove the launchers, what install added to rustup, and install/
+  clean                        remove dist/ and target/ (not install/)
 ";
 
 fn usage() -> String {
@@ -83,6 +90,8 @@ enum Cmd {
     BenchCodegen,
     BenchCrates(crates::Options),
     Lean(LeanMode),
+    Install(install::InstallOptions),
+    Uninstall(install::UninstallOptions),
     Clean,
     Help,
 }
@@ -140,6 +149,8 @@ fn parse_args(args: &[String]) -> Result<Cmd, String> {
             ["--proofs"] => Ok(Cmd::Lean(LeanMode::Proofs)),
             [arg, ..] => Err(format!("unexpected argument `{arg}`")),
         },
+        "install" => install::parse_install(&rest).map(Cmd::Install),
+        "uninstall" => install::parse_uninstall(&rest).map(Cmd::Uninstall),
         "clean" => no_args(Cmd::Clean),
         "help" | "-h" | "--help" => Ok(Cmd::Help),
         other => Err(format!("unknown command `{other}`")),
@@ -207,6 +218,8 @@ fn main() -> ExitCode {
         Cmd::Lean(LeanMode::Check) => lean::check(false),
         Cmd::Lean(LeanMode::Proofs) => lean::check(true),
         Cmd::Lean(LeanMode::Generate) => lean::generate(),
+        Cmd::Install(o) => return install::install(&o),
+        Cmd::Uninstall(o) => return install::uninstall(&o),
         Cmd::Clean => dist::clean(),
     };
     match result {
@@ -265,6 +278,8 @@ mod tests {
         assert_eq!(parse(&["lean", "gen"]), Ok(Cmd::Lean(LeanMode::Generate)));
         assert_eq!(parse(&["lean", "--proofs"]), Ok(Cmd::Lean(LeanMode::Proofs)));
         assert!(parse(&["lean", "x"]).is_err());
+        assert!(matches!(parse(&["install", "--yes"]), Ok(Cmd::Install(o)) if o.yes));
+        assert!(matches!(parse(&["uninstall", "--dry-run"]), Ok(Cmd::Uninstall(o)) if o.dry_run));
         assert_eq!(parse(&["clean"]), Ok(Cmd::Clean));
         assert!(parse(&["clean", "x"]).is_err());
         assert!(parse(&["frobnicate"]).is_err());

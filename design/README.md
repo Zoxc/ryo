@@ -5,6 +5,7 @@ x86-64 calls of the VM's handlers, and uses
 `rustc_codegen_llvm` (cg_llvm) for everything the VM doesn't do itself.
 
 - [build.md](build.md): toolchain, the `y` build tool, sysroot, repository layout
+- [install.md](install.md): `y install`/`uninstall`: installing ryo for use, the launchers
 - [backend.md](backend.md): the codegen backend: pipeline and query overrides
 - [stubs.md](stubs.md): islands, the glue from VM code to native operations, and how VM
   functions are native functions

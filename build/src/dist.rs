@@ -14,14 +14,21 @@ const BACKEND_FEATURES: &str = "rustc_private,macro_metavar_expr_concat";
 /// With `ryo_std`, also builds std with the ryo backend into `dist/sysroot-ryo`
 /// (`--sysroot ryo`).
 pub fn build(targets: &[String], ryo_std: bool) -> Result<(), String> {
+    let root = root();
+    build_in(&root.join("dist"), &root.join("target"), targets, ryo_std).map(drop)
+}
+
+/// [`build`] with `dist` as the output directory (what `dist/` is for `y build`) and `target`
+/// as cargo's target directory (`y install` uses `install/build/` and `install/target/`).
+/// Returns the build id.
+pub fn build_in(dist: &Path, target: &Path, targets: &[String], ryo_std: bool) -> Result<String, String> {
     let info = RustcInfo::get()?;
     let root = root();
-    let dist = root.join("dist");
-    let target = root.join("target");
+    let (dist, target) = (dist.to_path_buf(), target.to_path_buf());
 
     let backend = build_backend(&root, &target, &info)?;
 
-    eprintln!("[y] sysroot: dist/");
+    eprintln!("[y] sysroot: {}", dist.display());
     // Everything but the ryo sysroot and its stamp, which `y test` checks for staleness
     // ([`crate::sysroot::ryo_sysroot_status`]) instead of losing a slow build to each `y build`.
     if dist.exists() {
@@ -73,10 +80,10 @@ pub fn build(targets: &[String], ryo_std: bool) -> Result<(), String> {
     let build_id = build_id(&build_files)?;
     build_wrappers(&root, &dist_bin, &info, &build_id)?;
     if ryo_std {
-        crate::sysroot::build(&info, &dist, host_jit.as_ref().map(|(j, c)| (j.as_path(), c.as_path())))?;
+        crate::sysroot::build(&info, &dist, &target, host_jit.as_ref().map(|(j, c)| (j.as_path(), c.as_path())))?;
     }
     eprintln!("[y] done: {}", dist.display());
-    Ok(())
+    Ok(build_id)
 }
 
 pub fn clean() -> Result<(), String> {
