@@ -80,11 +80,7 @@ impl Proto {
 
     /// The branch targets (byte positions).
     fn targets(&self) -> impl Iterator<Item = u32> + '_ {
-        let handler: &[u32] = match &self.handler {
-            Some((_, Then::Branch { target, .. })) => core::slice::from_ref(target),
-            Some((_, Then::Table(ts))) => ts,
-            _ => &[],
-        };
+        let handler: &[u32] = self.handler.as_ref().map_or(&[], |(_, then)| then.targets());
         self.ops.iter().flat_map(op_targets).chain(handler).copied()
     }
 }
@@ -390,11 +386,7 @@ fn read(code: &[u8], fields: Fields<'_>, rodata: &[u8], side: Side<'_>, mode: Mo
             _ => None,
         });
         // A handler call's branch, or its table's default (an operand of its own).
-        let br = match &p.handler {
-            Some((_, Then::Branch { target, .. })) => Some(*target),
-            Some((_, Then::Table(ts))) => ts.last().copied(),
-            _ => None,
-        };
+        let br = p.handler.as_ref().and_then(|(_, then)| then.loop_target());
         for t in single.chain(br) {
             let j = index(p.pos, t)?;
             if j <= i && j < rs {

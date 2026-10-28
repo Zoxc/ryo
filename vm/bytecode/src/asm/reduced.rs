@@ -28,12 +28,25 @@ pub fn as_handler(words: &[u32], mode: Mode) -> Vec<u32> {
     let ops: Vec<Opnd> = operands(&full, 0);
     let args: Vec<Arg> =
         handler_args(op, &ops, mode, |_| unreachable!("no code constants")).into_iter().map(|v| v.to_arg().expect("a handler argument")).collect();
-    let mut out = alloc::vec![reduced::Opcode::Handler as u32, op as u32, args.len() as u32];
-    for a in &args {
-        crate::full::Elem::put(a, &mut out);
-    }
-    out.extend([0, 0]);
+    let mut out = Vec::with_capacity(handler_words(args.len(), 0));
+    push_handler(op, &args, false, &[], &mut out);
     out
+}
+
+/// The length in words of a reduced `handler` with `nargs` arguments and `ntargets` targets.
+fn handler_words(nargs: usize, ntargets: usize) -> usize {
+    3 + ElemKind::Arg.words() * nargs + 2 + ntargets
+}
+
+/// Appends a reduced `handler` calling `op`'s handler with `args`, then `neg` and the
+/// (relative) targets `targets`.
+fn push_handler(op: Opcode, args: &[Arg], neg: bool, targets: &[u32], out: &mut Vec<u32>) {
+    out.extend([reduced::Opcode::Handler as u32, op as u32, args.len() as u32]);
+    for a in args {
+        crate::full::Elem::put(a, out);
+    }
+    out.extend([neg as u32, targets.len() as u32]);
+    out.extend_from_slice(targets);
 }
 
 /// What follows a handler call: its shape's control flow, with targets `T`.
@@ -47,6 +60,42 @@ pub(super) enum Then<T = u32> {
     Table(Vec<T>),
     /// Nothing: the handler doesn't return (`trap`).
     Trap,
+}
+
+impl<T: Copy> Then<T> {
+    /// All its targets: the branch's, or the table's (the default last).
+    pub(super) fn targets(&self) -> &[T] {
+        match self {
+            Then::Branch { target, .. } => core::slice::from_ref(target),
+            Then::Table(ts) => ts,
+            Then::Next | Then::Trap => &[],
+        }
+    }
+
+    /// Its single target, which can make a loop head: the branch's, or the table's default.
+    pub(super) fn loop_target(&self) -> Option<T> {
+        match self {
+            Then::Branch { target, .. } => Some(*target),
+            Then::Table(ts) => ts.last().copied(),
+            Then::Next | Then::Trap => None,
+        }
+    }
+}
+
+/// The jump table targets of the `switch`-shaped `op` with operands `ops`: its targets or
+/// cases' targets, then the default.
+pub(super) fn switch_targets<T: Copy>(op: Opcode, ops: &[Opnd<T>]) -> Vec<T> {
+    let mut ts: Vec<T> = ops
+        .iter()
+        .flat_map(|o| match o {
+            Opnd::Targets(t) | Opnd::Cases(_, t) => &t[..],
+            _ => &[],
+        })
+        .copied()
+        .collect();
+    let Opnd::Target(d) = ops[op.info().operand_index("default").expect("operand")] else { unreachable!("a switch's default") };
+    ts.push(d);
+    ts
 }
 
 /// A reduced instruction being built, targets instruction indices: one of the full set
@@ -96,14 +145,7 @@ pub(super) fn words(
     let region = if pe { cleanup.iter().filter(|c| !c.2).filter_map(|c| c.1).min().unwrap_or(usize::MAX) } else { usize::MAX };
     let len = |i: &Insn| match i {
         Insn::Native(op, ops) => word_len(*op, ops),
-        Insn::Handler(_, args, then) => {
-            let n = match then {
-                Then::Branch { .. } => 1,
-                Then::Table(t) => t.len(),
-                Then::Next | Then::Trap => 0,
-            };
-            4 + 3 * args.len() + 1 + n
-        }
+        Insn::Handler(_, args, then) => handler_words(args.len(), then.targets().len()),
     };
     let mut wpos = Vec::with_capacity(insns.len() + 1);
     let mut w = 0u32;
@@ -123,17 +165,9 @@ pub(super) fn words(
                 out[at] = reduced::Opcode::of_full(*op).expect("in the reduced set") as u32;
             }
             Insn::Handler(op, args, then) => {
-                let (neg, ts) = match then {
-                    Then::Branch { neg, target } => (*neg, alloc::vec![*target]),
-                    Then::Table(t) => (false, t.clone()),
-                    Then::Next | Then::Trap => (false, Vec::new()),
-                };
-                out.extend([reduced::Opcode::Handler as u32, *op as u32, args.len() as u32]);
-                for a in args {
-                    crate::full::Elem::put(a, &mut out);
-                }
-                out.extend([neg as u32, ts.len() as u32]);
-                out.extend(ts.into_iter().map(rel));
+                let neg = matches!(then, Then::Branch { neg: true, .. });
+                let ts: Vec<u32> = then.targets().iter().map(|&t| rel(t)).collect();
+                push_handler(*op, args, neg, &ts, &mut out);
             }
         }
     }
@@ -149,9 +183,7 @@ pub(super) fn words(
     for (k, i) in insns.iter().enumerate() {
         let single: Vec<u32> = match i {
             Insn::Native(_, ops) => ops.iter().filter_map(|o| if let Opnd::Target(t) = o { Some(*t) } else { None }).collect(),
-            Insn::Handler(_, _, Then::Branch { target, .. }) => alloc::vec![*target],
-            Insn::Handler(_, _, Then::Table(ts)) => ts.last().copied().into_iter().collect(),
-            Insn::Handler(..) => Vec::new(),
+            Insn::Handler(_, _, then) => then.loop_target().into_iter().collect(),
         };
         for t in single {
             if t as usize <= k && (t as usize) < region {
@@ -208,18 +240,7 @@ pub fn reduce(
                 let (Opnd::Neg(neg), Opnd::Target(target)) = (named("neg"), named("t")) else { unreachable!() };
                 Then::Branch { neg, target }
             }
-            Shape::Switch => {
-                let mut ts: Vec<u32> = ops
-                    .iter()
-                    .flat_map(|o| match o {
-                        Opnd::Targets(t) | Opnd::Cases(_, t) => t.clone(),
-                        _ => Vec::new(),
-                    })
-                    .collect();
-                let Opnd::Target(d) = named("default") else { unreachable!() };
-                ts.push(d);
-                Then::Table(ts)
-            }
+            Shape::Switch => Then::Table(switch_targets(op, &ops)),
             Shape::Trap => Then::Trap,
             _ => Then::Next,
         };

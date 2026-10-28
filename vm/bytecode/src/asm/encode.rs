@@ -1262,14 +1262,7 @@ impl Asm {
                     Some(items) => self.dense_index(items),
                     None => self.handler_call(op, ops, None),
                 }
-                let mut ts = Vec::new();
-                for o in ops {
-                    if let Opnd::Targets(t) | Opnd::Cases(_, t) = o {
-                        ts.extend_from_slice(t);
-                    }
-                }
-                ts.push(target("default"));
-                self.table(ts);
+                self.table(super::reduced::switch_targets(op, ops));
             }
             Shape::Trap if op == Opcode::Unreachable => self.fixed(Item::Ud2),
             Shape::Trap => {
