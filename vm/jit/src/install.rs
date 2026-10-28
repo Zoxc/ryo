@@ -248,12 +248,47 @@ impl Jit {
         let mode = jit_mode(&img, place.far_rt);
         let shuffled = (self.rt.shuffled)(h as *const _ as *const u8);
 
+        // The SSA tier (`RYO_JIT_OPT`), else, or where it doesn't compile the function, the
+        // re-encoding pipeline.
+        let settings = self.rt.settings;
+        // `RYO_JIT_SSA_LIMIT=n` (debugging: bisects a miscompile): only the first `n`
+        // functions go through the SSA tier.
+        let within_limit = self.ssa_tried < settings.ssa_limit;
+        if settings.opt != JitOpt::Reencode && within_limit {
+            self.ssa_tried += 1;
+            // The AOT layout's words (the SSA tier lays out its own frame); the calls are
+            // retargeted after inlining, by the rules `reencode` uses.
+            if let Some((out, ssa_ext)) = self.compile_ssa(rec, func, &img, &d, mode, shuffled, place)? {
+                return self.install(&Install { rec, func, img: &img, place, mode, personality, ext: &ssa_ext, tier: Tier::Ssa }, out);
+            }
+        } else if settings.opt == JitOpt::Reencode {
+            stats::add(&STATS.opt_reencode, 1);
+        } else {
+            stats::add(&STATS.ssa_limit, 1);
+        }
+        let (out, ext) = self.reencode(rec, func, &img, &d, mode, shuffled, place)?;
+        self.install(&Install { rec, func, img: &img, place, mode, personality, ext: &ext, tier: Tier::Reencode }, out)
+    }
+
+    /// Compiles `d`, the function `func` of `img` (record `rec`), for `place` through the
+    /// re-encoding pipeline: its code and callees.
+    #[allow(clippy::too_many_arguments)]
+    fn reencode(
+        &self,
+        rec: *mut JitRecord,
+        func: u32,
+        img: &Image<'_>,
+        d: &asm::Decoded,
+        mode: Mode,
+        shuffled: bool,
+        place: Place,
+    ) -> Result<(Gen, Vec<Ext>), CompileError> {
         // The JIT frame layout: the AOT one, or with `RYO_JIT_SHUFFLE` one that moves every
         // slot it can (frame::shuffle_map), to catch reliance on matching frames.
         let mut map = SlotMap::identity(d.frame_size);
         let mut words = None;
         if shuffled {
-            match frame::shuffle_map(&d, mode).and_then(|m| Ok((frame::remap_slots(&d.words, mode, &m)?, m))) {
+            match frame::shuffle_map(d, mode).and_then(|m| Ok((frame::remap_slots(&d.words, mode, &m)?, m))) {
                 Ok((w, m)) => {
                     words = Some(w);
                     map = m;
@@ -273,27 +308,8 @@ impl Jit {
         // code, native code) directly, or through `r11` out of reach.
         let mut ext = Vec::new();
         let mut memo = HashMap::new();
-        self.retarget(&mut words, func, &img, place, &mut ext, &mut memo)?;
-        // The SSA tier (`RYO_JIT_OPT`), else, or where it doesn't compile the function, the
-        // re-encoding pipeline.
-        let settings = self.rt.settings;
-        // `RYO_JIT_SSA_LIMIT=n` (debugging: bisects a miscompile): only the first `n`
-        // functions go through the SSA tier.
-        let within_limit = self.ssa_tried < settings.ssa_limit;
-        if settings.opt != JitOpt::Reencode && within_limit {
-            self.ssa_tried += 1;
-            // The AOT layout's words (the SSA tier lays out its own frame); the calls are
-            // retargeted as above after inlining, by the same rules.
-            if let Some((out, ssa_ext)) = self.compile_ssa(rec, func, &img, &d, mode, shuffled, place)? {
-                return self.install(&Install { rec, func, img: &img, place, personality, ext: &ssa_ext, tier: Tier::Ssa }, out);
-            }
-        } else if settings.opt == JitOpt::Reencode {
-            stats::add(&STATS.opt_reencode, 1);
-        } else {
-            stats::add(&STATS.ssa_limit, 1);
-        }
-        let out = compile_reencode(&d, &words, &map, &img, mode)?;
-        self.install(&Install { rec, func, img: &img, place, personality, ext: &ext, tier: Tier::Reencode }, out)
+        self.retarget(&mut words, func, img, place, &mut ext, &mut memo)?;
+        Ok((compile_reencode(d, &words, &map, img, mode)?, ext))
     }
 
     /// Compiles `d`, the function `func` of `img` (record `rec`), for `place` through the SSA
@@ -381,7 +397,7 @@ impl Jit {
     /// Installs the code `out` of `cx`'s function: code memory, relocation, unwind
     /// information, the perf map and the publication.
     fn install(&mut self, cx: &Install<'_>, out: Gen) -> Result<(), CompileError> {
-        let mode = jit_mode(cx.img, cx.place.far_rt);
+        let mode = cx.mode;
         let Gen { code: enc_code, mut relocs, rodata, call_sites, body, osr, osr_at, region } = out;
         let code_len = enc_code.len();
         // The OSR code's stack probes, relocated as the body's.
@@ -525,12 +541,14 @@ impl Jit {
 }
 
 /// What [`Jit::install`] installs: the function `func` of `img` (record `rec`), compiled by
-/// `tier` for the region `place` with the callees `ext`, and its image's personality slot.
+/// `tier` in `mode` for the region `place` with the callees `ext`, and its image's
+/// personality slot.
 struct Install<'a> {
     rec: *mut JitRecord,
     func: u32,
     img: &'a Image<'a>,
     place: Place,
+    mode: Mode,
     personality: usize,
     ext: &'a [Ext],
     tier: Tier,
