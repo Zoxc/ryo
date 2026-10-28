@@ -28,7 +28,7 @@
 
 use core::cell::UnsafeCell;
 use core::ffi::{CStr, c_char};
-use core::mem::MaybeUninit;
+use core::mem::{MaybeUninit, offset_of};
 use core::ptr;
 use core::sync::atomic::Ordering::{AcqRel, Acquire, Relaxed, Release, SeqCst};
 use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU8, AtomicU32, AtomicUsize};
@@ -44,6 +44,7 @@ mod merge;
 pub(crate) use merge::forward;
 
 /// The settings, read once from the environment (or [`configure_jit`]).
+#[derive(Clone, Copy)]
 struct Config {
     /// `RYO_JIT=off` turns the JIT into the no-op JIT.
     enabled: bool,
@@ -58,22 +59,38 @@ struct Config {
     /// `RYO_JIT_SHUFFLE=1`: JIT code gets another frame layout than the AOT code's
     /// (`asm::frame::shuffle_map`), so that OSR entries convert frames (tests).
     shuffle: bool,
-    /// What the JIT gets: `RYO_JIT_LOG`, `RYO_JIT_PERFMAP`, `RYO_JIT_TEST_PANIC` (tests: the
-    /// JIT catches its panics even in a `-Cpanic=abort` program), `RYO_JIT_TEST_OOM` (an
-    /// allocation failure in every compile), `RYO_JIT_CHECK`, `RYO_JIT_OPT` and
-    /// `RYO_JIT_SSA_LIMIT`, and `RYO_JIT_STATS`'s level.
+    /// What the JIT gets: its flags from [`FLAGS`] (`RYO_JIT_TEST_PANIC`: the JIT catches its
+    /// panics even in a `-Cpanic=abort` program), `RYO_JIT_OPT`, `RYO_JIT_SSA_LIMIT` and
+    /// `RYO_JIT_STATS`'s level.
     jit: JitSettings,
     /// `RYO_JIT_STATS`'s value if it isn't `0`, `1` or `2` (level 1, with a warning).
     stats_bad: Option<&'static [u8]>,
 }
 
-/// `RYO_JIT_OPT`: the SSA tier unless `reencode` or `ssa-naive`.
+/// `RYO_JIT_OPT`: the SSA tier unless it names another.
 fn opt() -> JitOpt {
-    match var(c"RYO_JIT_OPT") {
-        Some(b"reencode") => JitOpt::Reencode,
-        Some(b"ssa-naive") => JitOpt::SsaNaive,
-        _ => JitOpt::Ssa,
-    }
+    var(c"RYO_JIT_OPT").and_then(JitOpt::parse).unwrap_or(JitOpt::Ssa)
+}
+
+/// The boolean settings, on with `<var>=1`: the variable, the startup line's label (`None`:
+/// not shown), and the field's offset in [`Config`] (an offset, not an accessor function:
+/// an indirect call could unwind, which would pull core's panic path into `at_exit`).
+const FLAGS: [(&CStr, Option<&str>, usize); 9] = [
+    (c"RYO_JIT_SYNC", Some("sync"), offset_of!(Config, sync)),
+    (c"RYO_JIT_SHUFFLE", Some("shuffle"), offset_of!(Config, shuffle)),
+    (c"RYO_JIT_CHECK", Some("check"), offset_of!(Config, jit.check)),
+    (c"RYO_JIT_LICM", Some("licm"), offset_of!(Config, jit.licm)),
+    (c"RYO_JIT_ROTATE", Some("rotate"), offset_of!(Config, jit.rotate)),
+    (c"RYO_JIT_PERFMAP", Some("perfmap"), offset_of!(Config, jit.perfmap)),
+    (c"RYO_JIT_LOG", Some("log"), offset_of!(Config, jit.log)),
+    (c"RYO_JIT_TEST_PANIC", None, offset_of!(Config, jit.test_panic)),
+    (c"RYO_JIT_TEST_OOM", None, offset_of!(Config, jit.test_oom)),
+];
+
+/// The flag of [`FLAGS`] at `offset` in `cfg`.
+fn flag(cfg: &mut Config, offset: usize) -> &mut bool {
+    // SAFETY: `offset` is a `bool` field's ([`FLAGS`]).
+    unsafe { &mut *(cfg as *mut Config).cast::<u8>().add(offset).cast::<bool>() }
 }
 
 /// A static written once, before [`READY`] is published.
@@ -163,29 +180,32 @@ fn parse_stats(v: Option<&'static [u8]>) -> (u8, Option<&'static [u8]>) {
 }
 
 fn from_env() -> Config {
-    let flag = |name: &CStr| var(name) == Some(b"1");
     let (stats, stats_bad) = parse_stats(var(c"RYO_JIT_STATS"));
-    Config {
+    let mut cfg = Config {
         enabled: var(c"RYO_JIT") != Some(b"off"),
         threshold: var(c"RYO_JIT_THRESHOLD")
             .map(|s| parse_thresholds(s).unwrap_or_else(|| fatal("RYO_JIT_THRESHOLD: expected `L` or `E,L` with decimal thresholds"))),
-        sync: flag(c"RYO_JIT_SYNC"),
-        shuffle: flag(c"RYO_JIT_SHUFFLE"),
+        sync: false,
+        shuffle: false,
         jit: JitSettings {
-            log: flag(c"RYO_JIT_LOG"),
-            perfmap: flag(c"RYO_JIT_PERFMAP"),
-            test_panic: flag(c"RYO_JIT_TEST_PANIC"),
-            test_oom: flag(c"RYO_JIT_TEST_OOM"),
-            check: flag(c"RYO_JIT_CHECK"),
+            log: false,
+            perfmap: false,
+            test_panic: false,
+            test_oom: false,
+            check: false,
             opt: opt(),
-            licm: flag(c"RYO_JIT_LICM"),
-            rotate: flag(c"RYO_JIT_ROTATE"),
+            licm: false,
+            rotate: false,
             ssa_limit: var(c"RYO_JIT_SSA_LIMIT").and_then(parse_i64).and_then(|n| u64::try_from(n).ok()).unwrap_or(u64::MAX),
             stats,
             count: stats >= 1,
         },
         stats_bad,
+    };
+    for (name, _, field) in FLAGS {
+        *flag(&mut cfg, field) = var(name) == Some(b"1");
     }
+    cfg
 }
 
 /// `RYO_JIT_THRESHOLD`'s value: `L` or `E,L` ([`Config::threshold`]); `None` if malformed.
@@ -216,8 +236,7 @@ impl Config {
 
 /// Sets the JIT's settings instead of the environment, before anything reads them (tests):
 /// on, with `sync` ([`Config::sync`]) and `threshold` (as `RYO_JIT_THRESHOLD=threshold`), no
-/// perf map, shuffling or test panics, compile timing on, and the rest (`RYO_JIT_LOG`,
-/// `RYO_JIT_OPT`, `RYO_JIT_CHECK`, `RYO_JIT_SSA_LIMIT`, `RYO_JIT_STATS`) from the
+/// perf map, shuffling or test panics or OOMs, compile timing on, and the rest from the
 /// environment. False if they were read already.
 #[doc(hidden)]
 pub fn configure_jit(sync: bool, threshold: Option<i64>) -> bool {
@@ -804,11 +823,7 @@ fn startup_line(cfg: &Config, pid: u32, l: &mut Line) {
     }
     let j = &cfg.jit;
     l.bytes(b"[ryo] jit: on, ");
-    l.bytes(match j.opt {
-        JitOpt::Ssa => &b"ssa"[..],
-        JitOpt::SsaNaive => b"ssa-naive",
-        JitOpt::Reencode => b"reencode",
-    });
+    l.bytes(j.opt.name().as_bytes());
     let [e, it] = cfg.thresholds();
     l.bytes(b", thresholds ");
     l.u64(e as u64);
@@ -818,18 +833,13 @@ fn startup_line(cfg: &Config, pid: u32, l: &mut Line) {
     if cfg.threshold.is_some() {
         l.bytes(b" (RYO_JIT_THRESHOLD)");
     }
-    for (on, name) in [
-        (cfg.sync, &b"sync"[..]),
-        (cfg.shuffle, b"shuffle"),
-        (j.check, b"check"),
-        (j.licm, b"licm"),
-        (j.rotate, b"rotate"),
-        (j.perfmap, b"perfmap"),
-        (j.log, b"log"),
-    ] {
-        if on {
+    let mut c = *cfg;
+    for (_, label, field) in FLAGS {
+        if let Some(label) = label
+            && *flag(&mut c, field)
+        {
             l.bytes(b", ");
-            l.bytes(name);
+            l.bytes(label.as_bytes());
         }
     }
     if j.ssa_limit != u64::MAX {

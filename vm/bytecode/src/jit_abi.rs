@@ -37,6 +37,26 @@ pub enum JitOpt {
     Ssa,
 }
 
+impl JitOpt {
+    /// Its `RYO_JIT_OPT` value.
+    #[inline]
+    pub const fn name(self) -> &'static str {
+        match self {
+            JitOpt::Reencode => "reencode",
+            JitOpt::SsaNaive => "ssa-naive",
+            JitOpt::Ssa => "ssa",
+        }
+    }
+
+    /// The tier a `RYO_JIT_OPT` value names, `None` for an unknown one. (Inline: `ryo_rt`
+    /// calls it from `extern "C"` functions, where a call it can't see through would pull in
+    /// core's panic path.)
+    #[inline]
+    pub fn parse(s: &[u8]) -> Option<JitOpt> {
+        [JitOpt::Reencode, JitOpt::SsaNaive, JitOpt::Ssa].into_iter().find(|o| o.name().as_bytes() == s)
+    }
+}
+
 /// The settings the JIT gets from the runtime, which reads them from the environment
 /// (design/jit.md, "Settings"). `RYO_JIT_DUMP`, a path, the JIT reads itself.
 #[repr(C)]
