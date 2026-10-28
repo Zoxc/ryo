@@ -1411,13 +1411,14 @@ impl Asm {
                     let stub = out.len();
                     let Laid::Branch { to, .. } = &mut out[js] else { unreachable!() };
                     *to = stub;
-                    fixed(out, Item::Lea(Reg::R11, Ref::Rec));
-                    if js == *entry {
+                    let head = if js == *entry {
                         entry_stub = stub;
-                        fixed(out, Item::CallR11(crate::image::JIT_ENTRY_SLOT));
+                        None
                     } else {
-                        fixed(out, Item::SetReg(Reg::Rax, n as u64));
-                        fixed(out, Item::CallR11(crate::image::JIT_OSR_SLOT));
+                        Some(n as u64)
+                    };
+                    for item in counter_stub(head) {
+                        fixed(out, item);
                     }
                     out.push(Laid::Branch { cond: Cond::Always, to: js + 1, long: false });
                 }
@@ -1431,8 +1432,9 @@ impl Asm {
             if region == Some(k) {
                 entry_stub = Some(stubs(&mut out, &checks));
                 region_at = Some(out.len());
-                fixed(&mut out, Item::SubRsp(super::PE_REGION_ALLOC));
-                fixed(&mut out, Item::JmpR11);
+                for item in pe_region_entry() {
+                    fixed(&mut out, item);
+                }
             }
             if head[k] {
                 if mode.align_loops {
@@ -1718,6 +1720,21 @@ pub(super) fn epilogue(frame_size: u32, mode: Mode) -> Vec<Item> {
     } else {
         vec![Item::AddRsp(frame_size + 8)]
     }
+}
+
+/// A counter stub's items before its branch back: `lea r11, [rec]`, then for the loop head
+/// `n` (`head`) `mov eax, n` and a call through the record's OSR slot, or for the entry
+/// (`None`) through its entry slot.
+pub(super) fn counter_stub(head: Option<u64>) -> Vec<Item> {
+    match head {
+        Some(n) => vec![Item::Lea(Reg::R11, Ref::Rec), Item::SetReg(Reg::Rax, n), Item::CallR11(crate::image::JIT_OSR_SLOT)],
+        None => vec![Item::Lea(Reg::R11, Ref::Rec), Item::CallR11(crate::image::JIT_ENTRY_SLOT)],
+    }
+}
+
+/// The PE pad region's entry: `sub rsp, PE_REGION_ALLOC; jmp r11`.
+pub(super) fn pe_region_entry() -> [Item; 2] {
+    [Item::SubRsp(super::PE_REGION_ALLOC), Item::JmpR11]
 }
 
 /// `reg = fp`: `mov reg, rbp`, or `lea reg, [rsp + F]`.

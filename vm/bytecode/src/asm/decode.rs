@@ -9,8 +9,8 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use super::encode::{
-    ArgVal, CallSite, DroppedStore, Encoded, Opnd, Ref, Scope, arg_store, epilogue, fp_item, int_arg, prologue, push_words, result_stores, ret_loads,
-    word_len,
+    ArgVal, CallSite, DroppedStore, Encoded, Opnd, Ref, Scope, arg_store, counter_stub, epilogue, fp_item, int_arg, pe_region_entry, prologue,
+    push_words, result_stores, ret_loads, word_len,
 };
 use super::inline::Cache;
 use super::list::{Hint, InsnList};
@@ -304,9 +304,9 @@ fn read(code: &[u8], fields: Fields<'_>, rodata: &[u8], side: Side<'_>, mode: Mo
     // PE: the pad region's entry, `sub rsp, PE_REGION_ALLOC; jmp r11`, right before the first
     // cleanup landing pad (`encode::pe_region_start`); the body (and the counter stubs) end
     // there.
-    const ENTRY_LEN: u32 = 7;
+    let entry_len: u32 = pe_region_entry().iter().map(Item::len).sum();
     let region_at = match call_sites.iter().filter(|cs| !cs.catch).filter_map(|cs| cs.pad).min() {
-        Some(p) if mode.pe => Some(p.checked_sub(ENTRY_LEN).ok_or(err(p, "no pad region entry"))?),
+        Some(p) if mode.pe => Some(p.checked_sub(entry_len).ok_or(err(p, "no pad region entry"))?),
         _ => None,
     };
     let limit = region_at.unwrap_or(code.len() as u32);
@@ -336,15 +336,17 @@ fn read(code: &[u8], fields: Fields<'_>, rodata: &[u8], side: Side<'_>, mode: Mo
         let Some(r) = region_at else { return Ok((protos, padded, body_end)) };
         // The counter stubs come between, checked below.
         c.pos = r;
-        if c.item()? != Item::SubRsp(super::PE_REGION_ALLOC) || c.item()? != Item::JmpR11 {
-            return Err(err(r, "not the pad region's entry"));
+        for want in pe_region_entry() {
+            if c.item()? != want {
+                return Err(err(r, "not the pad region's entry"));
+            }
         }
         let (rp, rpad) = instructions(c, &fr_region, rodata, dropped_region, targets, hints[1], None, code.len() as u32, call_sites)?;
         protos.extend(rp);
         padded.extend(rpad);
         Ok((protos, padded, body_end))
     };
-    let region_pos = region_at.map_or(u32::MAX, |r| r + ENTRY_LEN);
+    let region_pos = region_at.map_or(u32::MAX, |r| r + entry_len);
     let (protos, padded, body_end) = match index {
         Some((targets, _)) => {
             let (protos, padded, rp) = read_parts(&mut c, Some(targets), [hints_body, hints_region])?;
@@ -416,15 +418,13 @@ fn read(code: &[u8], fields: Fields<'_>, rodata: &[u8], side: Side<'_>, mode: Mo
         for (n, (stub, back)) in checks.chain([(entry_stub, entry_back)]).enumerate() {
             let at = c.pos;
             let bad = err(at, "counter stub");
-            if at != stub || c.item()? != Item::Lea(Reg::R11, Ref::Rec) {
+            if at != stub {
                 return Err(bad);
             }
-            if n < heads.len() {
-                if c.item()? != Item::SetReg(Reg::Rax, n as u64) || c.item()? != Item::CallR11(crate::image::JIT_OSR_SLOT) {
+            for want in counter_stub((n < heads.len()).then_some(n as u64)) {
+                if c.item()? != want {
                     return Err(bad);
                 }
-            } else if c.item()? != Item::CallR11(crate::image::JIT_ENTRY_SLOT) {
-                return Err(bad);
             }
             match c.item()? {
                 Item::Branch { cond: Cond::Always, target, .. } if target == back => {}
