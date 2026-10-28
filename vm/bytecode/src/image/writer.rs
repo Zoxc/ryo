@@ -962,6 +962,15 @@ fn eh_cie_with(eh: &mut Vec<u8>, ptrs: EhPointers) -> usize {
     cie.extend_from_slice(&[0; 4]);
     cie.extend_from_slice(&[enc, enc]); // L, R encodings
     cie.extend_from_slice(&[0x0c, 7, 8, 0x90, 1]); // CFA = rsp + 8; return address at CFA - 8
+    if ptrs == EhPointers::Abs8 {
+        // Mach-O: the return address's rule once more, the idiom that keeps Apple's linkers
+        // from converting the FDEs to compact unwind (ld64's `registerSavedTwiceInCIE`, which
+        // silently encodes `UNWIND_X86_64_MODE_DWARF`). They convert from the rules at the
+        // FDE's end, which are the entry's counter stub's (CFA `rsp + 8`), not the body's: the
+        // frame would unwind wrongly and panics through it fail ("failed to initiate panic").
+        // In the two bytes that were padding.
+        cie.extend_from_slice(&[0x90, 1]);
+    }
     while (cie.len() + 4) % 8 != 0 {
         cie.push(0); // DW_CFA_nop
     }
