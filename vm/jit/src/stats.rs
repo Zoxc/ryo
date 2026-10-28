@@ -13,22 +13,73 @@ use std::io::{self, Write};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
-/// The failure reasons counted on their own (the strings `Jit::compile` fails with); the
-/// rest count as "other", the last slot.
-const REASONS: [(&str, &str); 4] = [
-    ("no personality slot", "no personality slot"),
-    ("panicked", "panicked"),
-    ("region full", "region full"),
-    ("the SSA tier's checkers failed", "ssa check failed"),
-];
-const FAIL_SLOTS: usize = REASONS.len() + 1;
+/// Why the JIT thread failed a record. The reasons but `Other` are counted on their own.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Fail {
+    /// The image has no `rust_eh_personality` slot.
+    NoPersonality,
+    /// The compile panicked.
+    Panicked,
+    /// The region filled up twice ([`crate::install`]'s retry).
+    RegionFull,
+    /// The SSA tier's checkers found a bug.
+    SsaCheck,
+    /// Anything else, for this reason.
+    Other(&'static str),
+}
+
+const FAIL_SLOTS: usize = 5;
+
+impl Fail {
+    /// The reasons counted on their own, in slot order; "other" is the last slot.
+    const COUNTED: [Fail; FAIL_SLOTS - 1] = [Fail::NoPersonality, Fail::Panicked, Fail::RegionFull, Fail::SsaCheck];
+
+    /// Its slot in [`Stats::failed`].
+    const fn slot(self) -> usize {
+        match self {
+            Fail::NoPersonality => 0,
+            Fail::Panicked => 1,
+            Fail::RegionFull => 2,
+            Fail::SsaCheck => 3,
+            Fail::Other(_) => FAIL_SLOTS - 1,
+        }
+    }
+
+    /// Its name in the summary.
+    fn label(self) -> &'static str {
+        match self {
+            Fail::NoPersonality => "no personality slot",
+            Fail::Panicked => "panicked",
+            Fail::RegionFull => "region full",
+            Fail::SsaCheck => "ssa check failed",
+            Fail::Other(_) => "other",
+        }
+    }
+
+    /// The reason, as `RYO_JIT_LOG` prints it.
+    pub(crate) fn message(self) -> &'static str {
+        match self {
+            Fail::NoPersonality => "no personality slot",
+            Fail::Panicked => "panicked",
+            Fail::RegionFull => "region full",
+            Fail::SsaCheck => "the SSA tier's checkers failed",
+            Fail::Other(why) => why,
+        }
+    }
+}
+
+impl From<&'static str> for Fail {
+    fn from(why: &'static str) -> Fail {
+        Fail::Other(why)
+    }
+}
 
 macro_rules! stats {
     ($($(#[$doc:meta])* $f:ident,)*) => {
         /// The counters.
         pub(crate) struct Stats {
             $($(#[$doc])* pub(crate) $f: AtomicU64,)*
-            /// Failed records, by reason ([`REASONS`], then other).
+            /// Failed records, by reason ([`Fail::slot`]).
             failed: [AtomicU64; FAIL_SLOTS],
         }
 
@@ -36,7 +87,7 @@ macro_rules! stats {
         #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
         pub struct Snapshot {
             $($(#[$doc])* pub $f: u64,)*
-            /// Failed records, by reason ([`REASONS`], then other).
+            /// Failed records, by reason ([`Fail::slot`]).
             pub failed: [u64; FAIL_SLOTS],
         }
 
@@ -70,8 +121,6 @@ stats! {
     ssa_unsupported,
     ssa_limit,
     opt_reencode,
-    /// The SSA tier's checkers failed (the record failed).
-    ssa_check_failed,
     /// Calls the SSA tier made direct, and calls it inlined.
     devirt,
     inlined,
@@ -103,16 +152,20 @@ pub(crate) fn max(c: &AtomicU64, n: u64) {
 }
 
 impl Stats {
-    /// Counts a record that failed for `why`. Allocates nothing.
-    pub(crate) fn fail(&self, why: &str) {
-        let i = REASONS.iter().position(|r| r.0 == why).unwrap_or(REASONS.len());
-        add(&self.failed[i], 1);
+    /// Counts a record that failed for `why`.
+    pub(crate) fn fail(&self, why: Fail) {
+        add(&self.failed[why.slot()], 1);
     }
 }
 
 impl Snapshot {
     pub fn failed_total(&self) -> u64 {
         self.failed.iter().sum()
+    }
+
+    /// Records the SSA tier's checkers failed.
+    pub fn ssa_check_failed(&self) -> u64 {
+        self.failed[Fail::SsaCheck.slot()]
     }
 }
 
@@ -145,10 +198,10 @@ pub(crate) fn summary(s: &Snapshot, pid: u32, since: Duration, w: &mut impl Writ
         s.compiled, s.ssa, s.reencode, s.ssa_unsupported, s.ssa_limit, s.opt_reencode
     )?;
     write!(w, "{P}   failed    {:>4}:", s.failed_total())?;
-    for (i, (_, label)) in REASONS.iter().enumerate() {
-        write!(w, " {label} {},", s.failed[i])?;
+    for f in Fail::COUNTED {
+        write!(w, " {} {},", f.label(), s.failed[f.slot()])?;
     }
-    writeln!(w, " other {}", s.failed[REASONS.len()])?;
+    writeln!(w, " {} {}", Fail::Other("").label(), s.failed[Fail::Other("").slot()])?;
     let in_flight = s.queued.saturating_sub(s.compiled).saturating_sub(s.failed_total());
     writeln!(w, "{P}   in flight {in_flight:>4} (taken, not yet reported; approximate at exit)")?;
     writeln!(w, "{P}   ssa: devirt {}, inlined {} calls", s.devirt, s.inlined)?;
@@ -171,15 +224,27 @@ pub(crate) fn summary(s: &Snapshot, pid: u32, since: Duration, w: &mut impl Writ
     )
 }
 
-/// The exit report (`ryo_jit_start` returns it to the runtime, whose `atexit` handler calls
-/// it): the summary, formatted on the stack and written with one `write`. It only loads the
-/// counters: no lock, no allocation, no waiting for the JIT thread.
-pub(crate) extern "C" fn report() {
+/// Formats the counters and the time since the JIT started with `f` into an `N`-byte buffer
+/// on the stack, and writes it to stderr with one `write`. It only loads the counters: no
+/// lock, no allocation, no waiting for the JIT thread.
+fn write_snapshot<const N: usize>(f: impl FnOnce(&Snapshot, Duration, &mut io::Cursor<[u8; N]>) -> io::Result<()>) {
     let since = STARTED_AT.get().map_or(Duration::ZERO, |t| t.elapsed());
-    let mut buf = io::Cursor::new([0u8; 2048]);
-    let _ = summary(&STATS.load_all(), std::process::id(), since, &mut buf);
+    let mut buf = io::Cursor::new([0u8; N]);
+    let _ = f(&STATS.load_all(), since, &mut buf);
     let n = buf.position() as usize;
     crate::sys::write_stderr(&buf.get_ref()[..n]);
+}
+
+/// `RYO_JIT_STATS=2`'s progress line.
+#[cold]
+pub(crate) fn write_progress() {
+    write_snapshot::<256>(|s, since, w| progress(s, since, w));
+}
+
+/// The exit report (`ryo_jit_start` returns it to the runtime, whose `atexit` handler calls
+/// it): the summary.
+pub(crate) extern "C" fn report() {
+    write_snapshot::<2048>(|s, since, w| summary(s, std::process::id(), since, w));
 }
 
 #[cfg(test)]
@@ -250,7 +315,7 @@ mod tests {
     #[test]
     fn failure_reasons() {
         let st = Stats::new();
-        for why in ["panicked", "panicked", "region full", "the SSA tier's checkers failed", "no such function"] {
+        for why in [Fail::Panicked, Fail::Panicked, Fail::RegionFull, Fail::SsaCheck, Fail::Other("no such function")] {
             st.fail(why);
         }
         assert_eq!(st.load_all().failed, [0, 2, 1, 1, 1]);

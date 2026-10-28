@@ -24,7 +24,7 @@ use ryo_bytecode::jit::ir::CallTarget;
 use ryo_bytecode::jit_abi::{JIT_ENTRY_PREFIX, JitOpt, RtApi};
 use ryo_bytecode::{Opcode, reduced, vmem};
 
-use crate::stats::{self, STATS};
+use crate::stats::{self, Fail, STATS};
 
 mod callees;
 mod dump;
@@ -103,12 +103,12 @@ enum CompileError {
     /// the calls' forms depend on the region, so the function is compiled again.
     Retry,
     /// It failed, for this reason.
-    Fail(&'static str),
+    Fail(Fail),
 }
 
 impl From<&'static str> for CompileError {
     fn from(why: &'static str) -> CompileError {
-        CompileError::Fail(why)
+        CompileError::Fail(Fail::Other(why))
     }
 }
 
@@ -208,7 +208,7 @@ impl Jit {
     }
 
     /// Compiles the function of `rec` and publishes its code.
-    pub(crate) fn compile(&mut self, rec: *mut JitRecord) -> Result<(), &'static str> {
+    pub(crate) fn compile(&mut self, rec: *mut JitRecord) -> Result<(), Fail> {
         if self.rt.settings.test_panic {
             panic!("RYO_JIT_TEST_PANIC");
         }
@@ -227,7 +227,7 @@ impl Jit {
             r => r,
         };
         r.map_err(|e| match e {
-            CompileError::Retry => "region full",
+            CompileError::Retry => Fail::RegionFull,
             CompileError::Fail(why) => why,
         })
     }
@@ -239,7 +239,7 @@ impl Jit {
         let info = self.image(&img);
         // PE code has no personality: its unwind info names `ryo_seh_handler` instead, as the
         // AOT code's (design/vm.md#pe-seh).
-        let personality = if img.mode().pe { 0 } else { info.personality.ok_or("no personality slot")? };
+        let personality = if img.mode().pe { 0 } else { info.personality.ok_or(CompileError::Fail(Fail::NoPersonality))? };
         let place = self.place(info.span).ok_or("no code memory near the image")?;
         let d = callees::decode(img, &self.handlers, self.rt.probe as usize, func).ok_or("no such function")?.map_err(|e| e.what)?;
         let mode = jit_mode(&img, place.far_rt);
@@ -384,9 +384,8 @@ impl Jit {
             // A checker found a bug: always on stderr, so that tests see it, and the function
             // stays in its AOT code (`Failed`), which tests that expect JIT code notice.
             Err(jit::Error::Check(why)) => {
-                stats::add(&STATS.ssa_check_failed, 1);
                 self.log(rec, &std::format!("ssa: check failed: {why}"));
-                Err("the SSA tier's checkers failed".into())
+                Err(CompileError::Fail(Fail::SsaCheck))
             }
         }
     }

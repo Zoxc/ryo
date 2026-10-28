@@ -49,30 +49,6 @@ pub fn stats() -> Snapshot {
     stats::STATS.load_all()
 }
 
-/// How many functions the JIT compiled, and how many it failed to (tests).
-#[cfg(target_arch = "x86_64")]
-#[doc(hidden)]
-pub fn jit_stats() -> (usize, usize) {
-    let s = stats();
-    (s.compiled as usize, s.failed_total() as usize)
-}
-
-/// How many functions the SSA tier (`RYO_JIT_OPT=ssa…`) compiled, and how many it left
-/// (to the re-encoding pipeline, or failed by its checkers) (tests).
-#[cfg(target_arch = "x86_64")]
-#[doc(hidden)]
-pub fn ssa_stats() -> (usize, usize) {
-    let s = stats();
-    (s.ssa as usize, (s.ssa_unsupported + s.ssa_check_failed) as usize)
-}
-
-/// How many calls through a constant pointer the SSA tier made direct in its roots (tests).
-#[cfg(all(any(target_os = "linux", target_vendor = "apple"), target_arch = "x86_64"))]
-#[doc(hidden)]
-pub fn ssa_devirt() -> usize {
-    stats().devirt as usize
-}
-
 /// The length of the code the JIT installed for the record at `rec`, 0 if none (tests).
 #[cfg(target_arch = "x86_64")]
 #[doc(hidden)]

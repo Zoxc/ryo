@@ -1074,7 +1074,7 @@ the stderr it compares), each with one `write`:
   after the head (moved at OSR), an acyclic head (the trip returns into the AOT code), a slot
   reused at two widths, handler results feeding branches, a value live into a landing pad
   across a call, and sixteen values live across a call. `vm/jit/tests/ssa.rs` (a process of
-  its own) checks, by `ryo_jit::ssa_stats`, that its functions go through the tier: switch
+  its own) checks, by `ryo_jit::stats()`, that its functions go through the tier: switch
   tables with edge arguments, sparse switches, tail calls with stack arguments and through
   a pointer, SSE arguments and results, a catching landing pad, probed 12 KiB frames entered
   by OSR, an alloca pinned at the head, and every SIMD instruction and fold

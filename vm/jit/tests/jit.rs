@@ -585,7 +585,7 @@ fn concurrent_trips() {
         fs.push(w.add_function(func(a.done(), 16, 16, 8)));
     }
     let img = std::sync::Arc::new(build(w, &syms()));
-    let (before, _) = ryo_jit::jit_stats();
+    let before = ryo_jit::stats().compiled;
     let threads: Vec<_> = (0..16u64)
         .map(|t| {
             let (img, fs) = (img.clone(), fs.clone());
@@ -609,7 +609,7 @@ fn concurrent_trips() {
         assert_eq!(state(&img, f), JIT_DONE);
     }
     // Other tests compile concurrently, so only a lower bound.
-    assert!(ryo_jit::jit_stats().0 >= before + fs.len());
+    assert!(ryo_jit::stats().compiled >= before + fs.len() as u64);
 }
 
 /// The JIT's statistics: with `RYO_JIT_SYNC`, a function's counts are in as soon as its
@@ -1517,7 +1517,12 @@ fn pe_pad_region() {
     obj.unwind.clear();
     let img = link(obj, &[("note_pe", note_pe as *const () as usize)]);
     register(&[&img]);
-    let fallbacks = ryo_jit::ssa_stats().1;
+    // Functions the SSA tier left (to the re-encoding pipeline, or failed by its checkers).
+    let ssa_left = || {
+        let s = ryo_jit::stats();
+        s.ssa_unsupported + s.ssa_check_failed()
+    };
+    let fallbacks = ssa_left();
     let saved =
         [0x1111111111111111, 0x2222222222222222, 0x3333333333333333, 0x4444444444444444, 0x5555555555555555, 0x6666666666666666, 0x7777777777777777];
     let o = |a: &AtomicU64| a.load(std::sync::atomic::Ordering::SeqCst);
@@ -1535,7 +1540,7 @@ fn pe_pad_region() {
     assert_eq!(code[..4], [0x55, 0x48, 0x89, 0xe5]);
     assert!(code.windows(7).any(|w| w == [0x48, 0x83, 0xec, 0x28, 0x41, 0xff, 0xe3]), "the region's entry");
     if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
-        assert!(ryo_jit::ssa_stats().1 > fallbacks, "the SSA tier left it");
+        assert!(ssa_left() > fallbacks, "the SSA tier left it");
     }
 }
 

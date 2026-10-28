@@ -10,7 +10,7 @@ use ryo_bytecode::jit_abi::RtApi;
 const NAME: &str = "ryo-jit";
 
 use crate::install::Jit;
-use crate::stats::{self, STATS};
+use crate::stats::{self, Fail, STATS};
 
 /// Starts the JIT thread. False if the thread didn't start.
 pub(crate) fn start(rt: &'static RtApi) -> bool {
@@ -106,7 +106,7 @@ fn main(rt: &'static RtApi) {
             let why = match res {
                 Ok(Ok(())) => None,
                 Ok(Err(why)) => Some(why),
-                Err(_) => Some("panicked"),
+                Err(_) => Some(Fail::Panicked),
             };
             if let Some(t0) = t0 {
                 let ns = t0.elapsed().as_nanos() as u64;
@@ -122,7 +122,7 @@ fn main(rt: &'static RtApi) {
             if let Some(why) = why
                 && rt.settings.log
             {
-                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| jit.log(rec, why)));
+                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| jit.log(rec, why.message())));
             }
             (rt.done)(rec, why.is_none());
             if why.is_none() {
@@ -131,17 +131,7 @@ fn main(rt: &'static RtApi) {
         }
         if rt.settings.stats >= 2 && last_progress.elapsed() >= std::time::Duration::from_secs(60) {
             last_progress = std::time::Instant::now();
-            progress();
+            stats::write_progress();
         }
     }
-}
-
-/// `RYO_JIT_STATS=2`'s progress line, with one `write`.
-#[cold]
-fn progress() {
-    let since = stats::STARTED_AT.get().map_or(std::time::Duration::ZERO, |t| t.elapsed());
-    let mut buf = std::io::Cursor::new([0u8; 256]);
-    let _ = stats::progress(&STATS.load_all(), since, &mut buf);
-    let n = buf.position() as usize;
-    crate::sys::write_stderr(&buf.get_ref()[..n]);
 }

@@ -1,7 +1,7 @@
 //! The JIT's SSA tier (the default, but for `RYO_JIT_OPT=reencode`): hand-assembled
 //! functions using switches, tail calls, SSE arguments and results, catching landing pads,
 //! large frames and escaped locals across OSR. Each test checks the results, that the code ran in the JIT code, and, in an SSA
-//! mode, that every function it compiled went through the tier ([`ryo_jit::ssa_stats`]; a
+//! mode, that every function it compiled went through the tier ([`ssa_stats`]; a
 //! separate test binary, so that the counters are this file's alone).
 
 #![cfg(all(target_arch = "x86_64", any(target_os = "linux", target_vendor = "apple")))]
@@ -23,21 +23,28 @@ fn init() {
     ONCE.call_once(|| assert!(ryo_rt::vm::configure_jit(true, Some(0)), "the JIT's settings were read already"));
 }
 
-/// Serializes the tests, so that each one's [`ryo_jit::ssa_stats`] deltas are its own.
+/// How many functions the SSA tier compiled, and how many it left (to the re-encoding
+/// pipeline, or failed by its checkers).
+fn ssa_stats() -> (u64, u64) {
+    let s = ryo_jit::stats();
+    (s.ssa, s.ssa_unsupported + s.ssa_check_failed())
+}
+
+/// Serializes the tests, so that each one's [`ssa_stats`] deltas are its own.
 static LOCK: Mutex<()> = Mutex::new(());
 
 /// The test's lock, after [`init`], and the stats before it compiles anything.
-fn start() -> (MutexGuard<'static, ()>, (usize, usize)) {
+fn start() -> (MutexGuard<'static, ()>, (u64, u64)) {
     let g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     init();
-    (g, ryo_jit::ssa_stats())
+    (g, ssa_stats())
 }
 
 /// In an SSA mode: exactly `n` more functions compiled by the tier since `before`, none fell back.
-fn check_stats(before: (usize, usize), n: usize) {
+fn check_stats(before: (u64, u64), n: usize) {
     if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
-        let now = ryo_jit::ssa_stats();
-        assert_eq!(now.0 - before.0, n, "functions the SSA tier compiled ({before:?} -> {now:?})");
+        let now = ssa_stats();
+        assert_eq!(now.0 - before.0, n as u64, "functions the SSA tier compiled ({before:?} -> {now:?})");
         assert_eq!(now.1, before.1, "fallbacks to re-encoding ({before:?} -> {now:?})");
     }
 }
@@ -2076,8 +2083,8 @@ fn constant_pool_loads() {
 
 /// How many calls through constant pointers the SSA tier made direct in its roots since
 /// `before` (none through re-encoding).
-fn devirt_since(before: usize) -> usize {
-    ryo_jit::ssa_devirt() - before
+fn devirt_since(before: u64) -> u64 {
+    ryo_jit::stats().devirt - before
 }
 
 fn ssa() -> bool {
@@ -2115,7 +2122,7 @@ fn vtable(w: &mut ImageWriter, s: Sym, at: u32, addend: i64) -> Const {
 #[test]
 fn devirt_symbol_and_pool_pointer() {
     let (_g, before) = start();
-    let d0 = ryo_jit::ssa_devirt();
+    let d0 = ryo_jit::stats().devirt;
     let mut w = ImageWriter::new(unique_scid());
     let gd = rounds(1, 0);
     let s_g = w.symbol(&gd.name.clone(), 0);
@@ -2157,7 +2164,7 @@ fn devirt_symbol_and_pool_pointer() {
 #[test]
 fn devirt_targets() {
     let (_g, before) = start();
-    let d0 = ryo_jit::ssa_devirt();
+    let d0 = ryo_jit::stats().devirt;
     // Image B: g(x) = 3x + 1.
     let mut w = ImageWriter::new(unique_scid());
     let gb = w.add_function(rounds(1, 0));
@@ -2221,7 +2228,7 @@ fn devirt_targets() {
 #[test]
 fn devirt_per_image_and_cache() {
     let (_g, before) = start();
-    let d0 = ryo_jit::ssa_devirt();
+    let d0 = ryo_jit::stats().devirt;
     // Image B: g(x) = 3x + 1; h(x) = vt[40](x) + 1 (g); k(x) = h(x) + 1.
     let mut w = ImageWriter::new(unique_scid());
     let gd = rounds(1, 0);
@@ -2305,7 +2312,7 @@ fn through_param(at: i32, pass: bool) -> FunctionDef {
 #[test]
 fn devirt_second_round() {
     let (_g, before) = start();
-    let d0 = ryo_jit::ssa_devirt();
+    let d0 = ryo_jit::stats().devirt;
     let mut w = ImageWriter::new(unique_scid());
     // g(x) = 3x + 1; g2(x) = (3x + 1) * 3 + 1; g3(p, x) = g2 through p[40] + 1.
     let gd = rounds(1, 0);
