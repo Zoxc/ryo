@@ -296,22 +296,22 @@ fn arg_list(a: &[u32], accs: &mut Vec<Acc>, regs: &mut Vec<ArgReg>) -> Result<()
 /// A handler call that is a small block copy: its length, destination, source and the
 /// pointer slot of its `Mem` side. Frame sides must stay clear of the return address.
 fn small_copy(h: full::Opcode, args: &[Arg], l: &asm::Layout, pool: bool) -> Option<(u32, Side, Side, Option<i32>)> {
+    use full::Opcode as O;
     let info = h.info();
-    let m = info.mnemonic;
     let reg = |name: &str, part: u8| l.locs[info.operand_index(name)?].imm(args, part);
     let slot = |name: &str| Some(reg(name, 0)? as u32 as i32);
     let disp = || Some(reg("m", 1)? as u32 as i32);
-    let (len, dst, src, p) = match m {
-        "copy" => (reg("len", 0)? as u32, Side::Frame(slot("d")?), Side::Frame(slot("s")?), None),
-        "zero" => (reg("len", 0)? as u32, Side::Frame(slot("d")?), Side::Zero, None),
-        "const" if pool => {
+    let (len, dst, src, p) = match h {
+        O::Copy => (reg("len", 0)? as u32, Side::Frame(slot("d")?), Side::Frame(slot("s")?), None),
+        O::Zero => (reg("len", 0)? as u32, Side::Frame(slot("d")?), Side::Zero, None),
+        O::Const if pool => {
             let Arg::Const(k) = *args.get(l.locs[info.operand_index("k")?].reg as usize)? else { return None };
             (reg("len", 0)? as u32, Side::Frame(slot("d")?), Side::Pool(k.0), None)
         }
-        "load.copy" => (reg("len", 0)? as u32, Side::Frame(slot("d")?), Side::Mem(disp()?), Some(slot("m")?)),
-        "store.copy" => (reg("len", 0)? as u32, Side::Mem(disp()?), Side::Frame(slot("s")?), Some(slot("m")?)),
-        "load.w128" => (16, Side::Frame(slot("d")?), Side::Mem(disp()?), Some(slot("m")?)),
-        "store.w128" => (16, Side::Mem(disp()?), Side::Frame(slot("s")?), Some(slot("m")?)),
+        O::LoadCopy => (reg("len", 0)? as u32, Side::Frame(slot("d")?), Side::Mem(disp()?), Some(slot("m")?)),
+        O::StoreCopy => (reg("len", 0)? as u32, Side::Mem(disp()?), Side::Frame(slot("s")?), Some(slot("m")?)),
+        O::LoadW128 => (16, Side::Frame(slot("d")?), Side::Mem(disp()?), Some(slot("m")?)),
+        O::StoreW128 => (16, Side::Mem(disp()?), Side::Frame(slot("s")?), Some(slot("m")?)),
         _ => return None,
     };
     let clear = |s: Side| match s {
