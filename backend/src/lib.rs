@@ -33,12 +33,15 @@ extern crate rustc_driver;
 
 mod dump;
 mod dump_lean;
+mod exports;
 mod json;
 mod link;
 mod lower;
+mod merge;
 mod objfile;
 mod partition;
 mod persist;
+mod stats;
 mod switches;
 mod symbols;
 
@@ -97,7 +100,7 @@ impl RyoBackend {
 type PartitionProvider = for<'tcx> fn(TyCtxt<'tcx>, ()) -> MonoItemPartitions<'tcx>;
 type SymbolNameProvider = for<'tcx> fn(TyCtxt<'tcx>, Instance<'tcx>) -> ty::SymbolName<'tcx>;
 type ExportedProvider = for<'tcx> fn(TyCtxt<'tcx>, LocalCrate) -> &'tcx [(ExportedSymbol<'tcx>, SymbolExportInfo)];
-type UpstreamProvider = for<'tcx> fn(TyCtxt<'tcx>, ()) -> partition::UpstreamMonos<'tcx>;
+type UpstreamProvider = for<'tcx> fn(TyCtxt<'tcx>, ()) -> exports::UpstreamMonos<'tcx>;
 type DylibFormatsProvider =
     for<'tcx> fn(TyCtxt<'tcx>, rustc_hir::def_id::CrateNum) -> &'tcx [(rustc_hir::def_id::CrateNum, rustc_crate_store::LinkagePreference)];
 
@@ -125,11 +128,11 @@ fn symbol_name<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> ty::SymbolN
 }
 
 fn exported_generic_symbols<'tcx>(tcx: TyCtxt<'tcx>, krate: LocalCrate) -> &'tcx [(ExportedSymbol<'tcx>, SymbolExportInfo)] {
-    partition::exported_generic_symbols(tcx, (originals().exported_generic_symbols)(tcx, krate))
+    exports::exported_generic_symbols(tcx, (originals().exported_generic_symbols)(tcx, krate))
 }
 
-fn upstream_monomorphizations<'tcx>(tcx: TyCtxt<'tcx>, (): ()) -> partition::UpstreamMonos<'tcx> {
-    partition::upstream_monomorphizations(tcx, (originals().upstream_monomorphizations)(tcx, ()))
+fn upstream_monomorphizations<'tcx>(tcx: TyCtxt<'tcx>, (): ()) -> exports::UpstreamMonos<'tcx> {
+    exports::upstream_monomorphizations(tcx, (originals().upstream_monomorphizations)(tcx, ()))
 }
 
 /// An upstream Rust dylib's dependency formats without the runtime crates (`ryo_rt`,

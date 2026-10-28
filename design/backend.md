@@ -11,7 +11,9 @@ Steps 1–4 run **inside our `collect_and_partition_mono_items` override**, not 
 (`rustc_interface/src/passes.rs:1314` vs `:1338`), and when generics are shared it already
 calls the query through `exported_generic_symbols` (`symbol_export.rs:330`). The query is
 `eval_always` and computed once. The provider stores the VM results in a `OnceLock`,
-and `codegen_crate` reads them.
+and `codegen_crate` reads them. `partition.rs` holds steps 1–4, `merge.rs` builds each
+image's contents (relocations, constant pool, function symbols), `stats.rs` the `RYO_STATS`
+and `RYO_DUMP_NATIVE` text, and `exports.rs` the exported-symbols overrides.
 
 1. **Collect.** Call the original `collect_and_partition_mono_items` provider (saved in
    `provide`). The collector (`collect_crate_mono_items`) is `pub(crate)` in
@@ -341,6 +343,8 @@ in the benches and `tests/vm_cgu.rs` by 200 to 1500 bytes. The images' other per
 `regex-syntax`). `RYO_STATS` prints the pools' total.
 
 ## Query overrides (`provide`)
+
+The exported-symbols ones are in `exports.rs`, `symbol_name` in `symbols.rs`.
 
 - `collect_and_partition_mono_items` → the native CGU from step 4. `all_mono_items` keeps the
   original DefIds of VM functions: `is_codegened_item` is built from it

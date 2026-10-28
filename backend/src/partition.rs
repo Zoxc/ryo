@@ -1,7 +1,8 @@
 //! Pipeline steps 1–4 (design/backend.md#pipeline), run inside our
-//! `collect_and_partition_mono_items`: collect, classify, lower, build the native CGU. Also
-//! builds the image (step 5's contents; `codegen_crate` writes it), and the `symbol_name` and
-//! exported-symbols overrides that depend on these results.
+//! `collect_and_partition_mono_items`: collect, classify, lower, build the native CGU, with
+//! each CGU's image built by [`super::merge`] (step 5's contents; `codegen_crate` writes it).
+//! The results feed the `symbol_name` ([`super::symbols`]) and exported-symbols
+//! ([`super::exports`]) overrides.
 
 use std::sync::OnceLock;
 
@@ -9,21 +10,20 @@ use rustc_data_structures::fx::{FxHashMap, FxHashSet, FxIndexMap};
 use rustc_data_structures::unord::UnordSet;
 use rustc_hir::attrs::Linkage;
 use rustc_hir::def_id::{CrateNum, DefId, LOCAL_CRATE};
-use rustc_middle::middle::exported_symbols::{ExportedSymbol, SymbolExportInfo, SymbolExportKind, SymbolExportLevel};
-use rustc_middle::mir::interpret::{AllocId, GlobalAlloc};
 use rustc_middle::mono::{CodegenUnit, CollectionMode, MonoItem, MonoItemData, MonoItemPartitions, Visibility};
-use rustc_middle::ty::{self, Instance, InstanceKind, Ty, TyCtxt, TypingEnv};
+use rustc_middle::ty::{self, Instance, Ty, TyCtxt, TypingEnv};
 use rustc_session::config::{CrateType, EntryFnType, OutputType};
 use rustc_span::Symbol;
-use ryo_bytecode::asm::{self, Ref};
-use ryo_bytecode::full::{Const, Data, Func, Sym};
-use ryo_bytecode::image::{AllocFixup, AllocReloc, AllocTarget, FuncSymbol, FunctionDef, ImageObject, ImageWriter, SYM_INDIRECT, SymVisibility};
+use ryo_bytecode::asm;
+use ryo_bytecode::image::ImageObject;
 
 use rustc_middle::dep_graph::{WorkProduct, WorkProductId};
 
 use super::dump;
 use super::lower::{self, CodeReloc, LowerCx, LoweredFn, NeedsNative};
+use super::merge::{alloc_refs, build_image, island_instance, island_names};
 use super::persist;
+use super::stats::{native_text, print_coverage};
 use super::switches::Switches;
 use super::symbols::{self, local_stable_crate_id, static_symbol};
 
@@ -135,12 +135,12 @@ pub struct LeanCerts {
 }
 
 /// The part of [`Results`] that holds this session's interned data.
-struct Exports<'tcx> {
+pub(super) struct Exports<'tcx> {
     /// For `exported_generic_symbols`: the VM functions with `External` linkage whose symbols
     /// the images define, with their visibility.
-    vm: Vec<(Instance<'tcx>, Visibility)>,
+    pub(super) vm: Vec<(Instance<'tcx>, Visibility)>,
     /// Native items made `External` + `Hidden` only because an image references them.
-    hidden_for_image: Vec<Instance<'tcx>>,
+    pub(super) hidden_for_image: Vec<Instance<'tcx>>,
 }
 
 static RESULTS: SessionCell<Results> = SessionCell::new();
@@ -164,7 +164,7 @@ pub fn results(tcx: TyCtxt<'_>) -> Option<&'static Results> {
 /// callee). Both queries are `cache_on_disk`, so a green node would load the previous session's
 /// list (design/backend.md#incremental): with VM code they depend on the forever-red node and
 /// rerun every session, as rustc's `create_def` makes its callers do. They are cheap.
-fn results_untracked(tcx: TyCtxt<'_>) -> Option<&'static Results> {
+pub(super) fn results_untracked(tcx: TyCtxt<'_>) -> Option<&'static Results> {
     let _ = tcx.collect_and_partition_mono_items(());
     let r = results(tcx)?;
     tcx.dep_graph.read_index(rustc_middle::dep_graph::DepNodeIndex::FOREVER_RED_NODE);
@@ -178,7 +178,7 @@ impl Results {
         Results { images, lean, exports }
     }
 
-    fn exports<'tcx>(&self, _tcx: TyCtxt<'tcx>) -> &Exports<'tcx> {
+    pub(super) fn exports<'tcx>(&self, _tcx: TyCtxt<'tcx>) -> &Exports<'tcx> {
         // SAFETY: the instances were interned by this session's `TyCtxt`, which outlives every
         // query provider call, and a process runs one session (`RESULTS` checks it). Only the
         // lifetime parameter changes.
@@ -284,7 +284,7 @@ fn vm_enabled(tcx: TyCtxt<'_>, switches: &Switches) -> bool {
 }
 
 /// The VM's own crates: always native ([`vm_enabled`]), their copies of other crates'
-/// generics are never linked to ([`upstream_monomorphizations`]), and every final artifact
+/// generics are never linked to ([`upstream_monomorphizations`](super::exports::upstream_monomorphizations)), and every final artifact
 /// links a private copy of them (`dylib_dependency_formats`). (`ryo_jit` is sealed into
 /// `ryo_rt`, so it is a crate only when built on its own, as with `-Zbuild-std`.)
 pub const RUNTIME_CRATES: [&str; 3] = [RT_CRATE, "ryo_bytecode", "ryo_jit"];
@@ -332,9 +332,9 @@ fn needs_frame_pointer(sess: &rustc_session::Session) -> bool {
 /// the image defines its symbol globally, with its linkage; an internal one becomes hidden).
 pub(super) struct VmFn<'tcx> {
     pub(super) instance: Instance<'tcx>,
-    data: MonoItemData,
+    pub(super) data: MonoItemData,
     pub(super) lowered: LoweredFn<'tcx>,
-    global: bool,
+    pub(super) global: bool,
 }
 
 /// What one CGU's image gives the native CGUs and the exported-symbols queries: its VM
@@ -421,15 +421,15 @@ impl CguImage {
 
 /// A CGU's VM part as this session lowered it: for the stats, the dumps and the Lean
 /// certificates.
-struct Fresh<'tcx> {
+pub(super) struct Fresh<'tcx> {
     /// The CGU's name.
-    cgu: Symbol,
-    vm: Vec<VmFn<'tcx>>,
+    pub(super) cgu: Symbol,
+    pub(super) vm: Vec<VmFn<'tcx>>,
     /// The image's constant pool size in bytes (`RYO_STATS`).
-    pool: usize,
-    failed: Vec<(Instance<'tcx>, NeedsNative)>,
-    dump: String,
-    code_dump: String,
+    pub(super) pool: usize,
+    pub(super) failed: Vec<(Instance<'tcx>, NeedsNative)>,
+    pub(super) dump: String,
+    pub(super) code_dump: String,
 }
 
 /// One CGU's image phase.
@@ -1186,251 +1186,6 @@ fn build_cgu<'tcx>(
     }
 }
 
-/// The coverage summary of `RYO_STATS` (design/backend.md#debugging-switches): island
-/// instructions per function and by template, and the native functions by reason, of the
-/// images built this session.
-fn print_coverage(fresh: &[Fresh<'_>], failed: &[(Instance<'_>, NeedsNative)]) {
-    let mut by_template: FxIndexMap<Symbol, (usize, usize)> = FxIndexMap::default();
-    let mut with_islands = 0;
-    let mut total = 0;
-    let mut n_vm = 0;
-    for v in fresh.iter().flat_map(|f| f.vm.iter()) {
-        n_vm += 1;
-        let mut n = 0;
-        let mut seen = FxHashSet::default();
-        for r in &v.lowered.relocs {
-            if let CodeReloc::Island { template, .. } = *r {
-                n += 1;
-                let e = by_template.entry(template).or_default();
-                e.0 += 1;
-                e.1 += usize::from(seen.insert(template));
-            }
-        }
-        total += n;
-        with_islands += usize::from(n > 0);
-    }
-    let per_fn = if n_vm == 0 { 0.0 } else { total as f64 / n_vm as f64 };
-    eprintln!("ryo: {total} island instructions in {with_islands} of {n_vm} VM functions ({per_fn:.2} per function)");
-    let mut templates: Vec<_> = by_template.into_iter().collect();
-    templates.sort_by(|a, b| b.1.0.cmp(&a.1.0).then_with(|| a.0.as_str().cmp(b.0.as_str())));
-    for (t, (n, fns)) in templates {
-        eprintln!("ryo: island {t}: {n} in {fns} functions");
-    }
-    let mut reasons: FxIndexMap<&str, usize> = FxIndexMap::default();
-    for (_, why) in failed {
-        *reasons.entry(why.0.as_str()).or_default() += 1;
-    }
-    let mut reasons: Vec<_> = reasons.into_iter().collect();
-    reasons.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
-    for (why, n) in reasons {
-        eprintln!("ryo: native reason: {n} {why}");
-    }
-}
-
-/// The `RYO_DUMP_NATIVE` text (design/backend.md#debugging-switches): a summary (native
-/// functions by reason, island instructions by template), then each function that stays
-/// native with its reason, each VM function also kept native (`keep_native`), and each VM
-/// function with islands with its island instructions by template. Every line names the
-/// function's crate (`[local]` for the crate being compiled) and its instance path, sorted,
-/// so the text is deterministic.
-fn native_text<'tcx>(tcx: TyCtxt<'tcx>, fresh: &[Fresh<'tcx>], failed: &[(Instance<'tcx>, NeedsNative)], kept: &[Instance<'tcx>]) -> String {
-    use std::collections::BTreeMap;
-    use std::fmt::Write;
-    let name = |i: Instance<'tcx>| {
-        let k = i.def_id().krate;
-        let krate = if k == LOCAL_CRATE { "local".to_owned() } else { tcx.crate_name(k).to_string() };
-        format!("[{krate}] {}", path(i))
-    };
-    let mut natives: Vec<(String, &str)> = failed.iter().map(|(i, w)| (name(*i), w.0.as_str())).collect();
-    natives.sort();
-    let mut reasons: BTreeMap<&str, usize> = BTreeMap::new();
-    for (_, why) in &natives {
-        *reasons.entry(why).or_default() += 1;
-    }
-    let mut kept: Vec<String> = kept.iter().map(|i| name(*i)).collect();
-    kept.sort();
-    kept.dedup();
-    let mut n_vm = 0;
-    let mut with: Vec<(String, BTreeMap<Symbol, usize>)> = Vec::new();
-    let mut templates: BTreeMap<&str, (usize, usize)> = BTreeMap::new();
-    for v in fresh.iter().flat_map(|f| f.vm.iter()) {
-        n_vm += 1;
-        let mut by: BTreeMap<Symbol, usize> = BTreeMap::new();
-        for r in &v.lowered.relocs {
-            if let CodeReloc::Island { template, .. } = *r {
-                *by.entry(template).or_default() += 1;
-            }
-        }
-        if !by.is_empty() {
-            with.push((name(v.instance), by));
-        }
-    }
-    with.sort_by(|a, b| a.0.cmp(&b.0));
-    for (_, by) in &with {
-        for (t, n) in by {
-            let e = templates.entry(t.as_str()).or_default();
-            e.0 += n;
-            e.1 += 1;
-        }
-    }
-    let mut out = String::new();
-    writeln!(out, "# {} native functions, by reason", natives.len()).unwrap();
-    let mut rs: Vec<_> = reasons.into_iter().collect();
-    rs.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
-    for (why, n) in rs {
-        writeln!(out, "{n:5} {why}").unwrap();
-    }
-    let total: usize = templates.values().map(|t| t.0).sum();
-    writeln!(out, "\n# {total} island instructions in {} of {n_vm} VM functions, by template (instructions, functions)", with.len()).unwrap();
-    let mut ts: Vec<_> = templates.into_iter().collect();
-    ts.sort_by(|a, b| b.1.0.cmp(&a.1.0).then_with(|| a.0.cmp(b.0)));
-    for (t, (n, fns)) in ts {
-        writeln!(out, "{n:5} {fns:5} {t}").unwrap();
-    }
-    writeln!(out, "\n# native functions: [crate] instance: reason").unwrap();
-    for (f, why) in &natives {
-        writeln!(out, "{f}: {why}").unwrap();
-    }
-    writeln!(out, "\n# VM functions also kept native (local copies native code of their CGU references)").unwrap();
-    for f in &kept {
-        writeln!(out, "{f}").unwrap();
-    }
-    writeln!(out, "\n# VM functions with islands: [crate] instance: template x count, ...").unwrap();
-    for (f, by) in &with {
-        let list: Vec<String> = by.iter().map(|(t, n)| format!("{t} x{n}")).collect();
-        writeln!(out, "{f}: {}", list.join(", ")).unwrap();
-    }
-    out
-}
-
-/// Each island instance the fresh images call: its symbol and its template's name.
-fn island_names<'tcx>(tcx: TyCtxt<'tcx>, rt: RtItems, fresh: &[Fresh<'tcx>]) -> Vec<(String, String)> {
-    let mut out: Vec<(String, String)> = Vec::new();
-    for v in fresh.iter().flat_map(|f| f.vm.iter()) {
-        for r in &v.lowered.relocs {
-            let CodeReloc::Island { template, args } = *r else { continue };
-            let island = island_instance(tcx, rt, template, args);
-            out.push((tcx.symbol_name(island).name.to_owned(), template.to_string()));
-        }
-    }
-    out.sort();
-    out.dedup();
-    out
-}
-
-/// The merge pass of a CGU's image: resolves every function's relocations, then lays out the
-/// image. Appends to the `RYO_DUMP` and `RYO_DUMP_CODE` texts if those are on.
-#[allow(clippy::too_many_arguments)]
-fn build_image<'tcx>(
-    tcx: TyCtxt<'tcx>,
-    rt: RtItems,
-    mode: asm::Mode,
-    switches: &Switches,
-    cgu_name: Symbol,
-    vm: &mut [VmFn<'tcx>],
-    dump_text: &mut String,
-    code_text: &mut String,
-) -> ImageObject {
-    let mut w = ImageWriter::new(local_stable_crate_id(tcx));
-    w.set_cgu_hash(ryo_bytecode::image::cgu_hash(cgu_name.as_str().as_bytes()));
-    let mut pool = Pool::default();
-    w.prepare(mode);
-    if symbols::is_macho(tcx.sess) {
-        // As LLVM writes `__eh_frame` (design/platforms.md).
-        w.set_eh_pointers(ryo_bytecode::image::EhPointers::Abs8);
-    }
-    let mut encoded = Vec::with_capacity(vm.len());
-    if switches.dump.is_some() {
-        dump_text.push_str(&dump::vm_text(tcx, vm, mode));
-    }
-    let mut code_dump = switches.dump_code.as_ref().map(|_| dump::code_text(tcx, vm));
-    let merge_t = tcx.prof.generic_activity("ryo_merge");
-    let index: FxHashMap<Instance<'tcx>, u32> = vm.iter().enumerate().map(|(i, v)| (v.instance, i as u32)).collect();
-    for (i, v) in vm.iter_mut().enumerate() {
-        let l = &mut v.lowered;
-        // Each reference's value.
-        let vals: Vec<u32> = l
-            .relocs
-            .iter()
-            .map(|r| match *r {
-                CodeReloc::Call { callee } => index[&callee],
-                CodeReloc::Symbol { target } => {
-                    let flags = symbols::symbol_flags(tcx, target, symbols::SymRole::Target);
-                    let Sym(s) = w.symbol(tcx.symbol_name(target).name, flags);
-                    s
-                }
-                CodeReloc::Static { def_id } => {
-                    let flags = symbols::static_symbol_flags(tcx, def_id);
-                    let Sym(s) = w.symbol(static_symbol(tcx, def_id).name, flags);
-                    s
-                }
-                CodeReloc::Const { alloc, offset } => pool.intern(tcx, &mut w, alloc).0 + offset,
-                CodeReloc::Bytes { ref bytes, align } => pool.bytes(&mut w, bytes, align).0,
-                CodeReloc::Data { alloc, offset } => pool.data(tcx, &mut w, alloc).0 + offset,
-                CodeReloc::Island { template, args } => {
-                    let island = island_instance(tcx, rt, template, args);
-                    let flags = symbols::symbol_flags(tcx, island, symbols::SymRole::Island);
-                    w.symbol(tcx.symbol_name(island).name, flags).0
-                }
-            })
-            .collect();
-        let mut code = std::mem::take(&mut l.code);
-        if let Some(out) = &mut code_dump {
-            dump::image_names(out, i, v.instance, &code.relocs, &vals);
-        }
-        for r in &mut code.relocs {
-            let v = |i: u32| vals[i as usize];
-            r.to = match r.to {
-                Ref::Func(Func(i)) => Ref::Func(Func(v(i))),
-                Ref::Sym(Sym(i)) => Ref::Sym(Sym(v(i))),
-                Ref::Const(Const(i)) => Ref::Const(Const(v(i))),
-                Ref::Data(Data(i)) => Ref::Data(Data(v(i))),
-                Ref::Handler(_) | Ref::Probe | Ref::Ro(_) | Ref::Rec | Ref::RecLoopCtr | Ref::RegHandler(_) => r.to,
-            };
-        }
-        // A global symbol with the function's linkage; an internal function native code
-        // calls becomes hidden (design/backend.md, Linkage).
-        let symbol = v.global.then(|| {
-            let weak = !matches!(v.data.linkage, Linkage::External | Linkage::Internal);
-            let visibility = match (v.data.linkage, v.data.visibility) {
-                (Linkage::Internal, _) | (_, Visibility::Hidden) => SymVisibility::Hidden,
-                (_, Visibility::Protected) => SymVisibility::Protected,
-                (_, Visibility::Default) => SymVisibility::Default,
-            };
-            FuncSymbol { visibility, weak }
-        });
-        w.add_function(FunctionDef {
-            name: tcx.symbol_name(v.instance).name.to_owned(),
-            code: Vec::new(),
-            frame_size: l.frame_size,
-            arg_size: l.arg_size,
-            ret_size: l.ret_size,
-            ret_kind: l.ret_kind,
-            cleanup: Vec::new(),
-            symbol,
-            flags: symbols::func_flags(tcx, v.instance),
-        });
-        encoded.push(code);
-    }
-    drop(merge_t);
-    if let Some(text) = code_dump {
-        code_text.push_str(&text);
-    }
-    let _t = tcx.prof.generic_activity("ryo_finish_image");
-    match w.finish_encoded(encoded) {
-        Ok(image) => image,
-        Err(e) => tcx.dcx().fatal(format!("ryo: invalid image: {e:?}")),
-    }
-}
-
-/// The instance of `ryo_rt`'s island template `template` for `args`.
-fn island_instance<'tcx>(tcx: TyCtxt<'tcx>, rt: RtItems, template: Symbol, args: ty::GenericArgsRef<'tcx>) -> Instance<'tcx> {
-    let Some(def_id) = rt.item(tcx, template) else {
-        tcx.dcx().fatal(format!("ryo_rt has no island template `{template}`; rebuild with `./y.sh build`"))
-    };
-    Instance::new_raw(def_id, args)
-}
-
 /// `instance` for stats output: untrimmed paths, since trimming needs a diagnostic.
 pub(super) fn path(instance: Instance<'_>) -> String {
     rustc_middle::ty::print::with_no_trimmed_paths!(instance.to_string())
@@ -1490,200 +1245,6 @@ fn lower_cgu<'tcx>(
     }
     failed.sort_by_cached_key(|(i, _)| tcx.symbol_name(*i).name);
     (ok, failed)
-}
-
-/// The image's constant pool: allocations copied with their pointers relocated
-/// (design/lowering.md#constants), and raw byte constants. Deduplicated. On PE, allocations
-/// pointing directly at imports go into the writable fixup area instead, with a load-time
-/// fixup per such pointer (`lower::constant::needs_fixup`).
-#[derive(Default)]
-struct Pool {
-    allocs: FxHashMap<AllocId, AllocTarget>,
-    bytes: FxHashMap<(Vec<u8>, u32), Const>,
-}
-
-impl Pool {
-    /// The pool copy of `id`, which must not need the fixup area.
-    fn intern<'tcx>(&mut self, tcx: TyCtxt<'tcx>, w: &mut ImageWriter, id: AllocId) -> Const {
-        match self.target(tcx, w, id) {
-            AllocTarget::Const(k) => k,
-            _ => tcx.dcx().fatal("ryo: constant-pool reference to a fixup-area allocation"),
-        }
-    }
-
-    /// The fixup-area copy of `id`, which must need it.
-    fn data<'tcx>(&mut self, tcx: TyCtxt<'tcx>, w: &mut ImageWriter, id: AllocId) -> Data {
-        match self.target(tcx, w, id) {
-            AllocTarget::Data(d) => d,
-            _ => tcx.dcx().fatal("ryo: fixup-area reference to a constant-pool allocation"),
-        }
-    }
-
-    /// Where the copy of the memory or vtable allocation `id` is.
-    fn target<'tcx>(&mut self, tcx: TyCtxt<'tcx>, w: &mut ImageWriter, id: AllocId) -> AllocTarget {
-        if let Some(&t) = self.allocs.get(&id) {
-            return t;
-        }
-        let alloc = match tcx.global_alloc(id) {
-            GlobalAlloc::Memory(alloc) => alloc,
-            GlobalAlloc::VTable(ty, dyn_ty) => {
-                let t = self.target(tcx, w, lower::vtable_alloc(tcx, ty, dyn_ty));
-                self.allocs.insert(id, t);
-                return t;
-            }
-            GlobalAlloc::Function { .. } | GlobalAlloc::Static(_) | GlobalAlloc::TypeId { .. } => {
-                tcx.dcx().fatal("ryo: constant-pool reference to a non-memory allocation")
-            }
-        };
-        let inner = alloc.inner();
-        let mut bytes = inner.inspect_with_uninit_and_ptr_outside_interpreter(0..inner.len()).to_vec();
-        let mut relocs = Vec::new();
-        let mut fixups = Vec::new();
-        for &(offset, prov) in inner.provenance().ptrs().iter() {
-            let at = offset.bytes() as usize;
-            let addend = i64::from_le_bytes(bytes[at..at + 8].try_into().unwrap());
-            let target_alloc = tcx.global_alloc(prov.alloc_id());
-            if lower::is_import(tcx, &target_alloc) {
-                // Patched at registration from the `__imp_` slot (design/platforms.md).
-                let name = match target_alloc {
-                    GlobalAlloc::Function { instance } => tcx.symbol_name(instance).name,
-                    GlobalAlloc::Static(def_id) => static_symbol(tcx, def_id).name,
-                    _ => unreachable!("only functions and statics are imports"),
-                };
-                bytes[at..at + 8].fill(0);
-                fixups.push(AllocFixup { offset: at as u32, sym: w.symbol(name, SYM_INDIRECT), addend });
-                continue;
-            }
-            let target = match target_alloc {
-                GlobalAlloc::Memory(_) | GlobalAlloc::VTable(..) => self.target(tcx, w, prov.alloc_id()),
-                GlobalAlloc::Function { instance } => AllocTarget::Symbol(w.symbol(tcx.symbol_name(instance).name, 0)),
-                GlobalAlloc::Static(def_id) => AllocTarget::Symbol(w.symbol(static_symbol(tcx, def_id).name, 0)),
-                // No address: the bytes (the offset) are part of the type id's hash
-                // (`rustc_codegen_llvm/src/common.rs:201-205`).
-                GlobalAlloc::TypeId { .. } => continue,
-            };
-            bytes[at..at + 8].fill(0);
-            relocs.push(AllocReloc { offset: at as u32, target, addend });
-        }
-        let align = inner.align.bytes() as u32;
-        let t = if fixups.is_empty() {
-            AllocTarget::Const(w.add_const(&bytes, align, &relocs))
-        } else {
-            AllocTarget::Data(w.add_data(&bytes, align, &relocs, &fixups))
-        };
-        self.allocs.insert(id, t);
-        t
-    }
-
-    fn bytes(&mut self, w: &mut ImageWriter, bytes: &[u8], align: u32) -> Const {
-        *self.bytes.entry((bytes.to_vec(), align)).or_insert_with(|| w.add_const(bytes, align, &[]))
-    }
-}
-
-/// The items an allocation refers to by symbol (functions and statics), through nested
-/// allocations and vtables (like the collector's `collect_alloc`,
-/// `rustc_monomorphize/src/collector.rs:1285`).
-fn alloc_refs<'tcx>(tcx: TyCtxt<'tcx>, id: AllocId, seen: &mut FxHashSet<AllocId>, out: &mut Vec<MonoItem<'tcx>>) {
-    if !seen.insert(id) {
-        return;
-    }
-    match tcx.global_alloc(id) {
-        GlobalAlloc::Function { instance } => out.push(MonoItem::Fn(instance)),
-        GlobalAlloc::Static(def_id) => out.push(MonoItem::Static(def_id)),
-        GlobalAlloc::Memory(alloc) => {
-            for prov in alloc.inner().provenance().ptrs().values() {
-                alloc_refs(tcx, prov.alloc_id(), seen, out);
-            }
-        }
-        GlobalAlloc::VTable(ty, dyn_ty) => alloc_refs(tcx, lower::vtable_alloc(tcx, ty, dyn_ty), seen, out),
-        GlobalAlloc::TypeId { .. } => {}
-    }
-}
-
-/// The value of `upstream_monomorphizations`: per generic item, the upstream crate whose copy
-/// of each instance to link to.
-pub type UpstreamMonos<'tcx> = rustc_hir::def_id::DefIdMap<rustc_data_structures::unord::UnordMap<ty::GenericArgsRef<'tcx>, CrateNum>>;
-
-/// Our `upstream_monomorphizations` (design/backend.md#query-overrides): rustc's, without the
-/// copies in the runtime crates ([`RUNTIME_CRATES`]) of other crates' generics. rustc shares
-/// `#[inline(never)]` instances even without share-generics; linking to them would turn the
-/// program's own instances into the runtime's native code. A guard: the runtime used to
-/// instantiate std's in its JIT, which is now a sealed object of its own (design/jit.md#packaging).
-pub fn upstream_monomorphizations<'tcx>(tcx: TyCtxt<'tcx>, map: UpstreamMonos<'tcx>) -> UpstreamMonos<'tcx> {
-    let runtime = |c: CrateNum| is_runtime_crate(tcx, c);
-    map.into_items()
-        .filter_map(|(def, args)| {
-            let args: rustc_data_structures::unord::UnordMap<_, _> =
-                if runtime(def.krate) { args } else { args.into_items().filter(|&(_, c)| !runtime(c)).collect() };
-            (!args.is_empty()).then_some((def, args))
-        })
-        .collect()
-}
-
-/// Our local `exported_generic_symbols` (design/backend.md#query-overrides): rustc lists the
-/// native CGU's generic items; the VM functions' symbols the image defines are added as
-/// rustc would list them if they were in the CGU (`exported_generic_symbols_provider_local`:
-/// generic `Item` instances and drop glue shims), and items made hidden only for the image
-/// aren't listed.
-pub fn exported_generic_symbols<'tcx>(
-    tcx: TyCtxt<'tcx>,
-    list: &'tcx [(ExportedSymbol<'tcx>, SymbolExportInfo)],
-) -> &'tcx [(ExportedSymbol<'tcx>, SymbolExportInfo)] {
-    if !tcx.sess.opts.output_types.should_codegen() {
-        return list;
-    }
-    let Some(r) = results_untracked(tcx) else { return list };
-    let hidden: FxHashSet<Instance<'tcx>> = r.exports(tcx).hidden_for_image.iter().copied().collect();
-    let mut out: Vec<_> = list
-        .iter()
-        .copied()
-        .filter(|&(s, _)| match s {
-            ExportedSymbol::Generic(def_id, args) => !hidden.contains(&Instance::new_raw(def_id, args)),
-            ExportedSymbol::DropGlue(ty) => !hidden.contains(&Instance::resolve_drop_glue(tcx, ty)),
-            _ => true,
-        })
-        .collect();
-    if tcx.local_crate_exports_generics() {
-        let need_visibility = tcx.sess.target.dynamic_linking && !tcx.sess.target.only_cdylib;
-        let reachable = tcx.reachable_set(());
-        let local_unreachable = |ty: Ty<'tcx>| {
-            let root = match ty.peel_refs().kind() {
-                ty::Closure(d, _) | ty::FnDef(d, _) | ty::Coroutine(d, _) | ty::CoroutineClosure(d, _) | ty::CoroutineWitness(d, _) => *d,
-                _ => return false,
-            };
-            root.as_local().is_some_and(|d| !reachable.contains(&d))
-        };
-        let downstream = |def: Option<DefId>, args: ty::GenericArgsRef<'tcx>| {
-            args.types().chain(def.map(|d| tcx.type_of(d).skip_binder())).all(|t| t.walk().all(|a| a.as_type().is_none_or(|t| !local_unreachable(t))))
-        };
-        let info = SymbolExportInfo { level: SymbolExportLevel::Rust, kind: SymbolExportKind::Text, used: false, rustc_std_internal_symbol: false };
-        for &(instance, vis) in &r.exports(tcx).vm {
-            if need_visibility && vis == Visibility::Hidden {
-                continue;
-            }
-            if !tcx.sess.opts.share_generics() && tcx.codegen_fn_attrs(instance.def_id()).inline != rustc_hir::attrs::InlineAttr::Never {
-                continue;
-            }
-            // The kinds rustc shares (`symbol_export.rs:398-484`).
-            let symbol = match instance.def {
-                InstanceKind::Item(def) => (instance.args.non_erasable_generics().next().is_some() && downstream(Some(def), instance.args))
-                    .then_some(ExportedSymbol::Generic(def, instance.args)),
-                InstanceKind::Shim(ty::ShimKind::DropGlue(_, Some(ty))) => {
-                    let shared = match ty.kind() {
-                        ty::Adt(_, args) | ty::Closure(_, args) => downstream(None, args),
-                        _ => true,
-                    };
-                    shared.then_some(ExportedSymbol::DropGlue(ty))
-                }
-                InstanceKind::Shim(ty::ShimKind::AsyncDropGlueCtor(_, ty)) => Some(ExportedSymbol::AsyncDropGlueCtorShim(ty)),
-                InstanceKind::Shim(ty::ShimKind::AsyncDropGlue(def, ty)) => Some(ExportedSymbol::AsyncDropGlue(def, ty)),
-                _ => None,
-            };
-            out.extend(symbol.map(|s| (s, info)));
-        }
-    }
-    out.sort_by_cached_key(|s| s.0.symbol_name_for_local_instance(tcx));
-    tcx.arena.alloc_from_iter(out)
 }
 
 #[cfg(test)]
