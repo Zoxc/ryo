@@ -32,7 +32,7 @@ impl LinkInfo {
         let dylib = tcx.crate_types().contains(&CrateType::Dylib);
         LinkInfo {
             images,
-            macho: tcx.sess.target.binary_format == rustc_target::spec::BinaryFormat::MachO,
+            macho: crate::symbols::is_macho(tcx.sess),
             register: crate::symbols::rt_symbol(tcx, objfile::REGISTER_SYMBOL),
             runtime_exports: if dylib { crate::symbols::runtime_exports(tcx) } else { Default::default() },
         }

@@ -1323,7 +1323,7 @@ fn build_image<'tcx>(
     let rt_krate = rt.krate;
     let mut pool = Pool::default();
     w.prepare(mode);
-    if tcx.sess.target.binary_format == rustc_target::spec::BinaryFormat::MachO {
+    if symbols::is_macho(tcx.sess) {
         // As LLVM writes `__eh_frame` (design/platforms.md).
         w.set_eh_pointers(ryo_bytecode::image::EhPointers::Abs8);
     }

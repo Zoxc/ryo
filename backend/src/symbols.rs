@@ -4,6 +4,7 @@
 use rustc_hir::def_id::{DefId, LOCAL_CRATE};
 use rustc_middle::mono::{InstantiationMode, MonoItem};
 use rustc_middle::ty::{self, Instance, InstanceKind, TyCtxt};
+use rustc_session::Session;
 
 /// How an image symbol slot is used, which decides whether it is indirect
 /// (design/platforms.md, design/vm.md#image-format).
@@ -70,6 +71,11 @@ pub(crate) fn static_symbol_flags(tcx: TyCtxt<'_>, def_id: DefId) -> u8 {
 /// Whether the target uses PE/COFF objects.
 pub(crate) fn is_pe(tcx: TyCtxt<'_>) -> bool {
     matches!(tcx.sess.target.binary_format, rustc_target::spec::BinaryFormat::Coff)
+}
+
+/// Whether the target uses Mach-O objects.
+pub(crate) fn is_macho(sess: &Session) -> bool {
+    matches!(sess.target.binary_format, rustc_target::spec::BinaryFormat::MachO)
 }
 
 /// The image's function flags for `instance` ([`FUNC_INLINE_ALWAYS`] etc., read by the JIT's
