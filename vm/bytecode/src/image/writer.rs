@@ -29,7 +29,7 @@ use core::{mem, slice};
 
 use super::*;
 use crate::asm::{self, CallSite, Encoded, Mode, Ref};
-use crate::full::{Abs, Const, Data, DecodeError, Decoder, ElemKind, Func, Opcode, OperandKind, Sym};
+use crate::full::{Abs, Const, Data, DecodeError, Decoder, Func, Opcode, OperandKind, Sym};
 
 /// A symbol referenced by the image.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -327,9 +327,12 @@ pub fn validate_code(code: &[u32], lim: &CodeLimits) -> Result<Vec<bool>, (u32, 
             return fail(CodeError::ArgNotFirst);
         }
         args_only &= insn.opcode() == Opcode::Arg;
-        for (o, w) in insn.opcode().info().operand_words(&words[1..]) {
+        let info = insn.opcode().info();
+        if !info.branch_offsets(&words[1..]).all(|t| target_ok(at, t)) {
+            return fail(CodeError::BadTarget);
+        }
+        for (o, w) in info.operand_words(&words[1..]) {
             match o.kind {
-                OperandKind::Target if !target_ok(at, w[0] as i32) => return fail(CodeError::BadTarget),
                 OperandKind::Func if w[0] >= lim.functions => return fail(CodeError::FuncOutOfRange),
                 OperandKind::Sym if w[0] >= lim.symbols => return fail(CodeError::SymOutOfRange),
                 OperandKind::Const if w[0] > lim.consts => return fail(CodeError::ConstOutOfRange),
@@ -338,14 +341,6 @@ pub fn validate_code(code: &[u32], lim: &CodeLimits) -> Result<Vec<bool>, (u32, 
                     Abs::Data(d) if d.0 > lim.data => return fail(CodeError::DataOutOfRange),
                     _ => {}
                 },
-                OperandKind::List(e) => {
-                    for el in w[1..].chunks(e.words()) {
-                        // A case's target is its last word; a word list has none.
-                        if e != ElemKind::Word && !target_ok(at, el[el.len() - 1] as i32) {
-                            return fail(CodeError::BadTarget);
-                        }
-                    }
-                }
                 _ => {}
             }
         }

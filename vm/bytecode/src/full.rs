@@ -840,6 +840,21 @@ impl<O: 'static> OpInfo<O> {
             (o, w)
         })
     }
+
+    /// The branch offsets (relative to the instruction start) of the instruction's target
+    /// operands and target-list elements, in operand order, given the words after the opcode
+    /// word as for [`operand_words`](Self::operand_words).
+    pub fn branch_offsets<'a>(&self, words: &'a [u32]) -> impl Iterator<Item = i32> + use<'a, O> {
+        self.operand_words(words).flat_map(|(o, w)| {
+            let (w, step) = match o.kind {
+                OperandKind::Target => (&w[..1], 1),
+                // A case's target is its last word; a word list has none.
+                OperandKind::List(e) if e != ElemKind::Word => (&w[1..], e.words()),
+                _ => (&w[..0], 1),
+            };
+            w.chunks(step).map(|el| el[el.len() - 1] as i32)
+        })
+    }
 }
 
 impl<O: 'static> OpInfo<O> {

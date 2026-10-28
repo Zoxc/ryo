@@ -34,9 +34,9 @@ you answer. Then:
 1. Installs Rust 1.99.1 with `rustc-dev`, `rust-src` and `llvm-tools` through rustup, or
    adds whatever is missing. Your default toolchain isn't changed.
 2. Builds ryo and keeps it in `install/` in the checkout, apart from development builds.
-3. Runs `cargo install --path scripts`, which puts `cargo-ryo` and `rustc-ryo` in
-   `~/.cargo/bin` (on your `PATH` with rustup). They run the ryo in `install/`, so keep the
-   checkout: deleting or moving it breaks the install (run `./y.sh uninstall` first).
+3. Installs `cargo-ryo` and `rustc-ryo` in `~/.cargo/bin` (on your `PATH` with rustup).
+   They run the ryo in `install/`, so keep the checkout: deleting or moving it breaks the
+   install (run `./y.sh uninstall` first).
 
 Afterwards `cargo ryo build` works in any Cargo project.
 

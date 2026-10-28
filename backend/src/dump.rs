@@ -15,14 +15,19 @@ pub(super) fn write(tcx: TyCtxt<'_>, var: &str, path: &std::ffi::OsStr, text: &s
     std::fs::write(path, text).unwrap_or_else(|e| tcx.dcx().fatal(format!("ryo: {var}: {e}")));
 }
 
+/// `vm`'s functions with their paths, sorted by path.
+fn sorted_by_path<'a, 'tcx>(vm: &'a [VmFn<'tcx>]) -> Vec<(String, &'a VmFn<'tcx>)> {
+    let mut fns: Vec<_> = vm.iter().map(|v| (path(v.instance), v)).collect();
+    fns.sort_by(|a, b| a.0.cmp(&b.0));
+    fns
+}
+
 /// The `RYO_DUMP` text: each VM function, by path, decoded back to VM instructions, its
 /// operands that name relocations (`fn`, `sym`, `k`, `data`) listed below it.
 pub(super) fn vm_text<'tcx>(tcx: TyCtxt<'tcx>, vm: &[VmFn<'tcx>], mode: asm::Mode) -> String {
     use std::fmt::Write;
-    let mut fns: Vec<(String, &VmFn<'tcx>)> = vm.iter().map(|v| (path(v.instance), v)).collect();
-    fns.sort_by(|a, b| a.0.cmp(&b.0));
     let mut out = String::new();
-    for (name, v) in fns {
+    for (name, v) in sorted_by_path(vm) {
         let l = &v.lowered;
         let c = &l.code;
         let flags = func_flags_suffix(symbols::func_flags(tcx, v.instance));
@@ -58,10 +63,8 @@ pub(super) fn vm_text<'tcx>(tcx: TyCtxt<'tcx>, vm: &[VmFn<'tcx>], mode: asm::Mod
 /// function's (`fn0`, `k1`), with which the JIT's code (`RYO_JIT_DUMP`) is printed.
 pub(super) fn code_text<'tcx>(tcx: TyCtxt<'tcx>, vm: &[VmFn<'tcx>]) -> String {
     use std::fmt::Write;
-    let mut fns: Vec<(String, &VmFn<'tcx>)> = vm.iter().map(|v| (path(v.instance), v)).collect();
-    fns.sort_by(|a, b| a.0.cmp(&b.0));
     let mut out = String::new();
-    for (name, v) in fns {
+    for (name, v) in sorted_by_path(vm) {
         let c = &v.lowered.code;
         let flags = func_flags_suffix(symbols::func_flags(tcx, v.instance));
         writeln!(out, "fn {name}{flags}").unwrap();
@@ -112,38 +115,37 @@ pub(super) fn image_names(out: &mut String, i: usize, instance: Instance<'_>, re
 /// position, and `L<n>:` printed before each labeled instruction.
 fn dump_labeled(out: &mut String, words: &[u32], cleanup: &[ryo_bytecode::image::CleanupEntry], scopes: &[asm::Scope]) {
     use std::fmt::Write;
+    // Each instruction's offset, text, and branch targets (in the order its text prints them).
     let mut lines = Vec::new();
     for r in ryo_bytecode::full::Decoder::new(words) {
         match r {
-            Ok((at, insn)) => lines.push((at, insn.to_string())),
+            Ok((at, insn)) => {
+                let offs = insn.opcode().info().branch_offsets(&words[at + 1..]);
+                let to = offs.map(|o| (at as i64 + o as i64) as usize).collect::<Vec<_>>();
+                lines.push((at, insn.to_string(), to));
+            }
             Err(e) => {
-                lines.push((usize::MAX, format!("error: {e}")));
+                lines.push((usize::MAX, format!("error: {e}"), Vec::new()));
                 break;
             }
         }
     }
-    // Rewrites each `@±n` in `text` (at `at`) with `f(at + n)`.
-    fn targets(text: &str, at: usize, mut f: impl FnMut(usize) -> String) -> String {
+    // Rewrites the `@±n` operands in `text`, in order, with `f` of each of `to`.
+    fn targets(text: &str, to: &[usize], f: impl Fn(usize) -> String) -> String {
         let mut res = String::new();
         let mut rest = text;
-        while let Some(i) = rest.find('@') {
+        for &t in to {
+            let i = rest.find('@').expect("a printed branch target");
             res.push_str(&rest[..i]);
-            let t = &rest[i + 1..];
-            let n = t.find(|c: char| c != '+' && c != '-' && !c.is_ascii_digit()).unwrap_or(t.len());
-            let off: i64 = t[..n].parse().expect("a branch offset");
-            res.push_str(&f((at as i64 + off) as usize));
-            rest = &t[n..];
+            let r = &rest[i + 1..];
+            let n = r.find(|c: char| c != '+' && c != '-' && !c.is_ascii_digit()).unwrap_or(r.len());
+            res.push_str(&f(t));
+            rest = &r[n..];
         }
         res.push_str(rest);
         res
     }
-    let mut labeled = std::collections::BTreeSet::new();
-    for (at, text) in &lines {
-        targets(text, *at, |t| {
-            labeled.insert(t);
-            String::new()
-        });
-    }
+    let mut labeled: std::collections::BTreeSet<usize> = lines.iter().flat_map(|l| l.2.iter().copied()).collect();
     for e in cleanup {
         labeled.insert(e.offset as usize);
         if let Cleanup::Pad(p, _) = e.action() {
@@ -167,12 +169,12 @@ fn dump_labeled(out: &mut String, words: &[u32], cleanup: &[ryo_bytecode::image:
             writeln!(out, "    ; {what} ${}, {} bytes", sc.frame_offset, sc.size).unwrap();
         }
     };
-    for (at, text) in &lines {
+    for (at, text, to) in &lines {
         if label.contains_key(at) {
             writeln!(out, "{}:", name(*at)).unwrap();
         }
         scopes_at(out, *at);
-        writeln!(out, "    {}", targets(text, *at, name)).unwrap();
+        writeln!(out, "    {}", targets(text, to, name)).unwrap();
     }
     scopes_at(out, usize::MAX);
     for e in cleanup {
