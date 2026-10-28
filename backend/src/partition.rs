@@ -77,9 +77,12 @@ pub fn rt_items(tcx: TyCtxt<'_>) -> Option<RtItems> {
     rt_items_in(tcx, krate)
 }
 
+/// The runtime crate's name.
+pub const RT_CRATE: &str = "ryo_rt";
+
 /// Whether `krate` is `ryo_rt`.
 pub fn is_rt_crate(tcx: TyCtxt<'_>, krate: CrateNum) -> bool {
-    tcx.crate_name(krate).as_str() == "ryo_rt"
+    tcx.crate_name(krate).as_str() == RT_CRATE
 }
 
 /// [`rt_items`], given `ryo_rt`'s crate.
@@ -276,7 +279,7 @@ fn vm_enabled(tcx: TyCtxt<'_>, switches: &Switches) -> bool {
 /// generics are never linked to ([`upstream_monomorphizations`]), and every final artifact
 /// links a private copy of them (`dylib_dependency_formats`). (`ryo_jit` is sealed into
 /// `ryo_rt`, so it is a crate only when built on its own, as with `-Zbuild-std`.)
-pub const RUNTIME_CRATES: [&str; 3] = ["ryo_rt", "ryo_bytecode", "ryo_jit"];
+pub const RUNTIME_CRATES: [&str; 3] = [RT_CRATE, "ryo_bytecode", "ryo_jit"];
 
 /// Whether `krate` is one of [`RUNTIME_CRATES`].
 pub fn is_runtime_crate(tcx: TyCtxt<'_>, krate: CrateNum) -> bool {
