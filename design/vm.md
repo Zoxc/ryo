@@ -773,8 +773,11 @@ at byte positions in its code, only where they tell the decoder what the code do
 or would take a search to find. Each entry starts with a LEB128 `v`: the position advances
 by `v >> 1` from the previous entry's, and `v & 1` says what follows:
 
-- `0`, an instruction: the opcode and the register cache selector of an inline sequence the
-  cache emitted non-plainly ([Register cache](#register-cache)).
+- `0`, an instruction: the opcode and the register cache selector plus one (wrapping) of an
+  inline sequence the cache emitted non-plainly ([Register cache](#register-cache)); or,
+  with the selector `asm::HANDLER_SEL` (`u32::MAX`, stored as `0`), the opcode of the
+  handler the `call` there calls. Every handler call has one: handler addresses alone are
+  ambiguous once MergeFunctions or a linker's ICF folds handlers.
 - `1`, a modifier: its kind, then its fields: a branch target (`0`, where the cache is
   cleared), a dropped store (`1`: frame offset, then `log2(size) << 4 | register`), an
   escape, a storage end or an island operand (`2`, `3`, `4`, `asm::Scope`: frame offset,
@@ -782,9 +785,10 @@ by `v >> 1` from the previous entry's, and `v & 1` says what follows:
 
 At one position, entries come in the order target, scopes, dropped store, instruction. The
 list is an index the decoder checks, never trusted over the bytes: the targets must be
-exactly where the branches go, an instruction entry must re-emit to the bytes there, and
+exactly where the branches go, an instruction entry must re-emit to the bytes there, a
+handler entry must be at a handler call whose target is (one of) that opcode's handlers, and
 anything else fails the decode (the JIT then leaves the function in its AOT code). A
-sequence without an entry is still found by the search.
+sequence without an entry is still found by the search; a handler call without one fails.
 
 Scopes, call sites and dropped stores are for decoding a linked function's code at run time
 (`asm::decode_linked`), which the code alone doesn't allow: scopes and dropped stores aren't

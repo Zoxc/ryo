@@ -69,7 +69,38 @@ struct Linked {
 /// `ryo_rt`'s handlers to [`handler_addr`] and `ryo_probe_stack` to [`probe_addr`], past the
 /// text section.
 fn link(obj: &ImageObject, resolve: impl Fn(&SymbolDef) -> u64) -> Linked {
-    let [ro, data, text] = Buf::several(&[(&obj.rodata, obj.rodata_align), (&obj.data, obj.data_align), (&obj.text, 16)]).try_into().ok().unwrap();
+    link_with(obj, resolve, None).0
+}
+
+/// PLT stubs or import thunks for the handlers, which [`link_with`] calls them through: one
+/// per opcode, 16 bytes apart, `prefix` then `jmp [rip + slot]`, the slots after the stubs.
+/// A slot holds the handler's address ([`handler_addr`]), or with `lazy` the address after
+/// its stub's `jmp`, as a lazily bound PLT slot points back into the PLT.
+#[derive(Clone, Copy)]
+struct Stubs<'a> {
+    prefix: &'a [u8],
+    lazy: bool,
+}
+
+/// [`link`], calling the handlers through `stubs` (returned) if given.
+fn link_with(obj: &ImageObject, resolve: impl Fn(&SymbolDef) -> u64, stubs: Option<Stubs<'_>>) -> (Linked, Option<Buf>) {
+    let n = ALL_OPCODES.len();
+    let stub_bytes = vec![0u8; if stubs.is_some() { n * 24 } else { 0 }];
+    let [ro, data, text, mut plt] =
+        Buf::several(&[(&obj.rodata, obj.rodata_align), (&obj.data, obj.data_align), (&obj.text, 16), (&stub_bytes, 16)]).try_into().ok().unwrap();
+    if let Some(st) = stubs {
+        for &op in ALL_OPCODES {
+            let at = 16 * op as usize;
+            let end = at + st.prefix.len() + 6;
+            let slot = 16 * n + 8 * op as usize;
+            let mut b = st.prefix.to_vec();
+            b.extend([0xff, 0x25]);
+            b.extend(((slot - end) as i32).to_le_bytes());
+            unsafe { std::slice::from_raw_parts_mut(plt.ptr.add(at), b.len()) }.copy_from_slice(&b);
+            plt.write_u64(slot as u64, if st.lazy { plt.addr() + end as u64 } else { handler_addr(&text, op) });
+        }
+    }
+    let handler = |text: &Buf, op: Opcode| if stubs.is_some() { plt.addr() + 16 * op as u64 } else { handler_addr(text, op) };
     let mut l = Linked { ro, data, text };
     assert_eq!(l.ro.addr() % obj.rodata_align, 0);
     for r in &obj.relocs {
@@ -79,7 +110,7 @@ fn link(obj: &ImageObject, resolve: impl Fn(&SymbolDef) -> u64) -> Linked {
             RelocTarget::Section(Section::Writable) => l.data.addr(),
             RelocTarget::Section(Section::Text) => l.text.addr(),
             RelocTarget::Section(_) => continue,
-            RelocTarget::Handler(op) => handler_addr(&l.text, op),
+            RelocTarget::Handler(op) => handler(&l.text, op),
             RelocTarget::Probe => probe_addr(&l.text),
             RelocTarget::TripEntry => trip_addr(&l.text, false),
             RelocTarget::TripOsr => trip_addr(&l.text, true),
@@ -104,7 +135,7 @@ fn link(obj: &ImageObject, resolve: impl Fn(&SymbolDef) -> u64) -> Linked {
             RelocKind::Pc64 => unreachable!("Mach-O `.eh_frame` only"),
         }
     }
-    l
+    (l, stubs.map(|_| plt))
 }
 
 /// Where [`link`] puts the handler of `op`: in reach of `text`'s `rel32` calls.
@@ -760,7 +791,7 @@ fn scopes_and_call_sites_round_trip() {
             let sites: Vec<CallSite> = img.call_sites(i as u32).iter().map(CallSite::from).collect();
             assert_eq!((list, sites), (e.list(), e.call_sites.clone()), "{mode:?}");
         }
-        assert!(img.list(1).is_empty() && img.list(2).is_empty());
+        assert!(img.list(2).is_empty());
 
         // `validate` checks the runs and the entries.
         use std::mem::{offset_of, size_of};
@@ -841,6 +872,141 @@ fn linked_functions_decode() {
         }
         // Not a function.
         assert!(res.decode(enc.len() as u32, l.text.bytes()).is_none());
+    }
+}
+
+/// The sample image's functions (and [`dead_stores`]) encoded in `mode` and linked, the
+/// handlers called through `stubs` if given.
+fn linked_sample(mode: Mode, stubs: Option<Stubs<'_>>) -> (Vec<asm::Encoded>, Linked, Option<Buf>) {
+    let mut w = sample();
+    let mut enc: Vec<asm::Encoded> = w.functions().iter().map(|f| asm::encode(&f.code, f.frame_size, &f.cleanup, &[], mode).unwrap()).collect();
+    enc.push(dead_stores(mode));
+    w.add_function(FunctionDef { name: "dead".into(), frame_size: 64, ..Default::default() });
+    w.prepare(mode);
+    let obj = w.finish_encoded(enc.clone()).unwrap();
+    let (l, plt) = link_with(&obj, |s| 0x1000 + s.name.len() as u64, stubs);
+    (enc, l, plt)
+}
+
+/// What decoding function `e` of the linked image `img` must give: its encoder output decoded
+/// with its relocations, its code constants at their place in the image's.
+fn want_decoded(img: Image<'_>, e: &asm::Encoded, mode: Mode) -> asm::Decoded {
+    let cc = img.code_consts();
+    let base = if e.rodata.is_empty() { 0 } else { cc.windows(e.rodata.len()).position(|w| w == e.rodata).unwrap() as u32 };
+    let relocs: Vec<asm::Reloc> = e
+        .relocs
+        .iter()
+        .map(|r| match r.to {
+            asm::Ref::Ro(o) => asm::Reloc { to: asm::Ref::Ro(base + o), ..*r },
+            _ => *r,
+        })
+        .collect();
+    asm::decode_reduced(&asm::Encoded { relocs, rodata: cc.to_vec(), ..e.clone() }, mode).unwrap()
+}
+
+/// Whether `e` calls a handler.
+fn calls_handler(e: &asm::Encoded) -> bool {
+    e.relocs.iter().any(|r| matches!(r.to, asm::Ref::Handler(_)))
+}
+
+/// The handler table with every opcode's handler at its own address ([`handler_addr`]), and
+/// with `folded` also each opcode's partner (`op ^ 1`) there, as if MergeFunctions or ICF had
+/// folded each pair: the address alone doesn't tell them apart.
+fn handler_table(text: &Buf, folded: bool) -> Vec<(usize, Opcode)> {
+    let mut t: Vec<(usize, Opcode)> = ALL_OPCODES.iter().map(|&op| (handler_addr(text, op) as usize, op)).collect();
+    if folded {
+        t.extend(ALL_OPCODES.iter().filter_map(|&op| Some((handler_addr(text, op) as usize, Opcode::from_u16(op as u16 ^ 1)?))));
+    }
+    t.sort();
+    t
+}
+
+/// Folded handlers (several opcodes at one address) decode by the call's instruction list
+/// entry, which must name one of them; a call without one, or naming another, fails.
+#[test]
+fn folded_handlers_decode_by_list() {
+    for mode in [ELF, Mode { pe: true, ..ELF }, AOT] {
+        let (enc, l, _) = linked_sample(mode, None);
+        let img = unsafe { Image::from_header(l.ro.bytes().as_ptr()) }.unwrap();
+        let handlers = handler_table(&l.text, true);
+        let res = ImageResolver { image: img, handlers: &handlers, probe: probe_addr(&l.text) as usize };
+        let mut checked = 0;
+        for (i, e) in enc.iter().enumerate() {
+            let got = res.decode(i as u32, l.text.bytes()).expect("a function").unwrap_or_else(|e| panic!("f{i} {mode:?}: {e:?}"));
+            assert_eq!(got, want_decoded(img, e, mode), "f{i} {mode:?}");
+            if !calls_handler(e) {
+                continue;
+            }
+            // The list changed: decoded as `ImageResolver::decode` does.
+            let f = img.functions()[i];
+            let code = &l.text.bytes()[f.code_off as usize..][..f.code_len as usize];
+            let sites: Vec<CallSite> = img.call_sites(i as u32).iter().map(CallSite::from).collect();
+            let record = mode.counters.then(|| img.jit_records().wrapping_add(i) as u64);
+            let addr = l.text.addr() + f.code_off as u64;
+            let list = InsnList::read(img.list(i as u32), f.code_len).unwrap();
+            let decode = |list: &InsnList| asm::decode_linked(code, addr, record, &res, &sites, list, mode);
+            assert!(decode(&list).is_ok());
+            let h = list.hints.iter().position(|h| h.is_handler()).expect("a handler call's entry");
+            // Missing.
+            let mut missing = list.clone();
+            missing.hints.remove(h);
+            assert!(decode(&missing).is_err(), "f{i} {mode:?}: without the entry");
+            // Naming an opcode whose handler isn't at the call's target.
+            let op = list.hints[h].op;
+            let other = ALL_OPCODES.iter().copied().find(|&o| o != op && o as u16 != op as u16 ^ 1).unwrap();
+            let mut outside = list.clone();
+            outside.hints[h].op = other;
+            assert!(decode(&outside).is_err(), "f{i} {mode:?}: {other:?} for {op:?}");
+            // An inline sequence's entry there instead.
+            let mut inline = list.clone();
+            inline.hints[h].sel = 0;
+            assert!(decode(&inline).is_err(), "f{i} {mode:?}: an inline entry");
+            // A stray handler entry.
+            let mut stray = list.clone();
+            stray.hints.insert(h, asm::Hint { sel: asm::HANDLER_SEL, ..list.hints[h] });
+            assert!(decode(&stray).is_err(), "f{i} {mode:?}: a second entry");
+            checked += 1;
+        }
+        assert!(checked >= 2, "{mode:?}");
+    }
+}
+
+/// Handler calls through PLT stubs or import thunks (`jmp [rip + slot]`, after an `endbr64`
+/// and with a `bnd` prefix or not) resolve through their slot, also to folded handlers; a
+/// lazily bound slot, which points back into the PLT, resolves to nothing (the function isn't
+/// decoded, rather than misread).
+#[test]
+fn handlers_through_stubs() {
+    const ENDBR64: [u8; 4] = [0xf3, 0x0f, 0x1e, 0xfa];
+    for mode in [ELF, AOT] {
+        for prefix in [&[][..], &ENDBR64, &[0xf2], &[0xf3, 0x0f, 0x1e, 0xfa, 0xf2]] {
+            for folded in [false, true] {
+                let (enc, l, _plt) = linked_sample(mode, Some(Stubs { prefix, lazy: false }));
+                let img = unsafe { Image::from_header(l.ro.bytes().as_ptr()) }.unwrap();
+                let handlers = handler_table(&l.text, folded);
+                let res = ImageResolver { image: img, handlers: &handlers, probe: probe_addr(&l.text) as usize };
+                for (i, e) in enc.iter().enumerate() {
+                    let got =
+                        res.decode(i as u32, l.text.bytes()).expect("a function").unwrap_or_else(|e| panic!("f{i} {mode:?} {prefix:x?}: {e:?}"));
+                    assert_eq!(got, want_decoded(img, e, mode), "f{i} {mode:?} {prefix:x?}");
+                }
+            }
+        }
+        let (enc, l, _plt) = linked_sample(mode, Some(Stubs { prefix: &ENDBR64, lazy: true }));
+        let img = unsafe { Image::from_header(l.ro.bytes().as_ptr()) }.unwrap();
+        let handlers = handler_table(&l.text, false);
+        let res = ImageResolver { image: img, handlers: &handlers, probe: probe_addr(&l.text) as usize };
+        let mut lazy = 0;
+        for (i, e) in enc.iter().enumerate() {
+            let got = res.decode(i as u32, l.text.bytes()).expect("a function");
+            if calls_handler(e) {
+                assert!(got.is_err(), "f{i} {mode:?}: decoded through a lazily bound slot");
+                lazy += 1;
+            } else {
+                assert_eq!(got.unwrap(), want_decoded(img, e, mode), "f{i} {mode:?}");
+            }
+        }
+        assert!(lazy >= 2);
     }
 }
 

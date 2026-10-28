@@ -167,7 +167,8 @@ impl Jit {
             .map(|(&h, &op)| (h as usize, op))
             .collect();
         handlers.sort_unstable();
-        // The sets share `resume`.
+        // The sets share `resume`. Other opcodes at one address (folded handlers) stay: a
+        // call's instruction list entry tells them apart.
         handlers.dedup();
         let probe = rt.probe as usize;
         let lo = handlers.first().map_or(probe, |h| h.0).min(probe);

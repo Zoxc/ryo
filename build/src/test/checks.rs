@@ -513,6 +513,30 @@ pub(super) fn jit_private_std(info: &crate::utils::RustcInfo, rustc_ryo: &Path, 
     Ok(())
 }
 
+/// The atomics on pointers and 64-bit integers, whose handlers MergeFunctions folds in pairs
+/// (`ptr` and `w64`), compiled by the JIT at their first call: every function must compile,
+/// none fail to decode (`RYO_JIT_STATS`'s exit summary).
+pub(super) fn jit_atomics(info: &crate::utils::RustcInfo, rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
+    if !crate::jit::supported(&info.host) {
+        return Ok(());
+    }
+    let exe = out.join(exe_name("jit_atomics"));
+    crate::utils::run(cmd(rustc_ryo).arg("--edition=2024").arg(src).arg("-o").arg(&exe))?;
+    let env = [("RYO_JIT_THRESHOLD", "0"), ("RYO_JIT_SYNC", "1"), ("RYO_JIT_STATS", "1"), ("RYO_JIT_LOG", "1")];
+    let r = capture(Command::new(&exe).envs(env))?;
+    // The summary's `compiled` and `failed` counts.
+    let count = |what: &str| {
+        let line = r.stderr.lines().find(|l| l.starts_with("[ryo] jit stats:") && l.split_whitespace().nth(3) == Some(what))?;
+        line.split_whitespace().nth(4)?.trim_end_matches(':').parse::<u64>().ok()
+    };
+    let (compiled, failed) = (count("compiled"), count("failed"));
+    if !r.status.success() || r.stdout != "ptrs 314 u64s 6145 usizes 82\n" || failed != Some(0) || !compiled.is_some_and(|c| c >= 3) {
+        let failing: Vec<&str> = r.stderr.lines().filter(|l| l.starts_with("ryo-jit:") && !l.contains(": compiled")).take(10).collect();
+        return Err(format!("jit-atomics: {}, compiled {compiled:?}, failed {failed:?}\nstdout:\n{}{}", r.status, r.stdout, failing.join("\n")));
+    }
+    Ok(())
+}
+
 /// A call path from `ryo_rt`'s own code to core's panic machinery, through `ryo_bytecode`, if
 /// there is one. Under `--sysroot ryo` the panic handler is std's (VM code), so a panic in the
 /// runtime would enter the VM while it switches state. Everything `ryo_rt`'s rlib defines

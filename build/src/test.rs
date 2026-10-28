@@ -333,6 +333,7 @@ fn test_targets(rel: &str) -> Option<(Vec<&'static str>, Vec<Check>)> {
         "vm_statics.rs" => vec![Check::Dump],
         "vm_cgu_owner.rs" => vec![Check::CguOwnership],
         "vm_jit_private.rs" => vec![Check::JitPrivateStd],
+        "vm_jit_atomics.rs" => vec![Check::JitAtomics],
         "incremental/edits.rs" | "incremental/pm.rs" | "incremental/pm_user.rs" => vec![Check::Incremental],
         _ => vec![],
     };
@@ -513,6 +514,7 @@ enum Check {
     RtCoreOnly,
     JitSealed,
     JitPrivateStd,
+    JitAtomics,
     RejectUnsupported,
     CguDeterministic,
     CguOwnership,
@@ -526,10 +528,11 @@ enum Check {
 }
 
 impl Check {
-    const ALL: [Check; 12] = [
+    const ALL: [Check; 13] = [
         Check::RtCoreOnly,
         Check::JitSealed,
         Check::JitPrivateStd,
+        Check::JitAtomics,
         Check::RejectUnsupported,
         Check::CguDeterministic,
         Check::CguOwnership,
@@ -546,6 +549,7 @@ impl Check {
             Check::RtCoreOnly => "rt-core-only",
             Check::JitSealed => "jit-sealed",
             Check::JitPrivateStd => "jit-private-std",
+            Check::JitAtomics => "jit-atomics",
             Check::RejectUnsupported => "reject-unsupported",
             Check::CguDeterministic => "cgu-deterministic",
             Check::CguOwnership => "cgu-ownership",
@@ -570,7 +574,7 @@ impl Check {
             | Check::Exports
             | Check::Backtrace => sel.fast,
             Check::RtCoreOnly | Check::JitSealed => sel.rt,
-            Check::JitPrivateStd => sel.jit,
+            Check::JitPrivateStd | Check::JitAtomics => sel.jit,
             Check::Incremental | Check::CargoRyo => false,
         }
     }
@@ -582,6 +586,7 @@ impl Check {
             Check::RtCoreOnly => rt_core_only(info, root, &info.host),
             Check::JitSealed => jit_sealed(info, root, out),
             Check::JitPrivateStd => jit_private_std(info, rustc_ryo, &tests.join("vm_jit_private.rs"), out),
+            Check::JitAtomics => jit_atomics(info, rustc_ryo, &tests.join("vm_jit_atomics.rs"), out),
             Check::RejectUnsupported => reject_unsupported(rustc_ryo, &hello, out),
             Check::CguDeterministic => cgu_deterministic(rustc_ryo, &tests.join("vm_cgu.rs"), out),
             Check::CguOwnership => cgu_ownership(info, rustc_ryo, &tests.join("vm_cgu_owner.rs"), out),

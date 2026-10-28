@@ -196,8 +196,9 @@ def imageValidate : Except String Unit := do
     let rest := funcEntry 0 16 (list := ⟨0, 4⟩) ++ bad
     expectValidate (mkImage { functions := ⟨160, 1⟩, textSize := 16, lists := ⟨196, 4⟩ } rest) (.badList 0)
   -- A well-formed list: a target at 4, an escape (offset -8, size 8, align 8) and a dropped
-  -- store (offset -16, 8 bytes, `rdx`) at 8, an instruction entry (opcode 0, selector 9) at 12.
-  let good := [0x09, 0x00, 0x09, 0x02, 0x0f, 0x08, 0x08, 0x01, 0x01, 0x1f, 0x32, 0x08, 0x00, 0x09]
+  -- store (offset -16, 8 bytes, `rdx`) at 8, an instruction entry (opcode 0, selector 9,
+  -- stored plus one) at 12.
+  let good := [0x09, 0x00, 0x09, 0x02, 0x0f, 0x08, 0x08, 0x01, 0x01, 0x1f, 0x32, 0x08, 0x00, 0x0a]
   let rest := funcEntry 0 16 (list := ⟨0, good.length⟩) ++ good
   match Image.parse (mkImage { functions := ⟨160, 1⟩, textSize := 16, lists := ⟨196, good.length⟩ } rest) with
   | .error e => throw s!"parse: {e}"

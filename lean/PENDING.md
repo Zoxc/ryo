@@ -3,6 +3,20 @@
 Rust-side changes that the Lean model or proofs don't reflect yet. Add an entry per change;
 remove it once a Lean session has handled it.
 
+- Handler entries in the instruction list (Commit: "JIT: Handler opcodes in the instruction
+  list"): every handler `call` has an instruction entry at its position with the selector
+  `HANDLER_SEL` (`u32::MAX`); the stream stores selectors plus one, wrapping, so it is `0`.
+  `Obj/List.lean` reads them (`handlerSel`, the wrapping in `walkList`). Still to do:
+  `decode_linked` resolves a handler call's target to the set of opcodes registered at that
+  address (`Resolver::handlers`, several when MergeFunctions or ICF folded handlers, also
+  through a PLT stub or import thunk) and takes the opcode from the entry, which must be in
+  the set; a handler call without its entry, an entry naming an opcode outside the set, or a
+  stray entry fails the decode. `Vm/DecodeObj.lean` models handler addresses as
+  `handlers + 16 * op`, injective by construction: it can drop that assumption, resolving a
+  handler address to a candidate set and requiring the list entry in it (and the opcode's
+  layout to match the call's arguments). `Check/Image/Relocs.lean` mentions the handler
+  references.
+
 - Mono-unreachable blocks (Commit: "Backend: CGU ownership, incremental exports, mono-reachable
   blocks, unsupported options"): a block `mir::traversal::mono_reachable` doesn't reach (a
   `SwitchInt` on a constant or on `ub_checks()`, resolved for the instance) is lowered as a

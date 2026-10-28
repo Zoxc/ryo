@@ -882,6 +882,8 @@ pub struct Asm {
     drops: Option<Vec<usize>>,
     /// The inline sequences: their first piece and opcode.
     seqs: Vec<(usize, Opcode)>,
+    /// The handler calls: their piece and opcode, for their instruction list entries.
+    handler_calls: Vec<(usize, Opcode)>,
     /// PE: the piece the pad region starts at ([`Asm::begin_region`]).
     region: Option<usize>,
     /// The calls that end their instruction (no result stores after them, or an island's in
@@ -930,6 +932,7 @@ impl Asm {
             targets: Vec::new(),
             drops: None,
             seqs: Vec::new(),
+            handler_calls: Vec::new(),
             region: None,
             bare_calls: Vec::new(),
         }
@@ -1082,6 +1085,12 @@ impl Asm {
     fn handler_call(&mut self, op: Opcode, ops: &[Opnd<Label>], site: Option<InsnId>) {
         let vals = handler_args(op, ops, self.mode, |r| self.ro(r));
         self.arg_regs(vals);
+        self.call_handler(op, site);
+    }
+
+    /// The call of `op`'s handler, with its instruction list entry.
+    fn call_handler(&mut self, op: Opcode, site: Option<InsnId>) {
+        self.handler_calls.push((self.pieces.len(), op));
         self.maybe_site(rt_call(Ref::Handler(op), self.mode), site);
     }
 
@@ -1185,7 +1194,7 @@ impl Asm {
         let site = matches!(then, Then::Trap).then_some(id);
         match dense {
             Some(items) => self.dense_index(items),
-            None => self.maybe_site(rt_call(Ref::Handler(op), self.mode), site),
+            None => self.call_handler(op, site),
         }
         match then {
             Then::Next => {}
@@ -1338,7 +1347,7 @@ impl Asm {
     /// unbound ones): where the instruction after it starts, after a loop head's padding (the
     /// JIT's OSR entries land there).
     pub fn finish_labels(self, frame_size: u32, fix: impl Fn(u32) -> u32) -> (Encoded, Vec<u32>) {
-        let Asm { mode, mut pieces, labels, ro, unwind, targets, drops, seqs, region, bare_calls } = self;
+        let Asm { mode, mut pieces, labels, ro, unwind, targets, drops, seqs, handler_calls, region, bare_calls } = self;
         debug_assert!(mode.valid(), "{mode:?}");
         let target = branch_targets(&pieces, &labels);
         let sels = cache(&mut pieces, &target, mode.pe);
@@ -1548,14 +1557,22 @@ impl Asm {
                 targets.extend(ts);
             }
         }
-        let mut hints = Vec::with_capacity(sels.len());
-        let hint_ops: Vec<(Opcode, u32)> = sels
+        // The inline sequences' entries and the handler calls', by piece (a sequence that left
+        // no code shares its element with the call after it, and comes first).
+        let mut entries: Vec<(usize, Opcode, u32)> = sels
             .iter()
-            .map(|&(k, sel)| {
-                // A sequence at a loop head starts after its counter check.
+            .map(|&(k, sel)| (k, seqs[seqs.binary_search_by_key(&k, |s| s.0).expect("a sequence's start")].1, sel))
+            .chain(handler_calls.iter().map(|&(k, op)| (k, op, super::HANDLER_SEL)))
+            .collect();
+        entries.sort_unstable_by_key(|e| e.0);
+        let mut hints = Vec::with_capacity(entries.len());
+        let hint_ops: Vec<(Opcode, u32)> = entries
+            .iter()
+            .map(|&(k, op, sel)| {
+                // An instruction at a loop head starts after its counter check.
                 let e = remap[k];
                 hints.push(if head_checks.binary_search(&e).is_ok() { e + 2 } else { e });
-                (seqs[seqs.binary_search_by_key(&k, |s| s.0).expect("a sequence's start")].1, sel)
+                (op, sel)
             })
             .collect();
         let (mut e, marks) = layout_code(out, [prologue_at, entry_stub, region_at], Marks { labels, targets, hints });

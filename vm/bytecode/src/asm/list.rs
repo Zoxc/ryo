@@ -4,9 +4,12 @@
 //! Each entry starts with a varint `v`: the position advances by `v >> 1` from the previous
 //! entry's (from 0 for the first), and `v & 1` says what follows.
 //!
-//! - `0`, an instruction: the opcode and the register cache selector
+//! - `0`, an instruction: the opcode and, plus one (wrapping), the register cache selector
 //!   ([`super::inline::Cache::emit_sel`]) of an inline sequence the cache emitted other than
-//!   plainly, starting here.
+//!   plainly, starting here; or, with the selector [`HANDLER_SEL`] (stored as `0`), the
+//!   opcode of the handler a `call` here calls. Every handler call has one: folded handlers
+//!   (two opcodes' handlers at one address, by LLVM's MergeFunctions or a linker's ICF) leave
+//!   the address alone ambiguous.
 //! - `1`, a modifier: its kind, then its fields.
 //!   - `0`, a branch target, where the register cache is cleared.
 //!   - `1`, a dropped store ([`DroppedStore`]): the frame offset, then `size_log2 << 4 | reg`.
@@ -19,7 +22,9 @@
 //!
 //! The list is an index the decoder checks against the bytes, never trusted over them: the
 //! targets must be exactly the branch targets, each instruction entry must decode to the
-//! bytes there, and each dropped store and scope is checked as it is without the list. An
+//! bytes there, each handler entry must be at a handler call whose target is (one of) the
+//! opcode's handler addresses, and each dropped store and scope is checked as it is without
+//! the list. An
 //! inline sequence the cache emitted non-plainly without an entry is still found, by
 //! searching the cache's candidates ([`super::inline::Cache::unemit`]).
 
@@ -33,13 +38,24 @@ use super::leb::Reader;
 use super::leb::{put, zigzag};
 use crate::full::Opcode;
 
+/// The selector of a handler entry: the `call` at its position calls `op`'s handler.
+pub const HANDLER_SEL: u32 = u32::MAX;
+
 /// An instruction entry: the inline sequence at byte position `at` is the instruction `op`,
-/// emitted by the register cache with the selector `sel`.
+/// emitted by the register cache with the selector `sel`; or with [`HANDLER_SEL`], the `call`
+/// at `at` calls `op`'s handler.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Hint {
     pub at: u32,
     pub op: Opcode,
     pub sel: u32,
+}
+
+impl Hint {
+    /// Whether it names a handler call ([`HANDLER_SEL`]), not an inline sequence.
+    pub fn is_handler(&self) -> bool {
+        self.sel == HANDLER_SEL
+    }
 }
 
 /// An entry of the stream, as [`walk`] reads it.
@@ -94,7 +110,7 @@ pub fn walk(bytes: &[u8], code_len: u32, mut f: impl FnMut(u32, Entry)) -> Optio
         }
         let (order, e) = if v & 1 == 0 {
             let op = Opcode::from_u16(u16::try_from(b.u64()?).ok()?)?;
-            (3, Entry::Insn { op, sel: b.u32()? })
+            (3, Entry::Insn { op, sel: b.u32()?.wrapping_sub(1) })
         } else {
             match b.u64()? {
                 0 => (0, Entry::Target),
@@ -176,7 +192,7 @@ impl InsnList {
                 _ => {
                     let h = self.hints[i];
                     put(&mut out, h.op as u64);
-                    put(&mut out, h.sel as u64);
+                    put(&mut out, h.sel.wrapping_add(1) as u64);
                 }
             }
         }

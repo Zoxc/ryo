@@ -6,8 +6,10 @@ entries at byte positions (`FuncEntry::list`, a run of the image's instruction-l
 Each entry starts with a varint `v`: the position advances by `v >>> 1` from the previous
 entry's (from 0 for the first), and `v &&& 1` says what follows:
 
-- `0`, an instruction: the opcode and the register cache selector of an inline sequence the
-  cache emitted other than plainly, starting here;
+- `0`, an instruction: the opcode and the register cache selector plus one (wrapping at
+  `2 ^ 32`) of an inline sequence the cache emitted other than plainly, starting here; or,
+  with the selector `handlerSel` (stored as `0`), the opcode of the handler the `call` here
+  calls (every handler call has one);
 - `1`, a modifier: its kind, then its fields: `0` a branch target (where the register cache
   is cleared); `1` a dropped store (the frame offset, then `size_log2 <<< 4 ||| reg`); `2`,
   `3`, `4` an escape, a storage end, an island operand (the frame offset and the size, then
@@ -28,9 +30,14 @@ namespace Ryo.Obj
 
 open Ryo.Vm
 
+/-- The selector of a handler entry (`list::HANDLER_SEL`): the `call` at its position calls
+the opcode's handler. -/
+def handlerSel : Nat := 2 ^ 32 - 1
+
 /-- An entry of the stream (`list::Entry`). -/
 inductive ListEntry where
-  /-- An inline sequence the register cache emitted non-plainly: its opcode and selector. -/
+  /-- An inline sequence the register cache emitted non-plainly: its opcode and selector; or
+  with `handlerSel`, a handler call's opcode. -/
   | insn (op : Full.Opcode) (sel : Nat)
   | target
   /-- The frame offset, the size (1, 2, 4 or 8) and the register (x86 number, of the pool). -/
@@ -98,7 +105,7 @@ def walkList (bytes : ByteArray) (codeLen : Nat) : Option (Array (Nat × ListEnt
       if o ≥ 2 ^ 16 then none
       let op ← Full.Opcode.ofNat? o
       order := 3
-      e := .insn op sel
+      e := .insn op ((sel + handlerSel) % 2 ^ 32)
     else
       let (k, j) ← readVarint bytes i
       i := j

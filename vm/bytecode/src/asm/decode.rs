@@ -189,8 +189,14 @@ pub trait Resolver {
     /// a `[rip + x]` field outside the function: a handler, `ryo_probe_stack`, a function of
     /// the image (by its first byte), a symbol slot, a site cache slot, a constant, a data
     /// offset, or a code constant ([`Ref::Ro`], an offset in [`Resolver::code_consts`]).
-    /// `None` if it is none of them.
+    /// `None` if it is none of them. Handlers normally come from [`Resolver::handlers`]
+    /// instead; a resolver whose handler addresses are known to be distinct may give them
+    /// here (a handler call still needs its instruction list entry, naming that opcode).
     fn resolve(&self, addr: u64) -> Option<Ref>;
+    /// The handler table entries `(address, opcode)` at `addr` (followed through a PLT stub or
+    /// import thunk): the opcodes whose handler it is, several if handlers were folded, none
+    /// if it isn't a handler. Which one a call calls is its instruction list entry's.
+    fn handlers(&self, addr: u64) -> &[(usize, crate::full::Opcode)];
     /// The bytes [`Ref::Ro`] offsets index: the island operand arrays and switch values the
     /// decoder reads.
     fn code_consts(&self) -> &[u8];
@@ -213,7 +219,7 @@ pub fn decode_linked(
     list: &InsnList,
     mode: Mode,
 ) -> Result<Decoded, AsmError> {
-    let fields = Fields::Linked { addr: code_addr, record, resolver };
+    let fields = Fields::Linked { addr: code_addr, record, resolver, hints: &list.hints };
     reduced_of(read(code, fields, resolver.code_consts(), Side::of_list(call_sites, list), mode, true)?, mode.pe)
 }
 
@@ -292,7 +298,7 @@ fn read(code: &[u8], fields: Fields<'_>, rodata: &[u8], side: Side<'_>, mode: Mo
     if !mode.frame_pointer {
         c.sp_frame = Some(frame_size);
     }
-    let fr = Frame { size: frame_size, mode, reduced, region: false };
+    let fr = Frame { size: frame_size, mode, reduced, region: false, listed: index.is_some() };
     let fr_region = Frame { region: true, ..fr };
 
     // PE: the pad region's entry, `sub rsp, PE_REGION_ALLOC; jmp r11`, right before the first
@@ -614,7 +620,7 @@ fn instructions(
                 Some(p) => p,
                 None => {
                     cache = Cache::new(fr.mode.pe);
-                    insn(c, fr, ro)?
+                    insn(c, fr, ro, &mut hints)?
                 }
             }
         };
@@ -643,6 +649,8 @@ struct Frame {
     reduced: bool,
     /// In the pad region (PE, design/vm.md#unwinding).
     region: bool,
+    /// With the instruction list's instruction entries, so every handler call must have one.
+    listed: bool,
 }
 
 impl Frame {
@@ -671,7 +679,9 @@ impl Frame {
 }
 
 /// Reads one instruction that isn't inline.
-fn insn(c: &mut Cursor<'_>, fr: &Frame, ro: &[u8]) -> Result<Proto, AsmError> {
+/// With the instruction list ([`Frame::listed`]), a handler call takes its entry, the first of
+/// `hints`.
+fn insn(c: &mut Cursor<'_>, fr: &Frame, ro: &[u8], hints: &mut &[Hint]) -> Result<Proto, AsmError> {
     let pos = c.pos;
     let err = |at: u32, what: &'static str| AsmError { at, what };
     if let Some(p) = dense_switch(c, fr)? {
@@ -687,6 +697,16 @@ fn insn(c: &mut Cursor<'_>, fr: &Frame, ro: &[u8]) -> Result<Proto, AsmError> {
         }
     };
     let (hat, head) = head;
+    // A handler call's instruction list entry, which must name its opcode (in linked code,
+    // the cursor took the opcode from it, among the handlers at the call's target).
+    if let Item::Call(Ref::Handler(op)) = head
+        && fr.listed
+    {
+        match hints.first() {
+            Some(h) if h.at == hat && h.is_handler() && h.op == op => *hints = &hints[1..],
+            _ => return Err(err(hat, "handler call without its instruction list entry")),
+        }
+    }
     let mut sites = Vec::new();
     let ops = match head {
         Item::Call(Ref::Handler(op)) if has_handler(op) && fr.reduced => {
@@ -1075,7 +1095,7 @@ fn inline_insn(c: &mut Cursor<'_>, cache: &mut Cache, dropped: &mut &[DroppedSto
         return Some(Proto::new(op, ops, pos, Vec::new()));
     }
     // The sequence the instruction list names, and only it.
-    if let Some(h) = hints.first().filter(|h| h.at == pos) {
+    if let Some(h) = hints.first().filter(|h| h.at == pos && !h.is_handler()) {
         let cand = cache.invert(&items, h.sel).and_then(|cand| Some((super::inline::decode_op(h.op, &cand, branch)?, cand)));
         if let Some(((op, ops), cand)) = cand {
             let mut after = *cache;

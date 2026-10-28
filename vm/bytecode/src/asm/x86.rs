@@ -1090,7 +1090,12 @@ pub enum Fields<'a> {
     /// classified by the resolver. (A function's first byte is its prologue, never a branch
     /// target, so a field to it is a call or tail call of the function itself.) A field to
     /// `record` (with [`super::Mode::counters`]) is the function's JIT record ([`Ref::Rec`]).
-    Linked { addr: u64, record: Option<u64>, resolver: &'a dyn Resolver },
+    ///
+    /// A target among the handlers ([`Resolver::handlers`]) is the handler of the opcode the
+    /// instruction list's handler entry at the item names ([`super::list::HANDLER_SEL`], in
+    /// `hints`), which must be one of the opcodes registered at that address: the address
+    /// alone is ambiguous when handlers are folded.
+    Linked { addr: u64, record: Option<u64>, resolver: &'a dyn Resolver, hints: &'a [super::list::Hint] },
 }
 
 /// A `rel32` field: a branch within the function (its target position), or a reference.
@@ -1142,7 +1147,7 @@ impl<'a> Cursor<'a> {
                 Ok(i) => Field::Ref(relocs[i].to),
                 Err(_) => Field::Local(local),
             },
-            Fields::Linked { addr, record, resolver } => {
+            Fields::Linked { addr, record, resolver, hints } => {
                 let to = addr.wrapping_add((self.pos + len) as u64).wrapping_add(d as i64 as u64);
                 let inside = to.wrapping_sub(addr).wrapping_sub(1) < (self.code.len() as u64).wrapping_sub(1);
                 if inside {
@@ -1152,7 +1157,17 @@ impl<'a> Cursor<'a> {
                 } else if record.map(|r| r + super::JIT_LOOP_CTR as u64) == Some(to) {
                     Field::Ref(Ref::RecLoopCtr)
                 } else {
-                    resolver.resolve(to).map_or(Field::Bad, Field::Ref)
+                    let set = resolver.handlers(to);
+                    if set.is_empty() {
+                        resolver.resolve(to).map_or(Field::Bad, Field::Ref)
+                    } else {
+                        let lo = hints.partition_point(|h| h.at < self.pos);
+                        let named = hints[lo..].iter().take_while(|h| h.at == self.pos).find(|h| h.is_handler());
+                        match named {
+                            Some(h) if set.iter().any(|&(_, op)| op == h.op) => Field::Ref(Ref::Handler(h.op)),
+                            _ => Field::Bad,
+                        }
+                    }
                 }
             }
         })

@@ -25,6 +25,9 @@ mod decode {
 mod encode {
     pub use ryo_bytecode::asm::{Ref, Reloc};
 }
+mod list {
+    pub use ryo_bytecode::asm::Hint;
+}
 #[allow(dead_code)]
 #[path = "../src/asm/x86.rs"]
 mod x86;
@@ -117,6 +120,10 @@ impl Resolver for Link {
             0x6800_0000 => Ref::Ro(off as u32),
             _ => return None,
         })
+    }
+    // Handler addresses are unique here: `resolve` gives them, without an instruction list.
+    fn handlers(&self, _: u64) -> &[(usize, Opcode)] {
+        &[]
     }
     fn code_consts(&self) -> &[u8] {
         &[]
@@ -330,7 +337,7 @@ fn place(item: &Item, pos: u32, len: u32) -> Placed {
 fn decode(code: &[u8], pos: u32, relocs: Option<&[Reloc]>, sp: Option<u32>) -> Option<(Item, u32)> {
     let fields = match relocs {
         Some(rs) => Fields::Relocs(rs),
-        None => Fields::Linked { addr: CODE, record: Some(RECORD), resolver: &Link },
+        None => Fields::Linked { addr: CODE, record: Some(RECORD), resolver: &Link, hints: &[] },
     };
     let mut c = Cursor::new(code, fields);
     c.pos = pos;

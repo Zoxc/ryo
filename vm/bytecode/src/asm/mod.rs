@@ -66,9 +66,9 @@ pub use encode::{
 };
 #[cfg(feature = "alloc")]
 pub use inline::{has_inline, ssa_as_handler};
-pub use list::Hint;
 #[cfg(feature = "alloc")]
 pub use list::InsnList;
+pub use list::{HANDLER_SEL, Hint};
 #[cfg(feature = "alloc")]
 pub use reduced::{as_handler, encode_reduced, encode_reduced_at, is_native, reduce};
 

@@ -193,7 +193,13 @@ section; its fields and the counter checks and stubs that use it are in
 - **Decoding through PLTs**: code linked against a shared `ryo_rt` calls the handlers and
   the probe through PLT stubs. The resolver reads a call target outside the image as a
   stub (`jmp [rip + got]`, with `endbr64` and `bnd` in `.plt.sec`) and resolves the GOT
-  slot's value, which `BIND_NOW` (Rust's default) has filled.
+  slot's value, which `BIND_NOW` (Rust's default) has filled. A lazily bound slot points
+  back into the PLT, which resolves to nothing: the function stays on its AOT code.
+- **Folded handlers**: LLVM's MergeFunctions (and a linker's ICF) may give several
+  handlers one address (the `ptr` and `w64` atomics fold in pairs). The resolver returns
+  every opcode registered at a call's target, and the call's instruction list entry
+  ([design/vm.md](vm.md#instruction-list)) picks the one it calls; an entry naming another
+  opcode, or none, fails the decode.
 - **Publishing**: `jit_code` (and the code's length in the JIT's own table), then `entry`
   and `osr` (release), then `state = Done`, then the counters' `Done` bias, then the
   function's call slots, of every mapping and image (kept by callee, so publishing visits

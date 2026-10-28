@@ -405,7 +405,6 @@ impl asm::Resolver for Fake<'_> {
         use asm::Ref;
         let r = match a {
             Self::PROBE => Ref::Probe,
-            _ if (Self::HANDLERS..Self::FUNCS).contains(&a) => Ref::Handler(Opcode::from_u16(((a - Self::HANDLERS) / 16) as u16)?),
             _ if (Self::FUNCS..Self::SYMS).contains(&a) => Ref::Func(Func(((a - Self::FUNCS) / 16) as u32)),
             _ if (Self::SYMS..Self::SITES).contains(&a) => Ref::Sym(Sym(((a - Self::SYMS) / 8) as u32)),
             _ if (Self::SITES..Self::CONSTS).contains(&a) => Ref::Site(Site(((a - Self::SITES) / 8) as u32)),
@@ -418,9 +417,22 @@ impl asm::Resolver for Fake<'_> {
         (Self::addr(r) == a).then_some(r)
     }
 
+    fn handlers(&self, a: u64) -> &[(usize, Opcode)] {
+        let t = handler_table();
+        let lo = t.partition_point(|h| (h.0 as u64) < a);
+        let hi = t.partition_point(|h| (h.0 as u64) <= a);
+        &t[lo..hi]
+    }
+
     fn code_consts(&self) -> &[u8] {
         self.ro
     }
+}
+
+/// [`Fake`]'s handler table: each opcode's handler at its own address.
+fn handler_table() -> &'static [(usize, Opcode)] {
+    static T: std::sync::OnceLock<Vec<(usize, Opcode)>> = std::sync::OnceLock::new();
+    T.get_or_init(|| ALL_OPCODES.iter().map(|&op| (Fake::addr(asm::Ref::Handler(op)) as usize, op)).collect())
 }
 
 const FRAMES: [u32; 6] = [0, 16, 112, 128, 4096, 1 << 20];
