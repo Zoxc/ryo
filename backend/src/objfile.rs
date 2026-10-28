@@ -682,9 +682,6 @@ pub fn write_image(
         })
         .collect::<Result<Vec<SymbolId>, String>>()?;
     let rt = |name: &str| fmt.mangle(&rt_symbol(name));
-    // Handler symbols, by opcode: most relocations are handler calls.
-    let mut handlers: Vec<Option<SymbolId>> = vec![None; ryo_bytecode::full::ALL_OPCODES.len()];
-    let (mut trip_entry, mut trip_osr, mut seh_handler) = (None, None, None);
     // Mach-O's `.eh_frame` fields without relocations: (offset, target section, addend, size).
     let mut implicit = Vec::new();
     for r in &image.relocs {
@@ -711,11 +708,12 @@ pub fn write_image(
         let symbol = match r.target {
             RelocTarget::Symbol(s) => syms[s.0 as usize],
             RelocTarget::Section(s) => fmt.section_target(&mut obj, section(s)),
-            RelocTarget::Handler(op) => *handlers[op as usize].get_or_insert_with(|| undefined(&mut obj, &rt(&handler_name(op)), SymbolKind::Text)),
+            // `ryo_rt` symbols; `undefined` reuses the symbol on later references.
+            RelocTarget::Handler(op) => undefined(&mut obj, &rt(&handler_name(op)), SymbolKind::Text),
             RelocTarget::Probe => undefined(&mut obj, &rt(PROBE_SYMBOL), SymbolKind::Text),
-            RelocTarget::TripEntry => *trip_entry.get_or_insert_with(|| undefined(&mut obj, &rt(TRIP_ENTRY_SYMBOL), SymbolKind::Text)),
-            RelocTarget::TripOsr => *trip_osr.get_or_insert_with(|| undefined(&mut obj, &rt(TRIP_OSR_SYMBOL), SymbolKind::Text)),
-            RelocTarget::SehHandler => *seh_handler.get_or_insert_with(|| undefined(&mut obj, &rt(SEH_HANDLER_SYMBOL), SymbolKind::Text)),
+            RelocTarget::TripEntry => undefined(&mut obj, &rt(TRIP_ENTRY_SYMBOL), SymbolKind::Text),
+            RelocTarget::TripOsr => undefined(&mut obj, &rt(TRIP_OSR_SYMBOL), SymbolKind::Text),
+            RelocTarget::SehHandler => undefined(&mut obj, &rt(SEH_HANDLER_SYMBOL), SymbolKind::Text),
         };
         obj.add_relocation(section(r.section), Relocation { offset: r.offset, symbol, addend: r.addend, flags: fmt.reloc(r.kind) })
             .map_err(|e| format!("image relocation: {e}"))?;
