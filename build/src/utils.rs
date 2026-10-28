@@ -133,6 +133,18 @@ pub fn output(cmd: &mut Command) -> Result<String, String> {
     String::from_utf8(out.stdout).map_err(|_| format!("`{}`: non-UTF-8 output", describe(cmd)))
 }
 
+/// The symbols `llvm-nm <args> -j` lists for `file`, an object or archive for `triple`:
+/// trimmed, without Mach-O's `_` prefix, and without empty lines.
+pub fn nm_symbols(info: &RustcInfo, args: &[&str], file: &Path, triple: &str) -> Result<Vec<String>, String> {
+    let out = output(cmd(info.tool("llvm-nm")).args(args).arg("-j").arg(file))?;
+    Ok(out.lines().map(|l| crate::target::unprefixed(triple, l.trim())).filter(|l| !l.is_empty()).map(str::to_owned).collect())
+}
+
+/// Whether `s` is a symbol of std's allocator shim (`__rust_*`, `__rdl_*`, `__rg_*`).
+pub fn is_std_alloc_shim(s: &str) -> bool {
+    ["__rust", "__rdl", "__rg_"].iter().any(|p| s.starts_with(p))
+}
+
 /// What `y` needs to know about the host rustc.
 pub struct RustcInfo {
     pub host: String,

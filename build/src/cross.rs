@@ -145,19 +145,17 @@ pub fn run(target: &str) -> Result<(), String> {
     let mut jit_imports = BTreeSet::new();
     if crate::jit::supported(target) {
         let dir = out.join("jit-sealed");
-        let res = crate::jit::check_sealed(&info, &rlib, &dir, target).and_then(|()| {
-            let nm = info.tool("llvm-nm");
-            // Demangled as lld-link prints them; ld64.lld prints raw names.
-            let demangle = if macho { "--no-demangle" } else { "-C" };
-            let syms = crate::utils::output(cmd(nm).args(["-u", demangle, "-j"]).arg(dir.join(crate::jit::OBJECT)))?;
-            jit_imports = syms
-                .lines()
-                .map(|s| match s.trim().strip_prefix("__imp_") {
+        // As lld names them: ld64.lld with Mach-O's `_`, lld-link imports as dllimport. They
+        // are C symbols (`check_sealed` rejects Rust ones), so need no demangling.
+        let res = crate::jit::check_sealed(&info, &rlib, &dir, target).map(|undefined| {
+            jit_imports = undefined
+                .iter()
+                .map(|s| match s.strip_prefix("__imp_") {
                     Some(f) => format!("__declspec(dllimport) {f}"),
-                    None => s.trim().to_owned(),
+                    None => crate::target::symbol(target, s),
                 })
                 .collect();
-            Ok(String::new())
+            String::new()
         });
         report(target, &mut failed, "jit-sealed", res);
     }

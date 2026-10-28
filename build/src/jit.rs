@@ -5,8 +5,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::target::{is_coff, is_macho, is_windows, static_lib_name, symbol, unprefixed};
-use crate::utils::{RustcInfo, cmd, output, run};
+use crate::target::{is_coff, is_macho, is_windows, static_lib_name, symbol};
+use crate::utils::{RustcInfo, cmd, is_std_alloc_shim, nm_symbols, output, run};
 
 /// The JIT's one global symbol, before the ABI tag: `ryo_jit_start_<tag>`.
 pub const START: &str = "ryo_jit_start_";
@@ -180,34 +180,28 @@ fn lto_member(members: &str) -> Result<String, String> {
 /// (`.drectve`) and no CRT initializers (`.CRT$X*`), on Mach-O no initializers
 /// (`__mod_init_func`, `__init_offsets`) or linker options (`LC_LINKER_OPTION`, the
 /// counterpart of `.drectve`, which would add `-l` libraries to every link). Names are
-/// compared without Mach-O's `_` prefix.
-pub fn check_sealed(info: &RustcInfo, rlib: &Path, dir: &Path, triple: &str) -> Result<(), String> {
+/// compared without Mach-O's `_` prefix. Returns the object's undefined symbols, so named.
+pub fn check_sealed(info: &RustcInfo, rlib: &Path, dir: &Path, triple: &str) -> Result<Vec<String>, String> {
     let _ = fs::remove_dir_all(dir);
     crate::utils::create_dir(dir)?;
     let ar = info.tool("llvm-ar");
-    let nm = info.tool("llvm-nm");
     run(cmd(&ar).arg("x").arg(rlib).arg(OBJECT).arg("--output").arg(dir)).map_err(|e| format!("no sealed JIT in {}: {e}", rlib.display()))?;
     let obj = dir.join(OBJECT);
-    let names = |args: &[&str]| -> Result<Vec<String>, String> {
-        Ok(output(cmd(&nm).args(args).args(["--no-demangle", "-j"]).arg(&obj))?
-            .lines()
-            .map(|l| l.trim())
-            .map(|l| unprefixed(triple, l).to_owned())
-            .filter(|l| !l.is_empty())
-            .collect())
-    };
-    let globals = names(&["--extern-only", "--defined-only"])?;
+    let globals = nm_symbols(info, &["--extern-only", "--defined-only", "--no-demangle"], &obj, triple)?;
     let bad: Vec<&String> =
         globals.iter().filter(|s| !s.starts_with(START) && (!is_coff(triple) || (coff_renamed(s) && !s.starts_with(COFF_PREFIX)))).collect();
     if !bad.is_empty() || globals.iter().filter(|s| s.starts_with(START)).count() != 1 {
         return Err(format!("{} defines globals {bad:?} (and must define one {START}<tag>)", obj.display()));
     }
-    let rust = |s: &str| s.starts_with("_R") || s.starts_with("_ZN") || s.starts_with("__rust") || s.starts_with("__rdl") || s.starts_with("__rg_");
-    let bad: Vec<String> = names(&["-u"])?.into_iter().filter(|s| rust(s)).collect();
+    let undefined = nm_symbols(info, &["-u", "--no-demangle"], &obj, triple)?;
+    let bad: Vec<&String> = undefined.iter().filter(|s| s.starts_with("_R") || s.starts_with("_ZN") || is_std_alloc_shim(s)).collect();
     if !bad.is_empty() {
         return Err(format!("{} references Rust symbols {bad:?}", obj.display()));
     }
-    let unwinder: Vec<String> = names(&["--defined-only"])?.into_iter().filter(|s| s.starts_with("_Unwind_") || s == "__register_frame").collect();
+    let unwinder: Vec<String> = nm_symbols(info, &["--defined-only", "--no-demangle"], &obj, triple)?
+        .into_iter()
+        .filter(|s| s.starts_with("_Unwind_") || s == "__register_frame")
+        .collect();
     if !unwinder.is_empty() {
         return Err(format!("{} defines the unwinder's {unwinder:?}", obj.display()));
     }
@@ -227,7 +221,7 @@ pub fn check_sealed(info: &RustcInfo, rlib: &Path, dir: &Path, triple: &str) -> 
             return Err(format!("{} has linker options (LC_LINKER_OPTION)", obj.display()));
         }
     }
-    Ok(())
+    Ok(undefined)
 }
 
 #[cfg(test)]

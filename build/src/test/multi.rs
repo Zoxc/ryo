@@ -131,12 +131,9 @@ pub(super) fn multi_staticlib(info: &RustcInfo, rustc_ryo: &Path, src: &Path, ou
 /// The ryo symbols a shared object exports (`llvm-nm -D`): the runtime's own (`ryo_rt`,
 /// `ryo_bytecode`, its tagged entry points) must stay private to every module.
 fn exported_runtime(info: &RustcInfo, so: &Path) -> Result<Vec<String>, String> {
-    let syms = crate::utils::output(cmd(info.tool("llvm-nm")).args(["-D", "--defined-only", "-j"]).arg(so))?;
-    Ok(syms
-        .lines()
-        .filter(|s| s.contains("ryo_vm_register") || s.contains("6ryo_rt") || s.contains("12ryo_bytecode") || super::is_rt_internal(s))
-        .map(str::to_owned)
-        .collect())
+    let mut syms = crate::utils::nm_symbols(info, &["-D", "--defined-only"], so, &info.host)?;
+    syms.retain(|s| s.contains("ryo_vm_register") || s.contains("6ryo_rt") || s.contains("12ryo_bytecode") || super::is_rt_internal(s));
+    Ok(syms)
 }
 
 /// The `jit threads: <n>` line of `tests/multi_ryo`'s programs.

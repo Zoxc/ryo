@@ -349,7 +349,6 @@ pub(super) fn same_exports(info: &crate::utils::RustcInfo, rustc_ryo: &Path, src
     if cfg!(windows) {
         return Ok(());
     }
-    let nm = info.tool("llvm-nm");
     let dir = out.join("exports");
     crate::utils::create_dir(&dir)?;
     let cases: [(&str, &[&str]); 3] = [
@@ -362,7 +361,6 @@ pub(super) fn same_exports(info: &crate::utils::RustcInfo, rustc_ryo: &Path, src
         for (who, compiler) in [("rustc", Path::new("rustc")), ("ryo", rustc_ryo)] {
             let o = dir.join(format!("{name}-{who}"));
             crate::utils::run(cmd(compiler).arg("--edition=2024").arg(src).args(flags).arg("-o").arg(&o))?;
-            let syms = output(cmd(&nm).args(["-D", "--defined-only", "-j"]).arg(&o))?;
             // The registry constructor binds its own `ryo_rt`'s `ryo_vm_register` at link
             // time: through a dynamic relocation, another ryo shared object loaded first
             // would get this one's images.
@@ -375,8 +373,8 @@ pub(super) fn same_exports(info: &crate::utils::RustcInfo, rustc_ryo: &Path, src
             // The runtime's own symbols: in a Rust dylib everything of `ryo_rt` and
             // `ryo_bytecode`, the handlers included. A cdylib and an executable export none.
             let runtime = |s: &str| s.contains("6ryo_rt") || s.contains("12ryo_bytecode") || is_rt_internal(s);
-            let mut syms: Vec<String> =
-                syms.lines().map(|s| crate::target::unprefixed(&info.host, s)).filter(|s| !runtime(s)).map(str::to_owned).collect();
+            let mut syms = crate::utils::nm_symbols(info, &["-D", "--defined-only"], &o, &info.host)?;
+            syms.retain(|s| !runtime(s));
             syms.sort();
             lists.push(syms);
         }
@@ -402,7 +400,7 @@ pub(super) const CRATES: [&str; 4] = ["4core", "17compiler_builtins", "12ryo_byt
 /// Whether `s` is a Rust symbol of a crate outside [`CRATES`] (std's), or std's allocator
 /// shim (`__rust_*`, `__rdl_*`, `__rg_*`).
 pub(super) fn outside(s: &str) -> bool {
-    if s.starts_with("__rust") || s.starts_with("__rdl") || s.starts_with("__rg_") {
+    if crate::utils::is_std_alloc_shim(s) {
         return true;
     }
     s.starts_with("_R") && !is_rt_internal(s) && crate_roots(s).iter().any(|c| !CRATES.contains(&c.as_str()))
@@ -417,7 +415,6 @@ pub(super) fn outside(s: &str) -> bool {
 /// the rlib bundles (design/jit.md#packaging), which `ryo_rt` reaches only through `ryo_jit_start`
 /// and `jit-sealed` checks: this check skips it.
 pub(crate) fn rt_core_only(info: &crate::utils::RustcInfo, root: &Path, triple: &str) -> Result<(), String> {
-    let nm = info.tool("llvm-nm");
     let dist = root.join("dist");
     let mut libs = Vec::new();
     for sysroot in [dist.clone(), dist.join(crate::sysroot::SYSROOT_DIR)] {
@@ -435,13 +432,12 @@ pub(crate) fn rt_core_only(info: &crate::utils::RustcInfo, root: &Path, triple: 
     }
     const PANIC_RUNTIME: [&str; 3] = ["18___rust_start_panic", "20___rust_panic_cleanup", "rust_eh_personality"];
     for lib in libs {
-        let syms = output(cmd(&nm).args(["-u", "--no-demangle", "-j"]).arg(&lib))?;
+        let syms = crate::utils::nm_symbols(info, &["-u", "--no-demangle"], &lib, triple)?;
         // Per member, after a `<member>:` line.
         let mut in_jit = false;
         let bad: Vec<&str> = syms
-            .lines()
-            .map(str::trim)
-            .map(|s| crate::target::unprefixed(triple, s))
+            .iter()
+            .map(String::as_str)
             .filter(|s| {
                 if let Some(member) = s.strip_suffix(':') {
                     in_jit = member == crate::jit::OBJECT;
@@ -481,7 +477,7 @@ pub(super) fn jit_sealed(info: &crate::utils::RustcInfo, root: &Path, out: &Path
         return Ok(());
     }
     let lib = crate::utils::ryo_rt_rlib(root, &info.host);
-    crate::jit::check_sealed(info, &lib, &out.join("jit-sealed"), &info.host)
+    crate::jit::check_sealed(info, &lib, &out.join("jit-sealed"), &info.host).map(drop)
 }
 
 /// The JIT's std is its own (design/jit.md#packaging), so the program's can't get in its way:
