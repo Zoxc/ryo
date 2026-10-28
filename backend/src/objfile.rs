@@ -674,8 +674,19 @@ pub fn write_image(
         .symbols
         .iter()
         .map(|s| {
-            let name = if s.flags & SYM_INDIRECT != 0 { fmt.import_slot(&s.name)? } else { s.name.clone() };
-            Ok(undefined(&mut obj, &fmt.mangle(&name), SymbolKind::Unknown))
+            // `\x01`: the name verbatim, as LLVM has it (no Mach-O `_`).
+            let (name, verbatim) = match s.name.strip_prefix('\x01') {
+                Some(n) => (n, true),
+                None => (&s.name[..], false),
+            };
+            let name = if s.flags & SYM_INDIRECT != 0 {
+                fmt.mangle(&fmt.import_slot(name)?)
+            } else if verbatim {
+                name.to_owned()
+            } else {
+                fmt.mangle(name)
+            };
+            Ok(undefined(&mut obj, &name, SymbolKind::Unknown))
         })
         .collect::<Result<Vec<SymbolId>, String>>()?;
     let rt = |name: &str| fmt.mangle(&rt_symbol(name));

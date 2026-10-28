@@ -573,8 +573,10 @@ fn trip(rec: *mut JitRecord) -> u32 {
         push(rec);
     }
     // With `sync`, a queued record keeps its counters unbiased, so that every thread that
-    // trips meanwhile waits for the compile too, rather than running on in AOT code.
-    if cfg.sync {
+    // trips meanwhile waits for the compile too, rather than running on in AOT code. Not
+    // once the process exits on PE: the JIT thread is gone (`sys::exiting`), the wait would
+    // never end, and the record stays queued (its code AOT).
+    if cfg.sync && !super::sys::exiting() {
         while JitRecord::state(rec).load(SeqCst) == JIT_QUEUED && !DISABLED.load(SeqCst) {
             futex_wait(JitRecord::state(rec), JIT_QUEUED);
         }

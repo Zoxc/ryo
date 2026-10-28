@@ -9,7 +9,9 @@ unsafe extern "C" {
 }
 
 unsafe extern "C" {
-    #[link_name = "\u{1}strlen"]
+    // The raw symbol: Mach-O's C names have a leading `_`.
+    #[cfg_attr(not(target_vendor = "apple"), link_name = "\u{1}strlen")]
+    #[cfg_attr(target_vendor = "apple", link_name = "\u{1}_strlen")]
     fn c_strlen(s: *const std::ffi::c_char) -> usize;
 }
 

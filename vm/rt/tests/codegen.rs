@@ -227,7 +227,10 @@ fn handlers_read_rbp_first_and_hot_ones_have_no_prologue() {
     assert!(checked > 300, "{checked}");
     for op in [Opcode::AddOvfUW64, Opcode::SubOvfUW32, Opcode::ZextW32W64, Opcode::AddImmW32, Opcode::LoadW64, Opcode::StoreW64, Opcode::BrLtSW64] {
         let Some(a) = asm_of(&asm, &hr_name(op)) else { continue };
-        assert!(a.len() <= 5, "{op:?}: register entry of {} instructions\n{}", a.len(), a.join("\n"));
+        // On Win64 two results come back in `xmm0` (`ryo_rt::vm::RegRet`'s PE form): `movq`,
+        // `movd`/`movq` and `punpcklqdq` instead of `mov rdx`.
+        let limit = if ryo_rt::vm::MODE.pe { 7 } else { 5 };
+        assert!(a.len() <= limit, "{op:?}: register entry of {} instructions\n{}", a.len(), a.join("\n"));
     }
 }
 

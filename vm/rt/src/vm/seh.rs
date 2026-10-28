@@ -102,7 +102,7 @@ mod win {
 
     use ryo_bytecode::image::PeHandlerData;
 
-    use super::{Action, decide, is_cxx};
+    use super::{Action, decide, is_cxx, ryo_seh_call_pad};
     use crate::vm::sys::fatal;
 
     /// `EXCEPTION_RECORD` (x64).
@@ -161,16 +161,6 @@ mod win {
         );
     }
 
-    unsafe extern "system-unwind" {
-        /// Calls the landing pad `pad` through the pad region's entry `region`, with the
-        /// nonvolatile registers of the VM frame (`ctx`, the context the unwinder unwound into
-        /// it) and the exception object `obj` in `rax`, on the current stack (below this
-        /// handler), and returns once the pad's `resume` does (`global_asm!` below). It
-        /// unwinds when the pad raises an SEH exception that something above catches: the
-        /// unwind of that exception passes through it (its unwind info), so `system-unwind`.
-        fn ryo_seh_call_pad(ctx: *const Context, region: usize, pad: usize, obj: *mut ExceptionRecord);
-    }
-
     /// The language handler of every VM function's `UNWIND_INFO` on PE ([`super::decide`]).
     ///
     /// # Safety
@@ -221,13 +211,15 @@ mod win {
 // through it into the handler and the unwinder's frames. The `rax` a pad gets is the
 // exception record; a terminate stub reached through `RtlUnwindEx` gets whatever the unwind
 // leaves in it (the consolidation record, or the dispatcher's): neither relies on it.
+// A naked function rather than `global_asm!` with a foreign declaration: a call to a foreign
+// `system-unwind` function would make `ryo_rt` require `panic=unwind` of every program
+// (`-Cpanic=abort` programs would fail to link it), and the symbol stays private to this
+// runtime. `system-unwind`: the unwind of an SEH exception a pad raises passes through it.
 #[cfg(windows)]
-core::arch::global_asm!(
-    ".text",
-    ".globl ryo_seh_call_pad",
-    ".p2align 4",
-    "ryo_seh_call_pad:",
-    ".seh_proc ryo_seh_call_pad",
+#[unsafe(naked)]
+unsafe extern "system-unwind" fn ryo_seh_call_pad(ctx: *const win::Context, region: usize, pad: usize, obj: *mut win::ExceptionRecord) {
+    core::arch::naked_asm!(
+    ".seh_proc {this}",
     "push rbp",
     ".seh_pushreg rbp",
     "push rbx",
@@ -309,7 +301,9 @@ core::arch::global_asm!(
     "pop rbp",
     "ret",
     ".seh_endproc",
-);
+    this = sym ryo_seh_call_pad,
+    );
+}
 
 #[cfg(test)]
 mod tests {

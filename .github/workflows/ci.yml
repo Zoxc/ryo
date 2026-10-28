@@ -12,6 +12,8 @@ env:
   RUSTUP_TOOLCHAIN: "1.99.1"
   CARGO_TERM_COLOR: always
 
+# Step timeouts (well above a passing run) end a hang early; `y test` also kills a corpus
+# program that runs over 5 minutes, naming it.
 jobs:
   test:
     strategy:
@@ -27,11 +29,13 @@ jobs:
       # its C programs with vswhere (design/platforms.md).
       - if: runner.os != 'Windows'
         run: ./y.sh build && ./y.sh test
+        timeout-minutes: 90
       - if: runner.os == 'Windows'
         shell: cmd
         run: |
           call y.cmd build || exit /b 1
           call y.cmd test || exit /b 1
+        timeout-minutes: 120
       # As on macOS: the JIT from every function's first call, and entered by OSR. `y test`
       # fails on Windows if it finds no `cl`, so the SEH and C++ mains can't be left out.
       - if: runner.os == 'Windows'
@@ -39,11 +43,13 @@ jobs:
         shell: cmd
         run: call y.cmd test || exit /b 1
         env: { RYO_JIT_THRESHOLD: "0", RYO_JIT_SYNC: "1" }
+        timeout-minutes: 60
       - if: runner.os == 'Windows'
         name: JIT by OSR, shuffled frames
         shell: cmd
         run: call y.cmd test || exit /b 1
         env: { RYO_JIT_THRESHOLD: "2,0", RYO_JIT_SYNC: "1", RYO_JIT_SHUFFLE: "1" }
+        timeout-minutes: 60
 
   # x86_64 macOS (design/platforms.md). `macos-15-intel` is GitHub's Intel image, so the
   # toolchain, the backend and the JIT run natively; Rosetta on an arm64 runner would also test
@@ -58,9 +64,12 @@ jobs:
       - name: Install the toolchain
         run: rustup toolchain install 1.99.1 --profile minimal --component rustc-dev,rust-src,llvm-tools
       - run: ./y.sh build && ./y.sh test
+        timeout-minutes: 90
       - name: JIT from the first call
         run: ./y.sh test
         env: { RYO_JIT_THRESHOLD: "0", RYO_JIT_SYNC: "1" }
+        timeout-minutes: 60
       - name: JIT by OSR, shuffled frames
         run: ./y.sh test
         env: { RYO_JIT_THRESHOLD: "2,0", RYO_JIT_SYNC: "1", RYO_JIT_SHUFFLE: "1" }
+        timeout-minutes: 60

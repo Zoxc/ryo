@@ -44,16 +44,25 @@ fn unsized_arg(b: Box<[u8]>) -> u32 {
 
 #[cfg(not(windows))]
 mod weak {
+    // ld64 rejects an undefined weak reference unless told (`-U`), so on Apple only a
+    // defined symbol is tested (std's `weak!` uses `dlsym` there).
+    #[cfg(not(target_vendor = "apple"))]
     unsafe extern "C" {
         #[linkage = "extern_weak"]
         static ryo_test_no_such_symbol: Option<unsafe extern "C" fn() -> i32>;
+    }
+    unsafe extern "C" {
         #[linkage = "extern_weak"]
         static getpid: Option<unsafe extern "C" fn() -> i32>;
     }
 
     /// The statics hold the symbols' addresses, null if undefined (std's `weak!`).
     pub fn weak_statics() -> (bool, bool) {
-        unsafe { (ryo_test_no_such_symbol.is_none(), getpid.is_some()) }
+        #[cfg(not(target_vendor = "apple"))]
+        let none = unsafe { ryo_test_no_such_symbol.is_none() };
+        #[cfg(target_vendor = "apple")]
+        let none = true;
+        unsafe { (none, getpid.is_some()) }
     }
 }
 

@@ -1073,7 +1073,8 @@ impl Ctx<'_> {
         let mut paths = vec![dir.to_path_buf(), self.target_libdir(variant)?];
         paths.extend(std::env::split_paths(&std::env::var_os(lib_path_var).unwrap_or_default()));
         run.env(lib_path_var, std::env::join_paths(paths).map_err(|e| e.to_string())?);
-        let res = run.output().map_err(|e| format!("failed to run {}: {e}", exe.display()))?;
+        // Far above any program's run time, even with the JIT checkers on.
+        let res = crate::utils::output_timeout(&mut run, std::time::Duration::from_secs(300))?;
         // Panic messages name the source path, which is the same for every variant. Thread ids
         // differ between runs.
         Ok(RunResult {

@@ -234,3 +234,21 @@ impl Bump {
         }
     }
 }
+
+/// Whether the process is exiting with its other threads gone: on Windows, `ExitProcess`
+/// terminates every other thread (the JIT thread included) before it runs the exiting
+/// thread's TLS destructors and the modules' detach callbacks, which may still run VM code.
+/// Elsewhere other threads live on through `exit`'s handlers: always false.
+pub(crate) fn exiting() -> bool {
+    #[cfg(windows)]
+    {
+        #[link(name = "ntdll", kind = "raw-dylib")]
+        unsafe extern "system" {
+            fn RtlDllShutdownInProgress() -> u8;
+        }
+        // SAFETY: reads the loader's shutdown flag; callable at any time.
+        unsafe { RtlDllShutdownInProgress() != 0 }
+    }
+    #[cfg(not(windows))]
+    false
+}

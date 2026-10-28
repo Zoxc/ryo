@@ -124,6 +124,52 @@ pub fn capture_ok(cmd: &mut Command) -> Result<Captured, String> {
     Ok(res)
 }
 
+/// Runs `cmd` with stdin closed and its stdout and stderr captured, killing it if it runs
+/// longer than `limit`: then fails with what it printed so far, so a hang (a deadlock, a
+/// read of stdin) fails the test instead of the CI job's timeout.
+pub fn output_timeout(cmd: &mut Command, limit: std::time::Duration) -> Result<std::process::Output, String> {
+    use std::io::Read;
+    let mut child = cmd
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("failed to run `{}`: {e}", describe(cmd)))?;
+    let pipe = |r: Option<Box<dyn Read + Send>>| {
+        std::thread::spawn(move || {
+            let mut v = Vec::new();
+            if let Some(mut r) = r {
+                let _ = r.read_to_end(&mut v);
+            }
+            v
+        })
+    };
+    let out = pipe(child.stdout.take().map(|r| Box::new(r) as Box<dyn Read + Send>));
+    let err = pipe(child.stderr.take().map(|r| Box::new(r) as Box<dyn Read + Send>));
+    let start = std::time::Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if start.elapsed() < limit => std::thread::sleep(std::time::Duration::from_millis(10)),
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                // The pipes close with the process (unless it left children holding them).
+                let (o, e) = (out.join().unwrap_or_default(), err.join().unwrap_or_default());
+                return Err(format!(
+                    "`{}` timed out after {}s, killed\nstdout:\n{}stderr:\n{}",
+                    describe(cmd),
+                    limit.as_secs(),
+                    String::from_utf8_lossy(&o),
+                    String::from_utf8_lossy(&e)
+                ));
+            }
+            Err(e) => return Err(format!("failed to wait for `{}`: {e}", describe(cmd))),
+        }
+    };
+    Ok(std::process::Output { status, stdout: out.join().unwrap_or_default(), stderr: err.join().unwrap_or_default() })
+}
+
 /// Runs `cmd` and returns its stdout, failing if it doesn't exit successfully.
 pub fn output(cmd: &mut Command) -> Result<String, String> {
     let out = cmd.stderr(Stdio::inherit()).output().map_err(|e| format!("failed to run `{}`: {e}", describe(cmd)))?;

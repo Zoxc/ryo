@@ -479,10 +479,10 @@ impl ImageWriter {
     /// Interns a symbol slot and returns its index. Slots are keyed by name and flags, so
     /// one symbol used both directly (e.g. as an island) and indirectly (PE `__imp_`, e.g.
     /// by `call.ext.ind`) gets two slots. A leading `\x01` (as in bindgen's
-    /// `#[link_name = "\u{1}_ZN..."]` for C++ methods) means "this name verbatim" to LLVM,
-    /// which drops it; so does this.
+    /// `#[link_name = "\u{1}_ZN..."]` for C++ methods) means "this name verbatim" to LLVM:
+    /// it is kept, for the object writer, which drops it and doesn't mangle the rest (Mach-O's
+    /// `_`).
     pub fn symbol(&mut self, name: &str, flags: u8) -> Sym {
-        let name = name.strip_prefix('\x01').unwrap_or(name);
         let key = (String::from(name), flags);
         if let Some(&i) = self.sym_index.get(&key) {
             return Sym(i);

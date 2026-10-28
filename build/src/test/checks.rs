@@ -56,6 +56,8 @@ pub(super) fn cargo_smoke(info: &crate::utils::RustcInfo, root: &Path, out: &Pat
                 .env("PATH", &path)
                 .env("RYO_BACKEND_MARKER", "1")
                 .env("CARGO_TARGET_DIR", &target_sub)
+                // Plain `Fresh`/`Compiling` lines to match (CI sets `CARGO_TERM_COLOR=always`).
+                .env("CARGO_TERM_COLOR", "never")
                 .env_remove("CARGO_INCREMENTAL"),
         )?;
         let stderr = res.stderr;
@@ -343,7 +345,7 @@ pub(super) fn incremental(rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result
 
 /// The dynamic symbols a ryo Rust dylib, cdylib, and an executable with `-Zexport-executable-symbols`,
 /// export are exactly plain rustc's (plus the runtime's own) (design/backend.md#query-overrides).
-/// ELF and Mach-O (`llvm-nm -D`). On Linux, the cdylib's registry constructor doesn't bind
+/// ELF (`llvm-nm -D`) and Mach-O (`llvm-nm --extern-only`). On Linux, the cdylib's registry constructor doesn't bind
 /// `ryo_vm_register` dynamically.
 pub(super) fn same_exports(info: &crate::utils::RustcInfo, rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
     if cfg!(windows) {
@@ -373,7 +375,9 @@ pub(super) fn same_exports(info: &crate::utils::RustcInfo, rustc_ryo: &Path, src
             // The runtime's own symbols: in a Rust dylib everything of `ryo_rt` and
             // `ryo_bytecode`, the handlers included. A cdylib and an executable export none.
             let runtime = |s: &str| s.contains("6ryo_rt") || s.contains("12ryo_bytecode") || is_rt_internal(s);
-            let mut syms = crate::utils::nm_symbols(info, &["-D", "--defined-only"], &o, &info.host)?;
+            // Mach-O has no dynamic symbol table: its exports are the external symbols.
+            let table = if cfg!(target_vendor = "apple") { "--extern-only" } else { "-D" };
+            let mut syms = crate::utils::nm_symbols(info, &[table, "--defined-only"], &o, &info.host)?;
             syms.retain(|s| !runtime(s));
             syms.sort();
             lists.push(syms);
@@ -694,7 +698,12 @@ pub(super) fn dump(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), Strin
         capture_ok(cmd(rustc_ryo).args(["--edition=2024", "--crate-type=rlib", "--out-dir"]).arg(out).arg(&rs).env("RYO_DUMP", &dump))?;
         Ok(fs::read_to_string(&dump).unwrap_or_default())
     };
-    let sectioned = "#[unsafe(link_section = \".text.ryo_sectioned\")]\npub fn sectioned(x: u64) -> u64 {\n    x * 3 + 1\n}\n\npub fn plain(x: u64) -> u64 {\n    x * 5 + 2\n}\n";
+    // Mach-O section specifiers are `segment,section`.
+    let section = if cfg!(target_vendor = "apple") { "__TEXT,__ryo_sectioned" } else { ".text.ryo_sectioned" };
+    let sectioned = &format!(
+        "#[unsafe(link_section = {section:?})]\n{}",
+        "pub fn sectioned(x: u64) -> u64 {\n    x * 3 + 1\n}\n\npub fn plain(x: u64) -> u64 {\n    x * 5 + 2\n}\n"
+    );
     let text = lib("dump_sectioned", sectioned)?;
     if !text.contains("fn plain") || text.contains("fn sectioned") {
         return Err(format!("dump_sectioned: want `plain` as VM code and `sectioned` native, got:\n{text}"));
