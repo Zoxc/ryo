@@ -229,8 +229,17 @@ fn check_outputs(tcx: TyCtxt<'_>) {
 /// (design/backend.md#pipeline, step 2). A panic runtime (`panic_unwind`, `panic_abort`) too:
 /// portals re-raise a panic from the VM through its `__rust_start_panic` (design/vm.md,
 /// Unwinding), so that must be native, and the rest of the runtime gains nothing from the VM.
+/// Runtime-internal crates too (design/backend.md#unsupported-options): `compiler_builtins`
+/// and `#![no_builtins]` crates implement `memcpy` and friends, which the handlers call (VM
+/// code there would recurse), `#![profiler_runtime]`, and the VM's own crates.
 fn vm_enabled(tcx: TyCtxt<'_>, switches: &Switches) -> bool {
-    !switches.no_vm && !tcx.crate_types().contains(&CrateType::ProcMacro) && !tcx.is_panic_runtime(LOCAL_CRATE)
+    !switches.no_vm
+        && !tcx.crate_types().contains(&CrateType::ProcMacro)
+        && !tcx.is_panic_runtime(LOCAL_CRATE)
+        && !tcx.is_compiler_builtins(LOCAL_CRATE)
+        && !rustc_hir::find_attr!(tcx.hir_krate_attrs(), NoBuiltins)
+        && !rustc_hir::find_attr!(tcx.hir_krate_attrs(), ProfilerRuntime)
+        && !matches!(tcx.crate_name(LOCAL_CRATE).as_str(), "ryo_rt" | "ryo_bytecode" | "ryo_jit")
 }
 
 /// How the image's machine code is generated: as `ryo_rt`'s handlers expect `fp`, with a
@@ -353,12 +362,16 @@ struct ImagePart<'tcx> {
 /// lowering reads (which its dep node tracks), for the reuse fingerprint.
 fn image_settings(tcx: TyCtxt<'_>, rt: RtItems, mode: asm::Mode, switches: &Switches) -> String {
     // The backend itself, by a hash of its file: a rebuilt backend may lower differently,
-    // even with the same size and mtime (`cp -p`). Only read under incremental.
+    // even with the same size and mtime (`cp -p`). Only read under incremental, where a
+    // backend that can't be read is an error: images of an older one would be reused.
     let backend = tcx
         .dep_graph
         .is_fully_enabled()
-        .then(|| tcx.sess.opts.unstable_opts.codegen_backend.as_deref().and_then(|p| std::fs::read(p).ok()))
-        .flatten()
+        .then(|| {
+            let path = backend_path().or_else(|| tcx.sess.opts.unstable_opts.codegen_backend.as_deref().map(std::path::PathBuf::from));
+            let Some(path) = path else { tcx.dcx().fatal("incremental: can't find the ryo backend's file to hash") };
+            std::fs::read(&path).unwrap_or_else(|e| tcx.dcx().fatal(format!("incremental: reading the ryo backend {}: {e}", path.display())))
+        })
         .map(|bytes| {
             use std::hash::Hash;
             let mut h = rustc_data_structures::stable_hash::StableHasher::new();
@@ -369,6 +382,38 @@ fn image_settings(tcx: TyCtxt<'_>, rt: RtItems, mode: asm::Mode, switches: &Swit
     // `ryo_rt`'s crate hash: what its handlers expect may change without the backend
     // changing, and an image that calls no island reads nothing else of it.
     format!("{:?} {} {} {backend:?} {} {}", mode, local_stable_crate_id(tcx), switches.asm_align, env!("CARGO_PKG_VERSION"), tcx.crate_hash(rt.krate))
+}
+
+/// The file of the loaded backend dylib, from the address of one of its functions: the same
+/// for a `-Zcodegen-backend=<path>` and a `<name>` found in the sysroot.
+#[cfg(unix)]
+fn backend_path() -> Option<std::path::PathBuf> {
+    use std::os::unix::ffi::OsStrExt;
+    #[repr(C)]
+    struct DlInfo {
+        fname: *const std::ffi::c_char,
+        fbase: *mut std::ffi::c_void,
+        sname: *const std::ffi::c_char,
+        saddr: *mut std::ffi::c_void,
+    }
+    unsafe extern "C" {
+        fn dladdr(addr: *const std::ffi::c_void, info: *mut DlInfo) -> std::ffi::c_int;
+    }
+    let mut info = DlInfo { fname: std::ptr::null(), fbase: std::ptr::null_mut(), sname: std::ptr::null(), saddr: std::ptr::null_mut() };
+    // SAFETY: `dladdr` fills `info`; `fname` is a C string while the dylib stays loaded.
+    let name = unsafe {
+        if dladdr(backend_path as *const std::ffi::c_void, &mut info) == 0 || info.fname.is_null() {
+            return None;
+        }
+        std::ffi::CStr::from_ptr(info.fname)
+    };
+    Some(std::path::PathBuf::from(std::ffi::OsStr::from_bytes(name.to_bytes())))
+}
+
+/// Elsewhere, only the `-Zcodegen-backend` path.
+#[cfg(not(unix))]
+fn backend_path() -> Option<std::path::PathBuf> {
+    None
 }
 
 struct Partitioner<'a, 'tcx> {

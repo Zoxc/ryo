@@ -42,19 +42,25 @@ and `codegen_crate` reads them.
      the others' references resolve to it: two would define the symbol twice.
 
    A crate with no VM code (a proc
-   macro, a panic runtime, `RYO_NO_VM`, step 2) skips all of this: the provider returns
+   macro, a panic runtime, a runtime-internal crate, `RYO_NO_VM`, step 2) skips all of this: the provider returns
    rustc's partition as is, with any number of CGUs, and `codegen_crate` writes no image
    (its final outputs still get a registry stub, for their upstream images).
 2. **Classify** each mono item:
    - `Fn(instance)` → VM, unless something in it can't be expressed as a VM op or an island
      template. Those functions stay native as a whole:
      - `#[naked]` functions
+     - `#[rustc_offload_kernel]` functions (cg_llvm adds an argument)
+     - functions with `#[link_section]`: the image's `.text.ryo_image` would hide them
+       from section-based tables (`__start_<section>`) and linker-script placement
      - EII implementations (`#[<eii declaration>]`): cg_llvm defines the declaration's symbol
        as a forwarder while predefining the implementation (`add_function_aliases`)
      - functions with a `#[linkage]` other than `external` or `internal`: another object's
        definition may replace a weak or linkonce one, which the image's direct `call`s would
        bypass; `available_externally` defines nothing; PE has no plain weak definitions
      - inline asm
+     - references to Objective-C class or selector statics (`#[rustc_objc_class]`,
+       `#[rustc_objc_selector]`): cg_llvm doesn't define their symbols, it uses private
+       `OBJC_*_REFERENCES_` globals of its own
      - calls to C-variadic functions
      - functions with non-Rust ABIs defined in Rust (`extern "C" fn`): VM code follows only
        the Rust ABI's convention
@@ -74,7 +80,10 @@ and `codegen_crate` reads them.
      Never VM: everything in a `proc-macro` crate (it keeps the proc macro's own code out of
      the VM, and proc macros gain nothing from it; its rlib dependencies, `syn` say, do have
      images, and the proc macro gets a registry object, so VM code does run in rustc), everything in a panic runtime crate
-     (`#![panic_runtime]`: `panic_unwind`, `panic_abort`),
+     (`#![panic_runtime]`: `panic_unwind`, `panic_abort`), everything in a runtime-internal
+     crate (`compiler_builtins`, whose `memcpy` VM code would call back into;
+     `#![profiler_runtime]`; `#![no_builtins]`, whose functions must not become calls to
+     the builtins they implement; `ryo_rt`, `ryo_bytecode` and `ryo_jit`),
      `ryo_rt`'s own instances, and everything when
      `RYO_NO_VM` is set ([Debugging switches](#debugging-switches)).
    - `Static`, `GlobalAsm` → native. Statics are data, and cg_llvm handles relocations,
@@ -199,7 +208,13 @@ and `codegen_crate` reads them.
      a small object, the same for every crate (`objfile.rs`, `write_registry`): a null entry
      (so the list exists in every link unit) and a constructor, `lea` of the list's start,
      `lea` of its end, `jmp ryo_vm_register` (`.init_array.00000` on ELF, `.CRT$XCT` on PE,
-     ahead of other constructors; `__mod_init_func` on Mach-O). The bounds are the linker's
+     ahead of other constructors; `__mod_init_func` on Mach-O). On ELF the
+     `ryo_vm_register` reference is hidden where the output links `ryo_rt` itself, except
+     in a Rust dylib (which exports `ryo_rt` to the crates that link it): the linker binds
+     it at link time, and the definition isn't exported, so two ryo cdylibs loaded into
+     one process each register in their own runtime instead of the first one loaded. The
+     JIT's trip entry points and the handlers are `#[rustc_std_internal_symbol]`s, which a
+     cdylib doesn't export. The bounds are the linker's
      `__start_ryo_images`/`__stop_ryo_images` (referenced hidden, so a dylib and the exe
      that links it each walk their own list), on Mach-O `section$start$__DATA$__ryo_images`
      and `section$end$...`, on PE the stub's own markers in `.ryo$a` and `.ryo$z` (the
@@ -268,8 +283,11 @@ depends on changed (`partition.rs`, `image_part`).
   `<cgu>.ryo.<fingerprint>`, the fingerprint covering the CGU name, its candidates' symbols,
   linkage and visibility, the entry fn's symbol (only in the entry's own CGU's key), the
   `asm::Mode`, the crate's `StableCrateId`, `RYO_ASM_ALIGN`, a hash of the backend dylib's
-  contents, and `ryo_rt`'s crate
-  hash (an image that calls no island reads nothing else of `ryo_rt`). A change to any of
+  contents (the loaded dylib's own file, found with `dladdr`, so also for a
+  `-Zcodegen-backend=<name>` found in the sysroot; under incremental, an unreadable file is
+  an error), and `ryo_rt`'s crate
+  hash (an image that calls no island reads nothing else of `ryo_rt`). `RYO_ASM_CHECK` is
+  not in it: it only checks the code it encodes, without changing it. A change to any of
   these gives a node the previous session didn't have. The lowering runs inside
   `dep_graph.with_task(node, ..)`, so the queries it reads (MIR, layouts, ABIs, symbol
   names, constants) are its edges; reading rustc's partition there would be a cycle (this
@@ -354,7 +372,8 @@ most crates have VM code, and one without (a proc macro, `RYO_NO_VM`) may still 
 upstream images.
 
 - LTO in any form: `-Clto` (`fat`, `thin`, `yes`, bare), `-Clinker-plugin-lto`,
-  `-Zdylib-lto`, `-Zthinlto=yes`, and targets that require LTO. The images are objects LTO
+  `-Zdylib-lto`, and targets that require LTO (`-Zthinlto=yes` needs no check of its own:
+  with `thin_lto_supported() == false`, `Session::lto` returns `Lto::No` before reading it). The images are objects LTO
   doesn't see, so it would internalize or drop symbols only they refer to (a native item
   exposed as hidden for an image, a handler); linker-plugin LTO also makes the Rust
   objects of an rlib bitcode, whose symbols the rebuilt rlib's index would lack. rustc's
@@ -362,7 +381,9 @@ upstream images.
   the same way, so the backend reports `thin_lto_supported() == false`, which makes
   `Session::lto` return `Lto::No` for it: optimized builds work, without cross-CGU
   inlining of their native code.
-- Sanitizers (`-Zsanitizer=…`, the whole set: address, cfi, dataflow, hwaddress, kcfi,
+- Sanitizers, the session's effective set (`Session::sanitizers`: `-Zsanitizer=…` plus the
+  target's default sanitizers, e.g. `x86_64-unknown-linux-gnuasan` or a target JSON's
+  `default-sanitizers`; the whole set: address, cfi, dataflow, hwaddress, kcfi,
   kernel-address, kernel-hwaddress, leak, memory, memtag, safestack, shadow-call-stack,
   thread, realtime):
   VM code isn't instrumented, so they would miss its accesses (ASan, TSan, HWASan), report
@@ -378,9 +399,22 @@ upstream images.
   `-Cinstrument-coverage` (they would vanish from the report), `-Cprofile-generate`,
   `-Zinstrument-xray`, `-Zinstrument-mcount`, `-Zpatchable-function-entry`. A function
   with `#[patchable_function_entry]` stays native.
+- `-Zautodiff` and `-Zoffload`: cg_llvm's Enzyme and offload passes see only its own
+  modules, not VM code. A `#[rustc_offload_kernel]` function stays native.
 - `-Zrandomize-layout`: island argument blocks need tuple layouts that agree between crates.
 - Targets other than x86_64 with 64-bit pointers (`aarch64`, `x32`), and Mach-O targets
   other than macOS: the images are x86-64 machine code, in ELF, PE or macOS Mach-O.
+- Soft-float: a target with a `rustc_abi` (`softfloat`, as `x86_64-unknown-none` and
+  `x86_64-unknown-uefi` have, or a target JSON's `rustc-abi`), and
+  `-Ctarget-feature=+soft-float` or `-sse2`, for which rustc only warns. LLVM then passes
+  floats in general registers, while VM signatures put them in xmm registers, and the
+  handlers and VM code use SSE. The target features are only known after `init`, so
+  `codegen_crate` checks them (`sse2` must be in `sess.internal_target_features`,
+  `soft-float` must not).
+- `-Ccode-model` other than `small` (the default): the images reach handlers, other
+  images and native items with rel32 calls and RIP-relative addressing, which assume the
+  small model's 2 GiB reach. `large` and `medium` place code or data beyond it (a link
+  error at best), `kernel` is for kernels, which need soft-float anyway.
 - For a crate with VM code: `--emit=obj`, `llvm-bc` and `thin-link-bitcode` (cg_llvm's
   modules, copied to the outputs inside its `join`, without the image objects, so the VM
   functions would be undefined); any `--emit` without `link` (an rlib is written only with
@@ -393,6 +427,11 @@ upstream images.
 - `-Zstaticlib-rename-internal-symbols` and `-Zstaticlib-hide-internal-symbols`: they rename
   or hide symbols in the Rust objects of the staticlib, but not in the upstream images
   (plain archive members), which then refer to old names or leak their symbols.
+
+Runtime-internal crates aren't rejected but stay native as a whole, like proc macros and
+panic runtimes ([Pipeline](#pipeline), step 1): `compiler_builtins`, `#![profiler_runtime]`
+and `#![no_builtins]` crates, and the runtime's own `ryo_rt`, `ryo_bytecode` and `ryo_jit`
+(as when built with `-Zbuild-std`).
 
 `y test`'s `reject-unsupported` check runs each (`-Zrandomize-layout` also through an
 `@argfile`).

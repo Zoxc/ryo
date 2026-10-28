@@ -167,6 +167,15 @@ pub fn vm_fn_sig<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> Result<Ab
     if attrs.flags.contains(rustc_middle::middle::codegen_fn_attrs::CodegenFnAttrFlags::NAKED) {
         return native("#[naked]");
     }
+    // An offload kernel gets an extra argument from cg_llvm (`-Zoffload` is rejected too).
+    if attrs.flags.contains(rustc_middle::middle::codegen_fn_attrs::CodegenFnAttrFlags::OFFLOAD_KERNEL) {
+        return native("#[rustc_offload_kernel]");
+    }
+    // The image's `.text.ryo_image` would hide it from section-based tables
+    // (`__start_<section>`) and linker-script placement.
+    if attrs.link_section.is_some() {
+        return native("#[link_section]");
+    }
     // Its nops are for patching native code (`-Zpatchable-function-entry`, which applies to
     // every function, is rejected).
     if attrs.patchable_function_entry.is_some() {

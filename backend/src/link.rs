@@ -65,7 +65,11 @@ pub fn link(
         if crate_type != CrateType::Rlib && sess.opts.output_types.should_link() {
             let registry_t = sess.prof.generic_activity("ryo_registry");
             let import = register_is_imported(&crate_info, crate_type);
-            let bytes = objfile::write_registry(&*fmt, import).unwrap_or_else(|e| sess.dcx().fatal(e));
+            // Hidden where this output links `ryo_rt` itself, except in a Rust dylib, which
+            // must export it to the crates linking it (a hidden reference would hide the
+            // definition too).
+            let hidden = !import && !matches!(crate_type, CrateType::Dylib | CrateType::Sdylib);
+            let bytes = objfile::write_registry(&*fmt, import, hidden).unwrap_or_else(|e| sess.dcx().fatal(e));
             let name = format!("{}.ryo_registry.{}", crate_info.local_crate_name, crate_type);
             let path = outputs.temp_path_for_cgu(OutputType::Object, &name);
             fs::write(&path, bytes).unwrap_or_else(|e| sess.dcx().fatal(format!("writing {}: {e}", path.display())));

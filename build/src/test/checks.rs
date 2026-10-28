@@ -330,7 +330,8 @@ pub(super) fn incremental(rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result
 
 /// The dynamic symbols a ryo Rust dylib, cdylib, and an executable with `-Zexport-executable-symbols`,
 /// export are exactly plain rustc's (plus the runtime's own) (design/backend.md#query-overrides).
-/// ELF and Mach-O (`llvm-nm -D`).
+/// ELF and Mach-O (`llvm-nm -D`). On Linux, the cdylib's registry constructor doesn't bind
+/// `ryo_vm_register` dynamically.
 pub(super) fn same_exports(info: &crate::utils::RustcInfo, rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
     if cfg!(windows) {
         return Ok(());
@@ -349,6 +350,15 @@ pub(super) fn same_exports(info: &crate::utils::RustcInfo, rustc_ryo: &Path, src
             let o = dir.join(format!("{name}-{who}"));
             crate::utils::run(cmd(compiler).arg("--edition=2024").arg(src).args(flags).arg("-o").arg(&o))?;
             let syms = output(cmd(&nm).args(["-D", "--defined-only", "-j"]).arg(&o))?;
+            // The registry constructor binds its own `ryo_rt`'s `ryo_vm_register` at link
+            // time: through a dynamic relocation, another ryo shared object loaded first
+            // would get this one's images.
+            if who == "ryo" && name == "cdylib" && cfg!(target_os = "linux") {
+                let relocs = output(cmd(info.tool("llvm-objdump")).arg("--dynamic-reloc").arg(&o))?;
+                if let Some(line) = relocs.lines().find(|l| l.contains("ryo_vm_register")) {
+                    return Err(format!("{}: `ryo_vm_register` is bound dynamically: {line}", o.display()));
+                }
+            }
             // The runtime's own symbols, which every ryo output links: `ryo_vm_register`
             // (C level), and in a Rust dylib everything of `ryo_rt` and `ryo_bytecode`,
             // the handlers included.
@@ -656,7 +666,9 @@ pub(super) fn metadata_only(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<
 }
 
 /// `RYO_DUMP` of a program whose VM code names statics must build cleanly: printing a path
-/// with trimmed paths outside a diagnostic made rustc panic as the session ended.
+/// with trimmed paths outside a diagnostic made rustc panic as the session ended. And what
+/// must stay native has no VM code (design/lowering.md, design/backend.md#pipeline): a
+/// `#[link_section]` function, and a runtime-internal crate (`#![no_builtins]`).
 pub(super) fn dump(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
     let dump = out.join("dump.txt");
     capture_ok(cmd(rustc_ryo).args(["--edition=2024", "-O"]).arg(src).arg("-o").arg(out.join(exe_name("dump"))).env("RYO_DUMP", &dump))?;
@@ -664,14 +676,32 @@ pub(super) fn dump(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), Strin
     if !text.contains(" = static ") {
         return Err(format!("{} names no static", dump.display()));
     }
+    let lib = |name: &str, src: &str| -> Result<String, String> {
+        let rs = out.join(format!("{name}.rs"));
+        let dump = out.join(format!("{name}.dump.txt"));
+        let _ = fs::remove_file(&dump);
+        fs::write(&rs, src).map_err(|e| format!("writing {}: {e}", rs.display()))?;
+        capture_ok(cmd(rustc_ryo).args(["--edition=2024", "--crate-type=rlib", "--out-dir"]).arg(out).arg(&rs).env("RYO_DUMP", &dump))?;
+        Ok(fs::read_to_string(&dump).unwrap_or_default())
+    };
+    let sectioned = "#[unsafe(link_section = \".text.ryo_sectioned\")]\npub fn sectioned(x: u64) -> u64 {\n    x * 3 + 1\n}\n\npub fn plain(x: u64) -> u64 {\n    x * 5 + 2\n}\n";
+    let text = lib("dump_sectioned", sectioned)?;
+    if !text.contains("fn plain") || text.contains("fn sectioned") {
+        return Err(format!("dump_sectioned: want `plain` as VM code and `sectioned` native, got:\n{text}"));
+    }
+    let text = lib("dump_no_builtins", "#![no_builtins]\npub fn f(x: u64) -> u64 {\n    x * 3 + 1\n}\n")?;
+    if text.contains("fn ") {
+        return Err(format!("dump_no_builtins: a `#![no_builtins]` crate has VM code:\n{text}"));
+    }
     Ok(())
 }
 
 /// The backend fails with a clear error, naming the option, where VM code can't honour it
 /// (design/backend.md#unsupported-options): LTO in any form; sanitizers, control-flow
 /// protection and other hardening, instrumentation and profiling, which VM code would
-/// silently lack; `-Zrandomize-layout` (also through an `@argfile`, past the wrapper);
-/// unsupported targets; outputs without the images (`--emit=obj`, `bc`, an rlib without
+/// silently lack, including a target's default sanitizers; `-Zrandomize-layout` (also
+/// through an `@argfile`, past the wrapper); `-Zautodiff`, `-Zoffload`, `-Ccode-model`
+/// other than `small`; unsupported targets, soft-float ones and `+soft-float`/`-sse2`; outputs without the images (`--emit=obj`, `bc`, an rlib without
 /// `link`, `-o -`); and the options that bypass ryo's link step.
 pub(super) fn reject_unsupported(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
     let dir = out.join("reject");
@@ -695,12 +725,11 @@ pub(super) fn reject_unsupported(rustc_ryo: &Path, src: &Path, out: &Path) -> Re
         (&["-Clto=yes"], "-Clto"),
         (&["-Clinker-plugin-lto"], "-Clinker-plugin-lto"),
         (&["--crate-type=dylib", "-Zdylib-lto"], "-Zdylib-lto"),
-        (&["-Zthinlto=yes", "-Ccodegen-units=4", "-O"], "-Zthinlto"),
-        (&["-Zsanitizer=address"], "-Zsanitizer"),
-        (&["-Zsanitizer=kcfi"], "-Zsanitizer"),
-        (&["-Zsanitizer=cfi", "-Ccodegen-units=1"], "-Zsanitizer"),
-        (&["-Zsanitizer=memory"], "-Zsanitizer"),
-        (&["-Zsanitizer=thread"], "-Zsanitizer"),
+        (&["-Zsanitizer=address"], "sanitizer"),
+        (&["-Zsanitizer=kcfi"], "sanitizer"),
+        (&["-Zsanitizer=cfi", "-Ccodegen-units=1"], "sanitizer"),
+        (&["-Zsanitizer=memory"], "sanitizer"),
+        (&["-Zsanitizer=thread"], "sanitizer"),
         (&["-Zcf-protection=full"], "-Zcf-protection"),
         (&["-Ccontrol-flow-guard"], "-Ccontrol-flow-guard"),
         (&["-Zehcont-guard"], "-Zehcont-guard"),
@@ -717,9 +746,27 @@ pub(super) fn reject_unsupported(rustc_ryo: &Path, src: &Path, out: &Path) -> Re
         (&["-Zindirect-branch-cs-prefix"], "-Zindirect-branch-cs-prefix"),
         (&["--target=aarch64-unknown-linux-gnu"], "x86_64"),
         (&["--target=x86_64-unknown-linux-gnux32"], "x86_64"),
+        // Soft-float: floats in GPRs, and no SSE for the handlers.
+        (&["-Ctarget-feature=+soft-float"], "soft-float"),
+        (&["-Ctarget-feature=-sse2"], "sse2"),
+        // Autodiff (Enzyme) and offload run in cg_llvm on its own modules only.
+        (&["-Zautodiff=Enable"], "-Zautodiff"),
+        (&["-Zoffload=Test"], "-Zoffload"),
+        (&["-Ccode-model=large"], "-Ccode-model"),
+        (&["-Ccode-model=medium"], "-Ccode-model"),
+        (&["-Ccode-model=kernel"], "-Ccode-model"),
     ];
     for &(flags, needle) in cases {
         expect_reject(cmd(rustc_ryo).arg("--edition=2024").arg(src).args(flags).arg("-o").arg(&o), needle)?;
+    }
+    // Targets without an installed std, checked on a `#![no_core]` crate (`init` runs before
+    // crates are loaded): soft-float, and sanitizers the target enables by default.
+    let no_core = dir.join("no_core.rs");
+    fs::write(&no_core, "#![feature(no_core)]\n#![no_core]\n").map_err(|e| format!("writing {}: {e}", no_core.display()))?;
+    for (target, needle) in
+        [("x86_64-unknown-none", "soft-float"), ("x86_64-unknown-uefi", "soft-float"), ("x86_64-unknown-linux-gnuasan", "sanitizer")]
+    {
+        expect_reject(cmd(rustc_ryo).arg("--crate-type=lib").arg(format!("--target={target}")).arg(&no_core).arg("--out-dir").arg(&dir), needle)?;
     }
     // A library with VM code (`hello.rs`'s `main` is dead code in an rlib). An rlib is
     // written only with `link`, and one written to stdout can't have the images appended.

@@ -186,6 +186,12 @@ fn check_static(tcx: TyCtxt<'_>, def_id: DefId) -> Result<(), NeedsNative> {
     if tcx.is_foreign_item(def_id) && tcx.codegen_fn_attrs(def_id).import_linkage.is_some() {
         return native("static with an import linkage");
     }
+    // An Objective-C class or selector reference (`core::os::darwin::objc`): cg_llvm doesn't
+    // define the static's symbol but uses a private `OBJC_*_REFERENCES_` global of its own.
+    let attrs = tcx.codegen_fn_attrs(def_id);
+    if attrs.objc_class.is_some() || attrs.objc_selector.is_some() {
+        return native("Objective-C class or selector reference");
+    }
     Ok(())
 }
 

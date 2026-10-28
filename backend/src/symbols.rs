@@ -22,9 +22,16 @@ pub(crate) enum SymRole {
 /// import slot, and the instruction must be the `.ind` form (`addr.sym.ind`,
 /// `call.ext.ind`). Islands are always direct: a direct reference to a function in another
 /// DLL resolves to its import thunk, which is fine to call. The writer keys slots by name and
-/// flags, so one symbol can have both.
+/// flags, so one symbol can have both. A foreign function is indirect only where cg_llvm
+/// declares it `dllimport` (its library's kind is `dylib`, `raw-dylib` or unspecified,
+/// `NativeLibKind::is_dllimport`, `rustc_codegen_llvm/src/callee.rs`): one from a
+/// `kind = "static"` library or without `#[link]` is direct, as in native code, with no
+/// `__imp_` the linker must synthesize (LNK4217).
 pub(crate) fn symbol_flags<'tcx>(tcx: TyCtxt<'tcx>, target: Instance<'tcx>, role: SymRole) -> u8 {
-    if is_pe(tcx) && role == SymRole::Target && !tcx.should_codegen_locally(target) { ryo_bytecode::image::SYM_INDIRECT } else { 0 }
+    let def_id = target.def_id();
+    let import = !tcx.should_codegen_locally(target)
+        && (!tcx.is_foreign_item(def_id) || tcx.native_library(def_id).is_some_and(|lib| lib.kind.is_dllimport()));
+    if is_pe(tcx) && role == SymRole::Target && import { ryo_bytecode::image::SYM_INDIRECT } else { 0 }
 }
 
 /// [`symbol_flags`] for a static used as an address: on PE, statics of upstream crates and

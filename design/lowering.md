@@ -39,6 +39,12 @@ callee an island). A `LoweredFn` holds:
 `NeedsNative(reason)` keeps the function native as a whole. `RYO_STATS=2` prints the reasons
 ([backend.md](backend.md#debugging-switches)).
 
+Attributes keep a function native before its body is looked at (`vm_fn_sig`): `#[naked]`,
+`#[rustc_offload_kernel]`, `#[link_section]` (the image's code section would replace the
+one it names), `#[patchable_function_entry]`, `#[align]`, EII implementations, a
+`#[linkage]` other than `external` or `internal`, and `#[target_feature]`s the crate doesn't
+enable ([backend.md](backend.md#pipeline), step 2).
+
 A `#[target_feature]` function is lowered like any other if every feature it enables is
 already enabled for the crate (`sess.internal_target_features`, which includes implied and
 `-C target-cpu`/`-C target-feature` features: on default x86_64 `sse2`, so stdarch's SSE2

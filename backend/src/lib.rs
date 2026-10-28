@@ -218,6 +218,9 @@ impl CodegenBackend for RyoBackend {
     }
 
     fn codegen_crate<'tcx>(&self, tcx: TyCtxt<'tcx>) -> Box<dyn Any> {
+        if let Some(why) = unsupported_features(tcx.sess) {
+            tcx.dcx().fatal(format!("the ryo backend doesn't support {why} (design/backend.md#unsupported-options)"));
+        }
         // Usually already computed (metadata encoding, `exported_generic_symbols`); this forces
         // it otherwise, so the results are set.
         let partitions = tcx.collect_and_partition_mono_items(());
@@ -370,6 +373,12 @@ fn unsupported(sess: &Session) -> Option<String> {
     if target.requires_lto {
         return Some(format!("the target `{}`, which requires LTO", target.llvm_target));
     }
+    // A soft-float ABI passes floats in general registers, where VM signatures use xmm; the
+    // handlers and VM code use SSE besides. The flag forms (`+soft-float`, `-sse2`), for which
+    // rustc only warns, are checked in `codegen_crate` ([`unsupported_features`]).
+    if let Some(abi) = target.rustc_abi {
+        return Some(format!("the target `{}` with the `{abi:?}` ABI (soft-float)", target.llvm_target));
+    }
     let (c, z) = (&sess.opts.cg, &sess.opts.unstable_opts);
     let flags = [
         // LTO: the images are separate objects LTO doesn't see, so it would internalize or
@@ -378,13 +387,15 @@ fn unsupported(sess: &Session) -> Option<String> {
         (!matches!(c.lto, LtoCli::Unspecified | LtoCli::No), "`-Clto`"),
         (c.linker_plugin_lto.enabled(), "`-Clinker-plugin-lto`"),
         (z.dylib_lto, "`-Zdylib-lto`"),
-        (z.thinlto == Some(true), "`-Zthinlto`"),
+        // (`-Zthinlto=yes` needs no check: with `thin_lto_supported() == false`,
+        // `Session::lto` returns `No` before it reads it.)
         // Instrumentation and hardening VM code would silently lack: sanitizer checks (and
         // CFI/KCFI type checks that trap on VM functions), CET (`endbr64`, and the property
         // note whose absence turns CET off for the whole binary), CFG tables, coverage and
         // profile counters, XRay and mcount hooks, patchable entries, stack protectors and
         // the Spectre thunks.
-        (!z.sanitizer.is_empty(), "`-Zsanitizer`"),
+        // The effective set: `-Zsanitizer` plus the target's default sanitizers.
+        (!sess.sanitizers().is_empty(), "sanitizers (`-Zsanitizer` or the target's default sanitizers)"),
         (z.cf_protection != CFProtection::None, "`-Zcf-protection`"),
         (c.control_flow_guard != CFGuard::Disabled, "`-Ccontrol-flow-guard`"),
         (z.ehcont_guard, "`-Zehcont-guard`"),
@@ -403,6 +414,12 @@ fn unsupported(sess: &Session) -> Option<String> {
         (z.indirect_branch_cs_prefix, "`-Zindirect-branch-cs-prefix`"),
         // Tuple layouts (island argument blocks) must agree between crates.
         (z.randomize_layout, "`-Zrandomize-layout`"),
+        // The images use rel32 calls and RIP-relative addressing, which need the small
+        // model's 2 GiB reach (`kernel` is for kernels, which are soft-float anyway).
+        (c.code_model.is_some_and(|m| m != rustc_target::spec::CodeModel::Small), "`-Ccode-model` other than `small`"),
+        // cg_llvm's Enzyme and offload passes see only its own modules, not VM code.
+        (!z.autodiff.is_empty(), "`-Zautodiff`"),
+        (!z.offload.is_empty(), "`-Zoffload`"),
         // `-Zno-link` saves the modules in an `.rlink` and `-Zlink-only` links them without
         // `codegen_crate`, so without the registry object.
         (z.no_link, "`-Zno-link`"),
@@ -414,6 +431,20 @@ fn unsupported(sess: &Session) -> Option<String> {
         (z.staticlib_hide_internal_symbols, "`-Zstaticlib-hide-internal-symbols`"),
     ];
     flags.into_iter().find(|f| f.0).map(|f| f.1.to_owned())
+}
+
+/// [`unsupported`]'s soft-float check for `-Ctarget-feature`: rustc fills
+/// `internal_target_features` only after `init` (`rustc_interface/src/interface.rs`), and
+/// only warns about `+soft-float` and `-sse2`.
+fn unsupported_features(sess: &Session) -> Option<String> {
+    let features = &sess.internal_target_features;
+    if features.contains(&Symbol::intern("soft-float")) {
+        return Some("the `soft-float` target feature".to_owned());
+    }
+    if !features.contains(&Symbol::intern("sse2")) {
+        return Some("disabling the `sse2` target feature (soft-float)".to_owned());
+    }
+    None
 }
 
 /// A `CompiledModule` for an object file the backend wrote itself.
