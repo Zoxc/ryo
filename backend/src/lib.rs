@@ -255,60 +255,7 @@ impl CodegenBackend for RyoBackend {
             return Box::new(RyoOngoingCodegen { llvm, images: Vec::new() });
         };
         let _ = partitions;
-        let fmt = object_format(tcx.sess);
-        let scid = symbols::local_stable_crate_id(tcx);
-        // Step 5: the image objects, one per CGU with VM functions (design/backend.md#pipeline).
-        let rt_symbol = |name: &str| symbols::rt_symbol(tcx, name);
-        let write_t = tcx.prof.generic_activity("ryo_write_image");
-        let mut images = Vec::with_capacity(results.images.len());
-        for img in &results.images {
-            // Side data alone is only for the incremental cache.
-            if !img.has_object() && tcx.sess.opts.incremental.is_none() {
-                continue;
-            }
-            let image_name = format!("{}.ryo_image", img.cgu_name);
-            let image_path = tcx.output_filenames(()).temp_path_for_cgu(OutputType::Object, &image_name);
-            let save = match &img.image {
-                partition::ImageSrc::Fresh { image, side } => {
-                    let side_path = image_path.with_extension("ryo");
-                    let mut files = vec![(&side_path, side.clone())];
-                    if let Some(image) = image {
-                        let cgu_hash = ryo_bytecode::image::cgu_hash(img.cgu_name.as_str().as_bytes());
-                        let bytes = objfile::write_image(&*fmt, image, scid, cgu_hash, img.main_symbol.as_deref(), &rt_symbol)
-                            .unwrap_or_else(|e| tcx.dcx().fatal(e));
-                        files.push((&image_path, bytes));
-                    }
-                    for (p, b) in files {
-                        // A file left by `-Csave-temps` may still be a hard link into the
-                        // incremental cache (a reused image's); writing through it would change
-                        // the cached copy.
-                        let _ = std::fs::remove_file(p);
-                        if let Err(e) = std::fs::write(p, b) {
-                            tcx.dcx().fatal(format!("writing {}: {e}", p.display()));
-                        }
-                    }
-                    ImageSave::Fresh(side_path)
-                }
-                // The previous session's object, as cg_ssa reuses a CGU's
-                // (`execute_copy_from_cache_work_item`).
-                partition::ImageSrc::Reused(wp) => {
-                    let incr = tcx.incr_comp_session.expect("a reused image without an incremental session");
-                    let from = wp.saved_files.get("o").map(|f| rustc_incremental::in_incr_comp_dir_sess(incr, f));
-                    if let Some(from) = &from {
-                        let _ = std::fs::remove_file(&image_path);
-                        if std::fs::hard_link(from, &image_path).is_err()
-                            && let Err(e) = std::fs::copy(from, &image_path)
-                        {
-                            tcx.dcx().fatal(format!("copying {} from the incremental cache: {e}", from.display()));
-                        }
-                    }
-                    ImageSave::Reused(wp.clone(), from)
-                }
-            };
-            let path = img.has_object().then_some(image_path);
-            images.push(OngoingImage { cgu: img.cgu_name.to_string(), name: image_name, path, save });
-        }
-        drop(write_t);
+        let images = write_images(tcx, results);
         let modules = images.iter().filter(|i| i.path.is_some()).map(|i| i.name.clone()).collect();
         let _ = self.link_info.set(link::LinkInfo { images: modules, macho, register: symbols::rt_symbol(tcx, objfile::REGISTER_SYMBOL) });
         dump_lean::dump(tcx, &self.switches, results);
@@ -478,6 +425,68 @@ fn unsupported_features(sess: &Session) -> Option<String> {
         return Some("disabling the `sse2` target feature (soft-float)".to_owned());
     }
     None
+}
+
+/// Step 5 (design/backend.md#pipeline): writes the image objects, one per CGU with VM
+/// functions, or places the previous session's.
+fn write_images(tcx: TyCtxt<'_>, results: &partition::Results) -> Vec<OngoingImage> {
+    let _t = tcx.prof.generic_activity("ryo_write_image");
+    let fmt = object_format(tcx.sess);
+    let mut images = Vec::with_capacity(results.images.len());
+    for img in &results.images {
+        // Side data alone is only for the incremental cache.
+        if !img.has_object() && tcx.sess.opts.incremental.is_none() {
+            continue;
+        }
+        let name = format!("{}.ryo_image", img.cgu_name);
+        let image_path = tcx.output_filenames(()).temp_path_for_cgu(OutputType::Object, &name);
+        let save = match &img.image {
+            partition::ImageSrc::Fresh { image, side } => write_fresh_image(tcx, &*fmt, img, image.as_ref(), side, &image_path),
+            partition::ImageSrc::Reused(wp) => place_reused_image(tcx, wp, &image_path),
+        };
+        let path = img.has_object().then_some(image_path);
+        images.push(OngoingImage { cgu: img.cgu_name.to_string(), name, path, save });
+    }
+    images
+}
+
+/// Writes a CGU's image object (if it has one) and its side data.
+fn write_fresh_image(
+    tcx: TyCtxt<'_>,
+    fmt: &dyn objfile::ObjectFormat,
+    img: &partition::CguImage,
+    image: Option<&ryo_bytecode::image::ImageObject>,
+    side: &[u8],
+    image_path: &std::path::Path,
+) -> ImageSave {
+    // A file left by `-Csave-temps` may still be a hard link into the incremental cache (a
+    // reused image's); writing through it would change the cached copy.
+    let write = |p: &std::path::Path, bytes: &[u8]| {
+        let _ = std::fs::remove_file(p);
+        link::write_or_fatal(tcx.sess, p, bytes);
+    };
+    let side_path = image_path.with_extension("ryo");
+    write(&side_path, side);
+    if let Some(image) = image {
+        let scid = symbols::local_stable_crate_id(tcx);
+        let cgu_hash = ryo_bytecode::image::cgu_hash(img.cgu_name.as_str().as_bytes());
+        let bytes = objfile::write_image(fmt, image, scid, cgu_hash, img.main_symbol.as_deref(), &|name: &str| symbols::rt_symbol(tcx, name))
+            .unwrap_or_else(|e| tcx.dcx().fatal(e));
+        write(image_path, &bytes);
+    }
+    ImageSave::Fresh(side_path)
+}
+
+/// Places the previous session's image object, as cg_ssa reuses a CGU's
+/// (`execute_copy_from_cache_work_item`).
+fn place_reused_image(tcx: TyCtxt<'_>, wp: &rustc_middle::dep_graph::WorkProduct, image_path: &std::path::Path) -> ImageSave {
+    let incr = tcx.incr_comp_session.expect("a reused image without an incremental session");
+    let from = wp.saved_files.get("o").map(|f| rustc_incremental::in_incr_comp_dir_sess(incr, f));
+    if let Some(from) = &from {
+        let _ = std::fs::remove_file(image_path);
+        link::link_or_copy(tcx.sess, from, image_path);
+    }
+    ImageSave::Reused(wp.clone(), from)
 }
 
 /// A `CompiledModule` for an object file the backend wrote itself.

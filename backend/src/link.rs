@@ -73,7 +73,7 @@ pub fn link(
             let bytes = objfile::write_registry(&*fmt, &info.register, import, hidden).unwrap_or_else(|e| sess.dcx().fatal(e));
             let name = format!("{}.ryo_registry.{}", crate_info.local_crate_name, crate_type);
             let path = outputs.temp_path_for_cgu(OutputType::Object, &name);
-            fs::write(&path, bytes).unwrap_or_else(|e| sess.dcx().fatal(format!("writing {}: {e}", path.display())));
+            write_or_fatal(sess, &path, &bytes);
             // Mach-O has no constructor priorities: ld64 and lld lay out `__mod_init_func` in
             // input order and dyld runs it in that order, so the registry object goes first,
             // ahead of the crate's own objects and every rlib (design/platforms.md). Objects ahead of
@@ -165,14 +165,13 @@ fn register_is_imported(crate_info: &CrateInfo, crate_type: CrateType) -> bool {
 fn save_metadata(sess: &Session, metadata: &EncodedMetadata, dir: &Path) -> (PathBuf, Option<PathBuf>) {
     let full = dir.join("metadata.rmeta");
     let stub = dir.join("metadata.stub");
-    let write = |p: &Path, data: &[u8]| fs::write(p, data).unwrap_or_else(|e| sess.dcx().fatal(format!("writing {}: {e}", p.display())));
     match metadata.path() {
         Some(p) => {
             fs::copy(p, &full).unwrap_or_else(|e| sess.dcx().fatal(format!("copying {}: {e}", p.display())));
         }
-        None => write(&full, metadata.full()),
+        None => write_or_fatal(sess, &full, metadata.full()),
     }
-    write(&stub, metadata.stub_or_full());
+    write_or_fatal(sess, &stub, metadata.stub_or_full());
     (full, Some(stub))
 }
 
@@ -182,9 +181,7 @@ fn hardlinked(sess: &Session, modules: &CompiledModules, dir: &Path) -> Compiled
     let link = |p: &Option<PathBuf>| -> Option<PathBuf> {
         let p = p.as_ref()?;
         let to = dir.join(p.file_name()?);
-        if fs::hard_link(p, &to).is_err() {
-            fs::copy(p, &to).unwrap_or_else(|e| sess.dcx().fatal(format!("copying {}: {e}", p.display())));
-        }
+        link_or_copy(sess, p, &to);
         Some(to)
     };
     let module = |m: &CompiledModule| CompiledModule {
@@ -199,4 +196,16 @@ fn hardlinked(sess: &Session, modules: &CompiledModules, dir: &Path) -> Compiled
         links_from_incr_cache: m.links_from_incr_cache.clone(),
     };
     CompiledModules { modules: modules.modules.iter().map(module).collect(), allocator_module: modules.allocator_module.as_ref().map(module) }
+}
+
+/// Hardlinks `from` to `to`, or copies it if hardlinking fails; fatal if both fail.
+pub(crate) fn link_or_copy(sess: &Session, from: &Path, to: &Path) {
+    if fs::hard_link(from, to).is_err() {
+        fs::copy(from, to).unwrap_or_else(|e| sess.dcx().fatal(format!("copying {}: {e}", from.display())));
+    }
+}
+
+/// Writes `bytes` to `path`; fatal on failure.
+pub(crate) fn write_or_fatal(sess: &Session, path: &Path, bytes: &[u8]) {
+    fs::write(path, bytes).unwrap_or_else(|e| sess.dcx().fatal(format!("writing {}: {e}", path.display())));
 }
