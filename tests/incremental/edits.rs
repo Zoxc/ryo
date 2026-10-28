@@ -1,5 +1,5 @@
 //! The rebuild-after-edit program for `y test incremental`: built with `-Cincremental` once
-//! per revision `--cfg rev1` .. `--cfg rev10` in order, in one incremental directory, each
+//! per revision `--cfg rev1` .. `--cfg rev11` in order, in one incremental directory, each
 //! revision an edit of the previous one (see each `cfg`). Every build's output must equal
 //! plain rustc's for that revision, and its executable a clean incremental build's.
 //!
@@ -34,11 +34,11 @@
 
 mod a {
     // rev2: one function body changes.
-    #[cfg(not(any(rev2, rev3, rev4, rev5, rev6, rev7, rev8, rev9, rev10)))]
+    #[cfg(not(any(rev2, rev3, rev4, rev5, rev6, rev7, rev8, rev9, rev10, rev11)))]
     pub fn body(x: u64) -> u64 {
         x * 3 + 1
     }
-    #[cfg(any(rev2, rev3, rev4, rev5, rev6, rev7, rev8, rev9, rev10))]
+    #[cfg(any(rev2, rev3, rev4, rev5, rev6, rev7, rev8, rev9, rev10, rev11))]
     pub fn body(x: u64) -> u64 {
         x * 5 + 2
     }
@@ -72,13 +72,13 @@ mod a {
     }
 
     // rev7 changes the constant and the static VM code reads.
-    #[cfg(not(any(rev7, rev8, rev9, rev10)))]
+    #[cfg(not(any(rev7, rev8, rev9, rev10, rev11)))]
     pub const SCALE: u64 = 7;
-    #[cfg(any(rev7, rev8, rev9, rev10))]
+    #[cfg(any(rev7, rev8, rev9, rev10, rev11))]
     pub const SCALE: u64 = 11;
-    #[cfg(not(any(rev7, rev8, rev9, rev10)))]
+    #[cfg(not(any(rev7, rev8, rev9, rev10, rev11)))]
     pub static TABLE: [u64; 3] = [1, 2, 3];
-    #[cfg(any(rev7, rev8, rev9, rev10))]
+    #[cfg(any(rev7, rev8, rev9, rev10, rev11))]
     pub static TABLE: [u64; 3] = [4, 5, 6];
 
     // rev8 makes it `#[inline]`, rev9 takes that away.
@@ -109,9 +109,9 @@ mod a {
 
 // Native code (inline assembly) only: `g` is global because `m` calls it from another
 // codegen unit. rev10 makes VM code (`b::run`) call it too, which changes no native codegen
-// unit, only the image's LTO roots: under `-Clto=fat` a stale export list (one loaded from the
-// previous session) lets LTO internalize `g` and the image's reference fails to link.
-mod n {
+// unit. rev11 adds an unused item on the next line, ahead of `main`: it only shifts `main`'s
+// `DefIndex` (no line moves), so every image must be reused.
+mod n { #[cfg(rev11)] #[allow(dead_code)] pub fn unused() {}
     #[inline(never)]
     pub fn g(mut x: u64) -> u64 {
         unsafe { core::arch::asm!("add {0}, 7", inout(reg) x) };
@@ -140,17 +140,17 @@ mod b {
             r += moved(x);
         }
         // rev5: the first call from `b` into `a::shared`.
-        #[cfg(any(rev5, rev6, rev7, rev8, rev9, rev10))]
+        #[cfg(any(rev5, rev6, rev7, rev8, rev9, rev10, rev11))]
         {
             r += crate::a::shared(x);
         }
         r += crate::a::flip_inline(x);
-        #[cfg(any(rev9, rev10))]
+        #[cfg(any(rev9, rev10, rev11))]
         {
             r += crate::a::generic(&[x as u32, 3]);
         }
         // rev10: VM code calls `n::g`, which so far only native code called.
-        #[cfg(rev10)]
+        #[cfg(any(rev10, rev11))]
         {
             r += crate::n::g(x);
         }

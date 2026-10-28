@@ -187,11 +187,7 @@ pub fn run(target: &str) -> Result<(), String> {
         let res = (|| {
             let (reference, _) = link.build(&cmd("rustc"), program, &out.join(program.name).join("rustc"), &[])?;
             let mut unwind = 0;
-            let mut builds = vec![("ryo", &[][..])];
-            // `-Clto` on the last crate, as cargo passes it (no Rust dylibs).
-            if !program.has_dylib() {
-                builds.push(("ryo-lto", &["-Clto=fat"][..]));
-            }
+            let builds = [("ryo", &[][..])];
             for (name, final_flags) in builds {
                 let dir = out.join(program.name).join(name);
                 let (ryo, vm_fns) = link.build(&cmd(&rustc_ryo), program, &dir, final_flags)?;

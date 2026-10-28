@@ -7,7 +7,6 @@ use std::path::{Path, PathBuf};
 use rustc_codegen_ssa::back::archive::{AddArchiveKind, ArArchiveBuilderBuilder, ArchiveBuilderBuilder, ArchiveEntryKind};
 use rustc_codegen_ssa::traits::CodegenBackend;
 use rustc_codegen_ssa::{CompiledModule, CompiledModules, CrateInfo};
-use rustc_data_structures::fx::FxHashMap;
 use rustc_metadata::EncodedMetadata;
 use rustc_middle::middle::dependency_format::Linkage;
 use rustc_session::Session;
@@ -20,18 +19,8 @@ use crate::objfile;
 pub struct LinkInfo {
     /// The `CompiledModule` names of the local crate's images (one per CGU with VM code).
     pub images: Vec<String>,
-    /// Per crate type, the image symbols that only LTO needs (`partition::linked_roots`).
-    pub linked_roots: Vec<(CrateType, LinkedRoots)>,
     /// The target writes Mach-O objects.
     pub macho: bool,
-}
-
-/// Image symbols that only LTO needs, by the crate type list they appear in.
-pub struct LinkedRoots {
-    /// Entries of the crate type's `linked_symbols`.
-    pub linked: Vec<String>,
-    /// Entries of its `exported_symbols`.
-    pub exported: Vec<String>,
 }
 
 pub fn link(
@@ -91,9 +80,9 @@ pub fn link(
             }
             drop(registry_t);
         }
-        // In an rlib, the image must not be a Rust object: `-Clto` downstream reads bitcode
-        // from every Rust object of an rlib and leaves them out of the link, which would drop
-        // the image. So it is added afterwards, as a plain member.
+        // In an rlib, the image is added afterwards, as a plain member (not a Rust object,
+        // which downstream crates would read as rustc's own codegen). `link_binary` writes the
+        // rlib only with `link` output to a file, which `partition::check_outputs` requires.
         let images: Vec<CompiledModule> = if crate_type == CrateType::Rlib {
             let (images, rest) = std::mem::take(&mut these.modules).into_iter().partition(|m| info.images.contains(&m.name));
             these.modules = rest;
@@ -103,7 +92,6 @@ pub fn link(
         };
         let mut single = crate_info.clone();
         single.crate_types = vec![crate_type];
-        remove_roots(&mut single, info, crate_type);
         drop(prep_t);
         llvm.link(sess, these, single, this_metadata, outputs);
         let objects: Vec<PathBuf> = images.into_iter().filter_map(|m| m.object).collect();
@@ -122,40 +110,6 @@ pub fn link(
     }
     if n > 1 && !sess.opts.cg.save_temps {
         let _ = fs::remove_dir_all(&scratch);
-    }
-}
-
-/// Takes the image symbols that only LTO needs (`partition::linked_roots`) out of the
-/// output's export list (a Rust dylib's includes the `Rust` level, and the roots include other
-/// crates' and foreign symbols, which a version script or `.def` file can't export) and out of
-/// `symbols.o` (rustc already leaves that empty under `-Clto`, `linker.rs:1760-1768`). One
-/// occurrence per crate that listed it, so the names rustc lists itself stay.
-fn remove_roots(crate_info: &mut CrateInfo, info: &LinkInfo, crate_type: CrateType) {
-    let Some((_, roots)) = info.linked_roots.iter().find(|(t, _)| *t == crate_type) else {
-        return;
-    };
-    // Names are undecorated on both sides (`partition::linked_roots`).
-    fn counts(roots: &[String]) -> FxHashMap<&str, usize> {
-        let mut count = FxHashMap::default();
-        for r in roots {
-            *count.entry(r.as_str()).or_default() += 1;
-        }
-        count
-    }
-    let take = |count: &mut FxHashMap<&str, usize>, name: &str| match count.get_mut(name) {
-        Some(n) if *n > 0 => {
-            *n -= 1;
-            true
-        }
-        _ => false,
-    };
-    if let Some(linked) = crate_info.linked_symbols.get_mut(&crate_type) {
-        let mut count = counts(&roots.linked);
-        linked.retain(|(name, _)| !take(&mut count, name));
-    }
-    if let Some(exported) = crate_info.exported_symbols.get_mut(&crate_type) {
-        let mut count = counts(&roots.exported);
-        exported.retain(|e| !take(&mut count, &e.name));
     }
 }
 

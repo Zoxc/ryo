@@ -98,7 +98,7 @@ so a MIR change in a toolchain bump is a compile error. The tables below follow 
   order depends on niches, not only on sizes and alignments (`(u32, u8, bool, u8)` and
   `(u32, u8, u8, u8)` differ), and changes between releases; the backend takes the
   offsets, size and alignment from `tcx.layout_of`, and `check_arg_block` validates them. The
-  wrappers reject `-Zrandomize-layout`, so tuple layouts agree between crates. ZST
+  backend rejects `-Zrandomize-layout`, so tuple layouts agree between crates. ZST
   arguments take no space.
 - Frames grow downward, and slots are signed offsets from `fp` ([vm.md](vm.md#frames)).
 - **Other locals**: each gets a fixed offset below `fp`, aligned to its layout. ZSTs take no

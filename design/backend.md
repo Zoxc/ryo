@@ -71,8 +71,9 @@ and `codegen_crate` reads them.
      that call, until the set of VM functions doesn't change. A function that fails in one
      CGU is native in all of them.
 
-     Never VM: everything in a `proc-macro` crate (it keeps VM code out of rustc's own process,
-     and proc macros gain nothing from it), everything in a panic runtime crate
+     Never VM: everything in a `proc-macro` crate (it keeps the proc macro's own code out of
+     the VM, and proc macros gain nothing from it; its rlib dependencies, `syn` say, do have
+     images, and the proc macro gets a registry object, so VM code does run in rustc), everything in a panic runtime crate
      (`#![panic_runtime]`: `panic_unwind`, `panic_abort`),
      `ryo_rt`'s own instances, and everything when
      `RYO_NO_VM` is set ([Debugging switches](#debugging-switches)).
@@ -93,9 +94,7 @@ and `codegen_crate` reads them.
    `island` instruction whose `isl` operand is an *island* relocation (template + generic
    args). The merge pass deduplicates islands (same template + args → one instance), assigns
    function indices and symbols, rewrites each function's relocation targets to them,
-   and adds the function to the image writer under its own symbol. The handlers and `ryo_probe_stack` the code
-   calls, the JIT records' `ryo_jit_trip_entry` and `ryo_jit_trip_osr`, and `rust_eh_personality` on ELF and Mach-O, are added to the image's LTO roots
-   ([Query overrides](#query-overrides-provide)).
+   and adds the function to the image writer under its own symbol.
 4. **Build the native CGUs**, one per rustc CGU, with its name (kept even if empty). Each is
    a copy of the original CGU, with its VM functions removed and the stub instances its
    image needs (islands, and `c_main` in the CGU of the entry fn) added. Our override returns
@@ -173,10 +172,10 @@ and `codegen_crate` reads them.
    (`rustc_codegen_ssa/src/lib.rs:124-134`), so the object list of final links includes it.
    An rlib gets it as a plain (non-Rust) archive member instead: `link` takes the module out
    before `link_rlib` and appends the object to the finished rlib afterwards (with
-   `ArArchiveBuilder`). `link_rlib` would list it among the rlib's Rust objects
-   (`rmeta-link`), and a downstream `-Clto` build reads bitcode from each of those and leaves
-   them out of the link (`rustc_codegen_llvm/src/back/lto.rs:94-120`,
-   `rustc_codegen_ssa/src/back/link.rs:3756`), which would fail and drop the image.
+   `ArArchiveBuilder`), so rustc doesn't list it among the rlib's Rust objects
+   (`rmeta-link`), which it treats as its own codegen's. `link_rlib` writes the rlib only
+   with `link` output to a file, which a crate with VM code therefore needs
+   ([Unsupported options](#unsupported-options)).
    The image defines one global symbol, `__ryo_image_<StableCrateId>_<CGU hash>` (both as
    16 hex digits; the CGU hash is `image::cgu_hash`, FNV-1a of rustc's CGU name, also in the
    header), hidden: nothing references it, it names the header in tools and dumps. On ELF the
@@ -267,8 +266,9 @@ depends on changed (`partition.rs`, `image_part`).
     for an image `WeakODR` + `Hidden`, so no CGU depends on another's choices.
 - **The image's dep node** is a `CompileCodegenUnit` node named
   `<cgu>.ryo.<fingerprint>`, the fingerprint covering the CGU name, its candidates' symbols,
-  linkage and visibility, the entry fn, the `asm::Mode`, the crate's `StableCrateId`,
-  `RYO_ASM_ALIGN`, the backend dylib's size and modification time, and `ryo_rt`'s crate
+  linkage and visibility, the entry fn's symbol (only in the entry's own CGU's key), the
+  `asm::Mode`, the crate's `StableCrateId`, `RYO_ASM_ALIGN`, a hash of the backend dylib's
+  contents, and `ryo_rt`'s crate
   hash (an image that calls no island reads nothing else of `ryo_rt`). A change to any of
   these gives a node the previous session didn't have. The lowering runs inside
   `dep_graph.with_task(node, ..)`, so the queries it reads (MIR, layouts, ABIs, symbol
@@ -277,27 +277,28 @@ depends on changed (`partition.rs`, `image_part`).
 - **Reuse.** If the previous session has the work product `<cgu>.ryo` (files `o`, the image
   object, and `ryo`, its side data) and `try_mark_green` marks the node green, the image
   isn't lowered: the side data (`CguVm`: the VM functions and which have global symbols, the
-  islands they call, the items they refer to, the LTO roots, the `__ryo_main` target) is
+  islands they call, the items they refer to, the `__ryo_main` target) is
   decoded (`persist.rs`, `Instance`s and `MonoItem`s by `DefPathHash`), the native CGUs and
   the exported-symbols queries are built from it as from a fresh image, and `codegen_crate`
   hard-links the cached object into place. A reused image is byte-identical to a fresh one.
   A CGU whose candidates all stay native has a product too, with side data only (no `o`):
-  reusing it saves lowering them again only to find that out.
+  reusing it saves lowering them again only to find that out. The side data's first byte
+  says whether the CGU has an object; a product that should have one but lacks it (rustc
+  only warns when a file fails to copy into the cache) isn't reused. The `incremental`
+  check's revision 11 adds an unused item ahead of `main` and expects every image reused.
 - **Saving.** cg_ssa saves only its own modules' products, inside cg_llvm's join, so our
   `join_codegen` saves each fresh image's object and side data with
   `copy_cgu_workproduct_to_incr_comp_cache_dir`, and re-inserts each reused one's previous
   `WorkProduct`, before rustc writes the work product index. A fresh image's files are
   removed before they are written: under `-Csave-temps` the previous session's may still be
   hard links into the cache, which writing through would change.
-- **Exported symbols.** `exported_non_generic_symbols` and `exported_generic_symbols` are
-  `cache_on_disk`, and their overrides add data (the images' LTO roots and exports, the items
-  made hidden for them) that the dep graph sees only through the native CGUs. Those can stay
-  the same while the roots change: VM code that starts calling a native function another CGU
-  already exposes. A green node would then load the previous session's list, and `-Clto=fat`
-  would internalize and drop the new root. So with VM code both overrides read the
-  forever-red dep node (as rustc's `create_def` does) and rerun every session; they are
-  cheap, and an unchanged result keeps their dependents green. The `incremental` check's
-  revision 10 is this case, under `O2-fat`.
+- **Exported symbols.** `exported_generic_symbols` is `cache_on_disk`, and its override
+  adds data (the images' VM exports, the items made hidden for them) that the dep graph
+  sees only through the native CGUs, which can stay the same while that data changes (a new
+  generic instance that is VM code adds no native item). A green node would then load the
+  previous session's list into the metadata. So with VM code the override reads the
+  forever-red dep node (as rustc's `create_def` does) and reruns every session; it is cheap,
+  and an unchanged result keeps its dependents green.
 - Not reused: with `RYO_DUMP`, `RYO_DUMP_CODE` or `RYO_DUMP_LEAN` (their output covers the
   images built), and under `-Zdisable-incr-comp-backend-caching`. `RYO_STATS` prints
   `ryo: <n> of <m> images reused`; the `incremental` check rebuilds each revision unchanged
@@ -318,7 +319,7 @@ in the benches and `tests/vm_cgu.rs` by 200 to 1500 bytes. The images' other per
   original DefIds of VM functions: `is_codegened_item` is built from it
   (`rustc_codegen_ssa/src/base.rs`), and cg_llvm uses that to pick hidden visibility for
   declarations (`callee.rs`). The CGU's name is what `codegen_unit(name)` looks up.
-- `exported_non_generic_symbols` / `exported_generic_symbols`:
+- `exported_generic_symbols`:
   - VM functions aren't in the native CGU, so rustc's provider doesn't list the generic
     ones. The `exported_generic_symbols` override adds the VM generic `Item` instances and
     drop glue (and async drop glue) shims with `External` linkage whose global symbols the
@@ -326,39 +327,14 @@ in the benches and `tests/vm_cgu.rs` by 200 to 1500 bytes. The images' other per
     (`exported_generic_symbols_provider_local`, `symbol_export.rs:398-484`), with their
     visibility. Only symbols the image actually defines are listed, since a listed instance
     without a definition leaves downstream crates with an undefined reference.
-  - Every symbol the image refers to (VM functions of other crates, callees, statics, islands, the targets of
-    pointers in constants, upstream and foreign ones included, and `ryo_rt`'s handlers,
-    `ryo_probe_stack`, `ryo_jit_trip_*` and `rust_eh_personality`, which the machine code, the
-    JIT records and the unwind information reference) is added to the local
-    `exported_non_generic_symbols` as `NoDefId`, `used`, at the `Rust` level, so `-Clto`
-    doesn't internalize it: LTO keeps every `used` symbol whatever its threshold
-    (`rustc_codegen_ssa/src/back/lto.rs:107`), and the image is an object LTO doesn't see.
-    They are in the crate's metadata, so a downstream `-Clto` build keeps them too (also for
-    a crate that is both an rlib and a dylib). Not in metadata-only builds, where rustc's
-    provider is empty too (`symbol_export.rs:188`) and the partitioning doesn't run.
-    These entries must not be exported: a Rust dylib's export list includes the `Rust`
-    level (`linker.rs:1700-1716`), and a version script or `.def` file can't export another
-    crate's or a foreign symbol. `used` symbols also go into `symbols.o` (`linker.rs:1780`)
-    when LTO is off (rustc empties it under `-Clto`, `linker.rs:1760-1768`), where a
-    plain-name reference to a static in a DLL wouldn't resolve on PE. So `codegen_crate`
-    collects, per crate type, these entries of every statically linked crate (recognized
-    as `NoDefId` + `used` + `Rust`, which rustc never produces), and `link` removes one
-    occurrence of each from `linked_symbols`, and from `CrateInfo::exported_symbols` only
-    where rustc put them there: crate types whose export threshold the `Rust` level is below
-    (Rust dylibs), not proc macros, not from `compiler_builtins`, and not with a target
-    `override_export_symbols` (mirroring `linker.rs:1661-1716`). Otherwise a cdylib would
-    lose rustc's own export of a `#[no_mangle]` function the image calls. So the names rustc
-    lists itself stay; names are compared undecorated on both sides. The image objects
-    reference all of them anyway. `y test` (check `exports`) compares the dynamic exports
-    of a cdylib and of an executable with `-Zexport-executable-symbols` with plain rustc's,
-    with and without `-Clto`.
-    `-Clto` of a dylib itself (`-Zdylib-lto`) is rejected.
-  - The entry wrapper `c_main` (`External`, default visibility) isn't listed.
+  - The entry wrapper `c_main` (`External`, default visibility) isn't listed: only a bin
+    has it, rustc doesn't mix `bin` with other crate types, and a bin exports no generics.
+  - Nothing else is needed for the images' references to native symbols: no LTO runs
+    ([Unsupported options](#unsupported-options)), so rustc's partition decides what is
+    internal, and step 4 exposes what the images need.
   - Items made `External` + `Hidden` only for the image (see Linkage) are filtered out of
     `exported_generic_symbols`, whatever `need_visibility` says. The default provider exports every `External` CGU item, and
     skips hidden ones only when `need_visibility` is set (`symbol_export.rs:327, 375-387`).
-  - `y test` builds the corpus with `-Clto=fat` and `-Clto=thin -Copt-level=3` on the last
-    crate (as cargo passes it), and `y test --cross` links it with `-Clto=fat` on PE.
 - `upstream_monomorphizations` → rustc's, without the instances of other crates' generics
   that `ryo_rt` and `ryo_bytecode` export. rustc shares `#[inline(never)]` instances even
   without share-generics (`symbol_export.rs:389-398`), so a program would link to the
@@ -372,21 +348,54 @@ in the benches and `tests/vm_cgu.rs` by 200 to 1500 bytes. The images' other per
 
 ## Unsupported options
 
-Rejected with an error, rather than producing output that doesn't work:
+Rejected with an error, rather than producing output that doesn't work or silently lacks
+something in VM code. The backend's `init` checks the session options, for every crate:
+most crates have VM code, and one without (a proc macro, `RYO_NO_VM`) may still link
+upstream images.
 
-- `-Zrandomize-layout` (by the wrappers, [build.md](build.md)): island argument blocks need
-  tuple layouts that agree between crates.
-- `-Clto` of a dylib (`-Zdylib-lto`): not tested with the image.
-- `--emit=obj`, `llvm-bc` and `thin-link-bitcode` for a crate with VM code: these outputs
-  are cg_llvm's modules, copied to the outputs inside its `join`, without the image objects,
-  so the VM functions would be undefined. Output for reading (`asm`, `llvm-ir`, `mir`) is
-  allowed and covers the native code only.
+- LTO in any form: `-Clto` (`fat`, `thin`, `yes`, bare), `-Clinker-plugin-lto`,
+  `-Zdylib-lto`, `-Zthinlto=yes`, and targets that require LTO. The images are objects LTO
+  doesn't see, so it would internalize or drop symbols only they refer to (a native item
+  exposed as hidden for an image, a handler); linker-plugin LTO also makes the Rust
+  objects of an rlib bitcode, whose symbols the rebuilt rlib's index would lack. rustc's
+  implicit crate-local ThinLTO (`opt-level` >= 1 with several codegen units) internalizes
+  the same way, so the backend reports `thin_lto_supported() == false`, which makes
+  `Session::lto` return `Lto::No` for it: optimized builds work, without cross-CGU
+  inlining of their native code.
+- Sanitizers (`-Zsanitizer=…`, the whole set: address, cfi, dataflow, hwaddress, kcfi,
+  kernel-address, kernel-hwaddress, leak, memory, memtag, safestack, shadow-call-stack,
+  thread, realtime):
+  VM code isn't instrumented, so they would miss its accesses (ASan, TSan, HWASan), report
+  false positives (MSan: VM stores don't clear shadow memory), or trap on calls into it
+  (CFI and KCFI type checks VM functions don't carry).
+- Control-flow and Spectre hardening: `-Zcf-protection` (no `endbr64` at VM entries, and
+  images without the IBT/SHSTK property note silently turn CET off for the whole binary),
+  `-Ccontrol-flow-guard` and `-Zehcont-guard` (VM functions and landing pads aren't in the
+  tables), `-Zstack-protector`, `-Zretpoline`, `-Zretpoline-external-thunk`,
+  `-Zfunction-return` and `-Zindirect-branch-cs-prefix`. `-Cno-redzone` is supported: VM
+  frames never use a red zone ([platforms.md](platforms.md)).
+- Instrumentation and profiling, which VM functions would silently lack:
+  `-Cinstrument-coverage` (they would vanish from the report), `-Cprofile-generate`,
+  `-Zinstrument-xray`, `-Zinstrument-mcount`, `-Zpatchable-function-entry`. A function
+  with `#[patchable_function_entry]` stays native.
+- `-Zrandomize-layout`: island argument blocks need tuple layouts that agree between crates.
+- Targets other than x86_64 with 64-bit pointers (`aarch64`, `x32`), and Mach-O targets
+  other than macOS: the images are x86-64 machine code, in ELF, PE or macOS Mach-O.
+- For a crate with VM code: `--emit=obj`, `llvm-bc` and `thin-link-bitcode` (cg_llvm's
+  modules, copied to the outputs inside its `join`, without the image objects, so the VM
+  functions would be undefined); any `--emit` without `link` (an rlib is written only with
+  `link`, and the images are appended to it afterwards: without it they would go to a
+  missing or stale rlib, or be left behind); and `-o -` (nothing to append the images to).
+  Output for reading (`asm`, `llvm-ir`, `mir`) alongside `link` is allowed and covers the
+  native code only. Checked after the partitioning, which knows whether there is VM code.
 - `-Zno-link` and `-Zlink-only`: the `.rlink` path links without `codegen_crate`, so without
-  the registry object and the removal of the LTO roots from the export lists.
-- `-Zstaticlib-rename-internal-symbols`: it renames symbols in the Rust objects of the
-  staticlib, but not in the upstream images (plain archive members) that refer to them.
+  the registry object.
+- `-Zstaticlib-rename-internal-symbols` and `-Zstaticlib-hide-internal-symbols`: they rename
+  or hide symbols in the Rust objects of the staticlib, but not in the upstream images
+  (plain archive members), which then refer to old names or leak their symbols.
 
-`y test`'s `reject-unsupported` check runs each.
+`y test`'s `reject-unsupported` check runs each (`-Zrandomize-layout` also through an
+`@argfile`).
 
 ## Debugging switches
 

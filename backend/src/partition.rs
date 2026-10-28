@@ -18,16 +18,13 @@ use ryo_bytecode::asm::{self, Ref};
 use ryo_bytecode::full::{Const, Data, Func, Site, Sym};
 use ryo_bytecode::image::{AllocFixup, AllocReloc, AllocTarget, FuncSymbol, FunctionDef, ImageObject, ImageWriter, SYM_INDIRECT, SymVisibility};
 
-use crate::objfile;
-
 use rustc_middle::dep_graph::{WorkProduct, WorkProductId};
 
 use super::dump;
-use super::link::LinkedRoots;
 use super::lower::{self, CodeReloc, LowerCx, LoweredFn, NeedsNative};
 use super::persist;
 use super::switches::Switches;
-use super::symbols::{self, local_stable_crate_id, rt_symbol, static_symbol};
+use super::symbols::{self, local_stable_crate_id, static_symbol};
 
 /// The `ryo_rt` items the backend instantiates or checks (design/stubs.md, Lookup).
 #[derive(Clone, Copy)]
@@ -98,8 +95,6 @@ pub struct Results {
     pub images: Vec<CguImage>,
     /// With `RYO_DUMP_LEAN`: the data of the certificate file (`dump_lean::write_certs`).
     pub lean: Option<LeanCerts>,
-    /// For `exported_non_generic_symbols`: the Rust symbols the images refer to ([`Roots`]).
-    lto_roots: Vec<(String, SymbolExportKind)>,
     /// The interned data, lifetime-erased ([`Results::exports`]).
     exports: Exports<'static>,
 }
@@ -156,10 +151,10 @@ fn results_untracked(tcx: TyCtxt<'_>) -> Option<&'static Results> {
 }
 
 impl Results {
-    fn new<'tcx>(images: Vec<CguImage>, lean: Option<LeanCerts>, lto_roots: Vec<(String, SymbolExportKind)>, exports: Exports<'tcx>) -> Self {
+    fn new<'tcx>(images: Vec<CguImage>, lean: Option<LeanCerts>, exports: Exports<'tcx>) -> Self {
         // SAFETY: only the lifetime parameter changes; `exports` restores it (see there).
         let exports = unsafe { std::mem::transmute::<Exports<'tcx>, Exports<'static>>(exports) };
-        Results { images, lean, lto_roots, exports }
+        Results { images, lean, exports }
     }
 
     fn exports<'tcx>(&self, _tcx: TyCtxt<'tcx>) -> &Exports<'tcx> {
@@ -182,12 +177,6 @@ pub fn collect_and_partition_mono_items<'tcx>(tcx: TyCtxt<'tcx>, original: super
     if !vm_enabled(tcx, &switches) {
         return original(tcx, ());
     }
-    // rustc only allows LTO of a dylib with `-Zdylib-lto`, which isn't tested with the image.
-    if matches!(tcx.sess.lto(), rustc_session::config::Lto::Fat | rustc_session::config::Lto::Thin)
-        && tcx.crate_types().iter().any(|t| matches!(t, CrateType::Dylib | CrateType::Sdylib))
-    {
-        tcx.dcx().fatal("the ryo backend doesn't support `-Clto` for dylibs");
-    }
     let partitions = original(tcx, ());
     let Some(rt) = rt_items(tcx) else { tcx.dcx().fatal("the ryo backend needs `ryo_rt` (`--extern force:ryo_rt`); run it through `rustc-ryo`") };
 
@@ -195,17 +184,8 @@ pub fn collect_and_partition_mono_items<'tcx>(tcx: TyCtxt<'tcx>, original: super
         let _t = tcx.prof.generic_activity("ryo_partition");
         Partitioner::new(tcx, rt, &switches, partitions.codegen_units).run()
     };
-    // These outputs are cg_llvm's native modules only: an object or bitcode file without the
-    // images is missing the VM functions, so it would fail to link (or leave the image objects
-    // behind as temporaries). Output for reading (`asm`, `llvm-ir`, `mir`) is allowed.
-    if results.images.iter().any(CguImage::has_object)
-        && let Some(t) =
-            [OutputType::Object, OutputType::Bitcode, OutputType::ThinLinkBitcode].into_iter().find(|t| tcx.sess.opts.output_types.contains_key(t))
-    {
-        tcx.dcx().fatal(format!(
-            "the ryo backend doesn't support `--emit={}` for a crate with VM code: it would lack the VM functions, which are in separate image objects",
-            t.shorthand()
-        ));
+    if results.images.iter().any(CguImage::has_object) {
+        check_outputs(tcx);
     }
     if RESULTS.set(tcx, results).is_err() {
         tcx.dcx().fatal("collect_and_partition_mono_items ran twice in one process");
@@ -215,6 +195,32 @@ pub fn collect_and_partition_mono_items<'tcx>(tcx: TyCtxt<'tcx>, original: super
         codegen_units: tcx.arena.alloc_from_iter(native),
         // Keeps every original DefId, VM functions included (design/backend.md#query-overrides).
         all_mono_items: partitions.all_mono_items,
+    }
+}
+
+/// Fails for the outputs a crate with VM code can't have (design/backend.md#unsupported-options).
+/// An object or bitcode file is cg_llvm's native modules only, without the images, so it
+/// would lack the VM functions. Without `link` there is nothing to add the images to (`link`
+/// appends them to an rlib after `link_binary`, which writes it only then), so they would be
+/// left behind as temporaries, or appended to a stale rlib; output for reading (`asm`,
+/// `llvm-ir`, `mir`) is fine alongside `link`. And an output written to stdout (`-o -`) can't
+/// have the images appended.
+fn check_outputs(tcx: TyCtxt<'_>) {
+    let opts = &tcx.sess.opts;
+    let fail = |what: String| -> ! {
+        tcx.dcx().fatal(format!(
+            "the ryo backend doesn't support {what} for a crate with VM code: the VM functions are in separate image objects (design/backend.md#unsupported-options)"
+        ))
+    };
+    if let Some(t) = [OutputType::Object, OutputType::Bitcode, OutputType::ThinLinkBitcode].into_iter().find(|t| opts.output_types.contains_key(t)) {
+        fail(format!("`--emit={}`", t.shorthand()));
+    }
+    if !opts.output_types.should_link() {
+        let emits: Vec<&str> = opts.output_types.keys().map(|t| t.shorthand()).collect();
+        fail(format!("`--emit={}` without `link`", emits.join(",")));
+    }
+    if matches!(tcx.output_filenames(()).path(OutputType::Exe), rustc_session::config::OutFileName::Stdout) {
+        fail("`-o -`".to_owned());
     }
 }
 
@@ -252,14 +258,11 @@ fn asm_mode(tcx: TyCtxt<'_>, rt: RtItems, switches: &Switches) -> asm::Mode {
 }
 
 /// Whether the session asks for frame pointers, as `rustc_codegen_llvm::attributes::
-/// frame_pointer` decides: the target's default, `-Zinstrument-mcount` and
-/// `-Cforce-frame-pointers`. `NonLeaf` counts as `Always`: VM functions call handlers.
+/// frame_pointer` decides: the target's default and `-Cforce-frame-pointers`
+/// (`-Zinstrument-mcount` is rejected). `NonLeaf` counts as `Always`: VM functions call handlers.
 fn needs_frame_pointer(sess: &rustc_session::Session) -> bool {
     use rustc_target::spec::FramePointer;
     let mut fp = sess.target.frame_pointer;
-    if let rustc_session::config::InstrumentMcount::Mcount(_) = sess.opts.unstable_opts.instrument_mcount {
-        fp.ratchet(FramePointer::Always);
-    }
     fp.ratchet(sess.opts.cg.force_frame_pointers);
     fp != FramePointer::MayOmit
 }
@@ -275,47 +278,34 @@ pub(super) struct VmFn<'tcx> {
 
 /// What one CGU's image gives the native CGUs and the exported-symbols queries: its VM
 /// functions (and whether the image defines a global symbol for each), the island instances it
-/// calls, the items it refers to by symbol, its LTO roots, and the symbol `__ryo_main` points
+/// calls, the items it refers to by symbol, and the symbol `__ryo_main` points
 /// at. A function of the CGU's own items and tracked queries alone, so it is saved with the
 /// image and read back when the image is reused (design/backend.md#incremental, `persist.rs`).
 pub(super) struct CguVm<'tcx> {
     vm: Vec<(Instance<'tcx>, bool)>,
     islands: Vec<Instance<'tcx>>,
     refs: Vec<MonoItem<'tcx>>,
-    roots: Vec<(String, u8)>,
     main: Option<String>,
 }
 
-type CguVmData<'tcx> = (Vec<(Instance<'tcx>, bool)>, Vec<Instance<'tcx>>, Vec<MonoItem<'tcx>>, Vec<(String, u8)>, Option<String>);
+type CguVmData<'tcx> = (Vec<(Instance<'tcx>, bool)>, Vec<Instance<'tcx>>, Vec<MonoItem<'tcx>>, Option<String>);
 
 impl<'tcx> CguVm<'tcx> {
     fn empty() -> Self {
-        CguVm { vm: Vec::new(), islands: Vec::new(), refs: Vec::new(), roots: Vec::new(), main: None }
+        CguVm { vm: Vec::new(), islands: Vec::new(), refs: Vec::new(), main: None }
     }
 
+    /// The side data: a byte saying whether the CGU has an image object (it has VM
+    /// functions), readable before the image's dep node is green, then the encoded fields.
     fn save(&self, tcx: TyCtxt<'tcx>) -> Vec<u8> {
-        persist::encode(tcx, &(&self.vm, &self.islands, &self.refs, &self.roots, &self.main))
+        let mut out = vec![u8::from(!self.vm.is_empty())];
+        out.extend(persist::encode(tcx, &(&self.vm, &self.islands, &self.refs, &self.main)));
+        out
     }
 
     fn load(tcx: TyCtxt<'tcx>, data: &[u8]) -> Option<Self> {
-        let (vm, islands, refs, roots, main): CguVmData<'tcx> = persist::decode(tcx, data)?;
-        Some(CguVm { vm, islands, refs, roots, main })
-    }
-}
-
-fn root_kind(k: SymbolExportKind) -> u8 {
-    match k {
-        SymbolExportKind::Text => 0,
-        SymbolExportKind::Data => 1,
-        SymbolExportKind::Tls => 2,
-    }
-}
-
-fn root_kind_of(k: u8) -> SymbolExportKind {
-    match k {
-        0 => SymbolExportKind::Text,
-        1 => SymbolExportKind::Data,
-        _ => SymbolExportKind::Tls,
+        let (vm, islands, refs, main): CguVmData<'tcx> = persist::decode(tcx, data.get(1..)?)?;
+        Some(CguVm { vm, islands, refs, main })
     }
 }
 
@@ -362,11 +352,20 @@ struct ImagePart<'tcx> {
 /// The session's settings an image depends on beyond its CGU's items and the queries its
 /// lowering reads (which its dep node tracks), for the reuse fingerprint.
 fn image_settings(tcx: TyCtxt<'_>, rt: RtItems, mode: asm::Mode, switches: &Switches) -> String {
-    // The backend itself: a rebuilt backend may lower differently.
-    let backend = tcx.sess.opts.unstable_opts.codegen_backend.as_deref().and_then(|p| std::fs::metadata(p).ok()).map(|m| {
-        let t = m.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_nanos());
-        (m.len(), t)
-    });
+    // The backend itself, by a hash of its file: a rebuilt backend may lower differently,
+    // even with the same size and mtime (`cp -p`). Only read under incremental.
+    let backend = tcx
+        .dep_graph
+        .is_fully_enabled()
+        .then(|| tcx.sess.opts.unstable_opts.codegen_backend.as_deref().and_then(|p| std::fs::read(p).ok()))
+        .flatten()
+        .map(|bytes| {
+            use std::hash::Hash;
+            let mut h = rustc_data_structures::stable_hash::StableHasher::new();
+            bytes.hash(&mut h);
+            let f: rustc_data_structures::fingerprint::Fingerprint = h.finish();
+            f.to_hex()
+        });
     // `ryo_rt`'s crate hash: what its handlers expect may change without the backend
     // changing, and an image that calls no island reads nothing else of it.
     format!("{:?} {} {} {backend:?} {} {}", mode, local_stable_crate_id(tcx), switches.asm_align, env!("CARGO_PKG_VERSION"), tcx.crate_hash(rt.krate))
@@ -584,7 +583,6 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             let kept: Vec<Instance<'tcx>> = self.units.iter().flat_map(|u| u.keep_native.iter().copied()).collect();
             dump::write(tcx, "RYO_DUMP_NATIVE", path, &native_text(tcx, &fresh, &failed, &kept));
         }
-        let mut roots = Roots::default();
         let mut vm_exports: Vec<(Instance<'tcx>, Visibility)> = Vec::new();
         let mut hidden: Vec<Instance<'tcx>> = Vec::new();
         for unit in &self.units {
@@ -603,11 +601,8 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                     vm_exports.push((v, data.visibility));
                 }
             }
-            for (name, kind) in &unit.vm.roots {
-                roots.add(name, root_kind_of(*kind));
-            }
         }
-        let results = Results::new(images, lean, roots.0.into_iter().collect(), Exports { vm: vm_exports, hidden_for_image: hidden });
+        let results = Results::new(images, lean, Exports { vm: vm_exports, hidden_for_image: hidden });
         (natives, results)
     }
 
@@ -636,18 +631,13 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
     /// CGU's): a global one needs nothing more; an internal one without a global symbol (a
     /// `LocalCopy`) stays native as well, as an `Internal` item of the native CGU.
     fn native_ref(&mut self, u: usize, instance: Instance<'tcx>) {
-        let tcx = self.tcx;
         let unit = &mut self.units[u];
         let Some(&global) = unit.index.get(&instance) else { return };
         if global || !unit.keep_native.insert(instance) {
             return;
         }
-        let item = MonoItem::Fn(instance);
-        if !unit.cgu.items().contains_key(&item) {
-            let data =
-                MonoItemData { inlined: false, linkage: Linkage::Internal, visibility: Visibility::Default, size_estimate: item.size_estimate(tcx) };
-            unit.added.insert(item, data);
-        }
+        // The CGU's VM functions are its items, so it keeps this one native.
+        debug_assert!(unit.cgu.items().contains_key(&MonoItem::Fn(instance)));
         // Its own references are native now too (`walk_stub_neighbors`).
         unit.work.push(instance);
     }
@@ -827,12 +817,15 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         for island in self.units[u].vm.islands.clone() {
             all.insert(island);
             let item = MonoItem::Fn(island);
+            let elsewhere = self.global_elsewhere(u, item);
             let unit = &mut self.units[u];
             if unit.added.contains_key(&item) || unit.cgu.items().contains_key(&item) {
                 continue;
             }
-            // Upstream copies, and non-generic templates, which `ryo_rt` itself defines.
-            if island.upstream_monomorphization(tcx).is_some() || !tcx.should_codegen_locally(island) {
+            // Upstream copies, and non-generic templates, which `ryo_rt` itself defines; and a
+            // copy another CGU defines globally (perhaps exported: a hidden copy here would
+            // take it out of the exports, `hidden_for_image`).
+            if island.upstream_monomorphization(tcx).is_some() || !tcx.should_codegen_locally(island) || elsewhere {
                 continue;
             }
             let data =
@@ -963,6 +956,8 @@ fn image_part<'tcx>(
     }
     // A stable image order: by symbol name.
     cands.sort_by_cached_key(|(i, _)| tcx.symbol_name(*i).name);
+    // Only the entry's own CGU depends on it.
+    let entry = entry.filter(|e| cands.iter().any(|(i, _)| i == e));
     let build = || build_cgu(tcx, rt, mode, switches, entry, cgu, &cands);
     let incremental = tcx.dep_graph.is_fully_enabled()
         && !tcx.sess.opts.unstable_opts.disable_incr_comp_backend_caching
@@ -976,7 +971,10 @@ fn image_part<'tcx>(
     // The image's dep node: named after the CGU, its candidates with their linkage and
     // visibility, and the settings, so that a change to any of them gives a node the previous
     // session didn't have. The queries the lowering reads are the node's edges.
-    let mut key = format!("{}\n{settings}\n{entry:?}\n", cgu.name());
+    // The entry by its symbol: an `Instance`'s `Debug` shows its `DefIndex`, which an item
+    // added ahead of it changes.
+    let entry_symbol = entry.map(|e| tcx.symbol_name(e).name);
+    let mut key = format!("{}\n{settings}\n{entry_symbol:?}\n", cgu.name());
     for (i, d) in &cands {
         key.push_str(&format!("{} {:?} {:?}\n", tcx.symbol_name(*i).name, d.linkage, d.visibility));
     }
@@ -995,7 +993,10 @@ fn image_part<'tcx>(
         .and_then(|p| p.saved_files.get("ryo"))
         .zip(tcx.incr_comp_session)
         .and_then(|(f, incr)| std::fs::read(rustc_incremental::in_incr_comp_dir_sess(incr, f)).ok());
+    // A work product saved without its object (rustc only warns when a file fails to copy
+    // into the cache) can't be reused; the side data says whether it had one.
     if let (Some(prev), Some(side)) = (prev, side)
+        && (side.first() == Some(&0) || prev.saved_files.contains_key("o"))
         && tcx.dep_graph.try_mark_green(tcx, &node).is_some()
     {
         let vm = CguVm::load(tcx, &side).unwrap_or_else(|| tcx.dcx().fatal(format!("ryo: the saved image of `{}` is unreadable", cgu.name())));
@@ -1063,16 +1064,10 @@ fn build_cgu<'tcx>(
     let main = entry.filter(|m| vm.iter().any(|v| v.instance == *m)).map(|m| tcx.symbol_name(m).name.to_owned());
     let mut dump = String::new();
     let mut code_dump = String::new();
-    let (image, roots) = build_image(tcx, rt, mode, switches, cgu.name(), &mut vm, &mut dump, &mut code_dump);
+    let image = build_image(tcx, rt, mode, switches, cgu.name(), &mut vm, &mut dump, &mut code_dump);
     let at = std::mem::offset_of!(ryo_bytecode::image::Header, consts) + 4;
     let pool = image.rodata.get(at..at + 4).map_or(0, |b| u32::from_le_bytes(b.try_into().unwrap()) as usize);
-    let cgu_vm = CguVm {
-        vm: vm.iter().map(|v| (v.instance, v.global)).collect(),
-        islands,
-        refs,
-        roots: roots.0.into_iter().map(|(n, k)| (n, root_kind(k))).collect(),
-        main,
-    };
+    let cgu_vm = CguVm { vm: vm.iter().map(|v| (v.instance, v.global)).collect(), islands, refs, main };
     let side = cgu_vm.save(tcx);
     ImagePart {
         vm: cgu_vm,
@@ -1225,7 +1220,7 @@ fn build_image<'tcx>(
     vm: &mut [VmFn<'tcx>],
     dump_text: &mut String,
     code_text: &mut String,
-) -> (ImageObject, Roots) {
+) -> ImageObject {
     let mut w = ImageWriter::new(local_stable_crate_id(tcx));
     w.set_cgu_hash(ryo_bytecode::image::cgu_hash(cgu_name.as_str().as_bytes()));
     let rt_krate = rt.krate;
@@ -1236,9 +1231,6 @@ fn build_image<'tcx>(
         w.set_eh_pointers(ryo_bytecode::image::EhPointers::Abs8);
     }
     let mut encoded = Vec::with_capacity(vm.len());
-    // The handlers the code calls, and whether it probes the stack.
-    let mut handlers = vec![false; ryo_bytecode::full::ALL_OPCODES.len()];
-    let mut probe = false;
     if switches.dump.is_some() {
         dump_text.push_str(&dump::vm_text(tcx, vm, mode));
     }
@@ -1254,7 +1246,6 @@ fn build_image<'tcx>(
             .map(|r| match *r {
                 CodeReloc::Call { callee } => index[&callee],
                 CodeReloc::Symbol { target } => {
-                    pool.roots.function(tcx, target);
                     let flags = symbols::symbol_flags(tcx, target, symbols::SymRole::Target);
                     let Sym(s) = w.symbol(tcx.symbol_name(target).name, flags);
                     if flags & ryo_bytecode::image::SYM_INDIRECT != 0 {
@@ -1267,7 +1258,6 @@ fn build_image<'tcx>(
                     s
                 }
                 CodeReloc::Static { def_id } => {
-                    pool.roots.static_(tcx, def_id);
                     let flags = symbols::static_symbol_flags(tcx, def_id);
                     let Sym(s) = w.symbol(static_symbol(tcx, def_id).name, flags);
                     if flags & ryo_bytecode::image::SYM_INDIRECT != 0 && symbols::static_needs_direct_slot(tcx, def_id) {
@@ -1283,7 +1273,6 @@ fn build_image<'tcx>(
                 CodeReloc::Data { alloc, offset } => pool.data(tcx, &mut w, alloc).0 + offset,
                 CodeReloc::Island { template, args } => {
                     let island = island_instance(tcx, rt_krate, template, args);
-                    pool.roots.function(tcx, island);
                     let flags = symbols::symbol_flags(tcx, island, symbols::SymRole::Island);
                     w.symbol(tcx.symbol_name(island).name, flags).0
                 }
@@ -1301,15 +1290,7 @@ fn build_image<'tcx>(
                 Ref::Site(Site(i)) => Ref::Site(Site(v(i))),
                 Ref::Const(Const(i)) => Ref::Const(Const(v(i))),
                 Ref::Data(Data(i)) => Ref::Data(Data(v(i))),
-                Ref::Handler(op) => {
-                    handlers[op as usize] = true;
-                    r.to
-                }
-                Ref::Probe => {
-                    probe = true;
-                    r.to
-                }
-                Ref::Ro(_) | Ref::Rec | Ref::RecLoopCtr | Ref::RegHandler(_) => r.to,
+                Ref::Handler(_) | Ref::Probe | Ref::Ro(_) | Ref::Rec | Ref::RecLoopCtr | Ref::RegHandler(_) => r.to,
             };
         }
         // A global symbol with the function's linkage; an internal function native code
@@ -1341,23 +1322,8 @@ fn build_image<'tcx>(
         code_text.push_str(&text);
     }
     let _t = tcx.prof.generic_activity("ryo_finish_image");
-    for (i, _) in handlers.iter().enumerate().filter(|h| *h.1) {
-        pool.roots.text(&rt_symbol(tcx, &objfile::handler_name(ryo_bytecode::full::ALL_OPCODES[i])));
-    }
-    if probe {
-        pool.roots.text(&rt_symbol(tcx, objfile::PROBE_SYMBOL));
-    }
-    if mode.counters {
-        pool.roots.text(&rt_symbol(tcx, objfile::TRIP_ENTRY_SYMBOL));
-        pool.roots.text(&rt_symbol(tcx, objfile::TRIP_OSR_SYMBOL));
-    }
-    if mode.pe {
-        pool.roots.text(&rt_symbol(tcx, objfile::SEH_HANDLER_SYMBOL));
-    } else {
-        pool.roots.text(ryo_bytecode::image::PERSONALITY);
-    }
     match w.finish_encoded(encoded) {
-        Ok(image) => (image, pool.roots),
+        Ok(image) => image,
         Err(e) => tcx.dcx().fatal(format!("ryo: invalid image: {e:?}")),
     }
 }
@@ -1438,8 +1404,6 @@ fn lower_cgu<'tcx>(
 struct Pool {
     allocs: FxHashMap<AllocId, AllocTarget>,
     bytes: FxHashMap<(Vec<u8>, u32), Const>,
-    /// Every symbol the image refers to that LTO must keep.
-    roots: Roots,
 }
 
 impl Pool {
@@ -1483,11 +1447,6 @@ impl Pool {
             let at = offset.bytes() as usize;
             let addend = i64::from_le_bytes(bytes[at..at + 8].try_into().unwrap());
             let target_alloc = tcx.global_alloc(prov.alloc_id());
-            match target_alloc {
-                GlobalAlloc::Function { instance } => self.roots.function(tcx, instance),
-                GlobalAlloc::Static(def_id) => self.roots.static_(tcx, def_id),
-                GlobalAlloc::Memory(_) | GlobalAlloc::VTable(..) | GlobalAlloc::TypeId { .. } => {}
-            }
             if lower::is_import(tcx, &target_alloc) {
                 // Patched at registration from the `__imp_` slot (design/platforms.md).
                 let (name, direct) = match target_alloc {
@@ -1528,107 +1487,6 @@ impl Pool {
     fn bytes(&mut self, w: &mut ImageWriter, bytes: &[u8], align: u32) -> Const {
         *self.bytes.entry((bytes.to_vec(), align)).or_insert_with(|| w.add_const(bytes, align, &[]))
     }
-}
-
-/// The symbols the image refers to, which `-Clto` must not internalize: the image is a
-/// separate object that LTO doesn't see (design/backend.md#query-overrides). That includes
-/// foreign items, which an LTO module may define (the allocator shim's `__rust_alloc`).
-/// `link` takes them out of export lists and `symbols.o` again ([`linked_roots`]).
-/// On PE, the image refers to an imported static as `__imp_<name>`, which the linker
-/// synthesizes for a static linked in statically, if LTO kept `<name>`.
-#[derive(Default)]
-struct Roots(FxIndexMap<String, SymbolExportKind>);
-
-impl Roots {
-    fn text(&mut self, name: &str) {
-        self.add(name, SymbolExportKind::Text);
-    }
-
-    /// Adds `name` unless present, allocating only then (most references repeat a symbol).
-    fn add(&mut self, name: &str, kind: SymbolExportKind) {
-        if !self.0.contains_key(name) {
-            self.0.insert(name.to_owned(), kind);
-        }
-    }
-
-    fn function<'tcx>(&mut self, tcx: TyCtxt<'tcx>, f: Instance<'tcx>) {
-        self.text(tcx.symbol_name(f).name);
-    }
-
-    fn static_(&mut self, tcx: TyCtxt<'_>, def_id: DefId) {
-        self.add(static_symbol(tcx, def_id).name, SymbolExportKind::Data);
-    }
-}
-
-/// Our local `exported_non_generic_symbols` (design/backend.md#query-overrides): adds the
-/// image's [`Roots`] as `used` symbols, which LTO keeps whatever its export threshold
-/// (`rustc_codegen_ssa/src/back/lto.rs:107`), also downstream, from this crate's metadata.
-/// They are not meant to be exported: `link` takes them out of every output's export list and
-/// `symbols.o` again ([`linked_roots`]).
-pub fn exported_non_generic_symbols<'tcx>(
-    tcx: TyCtxt<'tcx>,
-    list: &'tcx [(ExportedSymbol<'tcx>, SymbolExportInfo)],
-) -> &'tcx [(ExportedSymbol<'tcx>, SymbolExportInfo)] {
-    // Without codegen there is no image (rustc's provider returns nothing then,
-    // `symbol_export.rs:188`), and a proc macro's exports are fixed.
-    if !tcx.sess.opts.output_types.should_codegen() || tcx.crate_types().contains(&CrateType::ProcMacro) {
-        return list;
-    }
-    let Some(r) = results_untracked(tcx) else { return list };
-    let info = |kind| SymbolExportInfo { level: SymbolExportLevel::Rust, kind, used: true, rustc_std_internal_symbol: false };
-    debug_assert!(is_root(&ExportedSymbol::NoDefId(ty::SymbolName::new(tcx, "")), &info(SymbolExportKind::Text)));
-    let mut roots: Vec<_> = r.lto_roots.iter().collect();
-    roots.sort_by(|a, b| a.0.cmp(&b.0));
-    let roots = roots.into_iter().map(|(name, kind)| (ExportedSymbol::NoDefId(ty::SymbolName::new(tcx, name)), info(*kind)));
-    tcx.arena.alloc_from_iter(list.iter().copied().chain(roots))
-}
-
-/// Whether an exported symbol is one of the [`Roots`] that `exported_non_generic_symbols`
-/// adds: rustc's own `NoDefId` symbols are never `used` at the `Rust` level.
-fn is_root(s: &ExportedSymbol<'_>, info: &SymbolExportInfo) -> bool {
-    matches!(s, ExportedSymbol::NoDefId(_)) && info.used && info.level == SymbolExportLevel::Rust && !info.rustc_std_internal_symbol
-}
-
-/// The [`Roots`] of the crates an output of `crate_type` links statically, one entry per
-/// crate that lists it: the entries they add to that output's `CrateInfo::exported_symbols`
-/// (a Rust dylib exports the `Rust` level, `linker.rs:1700-1716`) and `linked_symbols`
-/// (`used` symbols go into `symbols.o`, `linker.rs:1780`; rustc leaves it empty under
-/// `-Clto`, `linker.rs:1760-1768`), which `link` removes again. Exporting them would fail
-/// (they include other crates' and foreign symbols), and on PE a plain-name reference in
-/// `symbols.o` to a static in a DLL wouldn't resolve. The images reference every root anyway.
-///
-/// Returns (the entries in `linked_symbols`, the entries in `exported_symbols`). rustc adds a
-/// root to the export list only where the `Rust` level is below the crate type's threshold
-/// (Rust dylibs) and the crate isn't `compiler_builtins`, and never for proc macros
-/// (`linker.rs:1677-1716`); the same filter here, so `link` never removes one of rustc's own
-/// entries of the same name (a `#[no_mangle]` function the image calls, exported by a
-/// cdylib). Names are compared undecorated. That holds for the export list's `name`
-/// (`symbol_export.rs:737-738`), and for `linked_symbols` on x86_64; on targets that
-/// decorate (i686 Windows `_`, Arm64EC `#`, `linking_symbol_name_for_instance_in_crate`)
-/// the roots would stay in `symbols.o`, which ryo doesn't support anyway.
-pub fn linked_roots(tcx: TyCtxt<'_>, crate_type: CrateType) -> LinkedRoots {
-    let mut roots = LinkedRoots { linked: Vec::new(), exported: Vec::new() };
-    let Some(deps) = tcx.dependency_formats(()).get(&crate_type) else { return roots };
-    let threshold = rustc_codegen_ssa::back::symbol_export::crates_export_threshold(&[crate_type]);
-    let exports_rust = crate_type != CrateType::ProcMacro
-        && SymbolExportLevel::Rust.is_below_threshold(threshold)
-        && tcx.sess.target.override_export_symbols.is_none();
-    for (cnum, linkage) in deps.iter_enumerated() {
-        if *linkage != rustc_middle::middle::dependency_format::Linkage::Static {
-            continue;
-        }
-        for (s, info) in tcx.exported_non_generic_symbols(cnum) {
-            if let ExportedSymbol::NoDefId(name) = s
-                && is_root(s, info)
-            {
-                roots.linked.push(name.name.to_owned());
-                if exports_rust && !tcx.is_compiler_builtins(cnum) {
-                    roots.exported.push(name.name.to_owned());
-                }
-            }
-        }
-    }
-    roots
 }
 
 /// The items an allocation refers to by symbol (functions and statics), through nested

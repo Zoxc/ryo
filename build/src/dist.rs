@@ -166,9 +166,7 @@ fn build_runtime(root: &Path, target: &Path, dist: &Path, cross: Option<&str>, j
     eprintln!("[y] runtime: ryo_rt{}", cross.map(|t| format!(" for {t}")).unwrap_or_default());
     let mut sysroot_flag = String::from("--sysroot=");
     sysroot_flag.push_str(dist.to_str().ok_or("dist/ path is not UTF-8")?);
-    // `-Cembed-bitcode=yes` (after cargo's `=no`, so it wins): like std, a sysroot rlib must
-    // carry bitcode for `-Clto` builds against it.
-    let mut rustflags = vec![sysroot_flag.as_str(), "-Ccodegen-units=1", "-Cpanic=unwind", "-Cembed-bitcode=yes"];
+    let mut rustflags = vec![sysroot_flag.as_str(), "-Ccodegen-units=1", "-Cpanic=unwind"];
     // Windows: no red zone in the `sysv64` handlers either (design/platforms.md).
     if cross.map_or(cfg!(windows), |t| t.contains("-windows")) {
         rustflags.push(crate::jit::NO_REDZONE);

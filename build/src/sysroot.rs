@@ -197,13 +197,7 @@ pub fn build(info: &RustcInfo, dist: &Path, target: &Path, jit: Option<(&Path, &
     // cargo's `-L dependency=` isn't one.
     let mut crate_path = String::from("-Lcrate=");
     crate_path.push_str(deps.to_str().ok_or("non-UTF-8 target path")?);
-    let rustflags = [
-        crate_path.as_str(),
-        "-Zforce-unstable-if-unmarked",
-        "--sysroot=/dev/null",
-        // Like the prebuilt std, for users' `-Clto`.
-        "-Cembed-bitcode=yes",
-    ];
+    let rustflags = [crate_path.as_str(), "-Zforce-unstable-if-unmarked", "--sysroot=/dev/null"];
     let mut cargo = cmd("cargo");
     if let Some(dir) = jit {
         cargo.env("RYO_JIT_LIB_DIR", dir);

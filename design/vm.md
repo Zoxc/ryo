@@ -696,7 +696,7 @@ in `ryo_rt`, `ryo_h_<Opcode>`:
 - **Symbols**: `#[rustc_std_internal_symbol]` with `export_name = "ryo_h_<Opcode>"`, so the
   symbol is mangled as rustc mangles internal symbols (`mangle_internal_symbol`, under
   `__rustc`), the same in every crate that links `ryo_rt`. The backend references them by
-  that name, and lists the ones an image uses as LTO roots ([backend.md](backend.md#pipeline)).
+  that name ([backend.md](backend.md#pipeline)).
 - **Generation**: `vm/rt/src/vm/handlers.rs` lists every opcode with its handler *kind* and
   the kind's parameters (`AddW32 => bin(u32, wrapping_add);`, `BrEqW32 => br_cmp(u32, ==) ->
   bool;`). Each kind is a body macro in `vm/rt/src/vm/interp.rs`, and `handlers!` expands the

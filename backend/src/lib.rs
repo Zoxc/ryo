@@ -103,7 +103,6 @@ struct Originals {
     partition: PartitionProvider,
     symbol_name: SymbolNameProvider,
     exported_generic_symbols: ExportedProvider,
-    exported_non_generic_symbols: ExportedProvider,
     upstream_monomorphizations: UpstreamProvider,
 }
 
@@ -125,10 +124,6 @@ fn exported_generic_symbols<'tcx>(tcx: TyCtxt<'tcx>, krate: LocalCrate) -> &'tcx
     partition::exported_generic_symbols(tcx, (originals().exported_generic_symbols)(tcx, krate))
 }
 
-fn exported_non_generic_symbols<'tcx>(tcx: TyCtxt<'tcx>, krate: LocalCrate) -> &'tcx [(ExportedSymbol<'tcx>, SymbolExportInfo)] {
-    partition::exported_non_generic_symbols(tcx, (originals().exported_non_generic_symbols)(tcx, krate))
-}
-
 fn upstream_monomorphizations<'tcx>(tcx: TyCtxt<'tcx>, (): ()) -> partition::UpstreamMonos<'tcx> {
     partition::upstream_monomorphizations(tcx, (originals().upstream_monomorphizations)(tcx, ()))
 }
@@ -145,17 +140,8 @@ impl CodegenBackend for RyoBackend {
         // `-Cincremental` is allowed: the partition query is `eval_always`, so the image is
         // rebuilt every session, and the native CGU is hashed as our partition returns it
         // (`codegen_unit`); `symbol_name` reads only tracked queries.
-        let z = &sess.opts.unstable_opts;
-        // `-Zno-link` saves the modules in an `.rlink` and `-Zlink-only` links them without
-        // `codegen_crate`, so without the registry object and the roots' removal; and the
-        // staticlib renaming rewrites the Rust objects but not the upstream images, which
-        // refer to them by the old names (design/backend.md#unsupported-options).
-        for (set, flag) in
-            [(z.no_link, "-Zno-link"), (z.link_only, "-Zlink-only"), (z.staticlib_rename_internal_symbols, "-Zstaticlib-rename-internal-symbols")]
-        {
-            if set {
-                sess.dcx().fatal(format!("the ryo backend doesn't support `{flag}`"));
-            }
+        if let Some(why) = unsupported(sess) {
+            sess.dcx().fatal(format!("the ryo backend doesn't support {why} (design/backend.md#unsupported-options)"));
         }
         self.llvm.init(sess)
     }
@@ -188,8 +174,12 @@ impl CodegenBackend for RyoBackend {
         self.llvm.fallback_intrinsics()
     }
 
+    /// No: rustc's implicit crate-local ThinLTO (opt-level >= 1 with several codegen units)
+    /// internalizes every symbol below the `Rust` export level that isn't listed, including
+    /// native items only an image refers to, which LTO doesn't see. `false` makes
+    /// `Session::lto` return `Lto::No` for it; explicit LTO is rejected in `init`.
     fn thin_lto_supported(&self) -> bool {
-        self.llvm.thin_lto_supported()
+        false
     }
 
     fn has_zstd(&self) -> bool {
@@ -215,13 +205,11 @@ impl CodegenBackend for RyoBackend {
             partition: q.collect_and_partition_mono_items,
             symbol_name: q.symbol_name,
             exported_generic_symbols: q.exported_generic_symbols,
-            exported_non_generic_symbols: q.exported_non_generic_symbols,
             upstream_monomorphizations: q.upstream_monomorphizations,
         });
         q.collect_and_partition_mono_items = collect_and_partition_mono_items;
         q.symbol_name = symbol_name;
         q.exported_generic_symbols = exported_generic_symbols;
-        q.exported_non_generic_symbols = exported_non_generic_symbols;
         q.upstream_monomorphizations = upstream_monomorphizations;
     }
 
@@ -233,12 +221,11 @@ impl CodegenBackend for RyoBackend {
         // Usually already computed (metadata encoding, `exported_generic_symbols`); this forces
         // it otherwise, so the results are set.
         let partitions = tcx.collect_and_partition_mono_items(());
-        let linked_roots = || tcx.crate_types().iter().map(|&t| (t, partition::linked_roots(tcx, t))).collect();
         let macho = tcx.sess.target.binary_format == rustc_target::spec::BinaryFormat::MachO;
         // A crate with no VM code has no image (`partition::vm_enabled`); its output still
         // registers its upstream crates' images.
         let Some(results) = partition::results(tcx) else {
-            let _ = self.link_info.set(link::LinkInfo { images: Vec::new(), linked_roots: linked_roots(), macho });
+            let _ = self.link_info.set(link::LinkInfo { images: Vec::new(), macho });
             let llvm = self.llvm.codegen_crate(tcx);
             return Box::new(RyoOngoingCodegen { llvm, images: Vec::new() });
         };
@@ -298,7 +285,7 @@ impl CodegenBackend for RyoBackend {
         }
         drop(write_t);
         let modules = images.iter().filter(|i| i.path.is_some()).map(|i| i.name.clone()).collect();
-        let _ = self.link_info.set(link::LinkInfo { images: modules, linked_roots: linked_roots(), macho });
+        let _ = self.link_info.set(link::LinkInfo { images: modules, macho });
         dump_lean::dump(tcx, &self.switches, results);
         // The native CGUs (step 4), compiled by cg_llvm as usual.
         let llvm = self.llvm.codegen_crate(tcx);
@@ -364,6 +351,71 @@ impl CodegenBackend for RyoBackend {
     }
 }
 
+/// Why the session can't be built with ryo, if it can't: options whose effect VM code can't
+/// have (instrumentation, sanitizers, hardening), LTO in any form, options that bypass ryo's
+/// link step, and targets the images can't be made for. Checked in `init`, for every crate:
+/// most crates have VM code, and one without (a proc macro, `RYO_NO_VM`) may still link
+/// upstream images; so do the target checks, as `link` needs the object format for the
+/// registry object even then (design/backend.md#unsupported-options).
+fn unsupported(sess: &Session) -> Option<String> {
+    use rustc_session::config::{CFGuard, CFProtection, FunctionReturn, InstrumentCoverage, InstrumentMcount, LtoCli};
+    // `target` is the parsed spec, so this covers custom target JSON too.
+    let target = &sess.target;
+    if target.arch != rustc_target::spec::Arch::X86_64 || target.pointer_width != 64 {
+        return Some(format!("the target `{}`: the VM is x86_64 only", target.llvm_target));
+    }
+    if target.binary_format == rustc_target::spec::BinaryFormat::MachO && target.os != rustc_target::spec::Os::MacOs {
+        return Some(format!("the target `{}`: Mach-O is supported for x86_64 macOS only", target.llvm_target));
+    }
+    if target.requires_lto {
+        return Some(format!("the target `{}`, which requires LTO", target.llvm_target));
+    }
+    let (c, z) = (&sess.opts.cg, &sess.opts.unstable_opts);
+    let flags = [
+        // LTO: the images are separate objects LTO doesn't see, so it would internalize or
+        // drop what only they refer to; linker-plugin LTO also makes the rlib's Rust objects
+        // bitcode, whose symbols the rebuilt archive index (`link::append_to_rlib`) lacks.
+        (!matches!(c.lto, LtoCli::Unspecified | LtoCli::No), "`-Clto`"),
+        (c.linker_plugin_lto.enabled(), "`-Clinker-plugin-lto`"),
+        (z.dylib_lto, "`-Zdylib-lto`"),
+        (z.thinlto == Some(true), "`-Zthinlto`"),
+        // Instrumentation and hardening VM code would silently lack: sanitizer checks (and
+        // CFI/KCFI type checks that trap on VM functions), CET (`endbr64`, and the property
+        // note whose absence turns CET off for the whole binary), CFG tables, coverage and
+        // profile counters, XRay and mcount hooks, patchable entries, stack protectors and
+        // the Spectre thunks.
+        (!z.sanitizer.is_empty(), "`-Zsanitizer`"),
+        (z.cf_protection != CFProtection::None, "`-Zcf-protection`"),
+        (c.control_flow_guard != CFGuard::Disabled, "`-Ccontrol-flow-guard`"),
+        (z.ehcont_guard, "`-Zehcont-guard`"),
+        (c.instrument_coverage != InstrumentCoverage::No, "`-Cinstrument-coverage`"),
+        (c.profile_generate.enabled(), "`-Cprofile-generate`"),
+        (z.instrument_xray.is_some(), "`-Zinstrument-xray`"),
+        (!matches!(z.instrument_mcount, InstrumentMcount::Disabled), "`-Zinstrument-mcount`"),
+        (z.patchable_function_entry != Default::default(), "`-Zpatchable-function-entry`"),
+        // The images lay out VM functions at their own alignment.
+        (z.min_function_alignment.is_some(), "`-Zmin-function-alignment`"),
+        (z.stack_protector != rustc_target::spec::StackProtector::None, "`-Zstack-protector`"),
+        // (`-Zretpoline-external-thunk` sets `retpoline` too.)
+        (z.retpoline_external_thunk, "`-Zretpoline-external-thunk`"),
+        (z.retpoline, "`-Zretpoline`"),
+        (z.function_return != FunctionReturn::Keep, "`-Zfunction-return`"),
+        (z.indirect_branch_cs_prefix, "`-Zindirect-branch-cs-prefix`"),
+        // Tuple layouts (island argument blocks) must agree between crates.
+        (z.randomize_layout, "`-Zrandomize-layout`"),
+        // `-Zno-link` saves the modules in an `.rlink` and `-Zlink-only` links them without
+        // `codegen_crate`, so without the registry object.
+        (z.no_link, "`-Zno-link`"),
+        (z.link_only, "`-Zlink-only`"),
+        // The staticlib options rewrite or hide the Rust objects' symbols, but not the
+        // upstream images, which are plain members: renamed symbols they refer to don't
+        // resolve, and their own symbols aren't hidden.
+        (z.staticlib_rename_internal_symbols, "`-Zstaticlib-rename-internal-symbols`"),
+        (z.staticlib_hide_internal_symbols, "`-Zstaticlib-hide-internal-symbols`"),
+    ];
+    flags.into_iter().find(|f| f.0).map(|f| f.1.to_owned())
+}
+
 /// A `CompiledModule` for an object file the backend wrote itself.
 fn object_module(name: String, object: PathBuf) -> CompiledModule {
     CompiledModule {
@@ -380,14 +432,11 @@ fn object_module(name: String, object: PathBuf) -> CompiledModule {
 }
 
 /// The image and registry objects' format for the session's target (design/platforms.md).
-/// Mach-O only for macOS, with its deployment target.
+/// Mach-O only for macOS (`init` rejects other Mach-O targets), with its deployment target.
 pub(crate) fn object_format(sess: &Session) -> Box<dyn objfile::ObjectFormat> {
     let target = &sess.target;
     let mut macos_min = 0;
     if target.binary_format == rustc_target::spec::BinaryFormat::MachO {
-        if target.os != rustc_target::spec::Os::MacOs {
-            sess.dcx().fatal(format!("the ryo backend supports Mach-O for macOS only, not {}", target.llvm_target));
-        }
         let v = sess.apple_deployment_target();
         macos_min = (u32::from(v.major) << 16) | (u32::from(v.minor) << 8) | u32::from(v.patch);
     }

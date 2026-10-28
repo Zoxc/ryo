@@ -50,9 +50,6 @@ pub fn ryo_args(dist: &Path, passed: Vec<OsString>, checked: bool) -> Result<Vec
         return Ok(passed);
     }
     let mut passed = normalize(passed);
-    if let Some(flag) = randomize_layout_flag(&passed) {
-        return Err(format!("`{flag}` is not supported by rustc-ryo: argument block layouts must agree between crates"));
-    }
     if passed.last().is_some_and(|a| a == "--sysroot") {
         return Err("`--sysroot` needs a value".to_owned());
     }
@@ -191,14 +188,6 @@ fn targets_msvc(args: &[OsString]) -> bool {
     }
 }
 
-/// Finds an enabling `-Zrandomize-layout[=v]` among the normalized `args`.
-fn randomize_layout_flag(args: &[OsString]) -> Option<String> {
-    args.iter().find_map(|a| match z_opt(a)? {
-        (n, v) if n == "randomize-layout" && !matches!(v, Some("no" | "n" | "off" | "false")) => a.to_str().map(str::to_owned),
-        _ => None,
-    })
-}
-
 // Run by `cargo test` in `build/`, which includes this file as a module.
 #[cfg(test)]
 mod tests {
@@ -274,16 +263,6 @@ mod tests {
         }
         for no in [&["-V"][..], &["--version"], &[], &["-vV", "x.rs"], &["-v"]] {
             assert!(!is_verbose_version(&args(no)), "{no:?}");
-        }
-    }
-
-    #[test]
-    fn rejects_randomize_layout() {
-        for bad in [&["-Zrandomize-layout"][..], &["-Z", "randomize-layout"], &["-Zrandomize_layout=yes"]] {
-            assert!(ryo_args(Path::new("/d"), args(bad), false).is_err(), "{bad:?}");
-        }
-        for ok in [&["-Zrandomize-layout=no"][..], &["-Z", "mir-opt-level=1"], &["randomize-layout"]] {
-            assert!(ryo_args(Path::new("/d"), args(ok), false).is_ok(), "{ok:?}");
         }
     }
 }

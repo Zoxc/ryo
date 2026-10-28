@@ -330,13 +330,6 @@ pub(crate) const CORPUS: &[Program] = &[
         vm: &["main", "bump", "f", "g"],
         ..PROGRAM
     },
-    // `-Clto` (the LTO variants) downstream of a crate built as rlib and dylib.
-    Program {
-        name: "vm_lto_dep",
-        crates: &[krate("vla", "vm_lto_dep/a.rs", CrateKind::RlibDylib), krate("main", "vm_lto_dep/main.rs", CrateKind::Bin)],
-        vm: &["main", "f", "h"],
-        ..PROGRAM
-    },
     // Found building std with ryo (`--sysroot ryo`): a constructor entering the VM before
     // `main`, unsized arguments, `extern_weak` statics, LLVM intrinsics of local copies.
     single!(

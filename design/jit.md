@@ -897,7 +897,7 @@ rlib bundles (`build/src/jit.rs`, [build.md](build.md#build)):
   `RYO_JIT_LIB_DIR`), so rustc copies it into the rlib, and it goes wherever `ryo_rt` is
   linked statically: the binary, a Rust dylib (where rustc's version script keeps
   `ryo_jit_start` local), a cdylib, a staticlib (as a member). It is a native member, never
-  LTO input, so users' `-Clto` doesn't touch it. The backend and the image format don't
+  LTO input (ryo rejects `-Clto` anyway). The backend and the image format don't
   know about it. Without `RYO_JIT_LIB_DIR` (`vm/`'s own tests) the `ryo_jit` rlib provides
   `ryo_jit_start` instead, on the tests' std.
 - **Mach-O**: sealed as on ELF: `llvm-objcopy --keep-global-symbol=_ryo_jit_start` (C

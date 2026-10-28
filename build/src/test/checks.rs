@@ -212,11 +212,11 @@ fn msvc_env() -> Option<&'static [(String, String)]> {
 /// `-Cincremental -Zincremental-verify-ich` once per revision in one incremental directory,
 /// each revision an edit of the previous. Each build's output must equal plain rustc's (also
 /// with the JIT compiling every function), and its executable must be byte-identical to a
-/// clean incremental build's. At opt-level 0, at opt-level 2 with thin and with fat LTO, and with
-/// `RYO_NO_VM` at 16 codegen units, where rustc checks which units are reused. Then a proc
+/// clean incremental build's. At opt-level 0, at opt-level 2 (where rustc would run
+/// crate-local ThinLTO), and with `RYO_NO_VM` at 16 codegen units, where rustc checks which units are reused. Then a proc
 /// macro (no VM code, any number of codegen units) rebuilt after an edit, and used.
 pub(super) fn incremental(rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result<(), String> {
-    const REVISIONS: u32 = 10;
+    const REVISIONS: u32 = 11;
     let src = dir_in.join("edits.rs");
     let dir = out.join("incremental");
     let _ = fs::remove_dir_all(&dir);
@@ -230,12 +230,10 @@ pub(super) fn incremental(rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result
     let reuse = &["--cfg", "reuse", "-Zquery-dep-graph"][..];
     // Name, flags, flags for the incremental chain only, environment.
     // `O0` gets incremental's default of 256 codegen units, so one image per CGU.
-    // `O2-fat`: a stale export list makes fat LTO drop a symbol only the image references.
-    let configs: [(&str, &[&str], &[&str], &[(&str, &str)]); 5] = [
+    let configs: [(&str, &[&str], &[&str], &[(&str, &str)]); 4] = [
         ("O0", &[], &[], &[]),
         ("vm-16", &["-Ccodegen-units=16"], &[], &[]),
-        ("O2-thin", &["-Copt-level=2", "-Clto=thin"], &[], &[]),
-        ("O2-fat", &["-Copt-level=2", "-Clto=fat"], &[], &[]),
+        ("O2", &["-Copt-level=2"], &[], &[]),
         ("no-vm-16", &["-Ccodegen-units=16"], reuse, &[("RYO_NO_VM", "1")]),
     ];
     for (config, flags, chain_flags, env) in configs {
@@ -253,7 +251,22 @@ pub(super) fn incremental(rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result
                     c.args(flags).args(extra).envs(env.iter().copied());
                     c.arg(format!("-Cincremental={}", incr.display())).arg("-Zincremental-verify-ich");
                 }
-                crate::utils::run(&mut c).map_err(|e| format!("{config} {cfg} {sub}: {e}"))?;
+                // rev11 only shifts `main`'s `DefIndex`: the chain must reuse every image.
+                let check_reuse = sub == "incr" && rev == 11 && env.is_empty();
+                if check_reuse {
+                    c.env("RYO_STATS", "1");
+                }
+                let res = capture(&mut c).map_err(|e| format!("{config} {cfg} {sub}: {e}"))?;
+                if !res.status.success() {
+                    return Err(format!("{config} {cfg} {sub}: {}\nstderr:\n{}", res.status, res.stderr));
+                }
+                if check_reuse {
+                    let reused = res.stderr.lines().find_map(|l| l.strip_prefix("ryo: ")?.strip_suffix(" images reused"));
+                    match reused.and_then(|r| r.split_once(" of ")) {
+                        Some((r, n)) if r == n && n != "0" => {}
+                        r => return Err(format!("{config} {cfg}: an unused item ahead of `main` re-lowered images: reused {r:?}")),
+                    }
+                }
                 Ok(exe)
             };
             let reference = run(&build(Path::new("rustc"), None, &[], "rustc")?, &[])?;
@@ -316,10 +329,8 @@ pub(super) fn incremental(rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result
 }
 
 /// The dynamic symbols a ryo Rust dylib, cdylib, and an executable with `-Zexport-executable-symbols`,
-/// export are exactly plain rustc's (plus the runtime's own), with and without
-/// `-Clto`: the image's symbols are listed
-/// as exports for LTO, and `link` must remove those, and only those
-/// (design/backend.md#query-overrides). ELF and Mach-O (`llvm-nm -D`).
+/// export are exactly plain rustc's (plus the runtime's own) (design/backend.md#query-overrides).
+/// ELF and Mach-O (`llvm-nm -D`).
 pub(super) fn same_exports(info: &crate::utils::RustcInfo, rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
     if cfg!(windows) {
         return Ok(());
@@ -327,12 +338,10 @@ pub(super) fn same_exports(info: &crate::utils::RustcInfo, rustc_ryo: &Path, src
     let nm = info.tool("llvm-nm");
     let dir = out.join("exports");
     crate::utils::create_dir(&dir)?;
-    let cases: [(&str, &[&str]); 5] = [
+    let cases: [(&str, &[&str]); 3] = [
         ("dylib", &["--crate-type=dylib", "-Cprefer-dynamic"]),
         ("cdylib", &["--crate-type=cdylib"]),
-        ("cdylib-lto", &["--crate-type=cdylib", "-Clto=fat"]),
         ("exe", &["--crate-type=bin", "-Zexport-executable-symbols"]),
-        ("exe-lto", &["--crate-type=bin", "-Zexport-executable-symbols", "-Clto=fat"]),
     ];
     for (name, flags) in cases {
         let mut lists = Vec::new();
@@ -634,25 +643,74 @@ pub(super) fn dump(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), Strin
     Ok(())
 }
 
-/// Options the backend rejects (design/backend.md#unsupported-options), on `src`, a program
-/// with VM code: `-Zrandomize-layout`; outputs without the images (`--emit=obj`, `bc`); and
-/// links that bypass the backend's own (`-Zno-link`, `-Zlink-only`) or rewrite the objects
-/// the images refer to (`-Zstaticlib-rename-internal-symbols`).
+/// The backend fails with a clear error, naming the option, where VM code can't honour it
+/// (design/backend.md#unsupported-options): LTO in any form; sanitizers, control-flow
+/// protection and other hardening, instrumentation and profiling, which VM code would
+/// silently lack; `-Zrandomize-layout` (also through an `@argfile`, past the wrapper);
+/// unsupported targets; outputs without the images (`--emit=obj`, `bc`, an rlib without
+/// `link`, `-o -`); and the options that bypass ryo's link step.
 pub(super) fn reject_unsupported(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
     let dir = out.join("reject");
     crate::utils::create_dir(&dir)?;
     let o = dir.join(exe_name("rejected"));
-    let cases: [(&[&str], &str); 6] = [
+    let argfile = dir.join("args");
+    fs::write(&argfile, "-Zrandomize-layout\n").map_err(|e| format!("writing {}: {e}", argfile.display()))?;
+    let at_argfile = format!("@{}", argfile.display());
+    let cases: &[(&[&str], &str)] = &[
         (&["-Zrandomize-layout"], "-Zrandomize-layout"),
+        (&[&at_argfile], "-Zrandomize-layout"),
         (&["--emit=obj"], "--emit=obj"),
         (&["--emit=link,llvm-bc"], "--emit=llvm-bc"),
         (&["-Zno-link"], "-Zno-link"),
         (&["-Zlink-only"], "-Zlink-only"),
         (&["--crate-type=staticlib", "-Zstaticlib-rename-internal-symbols"], "-Zstaticlib-rename-internal-symbols"),
+        (&["--crate-type=staticlib", "-Zstaticlib-hide-internal-symbols"], "-Zstaticlib-hide-internal-symbols"),
+        (&["-Clto"], "-Clto"),
+        (&["-Clto=fat"], "-Clto"),
+        (&["-Clto=thin"], "-Clto"),
+        (&["-Clto=yes"], "-Clto"),
+        (&["-Clinker-plugin-lto"], "-Clinker-plugin-lto"),
+        (&["--crate-type=dylib", "-Zdylib-lto"], "-Zdylib-lto"),
+        (&["-Zthinlto=yes", "-Ccodegen-units=4", "-O"], "-Zthinlto"),
+        (&["-Zsanitizer=address"], "-Zsanitizer"),
+        (&["-Zsanitizer=kcfi"], "-Zsanitizer"),
+        (&["-Zsanitizer=cfi", "-Ccodegen-units=1"], "-Zsanitizer"),
+        (&["-Zsanitizer=memory"], "-Zsanitizer"),
+        (&["-Zsanitizer=thread"], "-Zsanitizer"),
+        (&["-Zcf-protection=full"], "-Zcf-protection"),
+        (&["-Ccontrol-flow-guard"], "-Ccontrol-flow-guard"),
+        (&["-Zehcont-guard"], "-Zehcont-guard"),
+        (&["-Cinstrument-coverage"], "-Cinstrument-coverage"),
+        (&["-Cprofile-generate"], "-Cprofile-generate"),
+        (&["-Zinstrument-xray"], "-Zinstrument-xray"),
+        (&["-Zinstrument-mcount"], "-Zinstrument-mcount"),
+        (&["-Zpatchable-function-entry=4"], "-Zpatchable-function-entry"),
+        (&["-Zmin-function-alignment=64"], "-Zmin-function-alignment"),
+        (&["-Zstack-protector=strong"], "-Zstack-protector"),
+        (&["-Zretpoline"], "-Zretpoline"),
+        (&["-Zretpoline-external-thunk"], "-Zretpoline-external-thunk"),
+        (&["-Zfunction-return=thunk-extern"], "-Zfunction-return"),
+        (&["-Zindirect-branch-cs-prefix"], "-Zindirect-branch-cs-prefix"),
+        (&["--target=aarch64-unknown-linux-gnu"], "x86_64"),
+        (&["--target=x86_64-unknown-linux-gnux32"], "x86_64"),
     ];
-    for (flags, needle) in cases {
+    for &(flags, needle) in cases {
         expect_reject(cmd(rustc_ryo).arg("--edition=2024").arg(src).args(flags).arg("-o").arg(&o), needle)?;
     }
+    // A library with VM code (`hello.rs`'s `main` is dead code in an rlib). An rlib is
+    // written only with `link`, and one written to stdout can't have the images appended.
+    let lib = dir.join("reject_lib.rs");
+    fs::write(&lib, "pub fn f(x: u64) -> u64 {\n    x * 3 + 1\n}\n").map_err(|e| format!("writing {}: {e}", lib.display()))?;
+    let rlib = |flags: &[&str]| {
+        let mut c = cmd(rustc_ryo);
+        c.arg("--edition=2024").arg(&lib).arg("--crate-type=rlib").arg("--out-dir").arg(&dir).args(flags);
+        c
+    };
+    crate::utils::run(&mut rlib(&[]))?;
+    for emit in ["--emit=asm", "--emit=llvm-ir", "--emit=mir"] {
+        expect_reject(&mut rlib(&[emit]), "without `link`")?;
+    }
+    expect_reject(&mut rlib(&["-o", "-"]), "-o -")?;
     Ok(())
 }
 

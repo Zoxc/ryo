@@ -114,8 +114,8 @@ modeled on cg_clif's `build_system/`.
      `compare-branches.py`, `bench crates`, users) gets the release JIT. `ryo_rt` itself is
      built only once, as above.
    - `ryo_rt` is always built with the stock LLVM backend, against that std, with
-     `-Copt-level=3 -Ccodegen-units=1 -Cpanic=unwind -Cembed-bitcode=yes` regardless of the
-     user's profile (bitcode, like std's, so `-Clto` builds can include it), and
+     `-Copt-level=3 -Ccodegen-units=1 -Cpanic=unwind` regardless of the user's profile (no
+     bitcode: ryo rejects `-Clto`, [backend.md](backend.md#unsupported-options)), and
      installed next to std. Its cargo features are `jit` where the target has the JIT (its
      build script then bundles the sealed library from `RYO_JIT_LIB_DIR` into the rlib,
      [jit.md](jit.md#packaging)) and those listed in `RYO_RT_FEATURES` (comma-separated, such as
@@ -137,9 +137,6 @@ modeled on cg_clif's `build_system/`.
 
    With no arguments, they pass none (so rustc prints its help), and an explicit `--sysroot`
    from the user replaces `--sysroot dist`.
-
-   They reject `-Zrandomize-layout`, because tuple layouts (island argument blocks) must
-   agree between crates ([lowering.md](lowering.md#frame-slots)).
 
    `--sysroot ryo` (or `--sysroot=ryo`) means `dist/sysroot-ryo`; a directory named `ryo`
    needs a path, such as `--sysroot ./ryo`. `-Zryo-stats[=N]` (or
@@ -204,22 +201,23 @@ This gives a third backend, built from the same toolchain, to compare against.
   ([jit.md](jit.md#testing)); `test` runs the JIT's own tests through the tier (`vm jit`),
   its naive allocator (`vm jit ssa-naive`) and the re-encoding pipeline (`vm jit reencode`),
   each also with `fp-rbp`. rustc's default merges the corpus's small crates into one codegen
-  unit; the `ryo-cgu*` variants ask for 1, 16 and 256 (also with `-Zshare-generics`, fat
-  LTO, thin LTO at `-O3` and the JIT), so calls, fn pointers, vtables and statics cross
+  unit; the `ryo-cgu*` variants ask for 1, 16 and 256 (also with `-Zshare-generics`, `-O3`
+  and the JIT), so calls, fn pointers, vtables and statics cross
   images (`tests/vm_cgu.rs` spreads over many).
   Some programs are a staticlib or cdylib called from a
-  C `main`, compiled with `cc`, or `cl` on windows-msvc hosts (skipped without one). The smoke tests check that `rustc-ryo`
-  rejects `-Zrandomize-layout` and the backend the options it doesn't support
+  C `main`, compiled with `cc`, or `cl` on windows-msvc hosts (skipped without one). The smoke tests check that the backend
+  rejects the options it doesn't support
   (`reject-unsupported`, [backend.md](backend.md#unsupported-options)), that two builds of
   `tests/vm_cgu.rs` (many modules) at 16 codegen units give several, byte-identical image
   objects (`cgu-deterministic`), that `tests/vm_cgu_owner.rs` at 16 codegen units defines a
   static once and nothing only a mono-unreachable block uses (`cgu-ownership`), and
   that `cargo-ryo` builds a dev-profile package (incrementally). The `incremental` check
   rebuilds `tests/incremental/edits.rs` after a series of scripted edits (`--cfg revN`) with
-  `-Cincremental -Zincremental-verify-ich`: the output must be plain rustc's and the
+  `-Cincremental -Zincremental-verify-ich` (revision 11 only adds an unused item ahead of
+  `main`, and every image must be reused): the output must be plain rustc's and the
   executable byte-identical to a clean incremental build's, at opt-level 0 (incremental's
   256 codegen units), at 16 codegen units, at opt-level 2
-  with thin and with fat LTO, and with `RYO_NO_VM` at 16 codegen units, where `#![rustc_partition_reused]`
+  (where rustc would run crate-local ThinLTO), and with `RYO_NO_VM` at 16 codegen units, where `#![rustc_partition_reused]`
   checks rustc's reuse; and rebuilds a proc macro at the default codegen units. The `backtrace` check builds
   `tests/vm_backtrace.rs` (a panic two VM calls deep, caught by `catch_unwind`) and runs it
   with `RUST_BACKTRACE=1`: the backtrace must name the VM functions by their own
@@ -237,8 +235,8 @@ This gives a third backend, built from the same toolchain, to compare against.
   `RYO_JIT_TEST_OOM` an allocation failure
   ([jit.md](jit.md#testing)).
 - With a ryo sysroot in `dist/`, `test` also builds the corpus against it (`--sysroot ryo`):
-  variants `ryo-std`, `ryo-std-O3` (output only, like `ryo-O3`),
-  `ryo-std-lto` (`-Clto=fat` on the last crate) and `ryo-std-abort` (`-Cpanic=abort`,
+  variants `ryo-std`, `ryo-std-O3` (output only, like `ryo-O3`)
+  and `ryo-std-abort` (`-Cpanic=abort`,
   compared with plain rustc's `-Cpanic=abort` build; programs with a Rust dylib are skipped),
   `ryo-std-jit` (run with `RYO_JIT_THRESHOLD=0 RYO_JIT_SYNC=1`: every VM function, std's
   included, runs its JIT code from its first call), `ryo-std-jit-shuffle` (also
@@ -335,8 +333,7 @@ A plain `y test` runs the fast set plus the tests the changed paths select
 - The fast set: two cargo runs in `vm/`, `vm` (`--workspace --exclude ryo_jit`, without
   vm/rt/tests/codegen.rs and the slow `every_opcode_round_trips`) and `vm jit` (`-p ryo_jit`,
   `RYO_JIT_OPT=ssa RYO_JIT_CHECK=1`); the corpus programs in `FAST`, each under the variants
-  listed there (`ryo` on most, the `ryo-jit-ssa*` variants on the VM programs, `ryo-lto` on
-  `vm_lto_dep`, `ryo-abort` on `vm_abort_cleanup`, `ryo-std` and `ryo-std-jit` on
+  listed there (`ryo` on most, the `ryo-jit-ssa*` variants on the VM programs, `ryo-abort` on `vm_abort_cleanup`, `ryo-std` and `ryo-std-jit` on
   `collections`); and the cheap checks (`reject-unsupported`, `cgu-deterministic`, `cgu-ownership`, `metadata-only`, `dump`, `exports`,
   `backtrace`). Every other corpus program is on `FULL_ONLY` with a reason; a unit test
   checks that each program is on exactly one of the two lists. Without a current ryo sysroot

@@ -167,6 +167,15 @@ pub fn vm_fn_sig<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> Result<Ab
     if attrs.flags.contains(rustc_middle::middle::codegen_fn_attrs::CodegenFnAttrFlags::NAKED) {
         return native("#[naked]");
     }
+    // Its nops are for patching native code (`-Zpatchable-function-entry`, which applies to
+    // every function, is rejected).
+    if attrs.patchable_function_entry.is_some() {
+        return native("#[patchable_function_entry]");
+    }
+    // The images lay out VM functions at their own alignment.
+    if attrs.alignment.is_some() {
+        return native("#[align]");
+    }
     // An EII implementation: cg_llvm defines the declaration's symbol as a forwarder to it
     // when it predefines the function (`add_function_aliases`,
     // `rustc_codegen_llvm/src/mono_item.rs`), which it doesn't do for a VM function.

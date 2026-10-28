@@ -35,8 +35,8 @@ struct Variant {
     compiler: Compiler,
     /// Extra flags for every crate.
     flags: &'static [&'static str],
-    /// Extra flags for the last crate only, as cargo passes `-Clto`. Programs with a Rust
-    /// dylib are skipped when this is set: LTO doesn't support them.
+    /// Extra flags for the last crate only (as cargo passes `-Clto`, which ryo rejects; none
+    /// now). Programs with a Rust dylib are skipped when this is set.
     final_flags: &'static [&'static str],
     /// Only for programs that list VM functions. Their `vm` lists aren't checked (MIR inlining
     /// at `-O` removes some functions).
@@ -78,16 +78,11 @@ const VARIANTS: &[Variant] = &[
     Variant { name: "ryo", ..VARIANT },
     Variant { name: "ryo-threads8", flags: &["-Zthreads=8"], ..VARIANT },
     Variant { name: "ryo-O3", flags: &["-Copt-level=3"], vm_only: true, ..VARIANT },
-    // The image is outside LTO's view: the symbols it refers to must survive internalization,
-    // also those of upstream rlibs built without LTO (design/backend.md#query-overrides).
-    Variant { name: "ryo-lto", final_flags: &["-Clto=fat"], ..VARIANT },
-    Variant { name: "ryo-thinlto-O3", flags: &["-Copt-level=3"], final_flags: &["-Clto=thin"], vm_only: true, ..VARIANT },
     // `-Cpanic=abort` without a ryo sysroot: the terminate stubs and abort paths of VM code.
     Variant { name: "ryo-abort", flags: &["-Cpanic=abort"], abort: true, ..VARIANT },
     // std itself in the VM (design/build.md#build, `--sysroot ryo`).
     Variant { name: "ryo-std", ryo_std: true, ..VARIANT },
     Variant { name: "ryo-std-O3", flags: &["-Copt-level=3"], vm_only: true, ryo_std: true, ..VARIANT },
-    Variant { name: "ryo-std-lto", final_flags: &["-Clto=fat"], ryo_std: true, ..VARIANT },
     Variant { name: "ryo-std-abort", flags: &["-Cpanic=abort"], ryo_std: true, abort: true, ..VARIANT },
     // Every VM function, std's included, runs its JIT code from its first call
     // (design/jit.md#testing), also with frames the JIT lays out differently.
@@ -106,8 +101,9 @@ const VARIANTS: &[Variant] = &[
     Variant { name: "ryo-cgu16", flags: &["-Ccodegen-units=16"], ..VARIANT },
     Variant { name: "ryo-cgu256", flags: &["-Ccodegen-units=256"], ..VARIANT },
     Variant { name: "ryo-cgu16-share-generics", flags: &["-Ccodegen-units=16", "-Zshare-generics=yes"], ..VARIANT },
-    Variant { name: "ryo-cgu16-lto", flags: &["-Ccodegen-units=16"], final_flags: &["-Clto=fat"], ..VARIANT },
-    Variant { name: "ryo-cgu16-thinlto-O3", flags: &["-Ccodegen-units=16", "-Copt-level=3"], final_flags: &["-Clto=thin"], vm_only: true, ..VARIANT },
+    // Where rustc would run crate-local ThinLTO, which the backend turns off
+    // (design/backend.md#unsupported-options).
+    Variant { name: "ryo-cgu16-O3", flags: &["-Ccodegen-units=16", "-Copt-level=3"], vm_only: true, ..VARIANT },
     Variant { name: "ryo-cgu16-jit-ssa", flags: &["-Ccodegen-units=16"], env: JIT_SSA, jit: true, ..VARIANT },
 ];
 
@@ -150,7 +146,7 @@ const FAST: &[(&str, &[&str])] = &[
     ("vm_calls", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-osr", "ryo-jit-ssa-shuffle", "ryo-cgu16"]),
     ("vm_tail", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-osr", "ryo-jit-ssa-shuffle"]),
     ("vm_cross", &["ryo", "ryo-jit-ssa", "ryo-cgu16"]),
-    ("vm_cgu", &["ryo", "ryo-cgu1", "ryo-cgu16", "ryo-cgu256", "ryo-cgu16-share-generics", "ryo-cgu16-lto", "ryo-cgu16-jit-ssa"]),
+    ("vm_cgu", &["ryo", "ryo-cgu1", "ryo-cgu16", "ryo-cgu256", "ryo-cgu16-share-generics", "ryo-cgu16-O3", "ryo-cgu16-jit-ssa"]),
     ("vm_intrinsics", &["ryo"]),
     ("vm_lowerings", &["ryo", "ryo-jit-ssa"]),
     ("vm_simd", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-osr", "ryo-jit-ssa-shuffle"]),
@@ -161,7 +157,6 @@ const FAST: &[(&str, &[&str])] = &[
     ("vm_ffi", &["ryo", "ryo-jit-ssa"]),
     ("vm_cdylib", &["ryo"]),
     ("vm_staticlib2", &["ryo", "ryo-jit-ssa"]),
-    ("vm_lto_dep", &["ryo-lto"]),
     ("vm_abort_cleanup", &["ryo-abort"]),
     ("end_ptrs", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-shuffle"]),
     ("vm_unwind_chain", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-osr", "ryo-abort"]),
