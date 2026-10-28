@@ -40,6 +40,9 @@ pub use ryo_bytecode::jit_abi::JIT_ENTRY_PREFIX;
 
 use super::sys::fatal;
 
+mod merge;
+pub(crate) use merge::forward;
+
 /// The settings, read once from the environment (or [`configure_jit`]).
 struct Config {
     /// `RYO_JIT=off` turns the JIT into the no-op JIT.
@@ -284,7 +287,7 @@ static DISABLED: AtomicBool = AtomicBool::new(false);
 /// so an asynchronous walk does too.
 #[unsafe(naked)]
 #[rustc_std_internal_symbol]
-#[unsafe(export_name = "ryo_jit_trip_entry")]
+#[unsafe(export_name = tagged!("ryo_jit_trip_entry"))]
 pub unsafe extern "sysv64" fn trip_entry() {
     core::arch::naked_asm!(
         cfi!(".cfi_startproc"),
@@ -403,7 +406,7 @@ const TRIP_ENTRY_AREA: usize = if cfg!(any(windows, feature = "pe-test")) { 320 
 #[cfg(any(windows, feature = "pe-test"))]
 #[unsafe(naked)]
 #[rustc_std_internal_symbol]
-#[unsafe(export_name = "ryo_jit_trip_osr")]
+#[unsafe(export_name = tagged!("ryo_jit_trip_osr"))]
 pub unsafe extern "sysv64" fn trip_osr() {
     core::arch::naked_asm!(
         cfi!(".cfi_startproc"),
@@ -494,7 +497,7 @@ pub unsafe extern "sysv64" fn trip_osr() {
 #[cfg(not(any(windows, feature = "pe-test")))]
 #[unsafe(naked)]
 #[rustc_std_internal_symbol]
-#[unsafe(export_name = "ryo_jit_trip_osr")]
+#[unsafe(export_name = tagged!("ryo_jit_trip_osr"))]
 pub unsafe extern "sysv64" fn trip_osr() {
     core::arch::naked_asm!(
         cfi!(".cfi_startproc"),
@@ -553,6 +556,11 @@ fn trip(rec: *mut JitRecord) -> u32 {
     // SAFETY: the writer sets `header` to the record's image's header, linked and mapped
     // forever.
     unsafe { super::registry::ensure((*rec).header.cast()) };
+    // Merged into another copy: the registration just pointed the record at the winner's
+    // trips; the next check trips there.
+    if merge::forward().is_some() {
+        return JIT_COLD;
+    }
     let cfg = config();
     if !cfg.enabled || DISABLED.load(Relaxed) {
         for c in [JitRecord::ctr_e(rec), JitRecord::ctr_l(rec)] {
@@ -654,6 +662,9 @@ fn start() -> bool {
         pe_handlers,
         pe_reg_handlers,
     };
+    // The JIT thread runs this module's code (the sealed JIT) and reads its images for the
+    // rest of the process: pin the module first.
+    super::sys::pin_module(start as *const ());
     // SAFETY: only the first push gets here, once; the JIT reads it only after the start.
     let report = unsafe { ryo_jit_start((*RT_API.0.get()).write(api)) };
     if let Some(r) = report {
@@ -663,8 +674,9 @@ fn start() -> bool {
 }
 
 unsafe extern "C" {
-    /// The JIT's (`ryo_jit`): starts its thread and returns its exit report
+    /// The JIT's (`ryo_jit`, `ryo_jit_start_<tag>`): starts its thread and returns its exit report
     /// (`RYO_JIT_STATS`), or `None` if the thread can't start.
+    #[link_name = tagged!("ryo_jit_start")]
     fn ryo_jit_start(rt: &'static RtApi) -> Option<extern "C" fn()>;
 }
 
@@ -724,6 +736,13 @@ fn fail(rec: *mut JitRecord) {
 /// failed record.
 #[inline(never)]
 pub(crate) fn registered(img: &Image<'_>) {
+    // The records' slots start at this copy's trips, also for an image of another copy that
+    // merged into this one (`merge`), whose slots were linked against that copy's.
+    for i in 0..img.header().jit_records.count as usize {
+        let r = img.jit_records().wrapping_add(i);
+        JitRecord::entry_slot(r).store(trip_entry as *const () as *mut u8, Relaxed);
+        JitRecord::osr_slot(r).store(trip_osr as *const () as *mut u8, Relaxed);
+    }
     let cfg = config();
     if cfg.jit.stats != 0 && !ANNOUNCED.swap(true, Relaxed) {
         announce(cfg);

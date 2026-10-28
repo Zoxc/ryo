@@ -30,12 +30,19 @@ pub use interp::{PE_MODE, pe_handler, pe_reg_handler};
 pub use jit::{JIT_ENTRY_PREFIX, configure_jit, jit_shuffle_image};
 pub use jit::{trip_entry, trip_osr};
 
-/// Registers the images whose header addresses are the non-null entries of `[start, end)`.
-/// Called by each link unit's registry stub constructor with the bounds of the link unit's
-/// `ryo_images` section (each image object contributes one entry, the stub a null one;
-/// design/backend.md#pipeline), including for shared objects loaded at run time. Images
-/// already registered are skipped. Aborts on an invalid image, or on two images with the same
-/// crate and CGU hashes.
+/// Registers the images whose header addresses are the non-null entries of `[start, end)` and
+/// that were linked against `anchor` (`Header::anchor`; a null `anchor` takes all). Called by
+/// each link unit's registry stub constructor with the bounds of the link unit's
+/// `ryo_images_<tag>` section (each image object contributes one entry, the stub a null one)
+/// and its registry anchor (design/backend.md#pipeline), including for shared objects loaded
+/// at run time. Images of another anchor belong to another runtime in the same link unit
+/// (staticlibs combined with `ld -r` and localized), whose stub registers them. Images already
+/// registered are skipped. Aborts on an invalid image, an image of another ryo build
+/// (`Header::abi`), or on two images with the same crate and CGU hashes.
+///
+/// Its symbol is internal (`#[rustc_std_internal_symbol]`) and tagged
+/// (`ryo_vm_register_<tag>`, mangled): a cdylib doesn't export it, so no other module's stub
+/// can bind to it, and no other ryo build's.
 ///
 /// # Safety
 /// `[start, end)` must be readable pointer-sized entries, each null or a linked image's header
@@ -44,8 +51,9 @@ pub use jit::{trip_entry, trip_osr};
 ///
 /// `C-unwind`, so the compiler adds no abort-on-unwind guard, which would reference core's
 /// panic path (design/vm.md, "No re-entry"); nothing in it panics (`y test`'s `rt-core-only`).
-#[unsafe(no_mangle)]
-pub unsafe extern "C-unwind" fn ryo_vm_register(start: *const *const u8, end: *const *const u8) {
+#[rustc_std_internal_symbol]
+#[unsafe(export_name = tagged!("ryo_vm_register"))]
+pub unsafe extern "C-unwind" fn ryo_vm_register(start: *const *const u8, end: *const *const u8, anchor: *const u8) {
     // SAFETY: per the caller.
-    unsafe { registry::register(start, end) }
+    unsafe { registry::register(start, end, anchor) }
 }

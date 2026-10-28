@@ -15,8 +15,15 @@ const BACKEND_FEATURES: &str = "rustc_private,macro_metavar_expr_concat";
 /// (`--sysroot ryo`).
 pub fn build(targets: &[String], ryo_std: bool) -> Result<(), String> {
     let root = root();
-    build_in(&root.join("dist"), &root.join("target"), targets, ryo_std).map(drop)
+    // Tests build a second `dist/` of another ryo build elsewhere (`RYO_ABI_OVERRIDE`).
+    let dir = |var: &str, default: &str| std::env::var_os(var).map_or_else(|| root.join(default), PathBuf::from);
+    build_in(&dir(DIST_DIR_VAR, "dist"), &dir(TARGET_DIR_VAR, "target"), targets, ryo_std).map(drop)
 }
+
+/// `y build`'s output directory instead of `dist/` (tests).
+pub const DIST_DIR_VAR: &str = "RYO_Y_DIST_DIR";
+/// `y build`'s cargo target directory instead of `target/` (tests).
+pub const TARGET_DIR_VAR: &str = "RYO_Y_TARGET_DIR";
 
 /// [`build`] with `dist` as the output directory (what `dist/` is for `y build`) and `target`
 /// as cargo's target directory (`y install` uses `install/build/` and `install/target/`).
@@ -25,6 +32,12 @@ pub fn build_in(dist: &Path, target: &Path, targets: &[String], ryo_std: bool) -
     let info = RustcInfo::get()?;
     let root = root();
     let (dist, target) = (dist.to_path_buf(), target.to_path_buf());
+    // The ABI tag (design/build.md#the-abi-tag), for every cargo build below: the backend's
+    // and the runtime's `ryo_bytecode`, `ryo_rt`'s and the JIT's build scripts.
+    let tag = abi_tag(&root)?;
+    eprintln!("[y] abi tag: {tag}");
+    // SAFETY: `y` is single-threaded here.
+    unsafe { std::env::set_var(ABI_VAR, &tag) };
 
     let backend = build_backend(&root, &target, &info)?;
 
@@ -49,6 +62,7 @@ pub fn build_in(dist: &Path, target: &Path, targets: &[String], ryo_std: bool) -
         crate::utils::create_dir(dir)?;
     }
     copy(&backend, &dist_lib.join(dll_name("rustc_codegen_ryo")))?;
+    crate::utils::write(dist.join(ABI_FILE), &tag)?;
     // What `rustc-ryo -vV` identifies the build by (design/build.md#the-y-build-tool).
     let mut build_files = vec![backend.clone()];
     let mut all = vec![info.host.clone()];
@@ -59,11 +73,11 @@ pub fn build_in(dist: &Path, target: &Path, targets: &[String], ryo_std: bool) -
         crate::utils::create_dir(&target_lib)?;
         install_llvm_sysroot(&info, &dist, triple)?;
         let cross = (*triple != info.host).then_some(triple.as_str());
-        let jit = if crate::jit::supported(triple) { Some(crate::jit::build(&root, &target, &info, triple, cross, false)?) } else { None };
+        let jit = if crate::jit::supported(triple) { Some(crate::jit::build(&root, &target, &info, triple, cross, false, &tag)?) } else { None };
         // For the host, also the checked JIT `y test` runs (design/build.md#build): `ryo_rt`
         // with it swapped in, in `dist/jit-checked/`.
-        let checked = if cross.is_none() && jit.is_some() { Some(crate::jit::build(&root, &target, &info, triple, None, true)?) } else { None };
-        for (krate, rlib) in build_runtime(&root, &target, &dist, cross, jit.as_deref())? {
+        let checked = if cross.is_none() && jit.is_some() { Some(crate::jit::build(&root, &target, &info, triple, None, true, &tag)?) } else { None };
+        for (krate, rlib) in build_runtime(&root, &target, &dist, cross, jit.as_deref(), &tag)? {
             copy(&rlib, &target_lib.join(format!("lib{krate}.rlib")))?;
             if krate == "ryo_rt"
                 && let Some(sealed) = &checked
@@ -162,11 +176,21 @@ fn is_std_lib(file_name: &str) -> bool {
 /// the host or the `cross` target, and returns their crate names and rlibs. With `jit`, the
 /// directory of the sealed JIT ([`crate::jit::build`]), `ryo_rt` gets its `jit` feature and
 /// bundles it.
-fn build_runtime(root: &Path, target: &Path, dist: &Path, cross: Option<&str>, jit: Option<&Path>) -> Result<Vec<(&'static str, PathBuf)>, String> {
+fn build_runtime(
+    root: &Path,
+    target: &Path,
+    dist: &Path,
+    cross: Option<&str>,
+    jit: Option<&Path>,
+    tag: &str,
+) -> Result<Vec<(&'static str, PathBuf)>, String> {
     eprintln!("[y] runtime: ryo_rt{}", cross.map(|t| format!(" for {t}")).unwrap_or_default());
     let mut sysroot_flag = String::from("--sysroot=");
     sysroot_flag.push_str(dist.to_str().ok_or("dist/ path is not UTF-8")?);
-    let mut rustflags = vec![sysroot_flag.as_str(), "-Ccodegen-units=1", "-Cpanic=unwind"];
+    // The tag in the runtime crates' identity: their symbols differ between tags, and their
+    // crate hashes, which every ryo-built crate records (design/build.md#the-abi-tag).
+    let metadata = format!("-Cmetadata={tag}");
+    let mut rustflags = vec![sysroot_flag.as_str(), "-Ccodegen-units=1", "-Cpanic=unwind", metadata.as_str()];
     // Windows: no red zone in the `sysv64` handlers either (design/platforms.md).
     if cross.map_or(cfg!(windows), |t| t.contains("-windows")) {
         rustflags.push(crate::jit::NO_REDZONE);
@@ -235,6 +259,51 @@ fn artifact_rlibs(json: &str) -> Vec<PathBuf> {
 fn rlib_crate(path: &Path) -> Option<&str> {
     let stem = path.file_stem()?.to_str()?.strip_prefix("lib")?;
     Some(stem.split_once('-').map_or(stem, |(name, _)| name))
+}
+
+/// The environment variable the ABI tag reaches the cargo builds in (`ryo_bytecode::ABI_TAG`,
+/// `ryo_rt`'s and `ryo_jit`'s build scripts).
+pub const ABI_VAR: &str = "RYO_ABI";
+
+/// Overrides the computed ABI tag (tests: a second `dist/` of another ryo build).
+pub const ABI_OVERRIDE_VAR: &str = "RYO_ABI_OVERRIDE";
+
+/// The file in `dist/` holding the tag it was built with.
+pub const ABI_FILE: &str = "abi-tag";
+
+/// The ABI tag (design/build.md#the-abi-tag): 16 hex digits of a hash of everything that
+/// defines the contract between images, handlers, registry, JIT records and the JIT: the
+/// `vm/` crates' sources and manifests, `vm/Cargo.lock` and `RYO_RT_FEATURES`. Or
+/// `RYO_ABI_OVERRIDE`, which must be a C identifier part (alphanumeric or `_`).
+pub fn abi_tag(root: &Path) -> Result<String, String> {
+    use std::hash::Hasher;
+    if let Ok(t) = std::env::var(ABI_OVERRIDE_VAR) {
+        if t.is_empty() || !t.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
+            return Err(format!("{ABI_OVERRIDE_VAR}={t:?}: not a C identifier part"));
+        }
+        return Ok(t);
+    }
+    let vm = root.join("vm");
+    let mut h = std::hash::DefaultHasher::new();
+    for krate in ["bytecode", "rt", "jit"] {
+        crate::sysroot::hash_tree(&vm.join(krate).join("src"), Path::new(krate), &mut h)?;
+        h.write(&fs::read(vm.join(krate).join("Cargo.toml")).map_err(|e| e.to_string())?);
+        if let Ok(b) = fs::read(vm.join(krate).join("build.rs")) {
+            h.write(&b);
+        }
+    }
+    for f in ["Cargo.toml", "Cargo.lock"] {
+        h.write(&fs::read(vm.join(f)).map_err(|e| format!("{}: {e}", vm.join(f).display()))?);
+    }
+    h.write(std::env::var("RYO_RT_FEATURES").unwrap_or_default().as_bytes());
+    Ok(format!("{:016x}", h.finish()))
+}
+
+/// The tag `dist` was built with ([`ABI_FILE`]).
+pub fn dist_abi_tag(dist: &Path) -> Result<String, String> {
+    fs::read_to_string(dist.join(ABI_FILE))
+        .map(|s| s.trim().to_owned())
+        .map_err(|e| format!("{}: {e} (run `./y.sh build`)", dist.join(ABI_FILE).display()))
 }
 
 /// A hash of `files`' contents: the backend dylib and the runtime rlibs.

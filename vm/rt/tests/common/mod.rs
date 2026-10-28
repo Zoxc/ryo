@@ -280,7 +280,7 @@ unsafe fn register_eh_frame(eh: *const u8) {
 
 pub fn register(images: &[&Linked]) {
     let hs: Vec<*const u8> = images.iter().map(|l| l.header).collect();
-    unsafe { ryo_rt::vm::ryo_vm_register(hs.as_ptr(), hs.as_ptr().add(hs.len())) };
+    unsafe { ryo_rt::vm::ryo_vm_register(hs.as_ptr(), hs.as_ptr().add(hs.len()), std::ptr::null()) };
 }
 
 /// Encodes and links an image (unregistered).

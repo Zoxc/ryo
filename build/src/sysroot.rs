@@ -73,7 +73,7 @@ fn stamp(info: &RustcInfo, root: &Path, dist: &Path, jit: bool) -> Result<String
     y.write(include_str!("sysroot.rs").as_bytes());
     let src = info.rust_src_library();
     Ok(format!(
-        "rustc={:x}\nrust-src={}\nbackend={:x}\nvm={:x}\ny={:x}\njit={jit}\n",
+        "rustc={:x}\nrust-src={}\nbackend={:x}\nvm={:x}\ny={:x}\njit={jit}\nabi={}\n",
         {
             let mut h = std::hash::DefaultHasher::new();
             h.write(info.version.as_bytes());
@@ -83,11 +83,12 @@ fn stamp(info: &RustcInfo, root: &Path, dist: &Path, jit: bool) -> Result<String
         backend_stamp(dist)?,
         vm.finish(),
         y.finish(),
+        crate::dist::dist_abi_tag(dist)?,
     ))
 }
 
 /// Hashes the paths and contents of the files under `dir`, in a fixed order.
-fn hash_tree(dir: &Path, rel: &Path, h: &mut std::hash::DefaultHasher) -> Result<(), String> {
+pub fn hash_tree(dir: &Path, rel: &Path, h: &mut std::hash::DefaultHasher) -> Result<(), String> {
     use std::hash::Hasher;
     let mut entries: Vec<_> = fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?.flatten().collect();
     entries.sort_by_key(|e| e.file_name());
@@ -126,7 +127,14 @@ pub fn shim(rustc_ryo: OsString) -> std::process::ExitCode {
     let (Some(name), Some(stats_dir)) = (name.filter(|n| is_ryo_crate(n)), std::env::var_os(STATS_DIR_VAR)) else {
         let rustc = OsString::from("rustc");
         let program = if name.is_some_and(is_ryo_crate) { &rustc_ryo } else { &rustc };
-        return match cmd(program).args(&args).status() {
+        let mut c = cmd(program);
+        c.args(&args);
+        // The runtime crates' identity carries the ABI tag, as in `dist/`
+        // (design/build.md#the-abi-tag).
+        if let (Some("ryo_rt" | "ryo_bytecode"), Ok(tag)) = (name, std::env::var(crate::dist::ABI_VAR)) {
+            c.arg(format!("-Cmetadata={tag}"));
+        }
+        return match c.status() {
             Ok(s) => exit(s),
             Err(e) => fail(program, e),
         };

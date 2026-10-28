@@ -3,6 +3,16 @@
 Rust-side changes that the Lean model or proofs don't reflect yet. Add an entry per change;
 remove it once a Lean session has handled it.
 
+- Several ryo runtimes (Commit: "Rt: ABI tag, private runtime per module, run-time merge"):
+  the image header gains `abi` (u64 at 160, FNV-1a of the ABI tag) and `anchor` (u64 at 168,
+  relocated against `__ryo_registry_anchor_<tag>`; the separate `ryo_anchor` slot section is
+  gone); the header is 176 bytes. Runtime symbols carry the tag (`ryo_h_<Op>_<tag>`, trips,
+  `ryo_probe_stack_<tag>`, `ryo_vm_register_<tag>`, now mangled as an internal symbol); the
+  registration section is `ryo_images_<tag>`; the registry constructor is `lea rdi, start;
+  lea rsi, stop; lea rdx, anchor; jmp ryo_vm_register`, i.e. `register(start, end, anchor)`
+  skips images of another anchor and aborts on another `abi`. The Lean image and registry
+  checks (`Ryo/Obj/Image.lean`, `Ryo/Check/Image/Registry.lean`) need the new layout, names
+  and constructor form.
 - Handler entries in the instruction list (Commit: "JIT: Handler opcodes in the instruction
   list"): every handler `call` has an instruction entry at its position with the selector
   `HANDLER_SEL` (`u32::MAX`); the stream stores selectors plus one, wrapping, so it is `0`.

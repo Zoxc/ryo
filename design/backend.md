@@ -245,8 +245,10 @@ and `codegen_crate` reads them.
        that copy with `EncodedMetadata::from_path(path, stub_path, None)` (`encoder.rs:2384-2388`).
    - **Staticlib outputs**: nothing in the archive references the stub, so a C linker
      consuming the staticlib would drop it, and with it the constructor. So every stub
-     defines a hidden `__ryo_registry_anchor`, and every image object references it with a
-     strong reference (a pointer slot relocated against it, `objfile.rs`, `write_image`). In
+     defines a hidden `__ryo_registry_anchor_<tag>`, and every image object references it with a
+     strong reference (its header's `anchor` field, relocated against it, `objfile.rs`,
+     `write_image`); the stub passes the anchor to `ryo_vm_register`, which registers only
+     images of that anchor ([vm.md](vm.md#several-ryo-runtimes-in-one-process)). In
      a staticlib, any image the C linker takes (any VM function called) then pulls the stub
      in. (A weak reference would not cause archive extraction.) The anchor is a weak
      definition (a COMDAT on PE), so two ryo staticlibs in one C link don't clash: the

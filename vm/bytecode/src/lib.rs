@@ -31,6 +31,27 @@ extern crate alloc;
 #[cfg(target_endian = "big")]
 compile_error!("ryo_bytecode assumes a little-endian target");
 
+/// The ABI tag of this ryo build (design/build.md#the-abi-tag): `RYO_ABI` as `y build` sets
+/// it, `dev` without it (`vm/`'s own tests). Runtime symbols carry it as a suffix
+/// (`ryo_h_<Opcode>_<tag>`; `ryo_rt`'s and `ryo_jit`'s build scripts pass the same variable),
+/// as does the registration section, and images record its hash ([`ABI`]).
+pub const ABI_TAG: &str = match option_env!("RYO_ABI") {
+    Some(t) => t,
+    None => "dev",
+};
+
+/// [`ABI_TAG`]'s 64-bit FNV-1a hash: `image::Header::abi`, which registration compares.
+pub const ABI: u64 = {
+    let b = ABI_TAG.as_bytes();
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut i = 0;
+    while i < b.len() {
+        h = (h ^ b[i] as u64).wrapping_mul(0x0000_0100_0000_01b3);
+        i += 1;
+    }
+    h
+};
+
 #[macro_use]
 pub mod full;
 pub mod abi;

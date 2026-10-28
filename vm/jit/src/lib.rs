@@ -33,7 +33,7 @@ use ryo_bytecode::jit_abi::RtApi;
 /// (`RYO_JIT_STATS`'s summary), which the runtime calls at exit. `None` if the thread didn't
 /// start; the runtime then acts as the no-op JIT. Called once per runtime.
 #[cfg(target_arch = "x86_64")]
-#[unsafe(no_mangle)]
+#[unsafe(export_name = concat!("ryo_jit_start_", env!("RYO_ABI")))]
 pub extern "C" fn ryo_jit_start(rt: &'static RtApi) -> Option<extern "C" fn()> {
     (sys::SUPPORTED && thread::start(rt)).then_some(stats::report as extern "C" fn())
 }
@@ -90,7 +90,7 @@ pub fn code_len(rec: *const ryo_bytecode::image::JitRecord) -> usize {
 
 /// Without a JIT for this target: fails, so the runtime acts as the no-op JIT.
 #[cfg(not(target_arch = "x86_64"))]
-#[unsafe(no_mangle)]
+#[unsafe(export_name = concat!("ryo_jit_start_", env!("RYO_ABI")))]
 pub extern "C" fn ryo_jit_start(rt: &'static RtApi) -> Option<extern "C" fn()> {
     let _ = rt;
     None

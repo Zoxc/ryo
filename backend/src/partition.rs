@@ -81,6 +81,12 @@ pub fn is_rt_crate(tcx: TyCtxt<'_>, krate: CrateNum) -> bool {
     tcx.crate_name(krate).as_str() == "ryo_rt"
 }
 
+/// Whether `krate` is one of the runtime crates, `ryo_rt` or `ryo_bytecode`, which every final
+/// artifact links a private copy of (`dylib_dependency_formats`).
+pub fn is_runtime_crate(tcx: TyCtxt<'_>, krate: CrateNum) -> bool {
+    matches!(tcx.crate_name(krate).as_str(), "ryo_rt" | "ryo_bytecode")
+}
+
 /// [`rt_items`], given `ryo_rt`'s crate.
 pub fn rt_items_in(tcx: TyCtxt<'_>, krate: CrateNum) -> Option<RtItems> {
     let items = tcx.diagnostic_items(krate);

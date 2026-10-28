@@ -359,10 +359,9 @@ pub(super) fn same_exports(info: &crate::utils::RustcInfo, rustc_ryo: &Path, src
                     return Err(format!("{}: `ryo_vm_register` is bound dynamically: {line}", o.display()));
                 }
             }
-            // The runtime's own symbols, which every ryo output links: `ryo_vm_register`
-            // (C level), and in a Rust dylib everything of `ryo_rt` and `ryo_bytecode`,
-            // the handlers included.
-            let runtime = |s: &str| s == "ryo_vm_register" || s.contains("6ryo_rt") || s.contains("12ryo_bytecode") || is_rt_internal(s);
+            // The runtime's own symbols: in a Rust dylib everything of `ryo_rt` and
+            // `ryo_bytecode`, the handlers included. A cdylib and an executable export none.
+            let runtime = |s: &str| s.contains("6ryo_rt") || s.contains("12ryo_bytecode") || is_rt_internal(s);
             let mut syms: Vec<String> =
                 syms.lines().map(|s| crate::jit::unprefixed(&info.host, s)).filter(|s| !runtime(s)).map(str::to_owned).collect();
             syms.sort();
@@ -376,10 +375,12 @@ pub(super) fn same_exports(info: &crate::utils::RustcInfo, rustc_ryo: &Path, src
 }
 
 /// Whether `s` is one of `ryo_rt`'s own `#[rustc_std_internal_symbol]`s (mangled under the
-/// `__rustc` root): the handlers `ryo_h_*`, `ryo_probe_stack` and the JIT's trip entry points
-/// `ryo_jit_trip_*`.
+/// `__rustc` root, with the ABI tag): the handlers `ryo_h_*`, `ryo_probe_stack`,
+/// `ryo_vm_register`, `ryo_seh_handler` and the JIT's trip entry points `ryo_jit_trip_*`.
 pub(super) fn is_rt_internal(s: &str) -> bool {
-    s.starts_with("_R") && s.contains("7___rustc") && (s.contains("ryo_h_") || s.ends_with("15ryo_probe_stack") || s.contains("ryo_jit_trip_"))
+    s.starts_with("_R")
+        && s.contains("7___rustc")
+        && ["ryo_h_", "ryo_probe_stack_", "ryo_jit_trip_", "ryo_vm_register_", "ryo_seh_handler_"].iter().any(|p| s.contains(p))
 }
 
 /// v0 crate roots (`C<disambiguator>_<len><name>`) `ryo_rt` may use.

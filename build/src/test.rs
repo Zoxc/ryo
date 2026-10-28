@@ -13,6 +13,7 @@ use crate::utils::{cmd, exe_name, output, root};
 
 mod checks;
 mod corpus;
+mod multi;
 
 use checks::*;
 pub(crate) use checks::{rt_core_only, vm_functions};
@@ -335,6 +336,7 @@ fn test_targets(rel: &str) -> Option<(Vec<&'static str>, Vec<Check>)> {
         "vm_jit_private.rs" => vec![Check::JitPrivateStd],
         "vm_jit_atomics.rs" => vec![Check::JitAtomics],
         "incremental/edits.rs" | "incremental/pm.rs" | "incremental/pm_user.rs" => vec![Check::Incremental],
+        _ if rel.starts_with("multi_ryo/") => vec![Check::MultiStaticlib, Check::MultiDylib, Check::MultiVersion],
         _ => vec![],
     };
     (!programs.is_empty() || !checks.is_empty()).then_some((programs, checks))
@@ -523,12 +525,16 @@ enum Check {
     Dump,
     Exports,
     Backtrace,
+    MultiStaticlib,
+    MultiDylib,
+    /// A second full `y build`, of another ABI tag.
+    MultiVersion,
     /// It runs the program it builds.
     CargoRyo,
 }
 
 impl Check {
-    const ALL: [Check; 13] = [
+    const ALL: [Check; 16] = [
         Check::RtCoreOnly,
         Check::JitSealed,
         Check::JitPrivateStd,
@@ -541,6 +547,9 @@ impl Check {
         Check::Dump,
         Check::Exports,
         Check::Backtrace,
+        Check::MultiStaticlib,
+        Check::MultiDylib,
+        Check::MultiVersion,
         Check::CargoRyo,
     ];
 
@@ -558,6 +567,9 @@ impl Check {
             Check::Dump => "dump",
             Check::Exports => "exports",
             Check::Backtrace => "backtrace",
+            Check::MultiStaticlib => "multi-staticlib",
+            Check::MultiDylib => "multi-dylib",
+            Check::MultiVersion => "multi-version",
             Check::CargoRyo => "cargo-ryo",
         }
     }
@@ -573,9 +585,9 @@ impl Check {
             | Check::Dump
             | Check::Exports
             | Check::Backtrace => sel.fast,
-            Check::RtCoreOnly | Check::JitSealed => sel.rt,
+            Check::RtCoreOnly | Check::JitSealed | Check::MultiStaticlib | Check::MultiDylib => sel.rt,
             Check::JitPrivateStd | Check::JitAtomics => sel.jit,
-            Check::Incremental | Check::CargoRyo => false,
+            Check::Incremental | Check::CargoRyo | Check::MultiVersion => false,
         }
     }
 
@@ -595,6 +607,9 @@ impl Check {
             Check::Dump => dump(rustc_ryo, &tests.join("vm_statics.rs"), out),
             Check::Exports => same_exports(info, rustc_ryo, &tests.join("vm_exports.rs"), out),
             Check::Backtrace => backtrace(rustc_ryo, &tests.join("vm_backtrace.rs"), out),
+            Check::MultiStaticlib => multi::multi_staticlib(info, rustc_ryo, &tests.join("multi_ryo"), out),
+            Check::MultiDylib => multi::multi_dylib(info, root, rustc_ryo, &tests.join("multi_ryo"), out),
+            Check::MultiVersion => multi::multi_version(info, root, rustc_ryo, &tests.join("multi_ryo"), out),
             Check::CargoRyo => cargo_smoke(info, root, out),
         }
     }

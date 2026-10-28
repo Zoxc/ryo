@@ -14,6 +14,7 @@
 extern crate rustc_abi;
 extern crate rustc_codegen_llvm;
 extern crate rustc_codegen_ssa;
+extern crate rustc_crate_store;
 extern crate rustc_data_structures;
 extern crate rustc_hir;
 extern crate rustc_incremental;
@@ -97,6 +98,8 @@ type PartitionProvider = for<'tcx> fn(TyCtxt<'tcx>, ()) -> MonoItemPartitions<'t
 type SymbolNameProvider = for<'tcx> fn(TyCtxt<'tcx>, Instance<'tcx>) -> ty::SymbolName<'tcx>;
 type ExportedProvider = for<'tcx> fn(TyCtxt<'tcx>, LocalCrate) -> &'tcx [(ExportedSymbol<'tcx>, SymbolExportInfo)];
 type UpstreamProvider = for<'tcx> fn(TyCtxt<'tcx>, ()) -> partition::UpstreamMonos<'tcx>;
+type DylibFormatsProvider =
+    for<'tcx> fn(TyCtxt<'tcx>, rustc_hir::def_id::CrateNum) -> &'tcx [(rustc_hir::def_id::CrateNum, rustc_crate_store::LinkagePreference)];
 
 /// The default providers, saved in `provide`. Statics, because providers are plain fns.
 struct Originals {
@@ -104,6 +107,7 @@ struct Originals {
     symbol_name: SymbolNameProvider,
     exported_generic_symbols: ExportedProvider,
     upstream_monomorphizations: UpstreamProvider,
+    dylib_dependency_formats: DylibFormatsProvider,
 }
 
 static ORIGINALS: OnceLock<Originals> = OnceLock::new();
@@ -126,6 +130,22 @@ fn exported_generic_symbols<'tcx>(tcx: TyCtxt<'tcx>, krate: LocalCrate) -> &'tcx
 
 fn upstream_monomorphizations<'tcx>(tcx: TyCtxt<'tcx>, (): ()) -> partition::UpstreamMonos<'tcx> {
     partition::upstream_monomorphizations(tcx, (originals().upstream_monomorphizations)(tcx, ()))
+}
+
+/// An upstream Rust dylib's dependency formats without the runtime crates (`ryo_rt`,
+/// `ryo_bytecode`): every final artifact links its own, private copy of the runtime, never
+/// one included in a dylib, so sibling dylibs don't both provide it (rustc's "only shows up
+/// once" error), and no dylib exports it ([`link::LinkInfo::hidden`]). Copies of one ryo build
+/// merge at run time (design/vm.md#several-ryo-runtimes-in-one-process).
+fn dylib_dependency_formats<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    cnum: rustc_hir::def_id::CrateNum,
+) -> &'tcx [(rustc_hir::def_id::CrateNum, rustc_crate_store::LinkagePreference)] {
+    let all = (originals().dylib_dependency_formats)(tcx, cnum);
+    if !all.iter().any(|(c, _)| partition::is_runtime_crate(tcx, *c)) {
+        return all;
+    }
+    tcx.arena.alloc_from_iter(all.iter().copied().filter(|(c, _)| !partition::is_runtime_crate(tcx, *c)))
 }
 
 impl CodegenBackend for RyoBackend {
@@ -206,7 +226,9 @@ impl CodegenBackend for RyoBackend {
             symbol_name: q.symbol_name,
             exported_generic_symbols: q.exported_generic_symbols,
             upstream_monomorphizations: q.upstream_monomorphizations,
+            dylib_dependency_formats: providers.extern_queries.dylib_dependency_formats,
         });
+        providers.extern_queries.dylib_dependency_formats = dylib_dependency_formats;
         q.collect_and_partition_mono_items = collect_and_partition_mono_items;
         q.symbol_name = symbol_name;
         q.exported_generic_symbols = exported_generic_symbols;
@@ -228,7 +250,7 @@ impl CodegenBackend for RyoBackend {
         // A crate with no VM code has no image (`partition::vm_enabled`); its output still
         // registers its upstream crates' images.
         let Some(results) = partition::results(tcx) else {
-            let _ = self.link_info.set(link::LinkInfo { images: Vec::new(), macho });
+            let _ = self.link_info.set(link::LinkInfo { images: Vec::new(), macho, register: symbols::rt_symbol(tcx, objfile::REGISTER_SYMBOL) });
             let llvm = self.llvm.codegen_crate(tcx);
             return Box::new(RyoOngoingCodegen { llvm, images: Vec::new() });
         };
@@ -288,7 +310,7 @@ impl CodegenBackend for RyoBackend {
         }
         drop(write_t);
         let modules = images.iter().filter(|i| i.path.is_some()).map(|i| i.name.clone()).collect();
-        let _ = self.link_info.set(link::LinkInfo { images: modules, macho });
+        let _ = self.link_info.set(link::LinkInfo { images: modules, macho, register: symbols::rt_symbol(tcx, objfile::REGISTER_SYMBOL) });
         dump_lean::dump(tcx, &self.switches, results);
         // The native CGUs (step 4), compiled by cg_llvm as usual.
         let llvm = self.llvm.codegen_crate(tcx);

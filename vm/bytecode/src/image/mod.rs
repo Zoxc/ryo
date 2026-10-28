@@ -412,6 +412,13 @@ pub struct Header {
     /// Identifies the image among its crate's: a hash of rustc's codegen unit name
     /// ([`cgu_hash`]). The registry rejects two images with the same crate and CGU hashes.
     pub cgu_hash: u64,
+    /// [`crate::ABI`] of the ryo build that wrote the image: registration rejects images of
+    /// another build (design/vm.md#registry).
+    pub abi: u64,
+    /// The address of the link unit's registry anchor (relocated; 0 in the unlinked bytes):
+    /// a runtime registers only the images linked against the anchor its stub passes
+    /// (design/backend.md#pipeline).
+    pub anchor: u64,
 }
 
 /// A function table entry.

@@ -41,6 +41,53 @@ mod os {
     }
 }
 
+/// Pins the module (executable or shared object) containing `addr` against unloading:
+/// `dlclose`/`FreeLibrary` of it become no-ops. Its images, its JIT thread's code and the JIT
+/// code other modules may call stay mapped (design/vm.md#several-ryo-runtimes-in-one-process).
+/// Best effort: a failure leaves the module as it was.
+#[cfg(feature = "jit")]
+pub(crate) fn pin_module(addr: *const ()) {
+    #[cfg(unix)]
+    {
+        use core::ffi::{c_char, c_int, c_void};
+        #[repr(C)]
+        struct DlInfo {
+            fname: *const c_char,
+            fbase: *mut c_void,
+            sname: *const c_char,
+            saddr: *mut c_void,
+        }
+        unsafe extern "C" {
+            fn dladdr(addr: *const c_void, info: *mut DlInfo) -> c_int;
+            fn dlopen(file: *const c_char, mode: c_int) -> *mut c_void;
+        }
+        #[cfg(target_vendor = "apple")]
+        const MODE: c_int = 0x2 | 0x10 | 0x80; // RTLD_NOW | RTLD_NOLOAD | RTLD_NODELETE
+        #[cfg(not(target_vendor = "apple"))]
+        const MODE: c_int = 0x2 | 0x4 | 0x1000; // RTLD_NOW | RTLD_NOLOAD | RTLD_NODELETE
+        let mut info = DlInfo { fname: core::ptr::null(), fbase: core::ptr::null_mut(), sname: core::ptr::null(), saddr: core::ptr::null_mut() };
+        // SAFETY: plain libc calls; `dlopen` with `RTLD_NOLOAD` only adds a reference (never
+        // released) to the already loaded module, or returns null (the main executable).
+        unsafe {
+            if dladdr(addr.cast(), &mut info) != 0 && !info.fname.is_null() {
+                dlopen(info.fname, MODE);
+            }
+        }
+    }
+    #[cfg(windows)]
+    {
+        use core::ffi::c_void;
+        #[link(name = "kernel32")]
+        unsafe extern "system" {
+            fn GetModuleHandleExW(flags: u32, name: *const u16, module: *mut *mut c_void) -> i32;
+        }
+        // GET_MODULE_HANDLE_EX_FLAG_PIN | GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
+        let mut m = core::ptr::null_mut();
+        // SAFETY: a plain kernel32 call.
+        unsafe { GetModuleHandleExW(0x1 | 0x4, addr.cast(), &mut m) };
+    }
+}
+
 /// Writes `ryo: <msg>` to stderr and aborts the process. For conditions native Rust also
 /// aborts on (stack overflow, panic in a no-unwind function) and for corrupt images.
 #[cold]

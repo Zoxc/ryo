@@ -1,19 +1,20 @@
 //! The sealed JIT (design/build.md#build, design/jit.md#packaging): `ryo_jit` built as a staticlib
-//! with its own std, reduced to one object whose only global symbol is `ryo_jit_start`, which
-//! `ryo_rt` bundles.
+//! with its own std, reduced to one object whose only global symbol is `ryo_jit_start_<tag>`
+//! (the ABI tag, design/build.md#the-abi-tag), which `ryo_rt` bundles.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::utils::{RustcInfo, cmd, output, run};
 
-/// The JIT's one global symbol.
-pub const START: &str = "ryo_jit_start";
+/// The JIT's one global symbol, before the ABI tag: `ryo_jit_start_<tag>`.
+pub const START: &str = "ryo_jit_start_";
 
 /// The sealed object's name, as a member of the library and of `ryo_rt`'s rlib.
 pub const OBJECT: &str = "ryo_jit.o";
 
-/// What COFF sealing prefixes the JIT's other external symbols with ([`build`]).
+/// What COFF sealing prefixes the JIT's other external symbols with ([`build`]), followed by
+/// the tag and `$`, so that two ryo builds' sealed objects never define the same name.
 const COFF_PREFIX: &str = "__ryo_jit$";
 
 /// The symbol `s` of an object for `triple` as its C or Rust name: without Mach-O's `_`.
@@ -75,7 +76,7 @@ pub fn lib_name(triple: &str) -> &'static str {
 ///
 /// `checked`: with `-Cdebug-assertions=on -Coverflow-checks=on` on top of the release
 /// optimizations, in `target/jit-checked/`: the JIT `y test` runs ([`CHECKED_DIR`]).
-pub fn build(root: &Path, target: &Path, info: &RustcInfo, triple: &str, cross: Option<&str>, checked: bool) -> Result<PathBuf, String> {
+pub fn build(root: &Path, target: &Path, info: &RustcInfo, triple: &str, cross: Option<&str>, checked: bool, tag: &str) -> Result<PathBuf, String> {
     eprintln!("[y] jit: ryo_jit{}{}", if checked { " (checked)" } else { "" }, cross.map(|t| format!(" for {t}")).unwrap_or_default());
     let target_dir = target.join(if checked { "jit-checked" } else { "jit" });
     let mut rustflags: Vec<&str> = Vec::new();
@@ -111,7 +112,7 @@ pub fn build(root: &Path, target: &Path, info: &RustcInfo, triple: &str, cross: 
     }
     let staticlib = built.join("release").join(lib_name(triple));
     let out = target_dir.join("sealed").join(triple);
-    seal(info, &staticlib, &out, triple)?;
+    seal(info, &staticlib, &out, triple, tag)?;
     Ok(out)
 }
 
@@ -136,7 +137,7 @@ pub fn swap_into_rlib(info: &RustcInfo, rlib: &Path, sealed: &Path, dst_dir: &Pa
 }
 
 /// Seals `staticlib` into `out` (see [`build`]).
-fn seal(info: &RustcInfo, staticlib: &Path, out: &Path, triple: &str) -> Result<(), String> {
+fn seal(info: &RustcInfo, staticlib: &Path, out: &Path, triple: &str, tag: &str) -> Result<(), String> {
     let ar = info.tool("llvm-ar");
     let objcopy = info.tool("llvm-objcopy");
     crate::utils::remove_dir_if_exists(out)?;
@@ -153,12 +154,12 @@ fn seal(info: &RustcInfo, staticlib: &Path, out: &Path, triple: &str) -> Result<
     if coff(triple) {
         let nm = info.tool("llvm-nm");
         let defined = output(cmd(&nm).args(["--extern-only", "--defined-only", "--no-demangle", "-j"]).arg(out.join(&lto)))?;
-        let renames: String = defined.lines().map(str::trim).filter(|s| coff_renamed(s)).map(|s| format!("{s} {COFF_PREFIX}{s}\n")).collect();
+        let renames: String = defined.lines().map(str::trim).filter(|s| coff_renamed(s)).map(|s| format!("{s} {COFF_PREFIX}{tag}${s}\n")).collect();
         let list = out.join("renames.txt");
         crate::utils::write(&list, renames)?;
         seal.arg(format!("--redefine-syms={}", list.display()));
     } else {
-        seal.arg(format!("--keep-global-symbol={}", symbol(triple, START)));
+        seal.arg(format!("--keep-global-symbol={}", symbol(triple, &format!("{START}{tag}"))));
     }
     run(seal.arg(out.join(&lto)).arg(&obj))?;
     fs::remove_file(out.join(&lto)).map_err(|e| e.to_string())?;
@@ -177,10 +178,10 @@ fn seal(info: &RustcInfo, staticlib: &Path, out: &Path, triple: &str) -> Result<
     }
 }
 
-/// Whether COFF sealing renames the JIT's external definition `s`: all but `ryo_jit_start`
+/// Whether COFF sealing renames the JIT's external definition `s`: all but `ryo_jit_start_<tag>`
 /// and LLVM's constants named by their contents.
 fn coff_renamed(s: &str) -> bool {
-    !s.is_empty() && s != START && !["__xmm@", "__ymm@", "__zmm@", "__real@"].iter().any(|p| s.starts_with(p))
+    !s.is_empty() && !s.starts_with(START) && !["__xmm@", "__ymm@", "__zmm@", "__real@"].iter().any(|p| s.starts_with(p))
 }
 
 /// The one Rust member of a fat-LTO staticlib (`llvm-ar t`'s listing): the `.rcgu.o` that
@@ -220,9 +221,10 @@ pub fn check_sealed(info: &RustcInfo, rlib: &Path, dir: &Path, triple: &str) -> 
             .collect())
     };
     let globals = names(&["--extern-only", "--defined-only"])?;
-    let bad: Vec<&String> = globals.iter().filter(|s| *s != START && (!coff(triple) || (coff_renamed(s) && !s.starts_with(COFF_PREFIX)))).collect();
-    if !bad.is_empty() || !globals.iter().any(|s| s == START) {
-        return Err(format!("{} defines globals {bad:?} (and must define {START})", obj.display()));
+    let bad: Vec<&String> =
+        globals.iter().filter(|s| !s.starts_with(START) && (!coff(triple) || (coff_renamed(s) && !s.starts_with(COFF_PREFIX)))).collect();
+    if !bad.is_empty() || globals.iter().filter(|s| s.starts_with(START)).count() != 1 {
+        return Err(format!("{} defines globals {bad:?} (and must define one {START}<tag>)", obj.display()));
     }
     let rust = |s: &str| s.starts_with("_R") || s.starts_with("_ZN") || s.starts_with("__rust") || s.starts_with("__rdl") || s.starts_with("__rg_");
     let bad: Vec<String> = names(&["-u"])?.into_iter().filter(|s| rust(s)).collect();
@@ -265,7 +267,7 @@ mod tests {
     fn coff_renames() {
         assert!(super::coff_renamed("rust_eh_personality"));
         assert!(super::coff_renamed("_RNvNtCs1_3std9panicking11EMPTY_PANIC"));
-        assert!(!super::coff_renamed("ryo_jit_start"));
+        assert!(!super::coff_renamed("ryo_jit_start_0123456789abcdef"));
         assert!(!super::coff_renamed("__xmm@00000000000000010000000000000001"));
     }
 

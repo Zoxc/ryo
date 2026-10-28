@@ -71,9 +71,11 @@ pub(crate) fn func_flags<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> u
     inline | if attrs.flags.contains(CodegenFnAttrFlags::COLD) { FUNC_COLD } else { 0 }
 }
 
-/// The symbol of one of `ryo_rt`'s handlers or `ryo_probe_stack` (`#[rustc_std_internal_symbol]`s).
+/// The symbol of one of `ryo_rt`'s entry points (`#[rustc_std_internal_symbol]`s: the
+/// handlers, `ryo_probe_stack`, the trips, `ryo_vm_register` …): `name` with the ABI tag
+/// (`<name>_<tag>`, design/build.md#the-abi-tag), mangled.
 pub fn rt_symbol(tcx: TyCtxt<'_>, name: &str) -> String {
-    rustc_symbol_mangling::mangle_internal_symbol(tcx, name)
+    rustc_symbol_mangling::mangle_internal_symbol(tcx, &format!("{name}_{}", ryo_bytecode::ABI_TAG))
 }
 
 /// The symbol of a static (its own, or the foreign item's link name).

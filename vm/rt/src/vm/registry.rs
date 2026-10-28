@@ -38,7 +38,12 @@ fn snapshot() -> Option<&'static Snapshot> {
 ///
 /// # Safety
 /// As for `ryo_vm_register`.
-pub unsafe fn register(start: *const *const u8, end: *const *const u8) {
+pub unsafe fn register(start: *const *const u8, end: *const *const u8, anchor: *const u8) {
+    // A copy merged into another registers there (design/vm.md#several-ryo-runtimes-in-one-process).
+    if let Some(winner) = super::jit::forward() {
+        // SAFETY: per the caller; the winner's `ryo_vm_register` has the same contract.
+        return unsafe { winner(start, end, anchor) };
+    }
     let n = (end as usize).saturating_sub(start as usize) / size_of::<*const u8>();
     let mut g = lock();
     let old = snapshot().map_or(&[][..], Snapshot::images);
@@ -53,7 +58,7 @@ pub unsafe fn register(start: *const *const u8, end: *const *const u8) {
         // SAFETY: the caller passes `n` readable header pointers.
         let h = unsafe { *start.add(i) };
         // SAFETY: per the caller.
-        let Some(view) = (unsafe { admit(h, done(len)) }) else { continue };
+        let Some(view) = (unsafe { admit(h, anchor, done(len)) }) else { continue };
         super::jit::registered(&view);
         // SAFETY: `by_hash` has room for `cap > len` entries.
         unsafe { by_hash.add(len).write(view) };
@@ -88,22 +93,39 @@ pub unsafe fn ensure(h: *const u8) {
     }
     let entry = [h];
     // SAFETY: per the caller; `register` skips the image if another thread just registered it.
-    unsafe { register(entry.as_ptr(), entry.as_ptr().wrapping_add(1)) }
+    // No anchor: the image's own trip reached this runtime, so it is this runtime's.
+    unsafe { register(entry.as_ptr(), entry.as_ptr().wrapping_add(1), ptr::null()) }
 }
 
 /// The admission checks for header `h` against the images already registered (`existing`):
-/// `None` to skip it (a null entry, or an image registered before); aborts on an invalid,
+/// `None` to skip it (a null entry, an image registered before, or one linked against another
+/// anchor than a non-null `anchor`); aborts on an image of another ryo build, an invalid,
 /// duplicate or unlinked image. Applies the image's fixups.
 ///
 /// # Safety
 /// `h` is null or a linked image's header, valid forever (as for `ryo_vm_register`), and the
 /// runtime lock is held.
-unsafe fn admit(h: *const u8, existing: &[Image<'static>]) -> Option<Image<'static>> {
+unsafe fn admit(h: *const u8, anchor: *const u8, existing: &[Image<'static>]) -> Option<Image<'static>> {
+    use ryo_bytecode::image::{Header, MAGIC};
     if h.is_null() {
         return None; // the stub's entry, or linker padding (PE incremental linking)
     }
     if existing.iter().any(|im| ptr::eq(im.header(), h.cast())) {
         return None; // registered before (e.g. a library loaded twice)
+    }
+    // Before parsing: another build's header may have another layout. The tagged symbols
+    // keep other builds' images away from this runtime (design/build.md#the-abi-tag), so this
+    // is the backstop for what bypasses them.
+    // SAFETY: per the caller, `h` is a linked image's header, valid forever.
+    let (magic, abi, owner) = unsafe {
+        let p = h.cast::<Header>();
+        ((&raw const (*p).magic).read_unaligned(), (&raw const (*p).abi).read_unaligned(), (&raw const (*p).anchor).read_unaligned())
+    };
+    if !anchor.is_null() && owner != 0 && owner != anchor as u64 {
+        return None; // another runtime's image in this link unit (design/backend.md#pipeline)
+    }
+    if magic == MAGIC && abi != ryo_bytecode::ABI {
+        fatal("ryo_vm_register: image built by another ryo build (ABI tag mismatch); mixing ryo builds in one runtime is unsupported");
     }
     // SAFETY: per the caller, `h` is a linked image's header, valid forever.
     let view = match unsafe { Image::from_header(h) } {

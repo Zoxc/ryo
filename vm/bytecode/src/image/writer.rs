@@ -744,6 +744,8 @@ impl ImageWriter {
             jit_records,
             const_relocs,
             cgu_hash: self.cgu_hash,
+            abi: crate::ABI,
+            anchor: 0,
         };
 
         let mut ro = vec![0u8; size];

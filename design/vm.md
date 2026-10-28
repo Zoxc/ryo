@@ -890,9 +890,15 @@ calls it by name, local otherwise (backtraces, profilers) ([backend.md](backend.
   `apply_fixups` requires. Nothing looks functions up at run time: calls go to symbols.
   Registry memory comes from `mmap`ed chunks (`VirtualAlloc` on PE), not the Rust
   allocator.
-- **`__ryo_registry_anchor`**: each image object references it (a pointer slot relocated
-  against it, `objfile.rs`, `write_image`), so a C linker that takes an image out of a
-  staticlib takes the registry stub defining it too ([backend.md](backend.md#pipeline)).
+- **`__ryo_registry_anchor_<tag>`**: each image's header references it (its `anchor` field,
+  relocated, `objfile.rs`, `write_image`), so a C linker that takes an image out of a
+  staticlib takes the registry stub defining it too ([backend.md](backend.md#pipeline)). The
+  stub passes its anchor to `ryo_vm_register(start, end, anchor)`, which skips images of
+  another anchor: another runtime's in the same link unit (staticlibs each combined with
+  `ld -r` and localized), registered by that runtime's stub.
+- **`Header::abi`**: the hash of the ABI tag ([build.md](build.md#the-abi-tag)) of the ryo
+  build that wrote the image. Registration aborts on another (the tagged symbols keep other
+  builds' images away; this is the backstop).
 
 ## JIT
 
@@ -904,6 +910,42 @@ the image alone ([Reduced instructions](#reduced-instructions)), and loop heads 
 the whole state is in the frame ([Register cache](#register-cache)). The JIT thread is a
 separate crate, `ryo_jit`, sealed with a std of its own into an object that `ryo_rt`'s
 rlib bundles ([jit.md](jit.md#packaging)).
+
+## Several ryo runtimes in one process
+
+Every final artifact (executable, cdylib, Rust dylib, the C link of staticlibs) links a
+private copy of the runtime (`ryo_rt`, `ryo_bytecode` and the sealed JIT):
+- **Names carry the ABI tag** ([build.md](build.md#the-abi-tag)): every entry point is
+  `<name>_<tag>` (the handlers, trips, `ryo_probe_stack`, `ryo_seh_handler`,
+  `ryo_vm_register`, mangled as `#[rustc_std_internal_symbol]`s), as are
+  `ryo_jit_start_<tag>`, the anchor and the registration section (`ryo_images_<tag>`,
+  `.ryo$<tag>{a,m,z}`, `__ryo_<tag[..10]>`); the runtime crates are built with
+  `-Cmetadata=<tag>`, so their other symbols differ between builds too. Two ryo builds'
+  runtimes in one link or process never share a name: each build's images bind to, and
+  register with, that build's runtime. A crate built against another build's rlib is rustc's
+  error (`ryo_rt`'s crate hash).
+- **Nothing of the runtime is exported**: `ryo_vm_register` is internal, so a cdylib exports
+  none of it, and the backend leaves `ryo_rt`/`ryo_bytecode` out of upstream Rust dylibs
+  (`dylib_dependency_formats`) and out of a Rust dylib's export list. So no module binds to
+  another's runtime, sibling Rust dylibs build, and no dynamic symbol is defined twice.
+- **Same-build staticlibs in one C link** share one runtime: their runtime members are the
+  same objects, and archive extraction pulls a member only for a still-undefined symbol, so
+  only the first archive's are taken. A link pulling every member (`--whole-archive`,
+  `/WHOLEARCHIVE`, `-all_load`) fails on duplicate symbols, the users' std and `ryo_rt`'s:
+  unsupported, as for any two Rust staticlibs. Staticlibs each combined with `ld -r` and
+  localized keep a runtime each (anchor ownership, [Image format](#image-format)).
+- **Run-time merge** (`jit/merge.rs`): copies of one build whose program has one panic
+  personality (one std: an executable and its Rust dylibs with `-Cprefer-dynamic`, the ryo
+  sysroot's `libstd` included) merge into one instance. At its first registration a copy
+  maps a rendezvous page at a fixed address derived from the tag (Linux
+  `MAP_FIXED_NOREPLACE`, macOS `mach_vm_allocate` without `VM_FLAGS_ANYWHERE`; a named file
+  mapping `Local\ryo-<pid>-<tag>` on Windows) and publishes its `ryo_vm_register` there; later
+  copies with the same personality forward their registrations to it. The winner's
+  registration points the images' JIT record slots at its own trips, so its registry, queue,
+  JIT thread and code allocator serve all of them, and JIT code calls and inlines across
+  modules; handlers keep no state. Copies with another personality (cdylibs, localized
+  blobs) stay separate instances. `RYO_JIT_MERGE=0` keeps every copy separate.
+- **Unloading** stays unsupported; the module whose JIT starts is pinned.
 
 ## Runtime crate: `ryo_rt`
 

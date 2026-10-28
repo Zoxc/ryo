@@ -850,6 +850,28 @@ fn say_terminate(_: u64) -> u64 {
 #[test]
 fn fatal_child() {
     let Ok(case) = std::env::var("RYO_FATAL_CASE") else { return };
+    if case == "abi" || case == "foreign_anchor" {
+        // A header of another ryo build (`Header::abi`); with `foreign_anchor` also linked
+        // against another link unit's anchor, which registration skips before the ABI check.
+        let mut w = ImageWriter::new(unique_scid());
+        let mut a = Asm::new();
+        a.i(Insn::ImmW32 { d: Slot(-16), imm: 1 });
+        a.ret(Slot(-16), 4);
+        w.add_function(func(a.done(), 16, 0, 4));
+        let l = assemble(w, &[]);
+        let foreign = case == "foreign_anchor";
+        unsafe {
+            let h = l.header as *mut ryo_bytecode::image::Header;
+            (*h).abi ^= 1;
+            if foreign {
+                (*h).anchor = 0x1000;
+            }
+            let hs = [l.header];
+            ryo_rt::vm::ryo_vm_register(hs.as_ptr(), hs.as_ptr().add(1), if foreign { 0x2000 as *const u8 } else { std::ptr::null() });
+        }
+        eprintln!("{}", if foreign { "SKIPPED" } else { "RETURNED" });
+        return;
+    }
     let mut w = ImageWriter::new(unique_scid());
     let mut a = Asm::new();
     let mut cleanup = vec![];
@@ -909,6 +931,7 @@ fn fatal_paths() {
         ("no_entry", Some("failed to initiate panic")),
         ("catch", Some("CATCH PAD RAN")),
         ("abort", None),
+        ("abi", Some("another ryo build")),
     ] {
         let out = std::process::Command::new(&exe)
             .args(["fatal_child", "--exact", "--nocapture", "--test-threads=1"])
@@ -922,6 +945,20 @@ fn fatal_paths() {
             assert!(err.contains(msg), "{case}: stderr lacks {msg:?}:\n{err}");
         }
     }
+}
+
+/// Registration skips an image linked against another anchor than its stub's (another
+/// runtime's, in the same link unit), even one of another ryo build.
+#[test]
+fn foreign_anchor_skipped() {
+    let exe = std::env::current_exe().unwrap();
+    let out = std::process::Command::new(&exe)
+        .args(["fatal_child", "--exact", "--nocapture", "--test-threads=1"])
+        .env("RYO_FATAL_CASE", "foreign_anchor")
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success() && err.contains("SKIPPED"), "{err}");
 }
 
 // ---- concurrency ----

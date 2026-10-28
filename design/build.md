@@ -159,6 +159,19 @@ modeled on cg_clif's `build_system/`.
    it comes in `RUSTFLAGS`, which cargo fingerprints (`y test`'s `cargo-ryo` check covers the
    switch between plain cargo and `cargo ryo`).
 
+### The ABI tag
+
+`y build` computes the ABI tag (`dist::abi_tag`): 16 hex digits of a hash of the `vm/`
+crates' sources and manifests (`bytecode`, `rt`, `jit`), `vm/Cargo.lock` and
+`RYO_RT_FEATURES`, or `RYO_ABI_OVERRIDE` (tests: a second build of another tag). It sets
+`RYO_ABI` for every cargo build (the backend's and the runtime's `ryo_bytecode::ABI_TAG`,
+`ryo_rt`'s and `ryo_jit`'s build scripts; `dev` without it), builds `ryo_rt` and
+`ryo_bytecode` with `-Cmetadata=<tag>` (also in the ryo sysroot), writes it to
+`dist/abi-tag` and `rustc-ryo -vV` (`ryo-abi:`). The runtime's symbols, the sealed JIT's
+entry and COFF prefix (`__ryo_jit$<tag>$`), the registration section and the image header
+carry it ([vm.md](vm.md#several-ryo-runtimes-in-one-process)). `RYO_Y_DIST_DIR` and
+`RYO_Y_TARGET_DIR` move `dist/` and `target/` (tests).
+
 ### `build-clif`: the Cranelift backend on stable
 
 The `rustc-codegen-cranelift` rustup component is nightly-only, but the stable `rustc-dev`

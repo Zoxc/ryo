@@ -1009,10 +1009,15 @@ the stderr it compares), each with one `write`:
   never replaced by a direct call: a caller compiled before its callee keeps the slot.
 - A program that interposes `malloc` itself with Rust code (which may call VM code) would
   run that code on the JIT thread, and with `RYO_JIT_SYNC` could deadlock.
-- Each `ryo_rt` copy in a process (cdylibs, a staticlib per C link) has its own JIT,
-  thread, code regions and private std. Two ryo staticlibs in one C link both define
-  `ryo_jit_start`, a duplicate-symbol error, like `ryo_vm_register` already is (one ryo
-  staticlib per final C link, [backend.md](backend.md#pipeline)).
+- Each runtime instance in a process has its own JIT, thread, code regions and private std
+  ([vm.md](vm.md#several-ryo-runtimes-in-one-process)): a cdylib, a C link of staticlibs, a
+  ryo build. Copies of one build with one std (an executable and its Rust dylibs) merge into
+  one instance at run time. Two same-build ryo staticlibs in one C link don't collide on
+  `ryo_jit_start_<tag>`: archive extraction takes one sealed member, as it takes one `ryo_rt`
+  member. Only a link that takes every member (`--whole-archive`) pulls both, and then the
+  users' std and `ryo_rt` collide too (unsupported, as for any two Rust staticlibs).
+- The thread starting pins its module (`dladdr` + `dlopen(RTLD_NOLOAD | RTLD_NODELETE)`,
+  `GetModuleHandleExW(PIN)`): `dlclose` of it is a no-op.
 - `#![no_std]` final artifacts don't link with the native sysroot: the sealed object needs
   libc, libpthread and the unwinder, which std brings.
 

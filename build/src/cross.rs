@@ -37,7 +37,7 @@ const STUB_LIBS: &[&str] = &[
 ];
 
 /// CRT and SDK symbols `ryo_rt` uses that a plain rustc build of a program may not: its
-/// kernel32 imports (`vm/rt/src/vm/sys.rs`, `seh.rs`, `vm/bytecode/src/vmem.rs`, as lld names their `__imp_` references) and the
+/// kernel32 imports (`vm/rt/src/vm/sys.rs`, `seh.rs`, `jit/merge.rs`, `vm/bytecode/src/vmem.rs`, as lld names their `__imp_` references) and the
 /// C runtime functions its code needs. The only unresolved symbols allowed besides plain
 /// rustc's.
 const RT_IMPORTS: &[&str] = &[
@@ -50,6 +50,11 @@ const RT_IMPORTS: &[&str] = &[
     "__declspec(dllimport) FlsAlloc",
     "__declspec(dllimport) FlsSetValue",
     "__declspec(dllimport) GetEnvironmentVariableA",
+    // The run-time merge's rendezvous and module pinning (`vm/rt/src/vm/jit/merge.rs`, `sys.rs`).
+    "__declspec(dllimport) CreateFileMappingW",
+    "__declspec(dllimport) MapViewOfFile",
+    "__declspec(dllimport) GetLastError",
+    "__declspec(dllimport) GetModuleHandleExW",
     // The PE exception handler's unwind to a terminate stub (`vm/rt/src/vm/seh.rs`).
     "__declspec(dllimport) RtlUnwindEx",
     "atexit",
@@ -244,7 +249,7 @@ pub fn run(target: &str) -> Result<(), String> {
 /// (design/platforms.md). The initializers come from `__mod_init_func` (pointers: plain, as
 /// lld writes them, or chained-fixup rebases, as ld64 and ld-prime do with chained fixups) or
 /// from `__init_offsets` (4-byte offsets from the Mach-O header, ld-prime's). The registry's
-/// is recognized by its `jmp` to `_ryo_vm_register` (or a stub for it), the program's by the
+/// is recognized by its `jmp` to `ryo_vm_register_<tag>` (or a stub for it), the program's by the
 /// symbol at its address.
 fn registry_first(info: &RustcInfo, exe: &Path) -> Result<(), String> {
     let objdump = info.tool("llvm-objdump");
@@ -295,9 +300,9 @@ fn registry_first(info: &RustcInfo, exe: &Path) -> Result<(), String> {
         return Err(format!("{} has {} initializers, expected the registry's and the program's", exe.display(), inits.len()));
     };
     let dis = crate::utils::output(
-        cmd(&objdump).arg("-d").arg(format!("--start-address={registry:#x}")).arg(format!("--stop-address={:#x}", registry + 19)).arg(exe),
+        cmd(&objdump).arg("-d").arg(format!("--start-address={registry:#x}")).arg(format!("--stop-address={:#x}", registry + 26)).arg(exe),
     )?;
-    if !dis.lines().any(|l| l.contains("jmp") && l.contains("_ryo_vm_register")) {
+    if !dis.lines().any(|l| l.contains("jmp") && l.contains("ryo_vm_register")) {
         return Err(format!("the first initializer of {} (at {registry:#x}) isn't the registry's:\n{dis}", exe.display()));
     }
     let names: Vec<&str> = syms.iter().filter(|s| s.0 == program).map(|s| s.1).collect();

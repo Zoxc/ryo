@@ -33,6 +33,8 @@ fn main() {
         if out.status.success() {
             // The checked JIT is another `ryo_rt`: cargo rebuilds when it is switched.
             let _ = writeln!(stdout, "ryo-build: {}{}", option_env!("RYO_BUILD_ID").unwrap_or("unknown"), if checked { "+jit-checked" } else { "" });
+            // The ABI tag (design/build.md#the-abi-tag), set in `y build`'s environment.
+            let _ = writeln!(stdout, "ryo-abi: {}", option_env!("RYO_ABI").unwrap_or("unknown"));
         }
         let _ = stdout.flush();
         let _ = std::io::stderr().write_all(&out.stderr);

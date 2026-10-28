@@ -15,7 +15,7 @@
 /// The trip of a function's entry: `r11` is its JIT record.
 #[unsafe(naked)]
 #[rustc_std_internal_symbol]
-#[unsafe(export_name = "ryo_jit_trip_entry")]
+#[unsafe(export_name = tagged!("ryo_jit_trip_entry"))]
 pub unsafe extern "sysv64" fn trip_entry() {
     core::arch::naked_asm!(
         ".cfi_startproc",
@@ -30,7 +30,7 @@ pub unsafe extern "sysv64" fn trip_entry() {
 /// The trip of a loop head: `r11` is the JIT record, `eax` the head's index.
 #[unsafe(naked)]
 #[rustc_std_internal_symbol]
-#[unsafe(export_name = "ryo_jit_trip_osr")]
+#[unsafe(export_name = tagged!("ryo_jit_trip_osr"))]
 pub unsafe extern "sysv64" fn trip_osr() {
     core::arch::naked_asm!(
         ".cfi_startproc",
@@ -45,3 +45,8 @@ pub unsafe extern "sysv64" fn trip_osr() {
 
 /// Called for every newly registered image: nothing to do without a JIT.
 pub(crate) fn registered(_: &ryo_bytecode::image::Image<'_>) {}
+
+/// Without the JIT, copies never merge (`jit/merge.rs`): there is nothing to share.
+pub(crate) fn forward() -> Option<unsafe extern "C" fn(*const *const u8, *const *const u8, *const u8)> {
+    None
+}

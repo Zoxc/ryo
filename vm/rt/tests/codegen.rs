@@ -23,6 +23,12 @@ use ryo_bytecode::{ALL_OPCODES, Opcode};
 /// The instructions of the function whose (mangled) name ends with `suffix`, without labels
 /// and directives.
 fn asm_of<'a>(asm: &'a str, suffix: &str) -> Option<Vec<&'a str>> {
+    // The handlers' symbols carry the ABI tag (`ryo_h_<Op>_<tag>`).
+    if !suffix.ends_with(ryo_bytecode::ABI_TAG)
+        && let Some(a) = asm_of(asm, &format!("{suffix}_{}", ryo_bytecode::ABI_TAG))
+    {
+        return Some(a);
+    }
     // An identical function merged into another is an alias, `name = other` (the `.ptr`
     // atomics and their `.w64` twins).
     let alias = asm.lines().find_map(|l| {
