@@ -255,45 +255,10 @@ fn read(code: &[u8], fields: Fields<'_>, rodata: &[u8], side: Side<'_>, mode: Mo
     let Side { call_sites, dropped, scopes, index } = side;
     let mut c = Cursor::new(code, fields);
     let err = |at: u32, what: &'static str| AsmError { at, what };
-    // Prologue: the frame size is its `sub`'s (less the 8 bytes in place of the saved `rbp`
-    // without a frame pointer), and the prologue must be that size's.
     if !mode.valid() {
         return Err(err(0, "unsupported mode"));
     }
-    // With counters, the entry's check comes first: its stub's position, and where the stub
-    // returns to.
-    let entry = if mode.counters {
-        match (c.item(), c.item()) {
-            (Ok(Item::CtrInc(false)), Ok(Item::Branch { cond: Cond::Ns, target, .. })) => Some((target, c.pos)),
-            _ => return Err(err(0, "no counter check at the entry")),
-        }
-    } else {
-        None
-    };
-    let start = c.pos;
-    let mut alloc = 0;
-    loop {
-        match c.item() {
-            Ok(Item::SubRsp(n)) => alloc = n,
-            Ok(Item::PushRbp | Item::Mov(Reg::Rbp, Reg::Rsp) | Item::SetReg(Reg::Rax, _) | Item::Call(Ref::Probe)) => continue,
-            _ => {}
-        }
-        break;
-    }
-    let frame_size = if mode.frame_pointer { alloc } else { alloc.wrapping_sub(8) };
-    if frame_size % 16 != 0 {
-        return Err(err(0, "frame size not a multiple of 16"));
-    }
-    c.pos = start;
-    for want in prologue(frame_size, mode) {
-        let at = c.pos;
-        if c.item().ok() != Some(want) {
-            return Err(err(at, "not the prologue of the frame size"));
-        }
-    }
-    if !mode.frame_pointer {
-        c.sp_frame = Some(frame_size);
-    }
+    let (entry, frame_size) = prologue_frame(&mut c, mode)?;
     let fr = Frame { size: frame_size, mode, reduced, region: false, listed: index.is_some() };
     let fr_region = Frame { region: true, ..fr };
 
@@ -368,9 +333,73 @@ fn read(code: &[u8], fields: Fields<'_>, rodata: &[u8], side: Side<'_>, mode: Mo
         return Err(err(region_pos, "pad region without instructions"));
     }
 
-    // Instruction positions → indices.
+    // Each instruction's position, for positions → indices.
     let ipos: Vec<u32> = protos.iter().map(|p| p.pos).collect();
-    let index = |at: u32, b: u32| insn_index(&ipos, at, b);
+    let heads = loop_heads(&protos, &padded, &ipos, rs, mode)?;
+    if let Some(entry) = entry {
+        c.pos = body_end;
+        check_counter_stubs(&mut c, &protos, &heads, entry, limit)?;
+    }
+    // `resume` in the pad region takes the landing pads' exception slot.
+    let mut protos = protos;
+    if rs < protos.len() {
+        resume_slots(&mut protos[..], rs, fr.mode, reduced).map_err(|at| err(at, "resume without a landing pad"))?;
+    }
+
+    let actions = unwind_actions(&protos, &ipos, call_sites, rs)?;
+    // Scopes: before the first instruction at or after their position.
+    let scopes = scopes.iter().map(|sc| (ipos.partition_point(|&p| p < sc.code_offset), *sc)).collect();
+    Ok(Read { protos, frame_size, actions, scopes, heads, ipos })
+}
+
+/// The entry's counter check (with counters: its stub's position and where the stub returns
+/// to) and the prologue at the cursor, which is left after it, and the frame size.
+fn prologue_frame(c: &mut Cursor<'_>, mode: Mode) -> Result<(Option<(u32, u32)>, u32), AsmError> {
+    let err = |at: u32, what: &'static str| AsmError { at, what };
+    // With counters, the entry's check comes first: its stub's position, and where the stub
+    // returns to.
+    let entry = if mode.counters {
+        match (c.item(), c.item()) {
+            (Ok(Item::CtrInc(false)), Ok(Item::Branch { cond: Cond::Ns, target, .. })) => Some((target, c.pos)),
+            _ => return Err(err(0, "no counter check at the entry")),
+        }
+    } else {
+        None
+    };
+    // Prologue: the frame size is its `sub`'s (less the 8 bytes in place of the saved `rbp`
+    // without a frame pointer), and the prologue must be that size's.
+    let start = c.pos;
+    let mut alloc = 0;
+    loop {
+        match c.item() {
+            Ok(Item::SubRsp(n)) => alloc = n,
+            Ok(Item::PushRbp | Item::Mov(Reg::Rbp, Reg::Rsp) | Item::SetReg(Reg::Rax, _) | Item::Call(Ref::Probe)) => continue,
+            _ => {}
+        }
+        break;
+    }
+    let frame_size = if mode.frame_pointer { alloc } else { alloc.wrapping_sub(8) };
+    if frame_size % 16 != 0 {
+        return Err(err(0, "frame size not a multiple of 16"));
+    }
+    c.pos = start;
+    for want in prologue(frame_size, mode) {
+        let at = c.pos;
+        if c.item().ok() != Some(want) {
+            return Err(err(at, "not the prologue of the frame size"));
+        }
+    }
+    if !mode.frame_pointer {
+        c.sp_frame = Some(frame_size);
+    }
+    Ok((entry, frame_size))
+}
+
+/// The loop heads' instruction indices, in order, checking that only they are padded and
+/// have counter checks, and that no branch crosses the pad region's start (instruction `rs`).
+fn loop_heads(protos: &[Proto], padded: &[bool], ipos: &[u32], rs: usize, mode: Mode) -> Result<Vec<usize>, AsmError> {
+    let err = |at: u32, what: &'static str| AsmError { at, what };
+    let index = |at: u32, b: u32| insn_index(ipos, at, b);
     // When aligning, loop heads start at multiples of 16, and only they are padded. Only
     // single branch targets make loop heads, not jump tables. The pad region has none, and
     // no branch crosses its start.
@@ -402,38 +431,43 @@ fn read(code: &[u8], fields: Fields<'_>, rodata: &[u8], side: Side<'_>, mode: Mo
             return Err(err(ipos[i], "counter check not at a loop head"));
         }
     }
-    let heads: Vec<usize> = (0..protos.len()).filter(|&i| head[i]).collect();
-    // The counter stubs after the body: the loop heads' in order, then the entry's.
-    if let Some((entry_stub, entry_back)) = entry {
-        c.pos = body_end;
-        let checks = heads.iter().map(|&i| protos[i].counter.unwrap());
-        for (n, (stub, back)) in checks.chain([(entry_stub, entry_back)]).enumerate() {
-            let at = c.pos;
-            let bad = err(at, "counter stub");
-            if at != stub {
+    Ok((0..protos.len()).filter(|&i| head[i]).collect())
+}
+
+/// Checks the counter stubs at the cursor, after the body: the loop heads' in order, then the
+/// entry's (`entry`: its position and where it returns to), ending at `limit`.
+fn check_counter_stubs(c: &mut Cursor<'_>, protos: &[Proto], heads: &[usize], entry: (u32, u32), limit: u32) -> Result<(), AsmError> {
+    let err = |at: u32, what: &'static str| AsmError { at, what };
+    let (entry_stub, entry_back) = entry;
+    let checks = heads.iter().map(|&i| protos[i].counter.unwrap());
+    for (n, (stub, back)) in checks.chain([(entry_stub, entry_back)]).enumerate() {
+        let at = c.pos;
+        let bad = err(at, "counter stub");
+        if at != stub {
+            return Err(bad);
+        }
+        for want in counter_stub((n < heads.len()).then_some(n as u64)) {
+            if c.item()? != want {
                 return Err(bad);
             }
-            for want in counter_stub((n < heads.len()).then_some(n as u64)) {
-                if c.item()? != want {
-                    return Err(bad);
-                }
-            }
-            match c.item()? {
-                Item::Branch { cond: Cond::Always, target, .. } if target == back => {}
-                _ => return Err(bad),
-            }
         }
-        if c.pos != limit {
-            return Err(err(c.pos, "code after the counter stubs"));
+        match c.item()? {
+            Item::Branch { cond: Cond::Always, target, .. } if target == back => {}
+            _ => return Err(bad),
         }
     }
-    // `resume` in the pad region takes the landing pads' exception slot.
-    let mut protos = protos;
-    if rs < protos.len() {
-        resume_slots(&mut protos[..], rs, fr.mode, reduced).map_err(|at| err(at, "resume without a landing pad"))?;
+    if c.pos != limit {
+        return Err(err(c.pos, "code after the counter stubs"));
     }
+    Ok(())
+}
 
-    // Unwind actions from the call sites.
+/// Each instruction's unwind action from the call sites (its landing pad's index, if any, and
+/// whether it catches), checking that every call site belongs to one instruction that may
+/// unwind and lands on an `lpad`. Instructions from `rs` on are the pad region's.
+fn unwind_actions(protos: &[Proto], ipos: &[u32], call_sites: &[CallSite], rs: usize) -> Result<Vec<Option<(Option<usize>, bool)>>, AsmError> {
+    let err = |at: u32, what: &'static str| AsmError { at, what };
+    let index = |at: u32, b: u32| insn_index(ipos, at, b);
     let mut actions = vec![None; protos.len()];
     let mut used = 0;
     for (i, p) in protos.iter().enumerate() {
@@ -478,9 +512,7 @@ fn read(code: &[u8], fields: Fields<'_>, rodata: &[u8], side: Side<'_>, mode: Mo
     if used != call_sites.len() {
         return Err(err(0, "call site outside every call"));
     }
-    // Scopes: before the first instruction at or after their position.
-    let scopes = scopes.iter().map(|sc| (ipos.partition_point(|&p| p < sc.code_offset), *sc)).collect();
-    Ok(Read { protos, frame_size, actions, scopes, heads, ipos })
+    Ok(actions)
 }
 
 /// Gives each `resume` of the pad region (from instruction `rs` on), which its return doesn't
