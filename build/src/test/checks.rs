@@ -686,7 +686,7 @@ pub(super) fn metadata_only(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<
 pub(super) fn dump(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
     let dump = out.join("dump.txt");
     capture_ok(cmd(rustc_ryo).args(["--edition=2024", "-O"]).arg(src).arg("-o").arg(out.join(exe_name("dump"))).env("RYO_DUMP", &dump))?;
-    let text = fs::read_to_string(&dump).map_err(|e| format!("reading {}: {e}", dump.display()))?;
+    let text = crate::utils::read(&dump)?;
     if !text.contains(" = static ") {
         return Err(format!("{} names no static", dump.display()));
     }

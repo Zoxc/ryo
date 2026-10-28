@@ -618,7 +618,7 @@ fn prepare(root: &Path, base: &Path, krate: &Crate) -> Result<Sources, String> {
     // Published manifests set `autoexamples = false`. `[workspace]` keeps cargo from looking
     // for one in the parent directories.
     let manifest = dir.join("Cargo.toml");
-    let mut text = fs::read_to_string(&manifest).map_err(|e| e.to_string())?;
+    let mut text = crate::utils::read(&manifest)?;
     // `CARGO_PROFILE_*` restates the profiles (see `PROFILE_ENV`) but can't reach per-package
     // overrides, so a crate with any is rejected rather than measured with other settings.
     if let Some(l) = text.lines().find(|l| l.starts_with("[profile.") && l.contains(".package.")) {
@@ -647,7 +647,7 @@ struct Sources {
 /// sources are used in place (nothing is written to them; the target directory is the
 /// bench's).
 fn prepare_local(dir: &Path) -> Result<Sources, String> {
-    let text = fs::read_to_string(dir.join("Cargo.toml")).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let text = crate::utils::read(dir.join("Cargo.toml"))?;
     let overrides = text
         .lines()
         .filter_map(|l| l.trim().strip_prefix('[')?.strip_suffix(']'))

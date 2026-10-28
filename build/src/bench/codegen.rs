@@ -25,10 +25,7 @@ const NATIVE_HEADER: &str = "\
 /// it, writing the JIT's code and IR ([`jit_dumps`]) to `bench/codegen/<name>.jit*`.
 pub fn codegen() -> Result<(), String> {
     let root = root();
-    let rustc_ryo = crate::utils::dist_bin(&root, "rustc-ryo");
-    if !rustc_ryo.exists() {
-        return Err("dist/ is missing; run `./y.sh build` first".to_owned());
-    }
+    let rustc_ryo = crate::utils::require_dist(&root)?;
     let dump_dir = root.join("bench").join("codegen");
     let out = root.join("target").join("bench-codegen");
     for dir in [&dump_dir, &out] {
@@ -51,9 +48,9 @@ pub fn codegen() -> Result<(), String> {
         c.env("RYO_DUMP_NATIVE", &native);
         eprintln!("[y] bench codegen {program}: {}", dump.display());
         crate::utils::run(&mut c)?;
-        let native = fs::read_to_string(&native).map_err(|e| format!("reading {}: {e}", native.display()))?;
+        let native = crate::utils::read(&native)?;
         crate::utils::write(&dump_dir.join(format!("{program}.native.txt")), format!("{NATIVE_HEADER}{native}"))?;
-        let code = fs::read_to_string(&code).map_err(|e| format!("reading {}: {e}", code.display()))?;
+        let code = crate::utils::read(&code)?;
         let s = dump_dir.join(format!("{program}.s"));
         crate::utils::write(&s, disassemble(&code)?)?;
         let jit = out.join(format!("{program}.jit"));
@@ -149,7 +146,7 @@ fn jit_dumps(exe: &Path, dir: &Path, aot: &str) -> Result<Vec<(&'static str, Str
     }
     funcs.sort();
 
-    let read = |f: &str| fs::read_to_string(dir.join(f)).map_err(|e| format!("reading {f}: {e}"));
+    let read = |f: &str| crate::utils::read(dir.join(f));
     let (mut code, mut pre, mut post) = (String::new(), String::new(), String::new());
     for (path, f, stem) in &funcs {
         let text = read(&format!("{stem}.code"))?;

@@ -18,9 +18,7 @@ pub fn build() -> Result<(), String> {
     let info = RustcInfo::get()?;
     let root = root();
     let dist = root.join("dist");
-    if !dist_bin(&root, "rustc-ryo").exists() {
-        return Err("dist/ is missing; run `./y.sh build` first (cg_clif uses its std)".to_owned());
-    }
+    crate::utils::require_dist(&root).map_err(|e| format!("{e} (cg_clif uses its std)"))?;
 
     let src = info.sysroot.join("lib/rustlib/rustc-src/rust/compiler/rustc_codegen_cranelift");
     if !src.join("Cargo.toml").exists() {

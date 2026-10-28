@@ -49,6 +49,12 @@ pub fn remove_dir_if_exists(dir: impl AsRef<Path>) -> Result<(), String> {
     Ok(())
 }
 
+/// `fs::read_to_string`, with the path in the error.
+pub fn read(path: impl AsRef<Path>) -> Result<String, String> {
+    let path = path.as_ref();
+    std::fs::read_to_string(path).map_err(|e| format!("reading {}: {e}", path.display()))
+}
+
 /// `fs::write`, with the path in the error.
 pub fn write(path: impl AsRef<Path>, contents: impl AsRef<[u8]>) -> Result<(), String> {
     let path = path.as_ref();
@@ -239,6 +245,15 @@ impl RustcInfo {
 /// `dist/bin/<name>` (an executable).
 pub fn dist_bin(root: &Path, name: &str) -> PathBuf {
     root.join("dist").join("bin").join(exe_name(name))
+}
+
+/// `dist/bin/rustc-ryo`, or an error if `dist/` hasn't been built.
+pub fn require_dist(root: &Path) -> Result<PathBuf, String> {
+    let rustc_ryo = dist_bin(root, "rustc-ryo");
+    if !rustc_ryo.exists() {
+        return Err("dist/ is missing; run `./y.sh build` first".to_owned());
+    }
+    Ok(rustc_ryo)
 }
 
 /// `dist/`'s `ryo_rt` rlib for `triple`.

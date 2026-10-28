@@ -268,7 +268,7 @@ impl Timer {
                 if !status.success() {
                     return Err(format!("`{}` failed with {status}", describe(&c)));
                 }
-                let text = fs::read_to_string(json).map_err(|e| format!("{}: {e}", json.display()))?;
+                let text = crate::utils::read(json)?;
                 parse_hyperfine(&text).ok_or_else(|| format!("can't parse {}", json.display()))
             }
         }

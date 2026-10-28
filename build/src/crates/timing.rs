@@ -196,7 +196,7 @@ pub fn read_units(dir: &Path) -> Result<Vec<Unit>, String> {
     let mut units = Vec::new();
     let Ok(entries) = fs::read_dir(dir) else { return Ok(units) };
     for e in entries.flatten() {
-        let text = fs::read_to_string(e.path()).map_err(|err| format!("{}: {err}", e.path().display()))?;
+        let text = crate::utils::read(e.path())?;
         units.push(parse_unit(&text).ok_or_else(|| format!("{}: bad timing log", e.path().display()))?);
     }
     units.sort_by(|a, b| (&a.krate, &a.kind).cmp(&(&b.krate, &b.kind)));

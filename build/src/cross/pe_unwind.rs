@@ -21,8 +21,7 @@ pub(super) fn pe_unwind(info: &RustcInfo, dir: &Path) -> Result<usize, String> {
         if !file.exists() {
             return Err(format!("{} has no output {}", map.display(), file.display()));
         }
-        n += pe_unwind_file(info, &file, &fs::read_to_string(&map).map_err(|e| e.to_string())?)
-            .map_err(|e| format!("{}: {e}", file.file_name().unwrap().to_string_lossy()))?;
+        n += pe_unwind_file(info, &file, &crate::utils::read(&map)?).map_err(|e| format!("{}: {e}", file.file_name().unwrap().to_string_lossy()))?;
     }
     Ok(n)
 }

@@ -261,7 +261,7 @@ fn print_coverage(stats_dir: &Path) -> Result<(), String> {
     eprintln!("[y] sysroot coverage (RYO_STATS):");
     eprintln!("    {:<28} {:>8} {:>8} {:>8} {:>8}", "crate", "vm fns", "native", "vm %", "islands");
     for f in &files {
-        let text = fs::read_to_string(f).map_err(|e| e.to_string())?;
+        let text = crate::utils::read(f)?;
         let krate = f.file_stem().and_then(|s| s.to_str()).unwrap_or("?");
         for line in text.lines() {
             if let Some(rest) = line.strip_prefix("ryo: ")
@@ -346,7 +346,7 @@ fn prepare_sources(info: &RustcInfo, root: &Path, dst: &Path, jit: bool) -> Resu
     let dep = if jit { "ryo_rt = { path = \"../ryo_rt\", features = [\"jit\"] }\n" } else { "ryo_rt = { path = \"../ryo_rt\" }\n" };
     for krate in ["alloc", "rustc-std-workspace-core"] {
         let manifest = dst.join(krate).join("Cargo.toml");
-        let text = fs::read_to_string(src.join(krate).join("Cargo.toml")).map_err(|e| e.to_string())?;
+        let text = crate::utils::read(src.join(krate).join("Cargo.toml"))?;
         let patched = text.replacen("[dependencies]\n", &format!("[dependencies]\n{dep}"), 1);
         if patched == text {
             return Err(format!("{}: no [dependencies] section", manifest.display()));

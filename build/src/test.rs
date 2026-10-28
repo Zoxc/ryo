@@ -722,10 +722,7 @@ const CODEGEN_TESTS: [&str; 2] = ["win64_handlers_preserve_xmm6_to_15", "handler
 pub fn run(opts: &Options) -> Result<(), String> {
     let start = Instant::now();
     let root = root();
-    let rustc_ryo = crate::utils::dist_bin(&root, "rustc-ryo");
-    if !rustc_ryo.exists() {
-        return Err("dist/ is missing; run `./y.sh build` first".to_owned());
-    }
+    let rustc_ryo = crate::utils::require_dist(&root)?;
     let info = crate::utils::RustcInfo::get()?;
     // The checked JIT (debug assertions, overflow checks; design/build.md#build) unless the
     // caller set `RYO_JIT_CHECKED`; `rustc-ryo` reads it, for host compilations.
