@@ -220,7 +220,6 @@ comment). -/
 theorem cached_of (ctx : Ctx) {T : Type} {cls : Class} {ops : List (R.Opnd T)} {cand : List Item}
     {br : Option Cond} {cache : Cache} {x : X86.State} {Q : X86.State → Prop}
     (hinv : CacheInv cache x) (hext : ∀ b, cls ≠ .ext .q b true)
-    (hcount : ∀ lz w, cls = .count lz w → w = .q)
     (hseq : sequence cls ops = some (cand, br))
     (hQ : ∀ y z, y.reg .rbp = z.reg .rbp → y.mem = z.mem → y.flags = z.flags → Q z → Q y)
     (hrun : ∀ xr, xr ≠ .rbp → ∃ x1, execItems ctx cand (swapS xr x) = .ok x1 ∧ Q x1) :
@@ -278,7 +277,6 @@ theorem cached_of_regs (ctx : Ctx) {T : Type} {cls : Class} {ops : List (R.Opnd 
     {cand : List Item} {br : Option Cond} {cache : Cache} {x : X86.State} {Q : X86.State → Prop}
     {Clob : Fin 16 → Prop} (h0 : Clob 0)
     (hinv : CacheInv cache x) (hext : ∀ b, cls ≠ .ext .q b true)
-    (hcount : ∀ lz w, cls = .count lz w → w = .q)
     (hseq : sequence cls ops = some (cand, br))
     (hQ : ∀ y z, y.reg .rbp = z.reg .rbp → y.mem = z.mem → y.flags = z.flags → Q z → Q y)
     (hrun : ∀ xr, xr ≠ .rbp → ∃ x1, execItems ctx cand (swapS xr x) = .ok x1 ∧ Q x1 ∧
@@ -358,7 +356,7 @@ theorem load_step_cached (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.Sta
       x'.rip = x.rip + BitVec.ofNat 64 ((cache.emit cand).1.map Item.size).sum ∧
       BrOk f ops s s' br x' := by
   obtain ⟨y, hy, ⟨hr', hm', hbr⟩, hcy, hrip⟩ := cached_of ctx
-    (Q := fun y => RRel s' y ∧ MemRel s'.st y ∧ BrOk f ops s s' br y) hinv (fun _ h => by cases h) (fun _ _ h => by cases h) hseq
+    (Q := fun y => RRel s' y ∧ MemRel s'.st y ∧ BrOk f ops s s' br y) hinv (fun _ h => by cases h) hseq
     (fun y z hb hm hf hq =>
       ⟨rrel_congr hq.1 hb hm, memRel_congr hm hq.2.1, brOk_congr hf hq.2.2⟩)
     fun xr hb => by
@@ -385,7 +383,7 @@ theorem store_step_cached (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.St
       x'.rip = x.rip + BitVec.ofNat 64 ((cache.emit cand).1.map Item.size).sum ∧
       BrOk f ops s s' br x' := by
   obtain ⟨y, hy, ⟨hr', hm', hbr⟩, hcy, hrip⟩ := cached_of ctx
-    (Q := fun y => RRel s' y ∧ MemRel s'.st y ∧ BrOk f ops s s' br y) hinv (fun _ h => by cases h) (fun _ _ h => by cases h) hseq
+    (Q := fun y => RRel s' y ∧ MemRel s'.st y ∧ BrOk f ops s s' br y) hinv (fun _ h => by cases h) hseq
     (fun y z hb hm hf hq =>
       ⟨rrel_congr hq.1 hb hm, memRel_congr hm hq.2.1, brOk_congr hf hq.2.2⟩)
     fun xr hb => by
@@ -408,10 +406,8 @@ theorem rip_step_cached (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.Stat
       x'.rip = x.rip + BitVec.ofNat 64 ((cache.emit cand).1.map Item.size).sum ∧
       BrOk f ops s s' br x' := by
   have hext : ∀ b, cls ≠ .ext .q b true := fun b he => by subst he; simp [ripAddr] at hc
-  have hcount : ∀ lz w, cls = .count lz w → w = .q := fun _ _ he => by
-    subst he; simp [ripAddr] at hc
   obtain ⟨y, hy, ⟨hr', hbr⟩, hcy, hrip⟩ := cached_of ctx
-    (Q := fun y => RRel s' y ∧ BrOk f ops s s' br y) hinv hext hcount hseq
+    (Q := fun y => RRel s' y ∧ BrOk f ops s s' br y) hinv hext hseq
     (fun y z hb hm hf hq => ⟨rrel_congr hq.1 hb hm, brOk_congr hf hq.2⟩)
     fun xr hb => by
       obtain ⟨x1, hx1, hr1, -, hbr⟩ := rip_step ctx (x := swapS xr x) hc
@@ -650,7 +646,7 @@ theorem load_step_sep_cached (ctx : Ctx) {wl wh : Int} {c : R.Code} {s s' : R.RS
       BrOk f ops s s' br x' := by
   obtain ⟨y, hy, ⟨hr', hm', hs', hbr⟩, hcy, hrip⟩ := cached_of ctx
     (Q := fun y => RRel s' y ∧ MemRel s'.st y ∧ FrameSep wl wh s'.st y ∧ BrOk f ops s s' br y) hinv
-    (fun _ h => by cases h) (fun _ _ h => by cases h) hseq
+    (fun _ h => by cases h) hseq
     (fun y z hb hm hf hq =>
       ⟨rrel_congr hq.1 hb hm, memRel_congr hm hq.2.1, hq.2.2.1.congr hb, brOk_congr hf hq.2.2.2⟩)
     fun xr hb => by
@@ -676,7 +672,7 @@ theorem store_step_sep_cached (ctx : Ctx) {wl wh : Int} {c : R.Code} {s s' : R.R
       BrOk f ops s s' br x' := by
   obtain ⟨y, hy, ⟨hr', hm', hs', hbr⟩, hcy, hrip⟩ := cached_of ctx
     (Q := fun y => RRel s' y ∧ MemRel s'.st y ∧ FrameSep wl wh s'.st y ∧ BrOk f ops s s' br y) hinv
-    (fun _ h => by cases h) (fun _ _ h => by cases h) hseq
+    (fun _ h => by cases h) hseq
     (fun y z hb hm hf hq =>
       ⟨rrel_congr hq.1 hb hm, memRel_congr hm hq.2.1, hq.2.2.1.congr hb, brOk_congr hf hq.2.2.2⟩)
     fun xr hb => by
@@ -704,8 +700,7 @@ theorem rip_step_sep_cached (ctx : Ctx) {wl wh : Int} {c : R.Code} {s s' : R.RSt
       BrOk f ops s s' br x' := by
   have hext : ∀ b, cls ≠ .ext .q b true := fun b he => by subst he; simp [ripAddr] at hc
   obtain ⟨y, hy, ⟨hr', hs', hbr⟩, hcy, hrip⟩ := cached_of ctx
-    (Q := fun y => RRel s' y ∧ FrameSep wl wh s'.st y ∧ BrOk f ops s s' br y) hinv hext
-      (fun _ _ he => by subst he; simp [ripAddr] at hc) hseq
+    (Q := fun y => RRel s' y ∧ FrameSep wl wh s'.st y ∧ BrOk f ops s s' br y) hinv hext hseq
     (fun y z hb hm hf hq => ⟨rrel_congr hq.1 hb hm, hq.2.1.congr hb, brOk_congr hf hq.2.2⟩)
     fun xr hb => by
       obtain ⟨x1, hx1, hr1, hs1, -, hbr⟩ := rip_step_sep ctx (x := swapS xr x) hc
@@ -906,7 +901,7 @@ theorem load_step_sep_cached_regs (ctx : Ctx) {wl wh : Int} {c : R.Code} {s s' :
     (Q := fun y => RRel s' y ∧ MemRel s'.st y ∧ FrameSep wl wh s'.st y ∧ BrOk f ops s s' br y ∧
       MemOutW c f ops x y)
     (Clob := fun i => i = 0 ∨ i = 1) (.inl rfl) hinv
-    (fun _ h => by cases h) (fun _ _ h => by cases h) hseq
+    (fun _ h => by cases h) hseq
     (fun y z hb hm hf hq =>
       ⟨rrel_congr hq.1 hb hm, memRel_congr hm hq.2.1, hq.2.2.1.congr hb,
         brOk_congr hf hq.2.2.2.1, memOutW_congr hm hq.2.2.2.2⟩)
@@ -938,7 +933,7 @@ theorem store_step_sep_cached_regs (ctx : Ctx) {wl wh : Int} {c : R.Code} {s s' 
     (Q := fun y => RRel s' y ∧ MemRel s'.st y ∧ FrameSep wl wh s'.st y ∧ BrOk f ops s s' br y ∧
       MemOutA c s x y)
     (Clob := fun i => i = 0 ∨ i = 1) (.inl rfl) hinv
-    (fun _ h => by cases h) (fun _ _ h => by cases h) hseq
+    (fun _ h => by cases h) hseq
     (fun y z hb hm hf hq =>
       ⟨rrel_congr hq.1 hb hm, memRel_congr hm hq.2.1, hq.2.2.1.congr hb,
         brOk_congr hf hq.2.2.2.1, memOutA_congr hm hq.2.2.2.2⟩)
@@ -972,8 +967,7 @@ theorem rip_step_sep_cached_regs (ctx : Ctx) {wl wh : Int} {c : R.Code} {s s' : 
   obtain ⟨y, hy, ⟨hr', hs', hbr, ho'⟩, hcy, hrip, hk⟩ := cached_of_regs ctx
     (Q := fun y => RRel s' y ∧ FrameSep wl wh s'.st y ∧ BrOk f ops s s' br y ∧
       MemOutW c f ops x y)
-    (Clob := fun i => i = 0 ∨ i = 1) (.inl rfl) hinv hext
-      (fun _ _ he => by subst he; simp [ripAddr] at hc) hseq
+    (Clob := fun i => i = 0 ∨ i = 1) (.inl rfl) hinv hext hseq
     (fun y z hb hm hf hq => ⟨rrel_congr hq.1 hb hm, hq.2.1.congr hb, brOk_congr hf hq.2.2.1,
       memOutW_congr hm hq.2.2.2⟩)
     fun xr hb => by
@@ -990,7 +984,6 @@ theorem inline_step_cached_regs (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : 
     {cls : Class} {cand : List Item} {br : Option Cond} {cache : Cache} (hsound : SoundC cls)
     (hinv : CacheInv cache x) (hr : RRel s x) (hi : c.d.insns[s.pc]? = some (.native op ops))
     (hf : op.full = some f) (hok : InlineOk f cls) (hext : ∀ b, cls ≠ .ext .q b true)
-    (hcount : ∀ lz w, cls = .count lz w → w = .q)
     (hseq : sequence cls ops = some (cand, br)) (h : R.step c s ch = .ok (.step s')) :
     ∃ x', execItems ctx (cache.emit cand).1 x = .ok x' ∧ RRel s' x' ∧
       CacheInv (cache.emit cand).2 x' ∧
@@ -999,7 +992,7 @@ theorem inline_step_cached_regs (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : 
       MemOutW c f ops x x' := by
   obtain ⟨y, hy, ⟨hr', hbr, ho'⟩, hcy, hrip, hk⟩ := cached_of_regs ctx
     (Q := fun y => RRel s' y ∧ BrOk f ops s s' br y ∧ MemOutW c f ops x y)
-    (Clob := (· ∈ clobbers cls)) (clobbers_01 cls).1 hinv hext hcount hseq
+    (Clob := (· ∈ clobbers cls)) (clobbers_01 cls).1 hinv hext hseq
     (fun y z hb hm hf hq => ⟨rrel_congr hq.1 hb hm, brOk_congr hf hq.2.1,
       memOutW_congr hm hq.2.2⟩)
     fun xr hb => by

@@ -1306,4 +1306,49 @@ def Inputs.decode (i : Inputs) : Except AsmError Decoded :=
 
 end Json
 
+/-! ### Switch tables (Lean only)
+
+The decoder reads a switch's table (`table`) without checking that it starts at a relocation
+boundary or lies below `2 ^ 31`, which the proofs need (`HdlTables`). `tablesCheck` checks it for
+every place a switch's jump decodes, and that the targets lie below `2 ^ 31`
+(`Ryo.Proofs.DecodeLink.Tables.hdlTables_of_check`). -/
+
+/-- The table start `t` of the switch jump `lea rcx, [rip + t]; movsxd rax, [rcx + rax*4];
+add rax, rcx; jmp rax` decoding at `p` (`Switch.switchItems`), if it does. -/
+def switchTableAt (c : Cursor) (p : Nat) : Option (BitVec 32) :=
+  match decodeItem { c with pos := p } with
+  | some (.leaTable t, n1) =>
+    match decodeItem { c with pos := p + n1 } with
+    | some (.loadTableEntry, n2) =>
+      match decodeItem { c with pos := p + n1 + n2 } with
+      | some (.addRaxRcx, n3) =>
+        match decodeItem { c with pos := p + n1 + n2 + n3 } with
+        | some (.jmpRax, _) => some t
+        | _ => none
+      | _ => none
+    | _ => none
+  | _ => none
+
+/-- The code is at most `2 ^ 31` bytes, and every switch jump decoding anywhere in it (read as
+`c`, with its relocations and `spFrame`) has its table start at a boundary of `rs`. -/
+def tablesOk (c : Cursor) (rs : Array Reloc) : Bool :=
+  decide (c.code.size ≤ 2 ^ 31) &&
+    (List.range c.code.size).all fun p => match switchTableAt c p with
+      | some t => rs.toList.all fun r => decide (r.pos < t.toNat → r.pos + 4 ≤ t.toNat)
+      | none => true
+
+/-- `tablesOk` for the body as `read` leaves it (the frame size as `spFrame` without a frame
+pointer), and every target of the read instructions below `2 ^ 31`. -/
+def tablesCheck (code : ByteArray) (relocs : Array Reloc) (rodata : ByteArray)
+    (callSites : Array CallSite) (dropped : Array DroppedStore) (scopes : Array Scope)
+    (mode : Mode) : Bool :=
+  match (read rodata callSites dropped.toList scopes mode).run
+      ({ code := code.data, pos := 0, fields := .relocs relocs } : Cursor) with
+  | .ok (r, _) =>
+    let sp : Option (BitVec 32) :=
+      if mode.framePointer then none else some (BitVec.ofNat 32 r.frameSize)
+    let body : Cursor := { code := code.data, pos := 0, fields := .relocs relocs, spFrame := sp }
+    tablesOk body relocs && r.protos.all fun q => q.targets.all (· < 2 ^ 31)
+  | .error _ => false
+
 end Ryo.Vm

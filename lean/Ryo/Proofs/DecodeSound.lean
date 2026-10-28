@@ -51,8 +51,8 @@ Proved helpers: decoded branches are canonical (`branch_canonical`), every itera
 relocation boundary (`boundary_start`), R's scopes never stop with `noBehavior` (`noNB_scopes`);
 facts of the decoder: the prologue read item by item (`read_instructions_prologue`), landing
 pads are `lpad`s (`pad_lpad`, so not leading `arg`s, `pad_not_leadArg`), protos lie within the
-code (`posOf_le_size`, so `posOf_lt_32`). Still `sorry`: `bodySim_inline` (worked on in
-`DSWork/Inline.lean`) and `bodySim_dense`'s `dense_vals` (the operands `R.unpack` gives a dense switch).
+code (`posOf_le_size`, so `posOf_lt_32`). `bodySim_inline` is `DSWork/Inline.lean`'s
+`bodySim_inline'` (whose helpers still have `sorry`s there).
 
 **Files.** `DecodeSound/Basic.lean`: §1–§3 and §4's helpers, `bodySim_unreachable`,
 `bodySim_jmp`, `reach_padding`, `boundary_start`. `DSWork/Boundary.lean`: the decoder facts.
@@ -61,7 +61,10 @@ code (`posOf_le_size`, so `posOf_lt_32`). Still `sorry`: `bodySim_inline` (worke
 
 **`decode_sound`** (§5): from `decodeReduced … = .ok d`, `read_instructions_prologue`,
 `instructions_read` and `iters_indexed` give the layout; `reducedOf_insns` the instructions; then
-`fnSim_of_insnSim`.
+`fnSim_of_insnSim`. The switch tables' facts (`HdlTables`: table starts at relocation
+boundaries, code and targets below `2 ^ 31`) are checked: `decodeChecked` runs `tablesCheck`,
+and `decode_sound` takes its success (`htc`), from which `DecodeLink.Tables.hdlTables_of_check`
+gives them.
 
 **Hypotheses** (`Hyps`). Trusted: the handler, `resume`, call, island and trip contracts on the
 environment's `ret` (`HandlerContract`, `ResumeContract`: `resume`'s handler is assembly, outside
@@ -78,10 +81,10 @@ discharged later:
 - of the decoded code, checkable (the decoder or a check could reject the code otherwise):
   `frameBounds` (`FrameBounds c K`, from the decoder, `DecodeLink/Bounds.lean`, in progress),
   `peFrame` (on PE `F + 8 < 2 ^ 31`, for the epilogue),
-  `relocsIn` (`RelocsIn`: relocated fields within the code), `hdlTables`
-  (`HdlTables`: switch tables at relocation boundaries, below `2 ^ 31`), `argsOk` (`ArgsOk`:
+  `relocsIn` (`RelocsIn`: relocated fields within the code), `argsOk` (`ArgsOk`:
   the leading `arg`s read distinct argument registers of the convention, and no branch target
-  is one);
+  is one), `inlineBelowLink` (inline frame writes miss the link slots), `cacheRegsOk` (on PE
+  `emit` never computes in `rsi`/`rdi`, a decoder fact);
 - privacy after the scopes (checkable with the scopes, as an invariant): `loadPrivate` (a
   `load`'s destination, `LoadPrivate`), `argPrivate` (an `arg`'s, `ArgPrivate`),
   `resultPrivate` (a call's result slots, `ResultPrivate`), `linkPrivate` (the frame's link
@@ -114,6 +117,7 @@ import Ryo.Proofs.DSWork.Call
 import Ryo.Proofs.DSWork.Handler
 import Ryo.Proofs.Dense
 import Ryo.Proofs.DSWork.Inline
+import Ryo.Proofs.DecodeLink.Tables
 
 set_option linter.constructorNameAsVariable false
 set_option linter.unusedSimpArgs false
@@ -137,17 +141,15 @@ variable {S : Setup} {code : ByteArray} {relocs : Array Reloc} {rodata : ByteArr
   {callSites : Array CallSite} {dropped : Array DroppedStore} {scopes : Array R.Scope}
   {mode : Ryo.Obj.Mode}
 
-/-! #### The shapes' bodies still open
+/-! #### The inline and dense-switch bodies
 
 Proved in `DSWork/*.lean`: `bodySim_arg` (Arg), `bodySim_ret` (Ret), `bodySim_island` (Island),
-`reach_counter` (Counter), `bodySim_call'` (Call), `bodySim_handler'` (Handler);
-`bodySim_unreachable`, `bodySim_jmp` in `DecodeSound/Basic.lean`. Still `sorry` here:
-`bodySim_inline` (worked on in `DSWork/Inline.lean` as `bodySim_inline'`) and the dense
-switch's `dense_vals`. -/
+`reach_counter` (Counter), `bodySim_call'` (Call), `bodySim_handler'` (Handler),
+`bodySim_inline'` (Inline, under `Hyps`' `inlineBelowLink`, `cacheRegsOk`);
+`bodySim_unreachable`, `bodySim_jmp` in `DecodeSound/Basic.lean`. -/
 
-/-- An inline sequence without a dropped store (`CacheStep.inline_step_cached` and
-`CacheMem`'s `_sep_cached` steps through `FrameBounds`, with `DecodeLink.link_inline` and
-`inline_branch_index`; the `jcc` by `branch_canonical`). -/
+/-- An inline sequence without a dropped store: `DSWork/Inline.lean`'s `bodySim_inline'`, its
+extra hypotheses from `Hyps` (`inlineBelowLink`, `cacheRegsOk`). -/
 theorem bodySim_inline (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (H : Hyps S) {k p : Nat} {a : Bool} {q : Proto} {cur cur' c' : Cursor}
     {cache' : Cache} {dr' : List DroppedStore}
@@ -156,7 +158,7 @@ theorem bodySim_inline (hD : Decodes S code relocs rodata callSites dropped scop
     (hr : (inlineInsn (S.used k) (S.dr k) true).run cur' = .ok (some (q, cache', dr'), c'))
     (hq : q.dropped = false) :
     BodySim S k p (S.used k) := by
-  sorry  -- TODO(wip): bodySim_inline
+  exact bodySim_inline' hD H H.inlineBelowLink H.cacheRegsOk H.inlinePrivate H.inlineMemKept H.inlineClsOk hP hn hc hr hq
 
 /-! #### The dense switch -/
 
@@ -438,7 +440,7 @@ scopes (`dense_frameInv`, `hdl_frameInv_regs`); the target's cache cleared
 theorem bodySim_dense (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (H : Hyps S) {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
     (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
-    (hr : (denseSwitch S.fr).run cur = .ok (some q, c')) :
+    (hr : (denseSwitch S.fr).run cur = .ok (some q, c')) (htable : HdlTables S) :
     BodySim S k p (S.used k) := by
   intro s x hs hf hrip hci hsafe
   have hcur := noArg_insn hn (InsnRead.dense (ro := S.ro) hr)
@@ -479,7 +481,7 @@ theorem bodySim_dense (hD : Decodes S code relocs rodata callSites dropped scope
   have hLp := bs_linkOk_at hf.code p
   obtain ⟨hca, -, -⟩ := hLp.dec (hd1.append hd2) hP.bound
   obtain ⟨htb, hbtb, hes31⟩ :=
-    H.hdlTables (atPos (atPos S.body p) at_) tb pE es k rfl rfl rfl (Dec.at_iff.2 hd2) hes
+    htable (atPos (atPos S.body p) at_) tb pE es k rfl rfl rfl (Dec.at_iff.2 hd2) hes
       (List.ne_nil_of_length_pos (by omega)) hlt (fun e he => by
         rw [hpk]
         simp [Proto.targets, R.Then.targets] <;> exact ⟨e, he, rfl⟩)
@@ -541,7 +543,8 @@ theorem bodySim_of_read (hD : Decodes S code relocs rodata callSites dropped sco
     (H : Hyps S) {k p : Nat} {q : Proto} {c' : Cursor} {cache' : Cache}
     {dr' : List DroppedStore}
     (hP : ProtoFacts S k p q c' cache')
-    (hr : ProtoRead S.fr S.ro true S.body p (S.used k) (S.dr k) (S.args k) q c' cache' dr') :
+    (hr : ProtoRead S.fr S.ro true S.body p (S.used k) (S.dr k) (S.args k) q c' cache' dr')
+    (htable : HdlTables S) :
     BodySim S k p (S.used k) := by
   generalize ha : S.args k = a at hr
   cases hr with
@@ -556,16 +559,16 @@ theorem bodySim_of_read (hD : Decodes S code relocs rodata callSites dropped sco
     have e2 := inlineInsn_none hi
     subst e1 e2
     rcases insn_split h with hd | ⟨hnd, hcore⟩
-    · exact bodySim_dense hD H hP hn hd
+    · exact bodySim_dense hD H hP hn hd htable
     have hir := insnCore_read hcore
     have hir' := hir
     cases hir' with
-    | handler => exact bodySim_handler' hD H hP hn hir (by simp) hnd
+    | handler => exact bodySim_handler' hD H hP hn hir (by simp) hnd htable
     | ret => exact bodySim_ret hD H hP hn hir rfl
     | unreachable => exact bodySim_unreachable hD H hP hn hir rfl
     | jmp => exact bodySim_jmp hD H hP hn hir rfl
     | island => exact bodySim_island hD H hP hn hir rfl
-    | resume => exact bodySim_handler' hD H hP hn hir (by simp) hnd
+    | resume => exact bodySim_handler' hD H hP hn hir (by simp) hnd htable
     | dense h => exact (hnd _ h).elim
 
 /-- Instruction `k` of a main iteration: the padding (from its start), the counter check, then
@@ -579,7 +582,7 @@ theorem insnSim_main (hD : Decodes S code relocs rodata callSites dropped scopes
       (if (some S.targets).any (sortedContains · p1) then { pe := S.fr.mode.pe } else S.cache k)
       (S.dr k) (S.args k) q c' cache' dr')
     (hnop : NopRead S.fr S.callSites S.body q c'.pos (S.start (k + 1)))
-    (hcache : S.cache (k + 1) = cache') :
+    (hcache : S.cache (k + 1) = cache') (htable : HdlTables S) :
     InsnSimAt S k := by
   intro s x hs hbi hsafe
   obtain ⟨hf, hat⟩ := hbi
@@ -602,7 +605,7 @@ theorem insnSim_main (hD : Decodes S code relocs rodata callSites dropped scopes
     have hk' : k < S.c.d.insns.size := h1.1 ▸ hk
     exact ⟨S.c.d.insns[k], by simp [hk'], fun hk => h1.2 k hk hk'⟩
   have body : ∀ (hb2 : Boundary S.rs p2), BodySim S k p2 (S.used k) := fun hb2 =>
-    bodySim_of_read hD H ⟨hk, ⟨p1, counter, by simp [hk, hq]⟩, hinsn, hb2, hnop, hcache, hargs⟩ hpr
+    bodySim_of_read hD H ⟨hk, ⟨p1, counter, by simp [hk, hq]⟩, hinsn, hb2, hnop, hcache, hargs⟩ hpr htable
   -- From `p1` with the cache `used k`.
   have from_p1 : ∀ y, FrameInv S s y → y.rip = addrAt S.ctx p1 → CacheInv (S.used k) y →
       Reach S.ctx S.E (SNext S s) y := by
@@ -661,8 +664,9 @@ environment simulates the R program from every boundary whose R runs are safe. -
 theorem decode_sound {S : Setup} {code : ByteArray} {relocs : Array Reloc} {rodata : ByteArray}
     {callSites : Array CallSite} {dropped : Array DroppedStore} {scopes : Array R.Scope}
     {mode : Ryo.Obj.Mode} (hD : Decodes S code relocs rodata callSites dropped scopes mode)
-    (H : Hyps S) :
+    (H : Hyps S) (htc : tablesCheck code relocs rodata callSites dropped scopes mode = true) :
     ∀ s x, BInv S s x → SafeFrom S.Safe S.c s → FnSim S.ctx S.E S.c (BInv S) (ExitRel S) s x := by
+  have htable : HdlTables S := DecodeLink.Tables.hdlTables_of_check hD htc
   refine fnSim_of_insnSim _ _ _ _ _ _ fun s x hbi hsafe => ?_
   by_cases hk : s.pc < S.r.protos.size
   · have hit := hD.iters s.pc (by simpa using hk)
@@ -678,7 +682,7 @@ theorem decode_sound {S : Setup} {code : ByteArray} {relocs : Array Reloc} {roda
     | main hpad hctr hpr hnop =>
       rw [← hdr] at hpr
       rw [← hst1] at hnop
-      exact insnSim_main hD H hk hpk hpad hctr hpr hnop hca1 s x rfl hbi hsafe
+      exact insnSim_main hD H hk hpk hpad hctr hpr hnop hca1 htable s x rfl hbi hsafe
   · exact insnSim_oob hD (Nat.le_of_not_lt hk) s x rfl hbi hsafe
 
 /-- `decode_sound` from the decoder's acceptance directly. -/
@@ -687,6 +691,7 @@ theorem decode_sound_of_ok {code : ByteArray} {relocs : Array Reloc} {rodata : B
     {mode : Ryo.Obj.Mode} {d : Decoded}
     (hdec : decodeReduced code relocs rodata callSites dropped scopes mode = .ok d)
     (hnr : regionPad mode callSites = none)
+    (htc : tablesCheck code relocs rodata callSites dropped scopes mode = true)
     (c : R.Code) (hc : c.d = d) (hm : c.mode = mode) (ctx : Ctx) (E : Env) (K : Int)
     (x0 : X86.State) (Owned : BitVec 64 → Prop) (lo : BitVec 64)
     (padOf : BitVec 64 → Option (BitVec 64)) (Safe : R.Query → Prop) :
@@ -698,6 +703,6 @@ theorem decode_sound_of_ok {code : ByteArray} {relocs : Array Reloc} {rodata : B
     decodes_of_ok hdec hnr c hc hm ctx E K x0 Owned lo padOf Safe
   refine ⟨S, hD, h1, h2, h3, h4, h5, h6, h7, h8, h9, fun H => ?_⟩
   subst h1 h2 h3 h9
-  exact decode_sound hD H
+  exact decode_sound hD H htc
 
 end Ryo.Proofs.DecodeSound

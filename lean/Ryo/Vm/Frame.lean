@@ -819,7 +819,8 @@ def incomingExtents (decoded : Array (Option Decoded)) (mode : Mode) : Array (Op
 /-! ### The checked decoding -/
 
 /-- `decodeBounded` (`decodeReducedWith` with the frame bounds), accepting the code only if
-`droppedNotDead` shows every dropped store dead (given `facts`): the decoding, or an error
+`tablesCheck` accepts its switch tables (with relocations) and `droppedNotDead` shows every dropped
+store dead (given `facts`): the decoding, or an error
 naming the first store it doesn't (its word offset). -/
 def decodeChecked (code : ByteArray) (fields : Fields) (rodata : ByteArray)
     (callSites : Array CallSite) (dropped : Array DroppedStore) (scopes : Array Scope)
@@ -827,6 +828,10 @@ def decodeChecked (code : ByteArray) (fields : Fields) (rodata : ByteArray)
   let d ← match decodeBounded code fields rodata callSites dropped scopes mode with
     | .ok d => pure d
     | .error e => throw s!"{e.what} at {e.at_}"
+  -- The switch tables' starts and the targets (`tablesCheck`, for `HdlTables`).
+  if let .relocs rs := fields then
+    if !tablesCheck code rs rodata callSites dropped scopes mode then
+      throw "switch table start off a relocation boundary, or code or targets over 2 GiB"
   checkDropped d mode facts
 
 where

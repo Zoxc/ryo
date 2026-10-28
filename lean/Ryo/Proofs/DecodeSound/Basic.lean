@@ -15,6 +15,7 @@ import Ryo.Proofs.Call
 import Ryo.Proofs.Island
 import Ryo.Proofs.Switch
 import Ryo.Proofs.CacheStep
+import Ryo.Proofs.CacheEmit
 
 set_option linter.constructorNameAsVariable false
 set_option linter.unusedSimpArgs false
@@ -620,7 +621,6 @@ structure Hyps (S : Setup) : Prop where
   -- Open prerequisites: the decoded code (checkable).
   frameBounds : FrameBounds S.c S.K
   relocsIn : RelocsIn S
-  hdlTables : HdlTables S
   argsOk : ArgsOk S
   /-- On PE the frame size and the return address fit a signed 32-bit displacement, as PE's
   epilogue (`ArgRet.ret_step`, `bodySim_ret`) needs (`FrameBounds.F_le` gives `F ≤ 2 ^ 31`
@@ -648,6 +648,41 @@ structure Hyps (S : Setup) : Prop where
   cacheCleared : CacheCleared S
   padsLinked : PadsLinked S
   stubsLinked : StubsLinked S
+  -- Open prerequisites of the inline steps (`DSWork/Inline.lean`'s `bodySim_inline'`; stated
+  -- here unfolded, as `InlineBelowLink` and `CacheRegsOk` there).
+  /-- Checkable (missing from `FrameBounds.writes`): an inline instruction's frame writes miss
+  the frame's link slots `[0, 16)` (`InlineBelowLink`). -/
+  inlineBelowLink : ∀ (k : Nat) (op : Reduced.Opcode) (ops : List (R.Opnd Nat)) (f : Full.Opcode)
+    (cls : Class) (vals : Operands), S.c.d.insns[k]? = some (.native op ops) → op.full = some f →
+    (f, cls) ∈ inlineOps → nativeVals S.c.ρ f ops = some vals →
+    ∀ r ∈ wranges f vals, r.1 + r.2 ≤ 0 ∨ 16 ≤ r.1
+  /-- Checkable (a decoder fact): on PE, `emit` never computes in `rsi`/`rdi` (pool entries 2
+  and 3) with the cache an instruction is read with (`CacheRegsOk`): the decoder's caches start
+  with `pe` set and only `emit` fills entries, never those two then. -/
+  cacheRegsOk : ∀ k, S.c.mode.pe = true → ∀ cand : List Item,
+    (emitHead { S.used k with tick := (S.used k).tick + 1 } cand).1 ≠ 2 ∧
+      (emitHead { S.used k with tick := (S.used k).tick + 1 } cand).1 ≠ 3
+  /-- Every inline opcode's class is of its shape and `clsOk` (proved by kernel evaluation in
+  `RyoProofs/InlineOk.lean`: `inlineOps_shape`, `inlineOps_clsOk`; outside the default build,
+  hence a field). -/
+  inlineClsOk : ∀ (f : Full.Opcode) (cls : Class), (f, cls) ∈ inlineOps →
+    shapeOk f cls = true ∧ CacheStep.clsOk cls = true
+  /-- Open privacy invariant (`InlinePrivate`, as `loadPrivate`): after the scopes, an inline
+  instruction's frame writes hit no escaped object. -/
+  inlinePrivate : ∀ (s : R.RState) (x : X86.State) (s1 : R.RState) (op : Reduced.Opcode)
+    (ops : List (R.Opnd Nat)) (f : Full.Opcode) (cls : Class) (vals : Operands),
+    FrameInv S s x → S.c.d.insns[s.pc]? = some (.native op ops) → op.full = some f →
+    (f, cls) ∈ inlineOps → nativeVals S.c.ρ f ops = some vals →
+    (S.c.scopesAt s.pc).foldlM R.applyScope s = .ok s1 → Private f vals s1.st
+  /-- Open (`InlineMemKept`): an inline instruction other than `store` whose writes are private
+  keeps R's memory and escaped objects, and the frame outside its written ranges (the last two
+  follow from `SameButWrites` once every inline class has a `footprint`). -/
+  inlineMemKept : ∀ (ops : List (R.Opnd Nat)) (f : Full.Opcode) (cls : Class) (vals : Operands)
+    (st st' : OpSem.State) (ch : OpSem.Choice) (ctl : Control),
+    (f, cls) ∈ inlineOps → (∀ w, cls ≠ .store w) → nativeVals S.c.ρ f ops = some vals →
+    opSem f vals st ch = .ok (ctl, st') → Private f vals st →
+    st'.mem = st.mem ∧ st'.escaped = st.escaped ∧
+      ∀ o, st'.frame o = st.frame o ∨ ∃ r ∈ wranges f vals, inRange o r = true
 
 /-! ## 4. Per instruction -/
 

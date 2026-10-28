@@ -49,15 +49,16 @@ Its output at this commit: the seven opaque instances of §1.2 and the `sorry`s 
 
 ## 1. Logical and implementation assumptions
 
-### 1.1 `sorry`: only `decode_sound`'s open glue (the representation theorems have none)
+### 1.1 `sorry`: none
 
-`Ryo`'s `sorry`s are all in the glue of M3's `decode_sound` (aot.md §C2 "Composition"):
-`Ryo/Proofs/DecodeSound.lean` leaves the body `bodySim_inline` as `sorry`, so
-`decode_sound` depends on them; the other bodies, the counter check and the decoder facts are
-proved in `Ryo/Proofs/DSWork/` (`Boundary`, `Arg`, `Ret`, `Counter`, `Island`, `Call`,
-`Handler`, in the default build). Its open prerequisites are hypotheses (`Hyps`), not `sorry`s.
-The work file `DSWork/Inline.lean` (not yet imported by the composition) holds `bodySim_inline`'s
-proof, with `sorry` helper lemmas.
+`Ryo` has no `sorry`. M3's `decode_sound` (`Ryo/Proofs/DecodeSound.lean`, aot.md §C2
+"Composition") is proved from the per-shape bodies in `Ryo/Proofs/DSWork/`; its open
+prerequisites are hypotheses (`Hyps`), listed in its module doc: trusted contracts, checkable
+facts not yet checked (e.g. `cacheRegsOk`, `inlineBelowLink`), open privacy invariants
+(`loadPrivate`, `inlinePrivate`, `inlineMemKept`, …) and `inlineClsOk`, which
+`RyoProofs/InlineOk.lean` proves (`inlineClsOk_holds`) by kernel evaluation outside the
+default build. The switch tables are checked (`decodeChecked` runs `tablesCheck`;
+`DecodeLink/Tables.lean`'s `hdlTables_of_check`), so `decode_sound` takes that check's result.
 
 The five representation laws of MiniRust's `representation.md`
 § Generic properties are proved, depending only on Lean's standard axioms:

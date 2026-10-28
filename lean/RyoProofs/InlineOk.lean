@@ -10,9 +10,11 @@ opcode of `Asm.inlineOps` (aot.md §C2, toward `decode_sound`).
   `inlineOps_shape`, the rest `all_kindOk` through the handler kind `shapeOk` fixes).
 - `inlineOps_ext`: no inline class is a sign extension from 64 bits, which `sequence_cacheSafe`
   needs.
+- `all_clsOk`/`inlineOps_clsOk`: every inline class is `clsOk` (`emit_canonical`).
 - `inline_step_cached_ops`: `inline_step_cached` for an inline opcode, with those discharged.
 -/
 import Ryo.Proofs.CacheStep
+import Ryo.Proofs.CacheEmit
 import RyoProofs.InlineOps
 
 set_option linter.constructorNameAsVariable false
@@ -24,6 +26,17 @@ open Ryo.Spec Ryo.Vm Ryo.Vm.OpSem Ryo.X86 Ryo.Vm.Asm Ryo.Proofs.Inline Ryo.Proof
 
 set_option maxRecDepth 100000 in
 theorem all_kindOk : Full.all.all kindOk = true := by decide +kernel
+
+set_option maxRecDepth 100000 in
+theorem all_clsOk : inlineOps.all (fun p => clsOk p.2) = true := by
+  rw [Ryo.Proofs.Inline.inlineOps_eq, Ryo.Proofs.Inline.inlineOpsL_chunks]
+  simp only [List.all_append, Bool.and_eq_true]
+  refine ⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩ <;> decide +kernel
+
+/-- Every inline opcode's class has canonical items (`clsOk`, for `emit_canonical`). -/
+theorem inlineOps_clsOk {f : Full.Opcode} {cls : Class} (h : (f, cls) ∈ inlineOps) :
+    clsOk cls = true :=
+  List.all_eq_true.1 all_clsOk (f, cls) h
 
 /-- Every inline opcode satisfies what `inline_step` needs of it. -/
 theorem inlineOps_ok {f : Full.Opcode} {cls : Class} (h : (f, cls) ∈ inlineOps) :
@@ -50,5 +63,10 @@ theorem inline_step_cached_ops (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X
       | some cond => ∃ neg t b, R.nativeCtl f ops = some (.branch neg t) ∧
           cond.eval x'.flags = .ok b ∧ s'.pc = if b then t else s.pc + 1 :=
   inline_step_cached ctx hsound hinv hr hi hf (inlineOps_ok hmem) (inlineOps_ext hmem) hseq h
+
+/-- `DecodeSound.Hyps.inlineClsOk`, which the default build can't evaluate. -/
+theorem inlineClsOk_holds (f : Full.Opcode) (cls : Class) (h : (f, cls) ∈ inlineOps) :
+    shapeOk f cls = true ∧ clsOk cls = true :=
+  ⟨Ryo.Proofs.Inline.inlineOps_shape (f, cls) h, inlineOps_clsOk h⟩
 
 end Ryo.Proofs.CacheStep

@@ -436,8 +436,9 @@ follows the decoder's structure:
   for returns and tail calls. Proved: the padding, the dispatch over what the decoder read, the
   relocation boundaries (`boundary_start`), decoded branches canonical (`branch_canonical`),
   `unreachable` and `jmp`. Also proved (`Ryo/Proofs/DSWork/`):
-  `arg`, `ret`, calls, handler calls, islands, the counter check and the decoder facts. `sorry`
-  ([assumptions.md](assumptions.md) §1.1): `bodySim_inline` (worked on in `DSWork/Inline.lean`). The frame-pointer mode only, without a PE pad region
+  `arg`, `ret`, calls, handler calls, islands, the counter check and the decoder facts. Inline sequences too
+  (`DSWork/Inline.lean`, with the emitted items' facts in `CacheEmit*.lean`); no `sorry`
+  ([assumptions.md](assumptions.md) §1.1). The frame-pointer mode only, without a PE pad region
   (`Decodes.noRegion`: PE's cleanup code after the body, entered by the exception dispatcher on
   its own stack, is decoded but not simulated), and handler calls with their arguments in
   registers (`Hyps.regArgs`: PE's stack argument, the `atomic.cxchg` handlers', writes the

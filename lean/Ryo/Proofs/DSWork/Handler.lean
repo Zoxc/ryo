@@ -1389,14 +1389,15 @@ the R side under `RSafe`; `hdl_call_reach` for the setup, `call h` and the retur
 `H.handler` and `SepAcross.handler`; then the shape's tail: `hdl_fallthrough` for `op`/`lpad`,
 `hdl_br`, `hdl_switch`, and `trap` excluded by `RSafe`). Beyond `Hyps`: the decoder's read isn't
 an inline dense switch (`hnd`, as `link_handler`'s: the dispatch has it from `insn_split`); the
-switch tables' positions from `H.hdlTables`. -/
+switch tables' positions (`htable`, from the decoding and `tablesCheck`:
+`DecodeLink.Tables.hdlTables_of_check`). -/
 theorem bodySim_handler' (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (H : Hyps S) {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
     (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
     (hr : InsnRead S.fr S.ro cur q c') (hh : q.handler ≠ none)
-    (hnd : ∀ c'', (denseSwitch S.fr).run cur ≠ .ok (some q, c'')) :
+    (hnd : ∀ c'', (denseSwitch S.fr).run cur ≠ .ok (some q, c''))
+    (htable : HdlTables S) :
     BodySim S k p (S.used k) := by
-  have htable : HdlTables S := H.hdlTables
   by_cases hres : q.op = .resume
   · exact handler_resume' hD H hP hn hr hres
   · exact handler_general' hD H hP hn hr hh hres hnd htable
