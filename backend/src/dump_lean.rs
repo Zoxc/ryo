@@ -416,8 +416,7 @@ impl<'tcx> Dumper<'tcx> {
         match self.tcx.global_alloc(id) {
             GlobalAlloc::Memory(_) => self.global(GlobalKey::Alloc(id), kind, None),
             GlobalAlloc::VTable(t, dyn_ty) => {
-                let principal = dyn_ty.principal().map(|p| self.tcx.instantiate_bound_regions_with_erased(p));
-                let vt = self.tcx.vtable_allocation((t, principal));
+                let vt = super::lower::vtable_alloc(self.tcx, t, dyn_ty);
                 let name = self.name_of(Ty::new_dynamic(self.tcx, dyn_ty, self.tcx.lifetimes.re_erased));
                 self.global(GlobalKey::Alloc(vt), GKind::Vtable, Some(name))
             }
@@ -1043,14 +1042,12 @@ impl<'a, 'tcx> FnDump<'a, 'tcx> {
         let (sa, sb) = tcx.struct_lockstep_tails_for_codegen(a, b, d.typing_env());
         Ok(match (sa.kind(), sb.kind()) {
             (ty::Array(_, len), ty::Slice(_)) => ctor("length", vec![("n", num(len.try_to_target_usize(tcx).ok_or("array length")?))]),
-            (ty::Dynamic(da, _), ty::Dynamic(db, _)) => {
-                let same = da.principal_def_id() == db.principal_def_id() || db.principal_def_id().is_none();
-                let entry = if same { None } else { tcx.supertrait_vtable_slot((sa, sb)) };
+            (ty::Dynamic(..), ty::Dynamic(..)) => {
+                let entry = super::lower::upcast_entry(tcx, sa, sb);
                 ctor("upcast", vec![("entry", opt(entry.map(num)))])
             }
             (_, ty::Dynamic(preds, _)) => {
-                let principal = preds.principal().map(|p| tcx.instantiate_bound_regions_with_erased(p));
-                let vt = tcx.vtable_allocation((sa, principal));
+                let vt = super::lower::vtable_alloc(tcx, sa, preds);
                 let name = d.name_of(sb);
                 let g = d.global(GlobalKey::Alloc(vt), GKind::Vtable, Some(name));
                 ctor("vtable", vec![("g", num(g))])

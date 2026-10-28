@@ -56,6 +56,7 @@ use rustc_span::Symbol;
 use ryo_bytecode::asm::{self, Asm, InsnId, Label, Opnd, Unwind};
 use ryo_bytecode::full::{Abs, Const, ElemKind, Func, Opcode, OperandKind, Site, Sym};
 
+pub use self::cast::upcast_entry;
 pub use self::constant::{is_import, is_tls_shim, vtable_alloc};
 use self::emit::{IntOp, Width};
 use self::frame::{Frame, OUT_END};

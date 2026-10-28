@@ -4,7 +4,7 @@
 use rustc_middle::mir::{CastKind, Operand};
 use rustc_middle::ty::adjustment::PointerCoercion;
 use rustc_middle::ty::layout::TyAndLayout;
-use rustc_middle::ty::{self, FloatTy, Instance, Ty, TypingEnv};
+use rustc_middle::ty::{self, FloatTy, Instance, Ty, TyCtxt, TypingEnv};
 
 use super::emit::{FloatWidth, Width};
 use super::place::{Loc, PlaceVal};
@@ -198,14 +198,13 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 let len = len.try_to_target_usize(tcx).expect("monomorphic array length");
                 self.imm(Width::W64, d, u128::from(len));
             }
-            (ty::Dynamic(da, _), ty::Dynamic(db, _)) => {
+            (ty::Dynamic(..), ty::Dynamic(..)) => {
                 let Some(old) = old else { return native("dyn upcast of a thin pointer") };
-                let same = da.principal_def_id() == db.principal_def_id() || db.principal_def_id().is_none();
-                match (same, tcx.supertrait_vtable_slot((sa, sb))) {
-                    (false, Some(idx)) => {
+                match upcast_entry(tcx, sa, sb) {
+                    Some(idx) => {
                         self.op(Opcode::LoadW64, &[d, old, (idx * 8) as u32]);
                     }
-                    _ => self.mov(d, old, 8),
+                    None => self.mov(d, old, 8),
                 }
             }
             (_, ty::Dynamic(preds, _)) => {
@@ -216,4 +215,12 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         }
         Ok(())
     }
+}
+
+/// The vtable entry holding the supertrait vtable for a `dyn` upcast from `sa` to `sb`, or
+/// `None` when the vtable pointer is reused (same principal, or none in `sb`).
+pub fn upcast_entry<'tcx>(tcx: TyCtxt<'tcx>, sa: Ty<'tcx>, sb: Ty<'tcx>) -> Option<usize> {
+    let (ty::Dynamic(da, _), ty::Dynamic(db, _)) = (sa.kind(), sb.kind()) else { return None };
+    let same = da.principal_def_id() == db.principal_def_id() || db.principal_def_id().is_none();
+    if same { None } else { tcx.supertrait_vtable_slot((sa, sb)) }
 }
