@@ -1,39 +1,44 @@
 # ryo
 
 A rustc codegen backend for fast development builds: MIR is lowered to VM code, with a JIT
-at run time. Design docs: [design/README.md](design/README.md).
+at run time.
 
 ## Requirements
 
 Beyond what plain Rust needs (rustup, a linker):
 
-- x86_64 only: Linux, Windows (MSVC) or macOS (Intel, or Apple silicon under Rosetta).
+- x86_64 only: Linux, Windows (MSVC) or macOS.
 - Exactly **Rust 1.99.1** with the components `rustc-dev`, `rust-src` and `llvm-tools`.
   `./y.sh install` installs them through rustup if you don't have them (and removes them
   again on uninstall if it installed them).
-- About 1 GB of disk (the toolchain and `install/` in the checkout).
 
 ## Install
 
 ```sh
-git clone <this repository> ryo && cd ryo
-./y.sh install               # Windows: y.cmd install  (or .\y.ps1 install)
+git clone https://github.com/Zoxc/ryo
+cd ryo
+./y.sh install
+```
+
+On Windows (PowerShell):
+
+```powershell
+git clone https://github.com/Zoxc/ryo
+cd ryo
+.\y.ps1 install
 ```
 
 It first prints exactly what it will do and asks `Proceed? [y/N]`; nothing changes before
 you answer. Then:
 
-1. **Rust toolchain.** Installs Rust 1.99.1 with `rustc-dev`, `rust-src` and `llvm-tools`
-   through rustup, or adds whatever is missing. Your default toolchain isn't changed.
-2. **Build.** Builds ryo and keeps it in `install/` in the checkout, apart from development
-   builds.
-3. **Launchers.** Runs `cargo install --path scripts`, which puts `cargo-ryo` and
-   `rustc-ryo` in `~/.cargo/bin` (on your `PATH` with rustup). They run the ryo in
-   `install/`, so keep the checkout: deleting or moving it breaks the install (run
-   `./y.sh uninstall` first).
+1. Installs Rust 1.99.1 with `rustc-dev`, `rust-src` and `llvm-tools` through rustup, or
+   adds whatever is missing. Your default toolchain isn't changed.
+2. Builds ryo and keeps it in `install/` in the checkout, apart from development builds.
+3. Runs `cargo install --path scripts`, which puts `cargo-ryo` and `rustc-ryo` in
+   `~/.cargo/bin` (on your `PATH` with rustup). They run the ryo in `install/`, so keep the
+   checkout: deleting or moving it breaks the install (run `./y.sh uninstall` first).
 
-It never edits shell profiles, `PATH` or cargo config. Afterwards `cargo ryo build` works in
-any Cargo project.
+Afterwards `cargo ryo build` works in any Cargo project.
 
 In scripts and CI pass `--yes`: without a terminal, `y install` refuses to run otherwise.
 `--dry-run` only prints the plan. On Windows run it from PowerShell or cmd (in Git Bash,
@@ -50,12 +55,6 @@ pieces only it needed are removed (they're listed in the plan).
 
 Only one checkout can be installed at a time: installing from a second checkout is refused
 until you run `./y.sh uninstall` in the first.
-
-### For ryo development
-
-`./y.sh build` builds into `dist/` (use `dist/bin/cargo-ryo build`), `./y.sh test` runs the
-tests. Development builds and `./y.sh install` don't affect each other. To make the
-installed launchers use your `dist/`, set `RYO_HOME=<checkout>/dist`.
 
 ## Usage
 
@@ -85,23 +84,16 @@ macOS: programs built with ryo JIT-compile at run time. If you sign one with the
 runtime, give it the `com.apple.security.cs.allow-unsigned-executable-memory` entitlement,
 or run it with `RYO_JIT=off`.
 
-### Troubleshooting
-
-- **`cargo ryo`: no such command**: `~/.cargo/bin` isn't on `PATH`.
-- **"ryo is not installed in …/install"**: the checkout's `install/` is gone; rerun
-  `./y.sh install` there.
-- **"rustc-ryo was built for rustc 1.99.1, but the toolchain … has changed"**: the 1.99.1
-  toolchain was removed. Rerun `./y.sh install`.
-- **`can't find crate for std` with `--target`**: reinstall with `--target <T>`.
-- **Apple silicon**: `arch -x86_64 ./y.sh install` (with an x86_64 rustup), and run builds
-  under Rosetta.
-- **An install failed halfway**: your previous ryo (if any) still works; rerun
-  `./y.sh install`.
-
 ## Uninstall
 
 ```sh
 ./y.sh uninstall
+```
+
+On Windows (PowerShell):
+
+```powershell
+.\y.ps1 uninstall
 ```
 
 Like install, it prints what it will remove (and what it keeps, and why) and asks
@@ -115,6 +107,28 @@ Like install, it prints what it will remove (and what it keeps, and why) and ask
 Afterwards you can delete the checkout. Not touched: cargo's download cache, development
 builds (`dist/`, `target/`) and your projects' `target/` dirs. Projects that selected ryo
 through `.cargo/config.toml` need that setting removed.
+
+## Development
+
+```sh
+./y.sh build
+./y.sh test
+dist/bin/cargo-ryo build
+```
+
+On Windows (PowerShell):
+
+```powershell
+.\y.ps1 build
+.\y.ps1 test
+dist\bin\cargo-ryo.exe build
+```
+
+`./y.sh build` builds into `dist/` and `./y.sh test` runs the tests; `./y.sh --help` lists
+the other commands (benchmarks, the Lean model, cross builds). Development builds and
+`./y.sh install` don't affect each other; to make the installed launchers use your `dist/`,
+set `RYO_HOME=<checkout>/dist`. The design docs start at [design/README.md](design/README.md),
+and [AGENTS.md](AGENTS.md) has the repository map and working rules.
 
 ## License
 
