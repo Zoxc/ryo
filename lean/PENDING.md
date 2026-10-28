@@ -20,3 +20,8 @@ remove it once a Lean session has handled it.
   (`Ryo/Proofs/Inline/All.lean`), the register cache covers the new items (`hlater` replaced by
   `hcount`), and the dense switch is in `decode_sound` (`Ryo/Proofs/Dense.lean`,
   `bodySim_dense`)..
+
+- f98053b (Image: Keep Mach-O FDEs out of compact unwind): `eh_cie_with` with
+  `EhPointers::Abs8` (Mach-O) now appends a second `DW_CFA_offset r16, 1` in place of the two
+  `DW_CFA_nop`s of padding (same CIE length). `Ryo/Obj/EhFrame.lean`'s Mach-O CIE form should
+  accept it.
