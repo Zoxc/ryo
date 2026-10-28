@@ -832,7 +832,9 @@ The JIT thread is the `ryo_jit` crate, which `y build` turns into one object tha
 rlib bundles (`build/src/jit.rs`, [build.md](build.md#build)):
 
 - **Interface** (`ryo_bytecode::jit_abi`, `core` only, so neither crate depends on the
-  other): `extern "C" fn ryo_jit_start(rt: &'static RtApi) -> bool`, the JIT's only symbol,
+  other): `extern "C" fn ryo_jit_start(rt: &'static RtApi) -> Option<extern "C" fn()>`, the
+  JIT's only symbol, which returns its exit report ([statistics](#statistics)) or `None` if
+  its thread didn't start,
   and `RtApi`, which the runtime builds once, at the first push. Neither carries a version:
   the JIT is built with the runtime ([version-matched](vm.md#image-format)).
   | Field | |
@@ -915,6 +917,41 @@ for shuffled frames per image, `RtApi::shuffled`):
 | `RYO_JIT_DUMP=dir` | the SSA tier writes each function's reduced code, IR before and after value numbering and the folds, locations and code (or, for one it doesn't handle, the reason and the reduced code) to `dir/f<index>-<image header address>.txt`, and every installed function's code with its relocations by name to `dir/f<index>-<image header address>.code` (for `y bench codegen`, [build.md](build.md#test-and-bench)); read by the JIT thread itself, not passed in `RtApi` |
 | `RYO_JIT_LICM=1` | the SSA tier's general [loop-invariant code motion](#loop-invariant-code-motion); off by default, when only splats are hoisted |
 | `RYO_JIT_SSA_LIMIT=n` | debugging: only the first `n` functions the JIT compiles go to the SSA tier, the rest are re-encoded (bisects a miscompile) |
+| `RYO_JIT_STATS=1\|2` | [statistics](#statistics) on stderr: `1` a startup line at the first image registration and a summary at exit, `2` also a progress line from the JIT thread at most once a minute; another value warns and means `1`. Independent of `RYO_JIT_LOG` |
+
+### Statistics
+
+`RYO_JIT_STATS` prints lines starting with `[ryo] jit` on stderr (`y test` drops them from
+the stderr it compares), each with one `write`:
+
+```
+[ryo] jit: on, ssa, thresholds 64 calls / 1024 iterations (RYO_JIT_THRESHOLD), sync, pid 41213
+[ryo] jit stats: +60s compiled 412 (ssa 398, reencode 14), failed 3, code 1.9 MiB
+[ryo] jit stats: summary, pid 41213, 2.84s since the JIT started
+[ryo] jit stats:   queued    1203 records in 97 batches (largest 143)
+[ryo] jit stats:   compiled  1171: ssa 1102, reencode 69 (ssa unsupported 61, ssa-limit 0, RYO_JIT_OPT=reencode 8)
+[ryo] jit stats:   failed      12: no personality slot 9, panicked 1, region full 0, ssa check failed 0, other 2
+[ryo] jit stats:   in flight   20 (taken, not yet reported; approximate at exit)
+[ryo] jit stats:   ssa: devirt 5, inlined 40 calls
+[ryo] jit stats:   code   2.3 MiB (ssa 2.1, reencode 0.2) in 3 regions; region-full retries 2
+[ryo] jit stats:   time   compile 1.21s (mean 1.0ms, max 38ms)
+```
+
+- **Startup line**: the runtime's, at the first image registration, formatted without
+  `core::fmt` (a fixed buffer, `Line`); it lists the tier, the thresholds and the flags that
+  are on, or `off (RYO_JIT=off)`. It registers the summary's `atexit` handler.
+- **Counters**: nothing on the AOT side (code, handlers, trips). The counters
+  (`vm/jit/src/stats.rs`) are atomics only the JIT thread writes, with a `Relaxed` load
+  and store; other threads read them with `Relaxed` loads. A record's are stored before its
+  state leaves `Queued` (`JitRecord::publish`, `JitRecord::fail`), so a `RYO_JIT_SYNC` waiter
+  sees them. Compile timing is gated by `JitSettings::count` (on with stats, and in tests).
+- **Summary**: the `atexit` handler calls the JIT's report (formatted on the stack, no lock,
+  no waiting for the JIT thread), or prints `JIT off`, `no function reached a threshold` or
+  `JIT thread failed to start`. Read mid-compile, the counters needn't balance: `in flight`
+  saturates at 0. A forked child prints nothing; `_exit`, `abort`, signals and `exec` skip it.
+- **Progress** (`2`): the JIT thread checks after each batch, so an idle JIT prints none.
+- With `RYO_JIT_SYNC` in a single-threaded program, everything but the times and the pid is
+  deterministic.
 
 `y test` links a checked JIT, built with debug assertions and overflow checks
 (`RYO_JIT_CHECKED`, [build.md](build.md#build)); measurements use the release one.

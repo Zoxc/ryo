@@ -27,7 +27,7 @@ pub use interp::{FP_ARG, MODE, RegRet, handler, handler_for, probe_stack, reg_ha
 #[cfg(all(feature = "pe-test", not(windows)))]
 pub use interp::{PE_MODE, pe_handler, pe_reg_handler};
 #[cfg(feature = "jit")]
-pub use jit::{JIT_ENTRY_PREFIX, configure_jit, jit_shuffle_image, jit_stats};
+pub use jit::{JIT_ENTRY_PREFIX, configure_jit, jit_shuffle_image};
 pub use jit::{trip_entry, trip_osr};
 
 /// Registers the images whose header addresses are the non-null entries of `[start, end)`.

@@ -585,7 +585,7 @@ fn concurrent_trips() {
         fs.push(w.add_function(func(a.done(), 16, 16, 8)));
     }
     let img = std::sync::Arc::new(build(w, &syms()));
-    let (before, _) = ryo_rt::vm::jit_stats();
+    let (before, _) = ryo_jit::jit_stats();
     let threads: Vec<_> = (0..16u64)
         .map(|t| {
             let (img, fs) = (img.clone(), fs.clone());
@@ -609,7 +609,36 @@ fn concurrent_trips() {
         assert_eq!(state(&img, f), JIT_DONE);
     }
     // Other tests compile concurrently, so only a lower bound.
-    assert!(ryo_rt::vm::jit_stats().0 >= before + fs.len());
+    assert!(ryo_jit::jit_stats().0 >= before + fs.len());
+}
+
+/// The JIT's statistics: with `RYO_JIT_SYNC`, a function's counts are in as soon as its
+/// first call returns (they are stored before its record's `Done`), and compiles are timed
+/// (`configure_jit` turns the gate on).
+#[test]
+fn statistics() {
+    init();
+    let mut w = ImageWriter::new(unique_scid());
+    let s_ret = w.symbol("ret_addr", 0);
+    let mut a = Asm::new();
+    a.i(Insn::CallSym { d: Slot(-8), sym: s_ret, k: 8, a: List::from_words(&[]) });
+    a.i(Insn::StoreW64 { m: Mem { p: Slot(24), k: 0 }, s: Slot(-8) });
+    a.i(Insn::AddImmW64 { d: Slot(-8), a: Slot(16), imm: 1 });
+    a.ret(Slot(-8), 8);
+    let f = w.add_function(func(a.done(), 16, 16, 8));
+    let img = build(w, &syms());
+    let before = ryo_jit::stats();
+    let mut out = [0u64; 1];
+    assert_eq!(ok::<_, u64>(img.id(f), (41u64, out.as_mut_ptr() as u64)), 42);
+    assert_eq!(state(&img, f), JIT_DONE);
+    // Other tests compile concurrently, so only lower bounds.
+    let now = ryo_jit::stats();
+    assert!(now.compiled > before.compiled);
+    assert!(now.ssa + now.reencode > before.ssa + before.reencode);
+    assert!(now.code_ssa + now.code_reencode > before.code_ssa + before.code_reencode);
+    assert!(now.queued > before.queued && now.batches > before.batches && now.largest_batch >= 1);
+    assert!(now.timed > before.timed && now.compile_ns > before.compile_ns && now.compile_max_ns > 0);
+    assert!(now.regions >= 1);
 }
 
 // ---- OSR ----

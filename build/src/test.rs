@@ -866,9 +866,11 @@ struct RunResult {
 }
 
 impl RunResult {
-    /// Compares with `reference`.
+    /// Compares with `reference`, without the `[ryo] jit` lines of `RYO_JIT_STATS` in this
+    /// run's stderr.
     fn compare(&self, reference: &RunResult) -> Result<(), String> {
-        if self == reference {
+        let stderr: String = self.stderr.split_inclusive('\n').filter(|l| !l.starts_with("[ryo] jit")).collect();
+        if self.code == reference.code && self.stdout == reference.stdout && stderr == reference.stderr {
             return Ok(());
         }
         Err(format!(

@@ -10,12 +10,14 @@ use ryo_bytecode::jit_abi::RtApi;
 const NAME: &str = "ryo-jit";
 
 use crate::install::Jit;
+use crate::stats::{self, STATS};
 
 /// Starts the JIT thread. False if the thread didn't start.
 pub(crate) fn start(rt: &'static RtApi) -> bool {
     quiet_panics(rt.settings.log);
     oom_panics();
     crate::sys::close_frame_registry_at_exit();
+    let _ = stats::STARTED_AT.set(std::time::Instant::now());
     std::thread::Builder::new().name(NAME.into()).spawn(move || main(rt)).is_ok()
 }
 
@@ -60,6 +62,8 @@ fn main(rt: &'static RtApi) {
     // (`JitRecord`): re-checked after each batch and, while there are any, after a pause
     // without one, until they are seen settled twice.
     let mut recheck: Vec<(*mut ryo_bytecode::image::JitRecord, u8)> = Vec::new();
+    // `RYO_JIT_STATS=2`: when the last progress line went out.
+    let mut last_progress = std::time::Instant::now();
     loop {
         let mut list = (rt.next_batch)(recheck.is_empty());
         if list.is_null() {
@@ -71,6 +75,17 @@ fn main(rt: &'static RtApi) {
             *seen = if crate::install::settled(*rec) { *seen + 1 } else { 0 };
             *seen < 2
         });
+        if !list.is_null() {
+            let mut n = 0;
+            let mut r = list;
+            while !r.is_null() {
+                n += 1;
+                // SAFETY: the records of a batch are this thread's.
+                r = unsafe { (*r).next };
+            }
+            stats::add(&STATS.batches, 1);
+            stats::max(&STATS.largest_batch, n);
+        }
         while !list.is_null() {
             let rec = list;
             // SAFETY: the records of a batch are this thread's until it reports them.
@@ -78,6 +93,8 @@ fn main(rt: &'static RtApi) {
                 list = (*rec).next;
                 (*rec).next = core::ptr::null_mut();
             }
+            stats::add(&STATS.queued, 1);
+            let t0 = rt.settings.count.then(std::time::Instant::now);
             // Everything that may allocate, and so panic (`oom_panics`), is inside the
             // `catch_unwind`s: a panic out of this loop would end the thread with records
             // unreported. The room for `recheck` is made before the compile, so that a
@@ -91,6 +108,17 @@ fn main(rt: &'static RtApi) {
                 Ok(Err(why)) => Some(why),
                 Err(_) => Some("panicked"),
             };
+            if let Some(t0) = t0 {
+                let ns = t0.elapsed().as_nanos() as u64;
+                stats::add(&STATS.timed, 1);
+                stats::add(&STATS.compile_ns, ns);
+                stats::max(&STATS.compile_max_ns, ns);
+            }
+            // Before `done` fails the record: its `SeqCst` store of `Failed` makes the count
+            // visible to a `RYO_JIT_SYNC` waiter (stats.rs).
+            if let Some(why) = why {
+                STATS.fail(why);
+            }
             if let Some(why) = why
                 && rt.settings.log
             {
@@ -101,5 +129,19 @@ fn main(rt: &'static RtApi) {
                 recheck.push((rec, 0));
             }
         }
+        if rt.settings.stats >= 2 && last_progress.elapsed() >= std::time::Duration::from_secs(60) {
+            last_progress = std::time::Instant::now();
+            progress();
+        }
     }
+}
+
+/// `RYO_JIT_STATS=2`'s progress line, with one `write`.
+#[cold]
+fn progress() {
+    let since = stats::STARTED_AT.get().map_or(std::time::Duration::ZERO, |t| t.elapsed());
+    let mut buf = std::io::Cursor::new([0u8; 256]);
+    let _ = stats::progress(&STATS.load_all(), since, &mut buf);
+    let n = buf.position() as usize;
+    crate::sys::write_stderr(&buf.get_ref()[..n]);
 }

@@ -58,8 +58,10 @@ struct Config {
     /// What the JIT gets: `RYO_JIT_LOG`, `RYO_JIT_PERFMAP`, `RYO_JIT_TEST_PANIC` (tests: the
     /// JIT catches its panics even in a `-Cpanic=abort` program), `RYO_JIT_TEST_OOM` (an
     /// allocation failure in every compile), `RYO_JIT_CHECK`, `RYO_JIT_OPT` and
-    /// `RYO_JIT_SSA_LIMIT`.
+    /// `RYO_JIT_SSA_LIMIT`, and `RYO_JIT_STATS`'s level.
     jit: JitSettings,
+    /// `RYO_JIT_STATS`'s value if it isn't `0`, `1` or `2` (level 1, with a warning).
+    stats_bad: Option<&'static [u8]>,
 }
 
 /// `RYO_JIT_OPT`: the SSA tier unless `reencode` or `ssa-naive`.
@@ -147,8 +149,19 @@ fn parse_i64(s: &[u8]) -> Option<i64> {
     Some(n)
 }
 
+/// `RYO_JIT_STATS`'s level, and the value if it is malformed (level 1).
+fn parse_stats(v: Option<&'static [u8]>) -> (u8, Option<&'static [u8]>) {
+    match v {
+        None | Some(b"0") => (0, None),
+        Some(b"1") => (1, None),
+        Some(b"2") => (2, None),
+        Some(bad) => (1, Some(bad)),
+    }
+}
+
 fn from_env() -> Config {
     let flag = |name: &CStr| var(name) == Some(b"1");
+    let (stats, stats_bad) = parse_stats(var(c"RYO_JIT_STATS"));
     Config {
         enabled: var(c"RYO_JIT") != Some(b"off"),
         threshold: var(c"RYO_JIT_THRESHOLD")
@@ -164,7 +177,10 @@ fn from_env() -> Config {
             opt: opt(),
             licm: flag(c"RYO_JIT_LICM"),
             ssa_limit: var(c"RYO_JIT_SSA_LIMIT").and_then(parse_i64).and_then(|n| u64::try_from(n).ok()).unwrap_or(u64::MAX),
+            stats,
+            count: stats >= 1,
         },
+        stats_bad,
     }
 }
 
@@ -196,8 +212,9 @@ impl Config {
 
 /// Sets the JIT's settings instead of the environment, before anything reads them (tests):
 /// on, with `sync` ([`Config::sync`]) and `threshold` (as `RYO_JIT_THRESHOLD=threshold`), no
-/// perf map, shuffling or test panics, and the rest (`RYO_JIT_LOG`, `RYO_JIT_OPT`,
-/// `RYO_JIT_CHECK`, `RYO_JIT_SSA_LIMIT`) from the environment. False if they were read already.
+/// perf map, shuffling or test panics, compile timing on, and the rest (`RYO_JIT_LOG`,
+/// `RYO_JIT_OPT`, `RYO_JIT_CHECK`, `RYO_JIT_SSA_LIMIT`, `RYO_JIT_STATS`) from the
+/// environment. False if they were read already.
 #[doc(hidden)]
 pub fn configure_jit(sync: bool, threshold: Option<i64>) -> bool {
     set_config(|| {
@@ -207,7 +224,8 @@ pub fn configure_jit(sync: bool, threshold: Option<i64>) -> bool {
             threshold: threshold.map(thresholds_of),
             sync,
             shuffle: false,
-            jit: JitSettings { perfmap: false, test_panic: false, test_oom: false, ..env.jit },
+            jit: JitSettings { perfmap: false, test_panic: false, test_oom: false, count: true, ..env.jit },
+            stats_bad: env.stats_bad,
         }
     })
 }
@@ -237,15 +255,6 @@ extern "C-unwind" fn shuffled(header: *const u8) -> bool {
 extern "C-unwind" fn image_at(addr: usize) -> *const u8 {
     super::registry::image_at(addr)
 }
-
-/// How many functions the JIT compiled, and how many it failed to (tests).
-#[doc(hidden)]
-pub fn jit_stats() -> (usize, usize) {
-    (COMPILED.load(Relaxed), FAILED.load(Relaxed))
-}
-
-static COMPILED: AtomicUsize = AtomicUsize::new(0);
-static FAILED: AtomicUsize = AtomicUsize::new(0);
 
 /// The queue of records to compile: a Treiber stack linked through [`JitRecord::next`]. Only
 /// a trip that moved a record from `Cold` to `Queued` pushes it, so each record is pushed at
@@ -645,13 +654,21 @@ fn start() -> bool {
         pe_reg_handlers,
     };
     // SAFETY: only the first push gets here, once; the JIT reads it only after the start.
-    unsafe { ryo_jit_start((*RT_API.0.get()).write(api)) }
+    let report = unsafe { ryo_jit_start((*RT_API.0.get()).write(api)) };
+    if let Some(r) = report {
+        REPORT.store(r as *mut (), Release);
+    }
+    report.is_some()
 }
 
 unsafe extern "C" {
-    /// The JIT's (`ryo_jit`): starts its thread, false if it can't.
-    fn ryo_jit_start(rt: &'static RtApi) -> bool;
+    /// The JIT's (`ryo_jit`): starts its thread and returns its exit report
+    /// (`RYO_JIT_STATS`), or `None` if the thread can't start.
+    fn ryo_jit_start(rt: &'static RtApi) -> Option<extern "C" fn()>;
 }
+
+/// The JIT's exit report, once its thread started (an `extern "C" fn()`).
+static REPORT: AtomicPtr<()> = AtomicPtr::new(ptr::null_mut());
 
 /// [`RtApi::next_batch`]: the queue, in trip order, once it isn't empty (or at once without
 /// `wait`).
@@ -686,11 +703,9 @@ extern "C-unwind" fn next_batch(wait: bool) -> *mut JitRecord {
     }
 }
 
-/// [`RtApi::done`]: counts a compiled record, or fails it, and wakes its waiters.
+/// [`RtApi::done`]: fails a record that didn't compile, and wakes its waiters.
 extern "C-unwind" fn done(rec: *mut JitRecord, ok: bool) {
-    if ok {
-        COMPILED.fetch_add(1, Relaxed);
-    } else {
+    if !ok {
         fail(rec);
     }
     if config().sync {
@@ -700,7 +715,6 @@ extern "C-unwind" fn done(rec: *mut JitRecord, ok: bool) {
 
 /// Leaves a record in AOT code for good.
 fn fail(rec: *mut JitRecord) {
-    FAILED.fetch_add(1, Relaxed);
     JitRecord::fail(rec);
 }
 
@@ -710,6 +724,9 @@ fn fail(rec: *mut JitRecord) {
 #[inline(never)]
 pub(crate) fn registered(img: &Image<'_>) {
     let cfg = config();
+    if cfg.jit.stats != 0 && !ANNOUNCED.swap(true, Relaxed) {
+        announce(cfg);
+    }
     let [e, l] = cfg.thresholds();
     let bias = match (cfg.enabled, cfg.threshold) {
         (false, _) => -JIT_BIAS,
@@ -720,6 +737,155 @@ pub(crate) fn registered(img: &Image<'_>) {
         let r = img.jit_records().wrapping_add(i);
         JitRecord::ctr_e(r).store(bias - e, Relaxed);
         JitRecord::ctr_l(r).store(bias - l, Relaxed);
+    }
+}
+
+/// `RYO_JIT_STATS`: the startup line was printed (or is being printed) by the first
+/// registration.
+static ANNOUNCED: AtomicBool = AtomicBool::new(false);
+/// The process that printed the startup line: a forked child, which has no JIT thread,
+/// prints no summary.
+static ANNOUNCED_PID: AtomicU32 = AtomicU32::new(0);
+
+unsafe extern "C" {
+    fn atexit(f: extern "C" fn()) -> core::ffi::c_int;
+}
+
+/// `RYO_JIT_STATS`'s start: the malformed-value warning, the startup line, and the exit
+/// summary's `atexit` handler. Once, at the first registration.
+#[cold]
+#[inline(never)]
+fn announce(cfg: &Config) {
+    let pid = super::sys::pid();
+    ANNOUNCED_PID.store(pid, Relaxed);
+    if let Some(bad) = cfg.stats_bad {
+        let mut l = Line::new();
+        l.bytes(b"[ryo] warning: RYO_JIT_STATS=");
+        l.bytes(bad);
+        l.bytes(b": expected 0, 1 or 2; using 1\n");
+        l.flush();
+    }
+    let mut l = Line::new();
+    startup_line(cfg, pid, &mut l);
+    l.flush();
+    // SAFETY: registers a function that lives for the whole process.
+    unsafe { atexit(at_exit) };
+}
+
+/// The startup line: whether the JIT is on, its tier, thresholds and flags, and the pid.
+fn startup_line(cfg: &Config, pid: u32, l: &mut Line) {
+    if !cfg.enabled {
+        l.bytes(b"[ryo] jit: off (RYO_JIT=off), pid ");
+        l.u64(pid as u64);
+        l.bytes(b"\n");
+        return;
+    }
+    let j = &cfg.jit;
+    l.bytes(b"[ryo] jit: on, ");
+    l.bytes(match j.opt {
+        JitOpt::Ssa => &b"ssa"[..],
+        JitOpt::SsaNaive => b"ssa-naive",
+        JitOpt::Reencode => b"reencode",
+    });
+    let [e, it] = cfg.thresholds();
+    l.bytes(b", thresholds ");
+    l.u64(e as u64);
+    l.bytes(b" calls / ");
+    l.u64(it as u64);
+    l.bytes(b" iterations");
+    if cfg.threshold.is_some() {
+        l.bytes(b" (RYO_JIT_THRESHOLD)");
+    }
+    for (on, name) in
+        [(cfg.sync, &b"sync"[..]), (cfg.shuffle, b"shuffle"), (j.check, b"check"), (j.licm, b"licm"), (j.perfmap, b"perfmap"), (j.log, b"log")]
+    {
+        if on {
+            l.bytes(b", ");
+            l.bytes(name);
+        }
+    }
+    if j.ssa_limit != u64::MAX {
+        l.bytes(b", ssa-limit ");
+        l.u64(j.ssa_limit);
+    }
+    l.bytes(b", pid ");
+    l.u64(pid as u64);
+    l.bytes(b"\n");
+}
+
+/// `RYO_JIT_STATS`'s exit summary: the JIT's report once its thread started, else one line
+/// of why there is none. Nothing in a forked child. Takes no lock and never waits for the
+/// JIT thread.
+extern "C" fn at_exit() {
+    if super::sys::pid() != ANNOUNCED_PID.load(Relaxed) {
+        return;
+    }
+    let report = REPORT.load(Acquire);
+    let why: &[u8] = if !config().enabled {
+        b"JIT off"
+    } else if !STARTED.load(Relaxed) {
+        b"no function reached a threshold"
+    } else if DISABLED.load(Relaxed) || report.is_null() {
+        b"JIT thread failed to start"
+    } else {
+        // SAFETY: `ryo_jit_start`'s report, an `extern "C" fn()`.
+        let report: extern "C" fn() = unsafe { core::mem::transmute(report) };
+        report();
+        return;
+    };
+    let mut l = Line::new();
+    l.bytes(b"[ryo] jit stats: ");
+    l.bytes(why);
+    l.bytes(b"\n");
+    l.flush();
+}
+
+/// A line of output built without `core::fmt` (which the runtime must not reach), in a
+/// fixed buffer: too long a line is truncated. Nothing here can panic: only `get`/`get_mut`,
+/// division by the constant 10, and wrapping arithmetic.
+struct Line {
+    buf: [u8; 256],
+    len: usize,
+}
+
+impl Line {
+    fn new() -> Line {
+        Line { buf: [0; 256], len: 0 }
+    }
+
+    fn bytes(&mut self, s: &[u8]) {
+        for &b in s {
+            if let Some(slot) = self.buf.get_mut(self.len) {
+                *slot = b;
+                self.len = self.len.wrapping_add(1);
+            }
+        }
+    }
+
+    fn u64(&mut self, mut n: u64) {
+        let mut d = [0u8; 20];
+        let mut i = d.len();
+        loop {
+            // At most 20 digits: never wraps.
+            i = i.wrapping_sub(1);
+            if let Some(s) = d.get_mut(i) {
+                *s = b'0'.wrapping_add((n % 10) as u8);
+            }
+            n /= 10;
+            if n == 0 {
+                break;
+            }
+        }
+        self.bytes(d.get(i..).unwrap_or(&[]));
+    }
+
+    fn as_bytes(&self) -> &[u8] {
+        self.buf.get(..self.len).unwrap_or(&[])
+    }
+
+    /// Writes the line to stderr with one `write`.
+    fn flush(&self) {
+        super::sys::write_stderr(self.as_bytes());
     }
 }
 
@@ -811,6 +977,73 @@ use futex::{wait as futex_wait, wake as futex_wake};
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stats_values() {
+        assert_eq!(parse_stats(None), (0, None));
+        assert_eq!(parse_stats(Some(b"0")), (0, None));
+        assert_eq!(parse_stats(Some(b"1")), (1, None));
+        assert_eq!(parse_stats(Some(b"2")), (2, None));
+        assert_eq!(parse_stats(Some(b"3")), (1, Some(&b"3"[..])));
+        assert_eq!(parse_stats(Some(b"x")), (1, Some(&b"x"[..])));
+        assert_eq!(parse_stats(Some(b"")), (1, Some(&b""[..])));
+    }
+
+    #[test]
+    fn count_gate() {
+        // `from_env` counts with stats on; `configure_jit` always does.
+        let c = from_env();
+        assert_eq!(c.jit.count, c.jit.stats >= 1);
+    }
+
+    #[test]
+    fn line() {
+        let mut l = Line::new();
+        l.u64(0);
+        l.bytes(b" ");
+        l.u64(u64::MAX);
+        assert_eq!(l.as_bytes(), b"0 18446744073709551615");
+        let mut l = Line::new();
+        for _ in 0..30 {
+            l.bytes(b"0123456789");
+        }
+        l.u64(12345);
+        assert_eq!(l.as_bytes().len(), 256);
+        assert_eq!(&l.as_bytes()[250..], b"012345");
+    }
+
+    #[test]
+    fn startup() {
+        let jit = JitSettings {
+            log: false,
+            perfmap: false,
+            test_panic: false,
+            test_oom: false,
+            check: true,
+            opt: JitOpt::Ssa,
+            ssa_limit: u64::MAX,
+            licm: false,
+            stats: 1,
+            count: true,
+        };
+        let mut cfg = Config { enabled: true, threshold: Some((4, 64)), sync: true, shuffle: true, jit, stats_bad: None };
+        let line = |cfg: &Config| {
+            let mut l = Line::new();
+            startup_line(cfg, 41213, &mut l);
+            std::string::String::from_utf8(l.as_bytes().to_vec()).unwrap()
+        };
+        assert_eq!(line(&cfg), "[ryo] jit: on, ssa, thresholds 4 calls / 64 iterations (RYO_JIT_THRESHOLD), sync, shuffle, check, pid 41213\n");
+        cfg.threshold = None;
+        cfg.sync = false;
+        cfg.shuffle = false;
+        cfg.jit.check = false;
+        cfg.jit.opt = JitOpt::Reencode;
+        cfg.jit.ssa_limit = 7;
+        let [e, l] = cfg.thresholds();
+        assert_eq!(line(&cfg), std::format!("[ryo] jit: on, reencode, thresholds {e} calls / {l} iterations, ssa-limit 7, pid 41213\n"));
+        cfg.enabled = false;
+        assert_eq!(line(&cfg), "[ryo] jit: off (RYO_JIT=off), pid 41213\n");
+    }
 
     #[test]
     fn thresholds() {

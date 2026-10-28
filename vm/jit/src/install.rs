@@ -5,7 +5,7 @@
 
 use core::ptr;
 use core::sync::atomic::AtomicUsize;
-use core::sync::atomic::Ordering::{Acquire, Relaxed, Release, SeqCst};
+use core::sync::atomic::Ordering::{Acquire, Release, SeqCst};
 use std::collections::HashMap;
 use std::io::Write;
 use std::vec::Vec;
@@ -23,6 +23,8 @@ use ryo_bytecode::jit::inline::VmFunc;
 use ryo_bytecode::jit::ir::CallTarget;
 use ryo_bytecode::jit_abi::{JIT_ENTRY_PREFIX, JitOpt, RtApi};
 use ryo_bytecode::{Opcode, reduced, vmem};
+
+use crate::stats::{self, STATS};
 
 mod callees;
 mod dump;
@@ -64,14 +66,6 @@ pub(crate) fn settled(rec: *mut JitRecord) -> bool {
         v != jit_unbiased(v) && v > 0
     })
 }
-
-/// How many functions the SSA tier compiled, and how many it left to the re-encoding
-/// pipeline ([`crate::ssa_stats`]).
-pub(crate) static SSA_COMPILED: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
-pub(crate) static SSA_FALLBACK: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
-/// How many of the SSA tier's roots' calls through constant pointers became direct
-/// ([`crate::ssa_devirt`]).
-pub(crate) static SSA_DEVIRT: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
 
 /// A function's machine code, from either pipeline, before it is installed.
 struct Gen {
@@ -225,7 +219,10 @@ impl Jit {
         // Again in a new region if the one it was compiled for filled up (once is enough: the
         // new one is empty, and the function fits half of one).
         let r = match self.compile_once(rec) {
-            Err(CompileError::Retry) => self.compile_once(rec),
+            Err(CompileError::Retry) => {
+                stats::add(&STATS.region_retries, 1);
+                self.compile_once(rec)
+            }
             r => r,
         };
         r.map_err(|e| match e {
@@ -289,6 +286,10 @@ impl Jit {
             if let Some((out, ssa_ext)) = self.compile_ssa(rec, func, &img, &d, mode, shuffled, place)? {
                 return self.install(&Install { rec, func, img: &img, place, personality, ext: &ssa_ext, tier: Tier::Ssa }, out);
             }
+        } else if settings.opt == JitOpt::Reencode {
+            stats::add(&STATS.opt_reencode, 1);
+        } else {
+            stats::add(&STATS.ssa_limit, 1);
         }
         let out = compile_reencode(&d, &words, &map, &img, mode)?;
         self.install(&Install { rec, func, img: &img, place, personality, ext: &ext, tier: Tier::Reencode }, out)
@@ -350,12 +351,12 @@ impl Jit {
                     osr_at: o.osr_at as usize,
                     region: len,
                 };
-                SSA_COMPILED.fetch_add(1, Relaxed);
-                SSA_DEVIRT.fetch_add(o.devirt, Relaxed);
+                stats::add(&STATS.devirt, o.devirt as u64);
+                stats::add(&STATS.inlined, o.inlined as u64);
                 Ok(Some((out, ssa_ext)))
             }
             Err(jit::Error::Unsupported(u)) => {
-                SSA_FALLBACK.fetch_add(1, Relaxed);
+                stats::add(&STATS.ssa_unsupported, 1);
                 if let Some(dir) = &self.dump {
                     let text = std::format!("; unsupported: {}\n{}", u.0, reduced::Disasm(&d.words));
                     let _ = std::fs::write(std::format!("{dir}/f{func}-{:x}.txt", h as *const _ as usize), text);
@@ -368,7 +369,7 @@ impl Jit {
             // A checker found a bug: always on stderr, so that tests see it, and the function
             // stays in its AOT code (`Failed`), which tests that expect JIT code notice.
             Err(jit::Error::Check(why)) => {
-                SSA_FALLBACK.fetch_add(1, Relaxed);
+                stats::add(&STATS.ssa_check_failed, 1);
                 self.log(rec, &std::format!("ssa: check failed: {why}"));
                 Err("the SSA tier's checkers failed".into())
             }
@@ -411,7 +412,7 @@ impl Jit {
             code[thunk_at + 6..][..8].copy_from_slice(&(self.rt.seh_handler as u64).to_le_bytes());
         }
         map_and_register(&code, &eh, base, eh_base, mode)?;
-        self.publish(cx, jit_f, osr.is_some().then(|| jit_f + osr_at), code_len);
+        self.publish(cx, jit_f, osr.is_some().then(|| jit_f + osr_at), code_len, ro_at + rodata.len());
         Ok(())
     }
 
@@ -468,8 +469,9 @@ impl Jit {
     }
 
     /// Publishes the installed code of `cx`'s function, at `jit_f` with its OSR dispatcher at
-    /// `osr_entry`: the perf map, the record, the call slots of it, and the log.
-    fn publish(&mut self, cx: &Install<'_>, jit_f: usize, osr_entry: Option<usize>, code_len: usize) {
+    /// `osr_entry`: the perf map, the record, the call slots of it, and the log. `bytes` is
+    /// the size of its code memory, for the statistics.
+    fn publish(&mut self, cx: &Install<'_>, jit_f: usize, osr_entry: Option<usize>, code_len: usize, bytes: usize) {
         let (rec, func) = (cx.rec, cx.func);
         let h = cx.img.header();
         if let Some(m) = &mut self.perfmap {
@@ -483,6 +485,15 @@ impl Jit {
             let c = counts(rec, self.rt.thresholds);
             self.log_text(rec, &std::format!("compiled ({}, {} calls, {} loop iterations)", cx.tier.name(), c.calls, c.iters))
         });
+        // Counted before the record's `Done`, whose `SeqCst` store makes the counts visible
+        // to a `RYO_JIT_SYNC` waiter (stats.rs); after it, a test could miss them.
+        stats::add(&STATS.compiled, 1);
+        let (n, b) = match cx.tier {
+            Tier::Ssa => (&STATS.ssa, &STATS.code_ssa),
+            Tier::Reencode => (&STATS.reencode, &STATS.code_reencode),
+        };
+        stats::add(n, 1);
+        stats::add(b, bytes as u64);
         // The dispatcher, at the start of the OSR code: every head's stub calls it from now.
         // SAFETY: the record is this thread's until `Done`.
         unsafe { JitRecord::publish(rec, jit_f as *const u8, (jit_f - JIT_ENTRY_PREFIX) as *mut u8, osr_entry.map(|a| a as *mut u8)) };

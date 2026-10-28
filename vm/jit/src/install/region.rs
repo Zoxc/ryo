@@ -102,6 +102,7 @@ impl Jit {
                     continue;
                 }
                 self.regions.push(Region { start: p, end: p + REGION, code: p, data: p + REGION, retired: false });
+                crate::stats::add(&crate::stats::STATS.regions, 1);
                 return Some(self.regions.len() - 1);
             }
         }

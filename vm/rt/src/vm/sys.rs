@@ -23,6 +23,7 @@ mod os {
     unsafe extern "C" {
         pub fn write(fd: c_int, buf: *const c_void, n: usize) -> isize;
         pub fn abort() -> !;
+        pub fn getpid() -> c_int;
     }
 }
 
@@ -36,6 +37,7 @@ mod os {
     unsafe extern "system" {
         pub fn GetStdHandle(which: u32) -> *mut c_void;
         pub fn WriteFile(h: *mut c_void, buf: *const u8, n: u32, written: *mut u32, ov: *mut c_void) -> i32;
+        pub fn GetCurrentProcessId() -> u32;
     }
 }
 
@@ -44,15 +46,16 @@ mod os {
 #[cold]
 #[inline(never)]
 pub fn fatal(msg: &str) -> ! {
-    write_stderr("ryo: ");
-    write_stderr(msg);
-    write_stderr("\n");
+    write_stderr(b"ryo: ");
+    write_stderr(msg.as_bytes());
+    write_stderr(b"\n");
     abort()
 }
 
-fn write_stderr(s: &str) {
+/// Writes `s` to stderr with one `write`, ignoring errors.
+pub(crate) fn write_stderr(s: &[u8]) {
     #[cfg(unix)]
-    // SAFETY: `s` is valid for `s.len()` bytes. Errors are ignored: we are about to abort.
+    // SAFETY: `s` is valid for `s.len()` bytes. Errors are ignored.
     unsafe {
         os::write(2, s.as_ptr().cast(), s.len());
     }
@@ -61,6 +64,20 @@ fn write_stderr(s: &str) {
     unsafe {
         let mut n = 0;
         os::WriteFile(os::GetStdHandle(os::STD_ERROR_HANDLE), s.as_ptr(), s.len() as u32, &mut n, ptr::null_mut());
+    }
+}
+
+/// The process's id.
+pub(crate) fn pid() -> u32 {
+    #[cfg(unix)]
+    // SAFETY: always safe to call.
+    unsafe {
+        os::getpid() as u32
+    }
+    #[cfg(windows)]
+    // SAFETY: always safe to call.
+    unsafe {
+        os::GetCurrentProcessId()
     }
 }
 

@@ -39,6 +39,8 @@ pub struct Output {
     /// How many calls through a constant pointer of the root became direct
     /// ([`super::inline::devirt`]).
     pub devirt: usize,
+    /// How many calls the root inlined ([`super::inline::inline`]).
+    pub inlined: usize,
 }
 
 const S1: R = R::R11;
@@ -2146,7 +2148,7 @@ pub fn emit(f: &Func, al: &Alloc, uses: &[u32], mode: Mode, code_consts: &[u8], 
     };
     let Laid { mut code, relocs, .. } = l;
     code.extend_from_slice(&post);
-    Ok(Output { code, relocs, rodata, call_sites, cfi, osr, osr_at, frame_size: fr.size, pe_unwind, dump: None, devirt: 0 })
+    Ok(Output { code, relocs, rodata, call_sites, cfi, osr, osr_at, frame_size: fr.size, pe_unwind, dump: None, devirt: 0, inlined: 0 })
 }
 
 /// `DW_CFA_offset r`: `r` saved at `fp + o`, which is `CFA - 16 + o`. The offset counts in

@@ -116,6 +116,7 @@ pub fn compile(
     // code's constants can be the callers'). Each round after the first inlines only from
     // the calls the one before made direct.
     let mut devirt = 0;
+    let mut inlined = 0;
     if let Some(env) = env.as_deref_mut() {
         let (calls, tails) = inline::devirt(&mut f, env);
         devirt += calls.len() + tails;
@@ -129,6 +130,7 @@ pub fn compile(
                 d.push_str(&alloc::format!(";   round {}\n", round + 1));
             }
             let n = inline::inline(&mut f, env, mem, &inline::PARAMS, only.as_deref(), opts.check, decisions.as_mut()).map_err(Error::Check)?;
+            inlined += n;
             if n > 0 {
                 inlined_ir = opts.dump.then(|| alloc::format!("{f}"));
             }
@@ -179,6 +181,7 @@ pub fn compile(
         return Err(Error::Unsupported(Unsupported("PE cleanup landing pads")));
     }
     out.devirt = devirt;
+    out.inlined = inlined;
     if opts.dump {
         use core::fmt::Write;
         let mut s = alloc::string::String::new();

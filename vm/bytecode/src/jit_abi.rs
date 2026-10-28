@@ -3,8 +3,9 @@
 //! switch a function over to its JIT code. `core` only, so that neither crate depends on the
 //! other.
 //!
-//! The JIT defines one C symbol, `ryo_jit_start(rt: &'static RtApi) -> bool`, which starts
-//! its thread (false if the thread doesn't start).
+//! The JIT defines one C symbol, `ryo_jit_start(rt: &'static RtApi) -> Option<extern "C" fn()>`,
+//! which starts its thread and returns its exit report (`RYO_JIT_STATS`'s summary), or `None`
+//! if the thread doesn't start.
 //! Everything else goes through the [`RtApi`]: the JIT reads the handlers' addresses from
 //! it, takes queued records with [`RtApi::next_batch`], and reports each with
 //! [`RtApi::done`]. Records, images and code are shared memory in the layout of
@@ -60,6 +61,12 @@ pub struct JitSettings {
     pub ssa_limit: u64,
     /// General loop-invariant code motion in the SSA tier (`RYO_JIT_LICM`), off by default.
     pub licm: bool,
+    /// `RYO_JIT_STATS`: 0 for nothing, 1 for a startup line and an exit summary, 2 also for
+    /// progress lines from the JIT thread, at most one a minute.
+    pub stats: u8,
+    /// Whether the JIT thread times its compiles for the statistics (`RYO_JIT_STATS` set, or
+    /// tests); its other counters always count.
+    pub count: bool,
 }
 
 /// What the runtime gives the JIT: built once, before the JIT starts, and never changed.
