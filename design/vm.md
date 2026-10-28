@@ -16,7 +16,9 @@ native frames, and unwind natively ([Unwinding](#unwinding)). The runtime lives 
   instructions but what the [register cache](#register-cache) keeps between inline
   sequences. With a frame pointer ([Frames](#frames)), VM code keeps `fp` in `rbp`, and with
   `ryo_rt`'s `fp-rbp` feature, and always on PE, the handlers read it from there
-  ([Handlers](#handlers)).
+  ([Handlers](#handlers)). Not on Apple targets, whose functions all set up a frame pointer
+  (`frame-pointer=all`): `ryo_rt` rejects `fp-rbp` there, and its handlers have that
+  two-instruction prologue.
 - **No image context**: the code addresses its image's symbol slots, constant pool, data
   area and code constants RIP-relative (relocations, [Image format](#image-format)), so a
   call into another image switches nothing.

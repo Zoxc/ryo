@@ -48,6 +48,12 @@ use ryo_bytecode::asm::{self, ARG_REGS, Loc};
 use ryo_bytecode::full::{Opcode, OperandKind};
 use ryo_bytecode::jit::effects::RegEntry;
 
+// Apple's targets keep a frame pointer in every function (`frame-pointer=all`, which
+// `-Cforce-frame-pointers` can't lower): a handler's prologue would overwrite the caller's
+// `rbp` before the handler reads it.
+#[cfg(all(feature = "fp-rbp", target_vendor = "apple"))]
+compile_error!("the `fp-rbp` feature is unsupported on Apple targets: their functions all set up a frame pointer");
+
 /// How the machine code passes `fp`: the backend reads this (through `FP_ARG`) and encodes
 /// to match. The handlers work with and without a frame pointer when they take `fp` in
 /// `rdi`; tests encode without one then. On PE (Win64 handlers) `fp` is always `rbp`. The
@@ -557,8 +563,23 @@ impl RegRetOf for Sel<2> {
     type T = core::arch::x86_64::__m128i;
     #[inline(always)]
     fn make(a: MaybeUninit<u64>, b: MaybeUninit<u64>) -> core::arch::x86_64::__m128i {
-        // SAFETY: 16 bytes of (possibly uninitialized) integers in an integer vector.
-        unsafe { core::mem::transmute::<[MaybeUninit<u64>; 2], core::arch::x86_64::__m128i>([a, b]) }
+        // SAFETY: an entry with two results writes both. In assembly: LLVM merges the words
+        // bytewise where a result is a `bool` (a constant mask and three more instructions).
+        unsafe {
+            let (a, b) = (a.assume_init(), b.assume_init());
+            let v: core::arch::x86_64::__m128i;
+            core::arch::asm!(
+                "movq {v}, {a}",
+                "movq {t}, {b}",
+                "punpcklqdq {v}, {t}",
+                a = in(reg) a,
+                b = in(reg) b,
+                v = out(xmm_reg) v,
+                t = out(xmm_reg) _,
+                options(pure, nomem, nostack, preserves_flags),
+            );
+            v
+        }
     }
 }
 

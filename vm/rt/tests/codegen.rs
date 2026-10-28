@@ -149,7 +149,32 @@ fn win64_handlers() {
         let bad = a.iter().find(|i| i.starts_with("push") || (i.starts_with("sub") && i.ends_with("%rsp")) || i.starts_with("call"));
         assert!(bad.is_none(), "{op:?}: has a prologue or a call\n{}", a.join("\n"));
     }
+    short_reg_entries(&asm, |a| a, pe);
     eprintln!("AddW32 (Win64):\n  {}", asm_of(&asm, "ryo_h_AddW32").unwrap().join("\n  "));
+}
+
+/// The hot register entries that return two values are short: on Win64 (`pe`) they come back
+/// in `xmm0` (`ryo_rt::vm::RegRet`'s PE form, three instructions instead of `mov rdx`).
+/// `strip` drops what the target adds to every function.
+fn short_reg_entries<'a>(asm: &'a str, strip: impl Fn(Vec<&'a str>) -> Vec<&'a str>, mode: ryo_bytecode::asm::Mode) {
+    for op in [Opcode::AddOvfUW64, Opcode::SubOvfUW32, Opcode::ZextW32W64, Opcode::AddImmW32, Opcode::LoadW64, Opcode::StoreW64, Opcode::BrLtSW64] {
+        if ryo_bytecode::jit::effects::reg_entry(op, mode).is_none() {
+            continue;
+        }
+        let Some(a) = asm_of(asm, &hr_name(op)) else { continue };
+        let a = strip(a);
+        let limit = if mode.pe { 7 } else { 5 };
+        assert!(a.len() <= limit, "{op:?}: register entry of {} instructions\n{}", a.len(), a.join("\n"));
+    }
+}
+
+/// `a` without the frame pointer's prologue and epilogue, which Apple's targets put in every
+/// function (`frame-pointer=all`; `-Cforce-frame-pointers` can't lower it).
+fn strip_apple_fp(a: Vec<&str>) -> Vec<&str> {
+    if !cfg!(target_vendor = "apple") {
+        return a;
+    }
+    a.into_iter().filter(|i| !matches!(*i, "pushq\t%rbp" | "movq\t%rsp, %rbp" | "popq\t%rbp")).collect()
 }
 
 #[test]
@@ -165,7 +190,7 @@ fn handlers_read_rbp_first_and_hot_ones_have_no_prologue() {
             continue;
         }
         let name = format!("ryo_h_{op:?}");
-        let a = asm_of(&asm, &name).unwrap_or_else(|| panic!("{name}: not in the assembly"));
+        let a = strip_apple_fp(asm_of(&asm, &name).unwrap_or_else(|| panic!("{name}: not in the assembly")));
         if naked.contains(&op) {
             continue;
         }
@@ -200,7 +225,7 @@ fn handlers_read_rbp_first_and_hot_ones_have_no_prologue() {
         Opcode::PtrIndex,
         Opcode::Addr,
     ] {
-        let a = asm_of(&asm, &format!("ryo_h_{op:?}")).unwrap();
+        let a = strip_apple_fp(asm_of(&asm, &format!("ryo_h_{op:?}")).unwrap());
         let bad = a.iter().find(|i| i.starts_with("push") || (i.starts_with("sub") && i.ends_with("%rsp")) || i.starts_with("call"));
         assert!(bad.is_none(), "{op:?}: has a prologue or a call\n{}", a.join("\n"));
     }
@@ -216,6 +241,7 @@ fn handlers_read_rbp_first_and_hot_ones_have_no_prologue() {
         }
         let name = hr_name(op);
         let Some(a) = asm_of(&asm, &name) else { continue };
+        let a = strip_apple_fp(a);
         let frame = a.iter().any(|i| i.starts_with("push") || i.starts_with("call") || i.starts_with("jmp\t") && !i.contains(".LBB"));
         if !frame {
             // (`lock or [rsp - 64], 0` is a fence.)
@@ -225,13 +251,7 @@ fn handlers_read_rbp_first_and_hot_ones_have_no_prologue() {
         checked += 1;
     }
     assert!(checked > 300, "{checked}");
-    for op in [Opcode::AddOvfUW64, Opcode::SubOvfUW32, Opcode::ZextW32W64, Opcode::AddImmW32, Opcode::LoadW64, Opcode::StoreW64, Opcode::BrLtSW64] {
-        let Some(a) = asm_of(&asm, &hr_name(op)) else { continue };
-        // On Win64 two results come back in `xmm0` (`ryo_rt::vm::RegRet`'s PE form): `movq`,
-        // `movd`/`movq` and `punpcklqdq` instead of `mov rdx`.
-        let limit = if ryo_rt::vm::MODE.pe { 7 } else { 5 };
-        assert!(a.len() <= limit, "{op:?}: register entry of {} instructions\n{}", a.len(), a.join("\n"));
-    }
+    short_reg_entries(&asm, strip_apple_fp, ryo_rt::vm::MODE);
 }
 
 /// The symbol suffix of `op`'s register entry, which has no symbol of its own: `hr::<Opcode>`

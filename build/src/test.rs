@@ -744,6 +744,12 @@ pub fn run(opts: &Options) -> Result<(), String> {
 
     for run in CARGO_RUNS {
         if !corpus_only && sel.cargo_run(run) {
+            // Apple's targets keep a frame pointer in every function, so handlers can't read the
+            // caller's from `rbp` there: `ryo_rt` rejects `fp-rbp` (design/vm.md#handlers).
+            if cfg!(target_vendor = "apple") && run.name.contains("fp-rbp") {
+                eprintln!("[y] test {}: skipped (fp-rbp is unsupported on Apple targets)", run.name);
+                continue;
+            }
             let t = Instant::now();
             report(run.name, t, cargo_run(run, &sel, &root), &failed);
         }
