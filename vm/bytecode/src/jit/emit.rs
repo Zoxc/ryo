@@ -1618,7 +1618,7 @@ impl<'a> E<'a> {
 
     /// A call of a VM function, a native or a function pointer.
     fn call(&mut self, c: &Call, args: &[Value], res: &[Value], pad: Option<u32>) {
-        let (callee, rest) = if c.target == CallTarget::Ptr { (Some(args[0]), &args[1..]) } else { (None, &args[..]) };
+        let (callee, rest) = c.split_args(&args);
         let regs = self.arg_regs(&c.regs);
         self.to_abi(&regs, rest, callee);
         match c.target {
@@ -1986,7 +1986,7 @@ impl<'a> E<'a> {
             }
             Term::Ret { k, parts } => self.ret(*k, parts)?,
             Term::TailCall { call, args } => {
-                let (callee, rest) = if call.target == CallTarget::Ptr { (Some(args[0]), &args[1..]) } else { (None, &args[..]) };
+                let (callee, rest) = call.split_args(&args);
                 let regs = self.arg_regs(&call.regs);
                 self.to_abi(&regs, rest, callee);
                 self.epilogue();

@@ -402,16 +402,9 @@ fn weights(f: &Func) -> Vec<u64> {
     w
 }
 
-/// Linear scan on SSA without splitting (design/jit.md, "The SSA tier"): each value's
-/// interval runs from its definition to its last use in the linear block order (holes
-/// ignored), and lives in one register or one stack slot throughout. Values live across a call
-/// (which clobbers every caller-saved register; [`crossing`], by the exact liveness, so a call
-/// in a hole of the interval doesn't count) get callee-saved registers; when none is free, the
-/// interval with the least spill weight per position ([`weights`] over its length; of equal
-/// ones, the one ending last) is spilled.
-pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
-    let pos = positions(f);
-    let live = live_in(f);
+/// Each value's interval for [`linear_scan`]: from its first to its last position in the
+/// linear block order (`u32::MAX`, 0 for one never seen).
+fn intervals(f: &Func, pos: &Positions, live: &[BitSet]) -> (Vec<u32>, Vec<u32>) {
     let nv = f.values.len();
     let mut lo = alloc::vec![u32::MAX; nv];
     let mut hi = alloc::vec![0u32; nv];
@@ -420,7 +413,6 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
         hi[v] = hi[v].max(b);
     };
     let tracked = |v: Value| tracked(f, v);
-    let cross = crossing(f, &live);
     for &b in &f.layout {
         let bd = &f.blocks[b.idx()];
         let (s, e) = (pos.start[b.idx()], pos.end[b.idx()]);
@@ -462,6 +454,85 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
             }
         }
     }
+    (lo, hi)
+}
+
+/// Hints from uses for [`linear_scan`]: a shift amount wants `rcx`, a call argument its
+/// register, a returned value its return register (the first use in layout order wins). Also
+/// whether there is a shift by a variable amount.
+fn use_hints(f: &Func) -> (Vec<Option<R>>, bool) {
+    let nv = f.values.len();
+    let mut want: Vec<Option<R>> = alloc::vec![None; nv];
+    let mut var_shift = false;
+    for &b in &f.layout {
+        let bd = &f.blocks[b.idx()];
+        for &i in &bd.insts {
+            let id = &f.insts[i.idx()];
+            if clobbers(f, id) == 1 << R::Rcx.num() {
+                want[id.args[1].idx()].get_or_insert(R::Rcx);
+                var_shift = true;
+            }
+            match &id.op {
+                Op::Call(c) => {
+                    call_hints(f, &mut want, c, &id.args);
+                }
+                Op::HCall(h) if h.reg => {
+                    for (k, a) in id.args.iter().enumerate() {
+                        want[a.idx()].get_or_insert(super::emit::handler_arg_reg(f.pe, k).expect("a register entry's argument register"));
+                    }
+                }
+                _ => {}
+            }
+        }
+        match &bd.term {
+            super::ir::Term::TailCall { call, args } => {
+                call_hints(f, &mut want, call, args);
+            }
+            super::ir::Term::Ret { k, parts } if *k != 0 => {
+                let ps = crate::asm::ret_parts(*k, true).into_iter().flatten().flatten();
+                let mut g = R::RETS.into_iter();
+                for (p, a) in ps.zip(parts) {
+                    if !p.xmm
+                        && let Some(r) = g.next()
+                    {
+                        want[a.idx()].get_or_insert(r);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    (want, var_shift)
+}
+
+/// The integer argument registers a call's arguments want.
+fn call_hints(f: &Func, want: &mut [Option<R>], c: &super::ir::Call, args: &[Value]) {
+    let (_, rest) = c.split_args(args);
+    for (r, a) in c.regs.iter().zip(rest) {
+        if !r.xmm {
+            want[a.idx()].get_or_insert(super::emit::int_arg(f.pe, r.index));
+        }
+    }
+}
+
+/// The values the predecessors of `blk` pass for its parameter `n`, in `preds` order.
+fn pred_args(f: &Func, blk: Block, n: u16) -> impl Iterator<Item = Value> + '_ {
+    f.blocks[blk.idx()].preds.iter().filter_map(move |&(p, k)| f.blocks[p.idx()].term.edges().nth(k as usize)?.args.get(n as usize).copied())
+}
+
+/// Linear scan on SSA without splitting (design/jit.md, "The SSA tier"): each value's
+/// interval runs from its definition to its last use in the linear block order (holes
+/// ignored), and lives in one register or one stack slot throughout. Values live across a call
+/// (which clobbers every caller-saved register; [`crossing`], by the exact liveness, so a call
+/// in a hole of the interval doesn't count) get callee-saved registers; when none is free, the
+/// interval with the least spill weight per position ([`weights`] over its length; of equal
+/// ones, the one ending last) is spilled.
+pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
+    let pos = positions(f);
+    let live = live_in(f);
+    let nv = f.values.len();
+    let (lo, hi) = intervals(f, &pos, &live);
+    let cross = crossing(f, &live);
     let weight = weights(f);
     // Weight per position from `a` on: what spilling saves for the register it frees.
     let density = |w: usize, end: u32| weight[w] * 256 / (end.saturating_sub(lo[w]) as u64 + 2);
@@ -478,58 +549,7 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
         })
         .collect();
     order.sort_by_key(|&v| (lo[v], v));
-    // Hints from uses: a shift amount wants `rcx`, a call argument its register, a returned
-    // value its return register (the first use in layout order wins).
-    let mut want: Vec<Option<R>> = alloc::vec![None; nv];
-    let mut var_shift = false;
-    for &b in &f.layout {
-        let bd = &f.blocks[b.idx()];
-        for &i in &bd.insts {
-            let id = &f.insts[i.idx()];
-            if clobbers(f, id) == 1 << R::Rcx.num() {
-                want[id.args[1].idx()].get_or_insert(R::Rcx);
-                var_shift = true;
-            }
-            match &id.op {
-                Op::Call(c) => {
-                    let rest = if c.target == super::ir::CallTarget::Ptr { &id.args[1..] } else { &id.args[..] };
-                    for (r, a) in c.regs.iter().zip(rest) {
-                        if !r.xmm {
-                            want[a.idx()].get_or_insert(super::emit::int_arg(f.pe, r.index));
-                        }
-                    }
-                }
-                Op::HCall(h) if h.reg => {
-                    for (k, a) in id.args.iter().enumerate() {
-                        want[a.idx()].get_or_insert(super::emit::handler_arg_reg(f.pe, k).expect("a register entry's argument register"));
-                    }
-                }
-                _ => {}
-            }
-        }
-        match &bd.term {
-            super::ir::Term::TailCall { call, args } => {
-                let rest = if call.target == super::ir::CallTarget::Ptr { &args[1..] } else { &args[..] };
-                for (r, a) in call.regs.iter().zip(rest) {
-                    if !r.xmm {
-                        want[a.idx()].get_or_insert(super::emit::int_arg(f.pe, r.index));
-                    }
-                }
-            }
-            super::ir::Term::Ret { k, parts } if *k != 0 => {
-                let ps = crate::asm::ret_parts(*k, true).into_iter().flatten().flatten();
-                let mut g = R::RETS.into_iter();
-                for (p, a) in ps.zip(parts) {
-                    if !p.xmm
-                        && let Some(r) = g.next()
-                    {
-                        want[a.idx()].get_or_insert(r);
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
+    let (want, var_shift) = use_hints(f);
     let (mut caller, callee) = registers(frame_pointer, f.pe);
     if var_shift {
         // Keep `rcx` for the shift amounts.
@@ -586,10 +606,7 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
             // parameter.
             let hint = match f.values[v].def {
                 ValueDef::Inst(i, _) => f.insts[i.idx()].args.first().and_then(|&x| xmm_of(x)),
-                ValueDef::Param(blk, n) => f.blocks[blk.idx()]
-                    .preds
-                    .iter()
-                    .find_map(|&(p, k)| xmm_of(*f.blocks[p.idx()].term.edges().nth(k as usize)?.args.get(n as usize)?)),
+                ValueDef::Param(blk, n) => pred_args(f, blk, n).find_map(xmm_of),
                 _ => None,
             };
             let pick = hint.filter(|&r| xfree[r as usize] && xregs.contains(&r)).or_else(|| xregs.clone().find(|&r| xfree[r as usize]));
@@ -642,12 +659,9 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
                     let r = f.entry_regs[n as usize];
                     (!r.xmm).then(|| super::emit::int_arg(f.pe, r.index))
                 } else {
-                    f.blocks[blk.idx()].preds.iter().find_map(|&(p, k)| {
-                        let e = f.blocks[p.idx()].term.edges().into_iter().nth(k as usize)?.args.get(n as usize).copied()?;
-                        match loc[e.idx()] {
-                            Loc::Reg(r) => Some(r),
-                            _ => None,
-                        }
+                    pred_args(f, blk, n).find_map(|e| match loc[e.idx()] {
+                        Loc::Reg(r) => Some(r),
+                        _ => None,
                     })
                 }
             }

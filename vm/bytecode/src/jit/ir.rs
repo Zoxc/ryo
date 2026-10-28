@@ -315,6 +315,17 @@ pub struct Call {
     pub site: Site,
 }
 
+impl Call {
+    /// Its `args` split into the callee address (for [`CallTarget::Ptr`]) and the arguments
+    /// going to `regs`.
+    pub fn split_args<'a>(&self, args: &'a [Value]) -> (Option<Value>, &'a [Value]) {
+        match self.target {
+            CallTarget::Ptr => (Some(args[0]), &args[1..]),
+            _ => (None, args),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Island {
     /// The island function: a symbol of the unit's image ([`CallTarget::Sym`]), or for one
