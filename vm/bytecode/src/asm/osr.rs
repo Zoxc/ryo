@@ -14,6 +14,7 @@
 use alloc::vec::Vec;
 
 use super::{Mode, PROBE_FROM};
+use crate::image::cfa;
 
 /// What the OSR entry of one loop head does.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -36,19 +37,10 @@ pub struct OsrCode {
     pub cfi: Vec<(u32, Vec<u8>)>,
 }
 
-// DWARF register numbers.
-const DW_RDX: u8 = 1;
-const DW_RBP: u8 = 6;
-const DW_RSP: u8 = 7;
-
-fn uleb(out: &mut Vec<u8>, v: u32) {
-    super::leb::put(out, v.into());
-}
-
-/// `DW_CFA_def_cfa reg, off`.
+/// `DW_CFA_def_cfa reg, off`, as a rule of its own.
 fn def_cfa(reg: u8, off: u32) -> Vec<u8> {
-    let mut v = alloc::vec![0x0c, reg];
-    uleb(&mut v, off);
+    let mut v = Vec::new();
+    cfa::def_cfa(&mut v, reg, off);
     v
 }
 
@@ -109,11 +101,11 @@ pub(crate) fn dispatcher(n: usize, fp: bool, f_aot: u32) -> (Vec<u8>, Cfi, usize
     let mut c = Vec::new();
     let mut cfi = Vec::new();
     if fp {
-        let mut v = def_cfa(DW_RBP, 16);
-        v.extend([0x86, 2]);
+        let mut v = def_cfa(cfa::RBP, 16);
+        cfa::offset(&mut v, cfa::RBP, 2);
         cfi.push((0, v));
     } else {
-        cfi.push((0, def_cfa(DW_RSP, f_aot + 24)));
+        cfi.push((0, def_cfa(cfa::RSP, f_aot + 24)));
     }
     // `lea r11, [rip + table]; movsxd rax, [r11 + rax*4]; add rax, r11; jmp rax`, then the
     // table, 4-aligned, of `i32` offsets from it.
@@ -138,7 +130,7 @@ pub(crate) fn entry_start(c: &mut Vec<u8>, cfi: &mut Cfi, table: usize, n: usize
     let off = (len - table) as i32;
     c[table + 4 * n..][..4].copy_from_slice(&off.to_le_bytes());
     if !fp {
-        cfi.push((len as u32, def_cfa(DW_RSP, f_aot + 24)));
+        cfi.push((len as u32, def_cfa(cfa::RSP, f_aot + 24)));
     }
 }
 
@@ -147,8 +139,8 @@ pub(crate) fn entry_start(c: &mut Vec<u8>, cfi: &mut Cfi, table: usize, n: usize
 pub(crate) fn drop_return(c: &mut Vec<u8>, cfi: &mut Cfi, fp: bool, f_aot: u32) {
     c.push(0x59);
     if !fp {
-        let mut v = alloc::vec![0x0e];
-        uleb(&mut v, f_aot + 16);
+        let mut v = Vec::new();
+        cfa::def_cfa_offset(&mut v, f_aot + 16);
         cfi.push((c.len() as u32, v));
     }
 }
@@ -157,7 +149,7 @@ pub(crate) fn drop_return(c: &mut Vec<u8>, cfi: &mut Cfi, fp: bool, f_aot: u32) 
 /// here CFA = rdx + 16.
 pub(crate) fn fp_to_rdx(c: &mut Vec<u8>, cfi: &mut Cfi, f_aot: u32) {
     lea(c, 2, Base::Rsp, f_aot as i32);
-    cfi.push((c.len() as u32, def_cfa(DW_RDX, 16)));
+    cfi.push((c.len() as u32, def_cfa(cfa::RDX, 16)));
 }
 
 /// The low end of an entry's stack, `fp - low`: the scratch area of `scratch` bytes below

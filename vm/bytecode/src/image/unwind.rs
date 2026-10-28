@@ -8,6 +8,51 @@ use alloc::vec::Vec;
 use super::*;
 use crate::asm::{self, Mode};
 
+/// DWARF call frame instructions and register numbers (x86-64 psABI), each appending its
+/// encoding to a CFA rule.
+pub mod cfa {
+    use alloc::vec::Vec;
+
+    use crate::asm::leb;
+
+    /// DWARF register numbers.
+    pub const RDX: u8 = 1;
+    pub const RBP: u8 = 6;
+    pub const RSP: u8 = 7;
+    /// The return address column.
+    pub const RA: u8 = 16;
+
+    /// `DW_CFA_def_cfa reg, off`: CFA = `reg + off`.
+    pub fn def_cfa(v: &mut Vec<u8>, reg: u8, off: u32) {
+        v.extend_from_slice(&[0x0c, reg]);
+        leb::put(v, off.into());
+    }
+
+    /// `DW_CFA_def_cfa_offset off`: CFA = the CFA register + `off`.
+    pub fn def_cfa_offset(v: &mut Vec<u8>, off: u32) {
+        v.push(0x0e);
+        leb::put(v, off.into());
+    }
+
+    /// `DW_CFA_def_cfa_register reg`: CFA = `reg` + the CFA offset.
+    pub fn def_cfa_register(v: &mut Vec<u8>, reg: u8) {
+        v.extend_from_slice(&[0x0d, reg]);
+    }
+
+    /// `DW_CFA_offset reg, n`: `reg` saved at CFA − 8`n` (the CIE's data alignment).
+    pub fn offset(v: &mut Vec<u8>, reg: u8, n: u32) {
+        debug_assert!(reg < 64);
+        v.push(0x80 | reg);
+        leb::put(v, n.into());
+    }
+
+    /// `DW_CFA_restore reg`: `reg` back to its CIE rule.
+    pub fn restore(v: &mut Vec<u8>, reg: u8) {
+        debug_assert!(reg < 64);
+        v.push(0xc0 | reg);
+    }
+}
+
 /// `.eh_frame` and `.gcc_except_table`: one CIE naming `rust_eh_personality` (through the
 /// symbol slot at `personality_slot` of the read-only section, `DW_EH_PE_indirect`), then per
 /// function an FDE with the rules of [`eh_fde_rules`] and its LSDA ([`asm::lsda`]).
@@ -68,7 +113,8 @@ fn eh_cie_with(eh: &mut Vec<u8>, ptrs: EhPointers) -> usize {
     let personality = eh.len() + 4 + cie.len();
     cie.extend_from_slice(&[0; 4]);
     cie.extend_from_slice(&[enc, enc]); // L, R encodings
-    cie.extend_from_slice(&[0x0c, 7, 8, 0x90, 1]); // CFA = rsp + 8; return address at CFA - 8
+    cfa::def_cfa(&mut cie, cfa::RSP, 8);
+    cfa::offset(&mut cie, cfa::RA, 1); // the return address at CFA - 8
     if ptrs == EhPointers::Abs8 {
         // Mach-O: the return address's rule once more, the idiom that keeps Apple's linkers
         // from converting the FDEs to compact unwind (ld64's `registerSavedTwiceInCIE`, which
@@ -76,7 +122,7 @@ fn eh_cie_with(eh: &mut Vec<u8>, ptrs: EhPointers) -> usize {
         // FDE's end, which are the entry's counter stub's (CFA `rsp + 8`), not the body's: the
         // frame would unwind wrongly and panics through it fail ("failed to initiate panic").
         // In the two bytes that were padding.
-        cie.extend_from_slice(&[0x90, 1]);
+        cfa::offset(&mut cie, cfa::RA, 1);
     }
     while (cie.len() + 4) % 8 != 0 {
         cie.push(0); // DW_CFA_nop
@@ -121,20 +167,25 @@ fn eh_fde_rules(f: &EhFunc, mode: Mode) -> Vec<(u32, Vec<u8>)> {
     let mut rows = Vec::new();
     if mode.frame_pointer {
         // After `push rbp`: CFA = rsp + 16, rbp at CFA - 16; after `mov rbp, rsp`: CFA = rbp + 16.
-        rows.push((f.prologue + 1, vec![0x0e, 16, 0x86, 2]));
-        rows.push((f.prologue + 4, vec![0x0d, 6]));
+        let mut r = Vec::new();
+        cfa::def_cfa_offset(&mut r, 16);
+        cfa::offset(&mut r, cfa::RBP, 2);
+        rows.push((f.prologue + 1, r));
+        let mut r = Vec::new();
+        cfa::def_cfa_register(&mut r, cfa::RBP);
+        rows.push((f.prologue + 4, r));
     } else {
-        // After the prologue: CFA = rsp + F + 16 (`DW_CFA_def_cfa_offset`).
-        let mut r = vec![0x0e];
-        asm::leb::put(&mut r, (f.frame_size + 16).into());
+        // After the prologue: CFA = rsp + F + 16.
+        let mut r = Vec::new();
+        cfa::def_cfa_offset(&mut r, f.frame_size + 16);
         rows.push((f.prologue + asm::prologue_len(f.frame_size, mode), r));
     }
     if f.entry_stub < f.len {
-        // The entry's stub: CFA = rsp + 8 (`DW_CFA_def_cfa`), and `rbp` not saved yet
-        // (`DW_CFA_restore`).
-        let mut r = vec![0x0c, 7, 8];
+        // The entry's stub: CFA = rsp + 8, and `rbp` not saved yet.
+        let mut r = Vec::new();
+        cfa::def_cfa(&mut r, cfa::RSP, 8);
         if mode.frame_pointer {
-            r.push(0xc6);
+            cfa::restore(&mut r, cfa::RBP);
         }
         rows.push((f.entry_stub, r));
     }

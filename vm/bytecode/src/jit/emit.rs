@@ -14,6 +14,7 @@ use super::x86::{self, Alu, Cc as X, Mem, Packed, R, Rm, Shift, X86};
 use crate::asm::osr::{self, OsrCode};
 use crate::asm::{self, CallSite, Mode, PROBE_FROM, Ref, Reloc, RetPart};
 use crate::full::ElemKind;
+use crate::image::cfa;
 use crate::reduced::Arg;
 
 /// The SSA tier's machine code for one function.
@@ -59,10 +60,6 @@ fn dw(r: R) -> u8 {
         R::Rsp => 7,
         r => r.num(),
     }
-}
-
-fn uleb(out: &mut Vec<u8>, v: u32) {
-    asm::leb::put(out, v.into());
 }
 
 fn xcc(c: Cc) -> X {
@@ -887,7 +884,9 @@ impl<'a> E<'a> {
             self.cfi.push((m, v));
             self.a.x().mov(8, Rm::R(R::Rbp), Rm::R(R::Rsp));
             let m = self.a.mark();
-            self.cfi.push((m, alloc::vec![DW_CFA_DEF_CFA_REGISTER, dw(R::Rbp)]));
+            let mut v = Vec::new();
+            cfa::def_cfa_register(&mut v, dw(R::Rbp));
+            self.cfi.push((m, v));
         }
         if self.fr.frameless {
             return;
@@ -2157,21 +2156,17 @@ fn save_rule(v: &mut Vec<u8>, r: R, o: i32) {
     v.extend(cfa_saved(r, ((16 - o) / 8) as u32));
 }
 
-const DW_CFA_DEF_CFA_OFFSET: u8 = 0x0e;
-const DW_CFA_DEF_CFA_REGISTER: u8 = 0x0d;
-const DW_CFA_OFFSET: u8 = 0x80;
-
 /// `DW_CFA_def_cfa_offset off`.
 fn cfa_offset(off: u32) -> Vec<u8> {
-    let mut v = alloc::vec![DW_CFA_DEF_CFA_OFFSET];
-    uleb(&mut v, off);
+    let mut v = Vec::new();
+    cfa::def_cfa_offset(&mut v, off);
     v
 }
 
 /// `DW_CFA_offset r, n`: `r` saved at `CFA - 8n`.
 fn cfa_saved(r: R, n: u32) -> Vec<u8> {
-    let mut v = alloc::vec![DW_CFA_OFFSET | dw(r)];
-    uleb(&mut v, n);
+    let mut v = Vec::new();
+    cfa::offset(&mut v, dw(r), n);
     v
 }
 
