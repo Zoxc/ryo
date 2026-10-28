@@ -26,7 +26,6 @@
 //! | `Const` | 1 | [`Const`]: constant pool byte offset |
 //! | `Abs` | 1 | [`Abs`]: a constant pool or data area offset |
 //! | `Sym` | 1 | [`Sym`]: symbol table index |
-//! | `Site` | 1 | [`Site`]: site cache index |
 //! | `Func` | 1 | [`Func`]: function table index |
 //! | `Target` | 1 | [`Target`]: branch target, signed words relative to the instruction start |
 //! | `Neg` | 1 | [`Neg`]: a branch's polarity, 0 or 1 |
@@ -83,10 +82,6 @@ newtype!(
     Sym(u32), Sym, "sym"
 );
 newtype!(
-    /// A site cache index. Displayed as `site<idx>`.
-    Site(u32), Site, "site"
-);
-newtype!(
     /// A function table index (a VM function in the same image). Displayed as `fn<idx>`.
     Func(u32), Func, "fn"
 );
@@ -110,7 +105,7 @@ pub struct Mem {
     pub k: i32,
 }
 
-/// A byte offset into the image's writable data area (after the site cache). Displayed as
+/// A byte offset into the image's writable data area. Displayed as
 /// `data<off>`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 #[repr(transparent)]
@@ -167,7 +162,6 @@ pub enum OperandKind {
     Const,
     Abs,
     Sym,
-    Site,
     Func,
     Target,
     Neg,
@@ -250,7 +244,6 @@ impl OperandKind {
             | OperandKind::Const
             | OperandKind::Abs
             | OperandKind::Sym
-            | OperandKind::Site
             | OperandKind::Func
             | OperandKind::Target
             | OperandKind::Neg
@@ -637,7 +630,6 @@ macro_rules! op_ty {
     ($lt:lifetime, Const) => { $crate::full::Const };
     ($lt:lifetime, Abs) => { $crate::full::Abs };
     ($lt:lifetime, Sym) => { $crate::full::Sym };
-    ($lt:lifetime, Site) => { $crate::full::Site };
     ($lt:lifetime, Func) => { $crate::full::Func };
     ($lt:lifetime, Target) => { $crate::full::Target };
     ($lt:lifetime, Neg) => { $crate::full::Neg };

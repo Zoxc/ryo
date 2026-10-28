@@ -59,7 +59,7 @@ fn register_entries_match_frame_entries() {
         let rf = reg_handler(op).unwrap_or_else(|| panic!("{}: no register entry", op.mnemonic()));
         let info = op.info();
         let mn = op.mnemonic();
-        if info.operands.iter().any(|o| matches!(o.kind, OperandKind::Sym | OperandKind::Site | OperandKind::Const | OperandKind::Abs)) {
+        if info.operands.iter().any(|o| matches!(o.kind, OperandKind::Sym | OperandKind::Const | OperandKind::Abs)) {
             continue;
         }
         let fx = effects(op).unwrap();

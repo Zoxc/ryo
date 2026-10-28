@@ -15,7 +15,7 @@ use core::fmt;
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
-use crate::full::{self, Const, Data, DecodeError, Elem, ElemKind, Operand, OperandInfo, OperandKind, Site, Sym, fixed_len, str_eq};
+use crate::full::{self, Const, Data, DecodeError, Elem, ElemKind, Operand, OperandInfo, OperandKind, Sym, fixed_len, str_eq};
 
 /// The handler a reduced `handler` calls: `ryo_h_<op>`, `op` a full opcode with a handler.
 /// Displayed as its mnemonic.
@@ -60,8 +60,6 @@ pub enum Arg {
     Data(Data),
     /// The address of a symbol slot.
     Sym(Sym),
-    /// The address of a site cache slot.
-    Site(Site),
     /// The address of the code constant at this offset in the function's rodata (case
     /// values).
     Ro(u32),
@@ -78,8 +76,7 @@ impl Elem for Arg {
             3 => Arg::Const(Const(v as u32)),
             4 => Arg::Data(Data(v as u32)),
             5 => Arg::Sym(Sym(v as u32)),
-            6 => Arg::Site(Site(v as u32)),
-            // 7, and unknown tags (which `valid` rejects).
+            // 6, and unknown tags (which `valid` rejects).
             _ => Arg::Ro(v as u32),
         }
     }
@@ -95,7 +92,6 @@ impl Elem for Arg {
             Arg::Const(k) => fmt::Display::fmt(k, f),
             Arg::Data(d) => fmt::Display::fmt(d, f),
             Arg::Sym(s) => fmt::Display::fmt(s, f),
-            Arg::Site(s) => fmt::Display::fmt(s, f),
             Arg::Ro(o) => write!(f, "ro{o}"),
         }
     }
@@ -116,8 +112,7 @@ impl Arg {
             Arg::Const(k) => (3, k.0 as u64),
             Arg::Data(d) => (4, d.0 as u64),
             Arg::Sym(s) => (5, s.0 as u64),
-            Arg::Site(s) => (6, s.0 as u64),
-            Arg::Ro(o) => (7, o as u64),
+            Arg::Ro(o) => (6, o as u64),
         };
         [tag, v as u32, (v >> 32) as u32]
     }

@@ -208,7 +208,6 @@ pub fn rebase(c: &Func, img: ImageId, env: &mut dyn Env) -> Result<Func, &'stati
                             Arg::Const(x) => Ref::Const(x),
                             Arg::Data(x) => Ref::Data(x),
                             Arg::Sym(x) => Ref::Sym(x),
-                            Arg::Site(x) => Ref::Site(x),
                             // A sparse switch's case values: in the callee image's code
                             // constants, which stay mapped.
                             Arg::Ro(x) => Ref::Ro(x),

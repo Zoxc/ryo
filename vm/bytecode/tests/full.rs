@@ -280,7 +280,7 @@ fn image_layouts_are_pinned() {
     use ryo_bytecode::image::*;
     use std::mem::{offset_of, size_of};
     let layout = (
-        (size_of::<Header>(), offset_of!(Header, data), offset_of!(Header, functions), offset_of!(Header, text), offset_of!(Header, fixup_area)),
+        (size_of::<Header>(), offset_of!(Header, data), offset_of!(Header, functions), offset_of!(Header, text), offset_of!(Header, pad)),
         (
             size_of::<FuncEntry>(),
             offset_of!(FuncEntry, code_len),
@@ -308,13 +308,13 @@ fn image_layouts_are_pinned() {
     assert_eq!(
         layout,
         (
-            (176, 24, 48, 40, 124),
+            (168, 24, 48, 40, 124),
             (36, 4, 8, 12, 16, 20, 28),
             (8, 16, 8),
             (12, 4, 8),
-            (80, 104, 112, 128),
-            (132, 64, 8, 16, 24, 32, 36, 40),
-            (140, 152, 160, 168)
+            (80, 104, 112, 120),
+            (128, 64, 8, 16, 24, 32, 36, 40),
+            (136, 144, 152, 160)
         ),
         "{layout:?}"
     );

@@ -9,7 +9,7 @@ reads the code linked at made-up addresses, which says nothing about where reloc
 so each function is decoded a second time from its unlinked bytes with `Fields.relocs`, the
 object's relocations as `ImageObject.refOf` maps them (`R_X86_64_PLT32` with addend −4 against
 `ryo_h_<op>` or `ryo_probe_stack`; `R_X86_64_PC32` into the symbol slots, the code constants,
-the pool, the site cache, the data area or the function's JIT record; anything else is a
+the pool, the data area or the function's JIT record; anything else is a
 mismatch). Calls between the image's functions carry no relocation (the writer resolves
 them), so for that decode a `Ref.func` field is added at every `call`/`jmp rel32` (`e8`/`e9`)
 whose unrelocated displacement leaves the function for a function's first byte. With
@@ -35,7 +35,7 @@ check (`Ryo/Check/Image/Pool.lean`).
 `-JIT_ENTRY_THRESHOLD` (at 0), `ctr_l` = `-JIT_THRESHOLD` (at `JIT_LOOP_CTR`), `func` its
 index, every other byte 0; `entry` and `osr` relocated
 (`R_X86_64_64` + 0) against `ryo_jit_trip_entry` and `ryo_jit_trip_osr`, `header` against the
-image's header; data-area pointers as the pool's; nothing in the site cache.
+image's header; data-area pointers as the pool's.
 
 **Header**: the image symbol is `__ryo_image_<stable_crate_id>_<cgu_hash>` (each as 16 hex
 digits), `crate_hash` folds the id, the sections are where and as large as the header says (the read-only one RELRO).
@@ -157,7 +157,7 @@ def allocTarget (o : ImageObject) (names : Array (Option String)) (r : Rela) : O
       let dataEnd := if h.jitRecords.count != 0 then h.jitRecords.off else h.dataSize
       let within (base lo hi : Nat) : Bool := (base + lo : Nat) ≤ to && to ≤ ((base + hi : Nat) : Int)
       if s.shndx == o.ro.index && within o.roBase h.consts.off (h.consts.off + h.consts.count) then none
-      else if s.shndx == o.data.index && within o.dataBase h.fixupArea dataEnd then none
+      else if s.shndx == o.data.index && within o.dataBase 0 dataEnd then none
       else some s!"against `{o.elf.symbolName s}` + {r.addend}, neither the pool nor the data area"
 
 def checkRoRelocs (o : ImageObject) : Array String := Id.run do
@@ -246,7 +246,7 @@ def checkDataRelocs (o : ImageObject) : Array String := Id.run do
           (s.value : Int) + r.addend == o.roBase
         if !ok then out := out.push s!"JIT record {k}: header: {t}, not the image's header"
       else out := out.push s!"JIT record {k}: {t} at record offset {fld}"
-    else if h.fixupArea ≤ off && off + 8 ≤ dataEnd then
+    else if off + 8 ≤ dataEnd then
       if off % 8 != 0 then out := out.push s!"data area: {t} at an offset that isn't 8-aligned"
       if let some e := allocTarget o names r then out := out.push s!"data area: {t}: {e}"
     else

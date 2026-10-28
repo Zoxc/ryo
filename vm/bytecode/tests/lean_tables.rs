@@ -134,7 +134,7 @@ fn elem_name(e: ElemKind) -> &'static str {
 }
 
 /// Every operand kind but the lists, and `list` itself (its constructor name).
-const OPERAND_KINDS: [OperandKind; 16] = [
+const OPERAND_KINDS: [OperandKind; 15] = [
     OperandKind::Slot,
     OperandKind::Mem,
     OperandKind::U8,
@@ -146,7 +146,6 @@ const OPERAND_KINDS: [OperandKind; 16] = [
     OperandKind::Const,
     OperandKind::Abs,
     OperandKind::Sym,
-    OperandKind::Site,
     OperandKind::Func,
     OperandKind::Target,
     OperandKind::Neg,
@@ -172,7 +171,6 @@ fn kind_name(k: OperandKind) -> &'static str {
         OperandKind::Const => "const",
         OperandKind::Abs => "abs",
         OperandKind::Sym => "sym",
-        OperandKind::Site => "site",
         OperandKind::Func => "func",
         OperandKind::Target => "target",
         OperandKind::Neg => "neg",
@@ -216,13 +214,12 @@ fn args() -> Vec<(Arg, &'static str)> {
         (Arg::Const(full::Const(0)), "const"),
         (Arg::Data(full::Data(0)), "data"),
         (Arg::Sym(full::Sym(0)), "sym"),
-        (Arg::Site(full::Site(0)), "site"),
         (Arg::Ro(0), "ro"),
     ];
     for (a, _) in &all {
         // Exhaustive, so a new variant fails to compile here.
         match a {
-            Arg::Fp | Arg::Exception | Arg::Imm(_) | Arg::Const(_) | Arg::Data(_) | Arg::Sym(_) | Arg::Site(_) | Arg::Ro(_) => {}
+            Arg::Fp | Arg::Exception | Arg::Imm(_) | Arg::Const(_) | Arg::Data(_) | Arg::Sym(_) | Arg::Ro(_) => {}
         }
     }
     all

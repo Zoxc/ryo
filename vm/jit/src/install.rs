@@ -13,7 +13,7 @@ use std::vec::Vec;
 use ryo_bytecode::asm::frame::{self, SlotMap};
 use ryo_bytecode::asm::osr::OsrEntry;
 use ryo_bytecode::asm::{self, FUNC_FAR, FUNC_KINDS, FUNC_NEAR, FUNC_SLOT, Mode, Ref};
-use ryo_bytecode::full::{Const, Data, Func, Site, Sym};
+use ryo_bytecode::full::{Const, Data, Func, Sym};
 use ryo_bytecode::image::{
     EhFunc, Image, ImageResolver, JIT_DONE, JitRecord, eh_cie, eh_fde, eh_fde_rows, jit_count, jit_unbiased, pe_handler_data, pe_osr_unwind_info,
     pe_region_unwind_info, pe_unwind_info, pe_with_handler,
@@ -456,7 +456,7 @@ impl Jit {
                 }
                 // Every other call was retargeted.
                 Ref::Func(_) => return Err("an unexpected call".into()),
-                Ref::Sym(_) | Ref::Site(_) | Ref::Const(_) | Ref::Data(_) => image_ref_addr(cx.img, r.to).ok_or("no such symbol")?,
+                Ref::Sym(_) | Ref::Const(_) | Ref::Data(_) => image_ref_addr(cx.img, r.to).ok_or("no such symbol")?,
                 Ref::Ro(o) => base + ro_at + o as usize,
                 Ref::Rec => rec,
                 Ref::RecLoopCtr => rec + ryo_bytecode::image::JIT_LOOP_CTR as usize,
@@ -740,7 +740,7 @@ fn map_and_register(code: &[u8], eh: &Eh, base: usize, eh_base: usize, mode: Mod
     Ok(())
 }
 
-/// The address of an image part `r` refers to (`Sym`, `Site`, `Const`, `Data`), as installed
+/// The address of an image part `r` refers to (`Sym`, `Const`, `Data`), as installed
 /// code relocates it and the SSA tier bakes it in ([`InlineEnv`]'s `addr`); `None` for other
 /// references and symbols out of range.
 fn image_ref_addr(img: &Image<'_>, r: Ref) -> Option<usize> {
@@ -748,9 +748,8 @@ fn image_ref_addr(img: &Image<'_>, r: Ref) -> Option<usize> {
     let ro = img.bytes().as_ptr() as usize;
     Some(match r {
         Ref::Sym(Sym(s)) if (s as usize) < img.symbols().len() => ro + h.symbols.off as usize + 8 * s as usize,
-        Ref::Site(Site(s)) => h.data as usize + 8 * s as usize,
         Ref::Const(Const(k)) => ro + h.consts.off as usize + k as usize,
-        Ref::Data(Data(k)) => h.data as usize + h.fixup_area as usize + k as usize,
+        Ref::Data(Data(k)) => h.data as usize + k as usize,
         _ => return None,
     })
 }

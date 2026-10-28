@@ -172,7 +172,6 @@ inductive Ref
   | probe
   | func (f : Nat)
   | sym (s : Nat)
-  | site (s : Nat)
   | const (k : Nat)
   | data (d : Nat)
   | ro (off : Nat)

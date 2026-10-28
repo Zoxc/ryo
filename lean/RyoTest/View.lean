@@ -28,7 +28,6 @@ def ρ : Addrs
   | .const n => some ⟨1 * tagBase + n, none⟩
   | .data n => some ⟨2 * tagBase + n, none⟩
   | .sym n => some ⟨3 * tagBase + n, none⟩
-  | .site n => some ⟨4 * tagBase + n, none⟩
   | .ro n => some ⟨5 * tagBase + n, none⟩
   | _ => none
 
@@ -195,7 +194,7 @@ def rejects : Except String Unit := do
       for (a, r) in args.zipIdx do
         match a with
         | .imm _ => bad (args.set r (.const 0)) t s!"an address in register {r}"
-        | .const _ | .data _ | .sym _ | .site _ | .ro _ => bad (args.set r (.imm 0)) t s!"a value in register {r}"
+        | .const _ | .data _ | .sym _ | .ro _ => bad (args.set r (.imm 0)) t s!"a value in register {r}"
         | _ => pure ()
       if let .table ts := t then bad args (.table (ts ++ ts.take 1)) "a longer table"
       if let .branch _ x := t then bad args (.table [x]) "a table for a branch"

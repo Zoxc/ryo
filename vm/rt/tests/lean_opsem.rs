@@ -314,7 +314,7 @@ fn case(lean: &mut Lean, op: Opcode, rng: &mut Rng) -> bool {
                 let v = if bits == 128 { v } else { v & ((1u128 << bits) - 1) };
                 (v, format!("{{\"imm\":\"{v}\"}}"))
             }
-            OperandKind::Const | OperandKind::Abs | OperandKind::Sym | OperandKind::Site => {
+            OperandKind::Const | OperandKind::Abs | OperandKind::Sym => {
                 let p = ptr_into(rng, 8, 40);
                 (p as u128, format!("{{\"addr\":{p}}}"))
             }

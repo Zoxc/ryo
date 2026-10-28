@@ -209,8 +209,8 @@ at the register's size, zero-extended; `ARG_ADDR` as `addr`, with its two except
 the sret destination `Uninit` after reading the arguments, and store the answer's parts by
 `k` at `d`. `Run.lean` runs programs: the environment answers a call of a program function by
 running its R code below the caller's frame (tail calls in the frame they take over), and
-`imageProgram` makes an image object such a program (its constant pool, data, symbol slots,
-site slots and code constants as allocations); `ryo-lean rrun <image.o> <fn> <ints> [--cert <cert.json>]` runs one
+`imageProgram` makes an image object such a program (its constant pool, data, symbol slots
+and code constants as allocations); `ryo-lean rrun <image.o> <fn> <ints> [--cert <cert.json>]` runs one
 function (or `--all`; the certificate gives the zero-sized locals). Tested (`RyoTest/RSem.lean`) on hand-built functions (recursive `fib`, branch
 polarity, escapes, partial ends, dangling and `Uninit` after an `End`, by-address and stack
 arguments, sret, unwinding to a pad and out, tail calls, islands, ill-formed instructions,
@@ -262,7 +262,7 @@ a shared register or from a register with no other bits set; `Mem` as the slot a
 zero-extended `i32`; `U128` low then high; a case list as its values' `Ro` address and count;
 a target list as its count; `fp` first with `fp_arg`, `lpad`'s exception object before the
 operands, nowhere else). Addresses are `Val.addr` pointers: `ρ : Arg → Option ThinPointer`
-places the constants, data, symbol and site slots and code constants the arguments name
+places the constants, data, symbol slots and code constants the arguments name
 (the image's allocations; tests take an injective symbolic `ρ`). `view mode ρ i` gives
 `{op, ops, ctl}`: targets, `neg`, functions and word lists are `Val.none`, and `ctl` is the
 shape's `Then` (a branch, the switch table with the default last, `next`, `trap`) for the

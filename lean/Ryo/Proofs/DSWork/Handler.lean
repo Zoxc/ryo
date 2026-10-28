@@ -271,7 +271,7 @@ theorem handler_argItem_regs (ctx : Ctx) {mode : Ryo.Obj.Mode} {r : X86.Reg} {a 
     simp only [Item.exec] at he
     split at he <;> cases Switch.except_ok_inj he <;>
       simp [State.setReg, State.setFlags, State.jump, hi]
-  | const _ | data _ | sym _ | site _ | ro _ =>
+  | const _ | data _ | sym _ | ro _ =>
     simp only [Handler.argItem, Handler.argRef, Option.map_some, Option.some.injEq] at h; subst h
     simp only [Item.exec] at he; cases Switch.except_ok_inj he; simp [State.setReg, State.jump, hi]
 
@@ -418,7 +418,7 @@ theorem handler_argItem_ok (ctx : Ctx) {mode : Ryo.Obj.Mode} (hfp : mode.framePo
     split at he
     · cases Switch.except_ok_inj he; exact ⟨rfl, rfl⟩
     · cases Switch.except_ok_inj he; exact ⟨rfl, rfl⟩
-  | const _ | data _ | sym _ | site _ | ro _ =>
+  | const _ | data _ | sym _ | ro _ =>
     simp only [Handler.argItem, Handler.argRef, Option.map_some, Option.some.injEq] at h; subst h
     exact gen _ (fun _ _ h => nomatch h) (fun _ => rfl) fun s s' he => by
       cases Switch.except_ok_inj he; exact ⟨rfl, rfl⟩

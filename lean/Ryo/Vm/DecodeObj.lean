@@ -27,7 +27,6 @@ def text : Nat := 0x4000_0000
 def probe : Nat := 0x0f00_0000
 def handlers : Nat := 0x1000_0000
 def syms : Nat := 0x1100_0000
-def sites : Nat := 0x1200_0000
 def consts : Nat := 0x1400_0000
 def datas : Nat := 0x1800_0000
 def ros : Nat := 0x1c00_0000
@@ -40,7 +39,6 @@ def toRef : Ryo.Obj.Ref → Ref
   | .probe => .probe
   | .func i => .func i
   | .sym i => .sym i
-  | .site i => .site i
   | .const o => .const o
   | .data o => .data o
   | .ro o => .ro o
@@ -53,7 +51,6 @@ def addrOf (funcStarts : Array Nat) : Ref → Option Nat
   | .probe => some probe
   | .func i => funcStarts[i]?.map (text + ·)
   | .sym s => if 8 * s < 0x0100_0000 then some (syms + 8 * s) else none
-  | .site s => if 8 * s < 0x0200_0000 then some (sites + 8 * s) else none
   | .const k => if k < span then some (consts + k) else none
   | .data d => if d < span then some (datas + d) else none
   | .ro o => if o < span then some (ros + o) else none
@@ -69,8 +66,6 @@ def resolve (funcStarts : Array Nat) (a : BitVec 64) : Option Ref :=
     if d % 16 == 0 && d / 16 < Full.count then some (.handler (d / 16)) else none
   else if let some d := inRange syms 0x0100_0000 then
     if d % 8 == 0 then some (.sym (d / 8)) else none
-  else if let some d := inRange sites 0x0200_0000 then
-    if d % 8 == 0 then some (.site (d / 8)) else none
   else if let some d := inRange consts span then some (.const d)
   else if let some d := inRange datas span then some (.data d)
   else if let some d := inRange ros span then some (.ro d)

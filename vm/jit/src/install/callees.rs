@@ -197,7 +197,7 @@ impl jit::opt::ConstMem for PoolMem {
                 Some(match read {
                     PoolRead::Bits(b) => bits(b),
                     PoolRead::Const(t) => bits(pool + t as u64),
-                    PoolRead::Data(t) => bits(img.fixup_area() as u64 + t as u64),
+                    PoolRead::Data(t) => bits(img.data_ptr() as u64 + t as u64),
                 })
             }
         }

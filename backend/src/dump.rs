@@ -3,7 +3,7 @@
 use rustc_data_structures::fx::FxHashMap;
 use rustc_middle::ty::{Instance, TyCtxt};
 use ryo_bytecode::asm::{self, Ref};
-use ryo_bytecode::full::{Const, Data, Func, Site, Sym};
+use ryo_bytecode::full::{Const, Data, Func, Sym};
 use ryo_bytecode::image::Cleanup;
 
 use super::lower::CodeReloc;
@@ -16,7 +16,7 @@ pub(super) fn write(tcx: TyCtxt<'_>, var: &str, path: &std::ffi::OsStr, text: &s
 }
 
 /// The `RYO_DUMP` text: each VM function, by path, decoded back to VM instructions, its
-/// operands that name relocations (`fn`, `sym`, `site`, `k`, `data`) listed below it.
+/// operands that name relocations (`fn`, `sym`, `k`, `data`) listed below it.
 pub(super) fn vm_text<'tcx>(tcx: TyCtxt<'tcx>, vm: &[VmFn<'tcx>], mode: asm::Mode) -> String {
     use std::fmt::Write;
     let mut fns: Vec<(String, &VmFn<'tcx>)> = vm.iter().map(|v| (path(v.instance), v)).collect();
@@ -77,7 +77,6 @@ pub(super) fn code_text<'tcx>(tcx: TyCtxt<'tcx>, vm: &[VmFn<'tcx>]) -> String {
                 Ref::Probe => crate::objfile::PROBE_SYMBOL.to_owned(),
                 Ref::Func(x) => x.to_string(),
                 Ref::Sym(x) => x.to_string(),
-                Ref::Site(x) => x.to_string(),
                 Ref::Const(x) => x.to_string(),
                 Ref::Data(x) => x.to_string(),
                 Ref::Ro(off) => format!("ro+{off}"),
@@ -101,7 +100,6 @@ pub(super) fn image_names(out: &mut String, i: usize, instance: Instance<'_>, re
         let _ = match r.to {
             Ref::Func(Func(k)) => writeln!(out, "ref {i} {} {}", Func(v(k)), Func(k)),
             Ref::Sym(Sym(k)) => writeln!(out, "ref {i} {} {}", Sym(v(k)), Sym(k)),
-            Ref::Site(Site(k)) => writeln!(out, "ref {i} {} {}", Site(v(k)), Site(k)),
             Ref::Const(Const(k)) => writeln!(out, "ref {i} {} {}", Const(v(k)), Const(k)),
             Ref::Data(Data(k)) => writeln!(out, "ref {i} {} {}", Data(v(k)), Data(k)),
             _ => Ok(()),

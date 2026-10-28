@@ -21,7 +21,7 @@ What each instruction reads (`gen`) and writes for sure (`kill`), and what that 
   the operands unpacked through the layout: exact widths, `len`, `elem_size × count`. This
   is the handler contract of reduced.md §C0.5. A handler dereferencing a pointer from a slot, a memory operand or an
   address operand's contents makes a pointer access (an address operand itself is a
-  constant, symbol or site, never a frame object). `resume` (assembly, no footprint) reads
+  constant or symbol, never a frame object). `resume` (assembly, no footprint) reads
   its slot and leaves the function as a return does. Where the operands don't give an
   extent, `asm::frame::handler`'s over-estimate: a read of 16 bytes or the lengths its `len`
   / `elem_size × count` operands give, its `d` clobbered, and a pointer access.
@@ -310,7 +310,7 @@ def opndVals (h : Full.Opcode) (args : List Arg) (l : Asm.Layout) : List (String
 (`OpSem.footprint`): its frame reads and writes at their extents for these operands, its
 addresses taken, and a pointer access if it dereferences a pointer that may reach the frame
 (one in a slot, a memory operand, or loaded from an address operand; an address operand
-itself is a constant, a symbol or a site). `resume` (assembly, no footprint) reads its slot
+itself is a constant or a symbol). `resume` (assembly, no footprint) reads its slot
 and leaves the function as a return does. Else, and for an extent the operands don't give,
 `asm::frame::handler`'s over-estimate: 16 bytes or the lengths its `len` / `elem_size ×
 count` operands give, `d` clobbered, and a pointer access. -/

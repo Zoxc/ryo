@@ -43,7 +43,6 @@ impl Jit {
                 Ref::Probe => "ryo_probe_stack".into(),
                 Ref::Func(g) => g.to_string(),
                 Ref::Sym(x) => x.to_string(),
-                Ref::Site(x) => x.to_string(),
                 Ref::Const(x) => x.to_string(),
                 Ref::Data(x) => x.to_string(),
                 Ref::Ro(o) => std::format!("ro+{o}"),

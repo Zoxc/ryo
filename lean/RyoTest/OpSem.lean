@@ -39,7 +39,7 @@ def isFrame : Option OperandKind → Bool
   | _ => false
 
 def isAddr : Option OperandKind → Bool
-  | some .const | some .abs | some .sym | some .site => true
+  | some .const | some .abs | some .sym => true
   | some (.list .case8) | some (.list .case16) | some (.list .case32) | some (.list .case64)
   | some (.list .case128) => true
   | _ => false
@@ -507,7 +507,7 @@ def genericOps (op : Full.Opcode) : Operands :=
     | .slot => .slot (-32 * ((i : Int) + 1))
     | .mem => .mem (-32 * ((i : Int) + 1)) 0
     | .u8 | .u16 | .u32 | .u64 | .i64 | .u128 => .imm 2
-    | .const | .abs | .sym | .site => .addr ⟨0x10000, some 1⟩
+    | .const | .abs | .sym => .addr ⟨0x10000, some 1⟩
     | .list .target => .targets 3
     | .list _ => .cases ⟨0x10000, some 1⟩ 2
     | _ => .none

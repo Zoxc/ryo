@@ -2064,7 +2064,7 @@ fn constant_pool_loads() {
     let s_addr = pool + s.0 as u64;
     for (n, x) in [3u64, 1 << 40, 9].into_iter().enumerate() {
         // Native code changes the data area between the calls.
-        unsafe { *img.data.add(Image::from_header(img.header).unwrap().header().fixup_area as usize + data.0 as usize).cast::<u64>() += 100 };
+        unsafe { *img.data.add(data.0 as usize).cast::<u64>() += 100 };
         let mut out = [0u64; 3];
         let r = ok::<_, u64>(img.id(f), (x, out.as_mut_ptr() as u64));
         let d = (n as u64 + 1) * 101;

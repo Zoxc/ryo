@@ -54,7 +54,7 @@ use rustc_middle::ty::layout::TyAndLayout;
 use rustc_middle::ty::{self, GenericArgsRef, Instance, InstanceKind, Ty, TyCtxt, TypeVisitableExt, TypingEnv};
 use rustc_span::Symbol;
 use ryo_bytecode::asm::{self, Asm, InsnId, Label, Opnd, Unwind};
-use ryo_bytecode::full::{Abs, Const, ElemKind, Func, Opcode, OperandKind, Site, Sym};
+use ryo_bytecode::full::{Abs, Const, ElemKind, Func, Opcode, OperandKind, Sym};
 
 pub use self::cast::upcast_entry;
 pub use self::constant::{is_import, is_tls_shim, vtable_alloc};
@@ -66,7 +66,7 @@ pub use self::sig::{AbiSig, abi_sig};
 /// PE: the 32 bytes of shadow space at the bottom of every frame (`FnCx::finish`).
 const PE_SHADOW: u32 = 32;
 
-/// A lowered function: its machine code, whose `Func`, `Sym`, `Site`, `Const` and `Data`
+/// A lowered function: its machine code, whose `Func`, `Sym`, `Const` and `Data`
 /// references are indices into `relocs` until the merge pass resolves them.
 pub struct LoweredFn<'tcx> {
     pub code: asm::Encoded,
@@ -497,7 +497,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     }
 
     /// Emits an instruction without branch targets from its operand words, in the
-    /// instruction-word encoding of each operand kind (`sym`, `func`, `site`, `k` operands:
+    /// instruction-word encoding of each operand kind (`sym`, `func`, `k` operands:
     /// indices into [`FnCx::relocs`]).
     pub fn op(&mut self, op: Opcode, operands: &[u32]) -> InsnId {
         let mut ops = std::mem::take(&mut self.scratch);
@@ -675,7 +675,6 @@ fn opnds(op: Opcode, w: &[u32], out: &mut Vec<Opnd<Label>>) {
                 Abs::Data(d) => Opnd::Data(d),
             },
             OperandKind::Sym => Opnd::Sym(Sym(w[pos])),
-            OperandKind::Site => Opnd::Site(Site(w[pos])),
             OperandKind::Func => Opnd::Func(Func(w[pos])),
             OperandKind::Neg => Opnd::Neg(w[pos] != 0),
             OperandKind::List(ElemKind::Word) => {

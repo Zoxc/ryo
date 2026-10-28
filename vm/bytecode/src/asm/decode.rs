@@ -187,7 +187,7 @@ pub fn decode_reduced_indexed(enc: &Encoded, mode: Mode) -> Result<Decoded, AsmE
 pub trait Resolver {
     /// The reference at the absolute address `addr`, the target of a `call`/`jmp rel32` or of
     /// a `[rip + x]` field outside the function: a handler, `ryo_probe_stack`, a function of
-    /// the image (by its first byte), a symbol slot, a site cache slot, a constant, a data
+    /// the image (by its first byte), a symbol slot, a constant, a data
     /// offset, or a code constant ([`Ref::Ro`], an offset in [`Resolver::code_consts`]).
     /// `None` if it is none of them. Handlers normally come from [`Resolver::handlers`]
     /// instead; a resolver whose handler addresses are known to be distinct may give them
@@ -1374,10 +1374,6 @@ fn handler_operands(op: Opcode, setup: &[(u32, Item)], fr: &Frame, ro: &[u8], co
             OperandKind::Sym => match addr(loc.reg)? {
                 Ref::Sym(s) => Opnd::Sym(s),
                 _ => return Err(err("not a symbol slot")),
-            },
-            OperandKind::Site => match addr(loc.reg)? {
-                Ref::Site(s) => Opnd::Site(s),
-                _ => return Err(err("not a site")),
             },
             // A table of `n` entries and the default, 4 bytes each, must fit in the code.
             OperandKind::List(ElemKind::Target) => {

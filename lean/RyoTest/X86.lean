@@ -55,7 +55,6 @@ def addrOf : RefAddr
   | .probe => 0x1800_0000
   | .func f => 0x2000_0000 + BitVec.ofNat 64 (16 * f)
   | .sym s => 0x2800_0000 + BitVec.ofNat 64 (8 * s)
-  | .site s => 0x3000_0000 + BitVec.ofNat 64 (8 * s)
   | .const k => 0x5000_0000 + BitVec.ofNat 64 k
   | .data d => 0x5800_0000 + BitVec.ofNat 64 d
   | .ro o => 0x6800_0000 + BitVec.ofNat 64 o
@@ -72,7 +71,6 @@ def resolve : LinkMap := fun a =>
   | 0x1800_0000 => if off == 0 then some .probe else none
   | 0x2000_0000 => (idx 16).map .func
   | 0x2800_0000 => (idx 8).map .sym
-  | 0x3000_0000 => (idx 8).map .site
   | 0x5000_0000 => some (.const off)
   | 0x5800_0000 => some (.data off)
   | 0x6800_0000 => some (.ro off)
@@ -213,7 +211,7 @@ def rms : List Rm := usableRegs.map .reg ++ mems.map .mem
 def generated : List Item :=
   let fixed : List Item := [.pushRbp, .popRbp, .callRax, .callMemRax, .jmpRax, .jmpR11,
     .testAl, .testRax, .leave, .ret, .ud2, .loadTableEntry, .addRaxRcx]
-  let refs : List Ref := [.handler 7, .probe, .func 3, .sym 9, .site 2, .const 64, .data 8,
+  let refs : List Ref := [.handler 7, .probe, .func 3, .sym 9, .const 64, .data 8,
     .ro 32, .record, .recordLoopCtr]
   let vals : List (BitVec 64) := [0, 1, 0xffffffff, 0x100000000, 0xffffffff80000000,
     0xffffffff7fffffff, 0x8000000000000000, 0xffffffffffffffff]

@@ -47,7 +47,6 @@ inductive OperandKind where
   | const
   | abs
   | sym
-  | site
   | func
   | target
   | neg
@@ -68,7 +67,6 @@ def OperandKind.words : OperandKind → Option Nat
   | .const => some 1
   | .abs => some 1
   | .sym => some 1
-  | .site => some 1
   | .func => some 1
   | .target => some 1
   | .neg => some 1
@@ -125,7 +123,6 @@ inductive ArgKind where
   | const
   | data
   | sym
-  | site
   | ro
   deriving Repr, DecidableEq, Inhabited
 
@@ -137,7 +134,6 @@ def ArgKind.tag : ArgKind → Nat
   | .const => 3
   | .data => 4
   | .sym => 5
-  | .site => 6
-  | .ro => 7
+  | .ro => 6
 
 end Ryo.Vm

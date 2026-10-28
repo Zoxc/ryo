@@ -146,7 +146,7 @@ theorem unpackOpnd_erase {ρ : R.Addrs} {args : List R.Arg} {k : OperandKind} {l
     case list e => cases e <;> simp_all [R.unpackOpnd, pure] <;> subst h <;> rfl
     all_goals simp_all [R.unpackOpnd, pure] <;> subst h <;> rfl
   · cases k with
-    | const | abs | sym | site =>
+    | const | abs | sym =>
       simp only [R.unpackOpnd, h0, beq_iff_eq, ↓reduceIte] at h ⊢
       exact regAddr_erase h
     | list e =>

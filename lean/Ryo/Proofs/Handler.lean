@@ -53,7 +53,6 @@ def argRef : R.Arg → Option Ref
   | .const k => some (.const k)
   | .data d => some (.data d)
   | .sym s => some (.sym s)
-  | .site s => some (.site s)
   | .ro o => some (.ro o)
   | _ => none
 
@@ -221,7 +220,7 @@ private theorem argItem_exec (ctx : Ctx) (ρ : R.Addrs) (mode : Ryo.Obj.Mode) (r
       exact ⟨y, by rw [hy]; simp only [Item.exec, h0]; rfl, by rw [h1, hv]; rfl, h2⟩
     · obtain ⟨y, hy, h1, h2⟩ := hset v none
       exact ⟨y, by rw [hy]; simp only [Item.exec, h0]; rfl, by rw [h1]; rfl, h2⟩
-  | const _ | data _ | sym _ | site _ | ro _ =>
+  | const _ | data _ | sym _ | ro _ =>
     simp only [argItem, argRef, Option.map_some, Option.some.injEq] at h; subst h
     obtain ⟨p, hp, ha⟩ := hlink _ rfl
     obtain ⟨y, hy, h1, h2⟩ := hset (ctx.addrOf _) none

@@ -15,7 +15,7 @@ the callee's R code (`Program.invoke`), and an image object as such a program
   callee (`ret_kind = RET_SRET`), its `ret_size` as the destination's size (the image's
   claim; C1' is to check it against the return type). The world: the constant pool and the
   code constants as one immutable allocation each, the data area (statics) as a mutable one,
-  the symbol slots and the site cache slots, at the made-up addresses of `DecodeObj`;
+  the symbol slots, at the made-up addresses of `DecodeObj`;
   pointers between them (the read-only and data sections' `R_X86_64_64` relocations into
   those parts) carry their allocation's provenance, others (to symbols) are left as the
   object has them. A symbol slot holds its target's address as an integer, as the runtime
@@ -153,30 +153,26 @@ def symAt? (n a : Nat) : Option Nat :=
   else none
 
 /-- The image's parts as allocations: (made-up address, bytes, mutable, kind), in `AllocId`
-order: the constant pool, the data area, the symbol slots, the site slots, the code
-constants. -/
+order: the constant pool, the data area, the symbol slots, the code constants. -/
 def parts (o : ImageObject) (ns : List NativeAlloc := []) : List (Nat × ByteArray × Bool × AllocationKind) :=
   let h := o.image.header
   let dataEnd := if h.jitRecords.count != 0 then h.jitRecords.off else h.dataSize
-  let dataBytes := (o.elf.data o.data).extract (o.dataBase + h.fixupArea) (o.dataBase + dataEnd)
+  let dataBytes := (o.elf.data o.data).extract o.dataBase (o.dataBase + dataEnd)
   [(DecodeObj.consts, o.image.bytes.extract h.consts.off (h.consts.off + h.consts.count), false, .const),
    (DecodeObj.datas, dataBytes, true, .static),
    (DecodeObj.syms, symSlots h.symbols.count ns, false, .static),
-   (DecodeObj.sites, ByteArray.mk (Array.replicate (8 * h.siteCount) 0), true, .static),
    (DecodeObj.ros, o.image.codeConsts, false, .const)]
 
 def constsId : AllocId := 0
 def dataId : AllocId := 1
 def symsId : AllocId := 2
-def sitesId : AllocId := 3
-def roId : AllocId := 4
+def roId : AllocId := 3
 
 /-- Where `Arg`s point: into the parts. -/
 def addrs : Addrs
   | .const k => some ⟨DecodeObj.consts + k, some constsId⟩
   | .data d => some ⟨DecodeObj.datas + d, some dataId⟩
   | .sym s => some ⟨DecodeObj.syms + 8 * s, some symsId⟩
-  | .site s => some ⟨DecodeObj.sites + 8 * s, some sitesId⟩
   | .ro o => some ⟨DecodeObj.ros + o, some roId⟩
   | _ => none
 
@@ -190,11 +186,11 @@ def pointerTo (o : ImageObject) (i : Nat) (off : Int) : Option ThinPointer :=
     if let some d := within (o.roBase + h.consts.off) h.consts.count then addrs (.const d)
     else (within (o.roBase + h.codeConsts.off) h.codeConsts.count).bind (addrs ∘ .ro)
   else if i == o.data.index then
-    (within (o.dataBase + h.fixupArea) (dataEnd - h.fixupArea)).bind (addrs ∘ .data)
+    (within o.dataBase dataEnd).bind (addrs ∘ .data)
   else none
 
 /-- The image's memory: its parts as allocations, with the pointers between them, then the
-native allocations `ns` (from `AllocId` 5 on, in order). -/
+native allocations `ns` (from `AllocId` 4 on, in order). -/
 def worldMem (o : ImageObject) (ns : List NativeAlloc) : Memory := Id.run do
   let mut mem : Memory := {}
   for (addr, bs, mutable, kind) in parts o ns do
@@ -207,7 +203,7 @@ def worldMem (o : ImageObject) (ns : List NativeAlloc) : Memory := Id.run do
   let dataEnd := if h.jitRecords.count != 0 then h.jitRecords.off else h.dataSize
   let fields : List (Nat × Nat × Nat × AllocId) :=
     [(o.ro.index, o.roBase + h.consts.off, h.consts.count, constsId),
-     (o.data.index, o.dataBase + h.fixupArea, dataEnd - h.fixupArea, dataId)]
+     (o.data.index, o.dataBase, dataEnd, dataId)]
   for (sect, base, len, id) in fields do
     for r in o.elf.relocsOf sect do
       if r.type != .abs64 || r.offset < base || r.offset + 8 > base + len then continue

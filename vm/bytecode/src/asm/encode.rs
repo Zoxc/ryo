@@ -15,7 +15,7 @@ use super::list::Hint;
 use super::reduced::Then;
 use super::x86::{Cond, Item, M, Reg, STACK_ARG, Sh, W, handler_reg, island_args, padding};
 use super::{ArgReg, Layout, Loc, Mode, RetPart, layout, ret_parts};
-use crate::full::{Const, Data, DecodeError, ElemKind, Func, Opcode, OperandKind, Shape, Site, Sym};
+use crate::full::{Const, Data, DecodeError, ElemKind, Func, Opcode, OperandKind, Shape, Sym};
 use crate::image::{Cleanup, CleanupEntry};
 use crate::reduced::Arg;
 
@@ -33,8 +33,6 @@ pub enum Ref {
     Func(Func),
     /// A symbol slot (`addr.sym`, `call.ext`'s symbol, and island calls through it).
     Sym(Sym),
-    /// A site cache slot.
-    Site(Site),
     /// A constant pool offset.
     Const(Const),
     /// A data area offset.
@@ -213,7 +211,6 @@ pub enum Opnd<T = u32> {
     Const(Const),
     Data(Data),
     Sym(Sym),
-    Site(Site),
     Func(Func),
     Target(T),
     Neg(bool),
@@ -234,7 +231,6 @@ impl<T> Opnd<T> {
             Opnd::Const(k) => Opnd::Const(k),
             Opnd::Data(d) => Opnd::Data(d),
             Opnd::Sym(s) => Opnd::Sym(s),
-            Opnd::Site(s) => Opnd::Site(s),
             Opnd::Func(x) => Opnd::Func(x),
             Opnd::Target(t) => Opnd::Target(f(t)?),
             Opnd::Neg(n) => Opnd::Neg(n),
@@ -265,7 +261,6 @@ pub fn operands(code: &[u32], at: usize) -> Vec<Opnd> {
                 crate::full::Abs::Data(d) => Opnd::Data(d),
             },
             OperandKind::Sym => Opnd::Sym(Sym(w(0))),
-            OperandKind::Site => Opnd::Site(Site(w(0))),
             OperandKind::Func => Opnd::Func(Func(w(0))),
             OperandKind::Target => Opnd::Target(target(w(0))),
             OperandKind::Neg => Opnd::Neg(w(0) != 0),
@@ -322,7 +317,6 @@ pub fn push_words(op: Opcode, ops: &[Opnd], words: &mut Vec<u32>) {
             Opnd::Const(k) => words.push(k.0),
             Opnd::Data(d) => words.push(crate::full::Abs::Data(*d).to_word()),
             Opnd::Sym(s) => words.push(s.0),
-            Opnd::Site(s) => words.push(s.0),
             Opnd::Func(f) => words.push(f.0),
             Opnd::Target(t) => words.push(*t),
             Opnd::Neg(n) => words.push(*n as u32),
@@ -911,7 +905,6 @@ impl From<Arg> for ArgVal {
             Arg::Const(k) => ArgVal::Addr(Ref::Const(k)),
             Arg::Data(d) => ArgVal::Addr(Ref::Data(d)),
             Arg::Sym(s) => ArgVal::Addr(Ref::Sym(s)),
-            Arg::Site(s) => ArgVal::Addr(Ref::Site(s)),
             Arg::Ro(o) => ArgVal::Ro(o),
         }
     }
@@ -1900,7 +1893,6 @@ pub(super) fn handler_args<T>(op: Opcode, ops: &[Opnd<T>], mode: Mode, mut ro: i
             Opnd::Const(k) => set(loc, 0, ArgVal::Addr(Ref::Const(*k)), false),
             Opnd::Data(d) => set(loc, 0, ArgVal::Addr(Ref::Data(*d)), false),
             Opnd::Sym(s) => set(loc, 0, ArgVal::Addr(Ref::Sym(*s)), false),
-            Opnd::Site(s) => set(loc, 0, ArgVal::Addr(Ref::Site(*s)), false),
             Opnd::Targets(t) => set(loc, 0, imm(t.len() as u64), false),
             Opnd::Cases(vals, _) => {
                 let OperandKind::List(e) = info.operands[i].kind else { unreachable!() };

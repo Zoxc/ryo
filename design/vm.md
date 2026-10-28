@@ -356,7 +356,7 @@ has its own `Opcode`, `Insn`, decoder, encoder and disassembly, in the same word
 
 - **`handler h, args, t`** (`!` with `neg`): a call of the handler of the full opcode `h`
   with the argument registers `args` from `rdi` on (each three words: `fp`, the exception
-  object, an immediate, or the address of a constant, data, a symbol slot, a site or a code
+  object, an immediate, or the address of a constant, data, a symbol slot or a code
   constant), then `h`'s shape's control flow: a branch to `t[0]` on the returned `bool`
   (`br`), a jump through the table `t` on the returned index, the default last (`switch`),
   or nothing (`t` empty).
@@ -744,7 +744,7 @@ header, [backend.md](backend.md#pipeline)). It defines the symbol
 ```
 header          magic, crate hash, StableCrateId, pointers to the writable
                 and text sections (relocated), sizes, offset/count of every part below,
-                site count, fixup area offset, the `asm::Mode` the code was encoded in,
+                the `asm::Mode` the code was encoded in,
                 the JIT records' offset and count, the constant pool's relocated
                 fields, the CGU hash (`image::cgu_hash` of rustc's CGU name)
 functions       per function, sorted by code offset: code offset and length (bytes in the
@@ -803,9 +803,7 @@ relocation.
 **Writable** (`.data.ryo_image` / `.data$ryo_image`):
 
 ```
-site cache    site_count pointer-sized slots; no instruction uses them any more, so the
-              backend leaves it empty
-fixups        PE only: constant allocations that point at DLL-imported data
+fixups        at offset 0; PE only: constant allocations that point at DLL-imported data
 jit records   with counters, one `JitRecord` per function, 64-aligned, past the fixup
               area's one-past-the-end address ([JIT records and
               counters](#jit-records-and-counters))
@@ -819,7 +817,8 @@ calls it by name, local otherwise (backtraces, profilers) ([backend.md](backend.
 
 - `ryo_bytecode::image` defines the exact layout (`Header`, `FuncEntry`, `FixupEntry`,
   `CallSiteEntry`), `ryo_bytecode::asm::list` the instruction lists'.
-  `addr.const` data offsets are offsets from the start of the fixups area.
+  `addr.const` data offsets are offsets from the start of the writable section (the fixups
+  area).
 - **Relocations** (`RelocKind`):
   - `Abs64` (`R_X86_64_64` / `IMAGE_REL_AMD64_ADDR64`): the header's `data` and `text`
     pointers, one per symbol slot, the pointers inside constant and fixup allocations

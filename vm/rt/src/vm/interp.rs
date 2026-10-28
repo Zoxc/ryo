@@ -128,7 +128,7 @@ macro_rules! imm_of {
     };
 }
 
-/// The address an address operand (`Const`, `Abs`, `Sym`, `Site`) holds.
+/// The address an address operand (`Const`, `Abs`, `Sym`) holds.
 macro_rules! addr_of {
     ($a:ident, $op:ident, $name:ident) => {
         v!($a, $op, $name) as usize as *mut u8

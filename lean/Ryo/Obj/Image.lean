@@ -43,7 +43,7 @@ def FUNC_COLD : Nat := 4
 def FUNC_INLINE_HINT : Nat := 8
 def FUNC_FLAGS : Nat := FUNC_INLINE_ALWAYS ||| FUNC_INLINE_NEVER ||| FUNC_COLD ||| FUNC_INLINE_HINT
 
-def headerSize : Nat := 160
+def headerSize : Nat := 152
 
 /-- `image::Span`: offset and element count. -/
 structure Span where
@@ -73,9 +73,9 @@ structure Header where
   /-- The functions' instruction lists (bytes). -/
   lists : Span
   callSites : Span
-  siteCount : Nat
-  fixupArea : Nat
   mode : Nat
+  /-- Zero: keeps the header free of implicit padding. -/
+  pad : Nat
   jitRecords : Span
   /-- `[u32]`, strictly increasing: the pool offset of every relocated 8-byte field of the
   constant pool. Nothing in the VM semantics reads it (the JIT's constant-load fold does). -/
@@ -164,9 +164,8 @@ def readHeader (b : ByteArray) : Header :=
     dataSize := u32! b 32, textSize := u32! b 36, text := u64! b 40, functions := span! b 48,
     codeConsts := span! b 56, fixups := span! b 64, symFlags := span! b 72,
     funcFlags := span! b 80, symbols := span! b 88, consts := span! b 96, lists := span! b 104,
-    callSites := span! b 112, siteCount := u32! b 120, fixupArea := u32! b 124,
-    mode := u32! b 128, jitRecords := span! b 132, constRelocs := span! b 140,
-    cguHash := u64! b 152 }
+    callSites := span! b 112, mode := u32! b 120, pad := u32! b 124,
+    jitRecords := span! b 128, constRelocs := span! b 136, cguHash := u64! b 144 }
 
 /-- `cast`'s checks: `span.count` elements of `size` bytes at `span.off` lie in `len` bytes,
 and `span.off` is a multiple of `align` (the section start is 8-aligned). -/
@@ -199,7 +198,7 @@ def Image.parse (bytes : ByteArray) (aligned : Bool := true) : Except ImageError
   if h.mode &&& (2 ^ 32 - 1 - all) != 0 || !(Mode.ofBits h.mode).valid then throw .badMode
   if h.symFlags.count != h.symbols.count then throw (.outOfBounds "symbol flags")
   if h.funcFlags.count != h.functions.count then throw (.outOfBounds "function flags")
-  if h.siteCount * 8 > h.fixupArea || h.fixupArea > h.dataSize then throw .badData
+  if h.pad != 0 then throw .badData
   let r := h.jitRecords
   let records := if (Mode.ofBits h.mode).counters then h.functions.count else 0
   if r.count != records || r.off % 64 != 0 || r.off + 64 * r.count > h.dataSize then
@@ -293,8 +292,7 @@ def validate (img : Image) : Except ImageError Unit := do
       j := j + 1
   let mut i := 0
   for x in img.fixups do
-    if x.sym ≥ h.symbols.count || x.offset % 8 != 0 || x.offset < h.fixupArea
-        || x.offset + 8 > h.dataSize then
+    if x.sym ≥ h.symbols.count || x.offset % 8 != 0 || x.offset + 8 > h.dataSize then
       throw (.badFixup i)
     i := i + 1
   i := 0
@@ -487,9 +485,7 @@ def refOf (o : ImageObject) (func : Nat) (r : Rela) : Except String Ref := do
       if h.jitRecords.count != 0 && to == ((base + rec_ : Nat) : Int) then pure .record
       else if h.jitRecords.count != 0 && to == ((base + rec_ + Asm.jitLoopCtr : Nat) : Int) then
         pure .recordLoopCtr
-      else if let some d := within base (h.siteCount * 8) false then
-        if d % 8 == 0 then pure (.site (d / 8)) else throw s!"field at {r.offset} points inside a site slot"
-      else if let some d := within (base + h.fixupArea) (dataEnd - h.fixupArea) true then pure (.data d)
+      else if let some d := within base dataEnd true then pure (.data d)
       else throw s!"field at {r.offset} points at writable offset {to - base}"
     else throw s!"field at {r.offset} points into section {i}"
   | ty, .named n _ => throw s!"{ty.name} relocation at {r.offset} against undefined `{n}`"
@@ -544,7 +540,7 @@ private def hex (n : Nat) : String :=
 ```
 image <symbol>
 crate_hash <hex> stable_crate_id <hex> cgu_hash <hex> mode <bits> <Mode>
-sizes ro <size> data <data_size> text <text_size> sites <site_count> fixup_area <off> jit_records <off>+<count>
+sizes ro <size> data <data_size> text <text_size> jit_records <off>+<count>
 parts functions <off>+<n> code_consts .. fixups .. sym_flags .. func_flags .. symbols .. consts .. lists .. call_sites .. const_relocs ..
 validate ok | validate error: <ImageError>
 sym <i> flags <f> <name>
@@ -559,7 +555,7 @@ def summary (o : ImageObject) : Array String := Id.run do
   let h := img.header
   let mut out := #[s!"image {o.symbol}",
     s!"crate_hash {hex h.crateHash} stable_crate_id {hex h.stableCrateId} cgu_hash {hex h.cguHash} mode {h.mode} {img.mode}",
-    s!"sizes ro {h.size} data {h.dataSize} text {h.textSize} sites {h.siteCount} fixup_area {h.fixupArea} jit_records {h.jitRecords}",
+    s!"sizes ro {h.size} data {h.dataSize} text {h.textSize} jit_records {h.jitRecords}",
     s!"parts functions {h.functions} code_consts {h.codeConsts} fixups {h.fixups} sym_flags {h.symFlags} func_flags {h.funcFlags} symbols {h.symbols} consts {h.consts} lists {h.lists} call_sites {h.callSites} const_relocs {h.constRelocs}"]
   out := out.push (match img.validate with
     | .ok () => "validate ok"

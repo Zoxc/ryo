@@ -115,16 +115,15 @@ structure H where
   consts : Span := ⟨160, 0⟩
   lists : Span := ⟨160, 0⟩
   callSites : Span := ⟨160, 0⟩
-  siteCount : Nat := 0
-  fixupArea : Nat := 0
   mode : Nat := MODE_FP_ARG + MODE_FRAME_POINTER
+  pad : Nat := 0
   jitRecords : Span := ⟨0, 0⟩
   constRelocs : Span := ⟨160, 0⟩
   cguHash : Nat := 0
 
 def span (s : Span) : List UInt8 := le 4 s.off ++ le 4 s.count
 
-/-- An image: the header `h`, then `rest`. -/
+/-- An image: the header `h` (152 bytes, padded to 160), then `rest`. -/
 def mkImage (h : H) (rest : List UInt8 := []) (magic : String := "RYOIMAGE") : ByteArray :=
   let ff := h.funcFlags.getD ⟨160 + rest.length, h.functions.count⟩
   let rest := if h.funcFlags.isNone then rest ++ List.replicate h.functions.count 0 else rest
@@ -132,8 +131,8 @@ def mkImage (h : H) (rest : List UInt8 := []) (magic : String := "RYOIMAGE") : B
   bytes (magic.toUTF8.toList ++ le 4 0 ++ le 4 size ++ le 8 0 ++ le 8 0 ++ le 4 h.dataSize
     ++ le 4 h.textSize ++ le 8 0 ++ span h.functions ++ span h.codeConsts
     ++ span h.fixups ++ span h.symFlags ++ span ff ++ span h.symbols ++ span h.consts ++ span h.lists
-    ++ span h.callSites ++ le 4 h.siteCount ++ le 4 h.fixupArea ++ le 4 h.mode
-    ++ span h.jitRecords ++ span h.constRelocs ++ le 4 0 ++ le 8 h.cguHash ++ rest)
+    ++ span h.callSites ++ le 4 h.mode ++ le 4 h.pad ++ span h.jitRecords ++ span h.constRelocs
+    ++ le 8 h.cguHash ++ le 8 0 ++ rest)
 
 def funcEntry (off len : Nat) (list callSites : Span := ⟨0, 0⟩) : List UInt8 :=
   le 4 off ++ le 4 len ++ le 4 0 ++ le 4 0 ++ le 4 0 ++ span list ++ span callSites
@@ -166,7 +165,7 @@ def imageParse : Except String Unit := do
   expectParse (mkImage { symFlags := ⟨160, 1⟩ } [0]) (.outOfBounds "symbol flags")
   expectParse (mkImage { functions := ⟨160, 1⟩, funcFlags := some ⟨196, 0⟩ } (funcEntry 0 0))
     (.outOfBounds "function flags")
-  expectParse (mkImage { siteCount := 1, fixupArea := 0 }) .badData
+  expectParse (mkImage { pad := 1 }) .badData
   -- With counters, one 64-aligned JIT record per function.
   let f := funcEntry 0 0
   let counters := MODE_FP_ARG + MODE_FRAME_POINTER + MODE_COUNTERS

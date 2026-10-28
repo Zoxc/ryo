@@ -1,6 +1,6 @@
 //! The image writer (backend side, needs `alloc`).
 //!
-//! [`ImageWriter`] collects functions, constants, symbols and sites, and
+//! [`ImageWriter`] collects functions, constants and symbols, and
 //! [`ImageWriter::finish`] encodes the functions ([`crate::asm`]) and lays out the three
 //! sections. The result, [`ImageObject`], is plain bytes plus a relocation list and each
 //! function's unwind information; the backend turns it into an object file (with the
@@ -17,7 +17,7 @@
 //!   writable section (intra-image)
 //!
 //! The code's are 32-bit PC-relative fields ([`RelocKind::Pc32`], [`RelocKind::Call32`]):
-//! RIP-relative addresses of symbol slots, sites, constants, the data area and code
+//! RIP-relative addresses of symbol slots, constants, the data area and code
 //! constants, and calls of the handlers and `ryo_probe_stack`. Calls between functions are
 //! resolved by the writer.
 
@@ -29,7 +29,7 @@ use core::{mem, slice};
 
 use super::*;
 use crate::asm::{self, CallSite, Encoded, Mode, Ref};
-use crate::full::{Abs, Const, Data, DecodeError, Decoder, ElemKind, Func, Opcode, OperandKind, Site, Sym};
+use crate::full::{Abs, Const, Data, DecodeError, Decoder, ElemKind, Func, Opcode, OperandKind, Sym};
 
 /// A symbol referenced by the image.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -220,7 +220,6 @@ pub enum CodeError {
     /// directly, or the other way round. Only `addr.sym.ind` and `call.ext.ind` load through
     /// the slot; island symbols (`isl`) are always direct.
     SymIndirection,
-    SiteOutOfRange,
     ConstOutOfRange,
     DataOutOfRange,
     /// The last instruction can fall through past the function's end.
@@ -280,7 +279,6 @@ pub enum WriteError {
 pub struct CodeLimits {
     pub functions: u32,
     pub symbols: u32,
-    pub sites: u32,
     /// Constant pool size in bytes.
     pub consts: u32,
     /// Fixup area size in bytes.
@@ -334,7 +332,6 @@ pub fn validate_code(code: &[u32], lim: &CodeLimits) -> Result<Vec<bool>, (u32, 
                 OperandKind::Target if !target_ok(at, w[0] as i32) => return fail(CodeError::BadTarget),
                 OperandKind::Func if w[0] >= lim.functions => return fail(CodeError::FuncOutOfRange),
                 OperandKind::Sym if w[0] >= lim.symbols => return fail(CodeError::SymOutOfRange),
-                OperandKind::Site if w[0] >= lim.sites => return fail(CodeError::SiteOutOfRange),
                 OperandKind::Const if w[0] > lim.consts => return fail(CodeError::ConstOutOfRange),
                 OperandKind::Abs => match Abs::from_word(w[0]) {
                     Abs::Const(k) if k.0 > lim.consts => return fail(CodeError::ConstOutOfRange),
@@ -412,7 +409,6 @@ pub struct ImageWriter {
     symbols: Vec<SymbolDef>,
     /// Slots by (name, flags): a symbol can have a direct and an indirect slot.
     sym_index: BTreeMap<(String, u8), u32>,
-    sites: u32,
     /// The code's mode, from `prepare`.
     mode: Option<Mode>,
     /// The slot of `rust_eh_personality` (ELF).
@@ -464,7 +460,6 @@ impl ImageWriter {
             fixups: Vec::new(),
             symbols: Vec::new(),
             sym_index: BTreeMap::new(),
-            sites: 0,
             mode: None,
             personality: None,
             eh_pointers: EhPointers::Sdata4,
@@ -501,12 +496,6 @@ impl ImageWriter {
         self.symbols.push(SymbolDef { name: name.into(), flags });
         self.sym_index.insert(key, i);
         Sym(i)
-    }
-
-    /// Allocates a slot in the image's site area (no instruction uses one any more).
-    pub fn site(&mut self) -> Site {
-        self.sites += 1;
-        Site(self.sites - 1)
     }
 
     /// Adds a constant pool allocation; `relocs` offsets are relative to it.
@@ -563,7 +552,6 @@ impl ImageWriter {
         CodeLimits {
             functions: self.functions.len() as u32,
             symbols: self.symbols.len() as u32,
-            sites: self.sites,
             consts: self.consts.len() as u32,
             data: self.data.len() as u32,
         }
@@ -662,14 +650,12 @@ impl ImageWriter {
         Ok(t)
     }
 
-    /// The writable section: site cache, then the fixup area, then the JIT records (past the
+    /// The writable section: the fixup area, then the JIT records (past the
     /// fixup area's one-past-the-end address, which `addr.const` may take); and the checked
     /// fixups.
     fn layout_data(&self, mode: Mode, nfuncs: usize) -> Result<DataLayout, WriteError> {
         let align = self.data_align.max(if mode.counters { 64 } else { 8 }) as usize;
-        let fixup_area = align_to(self.sites as usize * 8, align);
-        let mut data = vec![0u8; fixup_area];
-        data.extend_from_slice(&self.data);
+        let mut data = self.data.clone();
         let jit_records = if mode.counters {
             let off = align_to(data.len() + 1, 64);
             data.resize(off, 0);
@@ -689,14 +675,14 @@ impl ImageWriter {
         for x in &self.fixups {
             if x.sym.0 >= nsyms
                 || self.symbols[x.sym.0 as usize].flags & SYM_INDIRECT == 0
-                || (fixup_area + x.offset as usize) % 8 != 0
+                || x.offset % 8 != 0
                 || x.offset as usize + 8 > self.data.len()
             {
                 return Err(WriteError::AllocReloc);
             }
-            fixups.push(FixupEntry { offset: (fixup_area + x.offset as usize) as u32, sym: x.sym.0, addend: x.addend });
+            fixups.push(FixupEntry { offset: x.offset, sym: x.sym.0, addend: x.addend });
         }
-        Ok(DataLayout { data, align, fixup_area, jit_records, fixups })
+        Ok(DataLayout { data, align, jit_records, fixups })
     }
 
     /// The read-only section, starting with its header.
@@ -743,9 +729,8 @@ impl ImageWriter {
             consts,
             lists,
             call_sites,
-            site_count: self.sites,
-            fixup_area: d.fixup_area as u32,
             mode: mode.to_header_bits(),
+            pad: 0,
             jit_records: d.jit_records,
             const_relocs,
             cgu_hash: self.cgu_hash,
@@ -794,10 +779,10 @@ impl ImageWriter {
             }
         }
         for r in &self.const_relocs {
-            relocs.push(self.alloc_reloc(h, d, r, Section::ReadOnly, h.consts.off as usize, self.consts.len())?);
+            relocs.push(self.alloc_reloc(h, r, Section::ReadOnly, h.consts.off as usize, self.consts.len())?);
         }
         for r in &self.data_relocs {
-            relocs.push(self.alloc_reloc(h, d, r, Section::Writable, d.fixup_area, self.data.len())?);
+            relocs.push(self.alloc_reloc(h, r, Section::Writable, 0, self.data.len())?);
         }
         Ok(relocs)
     }
@@ -833,9 +818,8 @@ impl ImageWriter {
                 return Ok(None);
             }
             Ref::Sym(Sym(s)) if (s as usize) < self.symbols.len() => pc(Section::ReadOnly, h.symbols.off as u64 + 8 * s as u64),
-            Ref::Site(Site(s)) if s < self.sites => pc(Section::Writable, 8 * s as u64),
             Ref::Const(Const(k)) if (k as usize) <= self.consts.len() => pc(Section::ReadOnly, h.consts.off as u64 + k as u64),
-            Ref::Data(Data(x)) if (x as usize) <= self.data.len() => pc(Section::Writable, (d.fixup_area + x as usize) as u64),
+            Ref::Data(Data(x)) if (x as usize) <= self.data.len() => pc(Section::Writable, x as u64),
             Ref::Ro(o) => pc(Section::ReadOnly, (h.code_consts.off + ro_base + o) as u64),
             Ref::Rec | Ref::RecLoopCtr if mode.counters => {
                 let rec = d.jit_records.off as u64 + 64 * func as u64;
@@ -844,7 +828,6 @@ impl ImageWriter {
             Ref::Rec | Ref::RecLoopCtr => return Err(bad(CodeError::NoJitRecord)),
             Ref::RegHandler(_) => return Err(bad(CodeError::JitOnly)),
             Ref::Sym(_) => return Err(bad(CodeError::SymOutOfRange)),
-            Ref::Site(_) => return Err(bad(CodeError::SiteOutOfRange)),
             Ref::Const(_) => return Err(bad(CodeError::ConstOutOfRange)),
             Ref::Data(_) => return Err(bad(CodeError::DataOutOfRange)),
         }))
@@ -852,7 +835,7 @@ impl ImageWriter {
 
     /// The relocation of a pointer at `r.offset` in an allocation of `len` bytes placed at
     /// `base` in `section`.
-    fn alloc_reloc(&self, h: &Header, d: &DataLayout, r: &AllocReloc, section: Section, base: usize, len: usize) -> Result<Reloc, WriteError> {
+    fn alloc_reloc(&self, h: &Header, r: &AllocReloc, section: Section, base: usize, len: usize) -> Result<Reloc, WriteError> {
         if r.offset as usize + 8 > len || (base + r.offset as usize) % 8 != 0 {
             return Err(WriteError::AllocReloc);
         }
@@ -865,9 +848,7 @@ impl ImageWriter {
             AllocTarget::Const(k) if (k.0 as usize) <= self.consts.len() => {
                 (RelocTarget::Section(Section::ReadOnly), h.consts.off as i64 + k.0 as i64 + r.addend)
             }
-            AllocTarget::Data(x) if (x.0 as usize) <= self.data.len() => {
-                (RelocTarget::Section(Section::Writable), d.fixup_area as i64 + x.0 as i64 + r.addend)
-            }
+            AllocTarget::Data(x) if (x.0 as usize) <= self.data.len() => (RelocTarget::Section(Section::Writable), x.0 as i64 + r.addend),
             _ => return Err(WriteError::AllocReloc),
         };
         Ok(Reloc { section, offset: (base + r.offset as usize) as u64, target, addend, kind: RelocKind::Abs64 })
@@ -891,8 +872,6 @@ struct DataLayout {
     /// The writable section.
     data: Vec<u8>,
     align: usize,
-    /// Offset of the allocations (past the site cache).
-    fixup_area: usize,
     jit_records: Span,
     fixups: Vec<FixupEntry>,
 }

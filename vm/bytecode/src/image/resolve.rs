@@ -44,7 +44,7 @@ impl ImageResolver<'_> {
     /// `addr` as a reference into the image's ranges, `Err(())` if none holds it.
     fn in_image(&self, addr: u64) -> Result<Option<crate::asm::Ref>, ()> {
         use crate::asm::Ref;
-        use crate::full::{Const, Data, Func, Site, Sym};
+        use crate::full::{Const, Data, Func, Sym};
         let h = self.image.header();
         // The offset of `addr` in the `len` bytes at `base` (one past the end with `end`).
         let within = |base: u64, len: u64, end: bool| {
@@ -53,8 +53,7 @@ impl ImageResolver<'_> {
         let ro = self.image.bytes().as_ptr() as u64;
         let consts = (ro.wrapping_add(h.consts.off as u64), h.consts.count as u64);
         // The fixup area ends where the JIT records start.
-        let data_end = if h.jit_records.count != 0 { h.jit_records.off } else { h.data_size };
-        let data = (h.data.wrapping_add(h.fixup_area as u64), data_end.saturating_sub(h.fixup_area) as u64);
+        let data = (h.data, if h.jit_records.count != 0 { h.jit_records.off } else { h.data_size } as u64);
         if let Some(o) = within(h.text, h.text_size as u64, false) {
             let fs = self.image.functions();
             return Ok(fs.binary_search_by_key(&o, |f| f.code_off).ok().map(|i| Ref::Func(Func(i as u32))));
@@ -67,9 +66,6 @@ impl ImageResolver<'_> {
         }
         if let Some(o) = within(consts.0, consts.1, false) {
             return Ok(Some(Ref::Const(Const(o))));
-        }
-        if let Some(o) = within(h.data, h.site_count as u64 * 8, false) {
-            return Ok((o % 8 == 0).then_some(Ref::Site(Site(o / 8))));
         }
         if let Some(o) = within(data.0, data.1, false) {
             return Ok(Some(Ref::Data(Data(o))));

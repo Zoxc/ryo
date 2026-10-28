@@ -1113,7 +1113,6 @@ impl<'a> E<'a> {
             Arg::Const(c) => self.a.x().lea(r, Mem::Rip(Ref::Const(c))),
             Arg::Data(d) => self.a.x().lea(r, Mem::Rip(Ref::Data(d))),
             Arg::Sym(s) => self.a.x().lea(r, Mem::Rip(Ref::Sym(s))),
-            Arg::Site(s) => self.a.x().lea(r, Mem::Rip(Ref::Site(s))),
             Arg::Ro(off) => {
                 // A sparse switch's case values: as many as the next register says.
                 let size = h.h.case_elem().and_then(ElemKind::case_bytes).ok_or(Unsupported("a code constant argument"))?;

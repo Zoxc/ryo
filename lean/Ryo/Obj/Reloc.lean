@@ -59,7 +59,7 @@ instance : ToString Mode where
 
 /-- `asm::Ref`: what a relocated 4-byte field of the code refers to. Every field is
 PC-relative: once linked, it holds `target - (field + 4)`. Indices are those of `full::Func`,
-`Sym`, `Site`, `Const` (pool byte offset) and `Data` (fixup-area byte offset). -/
+`Sym`, `Const` (pool byte offset) and `Data` (fixup-area byte offset). -/
 inductive Ref where
   /-- The handler `ryo_h_<op>`. -/
   | handler (op : Full.Opcode)
@@ -70,8 +70,6 @@ inductive Ref where
   | func (i : Nat)
   /-- A symbol slot. -/
   | sym (i : Nat)
-  /-- A site cache slot. -/
-  | site (i : Nat)
   /-- A constant pool offset. -/
   | const (off : Nat)
   /-- A data (fixup) area offset. -/
@@ -85,14 +83,13 @@ inductive Ref where
   deriving Repr, DecidableEq, Inhabited
 
 /-- The stable text form shared with the Rust reference printer
-(`scripts/lean-decode-ref`): `handler <Name>`, `probe`, `func <i>`, `sym <i>`, `site <i>`,
+(`scripts/lean-decode-ref`): `handler <Name>`, `probe`, `func <i>`, `sym <i>`,
 `const <off>`, `data <off>`, `ro <off>`, `rec`, `recloopctr`. -/
 def Ref.render : Ref → String
   | .handler op => s!"handler {op.info.name}"
   | .probe => "probe"
   | .func i => s!"func {i}"
   | .sym i => s!"sym {i}"
-  | .site i => s!"site {i}"
   | .const o => s!"const {o}"
   | .data o => s!"data {o}"
   | .ro o => s!"ro {o}"

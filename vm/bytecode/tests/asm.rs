@@ -100,7 +100,7 @@ fn insn(op: Opcode, rng: &mut Rng, list_len: usize, f: &mut Fn, target: &mut dyn
                 let (a, b) = (rng.imm(), rng.imm());
                 w.extend([a as u32, (a >> 32) as u32, b as u32, (b >> 32) as u32]);
             }
-            OperandKind::Const | OperandKind::Sym | OperandKind::Site | OperandKind::Func => w.push(rng.below(1 << 20) as u32),
+            OperandKind::Const | OperandKind::Sym | OperandKind::Func => w.push(rng.below(1 << 20) as u32),
             OperandKind::Abs => w.push(rng.below(1 << 20) as u32 | if rng.below(2) == 0 { ABS_DATA } else { 0 }),
             OperandKind::Neg => w.push(rng.below(2) as u32),
             OperandKind::Handler => unreachable!("not in the full set"),
@@ -365,7 +365,6 @@ impl Fake<'_> {
     const HANDLERS: u64 = 0x1000_0000;
     const FUNCS: u64 = 0x2000_0000;
     const SYMS: u64 = 0x3000_0000;
-    const SITES: u64 = 0x3100_0000;
     const CONSTS: u64 = 0x3200_0000;
     const DATA: u64 = 0x3300_0000;
     const RO: u64 = 0x3400_0000;
@@ -378,7 +377,6 @@ impl Fake<'_> {
             Ref::Probe => Self::PROBE,
             Ref::Func(f) => Self::FUNCS + 16 * f.0 as u64,
             Ref::Sym(s) => Self::SYMS + 8 * s.0 as u64,
-            Ref::Site(s) => Self::SITES + 8 * s.0 as u64,
             Ref::Const(k) => Self::CONSTS + k.0 as u64,
             Ref::Data(d) => Self::DATA + d.0 as u64,
             Ref::Ro(o) => Self::RO + o as u64,
@@ -406,8 +404,7 @@ impl asm::Resolver for Fake<'_> {
         let r = match a {
             Self::PROBE => Ref::Probe,
             _ if (Self::FUNCS..Self::SYMS).contains(&a) => Ref::Func(Func(((a - Self::FUNCS) / 16) as u32)),
-            _ if (Self::SYMS..Self::SITES).contains(&a) => Ref::Sym(Sym(((a - Self::SYMS) / 8) as u32)),
-            _ if (Self::SITES..Self::CONSTS).contains(&a) => Ref::Site(Site(((a - Self::SITES) / 8) as u32)),
+            _ if (Self::SYMS..Self::CONSTS).contains(&a) => Ref::Sym(Sym(((a - Self::SYMS) / 8) as u32)),
             _ if (Self::CONSTS..Self::DATA).contains(&a) => Ref::Const(Const((a - Self::CONSTS) as u32)),
             _ if (Self::DATA..Self::RO).contains(&a) => Ref::Data(Data((a - Self::DATA) as u32)),
             _ if (Self::RO..Self::RECORD - 1).contains(&a) => Ref::Ro((a - Self::RO) as u32),

@@ -137,7 +137,7 @@ def callField : Nat := ((funcCode f0Items).2.find? (·.to == Ryo.X86.Ref.func 1)
 /-- Function 0's one call site: the `call` of function 1, unwinding continuing in the caller. -/
 def site0 : CallSite := ⟨callField - 1, 5, none, false⟩
 
--- Read-only layout: header, 2 functions, code constants (none, at 256), fixups (none), 1 symbol
+-- Read-only layout: header (152 bytes, padded to 160), 2 functions, code constants (none, at 256), fixups (none), 1 symbol
 -- flag at 256, the slot at 264, no pool, no instruction lists, the call-site table at 272 (one
 -- entry), no constant relocations (at 284).
 def roSize : Nat := 284
@@ -193,8 +193,8 @@ def imageParts (resolve : Bool := true) (lsda0 : Array CallSite := #[site0]) : P
   let header := "RYOIMAGE".toUTF8.toList ++ le 4 (crateHash stableId) ++ le 4 roSize ++ le 8 stableId
     ++ le 8 0 ++ le 4 dataSize ++ le 4 text.length ++ le 8 0 ++ span ⟨160, 2⟩
     ++ span ⟨256, 0⟩ ++ span ⟨256, 0⟩ ++ span ⟨256, 1⟩ ++ span ⟨232, 2⟩ ++ span ⟨slotOff, 1⟩ ++ span ⟨272, 0⟩
-    ++ span ⟨272, 0⟩ ++ span ⟨272, 1⟩ ++ le 4 0 ++ le 4 0 ++ le 4 21 ++ span ⟨recOff, 2⟩ ++ span ⟨roSize, 0⟩
-    ++ le 4 0 ++ le 8 cgu
+    ++ span ⟨272, 0⟩ ++ span ⟨272, 1⟩ ++ le 4 21 ++ le 4 0 ++ span ⟨recOff, 2⟩ ++ span ⟨roSize, 0⟩
+    ++ le 8 cgu ++ le 8 0
   let ro := header ++ entry 0 c0.length ⟨0, 1⟩ ++ entry f1Off c1.length ⟨1, 0⟩ ++ List.replicate 24 0 ++ [0]
     ++ List.replicate 7 0 ++ le 8 0 ++ le 4 site0.start ++ le 4 site0.len ++ le 4 CONTINUE
   let lsda0 := (Lsda.write lsda0).toList
@@ -311,7 +311,7 @@ def imageNegative : Except String Unit := do
   expectMismatch { p with secs := p.secs.modify 7 fun s => { s with flags := 3 } } "SHF_GNU_RETAIN"
   -- The constant relocation table: an entry, with an empty pool (validate rejects it too).
   let p2 := { p with secs := p.secs.modify 0 fun s => { s with data := s.data ++ le 4 0 } }
-  expectMismatch ((p2.poke 1 140 roSize).poke 1 144 1 |>.poke 1 12 (roSize + 4)) "const_relocs: 1 entries"
+  expectMismatch ((p2.poke 1 136 roSize).poke 1 140 1 |>.poke 1 12 (roSize + 4)) "const_relocs: 1 entries"
   -- A function symbol of the wrong size, a missing one.
   expectMismatch { p with syms := p.syms.set! 4 { p.syms[4]! with size := 3 } } "st_size 3"
   expectMismatch { p with syms := p.syms.set! 4 { p.syms[4]! with type := Elf.STT_OBJECT } } "no function symbol"

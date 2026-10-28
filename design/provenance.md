@@ -85,9 +85,9 @@ the proofs ([verification.md](verification.md)) must justify. The model is R's
   overlap (`LiveDisjoint`, kept by `escape`). The price: in R, an out-of-bounds access from
   an object reaches an *exposed* neighbour (L0 says UB), so independent placement of
   escaped objects rests on L0's placement being daemonic, not on R's UB.
-- **Image** (`R/Run.lean`, `worldWith`): five allocations, the constant pool (immutable,
-  `.const`), the data area from the fixups on (mutable), the symbol slots (immutable), the
-  site slots, the code constants; then the environment's allocations the symbol slots point
+- **Image** (`R/Run.lean`, `worldWith`): four allocations, the constant pool (immutable,
+  `.const`), the data area (mutable, the writable section up to the JIT records), the symbol
+  slots (immutable), the code constants; then the environment's allocations the symbol slots point
   to (`NativeAlloc`: native statics and functions, other images' parts), each slot holding
   its target's address without provenance. Every allocation is exposed
   (`worldWith_exposed`), so integer addresses reach them. Relocated pool/data fields hold pointers with the target part's provenance.
@@ -180,7 +180,7 @@ R's memory under the JIT's layout: `AllocaAddr` carries its alloca's provenance.
    relocated pointer field becomes a `RefAddr` of its target (pool, data area, symbol),
    not the bare integer, unless rule 4 holds for it; a non-pointer field becomes a
    constant; a partly relocated read (a pointer's fragment) is not folded. The data area
-   (statics, PE fixups), the site slots and anything through `addr.sym` of a static are
+   (statics, PE fixups) and anything through `addr.sym` of a static are
    mutable: never folded.
 6. **What is UB, what is defined.** UB (may be assumed not to happen): an access outside a
    live allocation or through a dangling pointer (after `End`), a store into the constant

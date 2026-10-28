@@ -193,7 +193,7 @@ fn resolve(op: Opcode, vals: &[u128], img: &Linked) -> Vec<u128> {
         .map(|(o, &v)| match o.kind {
             OperandKind::Abs => match Abs::from_word(v as u32) {
                 Abs::Const(k) => im.consts().as_ptr() as u128 + k.0 as u128,
-                Abs::Data(d) => im.fixup_area() as u128 + d.0 as u128,
+                Abs::Data(d) => im.data_ptr() as u128 + d.0 as u128,
             },
             OperandKind::Sym => (unsafe { im.symbols_ptr().add(v as usize) }) as u128,
             _ => v,

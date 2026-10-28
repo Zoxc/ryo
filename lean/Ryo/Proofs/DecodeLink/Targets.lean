@@ -83,7 +83,6 @@ def opndMap {T U : Type} (f : T → U) : Opnd T → Opnd U
   | .const k => .const k
   | .data d => .data d
   | .sym s => .sym s
-  | .site s => .site s
   | .func x => .func x
   | .target t => .target (f t)
   | .neg n => .neg n

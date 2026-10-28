@@ -117,7 +117,7 @@ fn insn(op: Opcode, rng: &mut Rng, list_len: usize, f: &mut Fn, target: &mut dyn
                 let (a, b) = (rng.imm(), rng.imm());
                 w.extend([a as u32, (a >> 32) as u32, b as u32, (b >> 32) as u32]);
             }
-            OperandKind::Const | OperandKind::Sym | OperandKind::Site | OperandKind::Func => w.push(rng.below(1 << 20) as u32),
+            OperandKind::Const | OperandKind::Sym | OperandKind::Func => w.push(rng.below(1 << 20) as u32),
             OperandKind::Abs => w.push(rng.below(1 << 20) as u32 | if rng.below(2) == 0 { ABS_DATA } else { 0 }),
             OperandKind::Neg => w.push(rng.below(2) as u32),
             OperandKind::Handler => unreachable!("not in the full set"),
@@ -294,7 +294,6 @@ fn ref_text(r: Ref) -> String {
         Ref::Probe => "probe".to_owned(),
         Ref::Func(f) => format!("func {}", f.0),
         Ref::Sym(s) => format!("sym {}", s.0),
-        Ref::Site(s) => format!("site {}", s.0),
         Ref::Const(k) => format!("const {}", k.0),
         Ref::Data(d) => format!("data {}", d.0),
         Ref::Ro(o) => format!("ro {o}"),

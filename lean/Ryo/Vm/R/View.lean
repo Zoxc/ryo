@@ -14,11 +14,11 @@ from its argument registers, and `view`, an R instruction as a full opcode with 
   checks `encode_reduced` makes of a `handler` (`asm/reduced.rs`).
 
 **Addresses.** `Val.addr` is a pointer with provenance, which the argument doesn't carry: the
-argument names a constant, data offset, symbol slot, site cache slot or code constant, whose
+argument names a constant, data offset, symbol slot or code constant, whose
 address the image fixes. `view` and `unpack` take that placement as `ρ : Arg → Option
-ThinPointer` (only applied to `const`/`data`/`sym`/`site`/`ro` arguments): an image's
+ThinPointer` (only applied to `const`/`data`/`sym`/`ro` arguments): an image's
 allocations (the constant pool and statics as allocations, D7/D29) give it, and a test takes
-an injective symbolic one. A native instruction's `Const`/`Abs`/`Sym`/`Site` operands go
+an injective symbolic one. A native instruction's `Const`/`Abs`/`Sym` operands go
 through `ρ` too, as the argument of that address.
 
 **Operands `opSem` doesn't get** (targets, `neg`, a call's function, word lists: a call's
@@ -101,7 +101,6 @@ def unpackOpnd (ρ : Addrs) (args : List Arg) (k : OperandKind) (loc : Asm.Loc) 
   | .const => regAddr ρ args r fun | .const _ => true | _ => false
   | .abs => regAddr ρ args r fun | .const _ | .data _ => true | _ => false
   | .sym => regAddr ρ args r fun | .sym _ => true | _ => false
-  | .site => regAddr ρ args r fun | .site _ => true | _ => false
   | .list .target => return .targets (← regImm args r)
   | .list .case8 | .list .case16 | .list .case32 | .list .case64 | .list .case128 =>
     match args[r]?, regImm args (r + 1) with
@@ -135,7 +134,6 @@ def nativeVal (ρ : Addrs) : OperandKind → Opnd Nat → Option Val
   | .const, .const n | .abs, .const n => (ρ (.const n)).map .addr
   | .abs, .data d => (ρ (.data d)).map .addr
   | .sym, .sym s => (ρ (.sym s)).map .addr
-  | .site, .site s => (ρ (.site s)).map .addr
   | .func, .func _ | .target, .target _ | .neg, .neg _ => some .none
   | .list .target, .targets ts => some (.targets ts.length)
   | .list .word, .words _ => some .none

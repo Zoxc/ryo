@@ -229,7 +229,6 @@ pub const fn kind_regs(k: OperandKind) -> u8 {
         | OperandKind::Const
         | OperandKind::Abs
         | OperandKind::Sym
-        | OperandKind::Site
         | OperandKind::List(ElemKind::Target | ElemKind::Word) => 1,
         OperandKind::Mem
         | OperandKind::U128

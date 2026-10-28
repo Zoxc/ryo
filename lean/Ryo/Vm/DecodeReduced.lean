@@ -52,7 +52,7 @@ test vectors:
 { "mode": <bits: 1 fp_arg | 2 frame_pointer | 4 align_loops | 8 pe | 16 counters>,
   "code": "<hex>", "rodata": "<hex>",
   "relocs": [[<at>, "<ref>"], …],        -- sorted by `at`; <ref>: "handler <Name or number>",
-                                         -- "probe", "func <i>", "sym <i>", "site <i>",
+                                         -- "probe", "func <i>", "sym <i>",
                                          -- "const <off>", "data <off>", "ro <off>", "rec", "recloopctr"
   "call_sites": [[<start>, <len>, <pad or null>, <catches>], …],
   "dropped": [[<at>, <frame_offset>, <size>, <reg number>], …],   -- sorted by `at`
@@ -218,7 +218,6 @@ def addrArg : Ref → Option Arg
   | .const k => some (.const k)
   | .data d => some (.data d)
   | .sym s => some (.sym s)
-  | .site s => some (.site s)
   | .ro o => some (.ro o)
   | _ => none
 
@@ -1242,7 +1241,6 @@ def refOfString (s : String) : Except String Ref := do
   | ["probe"] => pure .probe
   | ["func", x] => .func <$> num x
   | ["sym", x] => .sym <$> num x
-  | ["site", x] => .site <$> num x
   | ["const", x] => .const <$> num x
   | ["data", x] => .data <$> num x
   | ["ro", x] => .ro <$> num x

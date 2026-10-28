@@ -14,7 +14,7 @@ use std::fmt::Write as _;
 
 use ryo_bytecode::Opcode;
 use ryo_bytecode::asm::{Mode, Ref, osr};
-use ryo_bytecode::full::{Const, Data, Func, Site, Sym};
+use ryo_bytecode::full::{Const, Data, Func, Sym};
 use ryo_bytecode::image::JIT_LOOP_CTR;
 
 // What `x86.rs` takes from its parent module.
@@ -94,7 +94,6 @@ fn addr_of(r: Ref) -> u64 {
         Ref::Probe => 0x1800_0000,
         Ref::Func(Func(f)) => 0x2000_0000 + 16 * f as u64,
         Ref::Sym(Sym(s)) => 0x2800_0000 + 8 * s as u64,
-        Ref::Site(Site(s)) => 0x3000_0000 + 8 * s as u64,
         Ref::Const(Const(k)) => 0x5000_0000 + k as u64,
         Ref::Data(Data(d)) => 0x5800_0000 + d as u64,
         Ref::Ro(o) => 0x6800_0000 + o as u64,
@@ -114,7 +113,6 @@ impl Resolver for Link {
             0x1800_0000 if off == 0 => Ref::Probe,
             0x2000_0000 => Ref::Func(Func(idx(16)?)),
             0x2800_0000 => Ref::Sym(Sym(idx(8)?)),
-            0x3000_0000 => Ref::Site(Site(idx(8)?)),
             0x5000_0000 => Ref::Const(Const(off as u32)),
             0x5800_0000 => Ref::Data(Data(off as u32)),
             0x6800_0000 => Ref::Ro(off as u32),
@@ -132,16 +130,15 @@ impl Resolver for Link {
 
 fn gen_ref(rng: &mut Rng) -> Ref {
     let small = |rng: &mut Rng| rng.below(1 << 12) as u32;
-    match rng.below(10) {
+    match rng.below(9) {
         0 => Ref::Handler(Opcode::from_u16(rng.below(Opcode::COUNT as u64) as u16).unwrap()),
         1 => Ref::Probe,
         2 => Ref::Func(Func(small(rng))),
         3 => Ref::Sym(Sym(small(rng))),
-        4 => Ref::Site(Site(small(rng))),
-        5 => Ref::Const(Const(small(rng))),
-        6 => Ref::Data(Data(small(rng))),
-        7 => Ref::Ro(small(rng)),
-        8 => Ref::Rec,
+        4 => Ref::Const(Const(small(rng))),
+        5 => Ref::Data(Data(small(rng))),
+        6 => Ref::Ro(small(rng)),
+        7 => Ref::Rec,
         _ => Ref::RecLoopCtr,
     }
 }
@@ -387,7 +384,6 @@ fn rf(r: Ref) -> String {
         Ref::Probe => "\"probe\"".into(),
         Ref::Func(Func(f)) => format!("{{\"func\":{{\"f\":{f}}}}}"),
         Ref::Sym(Sym(s)) => format!("{{\"sym\":{{\"s\":{s}}}}}"),
-        Ref::Site(Site(s)) => format!("{{\"site\":{{\"s\":{s}}}}}"),
         Ref::Const(Const(k)) => format!("{{\"const\":{{\"k\":{k}}}}}"),
         Ref::Data(Data(d)) => format!("{{\"data\":{{\"d\":{d}}}}}"),
         Ref::Ro(o) => format!("{{\"ro\":{{\"off\":{o}}}}}"),

@@ -47,7 +47,6 @@ def kindRegs : OperandKind → Nat
   | .const => 1
   | .abs => 1
   | .sym => 1
-  | .site => 1
   | .func => 0
   | .target => 0
   | .neg => 0

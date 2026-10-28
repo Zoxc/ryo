@@ -36,8 +36,6 @@ inductive Arg
   | data (d : Nat)
   /-- The address of a symbol slot. -/
   | sym (s : Nat)
-  /-- The address of a site cache slot. -/
-  | site (s : Nat)
   /-- The address of the code constant at this offset of the function's rodata. -/
   | ro (off : Nat)
 deriving DecidableEq, Repr, Inhabited
@@ -53,7 +51,6 @@ inductive Opnd (T : Type)
   | const (k : Nat)
   | data (d : Nat)
   | sym (s : Nat)
-  | site (s : Nat)
   | func (f : Nat)
   | target (t : T)
   | neg (b : Bool)
@@ -74,7 +71,6 @@ def mapTargets {T U ε : Type} (f : T → Except ε U) : Opnd T → Except ε (O
   | const k => pure (const k)
   | data d => pure (data d)
   | sym s => pure (sym s)
-  | site s => pure (site s)
   | func x => pure (func x)
   | target t => target <$> f t
   | neg n => pure (neg n)
@@ -204,8 +200,7 @@ def Arg.words : Arg → List Nat
   | .const k => [3, u32 k, 0]
   | .data d => [4, u32 d, 0]
   | .sym s => [5, u32 s, 0]
-  | .site s => [6, u32 s, 0]
-  | .ro o => [7, u32 o, 0]
+  | .ro o => [6, u32 o, 0]
 
 /-- An operand's words (`push_words`), its targets already relative. -/
 def opndToWords (k : OperandKind) : Opnd Nat → List Nat
@@ -215,7 +210,7 @@ def opndToWords (k : OperandKind) : Opnd Nat → List Nat
     | .u64 | .i64 => [v.toNat % 2 ^ 32, v.toNat / 2 ^ 32]
     | _ => [v.toNat % 2 ^ 32]
   | .imm128 v => (List.range 4).map fun j => v.toNat / 2 ^ (32 * j) % 2 ^ 32
-  | .const x | .sym x | .site x | .func x => [u32 x]
+  | .const x | .sym x | .func x => [u32 x]
   | .data d => [u32 d ||| 0x8000_0000]
   | .target t => [u32 t]
   | .neg n => [if n then 1 else 0]
@@ -286,7 +281,6 @@ def Arg.text : Arg → String
   | .const k => s!"k{k}"
   | .data d => s!"data{d}"
   | .sym s => s!"sym{s}"
-  | .site s => s!"site{s}"
   | .ro o => s!"ro{o}"
 
 def listText (xs : List String) : String := "[" ++ ", ".intercalate xs ++ "]"
@@ -304,7 +298,6 @@ def opndText (k : OperandKind) : Opnd Nat → String
   | .const x => s!"k{x}"
   | .data x => s!"data{x}"
   | .sym x => s!"sym{x}"
-  | .site x => s!"site{x}"
   | .func x => s!"fn{x}"
   | .target t => targetText t
   | .neg _ => ""

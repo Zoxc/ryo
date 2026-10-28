@@ -19,9 +19,8 @@
 //! | constants | the constant pool, aligned to its most aligned allocation |
 //! | constant relocations | `[u32]`, sorted: the pool offset of every relocated (pointer) field in the pool |
 //!
-//! **Writable**: the site cache (`site_count` pointer-sized zeroed slots), then the fixup
-//! area at `Header::fixup_area` (constant allocations patched at registration, PE only),
-//! then with [`Mode::counters`] one [`JitRecord`] per function at `Header::jit_records`.
+//! **Writable**: the fixup area at offset 0 (the [`Data`](crate::full::Data) allocations,
+//! constants patched at registration on PE), then with [`Mode::counters`] one [`JitRecord`] per function at `Header::jit_records`.
 //!
 //! The header's `data` field is a pointer to the writable section, filled by a relocation.
 //!
@@ -396,12 +395,10 @@ pub struct Header {
     pub lists: Span,
     /// `[CallSiteEntry]`.
     pub call_sites: Span,
-    /// Number of site cache slots at the start of the writable section.
-    pub site_count: u32,
-    /// Byte offset of the fixup area in the writable section (after the site cache).
-    pub fixup_area: u32,
     /// The [`Mode`] the code was encoded in ([`Mode::to_header_bits`]).
     pub mode: u32,
+    /// Zero: keeps the header free of implicit padding.
+    pub pad: u32,
     /// The [`JitRecord`]s: their byte offset in the writable section (64-aligned) and count
     /// (the function count with [`Mode::counters`], else 0).
     pub jit_records: Span,
@@ -637,8 +634,7 @@ impl<'a> Image<'a> {
         if header.func_flags.count != header.functions.count {
             return Err(ImageError::OutOfBounds("function flags"));
         }
-        let sites_end = header.site_count as u64 * 8;
-        if sites_end > header.fixup_area as u64 || header.fixup_area > header.data_size {
+        if header.pad != 0 {
             return Err(ImageError::BadData);
         }
         let r = header.jit_records;
@@ -701,11 +697,7 @@ impl<'a> Image<'a> {
             }
         }
         for (i, x) in self.fixups().iter().enumerate() {
-            if x.sym >= self.header.symbols.count
-                || x.offset % 8 != 0
-                || x.offset < self.header.fixup_area
-                || x.offset as u64 + 8 > self.header.data_size as u64
-            {
+            if x.sym >= self.header.symbols.count || x.offset % 8 != 0 || x.offset as u64 + 8 > self.header.data_size as u64 {
                 return Err(ImageError::BadFixup(i as u32));
             }
         }
@@ -860,8 +852,7 @@ impl<'a> Image<'a> {
         }
         let h = self.header;
         let pool = (self.consts().as_ptr() as u64, h.consts.count as u64);
-        let data_end = if h.jit_records.count != 0 { h.jit_records.off } else { h.data_size };
-        let data = (h.data.wrapping_add(h.fixup_area as u64), data_end.saturating_sub(h.fixup_area) as u64);
+        let data = (h.data, if h.jit_records.count != 0 { h.jit_records.off } else { h.data_size } as u64);
         let within = |r: (u64, u64), end: bool| v.checked_sub(r.0).filter(|&o| o < r.1 + end as u64).map(|o| o as u32);
         Some(if let Some(o) = within(pool, false) {
             PoolRead::Const(o)
@@ -876,24 +867,15 @@ impl<'a> Image<'a> {
         })
     }
 
-    /// The writable section (from the relocated header field; null before linking).
+    /// The writable section (from the relocated header field; null before linking). It starts
+    /// with the fixup area, the base of [`Data`](crate::full::Data) offsets.
     pub fn data_ptr(&self) -> *mut u8 {
         self.header.data as usize as *mut u8
-    }
-
-    /// The site cache: `site_count` pointer-sized slots at the start of the writable section.
-    pub fn site_cache(&self) -> *mut *const () {
-        self.data_ptr().cast()
     }
 
     /// The JIT records, one per function ([`Header::jit_records`]; empty without counters).
     pub fn jit_records(&self) -> *mut JitRecord {
         self.data_ptr().wrapping_add(self.header.jit_records.off as usize).cast()
-    }
-
-    /// The fixup area, base of [`Data`](crate::full::Data) offsets.
-    pub fn fixup_area(&self) -> *mut u8 {
-        self.data_ptr().wrapping_add(self.header.fixup_area as usize)
     }
 
     /// Applies the PE fixups.

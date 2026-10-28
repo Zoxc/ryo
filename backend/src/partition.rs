@@ -15,7 +15,7 @@ use rustc_middle::ty::{self, Instance, InstanceKind, Ty, TyCtxt, TypingEnv};
 use rustc_session::config::{CrateType, EntryFnType, OutputType};
 use rustc_span::Symbol;
 use ryo_bytecode::asm::{self, Ref};
-use ryo_bytecode::full::{Const, Data, Func, Site, Sym};
+use ryo_bytecode::full::{Const, Data, Func, Sym};
 use ryo_bytecode::image::{AllocFixup, AllocReloc, AllocTarget, FuncSymbol, FunctionDef, ImageObject, ImageWriter, SYM_INDIRECT, SymVisibility};
 
 use rustc_middle::dep_graph::{WorkProduct, WorkProductId};
@@ -1335,7 +1335,6 @@ fn build_image<'tcx>(
             r.to = match r.to {
                 Ref::Func(Func(i)) => Ref::Func(Func(v(i))),
                 Ref::Sym(Sym(i)) => Ref::Sym(Sym(v(i))),
-                Ref::Site(Site(i)) => Ref::Site(Site(v(i))),
                 Ref::Const(Const(i)) => Ref::Const(Const(v(i))),
                 Ref::Data(Data(i)) => Ref::Data(Data(v(i))),
                 Ref::Handler(_) | Ref::Probe | Ref::Ro(_) | Ref::Rec | Ref::RecLoopCtr | Ref::RegHandler(_) => r.to,

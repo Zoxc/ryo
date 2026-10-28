@@ -98,7 +98,6 @@ fn render(r: Ref) -> String {
         Ref::Probe => "probe".into(),
         Ref::Func(f) => format!("func {}", f.0),
         Ref::Sym(s) => format!("sym {}", s.0),
-        Ref::Site(s) => format!("site {}", s.0),
         Ref::Const(k) => format!("const {}", k.0),
         Ref::Data(d) => format!("data {}", d.0),
         Ref::Ro(o) => format!("ro {o}"),
@@ -333,15 +332,7 @@ impl<'d> Linked<'d> {
             h.mode,
             mode_str(h.mode)
         ));
-        out.push(format!(
-            "sizes ro {} data {} text {} sites {} fixup_area {} jit_records {}",
-            h.size,
-            h.data_size,
-            h.text_size,
-            h.site_count,
-            h.fixup_area,
-            span(h.jit_records)
-        ));
+        out.push(format!("sizes ro {} data {} text {} jit_records {}", h.size, h.data_size, h.text_size, span(h.jit_records)));
         out.push(format!(
             "parts functions {} code_consts {} fixups {} sym_flags {} func_flags {} symbols {} consts {} lists {} call_sites {} const_relocs {}",
             span(h.functions),

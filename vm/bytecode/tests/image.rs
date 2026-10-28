@@ -165,8 +165,6 @@ fn sample() -> ImageWriter {
     let imp = w.symbol("some_dll_static", SYM_INDIRECT);
     let island = w.symbol("_ZN6ryo_rt6island5call_c1", 0);
     let _other = w.symbol("_ZN4test3fooE", 0);
-    let _site = w.site();
-    let _site2 = w.site();
 
     let s1 = w.add_const(b"hello\0", 1, &[]);
     let vt = w.add_const(
@@ -260,8 +258,6 @@ fn image_round_trip() {
     assert_eq!(img.data_ptr() as u64, l.data.addr());
     assert_eq!(img.text_ptr() as u64, l.text.addr());
     assert_eq!(h.text_size as usize, obj.text.len());
-    assert_eq!(h.site_count, 2);
-    assert_eq!(h.fixup_area, 16);
 
     // Functions: machine code, each aligned to 16, in order.
     let fs = img.functions();
@@ -330,16 +326,13 @@ fn image_round_trip() {
     // The island operand arrays are code constants.
     assert!(!img.code_consts().is_empty());
 
-    // Writable section: zeroed site cache, fixup area with an intra-image pointer, and the
-    // PE fixup applied at registration.
+    // Writable section: the fixup area with an intra-image pointer, and the PE fixup applied
+    // at registration.
     let data = &l.data;
-    assert_eq!(data.read_u64(0), 0);
-    assert_eq!(data.read_u64(8), 0);
-    assert_eq!(data.read_u64(24), k.as_ptr() as u64 + vt_off as u64);
-    assert_eq!(data.read_u64(16), 0x0707070707070707);
+    assert_eq!(data.read_u64(8), k.as_ptr() as u64 + vt_off as u64);
+    assert_eq!(data.read_u64(0), 0x0707070707070707);
     unsafe { img.apply_fixups() };
-    assert_eq!(data.read_u64(16), &*real_static as *const u64 as u64 + 4);
-    assert_eq!(img.fixup_area() as u64, data.addr() + 16);
+    assert_eq!(data.read_u64(0), &*real_static as *const u64 as u64 + 4);
 }
 
 #[test]
@@ -667,11 +660,10 @@ fn validate_rejects_bad_tables() {
     let fe = |h: &Header, i: usize, field: usize| h.functions.off as usize + i * size_of::<FuncEntry>() + field;
     // Code past the end.
     assert_eq!(validate_edited(&obj, |r, h| put32(r, fe(h, 2, offset_of!(FuncEntry, code_len)), 1000)), Err(ImageError::BadFunction(2)));
-    // Fixups: unaligned, out of range, inside the site cache, bad symbol.
+    // Fixups: unaligned, out of range, bad symbol.
     let fx = |h: &Header| h.fixups.off as usize;
     assert_eq!(validate_edited(&obj, |r, h| put32(r, fx(h), 17)), Err(ImageError::BadFixup(0)));
     assert_eq!(validate_edited(&obj, |r, h| put32(r, fx(h), 4096)), Err(ImageError::BadFixup(0)));
-    assert_eq!(validate_edited(&obj, |r, h| put32(r, fx(h), 8)), Err(ImageError::BadFixup(0)));
     assert_eq!(validate_edited(&obj, |r, h| put32(r, fx(h) + 4, 5)), Err(ImageError::BadFixup(0)));
     // Unknown symbol flag bits.
     assert_eq!(validate_edited(&obj, |r, h| r[h.sym_flags.off as usize + 2] = 0x80), Err(ImageError::BadSymbolFlags(2)));
@@ -727,15 +719,10 @@ fn writer_rejects_bad_alloc_relocs() {
     let s = w.symbol("x", SYM_INDIRECT);
     w.add_const(&[0; 8], 8, &[AllocReloc { offset: 0, target: AllocTarget::Symbol(s), addend: 0 }]);
     assert_eq!(w.finish(ELF).unwrap_err(), WriteError::AllocReloc);
-    // The fixup area is 8-aligned even after an odd number of sites and 1-aligned data.
+    // The writable section is 8-aligned even with 1-aligned data.
     let mut w = ImageWriter::new(1);
-    w.site();
-    w.site();
-    w.site();
     let d = w.add_data(&[1], 1, &[], &[]);
     let obj = w.finish(ELF).unwrap();
-    let b = Buf::new(&obj.rodata, 8);
-    assert_eq!(Image::parse(b.bytes()).unwrap().header().fixup_area, 24);
     assert_eq!(d, Data(0));
     assert_eq!(obj.data_align, 8);
 }
@@ -1081,7 +1068,7 @@ fn jit_records() {
         assert_eq!(h.mode & MODE_COUNTERS, MODE_COUNTERS);
         assert_eq!((h.jit_records.count, h.jit_records.off % 64), (3, 0));
         // Past the fixup area, even its one-past-the-end address.
-        assert!(h.jit_records.off > h.fixup_area + 16);
+        assert!(h.jit_records.off > 16);
         let t = l.text.bytes();
         for (i, f) in obj.functions.iter().enumerate() {
             let rec = img.jit_records().wrapping_add(i) as u64;

@@ -2,7 +2,7 @@
 Ryo.Vm.OpSem.Basic — the state, operands and results of `opSem` (reduced.md Part D, §C0.3).
 
 - `Val`: an operand's value as the handler receives it (after `unpack`): a frame offset, a
-  memory operand `[p + k]`, an immediate, an address (`Const`/`Abs`/`Sym`/`Site`, with
+  memory operand `[p + k]`, an immediate, an address (`Const`/`Abs`/`Sym`, with
   provenance), a jump table's length or a case table's address and count.
 - `State`: the frame's **private bytes** by `fp` offset, the frame objects that escaped (each
   an allocation of `mem`), the frame's zero-sized objects with their addresses, L0's memory
@@ -38,7 +38,7 @@ inductive Val where
   | mem (p k : Int)
   /-- `U8`…`U64`, `I64` (its 64-bit pattern), `U128`. -/
   | imm (v : Nat)
-  /-- `Const`, `Abs`, `Sym`, `Site`: the address the handler gets, with its provenance. -/
+  /-- `Const`, `Abs`, `Sym`: the address the handler gets, with its provenance. -/
   | addr (p : ThinPointer)
   /-- A `Targets` list (`switch.dense`'s table): its length, what the handler gets. -/
   | targets (n : Nat)
@@ -60,7 +60,7 @@ def Val.fits : OperandKind → Val → Bool
   | .u32, .imm v => v < 2 ^ 32
   | .u64, .imm v | .i64, .imm v => v < 2 ^ 64
   | .u128, .imm v => v < 2 ^ 128
-  | .const, .addr _ | .abs, .addr _ | .sym, .addr _ | .site, .addr _ => true
+  | .const, .addr _ | .abs, .addr _ | .sym, .addr _ => true
   | .list .target, .targets _ => true
   | .list .case8, .cases .. | .list .case16, .cases .. | .list .case32, .cases ..
   | .list .case64, .cases .. | .list .case128, .cases .. => true
