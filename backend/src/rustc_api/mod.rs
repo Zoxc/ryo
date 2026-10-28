@@ -118,6 +118,18 @@ impl CodegenBackend for RyoBackend {
         // `-Cincremental` is allowed: the partition query is `eval_always`, so the image is
         // rebuilt every session, and the native CGU is hashed as our partition returns it
         // (`codegen_unit`); `symbol_name` reads only tracked queries.
+        let z = &sess.opts.unstable_opts;
+        // `-Zno-link` saves the modules in an `.rlink` and `-Zlink-only` links them without
+        // `codegen_crate`, so without the registry object and the roots' removal; and the
+        // staticlib renaming rewrites the Rust objects but not the upstream images, which
+        // refer to them by the old names (design/backend.md#unsupported-options).
+        for (set, flag) in
+            [(z.no_link, "-Zno-link"), (z.link_only, "-Zlink-only"), (z.staticlib_rename_internal_symbols, "-Zstaticlib-rename-internal-symbols")]
+        {
+            if set {
+                sess.dcx().fatal(format!("the ryo backend doesn't support `{flag}`"));
+            }
+        }
         self.llvm.init(sess)
     }
 
@@ -211,15 +223,27 @@ impl CodegenBackend for RyoBackend {
         let write_t = tcx.prof.generic_activity("ryo_write_image");
         let mut images = Vec::with_capacity(results.images.len());
         for img in &results.images {
+            // Side data alone is only for the incremental cache.
+            if !img.has_object() && tcx.sess.opts.incremental.is_none() {
+                continue;
+            }
             let image_name = format!("{}.ryo_image", img.cgu_name);
             let image_path = tcx.output_filenames(()).temp_path_for_cgu(OutputType::Object, &image_name);
             let save = match &img.image {
                 partition::ImageSrc::Fresh { image, side } => {
-                    let cgu_hash = ryo_bytecode::image::cgu_hash(img.cgu_name.as_str().as_bytes());
-                    let bytes = objfile::write_image(&*fmt, image, scid, cgu_hash, img.main_symbol.as_deref(), &rt_symbol)
-                        .unwrap_or_else(|e| tcx.dcx().fatal(e));
                     let side_path = image_path.with_extension("ryo");
-                    for (p, b) in [(&image_path, &bytes), (&side_path, side)] {
+                    let mut files = vec![(&side_path, side.clone())];
+                    if let Some(image) = image {
+                        let cgu_hash = ryo_bytecode::image::cgu_hash(img.cgu_name.as_str().as_bytes());
+                        let bytes = objfile::write_image(&*fmt, image, scid, cgu_hash, img.main_symbol.as_deref(), &rt_symbol)
+                            .unwrap_or_else(|e| tcx.dcx().fatal(e));
+                        files.push((&image_path, bytes));
+                    }
+                    for (p, b) in files {
+                        // A file left by `-Csave-temps` may still be a hard link into the
+                        // incremental cache (a reused image's); writing through it would change
+                        // the cached copy.
+                        let _ = std::fs::remove_file(p);
                         if let Err(e) = std::fs::write(p, b) {
                             tcx.dcx().fatal(format!("writing {}: {e}", p.display()));
                         }
@@ -230,20 +254,23 @@ impl CodegenBackend for RyoBackend {
                 // (`execute_copy_from_cache_work_item`).
                 partition::ImageSrc::Reused(wp) => {
                     let incr = tcx.incr_comp_session.expect("a reused image without an incremental session");
-                    let from = rustc_incremental::in_incr_comp_dir_sess(incr, &wp.saved_files["o"]);
-                    let _ = std::fs::remove_file(&image_path);
-                    if std::fs::hard_link(&from, &image_path).is_err()
-                        && let Err(e) = std::fs::copy(&from, &image_path)
-                    {
-                        tcx.dcx().fatal(format!("copying {} from the incremental cache: {e}", from.display()));
+                    let from = wp.saved_files.get("o").map(|f| rustc_incremental::in_incr_comp_dir_sess(incr, f));
+                    if let Some(from) = &from {
+                        let _ = std::fs::remove_file(&image_path);
+                        if std::fs::hard_link(from, &image_path).is_err()
+                            && let Err(e) = std::fs::copy(from, &image_path)
+                        {
+                            tcx.dcx().fatal(format!("copying {} from the incremental cache: {e}", from.display()));
+                        }
                     }
                     ImageSave::Reused(wp.clone(), from)
                 }
             };
-            images.push(OngoingImage { cgu: img.cgu_name.to_string(), name: image_name, path: image_path, save });
+            let path = img.has_object().then_some(image_path);
+            images.push(OngoingImage { cgu: img.cgu_name.to_string(), name: image_name, path, save });
         }
         drop(write_t);
-        let modules = images.iter().map(|i| i.name.clone()).collect();
+        let modules = images.iter().filter(|i| i.path.is_some()).map(|i| i.name.clone()).collect();
         let _ = self.link_info.set(link::LinkInfo { images: modules, linked_roots: linked_roots(), macho });
         dump_lean::dump(tcx, &self.switches, results);
         // The native CGUs (step 4), compiled by cg_llvm as usual.
@@ -267,18 +294,14 @@ impl CodegenBackend for RyoBackend {
         // only its own modules', inside cg_llvm's join), or the previous session's kept, before
         // rustc writes the index (design/backend.md#incremental).
         for img in ongoing.images {
-            let mut m = object_module(img.name, img.path.clone());
+            let mut m = img.path.clone().map(|p| object_module(img.name, p));
             let wp_name = partition::image_work_product_name(rustc_span::Symbol::intern(&img.cgu));
             match img.save {
                 ImageSave::Fresh(side) => {
                     if let Some(incr) = incr_comp_session {
-                        let (id, wp) = rustc_incremental::copy_cgu_workproduct_to_incr_comp_cache_dir(
-                            sess,
-                            incr,
-                            &wp_name,
-                            &[("o", &img.path), ("ryo", &side)],
-                            &[],
-                        );
+                        let mut files = vec![("ryo", side.as_path())];
+                        files.extend(img.path.as_deref().map(|p| ("o", p)));
+                        let (id, wp) = rustc_incremental::copy_cgu_workproduct_to_incr_comp_cache_dir(sess, incr, &wp_name, &files, &[]);
                         work_products.insert(id, wp);
                     }
                     if !sess.opts.cg.save_temps {
@@ -286,11 +309,13 @@ impl CodegenBackend for RyoBackend {
                     }
                 }
                 ImageSave::Reused(wp, from) => {
-                    m.links_from_incr_cache.push(from);
+                    if let (Some(m), Some(from)) = (&mut m, from) {
+                        m.links_from_incr_cache.push(from);
+                    }
                     work_products.insert(rustc_middle::dep_graph::WorkProductId::from_cgu_name(&wp_name), wp);
                 }
             }
-            modules.modules.push(m);
+            modules.modules.extend(m);
         }
         (modules, work_products)
     }
@@ -359,12 +384,12 @@ struct RyoOngoingCodegen {
     images: Vec<OngoingImage>,
 }
 
-/// An image object of `codegen_crate`: its CGU, module name and path, and how its work product
-/// is saved.
+/// An image object of `codegen_crate`: its CGU, module name and path (none for a CGU without
+/// VM functions, which has only side data), and how its work product is saved.
 struct OngoingImage {
     cgu: String,
     name: String,
-    path: PathBuf,
+    path: Option<PathBuf>,
     save: ImageSave,
 }
 
@@ -372,5 +397,5 @@ enum ImageSave {
     /// Written this session, with its side data at this path.
     Fresh(PathBuf),
     /// The previous session's work product, and the cached object it was copied from.
-    Reused(rustc_middle::dep_graph::WorkProduct, PathBuf),
+    Reused(rustc_middle::dep_graph::WorkProduct, Option<PathBuf>),
 }

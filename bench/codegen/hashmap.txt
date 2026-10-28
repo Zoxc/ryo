@@ -528,8 +528,7 @@ L2:
     call $-8, fn0, 8, [4294967248, 8, 4294967208, 264, 4294967216, 520, 4294967224, 776]
     jmp L0
 L3:
-    imm.w64 $-56, 8
-    jmp L1
+    unreachable
 L4:
     mov.w64 $-80, $-32
     mov.w64 $-64, $-80
@@ -539,8 +538,7 @@ L4:
 L5:
     jmp L1
 L6:
-    mov.w64 $-56, $-64
-    jmp L5
+    unreachable
 L7:
     imm.w64 $-112, 18446744073709551615
     ptr.index $-56, $-64, $-112, 16
@@ -1094,8 +1092,7 @@ L7:
     call $0, fn5, 0, [4294967184, 8, 4294967168, 264, 4294967136, 520]
     jmp L6
 L8:
-    imm.w64 $-128, 18446744073709551615
-    jmp L7
+    unreachable
 L9:
     mov.w64 $-136, $-24
     mov.w64 $-128, $-136
@@ -1880,8 +1877,7 @@ L6:
     mov.w64 $-8, $-80
     jmp L2
 L7:
-    imm.w64 $-120, 8
-    jmp L6
+    unreachable
 L8:
     mov.w64 $-128, $-136
     imm.w8 $-137, 0
@@ -1890,8 +1886,7 @@ L8:
 L9:
     jmp L6
 L10:
-    mov.w64 $-120, $-128
-    jmp L9
+    unreachable
 L11:
     imm.w64 $-144, 18446744073709551615
     ptr.index $-120, $-128, $-144, 16
@@ -1925,11 +1920,9 @@ L0:
     store.copy [$-72 + 0], $-40, 40
     ret $-72, 8
 L1:
-    imm.w64 $-184, 1
-    jmp L3
+    unreachable
 L2:
     mov.w64 $-184, $-176
-L3:
     mov.w64 $-136, $-184
     mov.w64 $-120, $-136
     ; end $-136, 8 bytes
@@ -1938,11 +1931,11 @@ L3:
     mov.w64 $-160, $-168
     load.w64 $-192, [$-48 + 8]
     add.imm.w64 $-168, $-192, 1
-L4:
+L3:
     ; escape align 8 $-152, 32 bytes
     call $0, fn0, 0, [4294967144, 72, 4294967136, 264, 4294967176, 520, 4294967128, 776]
     jmp L0
-  cleanup L4 -> continue
+  cleanup L3 -> continue
   fn0 = hashbrown::raw::RawIterRange::<(u64, u64)>::new
 
 fn hashbrown::map::HashMap::<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::retain::<{closure@bench/hashmap.rs:27:16: 27:22}> (frame 224, args 0, ret 0)
@@ -1954,14 +1947,14 @@ fn hashbrown::map::HashMap::<u64, u64, std::hash::BuildHasherDefault<std::hash::
     jmp L10
 L0:
     mov.w64 $-160, $-112
-    br.eq.imm.w64 $-160, 0, L14
-    jmp L15
+    br.eq.imm.w64 $-160, 0, L13
+    jmp L14
     unreachable
 L1:
     mov.w64 $-160, $-152
     imm.w8 $-209, 0
-    br! $-209, L20
-    jmp L19
+    br! $-209, L19
+    jmp L18
 L2:
     ; end $-144, 40 bytes
     jmp L7
@@ -1994,11 +1987,9 @@ L9:
     mov.w64 $-112, $-16
     jmp L0
 L10:
-    imm.w64 $-176, 1
-    jmp L12
+    unreachable
 L11:
     mov.w64 $-176, $-168
-L12:
     mov.w64 $-128, $-176
     mov.w64 $-112, $-128
     ; end $-128, 8 bytes
@@ -2007,57 +1998,55 @@ L12:
     mov.w64 $-152, $-160
     load.w64 $-184, [$-8 + 8]
     add.imm.w64 $-160, $-184, 1
-L13:
+L12:
     ; escape align 8 $-144, 32 bytes
     call $0, fn1, 0, [4294967152, 72, 4294967144, 264, 4294967184, 520, 4294967136, 776]
     jmp L9
-L14:
+L13:
     imm.w64 $-152, 0
     jmp L2
-L15:
+L14:
     ; escape align 8 $-144, 40 bytes
     addr $-160, $-144
-L16:
+L15:
     call $-152, fn2, 8, [4294967136, 8]
     sub.imm.w64 $-112, $-112, 1
     br.eq.imm.w64 $-152, 0, L2
     jmp L1
-L17:
+L16:
     mov.w64 $-184, $-168
     mov.w64 $-168, $-184
     ptr.add $-176, $-184, 8
     addr $-192, $-8
     mov.w64 $-208, $-168
     mov.w64 $-200, $-176
-L18:
+L17:
     call $-177, fn3, 1, [4294967104, 8, 4294967088, 264, 4294967096, 520]
     jmp L3
+L18:
+    unreachable
 L19:
-    imm.w64 $-168, 8
-    jmp L17
-L20:
     mov.w64 $-192, $-160
     mov.w64 $-176, $-192
     imm.w8 $-209, 0
-    br! $-209, L23
-    jmp L22
-L21:
-    jmp L17
-L22:
-    mov.w64 $-168, $-176
+    br! $-209, L22
     jmp L21
-L23:
+L20:
+    jmp L16
+L21:
+    unreachable
+L22:
     imm.w64 $-216, 18446744073709551615
     ptr.index $-168, $-176, $-216, 16
-    jmp L21
-L24:
+    jmp L20
+L23:
     lpad $-104
     jmp L8
-  cleanup L5 -> L24
+  cleanup L5 -> L23
   cleanup L8 -> continue
-  cleanup L13 -> L24
-  cleanup L16 -> L24
-  cleanup L18 -> L24
+  cleanup L12 -> L23
+  cleanup L15 -> L23
+  cleanup L17 -> L23
   fn0 = hashbrown::raw::RawTable::<(u64, u64)>::erase
   fn1 = hashbrown::raw::RawIterRange::<(u64, u64)>::new
   fn2 = hashbrown::raw::RawIterRange::<(u64, u64)>::next_impl::<false>
@@ -2211,11 +2200,9 @@ L0:
     br.eq.imm.w16 $-162, 0, L6
     jmp L5
 L1:
-    load.w64 $-144, [$-16 + 8]
-    load.w64 $-152, [$-16 + 16]
-    br.lt.u.w64 $-144, $-152, L2
-    imm.w64 $-8, 0
-    jmp L4
+    unreachable
+    unreachable
+    unreachable
 L2:
     load.w64 $-48, [$-16 + 8]
     mov.w64 $-144, $-48
@@ -2255,12 +2242,7 @@ L7:
     mov.w64 $-152, $-136
     imm.w8 $-201, 0
     br! $-201, L8
-    load.w64 $-200, [$-16 + 0]
-    mov.w64 $-192, $-200
-    mov.w64 $-184, $-192
-    add.w64 $-176, $-184, $-152
-    mov.w64 $-168, $-176
-    jmp L9
+    unreachable
 L8:
     load.w64 $-184, [$-16 + 0]
     mov.w64 $-176, $-184
@@ -2275,8 +2257,7 @@ L9:
 L10:
     jmp L9
 L11:
-    mov.w64 $-168, $-176
-    jmp L10
+    unreachable
 L12:
     mov.w64 $-192, $-152
     imm.w64 $-208, 0
@@ -2296,12 +2277,7 @@ L14:
     store.w16 [$-16 + 24], $-130
     imm.w8 $-201, 0
     br! $-201, L15
-    load.w64 $-176, [$-16 + 0]
-    mov.w64 $-168, $-176
-    mov.w64 $-160, $-168
-    add.imm.w64 $-152, $-160, 16
-    mov.w64 $-144, $-152
-    jmp L16
+    unreachable
 L15:
     load.w64 $-160, [$-16 + 0]
     mov.w64 $-152, $-160
@@ -2320,8 +2296,7 @@ L16:
 L17:
     jmp L16
 L18:
-    mov.w64 $-144, $-152
-    jmp L17
+    unreachable
 L19:
     imm.w64 $-208, 18446744073709551600
     ptr.index $-144, $-152, $-208, 32
@@ -2401,12 +2376,7 @@ L12:
     mov.w64 $-208, $-192
     imm.w8 $-265, 0
     br! $-265, L13
-    mov.w64 $-256, $-40
-    mov.w64 $-248, $-256
-    mov.w64 $-240, $-248
-    add.w64 $-232, $-240, $-208
-    mov.w64 $-224, $-232
-    jmp L14
+    unreachable
 L13:
     mov.w64 $-240, $-40
     mov.w64 $-232, $-240
@@ -2428,8 +2398,7 @@ L15:
 L16:
     jmp L14
 L17:
-    mov.w64 $-224, $-232
-    jmp L16
+    unreachable
 L18:
     mov.w64 $-248, $-208
     imm.w64 $-272, 0
@@ -2449,12 +2418,7 @@ L20:
     mov.w16 $-16, $-186
     imm.w8 $-265, 0
     br! $-265, L21
-    mov.w64 $-232, $-40
-    mov.w64 $-224, $-232
-    mov.w64 $-216, $-224
-    add.imm.w64 $-208, $-216, 16
-    mov.w64 $-200, $-208
-    jmp L22
+    unreachable
 L21:
     mov.w64 $-216, $-40
     mov.w64 $-208, $-216
@@ -2473,8 +2437,7 @@ L22:
 L23:
     jmp L22
 L24:
-    mov.w64 $-200, $-208
-    jmp L23
+    unreachable
 L25:
     imm.w64 $-272, 18446744073709551600
     ptr.index $-200, $-208, $-272, 16
@@ -2533,11 +2496,9 @@ L0:
     br.eq.imm.w16 $-162, 0, L6
     jmp L5
 L1:
-    load.w64 $-144, [$-16 + 8]
-    load.w64 $-152, [$-16 + 16]
-    br.lt.u.w64 $-144, $-152, L2
-    imm.w64 $-8, 0
-    jmp L4
+    unreachable
+    unreachable
+    unreachable
 L2:
     load.w64 $-48, [$-16 + 8]
     mov.w64 $-144, $-48
@@ -2577,12 +2538,7 @@ L7:
     mov.w64 $-152, $-136
     imm.w8 $-201, 0
     br! $-201, L8
-    load.w64 $-200, [$-16 + 0]
-    mov.w64 $-192, $-200
-    mov.w64 $-184, $-192
-    add.w64 $-176, $-184, $-152
-    mov.w64 $-168, $-176
-    jmp L9
+    unreachable
 L8:
     load.w64 $-184, [$-16 + 0]
     mov.w64 $-176, $-184
@@ -2597,8 +2553,7 @@ L9:
 L10:
     jmp L9
 L11:
-    mov.w64 $-168, $-176
-    jmp L10
+    unreachable
 L12:
     mov.w64 $-192, $-152
     imm.w64 $-208, 0
@@ -2618,12 +2573,7 @@ L14:
     store.w16 [$-16 + 24], $-130
     imm.w8 $-201, 0
     br! $-201, L15
-    load.w64 $-176, [$-16 + 0]
-    mov.w64 $-168, $-176
-    mov.w64 $-160, $-168
-    add.imm.w64 $-152, $-160, 16
-    mov.w64 $-144, $-152
-    jmp L16
+    unreachable
 L15:
     load.w64 $-160, [$-16 + 0]
     mov.w64 $-152, $-160
@@ -2642,8 +2592,7 @@ L16:
 L17:
     jmp L16
 L18:
-    mov.w64 $-144, $-152
-    jmp L17
+    unreachable
 L19:
     imm.w64 $-208, 18446744073709551600
     ptr.index $-144, $-152, $-208, 16
@@ -2689,10 +2638,7 @@ L3:
 L4:
     resume $-80
 L5:
-    add.imm.w64 $-144, $-104, 1
-    mov.w64 $-136, $-144
-    ; end $-144, 8 bytes
-    jmp L7
+    unreachable
 L6:
     mov.w64 $-144, $-128
     imm.w8 $-161, 0
@@ -2709,8 +2655,7 @@ L8:
     ; end $-144, 8 bytes
     jmp L7
 L9:
-    mov.w64 $-136, $-144
-    jmp L8
+    unreachable
 L10:
     mov.w64 $-160, $-104
     imm.w64 $-168, 0
@@ -2738,9 +2683,7 @@ fn hashbrown::raw::RawTable::<(std::string::String, usize)>::find::<{closure@has
 L0:
     ret $-1, 1
 L1:
-    add.imm.w64 $-136, $-24, 1
-    mov.w64 $-128, $-136
-    jmp L3
+    unreachable
 L2:
     mov.w64 $-136, $-120
     imm.w8 $-153, 0
@@ -2754,8 +2697,7 @@ L3:
 L4:
     jmp L3
 L5:
-    mov.w64 $-128, $-136
-    jmp L4
+    unreachable
 L6:
     mov.w64 $-152, $-24
     imm.w64 $-160, 0
@@ -2769,8 +2711,7 @@ L8:
     call $-1, fn0, 1, [4294967256, 8, 4294967200, 264]
     jmp L0
 L9:
-    imm.w64 $-112, 8
-    jmp L7
+    unreachable
 L10:
     mov.w64 $-120, $-88
     imm.w8 $-153, 0
@@ -2779,8 +2720,7 @@ L10:
 L11:
     jmp L7
 L12:
-    mov.w64 $-112, $-120
-    jmp L11
+    unreachable
 L13:
     imm.w64 $-160, 18446744073709551615
     ptr.index $-112, $-120, $-160, 32
@@ -2833,9 +2773,7 @@ L4:
     mov.w64 $-152, $-160
     imm.w8 $-201, 0
     br! $-201, L5
-    add.imm.w64 $-176, $-88, 1
-    mov.w64 $-168, $-176
-    jmp L6
+    unreachable
 L5:
     mov.w64 $-176, $-160
     imm.w8 $-201, 0
@@ -2860,8 +2798,7 @@ L6:
 L7:
     jmp L6
 L8:
-    mov.w64 $-168, $-176
-    jmp L7
+    unreachable
 L9:
     mov.w64 $-192, $-88
     imm.w64 $-208, 0
@@ -2878,8 +2815,7 @@ L10:
     store.w64 [$-16 + 24], $-224
     ret $-8, 8
 L11:
-    imm.w64 $-184, 8
-    jmp L10
+    unreachable
 L12:
     mov.w64 $-192, $-128
     imm.w8 $-201, 0
@@ -2888,8 +2824,7 @@ L12:
 L13:
     jmp L10
 L14:
-    mov.w64 $-184, $-192
-    jmp L13
+    unreachable
 L15:
     imm.w64 $-208, 18446744073709551615
     ptr.index $-184, $-192, $-208, 32
@@ -2967,7 +2902,7 @@ fn hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve_rehash::<{c
     mov.w64 $-112, $-120
     jmp L1
 L0:
-    imm.w64 $-112, 0
+    unreachable
 L1:
     const $-136, k2, 16
     mov.w64 $-176, $-136
@@ -3002,9 +2937,7 @@ fn hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve_rehash::<{c
 L0:
     ret $-8, 8
 L1:
-    add.imm.w64 $-136, $-32, 1
-    mov.w64 $-128, $-136
-    jmp L3
+    unreachable
 L2:
     mov.w64 $-136, $-120
     imm.w8 $-153, 0
@@ -3018,8 +2951,7 @@ L3:
 L4:
     jmp L3
 L5:
-    mov.w64 $-128, $-136
-    jmp L4
+    unreachable
 L6:
     mov.w64 $-152, $-32
     imm.w64 $-160, 0
@@ -3033,8 +2965,7 @@ L8:
     call $-8, fn0, 8, [4294967248, 8, 4294967200, 264]
     jmp L0
 L9:
-    imm.w64 $-112, 8
-    jmp L7
+    unreachable
 L10:
     mov.w64 $-120, $-88
     imm.w8 $-153, 0
@@ -3043,8 +2974,7 @@ L10:
 L11:
     jmp L7
 L12:
-    mov.w64 $-112, $-120
-    jmp L11
+    unreachable
 L13:
     imm.w64 $-160, 18446744073709551615
     ptr.index $-112, $-120, $-160, 32
@@ -3079,8 +3009,7 @@ L2:
     call.sym $0, sym1, 0, [4294967256, 8]
     jmp L8
 L3:
-    imm.w64 $-32, 8
-    jmp L1
+    unreachable
 L4:
     mov.w64 $-48, $-16
     mov.w64 $-40, $-48
@@ -3090,8 +3019,7 @@ L4:
 L5:
     jmp L1
 L6:
-    mov.w64 $-32, $-40
-    jmp L5
+    unreachable
 L7:
     imm.w64 $-56, 18446744073709551615
     ptr.index $-32, $-40, $-56, 16
@@ -3119,11 +3047,7 @@ L2:
     call $0, fn0, 0, [4294967264, 8, 4294967272, 264]
     jmp L0
 L3:
-    load.w64 $-64, [$-16 + 0]
-    mov.w64 $-56, $-64
-    mov.w64 $-48, $-56
-    sub.imm.w64 $-24, $-48, 1
-    jmp L1
+    unreachable
 L4:
     mov.w64 $-48, $-40
     load.w64 $-64, [$-16 + 0]
@@ -3191,10 +3115,7 @@ L3:
 L4:
     resume $-80
 L5:
-    add.imm.w64 $-144, $-104, 1
-    mov.w64 $-136, $-144
-    ; end $-144, 8 bytes
-    jmp L7
+    unreachable
 L6:
     mov.w64 $-144, $-128
     imm.w8 $-161, 0
@@ -3211,8 +3132,7 @@ L8:
     ; end $-144, 8 bytes
     jmp L7
 L9:
-    mov.w64 $-136, $-144
-    jmp L8
+    unreachable
 L10:
     mov.w64 $-160, $-104
     imm.w64 $-168, 0
@@ -3240,9 +3160,7 @@ fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::map::equiv
 L0:
     ret $-1, 1
 L1:
-    add.imm.w64 $-136, $-24, 1
-    mov.w64 $-128, $-136
-    jmp L3
+    unreachable
 L2:
     mov.w64 $-136, $-120
     imm.w8 $-153, 0
@@ -3256,8 +3174,7 @@ L3:
 L4:
     jmp L3
 L5:
-    mov.w64 $-128, $-136
-    jmp L4
+    unreachable
 L6:
     mov.w64 $-152, $-24
     imm.w64 $-160, 0
@@ -3271,8 +3188,7 @@ L8:
     call $-1, fn0, 1, [4294967256, 8, 4294967200, 264]
     jmp L0
 L9:
-    imm.w64 $-112, 8
-    jmp L7
+    unreachable
 L10:
     mov.w64 $-120, $-88
     imm.w8 $-153, 0
@@ -3281,8 +3197,7 @@ L10:
 L11:
     jmp L7
 L12:
-    mov.w64 $-112, $-120
-    jmp L11
+    unreachable
 L13:
     imm.w64 $-160, 18446744073709551615
     ptr.index $-112, $-120, $-160, 16
@@ -3325,10 +3240,7 @@ L3:
 L4:
     resume $-80
 L5:
-    add.imm.w64 $-144, $-104, 1
-    mov.w64 $-136, $-144
-    ; end $-144, 8 bytes
-    jmp L7
+    unreachable
 L6:
     mov.w64 $-144, $-128
     imm.w8 $-161, 0
@@ -3345,8 +3257,7 @@ L8:
     ; end $-144, 8 bytes
     jmp L7
 L9:
-    mov.w64 $-136, $-144
-    jmp L8
+    unreachable
 L10:
     mov.w64 $-160, $-104
     imm.w64 $-168, 0
@@ -3374,9 +3285,7 @@ fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::rustc_entr
 L0:
     ret $-1, 1
 L1:
-    add.imm.w64 $-136, $-24, 1
-    mov.w64 $-128, $-136
-    jmp L3
+    unreachable
 L2:
     mov.w64 $-136, $-120
     imm.w8 $-153, 0
@@ -3390,8 +3299,7 @@ L3:
 L4:
     jmp L3
 L5:
-    mov.w64 $-128, $-136
-    jmp L4
+    unreachable
 L6:
     mov.w64 $-152, $-24
     imm.w64 $-160, 0
@@ -3405,8 +3313,7 @@ L8:
     call $-1, fn0, 1, [4294967256, 8, 4294967200, 264]
     jmp L0
 L9:
-    imm.w64 $-112, 8
-    jmp L7
+    unreachable
 L10:
     mov.w64 $-120, $-88
     imm.w8 $-153, 0
@@ -3415,8 +3322,7 @@ L10:
 L11:
     jmp L7
 L12:
-    mov.w64 $-112, $-120
-    jmp L11
+    unreachable
 L13:
     imm.w64 $-160, 18446744073709551615
     ptr.index $-112, $-120, $-160, 16
@@ -3465,9 +3371,7 @@ L3:
     mov.w64 $-136, $-144
     imm.w8 $-177, 0
     br! $-177, L4
-    add.imm.w64 $-160, $-72, 1
-    mov.w64 $-152, $-160
-    jmp L5
+    unreachable
 L4:
     mov.w64 $-160, $-144
     imm.w8 $-177, 0
@@ -3489,8 +3393,7 @@ L5:
 L6:
     jmp L5
 L7:
-    mov.w64 $-152, $-160
-    jmp L6
+    unreachable
 L8:
     mov.w64 $-176, $-72
     imm.w64 $-184, 0
@@ -3504,8 +3407,7 @@ L9:
     store.w64 [$-16 + 24], $-192
     ret $-8, 8
 L10:
-    imm.w64 $-152, 8
-    jmp L9
+    unreachable
 L11:
     mov.w64 $-160, $-112
     imm.w8 $-177, 0
@@ -3514,8 +3416,7 @@ L11:
 L12:
     jmp L9
 L13:
-    mov.w64 $-152, $-160
-    jmp L12
+    unreachable
 L14:
     imm.w64 $-184, 18446744073709551615
     ptr.index $-152, $-160, $-184, 16
@@ -3580,31 +3481,27 @@ fn hashbrown::raw::RawTable::<(u64, u64)>::reserve_rehash::<{closure@hashbrown::
     addr.const $-80, k0
     imm.w8 $-121, 0
     br! $-121, L0
-    addr.sym $-120, sym1
-    mov.w64 $-112, $-120
-    jmp L1
+    unreachable
 L0:
     imm.w64 $-112, 0
-L1:
-    const $-136, k2, 16
+    const $-136, k1, 16
     mov.w64 $-176, $-136
     mov.w64 $-168, $-128
     mov.w64 $-160, $-112
-L2:
-    call $-16, fn3, 526344, [4294967232, 8, 4294967224, 264, 4294967264, 520, 4294967208, 776, 4294967216, 1032, 4294967255, 1281]
+L1:
+    call $-16, fn2, 526344, [4294967232, 8, 4294967224, 264, 4294967264, 520, 4294967208, 776, 4294967216, 1032, 4294967255, 1281]
     ; end $-104, 8 bytes
     ret $-16, 526344
-L3:
+L2:
     resume $-56
-L4:
+L3:
     lpad $-56
-    jmp L3
-  cleanup L2 -> L4
-  cleanup L3 -> continue
+    jmp L2
+  cleanup L1 -> L3
+  cleanup L2 -> continue
   k0 = const allocation + 0
-  sym1 = <{closure@hashbrown::raw::RawTable<(u64, u64)>::reserve_rehash<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>::{closure#1}} as std::ops::FnOnce<(*mut u8,)>>::call_once - shim
-  k2 = const allocation + 0
-  fn3 = hashbrown::raw::RawTableInner::reserve_rehash_inner::<std::alloc::Global>
+  k1 = const allocation + 0
+  fn2 = hashbrown::raw::RawTableInner::reserve_rehash_inner::<std::alloc::Global>
 
 fn hashbrown::raw::RawTable::<(u64, u64)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>::{closure#0} (frame 160, args 0, ret 8)
     arg $-16, 8
@@ -3619,9 +3516,7 @@ fn hashbrown::raw::RawTable::<(u64, u64)>::reserve_rehash::<{closure@hashbrown::
 L0:
     ret $-8, 8
 L1:
-    add.imm.w64 $-136, $-32, 1
-    mov.w64 $-128, $-136
-    jmp L3
+    unreachable
 L2:
     mov.w64 $-136, $-120
     imm.w8 $-153, 0
@@ -3635,8 +3530,7 @@ L3:
 L4:
     jmp L3
 L5:
-    mov.w64 $-128, $-136
-    jmp L4
+    unreachable
 L6:
     mov.w64 $-152, $-32
     imm.w64 $-160, 0
@@ -3650,8 +3544,7 @@ L8:
     call $-8, fn0, 8, [4294967248, 8, 4294967200, 264]
     jmp L0
 L9:
-    imm.w64 $-112, 8
-    jmp L7
+    unreachable
 L10:
     mov.w64 $-120, $-88
     imm.w8 $-153, 0
@@ -3660,8 +3553,7 @@ L10:
 L11:
     jmp L7
 L12:
-    mov.w64 $-112, $-120
-    jmp L11
+    unreachable
 L13:
     imm.w64 $-160, 18446744073709551615
     ptr.index $-112, $-120, $-160, 16
@@ -3683,14 +3575,14 @@ fn hashbrown::raw::RawTableInner::drop_elements::<(std::string::String, usize)> 
     jmp L5
 L0:
     mov.w64 $-136, $-88
-    br.eq.imm.w64 $-136, 0, L9
-    jmp L10
+    br.eq.imm.w64 $-136, 0, L8
+    jmp L9
     unreachable
 L1:
     mov.w64 $-136, $-128
     imm.w8 $-161, 0
-    br! $-161, L15
-    jmp L14
+    br! $-161, L14
+    jmp L13
 L2:
     ; end $-120, 40 bytes
     jmp L3
@@ -3713,11 +3605,9 @@ L4:
     mov.w64 $-88, $-16
     jmp L0
 L5:
-    imm.w64 $-152, 1
-    jmp L7
+    unreachable
 L6:
     mov.w64 $-152, $-144
-L7:
     mov.w64 $-104, $-152
     mov.w64 $-88, $-104
     ; end $-104, 8 bytes
@@ -3726,49 +3616,47 @@ L7:
     mov.w64 $-128, $-136
     load.w64 $-160, [$-8 + 8]
     add.imm.w64 $-136, $-160, 1
-L8:
+L7:
     ; escape align 8 $-120, 32 bytes
     call $0, fn0, 0, [4294967176, 72, 4294967168, 264, 4294967208, 520, 4294967160, 776]
     jmp L4
-L9:
+L8:
     imm.w64 $-128, 0
     jmp L2
-L10:
+L9:
     ; escape align 8 $-120, 40 bytes
     addr $-136, $-120
-L11:
+L10:
     call $-128, fn1, 8, [4294967160, 8]
     sub.imm.w64 $-88, $-88, 1
     br.eq.imm.w64 $-128, 0, L2
     jmp L1
-L12:
+L11:
     mov.w64 $-152, $-144
-L13:
+L12:
     call $0, fn2, 0, [4294967144, 8]
-    jmp L19
+    jmp L18
+L13:
+    unreachable
 L14:
-    imm.w64 $-144, 8
-    jmp L12
-L15:
     mov.w64 $-160, $-136
     mov.w64 $-152, $-160
     imm.w8 $-161, 0
-    br! $-161, L18
-    jmp L17
-L16:
-    jmp L12
-L17:
-    mov.w64 $-144, $-152
+    br! $-161, L17
     jmp L16
-L18:
+L15:
+    jmp L11
+L16:
+    unreachable
+L17:
     imm.w64 $-168, 18446744073709551615
     ptr.index $-144, $-152, $-168, 32
-    jmp L16
-L19:
+    jmp L15
+L18:
     jmp L0
-  cleanup L8 -> continue
-  cleanup L11 -> continue
-  cleanup L13 -> continue
+  cleanup L7 -> continue
+  cleanup L10 -> continue
+  cleanup L12 -> continue
   fn0 = hashbrown::raw::RawIterRange::<(std::string::String, usize)>::new
   fn1 = hashbrown::raw::RawIterRange::<(std::string::String, usize)>::next_impl::<false>
   fn2 = std::ptr::drop_glue::<(std::string::String, usize)> - shim(Some((std::string::String, usize)))
@@ -3776,106 +3664,30 @@ L19:
 fn hashbrown::raw::RawTableInner::drop_elements::<(u64, u64)> (frame 176, args 0, ret 0)
     arg $-8, 8
     imm.w8 $-161, 0
-    br! $-161, L3
-    load.w64 $-88, [$-8 + 24]
-    br.eq.imm.w64 $-88, 0, L3
-    ; end $-88, 8 bytes
-    load.w64 $-144, [$-8 + 0]
-    mov.w64 $-96, $-144
-    imm.w8 $-161, 0
-    br! $-161, L6
-    jmp L5
-L0:
-    mov.w64 $-136, $-88
-    br.eq.imm.w64 $-136, 0, L9
-    jmp L10
+    br! $-161, L0
     unreachable
-L1:
-    mov.w64 $-136, $-128
-    imm.w8 $-161, 0
-    br! $-161, L15
-    jmp L14
-L2:
-    ; end $-120, 40 bytes
-    jmp L3
-L3:
-    ; end $-88, 8 bytes
+    unreachable
+    unreachable
+    unreachable
+    unreachable
+    unreachable
+    unreachable
+L0:
     ret $0, 0
-L4:
-    load.w64 $-128, [$-8 + 24]
-    mov.w64 $-48, $-120
-    mov.w64 $-40, $-112
-    mov.w64 $-32, $-104
-    mov.w64 $-24, $-96
-    ; end $-120, 32 bytes
-    ; end $-88, 8 bytes
-    mov.w64 $-16, $-128
-    mov.w64 $-120, $-48
-    mov.w64 $-112, $-40
-    mov.w64 $-104, $-32
-    mov.w64 $-96, $-24
-    mov.w64 $-88, $-16
-    jmp L0
-L5:
-    imm.w64 $-152, 1
-    jmp L7
-L6:
-    mov.w64 $-152, $-144
-L7:
-    mov.w64 $-104, $-152
-    mov.w64 $-88, $-104
-    ; end $-104, 8 bytes
-    ; end $-96, 8 bytes
-    load.w64 $-136, [$-8 + 0]
-    mov.w64 $-128, $-136
-    load.w64 $-160, [$-8 + 8]
-    add.imm.w64 $-136, $-160, 1
-L8:
-    ; escape align 8 $-120, 32 bytes
-    call $0, fn0, 0, [4294967176, 72, 4294967168, 264, 4294967208, 520, 4294967160, 776]
-    jmp L4
-L9:
-    imm.w64 $-128, 0
-    jmp L2
-L10:
-    ; escape align 8 $-120, 40 bytes
-    addr $-136, $-120
-L11:
-    call $-128, fn1, 8, [4294967160, 8]
-    sub.imm.w64 $-88, $-88, 1
-    br.eq.imm.w64 $-128, 0, L2
-    jmp L1
-L12:
-    mov.w64 $-152, $-144
-L13:
-    call.sym $0, sym2, 0, [4294967144, 8]
-    jmp L19
-L14:
-    imm.w64 $-144, 8
-    jmp L12
-L15:
-    mov.w64 $-160, $-136
-    mov.w64 $-152, $-160
-    imm.w8 $-161, 0
-    br! $-161, L18
-    jmp L17
-L16:
-    jmp L12
-L17:
-    mov.w64 $-144, $-152
-    jmp L16
-L18:
-    imm.w64 $-168, 18446744073709551615
-    ptr.index $-144, $-152, $-168, 16
-    jmp L16
-L19:
-    jmp L0
-  cleanup L8 -> continue
-  cleanup L11 -> continue
-  cleanup L13 -> continue
-  fn0 = hashbrown::raw::RawIterRange::<(u64, u64)>::new
-  fn1 = hashbrown::raw::RawIterRange::<(u64, u64)>::next_impl::<false>
-  sym2 = std::ptr::drop_glue::<(u64, u64)> - shim(None)
+    unreachable
+    unreachable
+    unreachable
+    unreachable
+    unreachable
+    unreachable
+    unreachable
+    unreachable
+    unreachable
+    unreachable
+    unreachable
+    unreachable
+    unreachable
+    unreachable
 
 fn hashbrown::raw::RawTableInner::drop_inner_table::<(std::string::String, usize), std::alloc::Global> (frame 144, args 0, ret 0)
     arg $-8, 8
@@ -6939,8 +6751,7 @@ L10:
     ptr.add $-8, $-96, 24
     jmp L5
 L11:
-    imm.w64 $-104, 8
-    jmp L10
+    unreachable
 L12:
     mov.w64 $-112, $-128
     imm.w8 $-265, 0
@@ -6950,8 +6761,7 @@ L13:
     ; end $-265, 1 bytes
     jmp L10
 L14:
-    mov.w64 $-104, $-112
-    jmp L13
+    unreachable
 L15:
     imm.w64 $-272, 18446744073709551615
     ptr.index $-104, $-112, $-272, 32
@@ -6968,8 +6778,7 @@ L17:
     ; end $-168, 40 bytes
     jmp L5
 L18:
-    imm.w64 $-200, 8
-    jmp L17
+    unreachable
 L19:
     mov.w64 $-216, $-184
     mov.w64 $-208, $-216
@@ -6980,8 +6789,7 @@ L20:
     ; end $-265, 1 bytes
     jmp L17
 L21:
-    mov.w64 $-200, $-208
-    jmp L20
+    unreachable
 L22:
     imm.w64 $-272, 18446744073709551615
     ptr.index $-200, $-208, $-272, 32
@@ -7047,8 +6855,7 @@ L8:
     ptr.add $-8, $-104, 8
     jmp L3
 L9:
-    imm.w64 $-112, 8
-    jmp L8
+    unreachable
 L10:
     mov.w64 $-128, $-96
     mov.w64 $-120, $-128
@@ -7058,8 +6865,7 @@ L10:
 L11:
     jmp L8
 L12:
-    mov.w64 $-112, $-120
-    jmp L11
+    unreachable
 L13:
     imm.w64 $-168, 18446744073709551615
     ptr.index $-112, $-120, $-168, 16
@@ -7069,8 +6875,7 @@ L14:
     ptr.add $-8, $-88, 8
     jmp L3
 L15:
-    imm.w64 $-96, 8
-    jmp L14
+    unreachable
 L16:
     mov.w64 $-104, $-120
     imm.w8 $-161, 0
@@ -7079,8 +6884,7 @@ L16:
 L17:
     jmp L14
 L18:
-    mov.w64 $-96, $-104
-    jmp L17
+    unreachable
 L19:
     imm.w64 $-168, 18446744073709551615
     ptr.index $-96, $-104, $-168, 16

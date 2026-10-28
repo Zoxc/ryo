@@ -1682,7 +1682,7 @@ L12:
     mov     rbx,rbp
     jmp     L1
 L13:
-    lea     r14,[image.k10520]
+    lea     r14,[image.k10496]
     mov     r15,r9
     and     r15,3
     test    r15,r15
@@ -1959,7 +1959,7 @@ L8:
     mov     r8,r10
     jmp     L1
 L9:
-    lea     rbx,[image.k10520]
+    lea     rbx,[image.k10496]
     mov     r12,rsi
     and     r12,3
     test    r12,r12
@@ -10630,7 +10630,7 @@ L139:
     jmp     L141
 L140:
     lea     rcx,[image.k8338]
-    lea     rsi,[image.k10520]
+    lea     rsi,[image.k10496]
     mov     rdi,rcx
     mov     edx,0
     mov     rcx,rsi

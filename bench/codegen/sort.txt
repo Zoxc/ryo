@@ -112,21 +112,19 @@ L1:
     ; end $-64, 16 bytes
     ret $-1, 1
 L2:
-    mov.w64 $-120, $-88
-    jmp L4
+    unreachable
 L3:
     mov.w64 $-112, $-96
     ptr.index $-104, $-112, $-88, 4
     mov.w64 $-120, $-104
-L4:
     mov.w64 $-80, $-96
     mov.w64 $-72, $-120
-L5:
+L4:
     call $-40, fn2, 8, [4294967248, 8, 4294967216, 264, 4294967224, 520]
     jmp L1
   cleanup L0 -> continue
   cleanup L1 -> continue
-  cleanup L5 -> continue
+  cleanup L4 -> continue
   sym0 = std::fmt::Formatter::<'_>::debug_list
   sym1 = std::fmt::DebugList::<'_, '_>::finish
   fn2 = std::fmt::DebugList::<'_, '_>::entries::<&u32, std::slice::Iter<'_, u32>>
@@ -296,17 +294,11 @@ fn <std::alloc::Global as std::clone::Clone>::clone (frame 16, args 0, ret 0) [h
 fn <std::array::IntoIter<usize, 2> as std::ops::Drop>::drop (frame 48, args 0, ret 0) [hint]
     arg $-8, 8
     imm.w8 $-41, 0
-    br! $-41, L1
-    mov.w64 $-40, $-8
+    br! $-41, L0
+    unreachable
 L0:
-    call.sym $0, sym0, 0, [4294967256, 8]
-    jmp L2
-L1:
     ret $0, 0
-L2:
-    jmp L1
-  cleanup L0 -> continue
-  sym0 = std::ptr::drop_glue::<std::array::iter::iter_inner::PolymorphicIter<[std::mem::MaybeUninit<usize>; 2]>> - shim(Some(std::array::iter::iter_inner::PolymorphicIter<[std::mem::MaybeUninit<usize>; 2]>))
+    unreachable
 
 fn <std::hint::select_unpredictable::DropOnPanic<*const (u32, u32)> as std::ops::Drop>::drop (frame 32, args 0, ret 0)
     arg $-8, 8
@@ -836,10 +828,7 @@ fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::fold::<(), {closure@std::
     load.copy $-40, [$-168 + 0], 24
     imm.w8 $-169, 0
     br! $-169, L0
-    mov.w64 $-120, $-8
-    mov.w64 $-112, $-120
-    eq.imm.w64 $-97, $-112, 0
-    jmp L1
+    unreachable
 L0:
     mov.w64 $-120, $-8
     mov.w64 $-112, $-120
@@ -847,24 +836,21 @@ L0:
     mov.w64 $-120, $-128
     mov.w64 $-128, $-112
     eq.w64 $-97, $-120, $-128
-L1:
-    br! $-97, L3
+    br! $-97, L2
     imm.w8 $-82, 0
     ; escape align 8 $-40, 24 bytes
     addr $-176, $-40
-L2:
+L1:
     call $0, fn0, 0, [4294967120, 8]
-    jmp L10
-L3:
+    jmp L9
+L2:
     imm.w8 $-82, 0
     imm.w8 $-81, 1
     imm.w64 $-64, 0
     imm.w8 $-169, 0
-    br! $-169, L4
-    mov.w64 $-104, $-8
-    mov.w64 $-72, $-104
-    jmp L5
-L4:
+    br! $-169, L3
+    unreachable
+L3:
     mov.w64 $-112, $-8
     mov.w64 $-104, $-112
     mov.w64 $-112, $-16
@@ -872,9 +858,9 @@ L4:
     mov.w64 $-128, $-112
     mov.w64 $-136, $-104
     imm.w8 $-169, 1
-    br! $-169, L20
-    jmp L19
-L5:
+    br! $-169, L19
+    jmp L18
+L4:
     ; escape align 8 $-40, 24 bytes
     addr $-104, $-40
     imm.w8 $-81, 0
@@ -886,92 +872,92 @@ L5:
     mov.w64 $-120, $-128
     mov.w64 $-80, $-120
     mov.w64 $-112, $-80
-L6:
+L5:
     call $0, fn1, 0, [4294967192, 8, 4294967184, 264]
     imm.w8 $-169, 1
-    br! $-169, L24
-    jmp L23
+    br! $-169, L23
+    jmp L22
+L6:
+    ; escape align 8 $-40, 24 bytes
+    addr $-176, $-40
 L7:
-    ; escape align 8 $-40, 24 bytes
-    addr $-176, $-40
-L8:
     call $0, fn2, 0, [4294967120, 8]
-    jmp L10
+    jmp L9
+L8:
+    jmp L4
 L9:
-    jmp L5
-L10:
     ret $0, 0
-L11:
+L10:
     ; escape align 8 $-40, 24 bytes
     addr $-176, $-40
-L12:
+L11:
     call $0, fn3, 0, [4294967120, 8]
-    jmp L17
-L13:
-    resume $-96
-L14:
-    jmp L11
-L15:
-    br! $-81, L11
-    jmp L14
-L16:
-    jmp L13
-L17:
-    br! $-82, L13
     jmp L16
+L12:
+    resume $-96
+L13:
+    jmp L10
+L14:
+    br! $-81, L10
+    jmp L13
+L15:
+    jmp L12
+L16:
+    br! $-82, L12
+    jmp L15
+L17:
+    jmp L4
 L18:
-    jmp L5
-L19:
     mov.w64 $-144, $-104
     mov.w64 $-152, $-112
     addr.const $-176, k4
     call $0, fn5, 0, [4294967152, 8, 4294967144, 264, 4294967120, 520]
-L20:
+L19:
     imm.w64 $-176, 0
     lt.u.imm.w64 $-137, $-176, 4
-    br! $-137, L21
+    br! $-137, L20
     imm.w64 $-176, 4
     le.u.imm.w64 $-138, $-176, 9223372036854775807
-    br! $-138, L21
+    br! $-138, L20
     sub.w64 $-72, $-136, $-128
     shr.u.imm.w64 $-72, $-72, 2
-    jmp L18
-L21:
+    jmp L17
+L20:
     addr.const $-184, k6
     imm.w64 $-176, 73
     addr.const $-192, k7
-L22:
+L21:
     call.sym $0, sym8, 0, [4294967112, 8, 4294967120, 264, 4294967104, 520]
     unreachable
-L23:
+L22:
     imm.w64 $-176, 1
     addr.const $-184, k9
     call $0, fn10, 0, [4294967232, 8, 4294967120, 264, 4294967112, 520]
-L24:
+L23:
     add.imm.w64 $-104, $-64, 1
     mov.w64 $-64, $-104
     mov.w64 $-112, $-64
     mov.w64 $-120, $-72
-    br.eq.w64 $-112, $-120, L7
-    jmp L9
-L25:
+    br.eq.w64 $-112, $-120, L6
+    jmp L8
+L24:
     call.sym $0, sym11, 0, []
     unreachable
+L25:
+    lpad $-96
+    jmp L16
 L26:
     lpad $-96
-    jmp L17
+    jmp L14
 L27:
     lpad $-96
-    jmp L15
-L28:
-    lpad $-96
-    jmp L25
-  cleanup L2 -> L26
-  cleanup L6 -> L27
-  cleanup L8 -> L26
-  cleanup L12 -> L28 (catch)
-  cleanup L13 -> continue
-  cleanup L22 -> L27
+    jmp L24
+  cleanup L1 -> L25
+  cleanup L5 -> L26
+  cleanup L7 -> L25
+  cleanup L11 -> L27 (catch)
+  cleanup L12 -> continue
+  cleanup L21 -> L26
   fn0 = std::ptr::drop_glue::<{closure@std::iter::adapters::map::map_fold<&u32, (u32, u32), (), {closure@bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> - shim(Some({closure@std::iter::adapters::map::map_fold<&u32, (u32, u32), (), {closure@bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}}))
   fn1 = std::iter::adapters::map::map_fold::<&u32, (u32, u32), (), {closure@bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}
   fn2 = std::ptr::drop_glue::<{closure@std::iter::adapters::map::map_fold<&u32, (u32, u32), (), {closure@bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> - shim(Some({closure@std::iter::adapters::map::map_fold<&u32, (u32, u32), (), {closure@bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}}))
@@ -992,10 +978,7 @@ fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::fold::<u64, {closure@<std
     arg $-40, 776
     imm.w8 $-193, 0
     br! $-193, L0
-    mov.w64 $-120, $-16
-    mov.w64 $-112, $-120
-    eq.imm.w64 $-97, $-112, 0
-    jmp L1
+    unreachable
 L0:
     mov.w64 $-120, $-16
     mov.w64 $-112, $-120
@@ -1003,22 +986,19 @@ L0:
     mov.w64 $-120, $-128
     mov.w64 $-128, $-112
     eq.w64 $-97, $-120, $-128
-L1:
-    br! $-97, L2
+    br! $-97, L1
     imm.w8 $-82, 0
     mov.w64 $-8, $-32
-    jmp L8
-L2:
+    jmp L7
+L1:
     imm.w8 $-82, 0
     imm.w8 $-81, 1
     mov.w64 $-104, $-32
     imm.w64 $-64, 0
     imm.w8 $-193, 0
-    br! $-193, L3
-    mov.w64 $-112, $-16
-    mov.w64 $-72, $-112
-    jmp L4
-L3:
+    br! $-193, L2
+    unreachable
+L2:
     mov.w64 $-120, $-16
     mov.w64 $-112, $-120
     mov.w64 $-120, $-24
@@ -1026,9 +1006,9 @@ L3:
     mov.w64 $-136, $-120
     mov.w64 $-144, $-112
     imm.w8 $-193, 1
-    br! $-193, L17
-    jmp L16
-L4:
+    br! $-193, L16
+    jmp L15
+L3:
     ; escape align 8 $-40, 8 bytes
     addr $-120, $-40
     imm.w8 $-81, 0
@@ -1042,74 +1022,74 @@ L4:
     mov.w64 $-80, $-152
     mov.w64 $-136, $-144
     mov.w64 $-128, $-80
-L5:
+L4:
     call $-112, fn0, 8, [4294967176, 8, 4294967160, 264, 4294967168, 520]
     mov.w64 $-104, $-112
     imm.w8 $-193, 1
-    br! $-193, L21
-    jmp L20
-L6:
+    br! $-193, L20
+    jmp L19
+L5:
     mov.w64 $-8, $-104
-    jmp L8
+    jmp L7
+L6:
+    jmp L3
 L7:
-    jmp L4
-L8:
     ret $-8, 8
-L9:
-    jmp L14
-L10:
-    resume $-96
-L11:
-    jmp L9
-L12:
-    br! $-81, L9
-    jmp L11
-L13:
-    jmp L10
-L14:
-    br! $-82, L10
+L8:
     jmp L13
+L9:
+    resume $-96
+L10:
+    jmp L8
+L11:
+    br! $-81, L8
+    jmp L10
+L12:
+    jmp L9
+L13:
+    br! $-82, L9
+    jmp L12
+L14:
+    jmp L3
 L15:
-    jmp L4
-L16:
     mov.w64 $-152, $-112
     mov.w64 $-160, $-120
     addr.const $-200, k1
     call $0, fn2, 0, [4294967144, 8, 4294967136, 264, 4294967096, 520]
-L17:
+L16:
     imm.w64 $-200, 0
     lt.u.imm.w64 $-145, $-200, 4
-    br! $-145, L18
+    br! $-145, L17
     imm.w64 $-200, 4
     le.u.imm.w64 $-146, $-200, 9223372036854775807
-    br! $-146, L18
+    br! $-146, L17
     sub.w64 $-72, $-144, $-136
     shr.u.imm.w64 $-72, $-72, 2
-    jmp L15
-L18:
+    jmp L14
+L17:
     addr.const $-208, k3
     imm.w64 $-200, 73
     addr.const $-216, k4
-L19:
+L18:
     call.sym $0, sym5, 0, [4294967088, 8, 4294967096, 264, 4294967080, 520]
     unreachable
-L20:
+L19:
     imm.w64 $-200, 1
     addr.const $-208, k6
     call $0, fn7, 0, [4294967232, 8, 4294967096, 264, 4294967088, 520]
-L21:
+L20:
     add.imm.w64 $-112, $-64, 1
     mov.w64 $-64, $-112
     mov.w64 $-120, $-64
     mov.w64 $-128, $-72
-    br.eq.w64 $-120, $-128, L6
-    jmp L7
-L22:
+    br.eq.w64 $-120, $-128, L5
+    jmp L6
+L21:
     lpad $-96
-    jmp L12
-  cleanup L5 -> L22
-  cleanup L10 -> continue
-  cleanup L19 -> L22
+    jmp L11
+  cleanup L4 -> L21
+  cleanup L9 -> continue
+  cleanup L18 -> L21
   fn0 = <std::iter::Enumerate<I> as std::iter::Iterator>::fold::enumerate::<&u32, u64, {closure@bench/sort.rs:46:37: 46:51}>::{closure#0}
   k1 = const allocation + 0
   fn2 = std::ptr::const_ptr::<impl *const T>::offset_from_unsigned::precondition_check
@@ -1130,54 +1110,38 @@ fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::next (frame 112, args 0, 
     load.w64 $-64, [$-16 + 0]
     load.w64 $-72, [$-16 + 8]
     imm.w8 $-97, 0
-    br! $-97, L1
-    mov.w64 $-80, $-72
-    br.eq.imm.w64! $-80, 0, L0
-    imm.w64 $-8, 0
-    jmp L4
+    br! $-97, L0
+    unreachable
+    unreachable
+    unreachable
 L0:
-    imm.w8 $-97, 1
-    br! $-97, L6
-    jmp L5
-L1:
     mov.w64 $-88, $-72
     mov.w64 $-56, $-64
     mov.w64 $-96, $-88
     eq.w64 $-73, $-56, $-96
-    br! $-73, L2
+    br! $-73, L1
     imm.w64 $-8, 0
-    jmp L4
-L2:
+    jmp L2
+L1:
     imm.w64 $-104, 1
     ptr.index $-88, $-56, $-104, 4
     mov.w64 $-80, $-88
     store.w64 [$-16 + 0], $-80
-L3:
     mov.w64 $-88, $-64
     mov.w64 $-80, $-88
     mov.w64 $-8, $-80
-    jmp L4
-L4:
+    jmp L2
+L2:
     ret $-8, 8
-L5:
-    imm.w64 $-104, 1
-    addr.const $-112, k0
-    call $0, fn1, 0, [4294967216, 8, 4294967192, 264, 4294967184, 520]
-L6:
-    sub.imm.w64 $-24, $-80, 1
-    store.w64 [$-16 + 8], $-24
-    jmp L3
-  k0 = const allocation + 0
-  fn1 = core::num::<impl usize>::unchecked_sub::precondition_check
+    unreachable
+    unreachable
 
 fn <std::slice::Iter<'_, u32> as std::iter::Iterator>::size_hint (frame 128, args 0, ret 24) [hint]
     arg $-48, 8
     arg $-32, 264
     imm.w8 $-105, 0
     br! $-105, L0
-    load.w64 $-56, [$-32 + 8]
-    mov.w64 $-40, $-56
-    jmp L1
+    unreachable
 L0:
     load.w64 $-64, [$-32 + 8]
     mov.w64 $-56, $-64
@@ -1826,8 +1790,7 @@ L7:
     call $0, fn5, 0, [4294967184, 8, 4294967168, 264, 4294967136, 520]
     jmp L6
 L8:
-    imm.w64 $-128, 18446744073709551615
-    jmp L7
+    unreachable
 L9:
     mov.w64 $-136, $-24
     mov.w64 $-128, $-136
@@ -2392,8 +2355,7 @@ L3:
     br! $-121, L7
     jmp L6
 L4:
-    mov.w64 $-104, $-72
-    jmp L3
+    unreachable
 L5:
     mov.w64 $-120, $-96
     imm.w64 $-128, 0
@@ -2797,8 +2759,7 @@ L3:
     br! $-121, L7
     jmp L6
 L4:
-    mov.w64 $-104, $-72
-    jmp L3
+    unreachable
 L5:
     mov.w64 $-120, $-96
     imm.w64 $-128, 0
@@ -4090,8 +4051,7 @@ L13:
     call $-65, fn2, 1, [4294967272, 8, 4294967208, 264, 4294967216, 520]
     jmp L0
 L14:
-    mov.w64 $-32, $-16
-    jmp L12
+    unreachable
 L15:
     imm.w64 $-144, 18446744073709551615
     ptr.index $-32, $-16, $-144, 8
@@ -4125,8 +4085,7 @@ L19:
     call $-97, fn5, 1, [4294967272, 8, 4294967176, 264, 4294967184, 520]
     jmp L5
 L20:
-    mov.w64 $-104, $-32
-    jmp L18
+    unreachable
 L21:
     imm.w64 $-144, 18446744073709551615
     ptr.index $-104, $-32, $-144, 8
@@ -4223,8 +4182,7 @@ L13:
     call $-65, fn2, 1, [4294967272, 8, 4294967208, 264, 4294967216, 520]
     jmp L0
 L14:
-    mov.w64 $-32, $-16
-    jmp L12
+    unreachable
 L15:
     imm.w64 $-136, 18446744073709551615
     ptr.index $-32, $-16, $-136, 4
@@ -4256,8 +4214,7 @@ L19:
     call $-69, fn5, 1, [4294967272, 8, 4294967184, 264, 4294967192, 520]
     jmp L5
 L20:
-    mov.w64 $-104, $-32
-    jmp L18
+    unreachable
 L21:
     imm.w64 $-136, 18446744073709551615
     ptr.index $-104, $-32, $-136, 4
@@ -4403,8 +4360,7 @@ L4:
     store.copy [$-80 + 0], $-24, 24
     ret $-80, 8
 L5:
-    mov.w64 $-96, $-48
-    jmp L4
+    unreachable
 L6:
     imm.w64 $-128, 18446744073709551615
     ptr.index $-96, $-48, $-128, 8
@@ -4469,8 +4425,7 @@ L4:
     store.copy [$-80 + 0], $-24, 24
     ret $-80, 8
 L5:
-    mov.w64 $-96, $-48
-    jmp L4
+    unreachable
 L6:
     imm.w64 $-128, 18446744073709551615
     ptr.index $-96, $-48, $-128, 4
@@ -6257,32 +6212,30 @@ L2:
     mov.w32 $-64, $-88
     mov.w64 $-88, $-72
     imm.w8 $-105, 1
-    br! $-105, L7
+    br! $-105, L6
     jmp L4
 L3:
     ; escape align 4 $-64, 4 bytes
     addr $-88, $-64
     imm.w8 $-105, 1
-    br! $-105, L9
-    jmp L8
+    br! $-105, L8
+    jmp L7
 L4:
     mov.w64 $-96, $-72
     mov.w64 $-104, $-48
     imm.w8 $-105, 0
     br! $-105, L5
-    imm.w8 $-58, 1
-    jmp L6
+    unreachable
 L5:
     imm.w8 $-58, 0
-L6:
     imm.w64 $-112, 4
     addr.const $-120, k3
     call $0, fn4, 0, [4294967200, 8, 4294967192, 264, 4294967184, 520, 4294967238, 769, 4294967176, 1032]
-L7:
+L6:
     load.w32 $-112, [$-88 + 0]
     store.w32 [$-48 + 0], $-112
     jmp L3
-L8:
+L7:
     mov.w64 $-96, $-88
     mov.w64 $-104, $-56
     imm.w64 $-112, 4
@@ -6290,7 +6243,7 @@ L8:
     imm.w64 $-128, 1
     addr.const $-136, k5
     call $0, fn6, 0, [4294967200, 8, 4294967192, 264, 4294967184, 520, 4294967176, 776, 4294967168, 1032, 4294967160, 1288]
-L9:
+L8:
     load.w32 $-112, [$-88 + 0]
     store.w32 [$-56 + 0], $-112
     ; end $-64, 4 bytes
@@ -7024,8 +6977,7 @@ L7:
     br! $-121, L12
     jmp L11
 L8:
-    mov.w64 $-48, $-88
-    jmp L7
+    unreachable
 L9:
     imm.w64 $-128, 18446744073709551615
     ptr.index $-48, $-88, $-128, 8
@@ -7035,8 +6987,7 @@ L10:
     br! $-121, L16
     jmp L15
 L11:
-    mov.w64 $-56, $-88
-    jmp L10
+    unreachable
 L12:
     imm.w64 $-128, 18446744073709551615
     ptr.index $-56, $-88, $-128, 8
@@ -7051,8 +7002,7 @@ L14:
     call $-81, fn0, 1, [4294967256, 8, 4294967192, 264, 4294967200, 520]
     jmp L1
 L15:
-    mov.w64 $-88, $-32
-    jmp L13
+    unreachable
 L16:
     imm.w64 $-128, 18446744073709551615
     ptr.index $-88, $-32, $-128, 8
@@ -7292,8 +7242,7 @@ L3:
     br! $-17, L1
     jmp L0
 L4:
-    mov.w64 $-40, $-48
-    jmp L3
+    unreachable
 L5:
     imm.w64 $-64, 18446744073709551615
     ptr.index $-40, $-48, $-64, 8
@@ -8581,32 +8530,30 @@ L0:
     mov.w64 $-80, $-72
     load.w64 $-88, [$-16 + 0]
     imm.w8 $-105, 1
-    br! $-105, L5
+    br! $-105, L4
     jmp L2
 L1:
     load.w64 $-24, [$-16 + 16]
     mov.w64 $-80, $-24
     imm.w8 $-105, 1
-    br! $-105, L7
-    jmp L6
+    br! $-105, L6
+    jmp L5
 L2:
     mov.w64 $-96, $-72
     mov.w64 $-104, $-88
     imm.w8 $-105, 0
     br! $-105, L3
-    imm.w8 $-58, 1
-    jmp L4
+    unreachable
 L3:
     imm.w8 $-58, 0
-L4:
     imm.w64 $-112, 4
     addr.const $-120, k1
     call $0, fn2, 0, [4294967200, 8, 4294967192, 264, 4294967184, 520, 4294967238, 769, 4294967176, 1032]
-L5:
+L4:
     load.w32 $-112, [$-80 + 0]
     store.w32 [$-88 + 0], $-112
     jmp L1
-L6:
+L5:
     mov.w64 $-88, $-24
     mov.w64 $-96, $-72
     imm.w64 $-112, 4
@@ -8614,7 +8561,7 @@ L6:
     imm.w64 $-128, 1
     addr.const $-136, k3
     call $0, fn4, 0, [4294967208, 8, 4294967200, 264, 4294967184, 520, 4294967176, 776, 4294967168, 1032, 4294967160, 1288]
-L7:
+L6:
     load.w32 $-112, [$-80 + 0]
     store.w32 [$-72 + 0], $-112
     load.w64 $-80, [$-16 + 16]
@@ -8785,32 +8732,30 @@ L0:
     mov.w64 $-80, $-72
     load.w64 $-88, [$-16 + 0]
     imm.w8 $-105, 1
-    br! $-105, L5
+    br! $-105, L4
     jmp L2
 L1:
     load.w64 $-24, [$-16 + 16]
     mov.w64 $-80, $-24
     imm.w8 $-105, 1
-    br! $-105, L7
-    jmp L6
+    br! $-105, L6
+    jmp L5
 L2:
     mov.w64 $-96, $-72
     mov.w64 $-104, $-88
     imm.w8 $-105, 0
     br! $-105, L3
-    imm.w8 $-58, 1
-    jmp L4
+    unreachable
 L3:
     imm.w8 $-58, 0
-L4:
     imm.w64 $-112, 4
     addr.const $-120, k1
     call $0, fn2, 0, [4294967200, 8, 4294967192, 264, 4294967184, 520, 4294967238, 769, 4294967176, 1032]
-L5:
+L4:
     load.w32 $-112, [$-80 + 0]
     store.w32 [$-88 + 0], $-112
     jmp L1
-L6:
+L5:
     mov.w64 $-88, $-24
     mov.w64 $-96, $-72
     imm.w64 $-112, 4
@@ -8818,7 +8763,7 @@ L6:
     imm.w64 $-128, 1
     addr.const $-136, k3
     call $0, fn4, 0, [4294967208, 8, 4294967200, 264, 4294967184, 520, 4294967176, 776, 4294967168, 1032, 4294967160, 1288]
-L7:
+L6:
     load.w32 $-112, [$-80 + 0]
     store.w32 [$-72 + 0], $-112
     load.w64 $-80, [$-16 + 16]
@@ -10904,33 +10849,31 @@ L0:
     store.w32 [$-72 + 0], $-96
     mov.w64 $-64, $-16
     imm.w8 $-89, 1
-    br! $-89, L5
+    br! $-89, L4
     jmp L2
 L1:
     ; escape align 4 $-52, 4 bytes
     addr $-48, $-52
     mov.w64 $-64, $-48
     imm.w8 $-89, 1
-    br! $-89, L7
-    jmp L6
+    br! $-89, L6
+    jmp L5
 L2:
     mov.w64 $-72, $-16
     mov.w64 $-80, $-8
     imm.w8 $-89, 0
     br! $-89, L3
-    imm.w8 $-53, 1
-    jmp L4
+    unreachable
 L3:
     imm.w8 $-53, 0
-L4:
     imm.w64 $-96, 4
     addr.const $-104, k2
     call $0, fn3, 0, [4294967224, 8, 4294967216, 264, 4294967200, 520, 4294967243, 769, 4294967192, 1032]
-L5:
+L4:
     load.w32 $-96, [$-64 + 0]
     store.w32 [$-8 + 0], $-96
     jmp L1
-L6:
+L5:
     mov.w64 $-72, $-48
     mov.w64 $-80, $-16
     imm.w64 $-96, 4
@@ -10938,7 +10881,7 @@ L6:
     imm.w64 $-112, 1
     addr.const $-120, k4
     call $0, fn5, 0, [4294967224, 8, 4294967216, 264, 4294967200, 520, 4294967192, 776, 4294967184, 1032, 4294967176, 1288]
-L7:
+L6:
     load.w32 $-96, [$-64 + 0]
     store.w32 [$-16 + 0], $-96
     ; end $-52, 4 bytes
@@ -11401,8 +11344,7 @@ L0:
     br! $-81, L4
     jmp L3
 L1:
-    imm.w64 $-72, 18446744073709551615
-    jmp L0
+    unreachable
 L2:
     load.w64 $-80, [$-24 + 0]
     mov.w64 $-72, $-80
@@ -11443,9 +11385,7 @@ fn std::slice::Iter::<'_, u32>::make_slice (frame 128, args 0, ret 16) [always]
     mov.w64 $-48, $-32
     imm.w8 $-105, 0
     br! $-105, L0
-    load.w64 $-56, [$-24 + 8]
-    mov.w64 $-40, $-56
-    jmp L1
+    unreachable
 L0:
     load.w64 $-64, [$-24 + 8]
     mov.w64 $-56, $-64
@@ -11517,13 +11457,11 @@ fn std::slice::Iter::<'_, u32>::new (frame 112, args 0, ret 16) [hint]
     mov.w64 $-56, $-80
     imm.w8 $-97, 0
     br! $-97, L0
-    mov.w64 $-40, $-48
-    jmp L1
+    unreachable
 L0:
     mov.w64 $-72, $-56
     ptr.index $-64, $-72, $-48, 4
     mov.w64 $-40, $-64
-L1:
     mov.w64 $-16, $-56
     mov.w64 $-8, $-40
     ret $-16, 526344
@@ -11950,19 +11888,17 @@ fn std::vec::Vec::<u32>::extend_from_slice (frame 112, args 0, ret 0)
 L0:
     ret $0, 0
 L1:
-    mov.w64 $-80, $-48
-    jmp L3
+    unreachable
 L2:
     mov.w64 $-72, $-56
     ptr.index $-64, $-72, $-48, 4
     mov.w64 $-80, $-64
-L3:
     mov.w64 $-40, $-56
     mov.w64 $-32, $-80
-L4:
+L3:
     call $0, fn0, 0, [4294967288, 8, 4294967256, 264, 4294967264, 520]
     jmp L0
-  cleanup L4 -> continue
+  cleanup L3 -> continue
   fn0 = <std::vec::Vec<u32> as std::vec::spec_extend::SpecExtend<&u32, std::slice::Iter<'_, u32>>>::spec_extend
 
 fn std::vec::Vec::<u32>::extend_trusted::<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>> (frame 304, args 0, ret 0)
@@ -12105,8 +12041,7 @@ L5:
     br.eq.w64 $-64, $-80, L0
     jmp L2
 L6:
-    imm.w64 $-80, 18446744073709551615
-    jmp L5
+    unreachable
 L7:
     load.w64 $-88, [$-16 + 0]
     mov.w64 $-80, $-88

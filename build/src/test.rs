@@ -336,6 +336,7 @@ fn test_targets(rel: &str) -> Option<(Vec<&'static str>, Vec<Check>)> {
         "vm_backtrace.rs" => vec![Check::Backtrace],
         "vm_exports.rs" => vec![Check::Exports],
         "vm_statics.rs" => vec![Check::Dump],
+        "vm_cgu_owner.rs" => vec![Check::CguOwnership],
         "vm_jit_private.rs" => vec![Check::JitPrivateStd],
         "incremental/edits.rs" | "incremental/pm.rs" | "incremental/pm_user.rs" => vec![Check::Incremental],
         _ => vec![],
@@ -517,8 +518,9 @@ enum Check {
     RtCoreOnly,
     JitSealed,
     JitPrivateStd,
-    RejectRandomizeLayout,
+    RejectUnsupported,
     CguDeterministic,
+    CguOwnership,
     Incremental,
     MetadataOnly,
     Dump,
@@ -529,12 +531,13 @@ enum Check {
 }
 
 impl Check {
-    const ALL: [Check; 11] = [
+    const ALL: [Check; 12] = [
         Check::RtCoreOnly,
         Check::JitSealed,
         Check::JitPrivateStd,
-        Check::RejectRandomizeLayout,
+        Check::RejectUnsupported,
         Check::CguDeterministic,
+        Check::CguOwnership,
         Check::Incremental,
         Check::MetadataOnly,
         Check::Dump,
@@ -548,8 +551,9 @@ impl Check {
             Check::RtCoreOnly => "rt-core-only",
             Check::JitSealed => "jit-sealed",
             Check::JitPrivateStd => "jit-private-std",
-            Check::RejectRandomizeLayout => "reject-randomize-layout",
+            Check::RejectUnsupported => "reject-unsupported",
             Check::CguDeterministic => "cgu-deterministic",
+            Check::CguOwnership => "cgu-ownership",
             Check::Incremental => "incremental",
             Check::MetadataOnly => "metadata-only",
             Check::Dump => "dump",
@@ -563,9 +567,13 @@ impl Check {
     /// run every check.
     fn selected(self, sel: &Sel) -> bool {
         match self {
-            Check::RejectRandomizeLayout | Check::CguDeterministic | Check::MetadataOnly | Check::Dump | Check::Exports | Check::Backtrace => {
-                sel.fast
-            }
+            Check::RejectUnsupported
+            | Check::CguDeterministic
+            | Check::CguOwnership
+            | Check::MetadataOnly
+            | Check::Dump
+            | Check::Exports
+            | Check::Backtrace => sel.fast,
             Check::RtCoreOnly | Check::JitSealed => sel.rt,
             Check::JitPrivateStd => sel.jit,
             Check::Incremental | Check::CargoRyo => false,
@@ -579,8 +587,9 @@ impl Check {
             Check::RtCoreOnly => rt_core_only(info, root, &info.host),
             Check::JitSealed => jit_sealed(info, root, out),
             Check::JitPrivateStd => jit_private_std(info, rustc_ryo, &tests.join("vm_jit_private.rs"), out),
-            Check::RejectRandomizeLayout => reject_randomize_layout(rustc_ryo, &hello, out),
+            Check::RejectUnsupported => reject_unsupported(rustc_ryo, &hello, out),
             Check::CguDeterministic => cgu_deterministic(rustc_ryo, &tests.join("vm_cgu.rs"), out),
+            Check::CguOwnership => cgu_ownership(info, rustc_ryo, &tests.join("vm_cgu_owner.rs"), out),
             Check::Incremental => incremental(rustc_ryo, &tests.join("incremental"), out),
             Check::MetadataOnly => metadata_only(rustc_ryo, &hello, out),
             Check::Dump => dump(rustc_ryo, &tests.join("vm_statics.rs"), out),

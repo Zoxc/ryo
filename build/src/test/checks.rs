@@ -212,11 +212,11 @@ fn msvc_env() -> Option<&'static [(String, String)]> {
 /// `-Cincremental -Zincremental-verify-ich` once per revision in one incremental directory,
 /// each revision an edit of the previous. Each build's output must equal plain rustc's (also
 /// with the JIT compiling every function), and its executable must be byte-identical to a
-/// clean incremental build's. At opt-level 0, at opt-level 2 with thin LTO, and with
+/// clean incremental build's. At opt-level 0, at opt-level 2 with thin and with fat LTO, and with
 /// `RYO_NO_VM` at 16 codegen units, where rustc checks which units are reused. Then a proc
 /// macro (no VM code, any number of codegen units) rebuilt after an edit, and used.
 pub(super) fn incremental(rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result<(), String> {
-    const REVISIONS: u32 = 9;
+    const REVISIONS: u32 = 10;
     let src = dir_in.join("edits.rs");
     let dir = out.join("incremental");
     let _ = fs::remove_dir_all(&dir);
@@ -230,10 +230,12 @@ pub(super) fn incremental(rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result
     let reuse = &["--cfg", "reuse", "-Zquery-dep-graph"][..];
     // Name, flags, flags for the incremental chain only, environment.
     // `O0` gets incremental's default of 256 codegen units, so one image per CGU.
-    let configs: [(&str, &[&str], &[&str], &[(&str, &str)]); 4] = [
+    // `O2-fat`: a stale export list makes fat LTO drop a symbol only the image references.
+    let configs: [(&str, &[&str], &[&str], &[(&str, &str)]); 5] = [
         ("O0", &[], &[], &[]),
         ("vm-16", &["-Ccodegen-units=16"], &[], &[]),
         ("O2-thin", &["-Copt-level=2", "-Clto=thin"], &[], &[]),
+        ("O2-fat", &["-Copt-level=2", "-Clto=fat"], &[], &[]),
         ("no-vm-16", &["-Ccodegen-units=16"], reuse, &[("RYO_NO_VM", "1")]),
     ];
     for (config, flags, chain_flags, env) in configs {
@@ -632,8 +634,53 @@ pub(super) fn dump(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), Strin
     Ok(())
 }
 
-pub(super) fn reject_randomize_layout(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
-    expect_reject(cmd(rustc_ryo).arg(src).arg("-Zrandomize-layout").arg("-o").arg(out.join(exe_name("randomized"))), "-Zrandomize-layout")
+/// Options the backend rejects (design/backend.md#unsupported-options), on `src`, a program
+/// with VM code: `-Zrandomize-layout`; outputs without the images (`--emit=obj`, `bc`); and
+/// links that bypass the backend's own (`-Zno-link`, `-Zlink-only`) or rewrite the objects
+/// the images refer to (`-Zstaticlib-rename-internal-symbols`).
+pub(super) fn reject_unsupported(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
+    let dir = out.join("reject");
+    crate::utils::create_dir(&dir)?;
+    let o = dir.join(exe_name("rejected"));
+    let cases: [(&[&str], &str); 6] = [
+        (&["-Zrandomize-layout"], "-Zrandomize-layout"),
+        (&["--emit=obj"], "--emit=obj"),
+        (&["--emit=link,llvm-bc"], "--emit=llvm-bc"),
+        (&["-Zno-link"], "-Zno-link"),
+        (&["-Zlink-only"], "-Zlink-only"),
+        (&["--crate-type=staticlib", "-Zstaticlib-rename-internal-symbols"], "-Zstaticlib-rename-internal-symbols"),
+    ];
+    for (flags, needle) in cases {
+        expect_reject(cmd(rustc_ryo).arg("--edition=2024").arg(src).args(flags).arg("-o").arg(&o), needle)?;
+    }
+    Ok(())
+}
+
+/// [`tests/vm_cgu_owner.rs`](../../../tests/vm_cgu_owner.rs) at 16 codegen units: it prints
+/// what plain rustc's build prints, defines its static `b::COUNTER` once, and doesn't define
+/// `b::helper`, which only a block unreachable after monomorphization calls (ELF and Mach-O,
+/// `llvm-nm`).
+pub(super) fn cgu_ownership(info: &crate::utils::RustcInfo, rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
+    let dir = out.join("cgu-ownership");
+    crate::utils::create_dir(&dir)?;
+    let mut outputs = Vec::new();
+    for (who, compiler) in [("rustc", Path::new("rustc")), ("ryo", rustc_ryo)] {
+        let exe = dir.join(exe_name(who));
+        crate::utils::run(cmd(compiler).args(["--edition=2024", "-Ccodegen-units=16", "--crate-name=vm_cgu_owner"]).arg(src).arg("-o").arg(&exe))?;
+        outputs.push(output(&mut cmd(&exe))?);
+        if who == "ryo" && !cfg!(windows) {
+            let syms = output(cmd(info.tool("llvm-nm")).args(["--defined-only", "-j"]).arg(&exe))?;
+            let count = |name: &str| syms.lines().filter(|s| s.ends_with(name) && s.contains("12vm_cgu_owner")).count();
+            let (counter, helper) = (count("1b7COUNTER"), count("1b6helper"));
+            if counter != 1 || helper != 0 {
+                return Err(format!("{}: b::COUNTER defined {counter} times (want 1), b::helper {helper} times (want 0)", exe.display()));
+            }
+        }
+    }
+    if outputs[0] != outputs[1] {
+        return Err(format!("output {:?}, plain rustc's {:?}", outputs[1], outputs[0]));
+    }
+    Ok(())
 }
 
 /// Runs `c`, which must fail with `needle` in its stderr.

@@ -210,14 +210,17 @@ This gives a third backend, built from the same toolchain, to compare against.
   images (`tests/vm_cgu.rs` spreads over many).
   Some programs are a staticlib or cdylib called from a
   C `main`, compiled with `cc`, or `cl` on windows-msvc hosts (skipped without one). The smoke tests check that `rustc-ryo`
-  rejects `-Zrandomize-layout`, that two builds of `tests/vm_cgu.rs` (many modules) at 16
-  codegen units give several, byte-identical image objects (`cgu-deterministic`), and
+  rejects `-Zrandomize-layout` and the backend the options it doesn't support
+  (`reject-unsupported`, [backend.md](backend.md#unsupported-options)), that two builds of
+  `tests/vm_cgu.rs` (many modules) at 16 codegen units give several, byte-identical image
+  objects (`cgu-deterministic`), that `tests/vm_cgu_owner.rs` at 16 codegen units defines a
+  static once and nothing only a mono-unreachable block uses (`cgu-ownership`), and
   that `cargo-ryo` builds a dev-profile package (incrementally). The `incremental` check
   rebuilds `tests/incremental/edits.rs` after a series of scripted edits (`--cfg revN`) with
   `-Cincremental -Zincremental-verify-ich`: the output must be plain rustc's and the
   executable byte-identical to a clean incremental build's, at opt-level 0 (incremental's
   256 codegen units), at 16 codegen units, at opt-level 2
-  with thin LTO, and with `RYO_NO_VM` at 16 codegen units, where `#![rustc_partition_reused]`
+  with thin and with fat LTO, and with `RYO_NO_VM` at 16 codegen units, where `#![rustc_partition_reused]`
   checks rustc's reuse; and rebuilds a proc macro at the default codegen units. The `backtrace` check builds
   `tests/vm_backtrace.rs` (a panic two VM calls deep, caught by `catch_unwind`) and runs it
   with `RUST_BACKTRACE=1`: the backtrace must name the VM functions by their own
@@ -335,7 +338,7 @@ A plain `y test` runs the fast set plus the tests the changed paths select
   `RYO_JIT_OPT=ssa RYO_JIT_CHECK=1`); the corpus programs in `FAST`, each under the variants
   listed there (`ryo` on most, the `ryo-jit-ssa*` variants on the VM programs, `ryo-lto` on
   `vm_lto_dep`, `ryo-abort` on `vm_abort_cleanup`, `ryo-std` and `ryo-std-jit` on
-  `collections`); and the cheap checks (the three rejects, `metadata-only`, `dump`, `exports`,
+  `collections`); and the cheap checks (`reject-unsupported`, `cgu-deterministic`, `cgu-ownership`, `metadata-only`, `dump`, `exports`,
   `backtrace`). Every other corpus program is on `FULL_ONLY` with a reason; a unit test
   checks that each program is on exactly one of the two lists. Without a current ryo sysroot
   the ryo-std entries are skipped with a warning; the fast suite never builds the sysroot.

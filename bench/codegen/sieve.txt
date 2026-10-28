@@ -452,10 +452,7 @@ fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::fold::<usize, {closure@s
     arg $-32, 520
     imm.w8 $-185, 0
     br! $-185, L0
-    mov.w64 $-112, $-16
-    mov.w64 $-104, $-112
-    eq.imm.w64 $-89, $-104, 0
-    jmp L1
+    unreachable
 L0:
     mov.w64 $-112, $-16
     mov.w64 $-104, $-112
@@ -463,22 +460,19 @@ L0:
     mov.w64 $-112, $-120
     mov.w64 $-120, $-104
     eq.w64 $-89, $-112, $-120
-L1:
-    br! $-89, L2
+    br! $-89, L1
     imm.w8 $-74, 0
     mov.w64 $-8, $-32
-    jmp L8
-L2:
+    jmp L7
+L1:
     imm.w8 $-74, 0
     imm.w8 $-73, 1
     mov.w64 $-96, $-32
     imm.w64 $-56, 0
     imm.w8 $-185, 0
-    br! $-185, L3
-    mov.w64 $-104, $-16
-    mov.w64 $-64, $-104
-    jmp L4
-L3:
+    br! $-185, L2
+    unreachable
+L2:
     mov.w64 $-112, $-16
     mov.w64 $-104, $-112
     mov.w64 $-112, $-24
@@ -486,9 +480,9 @@ L3:
     mov.w64 $-128, $-112
     mov.w64 $-136, $-104
     imm.w8 $-185, 1
-    br! $-185, L17
-    jmp L16
-L4:
+    br! $-185, L16
+    jmp L15
+L3:
     addr $-112, $-32
     imm.w8 $-73, 0
     mov.w64 $-136, $-96
@@ -501,73 +495,73 @@ L4:
     mov.w64 $-72, $-144
     mov.w64 $-128, $-136
     mov.w64 $-120, $-72
-L5:
+L4:
     call $-104, fn0, 8, [4294967184, 8, 4294967168, 264, 4294967176, 520]
     mov.w64 $-96, $-104
     imm.w8 $-185, 1
-    br! $-185, L21
-    jmp L20
-L6:
+    br! $-185, L20
+    jmp L19
+L5:
     mov.w64 $-8, $-96
-    jmp L8
+    jmp L7
+L6:
+    jmp L3
 L7:
-    jmp L4
-L8:
     ret $-8, 8
-L9:
-    jmp L14
-L10:
-    resume $-88
-L11:
-    jmp L9
-L12:
-    br! $-73, L9
-    jmp L11
-L13:
-    jmp L10
-L14:
-    br! $-74, L10
+L8:
     jmp L13
+L9:
+    resume $-88
+L10:
+    jmp L8
+L11:
+    br! $-73, L8
+    jmp L10
+L12:
+    jmp L9
+L13:
+    br! $-74, L9
+    jmp L12
+L14:
+    jmp L3
 L15:
-    jmp L4
-L16:
     mov.w64 $-144, $-104
     mov.w64 $-152, $-112
     addr.const $-192, k1
     call $0, fn2, 0, [4294967152, 8, 4294967144, 264, 4294967104, 520]
-L17:
+L16:
     imm.w64 $-192, 0
     lt.u.imm.w64 $-137, $-192, 1
-    br! $-137, L18
+    br! $-137, L17
     imm.w64 $-192, 1
     le.u.imm.w64 $-138, $-192, 9223372036854775807
-    br! $-138, L18
+    br! $-138, L17
     sub.w64 $-64, $-136, $-128
-    jmp L15
-L18:
+    jmp L14
+L17:
     addr.const $-200, k3
     imm.w64 $-192, 73
     addr.const $-208, k4
-L19:
+L18:
     call.sym $0, sym5, 0, [4294967096, 8, 4294967104, 264, 4294967088, 520]
     unreachable
-L20:
+L19:
     imm.w64 $-192, 1
     addr.const $-200, k6
     call $0, fn7, 0, [4294967240, 8, 4294967104, 264, 4294967096, 520]
-L21:
+L20:
     add.imm.w64 $-104, $-56, 1
     mov.w64 $-56, $-104
     mov.w64 $-112, $-56
     mov.w64 $-120, $-64
-    br.eq.w64 $-112, $-120, L6
-    jmp L7
-L22:
+    br.eq.w64 $-112, $-120, L5
+    jmp L6
+L21:
     lpad $-88
-    jmp L12
-  cleanup L5 -> L22
-  cleanup L10 -> continue
-  cleanup L19 -> L22
+    jmp L11
+  cleanup L4 -> L21
+  cleanup L9 -> continue
+  cleanup L18 -> L21
   fn0 = std::iter::adapters::map::map_fold::<&bool, usize, usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}, {closure@<usize as std::iter::Sum>::sum<std::iter::Map<std::slice::Iter<'_, bool>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}>>::{closure#0}}>::{closure#0}
   k1 = const allocation + 0
   fn2 = std::ptr::const_ptr::<impl *const T>::offset_from_unsigned::precondition_check
@@ -588,9 +582,7 @@ fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::size_hint (frame 128, ar
     arg $-32, 264
     imm.w8 $-105, 0
     br! $-105, L0
-    load.w64 $-56, [$-32 + 8]
-    mov.w64 $-40, $-56
-    jmp L1
+    unreachable
 L0:
     load.w64 $-64, [$-32 + 8]
     mov.w64 $-56, $-64
@@ -1555,13 +1547,11 @@ fn std::slice::Iter::<'_, bool>::new (frame 112, args 0, ret 16) [hint]
     mov.w64 $-56, $-80
     imm.w8 $-97, 0
     br! $-97, L0
-    mov.w64 $-40, $-48
-    jmp L1
+    unreachable
 L0:
     mov.w64 $-72, $-56
     ptr.index $-64, $-72, $-48, 1
     mov.w64 $-40, $-64
-L1:
     mov.w64 $-16, $-56
     mov.w64 $-8, $-40
     ret $-16, 526344

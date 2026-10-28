@@ -66,6 +66,9 @@ struct BlockCert {
     term: Range,
     /// Whether the last statement is a compare fused into the terminator.
     fused: bool,
+    /// Unreachable after monomorphization: lowered as a lone `unreachable` (its `term`), with
+    /// no statement ranges.
+    dead: bool,
 }
 
 /// The certificate being recorded for one function.
@@ -107,6 +110,14 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             }
             c.blocks[bb] = BlockCert { fused, ..BlockCert::default() };
             c.cur = bb;
+        }
+    }
+
+    /// Records that the current block is unreachable after monomorphization.
+    pub fn cert_dead(&mut self) {
+        if let Some(c) = &mut self.cert {
+            let b = c.cur;
+            c.blocks[b].dead = true;
         }
     }
 
@@ -160,10 +171,14 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let range = |r: Range| J::Arr(vec![num(r.0), num(r.1)]);
         let (locals_end, high) = self.frame.extent();
         let locals = self.frame.locals.iter().map(|l| obj(vec![("off", off(l.off)), ("size", num(l.layout.size.bytes()))]));
-        let blocks = c
-            .blocks
-            .iter()
-            .map(|b| obj(vec![("stmts", J::Arr(b.stmts.iter().map(|&r| range(r)).collect())), ("term", range(b.term)), ("fused", J::Bool(b.fused))]));
+        let blocks = c.blocks.iter().map(|b| {
+            obj(vec![
+                ("stmts", J::Arr(b.stmts.iter().map(|&r| range(r)).collect())),
+                ("term", range(b.term)),
+                ("fused", J::Bool(b.fused)),
+                ("dead", J::Bool(b.dead)),
+            ])
+        });
         let stubs = c.stubs.iter().map(|&(reason, r)| obj(vec![("reason", tag(terminate_reason(reason))), ("insns", range(r))]));
         let pads = c.pads.iter().map(|&(r, bb)| obj(vec![("insns", range(r)), ("block", opt(bb.map(num)))]));
         let calls = c.calls.iter().map(|(at, kind, plan, k, size)| {

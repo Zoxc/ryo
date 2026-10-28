@@ -291,7 +291,11 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         })
     }
 
-    /// Lowers every block, in index order. Cleanup blocks are only reached through landing
+    /// Lowers every block, in index order. A block that is unreachable after
+    /// monomorphization (behind a `SwitchInt` on a constant, as `if T::IS_ZST`, or on
+    /// `ub_checks()`) is lowered as a lone `unreachable`, as cg_ssa does
+    /// (`codegen_block_as_unreachable`), so its calls don't make the image refer to items the
+    /// collector never collected for it (design/lowering.md#blocks). Cleanup blocks are only reached through landing
     /// pads; on PE they come last, in the pad region (design/vm.md#unwinding), after the
     /// body's unwind targets: the body's terminate stubs and their landing pads, then (the
     /// region's start) the cleanup landing pads, the cleanup blocks and their own terminate
@@ -302,6 +306,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let uses = terminator::local_uses(body);
         let dead = frame::dead_after_read(body);
         let pe = self.cx.mode.pe;
+        let reachable = rustc_middle::mir::traversal::mono_reachable_as_bitset(body, self.tcx, self.instance);
         let mut order: Vec<BasicBlock> = body.basic_blocks.indices().collect();
         if pe {
             order.sort_by_key(|&bb| body.basic_blocks[bb].is_cleanup);
@@ -322,6 +327,16 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             let data = &body.basic_blocks[bb];
             self.bind(self.block_labels[bb.as_usize()]);
             self.next_block = order.get(i + 1).copied().filter(|_| i + 1 != cleanup_at);
+            if !reachable.contains(bb) {
+                self.fused = None;
+                self.cert_block(bb.as_usize(), false);
+                self.cert_dead();
+                self.reset_temps();
+                let start = self.insns;
+                self.op(Opcode::Unreachable, &[]);
+                self.cert_term(start);
+                continue;
+            }
             self.fused = self.fusable(data, &uses);
             self.cert_block(bb.as_usize(), self.fused.is_some());
             let stmts = &data.statements[..data.statements.len() - usize::from(self.fused.is_some())];

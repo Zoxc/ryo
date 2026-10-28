@@ -12,7 +12,7 @@ use rustc_middle::middle::exported_symbols::{ExportedSymbol, SymbolExportInfo, S
 use rustc_middle::mir::interpret::{AllocId, GlobalAlloc};
 use rustc_middle::mono::{CodegenUnit, CollectionMode, MonoItem, MonoItemData, MonoItemPartitions, Visibility};
 use rustc_middle::ty::{self, Instance, InstanceKind, Ty, TyCtxt, TypingEnv};
-use rustc_session::config::{CrateType, EntryFnType};
+use rustc_session::config::{CrateType, EntryFnType, OutputType};
 use rustc_span::Symbol;
 use ryo_bytecode::asm::{self, Ref};
 use ryo_bytecode::full::{Const, Data, Func, Site, Sym};
@@ -104,7 +104,9 @@ pub struct Results {
     exports: Exports<'static>,
 }
 
-/// The image of one codegen unit (design/backend.md#pipeline).
+/// The image of one codegen unit (design/backend.md#pipeline), or, for a CGU whose candidates
+/// all stay native, only its side data: saved as a work product too, so an incremental session
+/// doesn't lower them again just to find that out.
 pub struct CguImage {
     /// The name of the (native) CGU it belongs to; the image is `<name>.ryo_image`.
     pub cgu_name: Symbol,
@@ -138,6 +140,19 @@ static RESULTS: SessionCell<Results> = SessionCell::new();
 
 pub fn results(tcx: TyCtxt<'_>) -> Option<&'static Results> {
     RESULTS.get(tcx)
+}
+
+/// [`Results`] for the exported-symbols overrides, after forcing the partitioning. The dep
+/// graph sees the results only through the native CGUs (the partition query's hash), not the
+/// images' roots and exports, which can change while the native CGUs don't (a VM function's new
+/// callee). Both queries are `cache_on_disk`, so a green node would load the previous session's
+/// list (design/backend.md#incremental): with VM code they depend on the forever-red node and
+/// rerun every session, as rustc's `create_def` makes its callers do. They are cheap.
+fn results_untracked(tcx: TyCtxt<'_>) -> Option<&'static Results> {
+    let _ = tcx.collect_and_partition_mono_items(());
+    let r = results(tcx)?;
+    tcx.dep_graph.read_index(rustc_middle::dep_graph::DepNodeIndex::FOREVER_RED_NODE);
+    Some(r)
 }
 
 impl Results {
@@ -180,6 +195,18 @@ pub fn collect_and_partition_mono_items<'tcx>(tcx: TyCtxt<'tcx>, original: super
         let _t = tcx.prof.generic_activity("ryo_partition");
         Partitioner::new(tcx, rt, &switches, partitions.codegen_units).run()
     };
+    // These outputs are cg_llvm's native modules only: an object or bitcode file without the
+    // images is missing the VM functions, so it would fail to link (or leave the image objects
+    // behind as temporaries). Output for reading (`asm`, `llvm-ir`, `mir`) is allowed.
+    if results.images.iter().any(CguImage::has_object)
+        && let Some(t) =
+            [OutputType::Object, OutputType::Bitcode, OutputType::ThinLinkBitcode].into_iter().find(|t| tcx.sess.opts.output_types.contains_key(t))
+    {
+        tcx.dcx().fatal(format!(
+            "the ryo backend doesn't support `--emit={}` for a crate with VM code: it would lack the VM functions, which are in separate image objects",
+            t.shorthand()
+        ));
+    }
     if RESULTS.set(tcx, results).is_err() {
         tcx.dcx().fatal("collect_and_partition_mono_items ran twice in one process");
     }
@@ -294,10 +321,22 @@ fn root_kind_of(k: u8) -> SymbolExportKind {
 
 /// Where a CGU's image object comes from.
 pub enum ImageSrc {
-    /// Written this session, with its side data ([`CguVm::save`]).
-    Fresh { image: ImageObject, side: Vec<u8> },
-    /// The previous session's, from the incremental cache: its work product.
+    /// Written this session, with its side data ([`CguVm::save`]); no image if the CGU has no
+    /// VM function.
+    Fresh { image: Option<ImageObject>, side: Vec<u8> },
+    /// The previous session's, from the incremental cache: its work product (without an `o`
+    /// file if the CGU has no VM function).
     Reused(WorkProduct),
+}
+
+impl CguImage {
+    /// Whether there is an image object (the CGU has VM functions).
+    pub fn has_object(&self) -> bool {
+        match &self.image {
+            ImageSrc::Fresh { image, .. } => image.is_some(),
+            ImageSrc::Reused(wp) => wp.saved_files.contains_key("o"),
+        }
+    }
 }
 
 /// A CGU's VM part as this session lowered it: for the stats, the dumps and the Lean
@@ -322,13 +361,15 @@ struct ImagePart<'tcx> {
 
 /// The session's settings an image depends on beyond its CGU's items and the queries its
 /// lowering reads (which its dep node tracks), for the reuse fingerprint.
-fn image_settings(tcx: TyCtxt<'_>, mode: asm::Mode, switches: &Switches) -> String {
+fn image_settings(tcx: TyCtxt<'_>, rt: RtItems, mode: asm::Mode, switches: &Switches) -> String {
     // The backend itself: a rebuilt backend may lower differently.
     let backend = tcx.sess.opts.unstable_opts.codegen_backend.as_deref().and_then(|p| std::fs::metadata(p).ok()).map(|m| {
         let t = m.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_nanos());
         (m.len(), t)
     });
-    format!("{:?} {} {} {backend:?} {}", mode, local_stable_crate_id(tcx), switches.asm_align, env!("CARGO_PKG_VERSION"))
+    // `ryo_rt`'s crate hash: what its handlers expect may change without the backend
+    // changing, and an image that calls no island reads nothing else of it.
+    format!("{:?} {} {} {backend:?} {} {}", mode, local_stable_crate_id(tcx), switches.asm_align, env!("CARGO_PKG_VERSION"), tcx.crate_hash(rt.krate))
 }
 
 struct Partitioner<'a, 'tcx> {
@@ -341,6 +382,8 @@ struct Partitioner<'a, 'tcx> {
     units: Vec<Unit<'a, 'tcx>>,
     /// The CGUs holding each of rustc's items (several for `LocalCopy` items).
     homes: FxHashMap<MonoItem<'tcx>, Vec<usize>>,
+    /// The CGU that added each [`unique`] item no CGU of rustc's holds ([`Self::expose_unique`]).
+    owners: FxHashMap<MonoItem<'tcx>, usize>,
     stats: Stats,
 }
 
@@ -398,7 +441,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                 hidden_added: Vec::new(),
             })
             .collect();
-        Partitioner { tcx, rt, switches, mode: asm_mode(tcx, rt, switches), units, homes, stats: Stats::default() }
+        Partitioner { tcx, rt, switches, mode: asm_mode(tcx, rt, switches), units, homes, owners: FxHashMap::default(), stats: Stats::default() }
     }
 
     fn run(mut self) -> (Vec<CodegenUnit<'tcx>>, Results) {
@@ -407,7 +450,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
 
         // Steps 2, 3 and 5's contents, per CGU and in parallel (over CGUs, and over each one's
         // functions): classify, lower and build the image, or reuse the previous session's.
-        let settings = image_settings(tcx, self.mode, self.switches);
+        let settings = image_settings(tcx, self.rt, self.mode, self.switches);
         let entry = tcx.entry_fn(()).map(|(def_id, _)| Instance::mono(tcx, def_id));
         let parts: Vec<ImagePart<'tcx>> = {
             let _t = tcx.prof.generic_activity("ryo_lower");
@@ -439,8 +482,8 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         self.stats.native_fns = failed.len();
 
         // Step 1 (symbols) and 4, per CGU: the native items' references to VM functions,
-        // islands, the entry wrapper, the stub neighbors, and the native items the image
-        // refers to.
+        // islands, the entry wrapper, and the native items the image refers to; then, once
+        // every CGU's linkage changes for its image are known, the stub neighbors.
         let stubs_t = tcx.prof.generic_activity("ryo_stubs");
         let mut islands = FxHashSet::default();
         for u in 0..self.units.len() {
@@ -452,11 +495,12 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             {
                 self.add_c_main(u, main, ty);
             }
-            self.walk_stub_neighbors(u);
             let refs = self.units[u].vm.refs.clone();
             for item in refs {
                 self.make_visible(u, item);
             }
+        }
+        for u in 0..self.units.len() {
             self.walk_stub_neighbors(u);
         }
         self.stats.islands = islands.len();
@@ -609,14 +653,56 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
     }
 
     /// Whether `item` is defined with a global symbol by some CGU other than `u`: one of its
-    /// non-internal items (VM or native), or a VM function another image gives a global symbol.
+    /// non-internal items (VM or native, after the flips so far), or a VM function another
+    /// image gives a global symbol.
     fn global_elsewhere(&self, u: usize, item: MonoItem<'tcx>) -> bool {
         let Some(homes) = self.homes.get(&item) else { return false };
         homes.iter().any(|&h| {
-            h != u
-                && (self.units[h].cgu.items()[&item].linkage != Linkage::Internal
-                    || matches!(item, MonoItem::Fn(f) if self.units[h].index.get(&f) == Some(&true)))
+            let unit = &self.units[h];
+            let linkage = unit.flips.get(&item).map_or(unit.cgu.items()[&item].linkage, |f| f.0);
+            h != u && (linkage != Linkage::Internal || matches!(item, MonoItem::Fn(f) if unit.index.get(&f) == Some(&true)))
         })
+    }
+
+    /// For a [`unique`] item (a static, or a function that isn't a `LocalCopy`) that CGU `u`
+    /// needs and doesn't hold: whether another CGU defines it, made linkable from `u` if
+    /// needed. Its CGU in rustc's partition (one, being unique): an internal item there becomes
+    /// External + Hidden, a linkonce one its weak form (as [`Self::make_visible`] does in `u`);
+    /// a VM function is global already ([`build_cgu`]). Else the CGU that added it before
+    /// (`owners`): an internal addition becomes External + Hidden. Else `false`, and `u` adds
+    /// it and becomes its owner. A copy of its own in `u` would be a second instance: a second
+    /// counter, lock or `OnceLock` for a static.
+    fn expose_unique(&mut self, u: usize, item: MonoItem<'tcx>) -> bool {
+        if let Some(homes) = self.homes.get(&item) {
+            for &h in homes.iter().filter(|&&h| h != u) {
+                let unit = &mut self.units[h];
+                if matches!(item, MonoItem::Fn(f) if unit.index.contains_key(&f)) || unit.flips.contains_key(&item) {
+                    continue;
+                }
+                let data = unit.cgu.items()[&item];
+                let flip = match data.linkage {
+                    Linkage::Internal => Some((Linkage::External, Visibility::Hidden)),
+                    Linkage::LinkOnceAny => Some((Linkage::WeakAny, data.visibility)),
+                    Linkage::LinkOnceODR => Some((Linkage::WeakODR, data.visibility)),
+                    _ => None,
+                };
+                if let Some(flip) = flip {
+                    unit.flips.insert(item, flip);
+                }
+            }
+            return true;
+        }
+        let Some(&h) = self.owners.get(&item) else { return false };
+        let unit = &mut self.units[h];
+        let data = unit.added.get_mut(&item).expect("an owned item is added");
+        if data.linkage == Linkage::Internal {
+            data.linkage = Linkage::External;
+            data.visibility = Visibility::Hidden;
+            if let MonoItem::Fn(f) = item {
+                unit.hidden_added.push(f);
+            }
+        }
+        true
     }
 
     /// Marks the VM functions referenced by CGU `u`'s native items: functions (their
@@ -696,8 +782,9 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
     /// Adds to CGU `u` whatever its stub instances use that the collector never saw,
     /// recursively (design/backend.md#pipeline step 4, Stub neighbors). `items_of_instance`
     /// already applies `should_codegen_locally`, so upstream copies (share-generics) are linked
-    /// to, not defined. An item another CGU defines globally is referenced; otherwise it is
-    /// added internal: only the stubs reference it.
+    /// to, not defined. A [`unique`] item is defined once ([`Self::expose_unique`]); a
+    /// `LocalCopy` another CGU defines globally is referenced; otherwise it is added internal:
+    /// only the stubs reference it.
     fn walk_stub_neighbors(&mut self, u: usize) {
         let tcx = self.tcx;
         while let Some(instance) = self.units[u].work.pop() {
@@ -709,7 +796,15 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                     continue;
                 }
                 let unit = &self.units[u];
-                if unit.cgu.items().contains_key(&n) || unit.added.contains_key(&n) || self.global_elsewhere(u, n) {
+                if unit.cgu.items().contains_key(&n) || unit.added.contains_key(&n) {
+                    continue;
+                }
+                if unique(tcx, n) {
+                    if self.expose_unique(u, n) {
+                        continue;
+                    }
+                    self.owners.insert(n, u);
+                } else if self.global_elsewhere(u, n) {
                     continue;
                 }
                 let data =
@@ -807,7 +902,11 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             }
             return;
         }
-        // Defined by another CGU: a native item there needs at most the linkonce flip.
+        if unique(tcx, item) && self.expose_unique(u, item) {
+            return;
+        }
+        // A `LocalCopy` defined globally by another CGU: a native item there needs at most the
+        // linkonce flip.
         if self.global_elsewhere(u, item) {
             for h in self.homes.get(&item).cloned().unwrap_or_default() {
                 let data = self.units[h].cgu.items()[&item];
@@ -827,6 +926,9 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         {
             let data =
                 MonoItemData { inlined: false, linkage: Linkage::WeakODR, visibility: Visibility::Hidden, size_estimate: item.size_estimate(tcx) };
+            if unique(tcx, item) {
+                self.owners.insert(item, u);
+            }
             let unit = &mut self.units[u];
             unit.added.insert(item, data);
             unit.hidden_added.push(f);
@@ -890,7 +992,7 @@ fn image_part<'tcx>(
     let prev = tcx.dep_graph.previous_work_product(&WorkProductId::from_cgu_name(&wp));
     let side = prev
         .as_ref()
-        .and_then(|p| p.saved_files.get("o").and(p.saved_files.get("ryo")))
+        .and_then(|p| p.saved_files.get("ryo"))
         .zip(tcx.incr_comp_session)
         .and_then(|(f, incr)| std::fs::read(rustc_incremental::in_incr_comp_dir_sess(incr, f)).ok());
     if let (Some(prev), Some(side)) = (prev, side)
@@ -932,9 +1034,10 @@ fn build_cgu<'tcx>(
         }
     }
     if vm.is_empty() {
+        let side = CguVm::empty().save(tcx);
         return ImagePart {
             vm: CguVm::empty(),
-            image: None,
+            image: Some(ImageSrc::Fresh { image: None, side }),
             fresh: Some(Fresh { cgu: cgu.name(), vm, pool: 0, failed, dump: String::new(), code_dump: String::new() }),
         };
     }
@@ -971,7 +1074,11 @@ fn build_cgu<'tcx>(
         main,
     };
     let side = cgu_vm.save(tcx);
-    ImagePart { vm: cgu_vm, image: Some(ImageSrc::Fresh { image, side }), fresh: Some(Fresh { cgu: cgu.name(), vm, pool, failed, dump, code_dump }) }
+    ImagePart {
+        vm: cgu_vm,
+        image: Some(ImageSrc::Fresh { image: Some(image), side }),
+        fresh: Some(Fresh { cgu: cgu.name(), vm, pool, failed, dump, code_dump }),
+    }
 }
 
 /// The coverage summary of `RYO_STATS` (design/backend.md#debugging-switches): island
@@ -1467,9 +1574,7 @@ pub fn exported_non_generic_symbols<'tcx>(
     if !tcx.sess.opts.output_types.should_codegen() || tcx.crate_types().contains(&CrateType::ProcMacro) {
         return list;
     }
-    // Forces the partitioning, as `exported_generic_symbols` does during metadata encoding.
-    let _ = tcx.collect_and_partition_mono_items(());
-    let Some(r) = results(tcx) else { return list };
+    let Some(r) = results_untracked(tcx) else { return list };
     let info = |kind| SymbolExportInfo { level: SymbolExportLevel::Rust, kind, used: true, rustc_std_internal_symbol: false };
     debug_assert!(is_root(&ExportedSymbol::NoDefId(ty::SymbolName::new(tcx, "")), &info(SymbolExportKind::Text)));
     let mut roots: Vec<_> = r.lto_roots.iter().collect();
@@ -1568,18 +1673,26 @@ pub fn upstream_monomorphizations<'tcx>(tcx: TyCtxt<'tcx>, map: UpstreamMonos<'t
 
 /// Our local `exported_generic_symbols` (design/backend.md#query-overrides): rustc lists the
 /// native CGU's generic items; the VM functions' symbols the image defines are added as
-/// rustc would list them if they were in the CGU (`exported_generic_symbols_provider_local`,
-/// generic `Item` instances only), and items made hidden only for the image aren't listed.
+/// rustc would list them if they were in the CGU (`exported_generic_symbols_provider_local`:
+/// generic `Item` instances and drop glue shims), and items made hidden only for the image
+/// aren't listed.
 pub fn exported_generic_symbols<'tcx>(
     tcx: TyCtxt<'tcx>,
     list: &'tcx [(ExportedSymbol<'tcx>, SymbolExportInfo)],
 ) -> &'tcx [(ExportedSymbol<'tcx>, SymbolExportInfo)] {
-    let Some(r) = results(tcx) else { return list };
+    if !tcx.sess.opts.output_types.should_codegen() {
+        return list;
+    }
+    let Some(r) = results_untracked(tcx) else { return list };
     let hidden: FxHashSet<Instance<'tcx>> = r.exports(tcx).hidden_for_image.iter().copied().collect();
     let mut out: Vec<_> = list
         .iter()
         .copied()
-        .filter(|&(s, _)| !matches!(s, ExportedSymbol::Generic(def_id, args) if hidden.contains(&Instance::new_raw(def_id, args))))
+        .filter(|&(s, _)| match s {
+            ExportedSymbol::Generic(def_id, args) => !hidden.contains(&Instance::new_raw(def_id, args)),
+            ExportedSymbol::DropGlue(ty) => !hidden.contains(&Instance::resolve_drop_glue(tcx, ty)),
+            _ => true,
+        })
         .collect();
     if tcx.local_crate_exports_generics() {
         let need_visibility = tcx.sess.target.dynamic_linking && !tcx.sess.target.only_cdylib;
@@ -1591,24 +1704,33 @@ pub fn exported_generic_symbols<'tcx>(
             };
             root.as_local().is_some_and(|d| !reachable.contains(&d))
         };
+        let downstream = |def: Option<DefId>, args: ty::GenericArgsRef<'tcx>| {
+            args.types().chain(def.map(|d| tcx.type_of(d).skip_binder())).all(|t| t.walk().all(|a| a.as_type().is_none_or(|t| !local_unreachable(t))))
+        };
+        let info = SymbolExportInfo { level: SymbolExportLevel::Rust, kind: SymbolExportKind::Text, used: false, rustc_std_internal_symbol: false };
         for &(instance, vis) in &r.exports(tcx).vm {
-            let InstanceKind::Item(def) = instance.def else { continue };
             if need_visibility && vis == Visibility::Hidden {
                 continue;
             }
-            if !tcx.sess.opts.share_generics() && tcx.codegen_fn_attrs(def).inline != rustc_hir::attrs::InlineAttr::Never {
+            if !tcx.sess.opts.share_generics() && tcx.codegen_fn_attrs(instance.def_id()).inline != rustc_hir::attrs::InlineAttr::Never {
                 continue;
             }
-            let downstream = instance
-                .args
-                .types()
-                .chain([tcx.type_of(def).skip_binder()])
-                .all(|t| t.walk().all(|a| a.as_type().is_none_or(|t| !local_unreachable(t))));
-            if instance.args.non_erasable_generics().next().is_some() && downstream {
-                let info =
-                    SymbolExportInfo { level: SymbolExportLevel::Rust, kind: SymbolExportKind::Text, used: false, rustc_std_internal_symbol: false };
-                out.push((ExportedSymbol::Generic(def, instance.args), info));
-            }
+            // The kinds rustc shares (`symbol_export.rs:398-484`).
+            let symbol = match instance.def {
+                InstanceKind::Item(def) => (instance.args.non_erasable_generics().next().is_some() && downstream(Some(def), instance.args))
+                    .then_some(ExportedSymbol::Generic(def, instance.args)),
+                InstanceKind::Shim(ty::ShimKind::DropGlue(_, Some(ty))) => {
+                    let shared = match ty.kind() {
+                        ty::Adt(_, args) | ty::Closure(_, args) => downstream(None, args),
+                        _ => true,
+                    };
+                    shared.then_some(ExportedSymbol::DropGlue(ty))
+                }
+                InstanceKind::Shim(ty::ShimKind::AsyncDropGlueCtor(_, ty)) => Some(ExportedSymbol::AsyncDropGlueCtorShim(ty)),
+                InstanceKind::Shim(ty::ShimKind::AsyncDropGlue(def, ty)) => Some(ExportedSymbol::AsyncDropGlue(def, ty)),
+                _ => None,
+            };
+            out.extend(symbol.map(|s| (s, info)));
         }
     }
     out.sort_by_cached_key(|s| s.0.symbol_name_for_local_instance(tcx));

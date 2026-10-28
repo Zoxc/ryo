@@ -3,6 +3,15 @@
 Rust-side changes that the Lean model or proofs don't reflect yet. Add an entry per change;
 remove it once a Lean session has handled it.
 
+- Mono-unreachable blocks (Commit: "Backend: CGU ownership, incremental exports, mono-reachable
+  blocks, unsupported options"): a block `mir::traversal::mono_reachable` doesn't reach (a
+  `SwitchInt` on a constant or on `ub_checks()`, resolved for the instance) is lowered as a
+  lone `unreachable`: no statement ranges, `term` the `unreachable`. The lowering
+  certificate's block objects gain `"dead": bool` (`lower/cert.rs`). `Ryo/Check/Lower/Cert.lean`
+  should read it and `CertCheck.lean` accept a dead block with no statement ranges and an
+  `unreachable` terminator, which needs the MIR spec's reachability under the instance's
+  constants (the block is never entered: a switch on a constant never takes that edge).
+
 - SSA tier on PE (Commit: "Asm, Rt, JIT, Backend: Win64 handlers on PE"): handler
   calls take the Win64 positions (the fifth as `mov [rsp + 32], r11d`), `rdi`/`rsi` are
   callee-saved (saved when used, no longer at fixed AOT slots; the PE prologue pushes only

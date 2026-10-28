@@ -113,9 +113,17 @@ and `codegen_crate` reads them.
      items already in the CGU. The query has already dropped what isn't codegened locally:
      the collector's `should_codegen_locally` (`collector.rs:1075`) runs on every neighbor,
      and it is public as the hook `tcx.should_codegen_locally` (`rustc_middle/src/hooks/mod.rs:90`),
-     which the lowering uses for callees. Neighbors are always native, and `Internal`: only the
-     stubs reference them. A neighbor that is a VM function of the same CGU gets a global
-     symbol instead; one another CGU defines globally (VM or native) is referenced.
+     which the lowering uses for callees. Neighbors are always native. A neighbor that is a VM
+     function of the same CGU gets a global symbol instead. One that exists once per crate
+     (a static, or a function that isn't `LocalCopy`) must not get a second copy (a second
+     counter, lock or `OnceLock`): if another CGU holds it, it is referenced, and made
+     linkable there as for the image (`Internal` → `External` + `Hidden`, linkonce → weak,
+     `expose_unique`); if no CGU of rustc's holds it, the first CGU that needs it adds it,
+     and later ones reference that copy, made `External` + `Hidden`. Any other neighbor (a
+     `LocalCopy`) is referenced if another CGU defines it globally (VM or native, after
+     those linkage changes), else added `Internal`: only the stubs reference it. The walks
+     run after every CGU's image references are made linkable, so these decisions don't
+     depend on the order the CGUs are processed in.
    - **Upstream copies**: before defining a stub instance or neighbor, the backend checks
      `instance.upstream_monomorphization(tcx)`. If an upstream crate exports it
      (share-generics), the image relocates against that copy instead of defining a second one,
@@ -177,9 +185,8 @@ and `codegen_crate` reads them.
    `.eh_frame` and `.gcc_except_table.ryo_image`; on PE they are `.rdata$ryo_image`,
    `.data$ryo_image`, `.text$ryo_image`, `.pdata` and `.xdata`; on Mach-O `__DATA,__const`,
    `__DATA,__data`, `__TEXT,__text`, `__TEXT,__eh_frame` and `__TEXT,__gcc_except_tab`
-   ([platforms.md](platforms.md)). Limitation: with `--emit=obj` (no linking) the emitted
-   `.o` lacks the image, because `join_codegen` adds the image module after cg_ssa has copied
-   the module objects to the outputs; and no registry stub is generated then. A binary with a VM `main` also gets `__ryo_main` in this
+   ([platforms.md](platforms.md)). `--emit=obj` is rejected for a crate with VM code
+   ([Unsupported options](#unsupported-options)). A binary with a VM `main` also gets `__ryo_main` in this
    object ([stubs.md](stubs.md#program-entry-main)).
 6. **Link** with cg_llvm's `link` (`link_binary`). The VM is part of `ryo_rt`, which links like
    any Rust dependency, so there is no native runtime library. Two additions:
@@ -261,7 +268,8 @@ depends on changed (`partition.rs`, `image_part`).
 - **The image's dep node** is a `CompileCodegenUnit` node named
   `<cgu>.ryo.<fingerprint>`, the fingerprint covering the CGU name, its candidates' symbols,
   linkage and visibility, the entry fn, the `asm::Mode`, the crate's `StableCrateId`,
-  `RYO_ASM_ALIGN` and the backend dylib's size and modification time. A change to any of
+  `RYO_ASM_ALIGN`, the backend dylib's size and modification time, and `ryo_rt`'s crate
+  hash (an image that calls no island reads nothing else of `ryo_rt`). A change to any of
   these gives a node the previous session didn't have. The lowering runs inside
   `dep_graph.with_task(node, ..)`, so the queries it reads (MIR, layouts, ABIs, symbol
   names, constants) are its edges; reading rustc's partition there would be a cycle (this
@@ -273,10 +281,23 @@ depends on changed (`partition.rs`, `image_part`).
   decoded (`persist.rs`, `Instance`s and `MonoItem`s by `DefPathHash`), the native CGUs and
   the exported-symbols queries are built from it as from a fresh image, and `codegen_crate`
   hard-links the cached object into place. A reused image is byte-identical to a fresh one.
+  A CGU whose candidates all stay native has a product too, with side data only (no `o`):
+  reusing it saves lowering them again only to find that out.
 - **Saving.** cg_ssa saves only its own modules' products, inside cg_llvm's join, so our
   `join_codegen` saves each fresh image's object and side data with
   `copy_cgu_workproduct_to_incr_comp_cache_dir`, and re-inserts each reused one's previous
-  `WorkProduct`, before rustc writes the work product index.
+  `WorkProduct`, before rustc writes the work product index. A fresh image's files are
+  removed before they are written: under `-Csave-temps` the previous session's may still be
+  hard links into the cache, which writing through would change.
+- **Exported symbols.** `exported_non_generic_symbols` and `exported_generic_symbols` are
+  `cache_on_disk`, and their overrides add data (the images' LTO roots and exports, the items
+  made hidden for them) that the dep graph sees only through the native CGUs. Those can stay
+  the same while the roots change: VM code that starts calling a native function another CGU
+  already exposes. A green node would then load the previous session's list, and `-Clto=fat`
+  would internalize and drop the new root. So with VM code both overrides read the
+  forever-red dep node (as rustc's `create_def` does) and rerun every session; they are
+  cheap, and an unchanged result keeps their dependents green. The `incremental` check's
+  revision 10 is this case, under `O2-fat`.
 - Not reused: with `RYO_DUMP`, `RYO_DUMP_CODE` or `RYO_DUMP_LEAN` (their output covers the
   images built), and under `-Zdisable-incr-comp-backend-caching`. `RYO_STATS` prints
   `ryo: <n> of <m> images reused`; the `incremental` check rebuilds each revision unchanged
@@ -299,9 +320,10 @@ in the benches and `tests/vm_cgu.rs` by 200 to 1500 bytes. The images' other per
   declarations (`callee.rs`). The CGU's name is what `codegen_unit(name)` looks up.
 - `exported_non_generic_symbols` / `exported_generic_symbols`:
   - VM functions aren't in the native CGU, so rustc's provider doesn't list the generic
-    ones. The `exported_generic_symbols` override adds the VM generic `Item` instances with
-    `External` linkage whose global symbols the image defines, as rustc would list them if
-    they were in the CGU (`exported_generic_symbols_provider_local`), with their
+    ones. The `exported_generic_symbols` override adds the VM generic `Item` instances and
+    drop glue (and async drop glue) shims with `External` linkage whose global symbols the
+    image defines, as rustc would list them if they were in the CGU
+    (`exported_generic_symbols_provider_local`, `symbol_export.rs:398-484`), with their
     visibility. Only symbols the image actually defines are listed, since a listed instance
     without a definition leaves downstream crates with an undefined reference.
   - Every symbol the image refers to (VM functions of other crates, callees, statics, islands, the targets of
@@ -347,6 +369,24 @@ in the benches and `tests/vm_cgu.rs` by 200 to 1500 bytes. The images' other per
   attribute-given symbol, the default symbol plus `.ryo<StableCrateId as 16 hex digits>` (see
   Linkage). Everything else uses the
   default provider.
+
+## Unsupported options
+
+Rejected with an error, rather than producing output that doesn't work:
+
+- `-Zrandomize-layout` (by the wrappers, [build.md](build.md)): island argument blocks need
+  tuple layouts that agree between crates.
+- `-Clto` of a dylib (`-Zdylib-lto`): not tested with the image.
+- `--emit=obj`, `llvm-bc` and `thin-link-bitcode` for a crate with VM code: these outputs
+  are cg_llvm's modules, copied to the outputs inside its `join`, without the image objects,
+  so the VM functions would be undefined. Output for reading (`asm`, `llvm-ir`, `mir`) is
+  allowed and covers the native code only.
+- `-Zno-link` and `-Zlink-only`: the `.rlink` path links without `codegen_crate`, so without
+  the registry object and the removal of the LTO roots from the export lists.
+- `-Zstaticlib-rename-internal-symbols`: it renames symbols in the Rust objects of the
+  staticlib, but not in the upstream images (plain archive members) that refer to them.
+
+`y test`'s `reject-unsupported` check runs each.
 
 ## Debugging switches
 

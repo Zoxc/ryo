@@ -233,6 +233,13 @@ the VM. Wide pointer orderings are lexicographic: `a < b` is `a.data < b.data ||
 
 ## Terminators
 
+A block that is unreachable after monomorphization (`mir::traversal::mono_reachable`: behind a
+`SwitchInt` on a constant, as `if const { size_of::<T>() == 0 }`, or on `ub_checks()`) is
+lowered as a lone `unreachable`, as cg_ssa does (`codegen_block_as_unreachable`,
+`rustc_codegen_ssa/src/mir/mod.rs:291-392`): the collector skips these blocks too
+(`collector.rs:1367`), so the image must not refer to what they use, which no CGU may define
+([backend.md](backend.md#pipeline), step 4). The Lean certificate marks such a block `dead`.
+
 | `TerminatorKind` | Bytecode |
 |---|---|
 | `Goto` | `jmp`, or fall-through |
