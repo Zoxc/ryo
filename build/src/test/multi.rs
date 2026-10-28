@@ -34,10 +34,10 @@ fn cc(info: &RustcInfo, lld: bool) -> Command {
     c
 }
 
-/// Same-version ryo staticlibs in one C program (multi-ryo.md §8.3): two and three of them, in
-/// both orders, with GNU ld and lld, each running correctly with and without the JIT (one
-/// runtime: archive extraction takes the first archive's runtime members, which define every
-/// symbol the later archives' would). With `--whole-archive` the link fails on duplicate
+/// Same-version ryo staticlibs in one C program: two and three of them, in both orders, with
+/// GNU ld and lld, each running correctly with and without the JIT. These links happen to pull
+/// only one archive's runtime members today; that isn't guaranteed (design/vm.md, "Several
+/// runtimes"), and a link that pulls two fails on duplicate symbols. With `--whole-archive` the link fails on duplicate
 /// symbols (the users' std and the runtime: the documented limitation). Staticlibs each
 /// combined into one object with their std localized (`ld -r` + `objcopy
 /// --keep-global-symbol`) link and run as two runtimes, each registering its own images

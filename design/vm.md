@@ -928,11 +928,14 @@ private copy of the runtime (`ryo_rt`, `ryo_bytecode` and the sealed JIT):
   none of it, and the backend leaves `ryo_rt`/`ryo_bytecode` out of upstream Rust dylibs
   (`dylib_dependency_formats`) and out of a Rust dylib's export list. So no module binds to
   another's runtime, sibling Rust dylibs build, and no dynamic symbol is defined twice.
-- **Same-build staticlibs in one C link** share one runtime: their runtime members are the
-  same objects, and archive extraction pulls a member only for a still-undefined symbol, so
-  only the first archive's are taken. A link pulling every member (`--whole-archive`,
-  `/WHOLEARCHIVE`, `-all_load`) fails on duplicate symbols, the users' std and `ryo_rt`'s:
-  unsupported, as for any two Rust staticlibs. Staticlibs each combined with `ld -r` and
+- **Same-build staticlibs in one C link** each carry the same `ryo_rt`/`ryo_bytecode`
+  objects, with identically named strong symbols. Nothing guarantees the linker takes only
+  one archive's copy: whether a later archive's runtime member is pulled depends on the
+  linker, the link order and which symbols are still undefined when it scans that archive.
+  When one is pulled, the link fails on duplicate symbols; when none is, the staticlibs share
+  one runtime. Deduplicating these symbols is a known open limitation. A link pulling every
+  member (`--whole-archive`, `/WHOLEARCHIVE`, `-all_load`) always fails, also on the users'
+  std, as for any two Rust staticlibs. Staticlibs each combined with `ld -r` and
   localized keep a runtime each (anchor ownership, [Image format](#image-format)).
 - **Run-time merge** (`jit/merge.rs`): copies of one build whose program has one panic
   personality (one std: an executable and its Rust dylibs with `-Cprefer-dynamic`, the ryo
