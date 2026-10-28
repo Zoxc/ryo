@@ -358,39 +358,9 @@ pub fn shape(f: &Func) -> Shape {
     let live = f.live_blocks();
     let rpo = f.rpo();
     let idom = f.idoms(&rpo);
-    let dominates = |a: Block, mut b: Block| -> bool {
-        loop {
-            if a == b {
-                return true;
-            }
-            match idom[b.idx()] {
-                Some(d) => b = d,
-                None => return false,
-            }
-        }
-    };
-    // Loops: the blocks that reach a back edge's source without passing its header.
-    let mut bodies: BTreeMap<u32, Vec<bool>> = BTreeMap::new();
-    for &b in &live {
-        for e in f.blocks[b.idx()].term.edges() {
-            let h = e.to;
-            if !dominates(h, b) {
-                continue;
-            }
-            let body = bodies.entry(h.0).or_insert_with(|| alloc::vec![false; n]);
-            body[h.idx()] = true;
-            let mut stack = alloc::vec![b];
-            while let Some(x) = stack.pop() {
-                if core::mem::replace(&mut body[x.idx()], true) {
-                    continue;
-                }
-                stack.extend(f.blocks[x.idx()].preds.iter().map(|p| p.0));
-            }
-        }
-    }
     let mut depth = alloc::vec![0u32; n];
-    for body in bodies.values() {
-        for (x, &inside) in body.iter().enumerate() {
+    for l in f.loops(&rpo, &idom, |b| f.blocks[b.idx()].preds.iter().map(|p| p.0)) {
+        for (x, &inside) in l.body.iter().enumerate() {
             depth[x] += inside as u32;
         }
     }

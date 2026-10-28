@@ -79,7 +79,7 @@ pub fn same_params(f: &Func, b: Block, n: usize, m: usize) -> bool {
 /// The immediate dominators as [`Func::idoms`] gives them, but with the OSR edges left out:
 /// a head's is its dominator on the normal paths, and the OSR entries (and blocks only they
 /// reach) have none.
-pub fn normal_idoms(f: &Func, rpo: &[Block]) -> Vec<Option<Block>> {
+pub fn normal_idoms(f: &Func, rpo: &[Block]) -> Idoms {
     f.idoms_by(rpo, |p| !osr_edge(f, p))
 }
 

@@ -620,6 +620,42 @@ pub enum Term {
     },
 }
 
+/// Immediate dominators by block, `None` for the roots and unreachable blocks.
+#[derive(Clone)]
+pub struct Idoms(pub Vec<Option<Block>>);
+
+impl Idoms {
+    /// Whether `a` dominates `b` (every block dominates itself).
+    pub fn dominates(&self, a: Block, b: Block) -> bool {
+        let mut x = Some(b);
+        while let Some(y) = x {
+            if y == a {
+                return true;
+            }
+            x = self.0[y.idx()];
+        }
+        false
+    }
+}
+
+impl core::ops::Deref for Idoms {
+    type Target = [Option<Block>];
+
+    fn deref(&self) -> &[Option<Block>] {
+        &self.0
+    }
+}
+
+/// A natural loop ([`Func::loops`]).
+pub struct Loop {
+    pub head: Block,
+    pub latches: Vec<Block>,
+    /// By block, whether it is in the loop.
+    pub body: Vec<bool>,
+    /// Its blocks.
+    pub size: usize,
+}
+
 impl Term {
     /// Its edges, in order (without allocating).
     pub fn edges(&self) -> Edges<'_> {
@@ -1020,12 +1056,12 @@ impl Func {
 
     /// The immediate dominators (Cooper, Harvey, Kennedy), with a virtual root above the
     /// entry and the OSR entries: `None` for those and for unreachable blocks.
-    pub fn idoms(&self, rpo: &[Block]) -> Vec<Option<Block>> {
+    pub fn idoms(&self, rpo: &[Block]) -> Idoms {
         self.idoms_by(rpo, |_| true)
     }
 
     /// [`Func::idoms`] counting only the edges from the predecessors `keep` accepts.
-    pub fn idoms_by(&self, rpo: &[Block], keep: impl Fn(Block) -> bool) -> Vec<Option<Block>> {
+    pub fn idoms_by(&self, rpo: &[Block], keep: impl Fn(Block) -> bool) -> Idoms {
         let n = self.blocks.len();
         const ROOT: u32 = u32::MAX;
         let mut order = alloc::vec![u32::MAX; n];
@@ -1078,7 +1114,34 @@ impl Func {
                 }
             }
         }
-        idom.into_iter().map(|d| if d >= u32::MAX - 1 { None } else { Some(Block(d)) }).collect()
+        Idoms(idom.into_iter().map(|d| if d >= u32::MAX - 1 { None } else { Some(Block(d)) }).collect())
+    }
+
+    /// The natural loops of the heads in `rpo` under the dominators `dom`, counting the
+    /// predecessors `preds` gives: a head, the predecessors it dominates (latches), and the
+    /// blocks that reach them without passing the head.
+    pub fn loops<I: Iterator<Item = Block>>(&self, rpo: &[Block], dom: &Idoms, preds: impl Fn(Block) -> I) -> Vec<Loop> {
+        let mut loops = Vec::new();
+        for &h in rpo {
+            let latches: Vec<Block> = preds(h).filter(|&p| dom.dominates(h, p)).collect();
+            if latches.is_empty() {
+                continue;
+            }
+            let mut body = alloc::vec![false; self.blocks.len()];
+            body[h.idx()] = true;
+            let mut size = 1;
+            let mut stack = latches.clone();
+            while let Some(b) = stack.pop() {
+                if body[b.idx()] || !dom.dominates(h, b) {
+                    continue;
+                }
+                body[b.idx()] = true;
+                size += 1;
+                stack.extend(preds(b));
+            }
+            loops.push(Loop { head: h, latches, body, size });
+        }
+        loops
     }
 
     /// Checks the IR: every operand defined (no aliases), defined before its use in its
@@ -1101,17 +1164,6 @@ impl Func {
                 }
             }
         }
-        let dominates = |a: Block, mut b: Block| -> bool {
-            loop {
-                if a == b {
-                    return true;
-                }
-                match idom[b.idx()] {
-                    Some(d) => b = d,
-                    None => return false,
-                }
-            }
-        };
         let check = |v: Value, b: Block, at: u32, w: u8| -> Result<(), alloc::string::String> {
             let d = self.values.get(v.idx()).ok_or_else(|| format!("{v} out of range"))?;
             match d.def {
@@ -1126,7 +1178,7 @@ impl Func {
             if db == u32::MAX {
                 return Err(format!("{v} used in {b} isn't defined in a reachable block"));
             }
-            if (db == b.0 && dk >= at) || (db != b.0 && !dominates(Block(db), b)) {
+            if (db == b.0 && dk >= at) || (db != b.0 && !idom.dominates(Block(db), b)) {
                 return Err(format!("{v} used in {b} doesn't dominate its use"));
             }
             Ok(())

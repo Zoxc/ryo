@@ -24,7 +24,7 @@
 
 use alloc::vec::Vec;
 
-use super::hoist::{Analysis, Dom};
+use super::hoist::Analysis;
 use crate::jit::ir::*;
 
 /// The most instructions a head may have to be copied: none, as a copied instruction's result
@@ -148,7 +148,7 @@ fn rotate_loop(f: &mut Func, s: Shape) -> bool {
     let def_of = |v: Value| slot.get(v.idx()).copied().filter(|&k| k != u32::MAX).map(|k| k as usize);
 
     let rpo = f.rpo();
-    let dom = Dom(f.idoms(&rpo));
+    let dom = f.idoms(&rpo);
     let blocks: Vec<Block> = f.live_blocks().into_iter().filter(|&q| q != h).collect();
     let side_of = |q: Block| {
         if dom.dominates(b, q) {

@@ -72,38 +72,13 @@ pub fn hoist(f: &mut Func) {
     }
 }
 
-pub(super) struct Loop {
-    pub(super) head: Block,
-    pub(super) latches: Vec<Block>,
-    /// By block, whether it is in the loop.
-    pub(super) body: Vec<bool>,
-    size: usize,
-}
-
 pub(super) struct Analysis {
     rpo: Vec<Block>,
     /// By block, its index in reverse postorder (`u32::MAX` if unreachable).
     ord: Vec<u32>,
     /// Without the OSR edges.
-    ndom: Dom,
+    ndom: Idoms,
     pub(super) loops: Vec<Loop>,
-}
-
-/// Immediate dominators, `None` for the roots and unreachable blocks.
-#[derive(Clone)]
-pub(super) struct Dom(pub(super) Vec<Option<Block>>);
-
-impl Dom {
-    pub(super) fn dominates(&self, a: Block, b: Block) -> bool {
-        let mut x = Some(b);
-        while let Some(y) = x {
-            if y == a {
-                return true;
-            }
-            x = self.0[y.idx()];
-        }
-        false
-    }
 }
 
 impl Analysis {
@@ -113,34 +88,9 @@ impl Analysis {
         for (k, b) in rpo.iter().enumerate() {
             ord[b.idx()] = k as u32;
         }
-        let ndom = Dom(if f.osr.iter().any(Option::is_some) { normal_idoms(f, &rpo) } else { f.idoms(&rpo) });
-        let mut loops = Vec::new();
-        for &h in &rpo {
-            if f.blocks[h.idx()].kind != BlockKind::Body {
-                continue;
-            }
-            // Only a retreating edge can be a back edge.
-            let latches: Vec<Block> = normal_preds(f, h)
-                .map(|(p, _)| p)
-                .filter(|&p| ord[p.idx()] >= ord[h.idx()] && ord[p.idx()] != u32::MAX && ndom.dominates(h, p))
-                .collect();
-            if latches.is_empty() {
-                continue;
-            }
-            let mut body = alloc::vec![false; f.blocks.len()];
-            body[h.idx()] = true;
-            let mut size = 1;
-            let mut stack = latches.clone();
-            while let Some(b) = stack.pop() {
-                if body[b.idx()] || !ndom.dominates(h, b) {
-                    continue;
-                }
-                body[b.idx()] = true;
-                size += 1;
-                stack.extend(normal_preds(f, b).map(|(p, _)| p));
-            }
-            loops.push(Loop { head: h, latches, body, size });
-        }
+        let ndom = if f.osr.iter().any(Option::is_some) { normal_idoms(f, &rpo) } else { f.idoms(&rpo) };
+        let mut loops = f.loops(&rpo, &ndom, |b| normal_preds(f, b).map(|(p, _)| p));
+        loops.retain(|l| f.blocks[l.head.idx()].kind == BlockKind::Body);
         Analysis { rpo, ord, ndom, loops }
     }
 }
