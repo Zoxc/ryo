@@ -51,13 +51,13 @@ Proved helpers: decoded branches are canonical (`branch_canonical`), every itera
 relocation boundary (`boundary_start`), R's scopes never stop with `noBehavior` (`noNB_scopes`);
 facts of the decoder: the prologue read item by item (`read_instructions_prologue`), landing
 pads are `lpad`s (`pad_lpad`, so not leading `arg`s, `pad_not_leadArg`), protos lie within the
-code (`posOf_le_size`, so `posOf_lt_32`). Still `sorry`: `bodySim_call`, `bodySim_inline`,
-`bodySim_handler` (worked on in `DSWork/{Call,Inline,Handler}.lean`) and `bodySim_dense`.
+code (`posOf_le_size`, so `posOf_lt_32`). Still `sorry`: `bodySim_inline` (worked on in
+`DSWork/Inline.lean`) and `bodySim_dense`.
 
 **Files.** `DecodeSound/Basic.lean`: §1–§3 and §4's helpers, `bodySim_unreachable`,
 `bodySim_jmp`, `reach_padding`, `boundary_start`. `DSWork/Boundary.lean`: the decoder facts.
-`DSWork/{Arg,Ret,Island,Counter}.lean`: `bodySim_arg`, `bodySim_ret`, `bodySim_island`,
-`reach_counter`. This file: the open bodies, the dispatch, `insnSim_main`, §5.
+`DSWork/{Arg,Ret,Island,Counter,Call,Handler}.lean`: `bodySim_arg`, `bodySim_ret`,
+`bodySim_island`, `reach_counter`, `bodySim_call'`, `bodySim_handler'`. This file: the open bodies, the dispatch, `insnSim_main`, §5.
 
 **`decode_sound`** (§5): from `decodeReduced … = .ok d`, `read_instructions_prologue`,
 `instructions_read` and `iters_indexed` give the layout; `reducedOf_insns` the instructions; then
@@ -79,9 +79,10 @@ discharged later:
   `frameBounds` (`FrameBounds c K`, from the decoder, `DecodeLink/Bounds.lean`, in progress),
   `peFrame` (on PE `F + 8 < 2 ^ 31`, for the epilogue),
   `moreBounds` (`MoreBounds`: handler writes and call result slots in the window, to join
-  `FrameBounds`), `relocsIn` (`RelocsIn`: relocated fields within the code), `argsOk`
-  (`ArgsOk`: the leading `arg`s read distinct argument registers of the convention, and no
-  branch target is one);
+  `FrameBounds`), `relocsIn` (`RelocsIn`: relocated fields within the code), `hdlTables`
+  (`HdlTables`: switch tables at relocation boundaries, below `2 ^ 31`), `argsOk` (`ArgsOk`:
+  the leading `arg`s read distinct argument registers of the convention, and no branch target
+  is one);
 - privacy after the scopes (checkable with the scopes, as an invariant): `loadPrivate` (a
   `load`'s destination, `LoadPrivate`), `argPrivate` (an `arg`'s, `ArgPrivate`),
   `resultPrivate` (a call's result slots, `ResultPrivate`), `linkPrivate` (the frame's link
@@ -91,8 +92,8 @@ discharged later:
   separation across handler calls, calls and islands, `SepAcross`: `FrameSep.extend`'s
   allocation facts, not yet in the contracts), `envApart` (`EnvApart`: the frame window not
   runtime-owned, live allocations neither runtime-owned nor below `rsp`, the symbol slots and
-  the JIT record off the stack), `stackSizes` (`StackSizes`: the callees' stack areas, from the
-  image), `codeApart` (`CodeApart`: nothing the function or its environment writes is code or
+  the JIT record off the stack), `stackSizes` (`StackSizes`: the callees' stack areas, fitting
+  the frame, from the image), `codeApart` (`CodeApart`: nothing the function or its environment writes is code or
   rodata), `envOutside` (`EnvOutside`: the environment's entries are `Env.out` states, outside
   the function's body);
 - facts of the decoder and linker not yet exposed: `deadStore` (`DeadStoreSim`: the steps of
@@ -110,6 +111,8 @@ import Ryo.Proofs.DSWork.Arg
 import Ryo.Proofs.DSWork.Ret
 import Ryo.Proofs.DSWork.Counter
 import Ryo.Proofs.DSWork.Island
+import Ryo.Proofs.DSWork.Call
+import Ryo.Proofs.DSWork.Handler
 
 set_option linter.constructorNameAsVariable false
 set_option linter.unusedSimpArgs false
@@ -136,19 +139,10 @@ variable {S : Setup} {code : ByteArray} {relocs : Array Reloc} {rodata : ByteArr
 /-! #### The shapes' bodies still open
 
 Proved in `DSWork/*.lean`: `bodySim_arg` (Arg), `bodySim_ret` (Ret), `bodySim_island` (Island),
-`reach_counter` (Counter); `bodySim_unreachable`, `bodySim_jmp` in `DecodeSound/Basic.lean`.
-Still `sorry` here, their proofs worked on in `DSWork/Call.lean`, `Inline.lean`, `Handler.lean`
-(as `bodySim_call'`, `bodySim_inline'`, `bodySim_handler'`; to replace these once those files
-import `DSWork/Boundary.lean` instead of this file), and the dense switch. -/
-
-/-- A call or tail call (`Call.call_sound`, `call_unwind`, `tail_call_step` with
-`DecodeLink.link_call_ok`; the pad by `PadsLinked`, `posOf_lt_32`, `pad_not_leadArg`). -/
-theorem bodySim_call (hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
-    {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
-    (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
-    (hr : (callInsn S.fr (S.dr k)).run cur = .ok (some q, c')) :
-    BodySim S k p (S.used k) := by
-  sorry  -- TODO(wip): bodySim_call
+`reach_counter` (Counter), `bodySim_call'` (Call), `bodySim_handler'` (Handler);
+`bodySim_unreachable`, `bodySim_jmp` in `DecodeSound/Basic.lean`. Still `sorry` here:
+`bodySim_inline` (worked on in `DSWork/Inline.lean` as `bodySim_inline'`) and the dense
+switch. -/
 
 /-- An inline sequence without a dropped store (`CacheStep.inline_step_cached` and
 `CacheMem`'s `_sep_cached` steps through `FrameBounds`, with `DecodeLink.link_inline` and
@@ -162,16 +156,6 @@ theorem bodySim_inline (hD : Decodes S code relocs rodata callSites dropped scop
     (hq : q.dropped = false) :
     BodySim S k p (S.used k) := by
   sorry  -- TODO(wip): bodySim_inline
-
-/-- A handler call of shape `op`, `lpad`, `br`, `switch` or `trap` (`Shapes.handler_step_op`,
-`_br`, `_trap`, `Switch.switch_tail`, with `DecodeLink.link_handler`; `resume` by
-`ResumeContract`, its writes by `MoreBounds.handler`). -/
-theorem bodySim_handler (hD : Decodes S code relocs rodata callSites dropped scopes mode)
-    (H : Hyps S) {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
-    (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
-    (hr : InsnRead S.fr S.ro cur q c') (hh : q.handler ≠ none) :
-    BodySim S k p (S.used k) := by
-  sorry  -- TODO(wip): bodySim_handler
 
 /-- A dense switch: `denseSwitch`'s inline index computation (`Asm.denseIndex`, the case index of
 `switch.dense` in `rax`: `s - base` wrapping at the width, `n` if not below `n`) and its jump
@@ -187,6 +171,25 @@ theorem bodySim_dense (hD : Decodes S code relocs rodata callSites dropped scope
 
 /-! #### The dispatch over what the decoder read -/
 
+/-- `insn` reads a dense switch (`denseSwitch`), or else (`denseSwitch` finding none at the
+cursor) `insnCore`'s instruction. -/
+theorem insn_split {fr : Vm.Frame} {ro : ByteArray} {c c' : Cursor} {q : Proto}
+    (h : (insn fr ro).run c = .ok (q, c')) :
+    (denseSwitch fr).run c = .ok (some q, c') ∨
+      ((∀ c'', (denseSwitch fr).run c ≠ .ok (some q, c'')) ∧ (insnCore fr ro).run c = .ok (q, c')) := by
+  unfold insn at h
+  obtain ⟨r, c1, h1, h2⟩ := bind_ok h
+  cases r with
+  | some p =>
+    obtain ⟨rfl, rfl⟩ := pure_ok h2
+    exact .inl h1
+  | none =>
+    have := denseSwitch_none h1
+    subst this
+    refine .inr ⟨fun c'' he => ?_, h2⟩
+    rw [h1] at he
+    cases he
+
 theorem noHandler_ops : Full.Opcode.ret ≠ Full.Opcode.unreachable ∧ Full.Opcode.ret ≠ Full.Opcode.jmp ∧
     Full.Opcode.ret ≠ Full.Opcode.island := by decide
 
@@ -200,7 +203,7 @@ theorem bodySim_of_read (hD : Decodes S code relocs rodata callSites dropped sco
   generalize ha : S.args k = a at hr
   cases hr with
   | arg h => exact bodySim_arg hD H ha hP h
-  | call hn h => exact bodySim_call hD H hP hn h
+  | call hn h => exact bodySim_call' hD H hP hn h
   | inline hn hc h =>
     cases hq : q.dropped
     · exact bodySim_inline hD H hP hn hc h hq
@@ -209,16 +212,18 @@ theorem bodySim_of_read (hD : Decodes S code relocs rodata callSites dropped sco
     have e1 := callInsn_none hc
     have e2 := inlineInsn_none hi
     subst e1 e2
-    have hir := insn_read h
+    rcases insn_split h with hd | ⟨hnd, hcore⟩
+    · exact bodySim_dense hD H hP hn hd
+    have hir := insnCore_read hcore
     have hir' := hir
     cases hir' with
-    | handler => exact bodySim_handler hD H hP hn hir (by simp)
+    | handler => exact bodySim_handler' hD H hP hn hir (by simp) hnd
     | ret => exact bodySim_ret hD H hP hn hir rfl
     | unreachable => exact bodySim_unreachable hD H hP hn hir rfl
     | jmp => exact bodySim_jmp hD H hP hn hir rfl
     | island => exact bodySim_island hD H hP hn hir rfl
-    | resume => exact bodySim_handler hD H hP hn hir (by simp)
-    | dense h => exact bodySim_dense hD H hP hn h
+    | resume => exact bodySim_handler' hD H hP hn hir (by simp) hnd
+    | dense h => exact (hnd _ h).elim
 
 /-- Instruction `k` of a main iteration: the padding (from its start), the counter check, then
 the body. -/

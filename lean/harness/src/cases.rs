@@ -34,6 +34,8 @@ pub const REGS: [&str; 11] = ["rax", "rcx", "rdx", "rsp", "rbp", "rsi", "rdi", "
 pub const USABLE: [&str; 9] = ["rax", "rcx", "rdx", "rsi", "rdi", "r8", "r9", "r10", "r11"];
 const ALU: [&str; 6] = ["add", "or", "and", "sub", "xor", "cmp"];
 const SH: [&str; 3] = ["shl", "shr", "sar"];
+/// `shiftCl`'s operations: the shifts and the rotates.
+const SH_CL: [&str; 5] = ["shl", "shr", "sar", "rol", "ror"];
 pub const CONDS: [&str; 12] = ["z", "nz", "l", "ge", "le", "g", "b", "ae", "be", "a", "s", "ns"];
 const WIDTHS: [&str; 4] = ["b", "w", "d", "q"];
 
@@ -60,6 +62,34 @@ fn bits(w: &str) -> u32 {
         "w" => 16,
         "d" => 32,
         _ => 64,
+    }
+}
+
+/// The low `n` bits.
+fn mask(n: u32) -> u64 {
+    if n >= 64 { u64::MAX } else { (1 << n) - 1 }
+}
+
+/// The `n`-bit value `v` sign-extended.
+fn sext(v: u64, n: u32) -> i128 {
+    ((v << (64 - n)) as i64 >> (64 - n)) as i128
+}
+
+/// Whether `div`/`idiv` at width `n` of `hi:lo` by `d` doesn't fault (`#DE`): `d` is
+/// nonzero and the quotient fits.
+fn div_ok(signed: bool, n: u32, hi: u64, lo: u64, d: u64) -> bool {
+    let (hi, lo, d) = (hi & mask(n), lo & mask(n), d & mask(n));
+    if d == 0 {
+        return false;
+    }
+    if signed {
+        let x = (sext(hi, n) << n) | lo as i128;
+        match x.checked_div(sext(d, n)) {
+            Some(q) => q >= -(1i128 << (n - 1)) && q < 1i128 << (n - 1),
+            None => false,
+        }
+    } else {
+        (((hi as u128) << n) | lo as u128) / d as u128 >> n == 0
     }
 }
 
@@ -191,11 +221,16 @@ impl Gen<'_> {
 
     /// A memory operand `[base + disp]` for an `n`-byte access in the data region; sets `base`.
     fn mem_on(&mut self, base: &str, n: usize) -> String {
+        self.mem_on_off(base, n).0
+    }
+
+    /// `mem_on`, also returning the operand's offset in the data region.
+    fn mem_on_off(&mut self, base: &str, n: usize) -> (String, usize) {
         let disp = self.disp();
         let off = self.off(n);
         let a = (self.data + off as u64).wrapping_sub(disp as u64);
         self.set(base, a);
-        format!(r#"{{"base":"{base}","disp":{disp}}}"#)
+        (format!(r#"{{"base":"{base}","disp":{disp}}}"#), off)
     }
 
     fn mem(&mut self, n: usize) -> String {
@@ -211,6 +246,101 @@ impl Gen<'_> {
         let off = self.off(n) as u64;
         let disp = (self.data + off).wrapping_sub(rbp) as i64;
         format!(r#"{{"base":"rbp","disp":{disp}}}"#)
+    }
+
+    /// A memory operand for an `n`-byte access as `mem` (or `mem_rbp_fixed` in an inline run)
+    /// whose base is not in `avoid`, and its offset in the data region (single items only: an
+    /// inline run's earlier items may store over it).
+    fn mem_avoid(&mut self, n: usize, fixed: bool, avoid: &[&str]) -> (String, Option<usize>) {
+        if fixed {
+            return (self.mem_rbp_fixed(n), None);
+        }
+        let base = if self.rng.chance(1, 10) {
+            "rbp"
+        } else {
+            loop {
+                let b = *self.rng.pick(&USABLE);
+                if !avoid.contains(&b) {
+                    break b;
+                }
+            }
+        };
+        let (m, off) = self.mem_on_off(base, n);
+        (m, Some(off))
+    }
+
+    /// A nonzero `n`-bit value, often a single bit.
+    fn nonzero(&mut self, n: u32) -> u64 {
+        let v = match self.rng.below(3) {
+            0 => 1 << self.rng.below(n as usize),
+            1 => self.val(),
+            _ => self.rng.next(),
+        } & mask(n);
+        if v == 0 { 1 << self.rng.below(n as usize) } else { v }
+    }
+
+    /// Makes the `n`-bit register-or-memory source `rm` (a memory operand at `off`, `None` in
+    /// an inline run) hold `v`: in the initial state for a single item, by a `setReg` or
+    /// `stImm` item just before for an inline run (`v` must then be a sign-extended `imm32`
+    /// for memory). The upper bits of a register are random.
+    fn put_src(&mut self, n: u32, rm: &Result<&str, (String, Option<usize>)>, v: u64, fixed: bool) {
+        match rm {
+            Ok(r) => {
+                let full = (self.rng.next() & !mask(n)) | (v & mask(n));
+                if fixed {
+                    self.item(format!(r#"{{"setReg":{{"r":"{r}","v":{full}}}}}"#));
+                } else {
+                    self.set(r, full);
+                }
+            }
+            Err((m, off)) => match off {
+                Some(off) => {
+                    let nb = (n / 8) as usize;
+                    self.c.mem[*off..*off + nb].copy_from_slice(&v.to_le_bytes()[..nb]);
+                }
+                None => {
+                    let w = if n == 32 { "d" } else { "q" };
+                    let imm = v as i64;
+                    assert!(fits_signed(imm, 32) && v & mask(n) == (imm as u64) & mask(n));
+                    self.item(format!(r#"{{"stImm":{{"w":"{w}","m":{m},"imm":{imm}}}}}"#));
+                }
+            },
+        }
+    }
+
+    /// `rdx:rax` (`hi`, `lo`, as `n`-bit values) that `div`/`idiv` by `d` (nonzero) at width `n`
+    /// takes without faulting; `lo_is_d`: the divisor is `rax` itself.
+    fn div_vals(&mut self, signed: bool, n: u32, d: u64, lo_is_d: bool) -> (u64, u64) {
+        let m = mask(n);
+        // `hi` the extension of `lo`, as after `cdq`/`cqo` or `xor edx, edx`.
+        let ext = |lo: u64| if signed && sext(lo, n) < 0 { m } else { 0 };
+        let (hi, lo) = if lo_is_d {
+            // A random `hi` mostly overflows; then the extension (quotient 1).
+            let hi = if self.rng.chance(1, 2) { self.val() & m } else { ext(d) };
+            if div_ok(signed, n, hi, d, d) { (hi, d) } else { (ext(d), d) }
+        } else if self.rng.chance(1, 3) {
+            let lo = self.val() & m;
+            if div_ok(signed, n, ext(lo), lo, d) {
+                (ext(lo), lo)
+            } else {
+                // `MIN / -1`: the dividend `MIN + 1` instead.
+                (ext(lo), lo.wrapping_add(1) & m)
+            }
+        } else if signed {
+            // `q * d + r`, `q` an `n`-bit quotient, `|r| < |d|` with the dividend's sign.
+            let (q, dd) = (sext(self.val() & m, n), sext(d, n));
+            let r = (self.rng.next() as u128 % dd.unsigned_abs()) as i128;
+            let p = q * dd;
+            let r = if p < 0 || (p == 0 && self.rng.chance(1, 2)) { -r } else { r };
+            let x = p + r;
+            ((x >> n) as u64 & m, x as u64 & m)
+        } else {
+            let q = self.val() & m;
+            let x = q as u128 * d as u128 + self.rng.next() as u128 % d as u128;
+            ((x >> n) as u64 & m, x as u64 & m)
+        };
+        assert!(div_ok(signed, n, hi, lo, d), "div case {signed} {n} {hi:#x}:{lo:#x} / {d:#x}");
+        (hi, lo)
     }
 
     /// Puts a 64-bit value in the data region at `off`.
@@ -262,7 +392,7 @@ impl Gen<'_> {
     fn straight(&mut self, fixed: bool) -> String {
         let r = |g: &mut Self| *g.rng.pick(&USABLE);
         let mem = |g: &mut Self, n: usize| if fixed { g.mem_rbp_fixed(n) } else { g.mem(n) };
-        match self.rng.below(21) {
+        match self.rng.below(29) {
             0..=2 => {
                 let (op, w, reg) = (*self.rng.pick(&ALU), *self.rng.pick(&WIDTHS), r(self));
                 let (rm, k) = self.reg_or_mem(w, fixed);
@@ -363,12 +493,113 @@ impl Gen<'_> {
                 self.item(format!(r#"{{"leaM":{{"dst":"{d}","m":{m}}}}}"#));
                 "leaM".into()
             }
-            _ => {
+            20 => {
                 // sse: frame operands only (`[rbp + d]`).
                 let (st, size, x) = (self.rng.chance(1, 2), *self.rng.pick(&[4usize, 8, 16]), self.rng.below(8));
                 let m = if fixed { self.mem_rbp_fixed(size) } else { self.mem_on("rbp", size) };
                 self.item(format!(r#"{{"sse":{{"st":{st},"size":{size},"x":{x},"m":{m}}}}}"#));
                 format!("sse.{}{size}", if st { "st" } else { "ld" })
+            }
+            21 => {
+                // shiftCl: by `cl`, often an edge count in a single item.
+                let (op, w, reg) = (*self.rng.pick(&SH_CL), *self.rng.pick(&WIDTHS), r(self));
+                if !fixed && self.rng.chance(2, 3) {
+                    let n = bits(w) as u64;
+                    let amt = *self.rng.pick(&[0, 1, 2, 7, 8, 9, 15, 16, 17, n - 1, n, n + 1, 31, 32, 33, 63, 64, 65, 0x80, 0xff]);
+                    self.set("rcx", (self.get("rcx") & !0xff) | amt);
+                }
+                self.item(format!(r#"{{"shiftCl":{{"op":"{op}","w":"{w}","reg":"{reg}"}}}}"#));
+                format!("shiftCl.{op}.{w}")
+            }
+            22 => {
+                let (w, reg) = (*self.rng.pick(&["d", "q"]), r(self));
+                self.item(format!(r#"{{"bswap":{{"w":"{w}","reg":"{reg}"}}}}"#));
+                format!("bswap.{w}")
+            }
+            23 => {
+                let w = *self.rng.pick(&["d", "q"]);
+                self.item(format!(r#"{{"cdq":{{"w":"{w}"}}}}"#));
+                format!("cdq.{w}")
+            }
+            24 | 25 => {
+                // bsf/bsr: never a zero source (the model writes `ctx.undef` there, the CPU
+                // keeps the destination).
+                let (k, w, reg) = (*self.rng.pick(&["bsf", "bsr"]), *self.rng.pick(&["d", "q"]), r(self));
+                let n = bits(w);
+                let src = if self.rng.chance(1, 2) { Ok(r(self)) } else { Err(self.mem_avoid((n / 8) as usize, fixed, &[])) };
+                let v = if fixed && src.is_err() {
+                    // An `stImm` puts it: a sign-extended `imm32`.
+                    let v = self.imm32();
+                    (if v == 0 { 1 << self.rng.below(31) } else { v }) as u64
+                } else {
+                    self.nonzero(n)
+                };
+                self.put_src(n, &src, v, fixed);
+                let (rm, kind) = match &src {
+                    Ok(r) => (format!(r#"{{"reg":{{"r":"{r}"}}}}"#), "reg"),
+                    Err((m, _)) => (format!(r#"{{"mem":{{"m":{m}}}}}"#), "mem"),
+                };
+                self.item(format!(r#"{{"{k}":{{"w":"{w}","reg":"{reg}","rm":{rm}}}}}"#));
+                format!("{k}.{w}.{kind}")
+            }
+            26 => {
+                // div/idiv: a nonzero divisor and a quotient that fits (no `#DE`). The divisor
+                // is not `rdx` (its own dividend's high half) and a memory divisor's base is
+                // neither `rax` nor `rdx`; in an inline run, items just before set the operands.
+                let (signed, w) = (self.rng.chance(1, 2), *self.rng.pick(&["d", "q"]));
+                let n = bits(w);
+                let src = if self.rng.chance(1, 2) {
+                    Ok(loop {
+                        let d = r(self);
+                        if d != "rdx" {
+                            break d;
+                        }
+                    })
+                } else {
+                    Err(self.mem_avoid((n / 8) as usize, fixed, &["rax", "rdx"]))
+                };
+                let d = if fixed && src.is_err() {
+                    let v = self.imm32();
+                    (if v == 0 { -1 } else { v }) as u64 & mask(n)
+                } else {
+                    loop {
+                        let v = self.val() & mask(n);
+                        if v != 0 {
+                            break v;
+                        }
+                    }
+                };
+                let (hi, lo) = self.div_vals(signed, n, d, src == Ok("rax"));
+                if src != Ok("rax") {
+                    let dv = if fixed && src.is_err() { sext(d, n) as u64 } else { d };
+                    self.put_src(n, &src, dv, fixed);
+                }
+                self.put_src(n, &Ok("rax"), lo, fixed);
+                self.put_src(n, &Ok("rdx"), hi, fixed);
+                let (rm, kind) = match &src {
+                    Ok(r) => (format!(r#"{{"reg":{{"r":"{r}"}}}}"#), "reg"),
+                    Err((m, _)) => (format!(r#"{{"mem":{{"m":{m}}}}}"#), "mem"),
+                };
+                self.item(format!(r#"{{"div":{{"signed":{signed},"w":"{w}","rm":{rm}}}}}"#));
+                format!("{}.{w}.{kind}", if signed { "idiv" } else { "div" })
+            }
+            27 => {
+                let (c, reg) = (*self.rng.pick(&CONDS), r(self));
+                let (rm, k) = self.reg_or_mem("d", fixed);
+                self.item(format!(r#"{{"cmov":{{"cond":"{c}","w":"d","reg":"{reg}","rm":{rm}}}}}"#));
+                format!("cmov.{k}")
+            }
+            _ => {
+                // setcc r8: not `cl` (`setccCl`).
+                let c = *self.rng.pick(&CONDS);
+                let reg = loop {
+                    let x = r(self);
+                    if x != "rcx" {
+                        break x;
+                    }
+                };
+                self.item(format!(r#"{{"setccR":{{"cond":"{c}","reg":"{reg}"}}}}"#));
+                format!("setccR.{c}")
             }
         }
     }

@@ -713,4 +713,216 @@ theorem rip_step_sep_cached (ctx : Ctx) {wl wh : Int} {c : R.Code} {s s' : R.RSt
       exact ⟨x1, hx1, hr1, hs1, hbr⟩
   exact ⟨y, hy, hr', hs', hcy, hrip, hbr⟩
 
+/-! ### Keeping the registers -/
+
+/-- The registers but `rax` and `rcx` kept. -/
+def KeptRegs (x x' : X86.State) : Prop := ∀ i : Fin 16, i ≠ 0 → i ≠ 1 → x'.regs i = x.regs i
+
+/-- `load_step_sep`, also keeping the registers but `rax` and `rcx`. -/
+theorem load_step_sep_regs (ctx : Ctx) {wl wh : Int} {c : R.Code} {s s' : R.RState}
+    {x : X86.State} {ch : OpSem.Choice} {op : Reduced.Opcode} {ops : List (R.Opnd Nat)}
+    {f : Full.Opcode} {w : W} {items : List Item} {br : Option Cond} (hr : RRel s x)
+    (hm : MemRel s.st x)
+    (hs : FrameSep wl wh s.st x) (hw : Window wl wh s.fp) (hin : ScopesIn wl wh (c.scopesAt s.pc))
+    (hsz : ∀ sc ∈ c.scopesAt s.pc, sc.size < 2 ^ 62)
+    (hpriv : ∀ vals, nativeVals c.ρ f ops = some vals → AfterScopes c s (Private f vals))
+    (hwin : ∀ vals, nativeVals c.ρ f ops = some vals → WrIn wl wh f vals)
+    (hi : c.d.insns[s.pc]? = some (.native op ops)) (hf : op.full = some f)
+    (hok : InlineOk f (.load w)) (hseq : sequence (.load w) ops = some (items, br))
+    (h : R.step c s ch = .ok (.step s')) :
+    ∃ x', execItems ctx items x = .ok x' ∧ RRel s' x' ∧ MemRel s'.st x' ∧ FrameSep wl wh s'.st x' ∧
+      KeptRegs x x' ∧ x'.rip = x.rip + BitVec.ofNat 64 (items.map Item.size).sum ∧
+      BrOk f ops s s' br x' := by
+  obtain ⟨fp, hfp⟩ := footprint_load hok.shape
+  obtain ⟨x', hx, hr', ⟨hm', hs', hk'⟩, hrip, hbr⟩ :=
+    step_of (P := fun st y => MemRel st y ∧ FrameSep wl wh st y ∧ KeptRegs x y) (br := br) ctx
+      hr hi hf hok h
+      fun s1 vals st' ctl hsc hr1 hn ho => by
+        have hm1 := (memRel_foldlM _ hsz hr hm hsc).2
+        have hs1 := afterScopes_sep hr hs hw hin s1 hsc
+        have hp1 := hpriv vals hn s1 hsc
+        obtain ⟨x', hx, hpost, hm'⟩ := sound_load w ctx c.ρ f ops items br vals s1.st st' ctl ch x
+          hok.shape hseq hn ho hr1.rel hp1 hm1 (hs1.wrApart hp1 (hwin vals hn))
+        exact ⟨x', hx, hpost.rel, rbp_of_regs hpost.regs, escWF_of_sameButWrites hr1.wf hpost.same,
+          ⟨hm', sep_of_opSem hs1 hpost.same hfp ho (hwin vals hn) (rbp_of_regs hpost.regs),
+            hpost.regs⟩,
+          hpost.rip, ctlOk_of_post hpost⟩
+  exact ⟨x', hx, hr', hm', hs', hk', hrip, hbr⟩
+
+/-- `store_step_sep`, also keeping the registers but `rax` and `rcx`. -/
+theorem store_step_sep_regs (ctx : Ctx) {wl wh : Int} {c : R.Code} {s s' : R.RState}
+    {x : X86.State} {ch : OpSem.Choice} {op : Reduced.Opcode} {ops : List (R.Opnd Nat)}
+    {f : Full.Opcode} {w : W} {items : List Item} {br : Option Cond} (hr : RRel s x)
+    (hm : MemRel s.st x)
+    (hs : FrameSep wl wh s.st x) (hw : Window wl wh s.fp) (hin : ScopesIn wl wh (c.scopesAt s.pc))
+    (hsz : ∀ sc ∈ c.scopesAt s.pc, sc.size < 2 ^ 62)
+    (hi : c.d.insns[s.pc]? = some (.native op ops)) (hf : op.full = some f)
+    (hok : InlineOk f (.store w)) (hseq : sequence (.store w) ops = some (items, br))
+    (h : R.step c s ch = .ok (.step s')) :
+    ∃ x', execItems ctx items x = .ok x' ∧ RRel s' x' ∧ MemRel s'.st x' ∧ FrameSep wl wh s'.st x' ∧
+      KeptRegs x x' ∧ x'.rip = x.rip + BitVec.ofNat 64 (items.map Item.size).sum ∧
+      BrOk f ops s s' br x' := by
+  obtain ⟨x', hx, hr', ⟨hm', hs', hk'⟩, hrip, hbr⟩ :=
+    step_of (P := fun st y => MemRel st y ∧ FrameSep wl wh st y ∧ KeptRegs x y) (br := br) ctx
+      hr hi hf hok h
+      fun s1 vals st' ctl hsc hr1 hn ho => by
+        have hm1 := (memRel_foldlM _ hsz hr hm hsc).2
+        have hs1 := afterScopes_sep hr hs hw hin s1 hsc
+        obtain ⟨rfl, x', hx, hpost⟩ := sound_store w ctx c.ρ f ops items br vals s1.st st' ctl ch x
+          hok.shape hseq hn ho hr1.rel hm1 hs1.frameApart hs1.dis
+        obtain ⟨hsize, hesc⟩ := store_allocs hok.shape hn ho
+        have hwf : EscWF st' := ⟨fun e he => by rw [hesc] at he; rw [hsize]; exact hr1.wf.idLt e he,
+          fun e he e' he' hid => by rw [hesc] at he he'; exact hr1.wf.idInj e he e' he' hid⟩
+        have hb := rbp_of_regs hpost.regs
+        exact ⟨x', hx, hpost.rel, hb, hwf,
+          ⟨hpost.memRel, sep_of_shape hs1 (store_shape hok.shape hn ho) hesc
+            (fun o => Or.inr (by rw [hpost.same.1])) hb, hpost.regs⟩, hpost.rip, hpost.ctl⟩
+  exact ⟨x', hx, hr', hm', hs', hk', hrip, hbr⟩
+
+/-- `rip_step_sep`, also keeping the registers but `rax` and `rcx`. -/
+theorem rip_step_sep_regs (ctx : Ctx) {wl wh : Int} {c : R.Code} {s s' : R.RState}
+    {x x0 : X86.State} {st0 : OpSem.State} {ch : OpSem.Choice} {op : Reduced.Opcode}
+    {ops : List (R.Opnd Nat)} {f : Full.Opcode} {cls : Class} {items : List Item}
+    {br : Option Cond}
+    (hc : ripAddr cls = true) (hr : RRel s x) (hm : MemRel s.st x) (hg : Globals ctx c.ρ st0 x0)
+    (hs : FrameSep wl wh s.st x) (hw : Window wl wh s.fp) (hin : ScopesIn wl wh (c.scopesAt s.pc))
+    (hsz : ∀ sc ∈ c.scopesAt s.pc, sc.size < 2 ^ 62)
+    (hwin : ∀ vals, nativeVals c.ρ f ops = some vals → WrIn wl wh f vals)
+    (hi : c.d.insns[s.pc]? = some (.native op ops)) (hf : op.full = some f)
+    (hok : InlineOk f cls) (hseq : sequence cls ops = some (items, br))
+    (h : R.step c s ch = .ok (.step s')) :
+    ∃ x', execItems ctx items x = .ok x' ∧ RRel s' x' ∧ FrameSep wl wh s'.st x' ∧
+      KeptRegs x x' ∧ x'.rip = x.rip + BitVec.ofNat 64 (items.map Item.size).sum ∧
+      BrOk f ops s s' br x' := by
+  obtain ⟨fp, hfp⟩ := footprint_rip hc hok.shape
+  have hgs := afterScopes_globals hg hr hm hsz
+  obtain ⟨x', hx, hr', ⟨hs', hk'⟩, hrip, hbr⟩ :=
+    step_of (P := fun st y => FrameSep wl wh st y ∧ KeptRegs x y) (br := br) ctx hr hi hf hok h
+    fun s1 vals st' ctl hsc hr1 hn ho => by
+      have hs1 := afterScopes_sep hr hs hw hin s1 hsc
+      obtain ⟨x', hx, hpost⟩ := inline_sound_rip cls hc ctx c.ρ f ops items br vals s1.st st' ctl
+        ch x hok.shape hseq hn ho hr1.rel (hgs s1 hsc)
+      exact ⟨x', hx, hpost.rel, rbp_of_regs hpost.regs,
+        escWF_of_sameButWrites hr1.wf hpost.same,
+        ⟨sep_of_opSem hs1 hpost.same hfp ho (hwin vals hn) (rbp_of_regs hpost.regs), hpost.regs⟩,
+        hpost.rip, ctlOk_of_post hpost⟩
+  exact ⟨x', hx, hr', hs', hk', hrip, hbr⟩
+
+/-- The registers an emitted run keeps: all but `rax`, `rcx` (or `clobbers`) and the register
+`emit` computes in. -/
+def EmitKept (Clob : Fin 16 → Prop) (cache : Cache) (cand : List Item) (x y : X86.State) : Prop :=
+  ∀ i, ¬ Clob i → i ≠ (pool[(emitHead { cache with tick := cache.tick + 1 } cand).1]!).idx →
+    y.regs i = x.regs i
+
+theorem keptRegs_swap {xr : Reg} {x x1 : X86.State} (h : KeptRegs (swapS xr x) x1) :
+    ∀ i, ¬ (i = 0 ∨ i = 1) → x1.regs i = (swapS xr x).regs i :=
+  fun i hi => h i (fun e => hi (.inl e)) (fun e => hi (.inr e))
+
+/-- `load_step_sep_cached`, also keeping the registers (`EmitKept`). -/
+theorem load_step_sep_cached_regs (ctx : Ctx) {wl wh : Int} {c : R.Code} {s s' : R.RState}
+    {x : X86.State} {ch : OpSem.Choice} {op : Reduced.Opcode} {ops : List (R.Opnd Nat)}
+    {f : Full.Opcode} {w : W} {cand : List Item} {br : Option Cond} {cache : Cache}
+    (hinv : CacheInv cache x) (hr : RRel s x) (hm : MemRel s.st x)
+    (hs : FrameSep wl wh s.st x) (hw : Window wl wh s.fp) (hin : ScopesIn wl wh (c.scopesAt s.pc))
+    (hsz : ∀ sc ∈ c.scopesAt s.pc, sc.size < 2 ^ 62)
+    (hpriv : ∀ vals, nativeVals c.ρ f ops = some vals → AfterScopes c s (Private f vals))
+    (hwin : ∀ vals, nativeVals c.ρ f ops = some vals → WrIn wl wh f vals)
+    (hi : c.d.insns[s.pc]? = some (.native op ops)) (hf : op.full = some f)
+    (hok : InlineOk f (.load w)) (hseq : sequence (.load w) ops = some (cand, br))
+    (h : R.step c s ch = .ok (.step s')) :
+    ∃ x', execItems ctx (cache.emit cand).1 x = .ok x' ∧ RRel s' x' ∧ MemRel s'.st x' ∧
+      FrameSep wl wh s'.st x' ∧ CacheInv (cache.emit cand).2 x' ∧
+      x'.rip = x.rip + BitVec.ofNat 64 ((cache.emit cand).1.map Item.size).sum ∧
+      BrOk f ops s s' br x' ∧ EmitKept (fun i => i = 0 ∨ i = 1) cache cand x x' := by
+  obtain ⟨y, hy, ⟨hr', hm', hs', hbr⟩, hcy, hrip, hk⟩ := cached_of_regs ctx
+    (Q := fun y => RRel s' y ∧ MemRel s'.st y ∧ FrameSep wl wh s'.st y ∧ BrOk f ops s s' br y)
+    (Clob := fun i => i = 0 ∨ i = 1) (.inl rfl) hinv
+    (fun _ h => by cases h) rfl hseq
+    (fun y z hb hm hf hq =>
+      ⟨rrel_congr hq.1 hb hm, memRel_congr hm hq.2.1, hq.2.2.1.congr hb, brOk_congr hf hq.2.2.2⟩)
+    fun xr hb => by
+      obtain ⟨x1, hx1, hr1, hm1, hs1, hk1, -, hbr⟩ := load_step_sep_regs ctx (x := swapS xr x)
+        (rrel_congr hr (swapS_rbp hb x) rfl) (memRel_congr rfl hm) (hs.congr (swapS_rbp hb x))
+        hw hin hsz hpriv hwin hi hf hok hseq h
+      exact ⟨x1, hx1, ⟨hr1, hm1, hs1, hbr⟩, keptRegs_swap hk1⟩
+  exact ⟨y, hy, hr', hm', hs', hcy, hrip, hbr, hk⟩
+
+/-- `store_step_sep_cached`, also keeping the registers (`EmitKept`). -/
+theorem store_step_sep_cached_regs (ctx : Ctx) {wl wh : Int} {c : R.Code} {s s' : R.RState}
+    {x : X86.State} {ch : OpSem.Choice} {op : Reduced.Opcode} {ops : List (R.Opnd Nat)}
+    {f : Full.Opcode} {w : W} {cand : List Item} {br : Option Cond} {cache : Cache}
+    (hinv : CacheInv cache x) (hr : RRel s x) (hm : MemRel s.st x)
+    (hs : FrameSep wl wh s.st x) (hw : Window wl wh s.fp) (hin : ScopesIn wl wh (c.scopesAt s.pc))
+    (hsz : ∀ sc ∈ c.scopesAt s.pc, sc.size < 2 ^ 62)
+    (hi : c.d.insns[s.pc]? = some (.native op ops)) (hf : op.full = some f)
+    (hok : InlineOk f (.store w)) (hseq : sequence (.store w) ops = some (cand, br))
+    (h : R.step c s ch = .ok (.step s')) :
+    ∃ x', execItems ctx (cache.emit cand).1 x = .ok x' ∧ RRel s' x' ∧ MemRel s'.st x' ∧
+      FrameSep wl wh s'.st x' ∧ CacheInv (cache.emit cand).2 x' ∧
+      x'.rip = x.rip + BitVec.ofNat 64 ((cache.emit cand).1.map Item.size).sum ∧
+      BrOk f ops s s' br x' ∧ EmitKept (fun i => i = 0 ∨ i = 1) cache cand x x' := by
+  obtain ⟨y, hy, ⟨hr', hm', hs', hbr⟩, hcy, hrip, hk⟩ := cached_of_regs ctx
+    (Q := fun y => RRel s' y ∧ MemRel s'.st y ∧ FrameSep wl wh s'.st y ∧ BrOk f ops s s' br y)
+    (Clob := fun i => i = 0 ∨ i = 1) (.inl rfl) hinv
+    (fun _ h => by cases h) rfl hseq
+    (fun y z hb hm hf hq =>
+      ⟨rrel_congr hq.1 hb hm, memRel_congr hm hq.2.1, hq.2.2.1.congr hb, brOk_congr hf hq.2.2.2⟩)
+    fun xr hb => by
+      obtain ⟨x1, hx1, hr1, hm1, hs1, hk1, -, hbr⟩ := store_step_sep_regs ctx (x := swapS xr x)
+        (rrel_congr hr (swapS_rbp hb x) rfl) (memRel_congr rfl hm) (hs.congr (swapS_rbp hb x))
+        hw hin hsz hi hf hok hseq h
+      exact ⟨x1, hx1, ⟨hr1, hm1, hs1, hbr⟩, keptRegs_swap hk1⟩
+  exact ⟨y, hy, hr', hm', hs', hcy, hrip, hbr, hk⟩
+
+/-- `rip_step_sep_cached`, also keeping the registers (`EmitKept`). -/
+theorem rip_step_sep_cached_regs (ctx : Ctx) {wl wh : Int} {c : R.Code} {s s' : R.RState}
+    {x x0 : X86.State} {st0 : OpSem.State} {ch : OpSem.Choice} {op : Reduced.Opcode}
+    {ops : List (R.Opnd Nat)} {f : Full.Opcode} {cls : Class} {cand : List Item}
+    {br : Option Cond} {cache : Cache} (hc : ripAddr cls = true) (hinv : CacheInv cache x)
+    (hr : RRel s x) (hm : MemRel s.st x) (hg : Globals ctx c.ρ st0 x0)
+    (hs : FrameSep wl wh s.st x) (hw : Window wl wh s.fp) (hin : ScopesIn wl wh (c.scopesAt s.pc))
+    (hsz : ∀ sc ∈ c.scopesAt s.pc, sc.size < 2 ^ 62)
+    (hwin : ∀ vals, nativeVals c.ρ f ops = some vals → WrIn wl wh f vals)
+    (hi : c.d.insns[s.pc]? = some (.native op ops)) (hf : op.full = some f)
+    (hok : InlineOk f cls) (hseq : sequence cls ops = some (cand, br))
+    (h : R.step c s ch = .ok (.step s')) :
+    ∃ x', execItems ctx (cache.emit cand).1 x = .ok x' ∧ RRel s' x' ∧ FrameSep wl wh s'.st x' ∧
+      CacheInv (cache.emit cand).2 x' ∧
+      x'.rip = x.rip + BitVec.ofNat 64 ((cache.emit cand).1.map Item.size).sum ∧
+      BrOk f ops s s' br x' ∧ EmitKept (fun i => i = 0 ∨ i = 1) cache cand x x' := by
+  have hext : ∀ b, cls ≠ .ext .q b true := fun b he => by subst he; simp [ripAddr] at hc
+  obtain ⟨y, hy, ⟨hr', hs', hbr⟩, hcy, hrip, hk⟩ := cached_of_regs ctx
+    (Q := fun y => RRel s' y ∧ FrameSep wl wh s'.st y ∧ BrOk f ops s s' br y)
+    (Clob := fun i => i = 0 ∨ i = 1) (.inl rfl) hinv hext
+      (by cases cls <;> simp_all [ripAddr, laterClass]) hseq
+    (fun y z hb hm hf hq => ⟨rrel_congr hq.1 hb hm, hq.2.1.congr hb, brOk_congr hf hq.2.2⟩)
+    fun xr hb => by
+      obtain ⟨x1, hx1, hr1, hs1, hk1, -, hbr⟩ := rip_step_sep_regs ctx (x := swapS xr x) hc
+        (rrel_congr hr (swapS_rbp hb x) rfl) (memRel_congr rfl hm) hg
+        (hs.congr (swapS_rbp hb x)) hw hin hsz hwin hi hf hok hseq h
+      exact ⟨x1, hx1, ⟨hr1, hs1, hbr⟩, keptRegs_swap hk1⟩
+  exact ⟨y, hy, hr', hs', hcy, hrip, hbr, hk⟩
+
+/-- `inline_step_cached`, also keeping the registers outside `clobbers cls` (`EmitKept`). -/
+theorem inline_step_cached_regs (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.State}
+    {ch : OpSem.Choice} {op : Reduced.Opcode} {ops : List (R.Opnd Nat)} {f : Full.Opcode}
+    {cls : Class} {cand : List Item} {br : Option Cond} {cache : Cache} (hsound : SoundC cls)
+    (hinv : CacheInv cache x) (hr : RRel s x) (hi : c.d.insns[s.pc]? = some (.native op ops))
+    (hf : op.full = some f) (hok : InlineOk f cls) (hext : ∀ b, cls ≠ .ext .q b true)
+    (hlater : laterClass cls = false)
+    (hseq : sequence cls ops = some (cand, br)) (h : R.step c s ch = .ok (.step s')) :
+    ∃ x', execItems ctx (cache.emit cand).1 x = .ok x' ∧ RRel s' x' ∧
+      CacheInv (cache.emit cand).2 x' ∧
+      x'.rip = x.rip + BitVec.ofNat 64 ((cache.emit cand).1.map Item.size).sum ∧
+      BrOk f ops s s' br x' ∧ EmitKept (· ∈ clobbers cls) cache cand x x' := by
+  obtain ⟨y, hy, ⟨hr', hbr⟩, hcy, hrip, hk⟩ := cached_of_regs ctx
+    (Q := fun y => RRel s' y ∧ BrOk f ops s s' br y)
+    (Clob := (· ∈ clobbers cls)) (clobbers_01 cls).1 hinv hext hlater hseq
+    (fun y z hb hm hf hq => ⟨rrel_congr hq.1 hb hm, brOk_congr hf hq.2⟩)
+    fun xr hb => by
+      obtain ⟨x1, hx1, hr1, -, hk1, hbr⟩ := inline_stepC ctx (x := swapS xr x) hsound
+        (rrel_congr hr (swapS_rbp hb x) rfl) hi hf hok hseq h
+      exact ⟨x1, hx1, ⟨hr1, by cases br <;> exact hbr⟩, hk1⟩
+  exact ⟨y, hy, hr', hcy, hrip, hbr, hk⟩
+
 end Ryo.Proofs.CacheMem

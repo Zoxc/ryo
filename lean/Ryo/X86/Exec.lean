@@ -116,16 +116,21 @@ def imulF {n : Nat} (a b : BitVec n) : BitVec n × Flags :=
 for a count of 0). -/
 def shiftF {n : Nat} (op : Sh) (a : BitVec n) (c : Nat) : BitVec n × Option Flags :=
   if c = 0 then (a, none) else
+  -- `CF` is the last bit shifted out; Intel leaves it undefined for `shl`/`shr` by at least the
+  -- width (8/16-bit `shiftCl` counts reach 31), and `sar` past the width shifts out sign bits.
   let (r, cf, of) := match op with
     | .shl => let r := a <<< c
-      (r, a.getLsbD (n - c), if c = 1 then some (r.msb != a.getLsbD (n - c)) else none)
-    | .shr => (a >>> c, a.getLsbD (c - 1), if c = 1 then some a.msb else none)
-    | .sar => (a.sshiftRight c, a.getLsbD (c - 1), if c = 1 then some false else none)
+      (r, (if c < n then some (a.getLsbD (n - c)) else none),
+        if c = 1 then some (r.msb != a.getLsbD (n - c)) else none)
+    | .shr => (a >>> c, (if c < n then some (a.getLsbD (c - 1)) else none),
+        if c = 1 then some a.msb else none)
+    | .sar => (a.sshiftRight c, some (if c ≤ n then a.getLsbD (c - 1) else a.msb),
+        if c = 1 then some false else none)
     -- `Item.shift` has no rotates (they aren't `wf`): these only make `shiftF` total, with
     -- `SF`/`ZF` from the result; `shiftCl`'s rotates are `rotF`'s.
-    | .rol => let r := a.rotateLeft c; (r, r.getLsbD 0, none)
-    | .ror => let r := a.rotateRight c; (r, r.msb, none)
-  (r, some { cf := some cf, of := of, zf := some (r == 0), sf := some r.msb })
+    | .rol => let r := a.rotateLeft c; (r, some (r.getLsbD 0), none)
+    | .ror => let r := a.rotateRight c; (r, some r.msb, none)
+  (r, some { cf := cf, of := of, zf := some (r == 0), sf := some r.msb })
 
 /-- A rotate (`rol`, else `ror`) by an already masked count `c`, modulo the width: the result
 and the new flags (`none`: unchanged, for a count of 0; else `SF`/`ZF` as in `f`). -/

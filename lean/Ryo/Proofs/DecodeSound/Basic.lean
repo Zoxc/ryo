@@ -569,17 +569,34 @@ structure MoreBounds (S : Setup) : Prop where
 
 /-- Open (image): the callees' stack argument areas (`Code.stackSize`, from the image's
 `FuncEntry`s) fit: below `2^62` with the frame (`call_sound`'s `hb`; `tail_call_step`'s `hn`
-follows), and on PE a call's holds the 32-byte shadow space. The image checks (§C4) could
-discharge it against the frame size. -/
+follows), on PE a call's holds the 32-byte shadow space, and every callee's area (with PE's
+16 bytes of return address and alignment) fits in the frame. The image checks (§C4) could
+discharge it against the frame size; `frame` is checked by check-image for direct calls, not
+yet for indirect ones. -/
 structure StackSizes (S : Setup) : Prop where
   stack : ∀ k, S.F + S.c.stackSize k < 2 ^ 62
   shadow : S.c.mode.pe = true → ∀ (k : Nat) (op : Reduced.Opcode) (ops : List (R.Opnd Nat))
     (f : Full.Opcode), S.c.d.insns[k]? = some (.native op ops) →
     op.full = some f → f.info.shape = .call → 32 ≤ S.c.stackSize k
+  /-- The outgoing area fits in the frame (`bodySim_call'`: callee writes below `sp + n` would
+  otherwise reach the link slots). -/
+  frame : ∀ k, S.c.stackSize k + (if S.c.mode.pe then 16 else 0) ≤ S.F
 
 /-- Open (checkable): every relocated field lies within the code (the decoder doesn't check
 it; the image checks of the relocations, §C4, or the decoder could). -/
 def RelocsIn (S : Setup) : Prop := ∀ r ∈ S.rs.toList, r.pos + 4 ≤ S.body.code.size
+
+/-- Open (checkable, code layout): every switch table read from the function's code starts at a
+relocation boundary, and it and its targets lie below `2 ^ 31` (`Switch.switch_tail`'s
+hypotheses: a function under 2 GiB, no relocated field straddling the table's start;
+`bodySim_handler'`). Nothing trusted: the decoder reads the table (`table_read`) but checks
+neither bound nor the boundary at its start; a size check on the code (`LinkOk.small` gives
+`2 ^ 32` only) and `RelocsIn`-like check of the relocations could discharge it. -/
+def HdlTables (S : Setup) : Prop :=
+  ∀ (c0 : Cursor) (tb : BitVec 32) (pE : Nat) (es : List (BitVec 32)), c0.code = S.body.code →
+    Dec c0 c0.pos (Switch.switchItems tb) pE →
+    (∀ i (hi : i < es.length), (atPos c0 (tb.toNat + 4 * i)).tableEntry tb = some es[i]) →
+    tb.toNat < 2 ^ 31 ∧ Boundary S.rs tb.toNat ∧ ∀ e ∈ es, e.toNat < 2 ^ 31
 
 /-- What `decode_sound` assumes (see the module comment): the trusted contracts, facts proved
 outside the default build, the frame-pointer restriction, and the open prerequisites. -/
@@ -611,6 +628,7 @@ structure Hyps (S : Setup) : Prop where
   frameBounds : FrameBounds S.c S.K
   moreBounds : MoreBounds S
   relocsIn : RelocsIn S
+  hdlTables : HdlTables S
   argsOk : ArgsOk S
   /-- On PE the frame size and the return address fit a signed 32-bit displacement, as PE's
   epilogue (`ArgRet.ret_step`, `bodySim_ret`) needs (`FrameBounds.F_le` gives `F ≤ 2 ^ 31`

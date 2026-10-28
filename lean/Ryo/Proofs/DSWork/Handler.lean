@@ -1,5 +1,7 @@
-import Ryo.Proofs.DecodeSound
+import Ryo.Proofs.DecodeSound.Basic
 import Ryo.Proofs.NoArgCursor
+import Ryo.Proofs.DSWork.Island
+import Ryo.Proofs.OpFacts
 
 set_option linter.constructorNameAsVariable false
 
@@ -826,20 +828,575 @@ theorem handler_resume' (hD : Decodes S code relocs rodata callSites dropped sco
   rw [H.cacheCleared.pads k pad cat hcl]
   exact CacheInv.emptyPe _ _
 
-/-- `bodySim_handler`. Proof idea: `noArg_insn`, then `InsnRead.handler`'s `link_handler`
-(setup, `call h`, the shape's tail); `resume` by `handler_resume'`; `unreachable` has no handler;
-else `Shapes.handler_step_op`/`_br`/`_trap` or `Switch.switch_tail` with `H.handler`
-(`handler_rside` for the R side under `RSafe`; `StackApart` from `EnvApart.allocs` and `FrameSep`),
-the environment step at the handler (`H.envOutside.handler`), `FrameSep` across it
-(`SepAcross.handler`, `MoreBounds.handler` for the writes), `FrameFacts` and the code kept
-(`LinkPrivate`, `CodeApart`, `EnvApart.window`), the targets not leading `arg`s
-(`ArgsOk.untargeted`) with the cache cleared there (`CacheCleared.targets`). -/
+/-! ### The general handler call (not `resume`) -/
+
+set_option maxRecDepth 100000 in
+theorem hdl_arg_shape : Full.Opcode.arg.info.shape = .arg := by decide
+
+theorem hdl_footprint {op : Full.Opcode} {ops : Operands} {st : OpSem.State} {ch : OpSem.Choice}
+    {r : Control × OpSem.State} (h : opSem op ops st ch = .ok r) : ∃ fp, footprint op = some fp := by
+  unfold opSem at h
+  cases hp : prepare op ops with
+  | error e => simp [hp, bind, Except.bind] at h
+  | ok y =>
+    obtain ⟨hi, fp, val⟩ := y
+    exact ⟨fp, (prepare_ok hp).1⟩
+
+theorem hdl_succ_next {pc pc' : Nat} {ctl : Control} (h : R.Then.succ .next pc ctl = some pc') :
+    pc' = pc + 1 := by
+  cases ctl with
+  | next => exact (Option.some.inj h).symm
+  | branch b =>
+    have e : R.Then.succ (.next : R.Then Nat) pc (.branch b) = none := rfl
+    rw [e] at h; cases h
+  | index i =>
+    have e : R.Then.succ (.next : R.Then Nat) pc (.index i) = none := rfl
+    rw [e] at h; cases h
+
+theorem hdl_succ_branch {neg : Bool} {j pc pc' : Nat} {ctl : Control}
+    (h : R.Then.succ (.branch neg j) pc ctl = some pc') :
+    ∃ b, ctl = .branch b ∧ (if (b != neg) = true then j else pc + 1) = pc' := by
+  cases ctl with
+  | branch b => exact ⟨b, rfl, Option.some.inj h⟩
+  | next =>
+    have e : R.Then.succ (.branch neg j) pc .next = none := rfl
+    rw [e] at h; cases h
+  | index i =>
+    have e : R.Then.succ (.branch neg j) pc (.index i) = none := rfl
+    rw [e] at h; cases h
+
+theorem hdl_succ_table {ts : List Nat} {pc pc' : Nat} {ctl : Control}
+    (h : R.Then.succ (.table ts) pc ctl = some pc') : ∃ i, ctl = .index i ∧ ts[i]? = some pc' := by
+  cases ctl with
+  | index i => exact ⟨i, rfl, h⟩
+  | next =>
+    have e : R.Then.succ (.table ts) pc .next = none := rfl
+    rw [e] at h; cases h
+  | branch b =>
+    have e : R.Then.succ (.table ts) pc (.branch b) = none := rfl
+    rw [e] at h; cases h
+
+theorem hdl_succ_trap {pc pc' : Nat} {ctl : Control}
+    (h : R.Then.succ (.trap : R.Then Nat) pc ctl = some pc') : False := by
+  have e : R.Then.succ (.trap : R.Then Nat) pc ctl = none := by cases ctl <;> rfl
+  rw [e] at h; cases h
+
+theorem hdl_testAl_straight (ctx : Ctx) :
+    Item.testAl.FallsThrough ctx ∧ Item.testAl.MemKept ctx :=
+  ⟨fun _ _ h => by cases Switch.except_ok_inj h; rfl,
+    fun _ _ h => by cases Switch.except_ok_inj h; rfl⟩
+
+theorem hdl_dec2 {c : Cursor} {p q : Nat} {i j : Item} (h : Dec c p [i, j] q) :
+    ∃ n1 n2, decodeItem (atPos c p) = some (i, n1) ∧
+      decodeItem (atPos c (p + n1)) = some (j, n2) ∧ q = p + n1 + n2 := by
+  cases h with
+  | cons h1 hr =>
+    cases hr with
+    | cons h2 hn => exact ⟨_, _, h1, h2, Dec.nil_eq hn⟩
+
+/-- The switch's jump changes only `rax` and `rcx` of the general registers. -/
+theorem hdl_switch_regs {ctx : Ctx} {tb : BitVec 32} {x y : X86.State}
+    (h : execItems ctx (Switch.switchItems tb) x = .ok y) (i : Fin 16) (h0 : i ≠ 0) (h1 : i ≠ 1) :
+    y.regs i = x.regs i := by
+  have hr0 : i ≠ Reg.rax.idx := h0
+  have hr1 : i ≠ Reg.rcx.idx := h1
+  simp only [Switch.switchItems] at h
+  rw [X86.execItems_cons] at h
+  obtain ⟨y1, e1, h⟩ := except_bind_ok h
+  rw [X86.execItems_cons] at h
+  obtain ⟨y2, e2, h⟩ := except_bind_ok h
+  rw [X86.execItems_cons] at h
+  obtain ⟨y3, e3, h⟩ := except_bind_ok h
+  rw [X86.execItems_cons] at h
+  obtain ⟨y4, e4, h⟩ := except_bind_ok h
+  rw [X86.execItems_nil] at h
+  cases Switch.except_ok_inj h
+  cases Switch.except_ok_inj e4
+  cases Switch.except_ok_inj e3
+  cases Switch.except_ok_inj e2
+  cases Switch.except_ok_inj e1
+  simp [State.setReg, State.jump, State.setFlags, hr0, hr1, h0, h1]
+
+/-- The next instruction is not a leading `arg` when this one isn't an `arg`. -/
+theorem hdl_next_notLead (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    {k p : Nat} {q : Proto} {c' : Cursor} {cache' : Cache}
+    (hP : ProtoFacts S k p q c' cache') (hq : q.op ≠ .arg) : ¬ LeadArg S (k + 1) := by
+  rintro ⟨hlt', ha⟩
+  have hia : (q.op == Full.Opcode.arg) = false := by
+    cases hb : (q.op == Full.Opcode.arg)
+    · rfl
+    · exact absurd (beq_iff_eq.1 hb) hq
+  have h1 : S.args (k + 1) = false := by rw [hP.args, hia, Bool.and_false]
+  have h2 := hD.argsSucc (k + 1) (by simpa using hlt')
+  rw [h1] at h2
+  simp [h2] at ha
+
+/-- `FrameInv` survives a state with the same memory, `rbp`, `rsp` and saved registers, past the
+leading `arg`s. -/
+theorem hdl_frameInv_regs {s : R.RState} {x y : X86.State} (hf : FrameInv S s x)
+    (hm : y.mem = x.mem) (hrbp : y.reg .rbp = x.reg .rbp) (hrsp : y.rsp = x.rsp)
+    (hsv : ∀ i, Saved S.c.mode.pe i → y.regs i = x.regs i) (ha : ¬ LeadArg S s.pc) :
+    FrameInv S s y := by
+  obtain ⟨⟨hrel, hb, hwf⟩, hmem, hsep, hwin, hfpF, hsp, hroom, hcode, hro, -, hfr⟩ := hf
+  obtain ⟨f1, f2, f3, f5⟩ := hfr
+  exact ⟨⟨Inline.rel_congr hrel hrbp hm, hrbp.trans hb, hwf⟩, Shapes.memRel_congr hm hmem,
+    hsep.congr hrbp, hwin, hfpF, by rw [hrsp, hrbp]; exact hsp, by rw [hrsp]; exact hroom,
+    by rw [hm]; exact hcode, by rw [hm]; exact hro, fun h => absurd h ha,
+    ⟨by rw [hrbp]; exact f1, by rw [hrbp, hm]; exact f2, by rw [hrbp, hm]; exact f3,
+      fun i hi h5 => by rw [hsv i hi]; exact f5 i hi h5⟩⟩
+
+set_option maxRecDepth 100000 in
+/-- A handler leaves the code, the rodata and the frame's link slots alone, and none is on the
+stack below `rsp` (as `island_kept'`: the frame writes lie in the window, `FrameBounds.handler`,
+and off the link slots, `FrameBounds.handlerOff`). -/
+theorem hdl_kept (H : Hyps S) {s s1 : R.RState} {x x2 : X86.State} (hf : FrameInv S s x)
+    (hci : CacheInv (S.used s.pc) x)
+    (hsc : (S.c.scopesAt s.pc).foldlM R.applyScope s = .ok s1)
+    {h : Full.Opcode} {args : List R.Arg} {t : R.Then Nat} {vals : Operands}
+    (hi : S.c.d.insns[s.pc]? = some (.handler h args t))
+    (hu : R.unpack S.c.ρ h S.c.mode args = some vals)
+    (hrbp2 : x2.reg .rbp = x.reg .rbp) (hrsp2 : x2.rsp.toNat ≤ x.rsp.toNat)
+    (b : BitVec 64) (hb : IslandKept S x b) :
+    ¬ Handler.MayWrite S.Owned S.lo h vals s1.st x2 b ∧ ¬ InStack S.lo x.rsp b := by
+  have hK : (16 : Int) ≤ S.K := by have := H.argSizeK; omega
+  have hwin : (s.fp : Int) + S.K ≤ 2 ^ 64 := hf.win
+  have hfpF : S.F ≤ s.fp := hf.fpF
+  have hfb := H.frameBounds
+  have hFle : (S.F : Int) ≤ 2 ^ 31 := hfb.F_le
+  have hKle : S.K ≤ 2 ^ 31 := hfb.K_le
+  have hrsp0 : x.rsp.toNat = s.fp - S.F := island_rsp_toNat hf.rrel.rbp (by omega) hfpF hf.rsp
+  have hrbp : x.reg .rbp = BitVec.ofNat 64 s.fp := hf.rrel.rbp
+  have hrbpX2 : x2.reg .rbp = BitVec.ofNat 64 s.fp := hrbp2.trans hrbp
+  have hW : ∀ o, S.winAddr o = BitVec.ofNat 64 s.fp + BitVec.ofInt 64 o := fun o => by
+    rw [← hf.fpAddr_eq]; simp [fpAddr, hrbp]
+  have hwr : WrIn (-(S.F : Int)) S.K h vals := hfb.handler s.pc h args t vals hi hu
+  -- A byte off the window: in no frame write range.
+  have hwr_win : ∀ b, (∀ o : Int, -(S.F : Int) ≤ o → o < S.K → b ≠ S.winAddr o) →
+      ¬ ∃ r ∈ wranges h vals, (b - fpAddr x2 r.1).toNat < r.2 := by
+    rintro b hnw ⟨r, hr, hlt⟩
+    have hr' := hwr r hr
+    rw [Island.fpAddr_eq_lendAddr hrbpX2] at hlt
+    refine hnw (r.1 + (b - Island.lendAddr s.fp r.1).toNat) (by omega) (by omega) ?_
+    rw [hW, island_ofInt_add, ← BitVec.add_assoc]
+    exact island_sub_toNat rfl
+  have hbi : BInv S s (x.jump (addrAt S.ctx (posOf S.r s.pc))) :=
+    ⟨hf.congr rfl rfl rfl, .inr ⟨rfl, hci⟩⟩
+  -- A code or rodata byte.
+  have hcode : ∀ b, ((∃ p, p < S.body.code.size ∧ b = addrAt S.ctx p) ∨
+      (∃ j, j < S.ro.size ∧ b = S.ctx.addrOf (.ro j))) →
+      ¬ Handler.MayWrite S.Owned S.lo h vals s1.st x2 b ∧ ¬ InStack S.lo x.rsp b := by
+    intro b hb'
+    obtain ⟨hown, hstk, hnw, hal⟩ := H.codeApart b hb'
+    have hst : ¬ InStack S.lo x.rsp b := hdl_inStack_lift H hf hstk
+    refine ⟨?_, hst⟩
+    rintro (hwb | hal1 | ho | hst2)
+    · exact hwr_win b hnw hwb
+    · have hold : island_AllOk (fun addr sz => ¬ (b - BitVec.ofNat 64 addr).toNat < sz) s.st :=
+        fun id al hg hl hlt => hal s _ hbi ⟨id, al, hg, hl, hlt⟩
+      have hnew := island_allOk_foldlM (P := fun addr sz => ¬ (b - BitVec.ofNat 64 addr).toNat < sz)
+        (F := S.F) (K := S.K) _ (fun off sz h1 h2 h3 hlt => by
+          refine hnw (off + (b - BitVec.ofNat 64 ((s.fp : Int) + off).toNat).toNat)
+            (by omega) (by omega) ?_
+          rw [hW, island_ofInt_add, ← BitVec.add_assoc, ← ofNat_frameAddr _ _ h3]
+          exact island_sub_toNat rfl) (hfb.scopesIn s.pc) hold hsc
+      obtain ⟨id, al, hg, hl, hlt⟩ := hal1
+      exact hnew id al hg hl hlt
+    · exact hown ho
+    · exact hst ⟨hst2.1, Nat.lt_of_lt_of_le hst2.2 hrsp2⟩
+  rcases hb with hb | ⟨r, hr, k, hk, rfl⟩ | hb | ⟨i, hi', hb⟩
+  · exact hcode b (.inl hb)
+  · exact hcode _ (.inl ⟨r.pos + k, by have := H.relocsIn r hr; omega, rfl⟩)
+  · exact hcode b (.inr hb)
+  · -- A link slot: `fp + o` with `o ∈ [0, 16)`.
+    obtain ⟨o, ho1, ho2, rfl⟩ : ∃ o : Int, 0 ≤ o ∧ o < 16 ∧ b = fpAddr x o := by
+      have e : ∀ c : Int, x.reg .rbp + BitVec.ofInt 64 c + BitVec.ofNat 64 i =
+          fpAddr x (c + i) := fun c => by
+        simp only [fpAddr, island_ofInt_add, BitVec.add_assoc]
+      rcases hb with rfl | rfl
+      · refine ⟨8 + i, by omega, by omega, ?_⟩
+        rw [← e]; rfl
+      · refine ⟨0 + i, by omega, by omega, ?_⟩
+        rw [← e]; simp
+    have hoF : -(S.F : Int) ≤ o := by omega
+    obtain ⟨hesc, -⟩ := H.linkPrivate s x s1 hf hsc o ho1 ho2
+    have hxo : (fpAddr x o).toNat = ((s.fp : Int) + o).toNat := by
+      rw [Island.fpAddr_eq_lendAddr hrbp, Island.lendAddr, ← ofNat_frameAddr _ _ (by omega),
+        BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]
+    have hst : ¬ InStack S.lo x.rsp (fpAddr x o) := by
+      rintro ⟨-, h2⟩
+      rw [hrsp0, hxo] at h2
+      omega
+    refine ⟨?_, hst⟩
+    rintro (⟨r, hr, hlt⟩ | ⟨id, al, hg, hlv, hlt⟩ | ho | hst2)
+    · have hli := hwr r hr
+      have hoff := hfb.handlerOff s.pc h args t vals hi hu r hr
+      have e2 : fpAddr x2 r.1 = fpAddr x r.1 := by simp [fpAddr, hrbp2]
+      rw [e2, fpAddr_sub, BitVec.toNat_ofInt] at hlt
+      have hsz : r.2 < 2 ^ 62 := by omega
+      simp only [OffLink] at hoff
+      omega
+    · have hsep1 := (sep_foldlM _ (hfb.scopesIn _) (hfb.window hwin) hf.rrel hf.sep hsc).2
+      obtain ⟨e, hem, he1, he2, -⟩ := hsep1.own id al o hg hlv hoF (by omega) hlt
+      exact escapedAt_none hesc e hem ⟨he1, he2⟩
+    · rw [hf.fpAddr_eq] at ho
+      exact H.envApart.window o hoF (by omega) ho
+    · exact hst ⟨hst2.1, Nat.lt_of_lt_of_le hst2.2 hrsp2⟩
+
+set_option maxHeartbeats 1000000 in
+/-- The setup, `call h` and the handler's return (`H.handler`, `SepAcross.handler`): each return
+continues at the item after the call with `opSem`'s result for a choice, its control in the
+return registers, and `FrameInv` of R's state after for any successor past the leading `arg`s
+(the frame writes in the window, `FrameBounds.handler`; the code, rodata and link slots kept,
+`hdl_kept`). -/
+theorem hdl_call_reach (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    (H : Hyps S)
+    {Q : X86.State → Prop} {s s1 : R.RState} {x : X86.State} {p n : Nat}
+    {h : Full.Opcode} {args : List R.Arg} {t : R.Then Nat} {vals : Operands} {items : List Item}
+    (hf : FrameInv S s x) (hci : CacheInv (S.used s.pc) x) (hrip : x.rip = addrAt S.ctx p)
+    (hca : CodeAt S.ctx x.mem (items ++ [Item.call (.handler n)]) p)
+    (hn : Full.Opcode.ofNat? n = some h) (hhh : h.hasHandler = true)
+    (hsetup : Handler.setupItems S.c.mode args = some items)
+    (hi : S.c.d.insns[s.pc]? = some (.handler h args t))
+    (hsc : (S.c.scopesAt s.pc).foldlM R.applyScope s = .ok s1)
+    (hu : R.unpack S.c.ρ h S.c.mode args = some vals) (hno : Handler.NoUB h vals s1.st)
+    (kont : ∀ x' ch ctl st', opSem h vals s1.st ch = .ok (ctl, st') → Handler.CtlIn ctl x' →
+      x'.rip = addrAt S.ctx (p + codeSize (items ++ [Item.call (.handler n)])) →
+      (∀ pc, ¬ LeadArg S pc → FrameInv S { s1 with pc, st := st' } x') → Reach S.ctx S.E Q x') :
+    Reach S.ctx S.E Q x := by
+  have hk := scopes_keeps _ hsc
+  have hfb := H.frameBounds
+  have hwinT : (s.fp : Int) + S.K ≤ 2 ^ 64 := hf.win
+  have hfpF : S.F ≤ s.fp := hf.fpF
+  obtain ⟨hrbN, hrspN, -, -, -, -, -⟩ := hdl_nums H hf
+  have hsep1 : FrameSep (-(S.F : Int)) S.K s1.st x :=
+    (sep_foldlM _ (hfb.scopesIn s.pc) (hfb.window hwinT) hf.rrel hf.sep hsc).2
+  obtain ⟨hr1, hm1⟩ := memRel_foldlM _ (hfb.scope_size _) hf.rrel hf.mem hsc
+  have hap : Handler.StackApart S.lo s1.st x :=
+    Handler.FrameSep.stackApart hsep1
+      (Handler.stack_off_window (by rw [hrbN, hrspN]; omega) (by rw [hrbN]; omega))
+      (island_allocs' H hf hsc)
+  have hlo : S.lo.toNat + 8 ≤ x.rsp.toNat := by have := hf.room; omega
+  have hreg : args.length ≤ (handlerRegs S.c.mode.pe).length := H.regArgs s.pc _ _ _ hi
+  obtain ⟨x2, hx2, hat2, hargs2, hrsp2, hsv2, hmem2, hret2⟩ :=
+    handler_call_ret (lo := S.lo) S.ctx H.linked hn hsetup hreg hlo
+  obtain ⟨x2', hx2', -, -, hH2, hrbp2, -, -⟩ :=
+    handler_call (lo := S.lo) S.ctx H.linked hn hsetup hreg ⟨hr1.rel, hm1⟩ hap hlo
+  have e2 : x2' = x2 := by
+    rw [hx2] at hx2'
+    exact (Switch.except_ok_inj hx2').symm
+  rw [e2] at hH2 hrbp2
+  have hsteps := handler_call_steps H.fp hsetup hreg hca hrip hx2
+  have hra : x2.mem.read64 x2.rsp =
+      addrAt S.ctx (p + codeSize (items ++ [Item.call (.handler n)])) := by
+    rw [hret2, hrip, addrAt_add']; rfl
+  have hrsp2le : x2.rsp.toNat ≤ x.rsp.toNat := by
+    have h8 : (x.rsp - 8).toNat = x.rsp.toNat - 8 := by
+      rw [BitVec.toNat_sub]; have := x.rsp.isLt; simp; omega
+    rw [hrsp2, h8]; omega
+  refine Reach.steps hsteps (.env (H.envOutside.handler h x2 hat2) fun x' hret => ?_)
+  -- The return.
+  obtain ⟨ch, ctl, st', hop, hH', hctl, hal⟩ :=
+    H.sepAcross.handler h args vals s1.st x2 x' x hhh hu hat2 hargs2 hH2 hno hret hsep1
+  obtain ⟨-, -, -, -, -, -, hrsp', hrip', hsv', hmw⟩ :=
+    H.handler.sound h args vals s1.st x2 x' hhh hu hat2 hargs2 hH2 hno hret
+  refine kont x' ch ctl st' hop hctl (by rw [hrip', hra]) fun pc hnl => ?_
+  have hrbp' : x'.reg .rbp = x.reg .rbp := by
+    show x'.regs 5 = x.regs 5
+    rw [hsv' 5 (by simp [CalleeSaved])]
+    exact hrbp2
+  have hrspX : x'.rsp = x.rsp := by
+    rw [hrsp', hrsp2]; exact BitVec.sub_add_cancel _ _
+  have hsvX : ∀ i, Saved S.c.mode.pe i → x'.regs i = x.regs i := by
+    intro i hi
+    rcases hi with hc | ⟨hpe, h67⟩
+    · rw [hsv' i hc]; exact hsv2 i (Or.inl hc)
+    · obtain ⟨h6, h7⟩ := H.peSaved hpe x2 x' hret
+      rcases h67 with rfl | rfl
+      · rw [h6]; exact hsv2 6 (Or.inr ⟨hpe, Or.inl rfl⟩)
+      · rw [h7]; exact hsv2 7 (Or.inr ⟨hpe, Or.inr rfl⟩)
+  have hkeep : ∀ b, IslandKept S x b → x'.mem b = x.mem b := by
+    intro b hb
+    obtain ⟨h1, h2⟩ := hdl_kept H hf hci hsc hi hu hrbp2 hrsp2le b hb
+    rw [hmw b h1, hmem2 b h2]
+  -- The frame separation after the handler.
+  have hesc : st'.escaped = s1.st.escaped := (Ryo.Proofs.OpFacts.opSem_out hop).2.1
+  have hwr : WrIn (-(S.F : Int)) S.K h vals := hfb.handler s.pc h args t vals hi hu
+  have hinit : FrameInit (-(S.F : Int)) S.K st' := by
+    intro o he hu'
+    have he1 : s1.st.escapedAt o = none := by
+      rw [← IslandLemmas.escapedAt_congr hesc o]; exact he
+    by_cases hin : ∃ r ∈ wranges h vals, inRange o r = true
+    · obtain ⟨r, hr, ho⟩ := hin
+      have := hwr r hr
+      simp only [inRange, decide_eq_true_eq] at ho
+      omega
+    · obtain ⟨fp, hfp⟩ := hdl_footprint hop
+      have hw : wranges h vals = fp.writeRanges (opndVal h.info vals) := by
+        unfold wranges; rw [hfp]
+      have hfr : st'.frame o = s1.st.frame o := opSem_frame_writes hfp hop o fun r hr => by
+        cases hc : inRange o r
+        · rfl
+        · exact absurd ⟨r, hw ▸ hr, hc⟩ hin
+      exact hsep1.init o he1 (by rw [← hfr]; exact hu')
+  have hsep' : FrameSep (-(S.F : Int)) S.K st' x' :=
+    FrameSep.extend hsep1 hrbp' hesc hal.1 hinit hal.2.1 hal.2.2
+  have hwf' : EscWF st' := (H.opFacts h).escWF vals s1.st ch ctl st' hop hr1.wf
+  refine ⟨⟨hH'.rel, ?_, hwf'⟩, hH'.mem, hsep', ?_, ?_, ?_, ?_, island_link_kept hf.code hkeep,
+    island_ro_kept hf.ro hkeep, fun ha => absurd ha hnl,
+    island_frame_kept hf.frame hkeep hrbp' (fun i hi _ => hsvX i hi)⟩
+  · show x'.reg .rbp = BitVec.ofNat 64 s1.fp
+    rw [hrbp', hf.rrel.rbp, hk.fp]
+  · show (s1.fp : Int) + S.K ≤ 2 ^ 64
+    rw [hk.fp]; exact hwinT
+  · show S.F ≤ s1.fp
+    rw [hk.fp]; exact hfpF
+  · rw [hrspX, hrbp']; exact hf.rsp
+  · rw [hrspX]; exact hf.room
+
+/-- Falling through to instruction `k + 1` at `pC` (after PE's `nop`, as in `bodySim_island'`). -/
+theorem hdl_fallthrough {k pC : Nat} {q : Proto} {s s' : R.RState} {y : X86.State}
+    (hnop : NopRead S.fr S.callSites S.body q pC (S.start (k + 1)))
+    (hlk : LinkOk S.ctx y.mem S.body S.rs) (hb : Boundary S.rs pC)
+    (hyrip : y.rip = addrAt S.ctx pC) (hnext : RNext S.c s s') (hpc : s'.pc = k + 1)
+    (hfi : FrameInv S s' y) (hcache : S.cache (k + 1) = { pe := S.fr.mode.pe }) :
+    Reach S.ctx S.E (SNext S s) y := by
+  have fin : ∀ z : X86.State, z.regs = y.regs → z.xmm = y.xmm → z.mem = y.mem →
+      z.rip = addrAt S.ctx (S.start (k + 1)) → Reach S.ctx S.E (SNext S s) z := by
+    intro z hzr hzx hzm hzrip
+    refine .done (.inl ⟨s', hnext, hfi.congr hzr hzx hzm, .inl ⟨?_, ?_⟩⟩)
+    · rw [hpc]; exact hzrip
+    · rw [hpc, hcache]; exact CacheInv.emptyPe _ _
+  generalize hE : S.start (k + 1) = pE at hnop fin
+  cases hnop with
+  | none _ => exact fin y rfl rfl rfl hyrip
+  | nop _ hby hrl =>
+    obtain ⟨hit, -, -⟩ := nop_itemAt hlk (p := pC) (n := 1) (by omega) (by omega)
+      (island_nop_bytes hby) hrl hb
+    refine reach_padding (ns := [1]) (by simp) ⟨hit, trivial⟩ hyrip fun z h1 h2 h3 h4 => ?_
+    refine fin z h1 h2 h3 ?_
+    rw [h4]; rfl
+
+set_option maxHeartbeats 1000000 in
+/-- The `br` shape's tail after the return: `test al, al; jz/jnz tgt` (`Handler.br_tail`), to the
+target (not a leading `arg`, `ArgsOk.untargeted`; the cache cleared there,
+`CacheCleared.targets`) or falling through. -/
+theorem hdl_br (H : Hyps S) {k pT j pc : Nat} {q : Proto} {c3 : Cursor} {s s1 : R.RState}
+    {x' : X86.State} {st' : OpSem.State} {ch : OpSem.Choice} {b : Bool} {cond : Cond}
+    {tgt : BitVec 32} {long : Bool}
+    (hs : s.pc = k) (hlt : k < S.r.protos.size)
+    (htg : tgt.toNat ∈ S.r.protos[k].targets) (hj : posOf S.r j = tgt.toNat)
+    (hcond : cond = .z ∨ cond = .nz)
+    (hdec : Dec (atPos S.body pT) pT [.testAl, .branch cond tgt long] c3.pos)
+    (hbT0 : Boundary S.rs pT) (hrip : x'.rip = addrAt S.ctx pT)
+    (hal : Handler.CtlIn (.branch b) x')
+    (hFI : ∀ pc, ¬ LeadArg S pc → FrameInv S { s1 with pc, st := st' } x')
+    (hpc : (if (b != (cond == Cond.z)) = true then j else s.pc + 1) = pc)
+    (hstep : R.step S.c s ch = .ok (.step { s1 with pc, st := st' }))
+    (hnl : ¬ LeadArg S (k + 1))
+    (hnop : NopRead S.fr S.callSites S.body q c3.pos (S.start (k + 1)))
+    (hcache : S.cache (k + 1) = { pe := S.fr.mode.pe }) :
+    Reach S.ctx S.E (SNext S s) x' := by
+  have hce : cond = (if (cond == Cond.z) = true then Cond.z else Cond.nz) := by
+    rcases hcond with rfl | rfl <;> rfl
+  have hnl' : ¬ LeadArg S (s.pc + 1) := by rw [hs]; exact hnl
+  have hfk := hFI (s.pc + 1) hnl'
+  have hlkT : LinkOk S.ctx x'.mem (atPos S.body pT) S.rs := bs_linkOk_at hfk.code pT
+  obtain ⟨hcaT, hqT, hbT⟩ := hlkT.dec hdec hbT0
+  obtain ⟨n1, n2, h1, h2, -⟩ := hdl_dec2 hdec
+  obtain ⟨-, hq1, -⟩ := hlkT.dec (Dec.single h1) hbT0
+  have hn1 : n1 = Item.testAl.size := by
+    simp only [codeSize, List.map_cons, List.map_nil, List.sum_cons, List.sum_nil] at hq1
+    omega
+  have hcanB : (Item.branch cond tgt long).Canonical (pT + Item.testAl.size) := by
+    rw [← hn1]; exact branch_canonical (c := S.body) hfk.code.fp h2
+  have hcanA : Item.testAl.Canonical pT := by
+    unfold Item.Canonical
+    exact ⟨fun _ _ h => (nomatch h), Or.inl rfl⟩
+  have hcan : Canon [Item.testAl, Item.branch cond tgt long] pT := ⟨hcanA, hcanB, trivial⟩
+  obtain ⟨x'', hex, hregs, hmem, hxmm, hrip2⟩ :=
+    Handler.br_tail S.ctx b (cond == Cond.z) tgt long x' hal
+  rw [← hce] at hex hrip2
+  have hst : Steps S.ctx x' x'' :=
+    steps_of_run_last (S := InCode S.ctx [Item.testAl, Item.branch cond tgt long] pT)
+      (items := [Item.testAl]) (j := Item.branch cond tgt long) hcan hcaT hrip (fun _ h => h)
+      (fetchRun_of_forall (fun i hi => by
+        simp only [List.mem_singleton] at hi
+        subst hi
+        exact hdl_testAl_straight S.ctx) x') hex
+  rcases Bool.eq_false_or_eq_true (b != (cond == Cond.z)) with hbn | hbn
+  · -- Taken: to the target.
+    rw [if_pos hbn] at hpc
+    rw [if_pos hbn] at hrip2
+    rw [← hpc] at hstep
+    have hnlj : ¬ LeadArg S j := H.argsOk.untargeted k hlt _ htg j hj
+    have hfj := (hFI j hnlj).congr hregs hxmm hmem
+    refine Reach.steps hst (.done (.inl ⟨_, .step hstep, hfj, .inr ⟨?_, ?_⟩⟩))
+    · show x''.rip = addrAt S.ctx (posOf S.r j)
+      rw [hrip2, hdl_base_setWidth, hj]
+    · show CacheInv (S.used j) x''
+      have hc := H.cacheCleared.targets k hlt _ htg
+      simp only [Setup.used, hj, hc, ↓reduceIte]
+      exact CacheInv.emptyPe _ _
+  · -- Not taken: falling through.
+    have hnb : ¬ ((b != (cond == Cond.z)) = true) := by simp [hbn]
+    rw [if_neg hnb] at hpc
+    rw [if_neg hnb] at hrip2
+    rw [← hpc] at hstep
+    have hripC : x''.rip = addrAt S.ctx c3.pos := by
+      (rw [hrip2, hrip, addrAt_add', hqT]) <;>
+        simp only [codeSize, List.map_cons, List.map_nil, List.sum_cons, List.sum_nil,
+          Nat.add_zero]
+    exact Reach.steps hst (hdl_fallthrough hnop (by rw [hmem]; exact hfk.code) hbT hripC
+      (.step hstep) (by show s.pc + 1 = k + 1; rw [hs]) (hfk.congr hregs hxmm hmem) hcache)
+
+set_option maxHeartbeats 1000000 in
+/-- The `switch` shape's tail after the return: the jump through the table
+(`Switch.switch_tail`) to entry `i`'s target (not a leading `arg`, `ArgsOk.untargeted`; the
+cache cleared there, `CacheCleared.targets`). -/
+theorem hdl_switch (H : Hyps S) {k pT pc i pE : Nat} {s s1 : R.RState}
+    {x' : X86.State} {st' : OpSem.State} {ch : OpSem.Choice} {tb : BitVec 32}
+    {es : List (BitVec 32)}
+    (hlt : k < S.r.protos.size)
+    (hdT : Dec (atPos S.body pT) pT (Switch.switchItems tb) pE) (hbT0 : Boundary S.rs pT)
+    (hrip : x'.rip = addrAt S.ctx pT)
+    (hes : ∀ i (hi : i < es.length), (atPos S.body (tb.toNat + 4 * i)).tableEntry tb = some es[i])
+    (htb : tb.toNat < 2 ^ 31) (hbtb : Boundary S.rs tb.toNat) (hes31 : ∀ e ∈ es, e.toNat < 2 ^ 31)
+    (hil : i < es.length) (hpe : posOf S.r pc = es[i].toNat)
+    (htg : es[i].toNat ∈ S.r.protos[k].targets)
+    (hrax : Handler.CtlIn (.index i) x')
+    (hFI : ∀ pc, ¬ LeadArg S pc → FrameInv S { s1 with pc, st := st' } x')
+    (hstep : R.step S.c s ch = .ok (.step { s1 with pc, st := st' })) :
+    Reach S.ctx S.E (SNext S s) x' := by
+  have hnl : ¬ LeadArg S pc := H.argsOk.untargeted k hlt _ htg pc hpe
+  have hfi := hFI pc hnl
+  have hlkT : LinkOk S.ctx x'.mem (atPos S.body pT) S.rs := bs_linkOk_at hfi.code pT
+  obtain ⟨hcaS, -, -⟩ := hlkT.dec hdT hbT0
+  have htab : CodeAt S.ctx x'.mem (es.map (Item.tableEntry tb)) tb.toNat :=
+    entries_codeAt hfi.code hes hbtb
+  obtain ⟨x'', hst, hex, hrip'', -, -, hm, -, -⟩ :=
+    Switch.switch_tail hcaS hrip htab hil hrax htb (hes31 _ (List.getElem_mem hil))
+  have hregs := hdl_switch_regs hex
+  have hrbp : x''.reg .rbp = x'.reg .rbp := by
+    show x''.regs 5 = x'.regs 5
+    exact hregs 5 (by decide) (by decide)
+  have hrsp : x''.rsp = x'.rsp := by
+    show x''.regs 4 = x'.regs 4
+    exact hregs 4 (by decide) (by decide)
+  have hsv : ∀ i, Saved S.c.mode.pe i → x''.regs i = x'.regs i := by
+    intro i hi
+    apply hregs <;> rcases hi with (rfl | rfl | rfl | rfl | rfl | rfl) | ⟨-, rfl | rfl⟩ <;> decide
+  have hfi'' := hdl_frameInv_regs hfi hm hrbp hrsp hsv hnl
+  refine Reach.steps hst (.done (.inl ⟨_, .step hstep, hfi'', .inr ⟨?_, ?_⟩⟩))
+  · show x''.rip = addrAt S.ctx (posOf S.r pc)
+    rw [hrip'', hpe]
+  · show CacheInv (S.used pc) x''
+    have hc := H.cacheCleared.targets k hlt _ htg
+    simp only [Setup.used, hpe, hc, ↓reduceIte]
+    exact CacheInv.emptyPe _ _
+
+set_option maxHeartbeats 1000000 in
+set_option maxRecDepth 100000 in
+/-- A handler call other than `resume` (see `bodySim_handler'`). -/
+theorem handler_general' (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    (H : Hyps S) {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
+    (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
+    (hr : InsnRead S.fr S.ro cur q c') (hh : q.handler ≠ none) (hres : q.op ≠ .resume)
+    (hnd : ∀ c'', (denseSwitch S.fr).run cur ≠ .ok (some q, c''))
+    (htable : HdlTables S) :
+    BodySim S k p (S.used k) := by
+  intro s x hs hf hrip hci hsafe
+  have hcur := noArg_insn hn hr
+  subst hcur
+  obtain ⟨i, p1, ctr, hi, hio, hlt, hpk⟩ := protoFacts_insnOf hP
+  cases hr with
+  | ret => exact (hh rfl).elim
+  | unreachable => exact (hh rfl).elim
+  | jmp => exact (hh rfl).elim
+  | island => exact (hh rfl).elim
+  | resume => exact (hres rfl).elim
+  | dense hd => exact (hnd _ hd).elim
+  | @handler items hat n len nn op args t sites c'' hd hcall hnop hhh hsetup hthen =>
+  have hres' : op ≠ .resume := hres
+  have hun : op ≠ .unreachable := by rintro rfl; simp [noHandler] at hhh
+  simp only [InsnOf] at hio
+  obtain ⟨t', rfl, ht'⟩ := hio
+  rw [← hs] at hi
+  obtain ⟨s1, vals, hsc, hu, hno, hsucc⟩ := handler_rside hi hsafe hres' hun
+  have hLp := bs_linkOk_at hf.code p
+  obtain ⟨hca, hend, hbe⟩ := hLp.dec (hd.append (Dec.single hcall)) hP.bound
+  have hend' : hat + len = p + codeSize (items ++ [Item.call (.handler n)]) := hend
+  have hbe' : Boundary S.rs (hat + len) := hbe
+  refine hdl_call_reach hD H hf (by rw [hs]; exact hci) hrip hca hnop hhh hsetup hi hsc hu
+    hno ?_
+  intro x' ch ctl st' hop hctl hrip' hFI
+  obtain ⟨pc, hpc, hstep⟩ := hsucc ch ctl st' hop
+  have hripT : x'.rip = addrAt S.ctx (hat + len) := by rw [hrip', hend']
+  cases thenSeq_read hthen with
+  | next hsh =>
+    have ht0 := thenMap_next ht'
+    subst ht0
+    have hpc1 := hdl_succ_next hpc
+    rw [hpc1] at hstep
+    have harg : op ≠ .arg := by
+      rintro rfl
+      rw [hdl_arg_shape] at hsh
+      rcases hsh with h | h <;> cases h
+    have hnl : ¬ LeadArg S (s.pc + 1) := by rw [hs]; exact hdl_next_notLead hD hP harg
+    have hfi := hFI (s.pc + 1) hnl
+    exact hdl_fallthrough (pC := hat + len) hP.nop hfi.code hbe' hripT (.step hstep)
+      (by show s.pc + 1 = k + 1; rw [hs]) hfi hP.cache
+  | br hsh hcond hdecT hc3 =>
+    obtain ⟨j, rfl, hj⟩ := thenMap_branch ht'
+    obtain ⟨b, rfl, hpc'⟩ := hdl_succ_branch hpc
+    have harg : op ≠ .arg := by
+      rintro rfl
+      rw [hdl_arg_shape] at hsh
+      cases hsh
+    exact hdl_br H (pT := hat + len) hs hlt
+      (by rw [hpk]; simp [Proto.targets, R.Then.targets]) hj hcond hdecT hbe' hripT hctl hFI
+      hpc' hstep (hdl_next_notLead hD hP harg) hP.nop hP.cache
+  | switch hsh htr =>
+    obtain ⟨tb, pE, es, hdT, rfl, hes, -⟩ := table_read htr
+    obtain ⟨rs', rfl, hmap⟩ := thenMap_table ht'
+    obtain ⟨i, rfl, hget⟩ := hdl_succ_table hpc
+    obtain ⟨hil, -⟩ := List.getElem?_eq_some_iff.1 hget
+    have hlen : rs'.length = es.length := by
+      have := congrArg List.length hmap
+      simpa using this
+    have hil' : i < es.length := hlen ▸ hil
+    have hpe : posOf S.r pc = es[i].toNat := by
+      have h1 : (rs'.map (posOf S.r))[i]? = (es.map (·.toNat))[i]? := by rw [hmap]
+      rw [List.getElem?_map, List.getElem?_map, hget, List.getElem?_eq_getElem hil'] at h1
+      simpa using h1
+    obtain ⟨htb, hbtb, hes31⟩ :=
+      htable (atPos (atPos S.body p) (hat + len)) tb pE es rfl hdT hes
+    exact hdl_switch H (pT := hat + len) hlt hdT hbe' hripT hes htb hbtb hes31 hil' hpe
+      (by
+        rw [hpk]
+        simp [Proto.targets, R.Then.targets] <;> exact ⟨es[i], List.getElem_mem hil', rfl⟩)
+      hctl hFI hstep
+  | trap hsh hdt hc3 =>
+    have ht0 := thenMap_trap ht'
+    subst ht0
+    exact (hdl_succ_trap hpc).elim
+
+/-- `bodySim_handler`: `resume` by `handler_resume'`, every other handler call by
+`handler_general'` (`noArg_insn`, `InsnRead.handler` as in `link_handler`; `handler_rside` for
+the R side under `RSafe`; `hdl_call_reach` for the setup, `call h` and the return under
+`H.handler` and `SepAcross.handler`; then the shape's tail: `hdl_fallthrough` for `op`/`lpad`,
+`hdl_br`, `hdl_switch`, and `trap` excluded by `RSafe`). Beyond `Hyps`: the decoder's read isn't
+an inline dense switch (`hnd`, as `link_handler`'s: the dispatch has it from `insn_split`); the
+switch tables' positions from `H.hdlTables`. -/
 theorem bodySim_handler' (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (H : Hyps S) {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
     (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
-    (hr : InsnRead S.fr S.ro cur q c') (hh : q.handler ≠ none) :
+    (hr : InsnRead S.fr S.ro cur q c') (hh : q.handler ≠ none)
+    (hnd : ∀ c'', (denseSwitch S.fr).run cur ≠ .ok (some q, c'')) :
     BodySim S k p (S.used k) := by
-  sorry  -- TODO(wip): bodySim_handler'
+  have htable : HdlTables S := H.hdlTables
+  by_cases hres : q.op = .resume
+  · exact handler_resume' hD H hP hn hr hres
+  · exact handler_general' hD H hP hn hr hh hres hnd htable
 
 end Insn
 

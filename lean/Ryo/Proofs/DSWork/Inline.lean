@@ -1,5 +1,5 @@
 import Lean
-import Ryo.Proofs.DecodeSound
+import Ryo.Proofs.DecodeSound.Basic
 import Ryo.Proofs.NoArgCursor
 
 set_option linter.constructorNameAsVariable false
