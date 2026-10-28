@@ -532,6 +532,46 @@ impl<'a, 'tcx> Unit<'a, 'tcx> {
         native.compute_size_estimate();
         native
     }
+
+    /// Applies `flip` (from [`linkable`]) to the CGU's own `item`.
+    fn flip(&mut self, item: MonoItem<'tcx>, flip: Option<(Linkage, Visibility)>) {
+        if let Some(flip) = flip {
+            self.flips.insert(item, flip);
+        }
+    }
+
+    /// Adds `f` with `linkage` + `Hidden`, for an image only, and queues its neighbors.
+    fn add_hidden(&mut self, tcx: TyCtxt<'tcx>, f: Instance<'tcx>, linkage: Linkage) {
+        let item = MonoItem::Fn(f);
+        let data = MonoItemData { inlined: false, linkage, visibility: Visibility::Hidden, size_estimate: item.size_estimate(tcx) };
+        self.added.insert(item, data);
+        self.hidden_added.push(f);
+        self.work.push(f);
+    }
+
+    /// Gives the added `item`, if `Internal`, the given hidden global linkage and visibility.
+    fn hide_added(&mut self, item: MonoItem<'tcx>, (linkage, visibility): (Linkage, Visibility)) {
+        let data = self.added.get_mut(&item).expect("an added item");
+        if data.linkage == Linkage::Internal {
+            data.linkage = linkage;
+            data.visibility = visibility;
+            if let MonoItem::Fn(f) = item {
+                self.hidden_added.push(f);
+            }
+        }
+    }
+}
+
+/// The linkage that makes a native item with `data` linkable from an image, if it changes: a
+/// linkonce item its weak form (LLVM drops linkonce items no native code uses), an internal
+/// one `internal` (design/backend.md, Linkage).
+fn linkable(data: &MonoItemData, internal: Option<(Linkage, Visibility)>) -> Option<(Linkage, Visibility)> {
+    match data.linkage {
+        Linkage::Internal => internal,
+        Linkage::LinkOnceAny => Some((Linkage::WeakAny, data.visibility)),
+        Linkage::LinkOnceODR => Some((Linkage::WeakODR, data.visibility)),
+        _ => None,
+    }
 }
 
 impl<'a, 'tcx> Partitioner<'a, 'tcx> {
@@ -778,29 +818,13 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                 if matches!(item, MonoItem::Fn(f) if unit.index.contains_key(&f)) || unit.flips.contains_key(&item) {
                     continue;
                 }
-                let data = unit.cgu.items()[&item];
-                let flip = match data.linkage {
-                    Linkage::Internal => Some((Linkage::External, Visibility::Hidden)),
-                    Linkage::LinkOnceAny => Some((Linkage::WeakAny, data.visibility)),
-                    Linkage::LinkOnceODR => Some((Linkage::WeakODR, data.visibility)),
-                    _ => None,
-                };
-                if let Some(flip) = flip {
-                    unit.flips.insert(item, flip);
-                }
+                let flip = linkable(&unit.cgu.items()[&item], Some((Linkage::External, Visibility::Hidden)));
+                unit.flip(item, flip);
             }
             return true;
         }
         let Some(&h) = self.owners.get(&item) else { return false };
-        let unit = &mut self.units[h];
-        let data = unit.added.get_mut(&item).expect("an owned item is added");
-        if data.linkage == Linkage::Internal {
-            data.linkage = Linkage::External;
-            data.visibility = Visibility::Hidden;
-            if let MonoItem::Fn(f) = item {
-                unit.hidden_added.push(f);
-            }
-        }
+        self.units[h].hide_added(item, (Linkage::External, Visibility::Hidden));
         true
     }
 
@@ -945,23 +969,11 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                 && h != u
             {
                 // (An addition of a stub walk there is internal until now.)
-                let owner = &mut self.units[h];
-                if let Some(data) = owner.added.get_mut(&item)
-                    && data.linkage == Linkage::Internal
-                {
-                    data.linkage = Linkage::External;
-                    data.visibility = Visibility::Hidden;
-                    owner.hidden_added.push(island);
-                }
+                self.units[h].hide_added(item, (Linkage::External, Visibility::Hidden));
                 continue;
             }
             self.owners.insert(item, u);
-            let unit = &mut self.units[u];
-            let data =
-                MonoItemData { inlined: false, linkage: Linkage::External, visibility: Visibility::Hidden, size_estimate: item.size_estimate(tcx) };
-            unit.added.insert(item, data);
-            unit.hidden_added.push(island);
-            unit.work.push(island);
+            self.units[u].add_hidden(tcx, island, Linkage::External);
         }
     }
 
@@ -991,37 +1003,17 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             // (`needs_thread_local_shim`), so on ELF the backend adds its own, also for
             // upstream statics. The same static always gives the same body, so copies from
             // several crates and CGUs merge (design/backend.md, Linkage).
-            let data =
-                MonoItemData { inlined: false, linkage: Linkage::WeakODR, visibility: Visibility::Hidden, size_estimate: item.size_estimate(tcx) };
-            let unit = &mut self.units[u];
-            unit.added.insert(item, data);
-            unit.hidden_added.push(f);
-            unit.work.push(f);
+            self.units[u].add_hidden(tcx, f, Linkage::WeakODR);
             return;
         }
-        if let Some(data) = self.units[u].cgu.items().get(&item) {
-            let flip = match data.linkage {
-                Linkage::Internal => Some(hidden_internal(item)),
-                Linkage::LinkOnceAny => Some((Linkage::WeakAny, data.visibility)),
-                Linkage::LinkOnceODR => Some((Linkage::WeakODR, data.visibility)),
-                _ => None,
-            };
-            if let Some(flip) = flip {
-                self.units[u].flips.insert(item, flip);
-            }
+        let unit = &mut self.units[u];
+        if let Some(data) = unit.cgu.items().get(&item) {
+            let flip = linkable(data, Some(hidden_internal(item)));
+            unit.flip(item, flip);
             return;
         }
-        if let Some(data) = self.units[u].added.get(&item) {
-            if data.linkage == Linkage::Internal {
-                let (linkage, visibility) = hidden_internal(item);
-                let unit = &mut self.units[u];
-                let data = unit.added.get_mut(&item).unwrap();
-                data.linkage = linkage;
-                data.visibility = visibility;
-                if let MonoItem::Fn(f) = item {
-                    unit.hidden_added.push(f);
-                }
-            }
+        if unit.added.contains_key(&item) {
+            unit.hide_added(item, hidden_internal(item));
             return;
         }
         if unique(tcx, item) && self.expose_unique(u, item) {
@@ -1031,30 +1023,19 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         // linkonce flip.
         if self.global_elsewhere(u, item) {
             for h in self.homes.get(&item).cloned().unwrap_or_default() {
-                let data = self.units[h].cgu.items()[&item];
-                let flip = match data.linkage {
-                    Linkage::LinkOnceAny => Some((Linkage::WeakAny, data.visibility)),
-                    Linkage::LinkOnceODR => Some((Linkage::WeakODR, data.visibility)),
-                    _ => None,
-                };
-                if let Some(flip) = flip {
-                    self.units[h].flips.insert(item, flip);
-                }
+                let unit = &mut self.units[h];
+                let flip = linkable(&unit.cgu.items()[&item], None);
+                unit.flip(item, flip);
             }
             return;
         }
         if let MonoItem::Fn(f) = item
             && tcx.should_codegen_locally(f)
         {
-            let data =
-                MonoItemData { inlined: false, linkage: Linkage::WeakODR, visibility: Visibility::Hidden, size_estimate: item.size_estimate(tcx) };
             if unique(tcx, item) {
                 self.owners.insert(item, u);
             }
-            let unit = &mut self.units[u];
-            unit.added.insert(item, data);
-            unit.hidden_added.push(f);
-            unit.work.push(f);
+            self.units[u].add_hidden(tcx, f, Linkage::WeakODR);
         }
     }
 }
