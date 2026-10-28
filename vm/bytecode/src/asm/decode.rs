@@ -953,7 +953,7 @@ fn call_insn(c: &mut Cursor<'_>, fr: &Frame, dropped: &[DroppedStore]) -> Option
             }
             match (c.item(), &pre) {
                 (Ok(Item::Jmp(Ref::Func(f))), Pre::None) => (Opcode::TailCall, vec![Opnd::Func(f), a_op.clone()], false),
-                (Ok(Item::JmpRax), Pre::Ptr(p)) => (Opcode::TailCallPtr, vec![Opnd::Slot(*p), a_op.clone()], false),
+                (Ok(Item::JmpRax | Item::JmpRaxW), Pre::Ptr(p)) => (Opcode::TailCallPtr, vec![Opnd::Slot(*p), a_op.clone()], false),
                 _ => return fail(c),
             }
         }

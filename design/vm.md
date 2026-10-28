@@ -173,7 +173,7 @@ ones, which are [inlined](#inline-instructions):
 | `arg` | `arg` | the store of an argument register |
 | `jmp` | `jmp` | `jmp t` |
 | `call` | `call`, `call.sym`, `call.sym.ind`, `call.ptr` | the callee's address into `rax` where needed, the argument registers' loads, the call, the result's stores from the return registers ([Calls and islands](#calls-and-islands)) |
-| `tail_call` | `tail_call`, `tail_call.ptr` | `mov rax, [p]` for `.ptr`, the argument registers' loads, epilogue, `jmp fn` / `jmp rax` |
+| `tail_call` | `tail_call`, `tail_call.ptr` | `mov rax, [p]` for `.ptr`, the argument registers' loads, epilogue, `jmp fn` / `jmp rax` (PE: `rex.w jmp rax`, an epilogue's end to the Win64 unwinder) |
 | `island` | `island` | `lea rdi, [rsp + F]; lea rsi, [rip + ops]; call [rip + isl]` (with a frame pointer `mov rdi, rbp`; PE: `rcx`/`rdx`, the frame's shadow space) |
 | `lpad` | `lpad` | `mov rsi, rax` (the exception object; `rdi` with `fp-rbp`, `rcx` on PE), operand registers, handler call |
 

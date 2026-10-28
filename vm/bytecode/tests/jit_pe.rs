@@ -342,6 +342,11 @@ fn check_frames(o: &Output, what: &str) -> Found {
             k += step(&mut t, c, k).unwrap();
         }
         let end = &c[k..];
+        // A `jmp rel32` within the function isn't an epilogue's end (to the unwinder either):
+        // an OSR entry's post part (`lea rsp, [rbp - F]; jmp head`).
+        if end[0] == 0xe9 && !o.relocs.iter().any(|r| r.at as usize == k + 1) {
+            continue;
+        }
         let ok =
             end[0] == 0xc3 || end[0] == 0xe9 || end.starts_with(&[0xff, 0x25]) || (end[0] & 0xf8 == 0x48 && end[1] == 0xff && end[2] & 0xf8 == 0xe0);
         assert!(ok, "{what}: the epilogue at {e} ends in {:02x?}", &end[..3.min(end.len())]);
@@ -372,12 +377,97 @@ fn xmm_saved(code: &[u8], saved: &[u8], what: &str) {
     }
 }
 
+/// The OSR code (GNU objdump, if there is one), which `pe_osr_unwind_info` describes: the AOT
+/// frame's `rbp`, nothing else saved. So no instruction there writes `rbp` or another
+/// callee-saved register (`xmm6`–`xmm15` included), each entry stores every save `info`
+/// describes at its slot before it jumps to its post part in the body (`jmp r11`, after which
+/// the body's information holds), and nothing there is an epilogue's end to the unwinder
+/// (`ret` only where an entry returns to the stub). Returns the entries checked.
+fn check_osr(o: &Output, info: &[u8], what: &str) -> usize {
+    const OBJDUMP: &str = "/usr/bin/objdump";
+    let Some(osr) = &o.osr else { return 0 };
+    if !std::path::Path::new(OBJDUMP).exists() {
+        return 0;
+    }
+    // The saves: pushed ones at `rbp - 8n` (`rbp` is `fp`), stored ones from `rbp - K`.
+    let k = 16 * (info[3] >> 4) as i64;
+    let mut want: Vec<(String, i64)> = Vec::new();
+    let mut pushed = 0;
+    const NAMES: [&str; 16] = ["rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"];
+    for (_, op, i, arg) in codes(info).into_iter().rev() {
+        match op {
+            0 if i != 5 => {
+                pushed += 1;
+                want.push((format!("%{}", NAMES[i as usize]), -8 * pushed));
+            }
+            4 => want.push((format!("%{}", NAMES[i as usize]), arg as i64 - k)),
+            8 => want.push((format!("%xmm{i}"), arg as i64 - k)),
+            _ => {}
+        }
+    }
+    let mut code = o.code.clone();
+    code.resize(o.osr_at as usize, 0xcc);
+    code.extend_from_slice(&osr.code);
+    let dir = std::env::temp_dir().join(format!("ryo-jit-pe-osr-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let f = dir.join(format!("{:x}.bin", what.len() as u64 ^ code.len() as u64 * 31 ^ code.iter().map(|&b| b as u64).sum::<u64>()));
+    std::fs::write(&f, &code).unwrap();
+    let start = format!("--start-address={}", o.osr_at);
+    let out = std::process::Command::new(OBJDUMP).args(["-D", "-b", "binary", "-m", "i386:x86-64", &start]).arg(&f).output().unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    let saved_regs: Vec<String> = ["bx", "bp", "si", "di"]
+        .iter()
+        .flat_map(|r| [format!("%r{r}"), format!("%e{r}"), format!("%{r}"), format!("%{r}l")])
+        .chain((12..16).flat_map(|n| [format!("%r{n}"), format!("%r{n}d"), format!("%r{n}w"), format!("%r{n}b")]))
+        .chain((6..16).map(|n| format!("%xmm{n}")))
+        .collect();
+    let (mut stored, mut entries) = (Vec::<(String, i64)>::new(), 0);
+    for line in text.lines() {
+        let parts: Vec<&str> = line.split('\t').collect();
+        if parts.len() < 3 || !parts[0].trim_end().ends_with(':') {
+            continue;
+        }
+        let insn = parts[2].trim();
+        let (mn, ops) = insn.split_once(' ').map(|(m, o)| (m, o.trim())).unwrap_or((insn, ""));
+        if mn == "int3" || mn.starts_with("(bad)") || mn == ".byte" {
+            continue;
+        }
+        let dst = ops.rsplit(',').next().unwrap_or("");
+        assert!(!saved_regs.iter().any(|r| r == dst), "{what}: the OSR code writes {dst}: {insn}");
+        if mn.starts_with("jmp") {
+            assert!(ops == "*%rax" || ops == "*%r11", "{what}: a jump the unwinder may take for an epilogue's end: {insn}");
+            if ops == "*%r11" {
+                for w in &want {
+                    assert!(stored.contains(w), "{what}: an OSR entry leaves without storing {w:?}: {stored:?}");
+                }
+                stored.clear();
+                entries += 1;
+            }
+        } else if mn == "ret" {
+            stored.clear();
+        } else if let Some((src, m)) = ops.split_once(',')
+            && let Some(d) = m.strip_suffix("(%rbp)")
+        {
+            let d = if let Some(h) = d.strip_prefix("-0x") {
+                -i64::from_str_radix(h, 16).unwrap()
+            } else {
+                i64::from_str_radix(d.trim_start_matches("0x"), 16).unwrap_or(0)
+            };
+            stored.push((src.to_string(), d));
+        }
+    }
+    entries
+}
+
 fn each(insns: &[Insn<'_>], frame: u32, scopes: &[(usize, i32, u32, ScopeKind)], what: &str, mut check: impl FnMut(&Found, &str)) {
     for alloc in [Allocator::LinearScan, Allocator::Naive] {
         for stress in [false, true] {
             let what = format!("{what} ({alloc:?}, stress {stress})");
             let o = compile(insns, frame, scopes, alloc, stress).unwrap_or_else(|e| panic!("{what}: {e:?}"));
             let found = check_frames(&o, &what);
+            if o.osr.is_some() {
+                assert!(check_osr(&o, &o.pe_unwind, &what) > 0 || !std::path::Path::new("/usr/bin/objdump").exists(), "{what}: no OSR entry");
+            }
             check(&found, &what);
         }
     }

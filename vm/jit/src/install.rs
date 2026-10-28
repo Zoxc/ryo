@@ -15,8 +15,8 @@ use ryo_bytecode::asm::osr::OsrEntry;
 use ryo_bytecode::asm::{self, FUNC_FAR, FUNC_KINDS, FUNC_NEAR, FUNC_SLOT, Mode, Ref};
 use ryo_bytecode::full::{Const, Data, Func, Site, Sym};
 use ryo_bytecode::image::{
-    EhFunc, Image, ImageResolver, JIT_DONE, JitRecord, eh_cie, eh_fde, eh_fde_rows, jit_count, jit_unbiased, pe_handler_data, pe_region_unwind_info,
-    pe_unwind_info, pe_with_handler,
+    EhFunc, Image, ImageResolver, JIT_DONE, JitRecord, eh_cie, eh_fde, eh_fde_rows, jit_count, jit_unbiased, pe_handler_data, pe_osr_unwind_info,
+    pe_region_unwind_info, pe_unwind_info, pe_with_handler,
 };
 use ryo_bytecode::jit;
 use ryo_bytecode::jit::inline::VmFunc;
@@ -585,7 +585,7 @@ impl Eh {
             let lsda = asm::lsda::write(call_sites);
             let has_region = region < code_len;
             let r = if has_region { region as u32 } else { 0 };
-            b.resize(12 * (1 + usize::from(has_region) * (1 + usize::from(osr.is_some()))), 0);
+            b.resize(12 * (1 + usize::from(osr.is_some() && (has_region || matches!(body, Body::Pe(_)))) + usize::from(has_region)), 0);
             let (rfs, handlers) = (&mut eh.pe_rfs, &mut eh.pe_handlers);
             let mut add = |b: &mut Vec<u8>, range: (usize, usize), info: &[u8], data: Option<Vec<u8>>| {
                 let at = b.len();
@@ -599,14 +599,20 @@ impl Eh {
                 }
                 rfs.push((range.0, range.1, at));
             };
-            let body_end = if has_region {
-                region
+            // The SSA tier's OSR code: its own entry ([`pe_osr_unwind_info`]); the entries'
+            // post parts are in the body's code.
+            let ssa_osr = matches!(body, Body::Pe(_)) && osr.is_some();
+            let body_end = if has_region || ssa_osr {
+                if has_region { region } else { code_len }
             } else if osr.is_some() {
                 osr_at + osr_len
             } else {
                 code_len
             };
             add(b, (0, body_end), &info, Some(pe_handler_data(0, r, &lsda)));
+            if ssa_osr && !has_region {
+                add(b, (osr_at, osr_at + osr_len), &pe_osr_unwind_info(), None);
+            }
             if has_region {
                 add(b, (region, code_len), &pe_region_unwind_info(), Some(pe_handler_data(r, r, &lsda)));
                 if osr.is_some() {

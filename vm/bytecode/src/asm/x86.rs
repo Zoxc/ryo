@@ -367,6 +367,9 @@ pub enum Item {
     CallMemRax,
     /// `jmp rax`
     JmpRax,
+    /// `rex.w jmp rax`: PE's `tail_call.ptr`, the form the Win64 unwinder takes for an
+    /// epilogue's end (a plain `jmp rax` after the pops isn't one).
+    JmpRaxW,
     /// `jmp r11`: a PE pad region's entry, to the landing pad the trampoline passes
     /// (design/vm.md#unwinding).
     JmpR11,
@@ -375,7 +378,8 @@ pub enum Item {
     /// JIT code only, never decoded: `mov r11, imm64; call r11`, a call of a target out of
     /// `rel32` reach (the `imm64` relocated against the [`Ref`], 8 bytes).
     CallAbs(Ref),
-    /// JIT code only: `mov r11, imm64; jmp r11`, a tail call out of reach.
+    /// JIT code only: `jmp [rip]; .quad target`, a tail call out of reach (through memory,
+    /// which the Win64 unwinder takes for an epilogue's end, and clobbering no register).
     JmpAbs(Ref),
     /// JIT code only: `jmp [rip + disp32]`, a tail call through a call slot.
     JmpMem(Ref),
@@ -526,7 +530,9 @@ impl Item {
             Item::Lea(..) | Item::LeaTable(_) | Item::LoadRip(..) => 7,
             Item::Call(_) | Item::Jmp(_) => 5,
             Item::CallMem(_) | Item::JmpMem(_) => 6,
-            Item::CallAbs(_) | Item::JmpAbs(_) => 13,
+            Item::CallAbs(_) => 13,
+            Item::JmpAbs(_) => 14,
+            Item::JmpRaxW => 3,
             Item::Branch { cond, long, .. } => match (cond, long) {
                 (_, false) => 2,
                 (Cond::Always, true) => 5,
@@ -885,6 +891,7 @@ impl Item {
                 reloc(out, relocs, to);
             }
             Item::JmpRax => out.extend_from_slice(&[0xff, 0xe0]),
+            Item::JmpRaxW => out.extend_from_slice(&[0x48, 0xff, 0xe0]),
             Item::JmpR11 => out.extend_from_slice(&[0x41, 0xff, 0xe3]),
             Item::Jmp(to) => {
                 out.push(0xe9);
@@ -894,11 +901,16 @@ impl Item {
                 out.extend_from_slice(&[0xff, 0x25]);
                 reloc(out, relocs, to);
             }
-            Item::CallAbs(to) | Item::JmpAbs(to) => {
+            Item::CallAbs(to) => {
                 out.extend_from_slice(&[0x49, 0xbb]);
                 relocs.push(Reloc { at: pos + (out.len() - start) as u32, to });
                 out.extend_from_slice(&[0; 8]);
-                out.extend_from_slice(&[0x41, 0xff, if matches!(self, Item::CallAbs(_)) { 0xd3 } else { 0xe3 }]);
+                out.extend_from_slice(&[0x41, 0xff, 0xd3]);
+            }
+            Item::JmpAbs(to) => {
+                out.extend_from_slice(&[0xff, 0x25, 0, 0, 0, 0]);
+                relocs.push(Reloc { at: pos + (out.len() - start) as u32, to });
+                out.extend_from_slice(&[0; 8]);
             }
             Item::Branch { cond, target, long } => {
                 if long {
@@ -1458,6 +1470,7 @@ impl<'a> Cursor<'a> {
             (0, 0xe8) => Item::Call(self.field_ref(1, 5)?),
             (0x41, 0xff) if self.byte(2)? == 0x53 => Item::CallR11(self.byte(3)?),
             (0x41, 0xff) if self.byte(2)? == 0xe3 => Item::JmpR11,
+            (0x48, 0xff) if self.byte(2)? == 0xe0 => Item::JmpRaxW,
             (0x48 | 0x4c, 0x8b) if self.byte(2)? & 0xc7 == 0x05 => {
                 let reg = Reg::from_num(self.byte(2)? >> 3 & 7 | (r as u8) << 3).ok_or(bad)?;
                 Item::LoadRip(reg, self.field_ref(3, 7)?)

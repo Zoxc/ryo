@@ -209,3 +209,11 @@ remove it once a Lean session has handled it.
   `u32`, was the width), as the handlers and inline sequences do. `Frame.lean`'s `native`
   (the `_` arm, `widthOfMnemonic`/`secondWidth` there) should match; `droppedStore` already
   had these widths.
+
+- PE `tail_call.ptr` ends in `rex.w jmp rax` (Commit: "JIT: Win64 asynchronous unwinding at
+  every PE instruction"). New x86 item `JmpRaxW` (`48 ff e0`), emitted instead of `JmpRax`
+  for `tail_call.ptr` in PE mode only (the Win64 unwinder takes it for an epilogue's end);
+  the reduced decoder accepts either after a tail call's epilogue. The Lean `Item` (and
+  `DecodeReduced`'s tail call, `Call.tailHead`) needs a `jmpRaxW` with the same semantics
+  as `jmpRax`; then add `Item::JmpRaxW` to `lean_x86_vectors.rs`'s `gen_items`. The JIT-only
+  `JmpAbs` is now `jmp [rip]; .quad` (14 bytes), never decoded.

@@ -1990,8 +1990,8 @@ impl<'a> E<'a> {
                 self.epilogue();
                 match call.target {
                     // PE: through a register as `rex.w jmp`, which the unwinder takes for the
-                    // epilogue's end (design/jit.md, "Limits").
-                    CallTarget::Func(g) if self.mode.pe && g.0 & asm::FUNC_KINDS == asm::FUNC_FAR => self.a.x().jmp_abs_w(Ref::Func(g)),
+                    // epilogue's end, as it does far ones' `jmp [rip]` (design/jit.md, "PE
+                    // frames").
                     CallTarget::Func(g) => self.a.x().jmp_func(g),
                     CallTarget::Ptr if self.mode.pe => self.a.x().jmp_r_w(R::Rax),
                     CallTarget::Ptr => self.a.x().jmp_r(R::Rax),
@@ -2137,9 +2137,15 @@ pub fn emit(f: &Func, al: &Alloc, uses: &[u32], mode: Mode, code_consts: &[u8], 
         sites.iter().map(|s| CallSite { start: l.at(s.at), len: s.len, pad: s.pad.map(|p| l.labels[p as usize]), catch: s.catch }).collect();
     call_sites.sort_by_key(|c| c.start);
     let cfi = cfi.into_iter().map(|(m, v)| (l.at(m), v)).collect();
-    let osr_at = (l.code.len() as u32).next_multiple_of(16);
-    let osr = if !f.osr.is_empty() { Some(osr_code(f, al, mode, &fr, &l.labels, osr_at)?) } else { None };
-    let Laid { code, relocs, .. } = l;
+    let (osr, osr_at, post) = match f.osr.is_empty() {
+        true => (None, (l.code.len() as u32).next_multiple_of(16), Vec::new()),
+        false => {
+            let (o, post, at) = osr_code(f, al, mode, &fr, &l.labels, l.code.len() as u32)?;
+            (Some(o), at, post)
+        }
+    };
+    let Laid { mut code, relocs, .. } = l;
+    code.extend_from_slice(&post);
     Ok(Output { code, relocs, rodata, call_sites, cfi, osr, osr_at, frame_size: fr.size, pe_unwind, dump: None, devirt: 0 })
 }
 
@@ -2172,13 +2178,23 @@ fn cfa_saved(r: R, n: u32) -> Vec<u8> {
 /// (design/jit.md, "OSR"): everything it reads from the AOT frame into a scratch area below
 /// both frames first, then the callee-saved registers' saves, the moved allocas' copies, the
 /// head's parameters, and the jump to the head.
-fn osr_code(f: &Func, al: &Alloc, mode: Mode, fr: &Frame, lab: &[u32], at: u32) -> Result<OsrCode, Unsupported> {
+///
+/// On PE each entry is split where its saves are stored ([`pe_osr_unwind_info`]'s range
+/// before, the body's after): the part before, with the dispatcher, is the OSR code; the
+/// part after (the *post* part) is returned to be appended to the body's code at `post_at`
+/// (its length), and the OSR code placed after that, at the returned offset.
+///
+/// [`pe_osr_unwind_info`]: crate::image::pe_osr_unwind_info
+fn osr_code(f: &Func, al: &Alloc, mode: Mode, fr: &Frame, lab: &[u32], post_at: u32) -> Result<(OsrCode, Vec<u8>, u32), Unsupported> {
     let fp = mode.frame_pointer;
     let f_aot = f.aot_frame;
     let f_jit = fr.size;
     let mut probes = Vec::new();
     let (code, mut cfi, table) = osr::dispatcher(f.osr.len(), fp, f_aot);
     let mut x = X86 { code, ..X86::default() };
+    let mut post = X86::default();
+    // The pre parts' jumps to their post parts: (end of the `rel32` field, post offset).
+    let mut fixups: Vec<(u32, u32)> = Vec::new();
     let mem_of = |base: R, off: i32| Mem::base(base, off);
     for (n, o) in f.osr.iter().enumerate() {
         osr::entry_start(&mut x.code, &mut cfi, table, n, fp, f_aot);
@@ -2248,8 +2264,19 @@ fn osr_code(f: &Func, al: &Alloc, mode: Mode, fr: &Frame, lab: &[u32], at: u32) 
         for &(r, o) in &fr.xsaves {
             x.movdqa_store(mem_of(base, o), r);
         }
+        // PE: the rest is the post part, after the body's code, which the body's
+        // `UNWIND_INFO` describes from here: the caller's registers are in their slots.
+        let w = if mode.pe {
+            // `lea r11, [rip + post]; jmp r11`, neither an epilogue's end for the unwinder.
+            x.code.extend_from_slice(&[0x4c, 0x8d, 0x1d, 0, 0, 0, 0]);
+            fixups.push((x.code.len() as u32, post.code.len() as u32));
+            x.code.extend_from_slice(&[0x41, 0xff, 0xe3]);
+            &mut post
+        } else {
+            &mut x
+        };
         for &(_, to, size, k) in &copies {
-            copy(&mut x, (R::Rsp, k), (base, to), size);
+            copy(w, (R::Rsp, k), (base, to), size);
         }
         // The head's parameters: memory ones first, then registers (`rdx`, the base, last).
         let params = &f.blocks[head.idx()].params;
@@ -2267,30 +2294,30 @@ fn osr_code(f: &Func, al: &Alloc, mode: Mode, fr: &Frame, lab: &[u32], at: u32) 
                 // A vector: from the scratch copy, or a zero-extended constant.
                 Loc::Xmm(r) => match src {
                     Src::Imm(c) => {
-                        x.mov_imm(8, Rm::R(S1), c);
-                        x.movq_to_xmm(r, Rm::R(S1), 8);
+                        w.mov_imm(8, Rm::R(S1), c);
+                        w.movq_to_xmm(r, Rm::R(S1), 8);
                     }
-                    Src::M(m) => x.movdqu_load(r, x86::X::M(m)),
+                    Src::M(m) => w.movdqu_load(r, x86::X::M(m)),
                     _ => unreachable!(),
                 },
                 Loc::Spill(s) if f.w(p) == 16 => match src {
                     Src::Imm(c) => {
-                        x.mov_imm(8, Rm::R(S1), c);
-                        x.mov(8, Rm::M(jit_mem(s)), Rm::R(S1));
-                        x.mov_imm(8, Rm::M(jit_mem(s + 1)), 0);
+                        w.mov_imm(8, Rm::R(S1), c);
+                        w.mov(8, Rm::M(jit_mem(s)), Rm::R(S1));
+                        w.mov_imm(8, Rm::M(jit_mem(s + 1)), 0);
                     }
-                    Src::M(Mem::Base { base: b, disp, .. }) => copy(&mut x, (b, disp), (base, fr.spill0 + 8 * s as i32), 16),
+                    Src::M(Mem::Base { base: b, disp, .. }) => copy(w, (b, disp), (base, fr.spill0 + 8 * s as i32), 16),
                     _ => unreachable!(),
                 },
                 Loc::Spill(s) => match src {
-                    Src::Imm(c) if fits32(c as i64) => x.mov_imm(8, Rm::M(jit_mem(s)), c),
+                    Src::Imm(c) if fits32(c as i64) => w.mov_imm(8, Rm::M(jit_mem(s)), c),
                     Src::Imm(c) => {
-                        x.mov_imm(8, Rm::R(S1), c);
-                        x.mov(8, Rm::M(jit_mem(s)), Rm::R(S1));
+                        w.mov_imm(8, Rm::R(S1), c);
+                        w.mov(8, Rm::M(jit_mem(s)), Rm::R(S1));
                     }
                     Src::M(m) => {
-                        x.mov(8, Rm::R(S1), Rm::M(m));
-                        x.mov(8, Rm::M(jit_mem(s)), Rm::R(S1));
+                        w.mov(8, Rm::R(S1), Rm::M(m));
+                        w.mov(8, Rm::M(jit_mem(s)), Rm::R(S1));
                     }
                     _ => unreachable!(),
                 },
@@ -2300,19 +2327,24 @@ fn osr_code(f: &Func, al: &Alloc, mode: Mode, fr: &Frame, lab: &[u32], at: u32) 
         regs.sort_by_key(|&(r, _)| r == R::Rdx);
         for (r, s) in regs {
             match s {
-                Src::Imm(c) => x.mov_imm(8, Rm::R(r), c),
-                Src::M(m) => x.mov(8, Rm::R(r), Rm::M(m)),
+                Src::Imm(c) => w.mov_imm(8, Rm::R(r), c),
+                Src::M(m) => w.mov(8, Rm::R(r), Rm::M(m)),
                 _ => unreachable!(),
             }
         }
         // `rsp = fp - F_jit`: from `rbp`, or from `rdx` unless it was just loaded.
         if fp {
-            x.lea(R::Rsp, mem_of(R::Rbp, -(f_jit as i32)));
+            w.lea(R::Rsp, mem_of(R::Rbp, -(f_jit as i32)));
         } else {
             // `rsp` is `fp - low`.
-            x.lea(R::Rsp, mem_of(R::Rsp, (low - f_jit) as i32));
+            w.lea(R::Rsp, mem_of(R::Rsp, (low - f_jit) as i32));
         }
-        osr::jmp_landing(&mut x.code, at, lab[head.idx()]);
+        osr::jmp_landing(&mut w.code, if mode.pe { post_at } else { post_at.next_multiple_of(16) }, lab[head.idx()]);
     }
-    Ok(OsrCode { code: x.code, probes, cfi })
+    let osr_at = if mode.pe { (post_at + post.code.len() as u32).next_multiple_of(16) } else { post_at.next_multiple_of(16) };
+    for (field, to) in fixups {
+        let d = (post_at + to) as i64 - (osr_at + field) as i64;
+        x.code[field as usize - 4..field as usize].copy_from_slice(&(d as i32).to_le_bytes());
+    }
+    Ok((OsrCode { code: x.code, probes, cfi }, post.code, osr_at))
 }

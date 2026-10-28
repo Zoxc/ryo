@@ -805,7 +805,8 @@ The call is a call site in the LSDA.
 in `p`; a tail call to anything else with a symbol is `addr.sym` + `tail_call.ptr`.
 
 The sequence: `mov rax, [fp + p]` for `.ptr`, the argument registers' loads, the epilogue,
-`jmp fn` / `jmp rax`.
+`jmp fn` / `jmp rax` (on PE `rex.w jmp rax`, which the Win64 unwinder takes for an
+epilogue's end; a plain `jmp rax` after `pop rbp` isn't one).
 
 #### `ret s, k`
 

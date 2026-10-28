@@ -65,8 +65,9 @@ section; its fields and the counter checks and stubs that use it are in
   among an entry's argument registers); with `ryo_rt`'s `pe-test` the Linux trips save the
   same, for PE code run off Windows. On Windows they carry unwind info (`.seh_*`: the area
   and the nonvolatile registers saved in it), so stack walks and a panic in their Rust code
-  get through them; the code after the restore isn't an epilogue form the Win64 unwinder
-  recognizes, so an asynchronous walk taken there goes wrong (no call can be there).
+  get through them; they test the Rust code's result before the restore and end in two
+  epilogues of the forms the Win64 unwinder recognizes (`add rsp`, the pops, then `ret` or
+  `rex.w jmp r11`), so an asynchronous walk gets through them anywhere.
 - **No unwinding**: the Rust parts can't panic: nothing may unwind out of them, since the
   stubs aren't call sites. They are `sysv64-unwind`/`C-unwind` only so that the compiler
   adds no abort-on-unwind guard, which would reach core's panic path ("No re-entry").
@@ -171,7 +172,8 @@ section; its fields and the counter checks and stubs that use it are in
   a `call.sym`'s symbol slot holds, found by `RtApi::image_at`), or a fixed address (native
   code, a VM function without a record). A known target (a compiled callee's JIT code, a
   fixed address) is called directly, `call rel32`/`jmp rel32`, if the whole mapping reaches
-  it, else as `mov r11, imm64; call r11`/`jmp r11`. A VM function not compiled yet goes
+  it, else as `mov r11, imm64; call r11`/`jmp [rip]; .quad` (through memory, an epilogue's
+  end to the Win64 unwinder). A VM function not compiled yet goes
   through a *call slot*, `call [rip + slot]`/`jmp [rip + slot]`: 8 bytes at the mapping's
   end, one per mapping and callee, holding the callee's AOT entry and then, once it is
   published, its JIT code (an aligned atomic store, no code patching). So calls and tail
@@ -231,10 +233,19 @@ section; its fields and the counter checks and stubs that use it are in
   functions with cleanup landing pads, its inlined callees' included, to re-encoding
   (`Unsupported`). The entry prefix has no entry: a leaf, the return address at `rsp` (the
   AOT stub's, then the body's start, whose prologue hasn't run). The SSA tier's functions
-  get their own `UNWIND_INFO` (`jit::Output::pe_unwind`, [PE frames](#back-end)), over the
-  OSR code too: its entries keep `rbp`, and store the other saves (`rdi` and `rsi` among
-  them, which the AOT code never touches) before
-  they jump to the head; their terminate pads are entered by `RtlUnwindEx` with the SSA
+  get their own `UNWIND_INFO` (`jit::Output::pe_unwind`, [PE frames](#back-end)). Their OSR
+  entries keep `rbp` and store the other saves (`rdi` and `rsi` among them, which the AOT
+  code never touches, and the used `xmm6`–`xmm15`) at slots that may hold AOT frame bytes the
+  entry reads first, so until then the body's description would take the caller's registers
+  from those bytes. Each entry is split where its saves are stored: the part before, with
+  the dispatcher, is the OSR code, under an entry of its own whose `UNWIND_INFO`
+  (`image::pe_osr_unwind_info`) is the AOT frame's without a prologue (`rbp` saved at `fp`,
+  the frame register; the caller's other registers still in place, which that part never
+  writes); the part after (moved allocas, the head's parameters, `lea rsp`, the `jmp` to
+  the head) is appended to the body's code, under the body's entry. The pre part leaves by
+  `lea r11, [rip + post]; jmp r11`, which isn't an epilogue form (a `jmp rel32` out of its
+  entry would be one), and the post part's `jmp` to the head stays inside the body's entry.
+  Their terminate pads are entered by `RtlUnwindEx` with the SSA
   frame's `rsp`, as the Itanium personality enters them.
 - **macOS** (`sys/macos.rs`): the same `.eh_frame` as on ELF (Mach-O images' VM code is
   SysV with DWARF unwind information), but registered one FDE at a time: libunwind's
@@ -557,7 +568,8 @@ innermost first, so a value invariant in several levels leaves each in turn.
   the 8-byte slots within 240 bytes below `rbp` that no pinned alloca covers, the rest of
   the frame below them; without room the function is re-encoded. The epilogue is the
   stored saves' and the `xmm` saves' loads, `lea rsp, [rbp - 8n]`, the pops, then `ret` or the tail jump, a
-  register one as `rex.w jmp` so that the unwinder sees an epilogue. Calls (handlers, VM
+  register one as `rex.w jmp` and a far one as `jmp [rip]; .quad` so that the unwinder
+  sees an epilogue (nothing between the pops and the jump). Calls (handlers, VM
   functions, natives and islands; Win64: `rcx rdx r8 r9`, `xmm0`–`xmm3` by position) get
   32 bytes of shadow space at the bottom of the frame, if the stack arguments don't cover
   it, and 8 more for a handler's stack argument (`atomic.cxchg`, `mov [rsp + 32], r11d`).
@@ -925,15 +937,6 @@ for shuffled frames per image, `RtApi::shuffled`):
   `MAP_FIXED_NOREPLACE`, the address only a hint), the `__ulock` waits in the trips, and
   ld64 linking the sealed object (a second `rust_eh_personality`, local, among the
   personalities compact unwind can encode, three at most) are untested there.
-- Asynchronous unwinding on Windows (a debugger's or a sampling profiler's stack walk)
-  misreads a frame stopped after its epilogue's `pop rbp` at a tail call through a
-  register: the JIT's far one (`mov r11, imm64; jmp r11`, a callee more than 2 GiB away)
-  and, as in AOT code, `tail_call.ptr`'s `jmp rax`. The unwinder takes only `ret`, `jmp`s
-  to outside the function or through memory, and `rex.w jmp reg` right after the pops as
-  an epilogue's end. Nothing synchronous stops there. The SSA tier's tail jumps through a
-  register are `rex.w jmp`, which it takes. In the SSA tier's OSR code, before an entry
-  stores the saves (`rbx`, `r12`–`r15`) at their slots, an unwind (a stack overflow in its
-  probe) would take them from those slots' AOT bytes.
 - Island calls and `call.sym.ind` stay through the image's symbol slots. A callee's slot is
   never replaced by a direct call: a caller compiled before its callee keeps the slot.
 - A program that interposes `malloc` itself with Rust code (which may call VM code) would
@@ -944,8 +947,6 @@ for shuffled frames per image, `RtApi::shuffled`):
   staticlib per final C link, [backend.md](backend.md#pipeline)).
 - `#![no_std]` final artifacts don't link with the native sysroot: the sealed object needs
   libc, libpthread and the unwinder, which std brings.
-- The trips on PE have no SEH unwind information: nothing unwinds through them, but a
-  debugger's stack walk stops there.
 
 ## Testing
 
@@ -984,7 +985,9 @@ for shuffled frames per image, `RtApi::shuffled`):
   code's and every Win64 callee-saved register, `xmm6`–`xmm15` included, survives.
   `vm/bytecode/tests/jit_pe.rs` runs each SSA prologue symbolically and unwinds it at every
   step by its `UNWIND_INFO` as `RtlVirtualUnwind` does, checks that each epilogue restores
-  the caller's registers in the form the unwinder recognizes, and that no code names
+  the caller's registers in the form the unwinder recognizes (a `jmp rel32` within the
+  function isn't one), that the OSR code writes no callee-saved register and stores every
+  save before it jumps to its post part, ending in no epilogue form, and that no code names
   `xmm6`–`xmm15`. The Windows registration itself has never run.
 - **The corpus**: `RYO_JIT_THRESHOLD=0 RYO_JIT_SYNC=1 y test` runs it with every function's
   JIT code from its first call, and `RYO_JIT_THRESHOLD=2,0` instead enters it by OSR at the

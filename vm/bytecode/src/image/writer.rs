@@ -1157,6 +1157,14 @@ pub fn pe_region_unwind_info() -> Vec<u8> {
     unwind_codes(sub, 0, &[(sub, PeUnwindOp::Alloc(asm::PE_REGION_ALLOC))])
 }
 
+/// The PE `UNWIND_INFO` (as [`pe_unwind_codes`]) of the SSA tier's OSR code up to where an
+/// entry has stored the callee-saved registers' saves (design/jit.md, "Unwinding and
+/// profiling"): the AOT frame's, `rbp` saved at `fp` and the frame register at offset 0, no
+/// prologue; the caller's other registers are still in place.
+pub fn pe_osr_unwind_info() -> Vec<u8> {
+    pe_unwind_codes(0, 0, &[(0, PeUnwindOp::Push(5)), (0, PeUnwindOp::SetFpreg)])
+}
+
 /// The flags of an `UNWIND_INFO` with a language handler that both phases call
 /// (`UNW_FLAG_EHANDLER | UNW_FLAG_UHANDLER`), in place in its first byte.
 pub const PE_HANDLER_FLAGS: u8 = (1 | 2) << 3;

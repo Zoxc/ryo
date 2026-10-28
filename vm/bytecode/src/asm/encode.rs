@@ -1315,7 +1315,8 @@ impl Asm {
                     let Opnd::Func(f) = named("f") else { unreachable!() };
                     self.fixed(func_call(*f, true));
                 } else {
-                    self.fixed(Item::JmpRax);
+                    // PE: `rex.w jmp rax`, an epilogue's end for the Win64 unwinder.
+                    self.fixed(if self.mode.pe { Item::JmpRaxW } else { Item::JmpRax });
                 }
             }
             Shape::Island => {

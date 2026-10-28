@@ -269,9 +269,9 @@ static DISABLED: AtomicBool = AtomicBool::new(false);
 /// `xmm8`–`xmm15`, callee-saved on Win64 but not for the `sysv64` Rust code it calls (`rdi`,
 /// `rsi`, `xmm6` and `xmm7` are among the argument registers it saves anyway), in a 320-byte
 /// area instead of 192. On Windows its unwind info records the area and the nonvolatile
-/// registers in it, so a panic in [`entry_trip`] or a stack walk passes through. The code
-/// after `add rsp` isn't an epilogue form the Win64 unwinder recognizes, so an asynchronous
-/// walk taken there (no call can be) goes wrong, as at a VM epilogue's `jmp reg`.
+/// registers in it, so a panic in [`entry_trip`] or a stack walk passes through, and it
+/// ends in epilogues the Win64 unwinder recognizes (`add rsp`, then `ret` or `rex.w jmp`),
+/// so an asynchronous walk does too.
 #[unsafe(naked)]
 #[rustc_std_internal_symbol]
 #[unsafe(export_name = "ryo_jit_trip_entry")]
@@ -357,12 +357,19 @@ pub unsafe extern "sysv64" fn trip_entry() {
         "movaps xmm14, [rsp + 272]",
         #[cfg(any(windows, feature = "pe-test"))]
         "movaps xmm15, [rsp + 288]",
-        "add rsp, {area}",
-        cfi!(".cfi_adjust_cfa_offset -{area}"),
+        // Two epilogues, each of the form the Win64 unwinder recognizes: `add rsp`, then
+        // `ret` or `rex.w jmp r11`.
         "test r11, r11",
         "jz 2f",
-        "jmp r11",
+        cfi!(".cfi_remember_state"),
+        "add rsp, {area}",
+        cfi!(".cfi_adjust_cfa_offset -{area}"),
+        // `rex.w jmp r11`.
+        ".byte 0x49, 0xff, 0xe3",
+        cfi!(".cfi_restore_state"),
         "2:",
+        "add rsp, {area}",
+        cfi!(".cfi_adjust_cfa_offset -{area}"),
         "ret",
         cfi!(".cfi_endproc"),
         seh!(".seh_endproc"),
@@ -383,6 +390,98 @@ const TRIP_ENTRY_AREA: usize = if cfg!(any(windows, feature = "pe-test")) { 320 
 /// else back to the AOT code. On PE (and with `pe-test`) it also saves `rdi`, `rsi` and
 /// `xmm6`–`xmm15`, callee-saved on Win64 (VM code preserves them for its caller) but not for
 /// the `sysv64` Rust code; on Windows with unwind info, as [`trip_entry`]'s.
+#[cfg(any(windows, feature = "pe-test"))]
+#[unsafe(naked)]
+#[rustc_std_internal_symbol]
+#[unsafe(export_name = "ryo_jit_trip_osr")]
+pub unsafe extern "sysv64" fn trip_osr() {
+    core::arch::naked_asm!(
+        cfi!(".cfi_startproc"),
+        seh!(".seh_proc {this}"),
+        "cmp dword ptr [r11 + {state}], {done}",
+        "jne 2f",
+        "jmp qword ptr [r11 + {osr}]",
+        "2:",
+        // PE: `rdi`, `rsi`, then the area: the `xmm` saves and `eax` at 160.
+        "push rdi",
+        cfi!(".cfi_adjust_cfa_offset 8"),
+        seh!(".seh_pushreg rdi"),
+        "push rsi",
+        cfi!(".cfi_adjust_cfa_offset 8"),
+        seh!(".seh_pushreg rsi"),
+        "sub rsp, 168",
+        cfi!(".cfi_adjust_cfa_offset 168"),
+        seh!(".seh_stackalloc 168"),
+        "mov [rsp + 160], eax",
+        "movaps [rsp + 0], xmm6",
+        seh!(".seh_savexmm xmm6, 0"),
+        "movaps [rsp + 16], xmm7",
+        seh!(".seh_savexmm xmm7, 16"),
+        "movaps [rsp + 32], xmm8",
+        seh!(".seh_savexmm xmm8, 32"),
+        "movaps [rsp + 48], xmm9",
+        seh!(".seh_savexmm xmm9, 48"),
+        "movaps [rsp + 64], xmm10",
+        seh!(".seh_savexmm xmm10, 64"),
+        "movaps [rsp + 80], xmm11",
+        seh!(".seh_savexmm xmm11, 80"),
+        "movaps [rsp + 96], xmm12",
+        seh!(".seh_savexmm xmm12, 96"),
+        "movaps [rsp + 112], xmm13",
+        seh!(".seh_savexmm xmm13, 112"),
+        "movaps [rsp + 128], xmm14",
+        seh!(".seh_savexmm xmm14, 128"),
+        "movaps [rsp + 144], xmm15",
+        seh!(".seh_savexmm xmm15, 144", ".seh_endprologue"),
+        "mov rdi, r11",
+        "call {trip}",
+        "mov r11, rax",
+        "movaps xmm6, [rsp + 0]",
+        "movaps xmm7, [rsp + 16]",
+        "movaps xmm8, [rsp + 32]",
+        "movaps xmm9, [rsp + 48]",
+        "movaps xmm10, [rsp + 64]",
+        "movaps xmm11, [rsp + 80]",
+        "movaps xmm12, [rsp + 96]",
+        "movaps xmm13, [rsp + 112]",
+        "movaps xmm14, [rsp + 128]",
+        "movaps xmm15, [rsp + 144]",
+        "mov eax, [rsp + 160]",
+        // Two epilogues, each of the form the Win64 unwinder recognizes: `add rsp`, the
+        // pops, then `ret` or `rex.w jmp r11`.
+        "test r11, r11",
+        "jz 3f",
+        cfi!(".cfi_remember_state"),
+        "add rsp, 168",
+        cfi!(".cfi_adjust_cfa_offset -168"),
+        "pop rsi",
+        cfi!(".cfi_adjust_cfa_offset -8"),
+        "pop rdi",
+        cfi!(".cfi_adjust_cfa_offset -8"),
+        // `rex.w jmp r11`.
+        ".byte 0x49, 0xff, 0xe3",
+        cfi!(".cfi_restore_state"),
+        "3:",
+        "add rsp, 168",
+        cfi!(".cfi_adjust_cfa_offset -168"),
+        "pop rsi",
+        cfi!(".cfi_adjust_cfa_offset -8"),
+        "pop rdi",
+        cfi!(".cfi_adjust_cfa_offset -8"),
+        "ret",
+        cfi!(".cfi_endproc"),
+        seh!(".seh_endproc"),
+        state = const core::mem::offset_of!(JitRecord, state),
+        done = const JIT_DONE,
+        osr = const core::mem::offset_of!(JitRecord, osr),
+        trip = sym osr_trip,
+        #[cfg(windows)]
+        this = sym trip_osr,
+    );
+}
+
+/// [`trip_osr`] off PE: only `eax` is saved.
+#[cfg(not(any(windows, feature = "pe-test")))]
 #[unsafe(naked)]
 #[rustc_std_internal_symbol]
 #[unsafe(export_name = "ryo_jit_trip_osr")]
@@ -396,87 +495,9 @@ pub unsafe extern "sysv64" fn trip_osr() {
         "2:",
         "push rax",
         cfi!(".cfi_adjust_cfa_offset 8"),
-        seh!(".seh_stackalloc 8"),
-        #[cfg(any(windows, feature = "pe-test"))]
-        "push rdi",
-        #[cfg(any(windows, feature = "pe-test"))]
-        cfi!(".cfi_adjust_cfa_offset 8"),
-        seh!(".seh_pushreg rdi"),
-        #[cfg(any(windows, feature = "pe-test"))]
-        "push rsi",
-        #[cfg(any(windows, feature = "pe-test"))]
-        cfi!(".cfi_adjust_cfa_offset 8"),
-        seh!(".seh_pushreg rsi"),
-        #[cfg(any(windows, feature = "pe-test"))]
-        "sub rsp, 160",
-        #[cfg(any(windows, feature = "pe-test"))]
-        cfi!(".cfi_adjust_cfa_offset 160"),
-        seh!(".seh_stackalloc 160"),
-        #[cfg(any(windows, feature = "pe-test"))]
-        "movaps [rsp + 0], xmm6",
-        seh!(".seh_savexmm xmm6, 0"),
-        #[cfg(any(windows, feature = "pe-test"))]
-        "movaps [rsp + 16], xmm7",
-        seh!(".seh_savexmm xmm7, 16"),
-        #[cfg(any(windows, feature = "pe-test"))]
-        "movaps [rsp + 32], xmm8",
-        seh!(".seh_savexmm xmm8, 32"),
-        #[cfg(any(windows, feature = "pe-test"))]
-        "movaps [rsp + 48], xmm9",
-        seh!(".seh_savexmm xmm9, 48"),
-        #[cfg(any(windows, feature = "pe-test"))]
-        "movaps [rsp + 64], xmm10",
-        seh!(".seh_savexmm xmm10, 64"),
-        #[cfg(any(windows, feature = "pe-test"))]
-        "movaps [rsp + 80], xmm11",
-        seh!(".seh_savexmm xmm11, 80"),
-        #[cfg(any(windows, feature = "pe-test"))]
-        "movaps [rsp + 96], xmm12",
-        seh!(".seh_savexmm xmm12, 96"),
-        #[cfg(any(windows, feature = "pe-test"))]
-        "movaps [rsp + 112], xmm13",
-        seh!(".seh_savexmm xmm13, 112"),
-        #[cfg(any(windows, feature = "pe-test"))]
-        "movaps [rsp + 128], xmm14",
-        seh!(".seh_savexmm xmm14, 128"),
-        #[cfg(any(windows, feature = "pe-test"))]
-        "movaps [rsp + 144], xmm15",
-        seh!(".seh_savexmm xmm15, 144", ".seh_endprologue"),
         "mov rdi, r11",
         "call {trip}",
         "mov r11, rax",
-        #[cfg(any(windows, feature = "pe-test"))]
-        "movaps xmm6, [rsp + 0]",
-        #[cfg(any(windows, feature = "pe-test"))]
-        "movaps xmm7, [rsp + 16]",
-        #[cfg(any(windows, feature = "pe-test"))]
-        "movaps xmm8, [rsp + 32]",
-        #[cfg(any(windows, feature = "pe-test"))]
-        "movaps xmm9, [rsp + 48]",
-        #[cfg(any(windows, feature = "pe-test"))]
-        "movaps xmm10, [rsp + 64]",
-        #[cfg(any(windows, feature = "pe-test"))]
-        "movaps xmm11, [rsp + 80]",
-        #[cfg(any(windows, feature = "pe-test"))]
-        "movaps xmm12, [rsp + 96]",
-        #[cfg(any(windows, feature = "pe-test"))]
-        "movaps xmm13, [rsp + 112]",
-        #[cfg(any(windows, feature = "pe-test"))]
-        "movaps xmm14, [rsp + 128]",
-        #[cfg(any(windows, feature = "pe-test"))]
-        "movaps xmm15, [rsp + 144]",
-        #[cfg(any(windows, feature = "pe-test"))]
-        "add rsp, 160",
-        #[cfg(any(windows, feature = "pe-test"))]
-        cfi!(".cfi_adjust_cfa_offset -160"),
-        #[cfg(any(windows, feature = "pe-test"))]
-        "pop rsi",
-        #[cfg(any(windows, feature = "pe-test"))]
-        cfi!(".cfi_adjust_cfa_offset -8"),
-        #[cfg(any(windows, feature = "pe-test"))]
-        "pop rdi",
-        #[cfg(any(windows, feature = "pe-test"))]
-        cfi!(".cfi_adjust_cfa_offset -8"),
         "pop rax",
         cfi!(".cfi_adjust_cfa_offset -8"),
         "test r11, r11",

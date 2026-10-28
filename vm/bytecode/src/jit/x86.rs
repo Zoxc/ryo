@@ -527,10 +527,14 @@ impl X86 {
         self.code.extend_from_slice(&[0x41, 0xff, 0xd3]);
     }
 
-    /// `mov r11, imm64; jmp r11`.
+    /// `jmp [rip]; .quad to`: a tail call out of `rel32` reach. Through memory, which the
+    /// Win64 unwinder takes for an epilogue's end, as it does `rex.w jmp r`, but not a
+    /// `mov r11, imm64` between the pops and the jump.
     pub fn jmp_abs(&mut self, to: Ref) {
-        self.mov_r11_abs(to);
-        self.code.extend_from_slice(&[0x41, 0xff, 0xe3]);
+        self.code.extend_from_slice(&[0xff, 0x25, 0, 0, 0, 0]);
+        let at = self.pos();
+        self.relocs.push(Reloc { at, to });
+        self.code.extend_from_slice(&[0; 8]);
     }
 
     /// A call of a handler or the probe: `call rel32`, or `far` ([`crate::asm::Mode::far_rt`])
@@ -578,12 +582,6 @@ impl X86 {
     /// end (a plain `jmp r` after the pops isn't one).
     pub fn jmp_r_w(&mut self, r: R) {
         self.insn(false, true, false, &[0xff], 4, Rm::R(r), &[]);
-    }
-
-    /// `mov r11, imm64; rex.w jmp r11` ([`Self::jmp_r_w`]).
-    pub fn jmp_abs_w(&mut self, to: Ref) {
-        self.mov_r11_abs(to);
-        self.code.extend_from_slice(&[0x49, 0xff, 0xe3]);
     }
 
     pub fn jmp_mem(&mut self, m: Mem) {
