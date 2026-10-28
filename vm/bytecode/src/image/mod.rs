@@ -38,6 +38,10 @@ mod writer;
 #[cfg(feature = "alloc")]
 pub use writer::*;
 #[cfg(feature = "alloc")]
+mod unwind;
+#[cfg(feature = "alloc")]
+pub use unwind::*;
+#[cfg(feature = "alloc")]
 mod resolve;
 #[cfg(feature = "alloc")]
 pub use resolve::ImageResolver;
