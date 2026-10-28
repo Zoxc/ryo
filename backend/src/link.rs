@@ -62,39 +62,23 @@ pub fn link(
             let (full, stub) = saved_metadata.clone().unwrap();
             EncodedMetadata::from_path(full, stub, None).unwrap_or_else(|e| sess.dcx().fatal(format!("reloading the crate metadata: {e}")))
         };
-        // Without linking (`--emit=obj` etc.) a registry object would only be left behind. The
-        // stub lists no images: each image object linked brings its own entry.
+        // Without linking (`--emit=obj` etc.) a registry object would only be left behind.
         if crate_type != CrateType::Rlib && sess.opts.output_types.should_link() {
-            let registry_t = sess.prof.generic_activity("ryo_registry");
-            let import = register_is_imported(&crate_info, crate_type);
-            // Hidden where this output links `ryo_rt` itself, which every output does: each
-            // has a private copy (design/vm.md#several-ryo-runtimes-in-one-process).
-            let hidden = !import;
-            let bytes = objfile::write_registry(&*fmt, &info.register, import, hidden).unwrap_or_else(|e| sess.dcx().fatal(e));
-            let name = format!("{}.ryo_registry.{}", crate_info.local_crate_name, crate_type);
-            let path = outputs.temp_path_for_cgu(OutputType::Object, &name);
-            write_or_fatal(sess, &path, &bytes);
+            let registry = registry_module(sess, &*fmt, &crate_info, info, outputs, crate_type);
             // Mach-O has no constructor priorities: ld64 and lld lay out `__mod_init_func` in
             // input order and dyld runs it in that order, so the registry object goes first,
             // ahead of the crate's own objects and every rlib (design/platforms.md). Objects ahead of
             // rustc's can still come first; for them the JIT's trips register lazily.
             if info.macho {
-                these.modules.insert(0, object_module(name, path));
+                these.modules.insert(0, registry);
             } else {
-                these.modules.push(object_module(name, path));
+                these.modules.push(registry);
             }
-            drop(registry_t);
         }
         // In an rlib, the image is added afterwards, as a plain member (not a Rust object,
         // which downstream crates would read as rustc's own codegen). `link_binary` writes the
         // rlib only with `link` output to a file, which `partition::check_outputs` requires.
-        let images: Vec<CompiledModule> = if crate_type == CrateType::Rlib {
-            let (images, rest) = std::mem::take(&mut these.modules).into_iter().partition(|m| info.images.contains(&m.name));
-            these.modules = rest;
-            images
-        } else {
-            Vec::new()
-        };
+        let images = if crate_type == CrateType::Rlib { take_images(&mut these, info) } else { Vec::new() };
         let mut single = crate_info.clone();
         single.crate_types = vec![crate_type];
         // A Rust dylib's copy of the runtime is private (`dylib_dependency_formats`): rustc
@@ -113,15 +97,13 @@ pub fn link(
             if let rustc_session::config::OutFileName::Real(rlib) = rlib {
                 append_to_rlib(sess, &rlib, &objects);
             }
-            if !sess.opts.cg.save_temps {
-                for o in &objects {
-                    let _ = fs::remove_file(o);
-                }
+            for o in &objects {
+                remove_temp(sess, o);
             }
         }
     }
-    if n > 1 && !sess.opts.cg.save_temps {
-        let _ = fs::remove_dir_all(&scratch);
+    if n > 1 {
+        remove_temp(sess, &scratch);
     }
 }
 
@@ -132,6 +114,43 @@ fn is_runtime_symbol(name: &str) -> bool {
     let internal = name.contains("7___rustc")
         && ["ryo_h_", "ryo_hr_", "ryo_probe_stack_", "ryo_jit_trip_", "ryo_vm_register_", "ryo_seh_handler_"].iter().any(|p| name.contains(p));
     internal || name.contains("6ryo_rt") || name.contains("12ryo_bytecode")
+}
+
+/// Writes the registry object for an output of `crate_type`. It lists no images: each image
+/// object linked brings its own entry.
+fn registry_module(
+    sess: &Session,
+    fmt: &dyn objfile::ObjectFormat,
+    crate_info: &CrateInfo,
+    info: &LinkInfo,
+    outputs: &OutputFilenames,
+    crate_type: CrateType,
+) -> CompiledModule {
+    let _t = sess.prof.generic_activity("ryo_registry");
+    let import = register_is_imported(crate_info, crate_type);
+    // Hidden where this output links `ryo_rt` itself, which every output does: each has a
+    // private copy (design/vm.md#several-ryo-runtimes-in-one-process).
+    let hidden = !import;
+    let bytes = objfile::write_registry(fmt, &info.register, import, hidden).unwrap_or_else(|e| sess.dcx().fatal(e));
+    let name = format!("{}.ryo_registry.{}", crate_info.local_crate_name, crate_type);
+    let path = outputs.temp_path_for_cgu(OutputType::Object, &name);
+    write_or_fatal(sess, &path, &bytes);
+    object_module(name, path)
+}
+
+/// Moves the local crate's image modules out of `modules`.
+fn take_images(modules: &mut CompiledModules, info: &LinkInfo) -> Vec<CompiledModule> {
+    let (images, rest) = std::mem::take(&mut modules.modules).into_iter().partition(|m| info.images.contains(&m.name));
+    modules.modules = rest;
+    images
+}
+
+/// Removes a temporary file or directory, unless `-Csave-temps` keeps it.
+fn remove_temp(sess: &Session, path: &Path) {
+    if sess.opts.cg.save_temps {
+        return;
+    }
+    let _ = if path.is_dir() { fs::remove_dir_all(path) } else { fs::remove_file(path) };
 }
 
 /// Appends `objects` to the archive `rlib` as non-Rust members (`ArchiveEntryKind::Other`).
