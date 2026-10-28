@@ -245,63 +245,37 @@ pub fn build(info: &RustcInfo, dist: &Path, target: &Path, jit: Option<(&Path, &
 /// and native functions and islands per crate, then the island templates and native reasons
 /// over all of them.
 fn print_coverage(stats_dir: &Path) -> Result<(), String> {
+    use crate::crates::timing::{Coverage, coverage_of_lines};
     let Ok(entries) = fs::read_dir(stats_dir) else {
         eprintln!("[y] sysroot: no coverage statistics (every crate was up to date)");
         return Ok(());
     };
     let mut files: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
     files.sort();
-    let mut templates: Vec<(String, u64)> = Vec::new();
-    let mut reasons: Vec<(String, u64)> = Vec::new();
-    let add = |list: &mut Vec<(String, u64)>, key: &str, n: u64| match list.iter_mut().find(|(k, _)| k == key) {
-        Some(e) => e.1 += n,
-        None => list.push((key.to_owned(), n)),
-    };
-    let (mut vm, mut native, mut islands) = (0u64, 0u64, 0u64);
+    let mut texts = Vec::new();
+    for f in &files {
+        texts.push((f.file_stem().and_then(|s| s.to_str()).unwrap_or("?"), crate::utils::read(f)?));
+    }
+    let row = |name: &str, c: &Coverage| eprintln!("    {name:<28} {:>8} {:>8} {:>7.1}% {:>8}", c.vm, c.native, c.vm_percent(), c.islands);
     eprintln!("[y] sysroot coverage (RYO_STATS):");
     eprintln!("    {:<28} {:>8} {:>8} {:>8} {:>8}", "crate", "vm fns", "native", "vm %", "islands");
-    for f in &files {
-        let text = crate::utils::read(f)?;
-        let krate = f.file_stem().and_then(|s| s.to_str()).unwrap_or("?");
-        for line in text.lines() {
-            if let Some(rest) = line.strip_prefix("ryo: ")
-                && let Some((v, rest)) = rest.split_once(" VM functions, ")
-                && let Some((n, rest)) = rest.split_once(" native functions, ")
-                && let Some((i, _)) = rest.split_once(" islands")
-            {
-                let (v, n, i): (u64, u64, u64) = (v.parse().unwrap_or(0), n.parse().unwrap_or(0), i.parse().unwrap_or(0));
-                vm += v;
-                native += n;
-                islands += i;
-                eprintln!("    {krate:<28} {v:>8} {n:>8} {:>7.1}% {i:>8}", percent(v, v + n));
-            } else if let Some(rest) = line.strip_prefix("ryo: island ")
-                && let Some((t, rest)) = rest.split_once(": ")
-                && let Some((n, _)) = rest.split_once(' ')
-            {
-                add(&mut templates, t, n.parse().unwrap_or(0));
-            } else if let Some(rest) = line.strip_prefix("ryo: native reason: ")
-                && let Some((n, why)) = rest.split_once(' ')
-            {
-                add(&mut reasons, why, n.parse().unwrap_or(0));
-            }
-        }
+    let mut all: Vec<&str> = Vec::new();
+    for (krate, text) in &texts {
+        let lines: Vec<&str> = text.lines().filter_map(|l| l.strip_prefix("ryo: ")).collect();
+        row(krate, &coverage_of_lines(lines.iter().copied()));
+        all.extend(lines);
     }
-    eprintln!("    {:<28} {vm:>8} {native:>8} {:>7.1}% {islands:>8}", "total", percent(vm, vm + native));
-    templates.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-    reasons.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    let total = coverage_of_lines(all);
+    row("total", &total);
     eprintln!("    island instructions by template:");
-    for (t, n) in &templates {
+    for (t, n) in &total.templates {
         eprintln!("      {n:>8} {t}");
     }
     eprintln!("    native functions by reason:");
-    for (why, n) in &reasons {
+    for (why, n) in &total.reasons {
         eprintln!("      {n:>8} {why}");
     }
     Ok(())
-}
-
-fn percent(part: u64, whole: u64) -> f64 {
-    if whole == 0 { 0.0 } else { 100.0 * part as f64 / whole as f64 }
 }
 
 /// Copies `rust-src`'s `library/` to `dst` (once per toolchain, so cargo's fingerprints
