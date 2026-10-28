@@ -806,7 +806,8 @@ theorem inline_cls_step (H : Hyps S) {s s' : R.RState} {x : X86.State} {ch : OpS
       x'.rip = x.rip + BitVec.ofNat 64 ((cache.emit cand).1.map Item.size).sum ∧
       BrOk f ops s s' br x' := fun hsc => by
     obtain ⟨x', h1, h2, h3, h4, h5⟩ :=
-      CacheStep.inline_step_cached S.ctx hsc hci hf.rrel hi hfull hok hext hlater hseq h
+      CacheStep.inline_step_cached S.ctx hsc hci hf.rrel hi hfull hok hext
+        (fun _ _ he => by subst he; simp [laterClass] at hlater) hseq h
     exact ⟨x', h1, h2, h3, h4, by cases br <;> exact h5⟩
   cases cls with
   | load w =>
@@ -861,7 +862,7 @@ the frame's link slots `[0, 16)` (the saved `rbp`, the return address). `FrameBo
 `LoadPrivate` nor `LinkPrivate` keeps them apart (both only say the bytes are private), so
 without it a `mov.w64` to slot `0` (`mov [rbp], rax`) overwrites the saved `rbp` and breaks
 `FrameFacts.savedRbp` after the step, while R's step (a private frame write) succeeds: the
-conclusion of `inline_run'` is false. Like `ArgBelowLink` for `arg`. -/
+conclusion of `inline_run'` is false. Like `FrameBounds.argBelow` for `arg`. -/
 def InlineBelowLink (S : Setup) : Prop :=
   ∀ (k : Nat) (op : Reduced.Opcode) (ops : List (R.Opnd Nat)) (f : Full.Opcode) (cls : Class)
     (vals : Operands), S.c.d.insns[k]? = some (.native op ops) → op.full = some f →
@@ -876,14 +877,134 @@ def NoLaterClass (S : Setup) : Prop :=
     S.c.d.insns[k]? = some (.native op ops) → op.full = some f → (f, cls) ∈ inlineOps →
     laterClass cls = false
 
-/-- Open (decoder): on PE the cache an inline instruction is emitted with keeps `rsi` and `rdi`
-(pool entries 2 and 3, Win64 callee-saved) out: `fresh` skips them only when `cache.pe` is set,
-and `find` returns any entry holding a slot, so a cache with a slot in `rsi` would make `emit`
-compute in `rsi` and break `FrameFacts.saved`. The decoder's caches start with `pe` set to the
-mode's and only `emit` fills entries, which never picks `rsi`/`rdi` then. -/
+/-- Open (decoder): on PE, `emit` never computes in `rsi` or `rdi` (pool entries 2 and 3, Win64
+callee-saved) with the cache an inline instruction is emitted with: `fresh` skips them when
+`cache.pe` is set, and `find` returns only entries holding a slot, so it holds when `cache.pe` is
+set and entries 2 and 3 hold no slot (the decoder's caches start with `pe` set to the mode's and
+only `emit` fills entries, which never picks `rsi`/`rdi` then). Otherwise `emit` could compute
+in `rsi` and break `FrameFacts.saved`. -/
 def CacheRegsOk (S : Setup) (cache : Cache) : Prop :=
-  S.c.mode.pe = true →
-    cache.pe = true ∧ (cache.regs[2]!).slot = none ∧ (cache.regs[3]!).slot = none
+  S.c.mode.pe = true → ∀ cand : List Item,
+    (emitHead { cache with tick := cache.tick + 1 } cand).1 ≠ 2 ∧
+      (emitHead { cache with tick := cache.tick + 1 } cand).1 ≠ 3
+
+/-! ### The registers and memory an inline run keeps -/
+
+theorem inline_pool_idx_ok (n : Nat) :
+    (pool[n]!).idx.val ≤ 11 ∧ (pool[n]!).idx.val ≠ 3 ∧ (pool[n]!).idx.val ≠ 4 ∧
+      (pool[n]!).idx.val ≠ 5 := by
+  by_cases hi : n < 8
+  · have : ∀ j < 8, (pool[j]!).idx.val ≤ 11 ∧ (pool[j]!).idx.val ≠ 3 ∧
+        (pool[j]!).idx.val ≠ 4 ∧ (pool[j]!).idx.val ≠ 5 := by decide
+    exact this n hi
+  · rw [getElem!_neg pool n (by simp [pool]; omega)]; decide
+
+theorem inline_pool_idx_pe (n : Nat) (h2 : n ≠ 2) (h3 : n ≠ 3) :
+    (pool[n]!).idx.val ≠ 6 ∧ (pool[n]!).idx.val ≠ 7 := by
+  by_cases hi : n < 8
+  · have : ∀ j < 8, j ≠ 2 → j ≠ 3 → (pool[j]!).idx.val ≠ 6 ∧ (pool[j]!).idx.val ≠ 7 := by
+      decide
+    exact this n hi h2 h3
+  · rw [getElem!_neg pool n (by simp [pool]; omega)]; decide
+
+theorem inline_saved_cases {pe : Bool} {i : Fin 16} (h : Saved pe i) :
+    i.val = 3 ∨ i.val = 5 ∨ 12 ≤ i.val ∨ (pe = true ∧ (i.val = 6 ∨ i.val = 7)) := by
+  unfold Ryo.Proofs.Call.Saved at h
+  rcases h with h | ⟨hpe, h⟩
+  · unfold Ryo.Proofs.Counter.CalleeSaved at h
+    rcases h with rfl | rfl | rfl | rfl | rfl | rfl
+    · exact .inl rfl
+    · exact .inr (.inl rfl)
+    · exact .inr (.inr (.inl (by decide)))
+    · exact .inr (.inr (.inl (by decide)))
+    · exact .inr (.inr (.inl (by decide)))
+    · exact .inr (.inr (.inl (by decide)))
+  · rcases h with rfl | rfl
+    · exact .inr (.inr (.inr ⟨hpe, .inl rfl⟩))
+    · exact .inr (.inr (.inr ⟨hpe, .inr rfl⟩))
+
+theorem inline_clobbers_le2 (cls : Class) : ∀ i : Fin 16, i ∈ clobbers cls → i.val ≤ 2 := by
+  unfold clobbers; split <;> decide
+
+/-- The registers an emitted run keeps (`EmitKept`, its clobbers among `rax`, `rcx`, `rdx`) include
+`rsp` and the callee-saved ones: `emit`'s register is a pool register (not `rsi`/`rdi` on PE). -/
+theorem inline_regs_of {pe : Bool} {Clob : Fin 16 → Prop} (hcl : ∀ i, Clob i → i.val ≤ 2)
+    {cache : Cache} {cand : List Item} {x x' : X86.State} (hk : EmitKept Clob cache cand x x')
+    (hpe : pe = true → (emitHead { cache with tick := cache.tick + 1 } cand).1 ≠ 2 ∧
+      (emitHead { cache with tick := cache.tick + 1 } cand).1 ≠ 3) :
+    x'.rsp = x.rsp ∧ ∀ i, Saved pe i → i ≠ 5 → x'.regs i = x.regs i := by
+  have hp := inline_pool_idx_ok (emitHead { cache with tick := cache.tick + 1 } cand).1
+  have hne : ∀ i : Fin 16,
+      i.val ≠ (pool[(emitHead { cache with tick := cache.tick + 1 } cand).1]!).idx.val →
+      i ≠ (pool[(emitHead { cache with tick := cache.tick + 1 } cand).1]!).idx :=
+    fun i hv e => hv (congrArg Fin.val e)
+  refine ⟨hk 4 (fun h => absurd (hcl 4 h) (by decide))
+    (hne 4 (by have := hp.2.2.1; show 4 ≠ _; omega)), ?_⟩
+  intro i hs _
+  have hcs := inline_saved_cases hs
+  have hc : ¬ Clob i := fun h => by
+    have := hcl i h
+    rcases hcs with h' | h' | h' | ⟨-, h' | h'⟩ <;> omega
+  rcases hcs with h' | h' | h' | ⟨hpe', h'⟩
+  · exact hk i hc (hne i (by have := hp.2.1; omega))
+  · exact hk i hc (hne i (by have := hp.2.2.2; omega))
+  · exact hk i hc (hne i (by have := hp.1; omega))
+  · obtain ⟨h2, h3⟩ := hpe hpe'
+    have := inline_pool_idx_pe _ h2 h3
+    exact hk i hc (hne i (by omega))
+
+theorem inline_read64_kept {m m' : Mem} {a : BitVec 64}
+    (h : ∀ i < 8, m' (a + BitVec.ofNat 64 i) = m (a + BitVec.ofNat 64 i)) :
+    m'.read64 a = m.read64 a := by
+  simp only [Mem.read64, readNat_congr m' m a 8 h]
+
+/-- The link words kept when their frame bytes are. -/
+theorem inline_link_kept {x x' : X86.State}
+    (hb : ∀ o : Int, 0 ≤ o → o < 16 → x'.mem (fpAddr x o) = x.mem (fpAddr x o)) :
+    x'.mem.read64 (x.reg .rbp) = x.mem.read64 (x.reg .rbp) ∧
+      x'.mem.read64 (x.reg .rbp + 8) = x.mem.read64 (x.reg .rbp + 8) := by
+  have e8 : x.reg .rbp + 8 = fpAddr x 8 := rfl
+  have e0 : x.reg .rbp = fpAddr x 0 := by simp [fpAddr]
+  rw [e8, e0]
+  constructor <;> apply inline_read64_kept <;> intro i hi <;> rw [← fpAddr_add] <;>
+    exact hb _ (by omega) (by omega)
+
+/-- A byte outside the window, or in the link slots, is outside an inline instruction's frame
+writes (in the window, `FrameBounds.writes`, and off the link slots, `InlineBelowLink`). -/
+theorem inline_memW_cases (H : Hyps S) {s : R.RState} {x : X86.State} (hf : FrameInv S s x)
+    {f : Full.Opcode} {vals : Operands} (hwin : WrIn (-(S.F : Int)) S.K f vals)
+    (hoff : ∀ r ∈ wranges f vals, r.1 + r.2 ≤ 0 ∨ 16 ≤ r.1) {b : BitVec 64}
+    (hb : (∀ o : Int, -(S.F : Int) ≤ o → o < S.K → b ≠ S.winAddr o) ∨
+      ∃ o : Int, 0 ≤ o ∧ o < 16 ∧ b = fpAddr x o) :
+    ∀ r ∈ wranges f vals, r.2 ≤ (b - fpAddr x r.1).toNat := by
+  have hF : (S.F : Int) ≤ 2 ^ 31 := H.frameBounds.F_le
+  have hK : S.K ≤ 2 ^ 31 := H.frameBounds.K_le
+  intro r hr
+  have hw := hwin r hr
+  rcases hb with ha | ⟨o, h0, h16, rfl⟩
+  · apply Nat.le_of_not_lt
+    intro hlt
+    have e : fpAddr x (r.1 + ((b - fpAddr x r.1).toNat : Nat)) = b := by
+      rw [fpAddr_add, bv_add_sub_toNat]
+    exact ha (r.1 + ((b - fpAddr x r.1).toNat : Nat)) (by omega) (by omega)
+      (by rw [← hf.fpAddr_eq]; exact e.symm)
+  · exact fpAddr_sub_ge x o r.1 r.2 ⟨by omega, by omega⟩ (by omega) (by omega)
+      (by rcases hoff r hr with h | h <;> omega)
+
+/-- Open: a `store`'s pointer write misses the code, the rodata and the link slots: they are in
+no live allocation of the state after the scopes. Proof idea: the scopes' new allocations are
+escaped frame objects (in the window, `sep_escape`), the others are `s`'s (so not the code or
+rodata, `CodeApart`); the link slots are private after the scopes (`LinkPrivate`), so in no live
+allocation (`FrameOwn` of `afterScopes_sep`). -/
+theorem inline_store_apart' (H : Hyps S) {s s1 : R.RState} {x y : X86.State}
+    (hf : FrameInv S s x) (hby : BInv S s y)
+    (hsc : (S.c.scopesAt s.pc).foldlM R.applyScope s = .ok s1) {b : BitVec 64}
+    (hb : ((∀ o : Int, -(S.F : Int) ≤ o → o < S.K → b ≠ S.winAddr o) ∧
+      ∀ s x, BInv S s x → ¬ Ryo.Proofs.Call.InAlloc s.world b) ∨
+      ∃ o : Int, 0 ≤ o ∧ o < 16 ∧ b = fpAddr x o) :
+    ∀ id al, s1.st.mem.get? id = some al → al.live = true →
+      ¬ (b - BitVec.ofNat 64 al.addr).toNat < al.size := by
+  sorry  -- TODO(wip): inline_store_apart'
 
 /-- Open: the run of an inline instruction's emitted items is fetched. Proof idea: the emitted
 items are canonical (`cache.emit` renames `sequence`'s items, each `Item.wf`); each item's
@@ -903,14 +1024,13 @@ theorem inline_fetch' (H : Hyps S) {s s' : R.RState} {x x' : X86.State} {ch : Op
     (hx : execItems S.ctx (cache.emit cand).1 x = .ok x') : Steps S.ctx x x' := by
   sorry  -- TODO(wip): inline_fetch'
 
-/-- Open: the x86 effects of an inline instruction's emitted items outside R's state. Proof
-idea: the emitted items name only pool registers, `rcx` and `rbp` (`sequence_ok`, `emit`'s
-renaming to a pool register, not `rsi`/`rdi` on PE by `CacheRegsOk`), none callee-saved nor
-`rsp`, and write `rbp` never (`cacheSafe`); their memory writes are the frame writes of
-`wranges` (in the window, `FrameBounds.writes`, off the link slots, `InlineBelowLink`) and
-`store`'s write in a live allocation (`PostMem.memOut`), none on the code or rodata
-(`CodeApart` through `hbi`). Needs the register and memory facts of `Post`/`PostMem`
-(`regs`, `memOut`) carried through `cached_of`, which drops them now. -/
+/-- The x86 effects of an inline instruction's emitted items outside R's state: `rsp`, the
+callee-saved registers, the code, the rodata and the link words kept. By class, the `_cached_regs`
+steps (`CacheMem`) give the registers kept (`EmitKept`: all but `rax`, `rcx`, `rdx` and `emit`'s
+pool register, `inline_regs_of`, not `rsi`/`rdi` on PE by `CacheRegsOk`) and memory kept outside
+the frame writes (`MemOutW`: in the window, off the link slots, `inline_memW_cases`) or, for
+`store`, outside the live allocations after the scopes (`MemOutA`, `inline_store_apart'`); the
+code and rodata are outside both (`CodeApart`). -/
 theorem inline_effects' (H : Hyps S) (hbl : InlineBelowLink S) {s s' : R.RState}
     {x x' : X86.State} {ch : OpSem.Choice} {op : Reduced.Opcode} {ops : List (R.Opnd Nat)}
     {f : Full.Opcode} {cls : Class} {cand : List Item} {br : Option Cond} {cache : Cache}
@@ -926,7 +1046,111 @@ theorem inline_effects' (H : Hyps S) (hbl : InlineBelowLink S) {s s' : R.RState}
       (∀ j, j < S.ro.size → x'.mem (S.ctx.addrOf (.ro j)) = x.mem (S.ctx.addrOf (.ro j))) ∧
       x'.mem.read64 (x.reg .rbp) = x.mem.read64 (x.reg .rbp) ∧
       x'.mem.read64 (x.reg .rbp + 8) = x.mem.read64 (x.reg .rbp + 8) := by
-  sorry  -- TODO(wip): inline_effects'
+  obtain ⟨y, hby⟩ := hbi
+  have hok := H.inlineOk f cls hmem
+  have hfb := H.frameBounds
+  obtain ⟨hovf, hext, hshi⟩ := inline_class_of hmem
+  obtain ⟨s1, hsc, hv⟩ := Step.step_native hi hfull hok.opShape hstep
+  obtain ⟨vals, _, _, _, _, hn, _, _, _, _⟩ :=
+    Step.stepView_native hfull hok.opShape hok.notResume hok.notUnreachable hv
+  have hwin : WrIn (-(S.F : Int)) S.K f vals := hfb.writes s.pc op ops f vals hi hfull hn
+  have hoff : ∀ r ∈ wranges f vals, r.1 + r.2 ≤ 0 ∨ 16 ≤ r.1 :=
+    hbl s.pc op ops f cls vals hi hfull hmem hn
+  have hpeO : S.c.mode.pe = true → (emitHead { cache with tick := cache.tick + 1 } cand).1 ≠ 2 ∧
+      (emitHead { cache with tick := cache.tick + 1 } cand).1 ≠ 3 := fun hp => hcro hp cand
+  have fin : ∀ {Clob : Fin 16 → Prop}, (∀ i, Clob i → i.val ≤ 2) →
+      EmitKept Clob cache cand x x' →
+      (∀ b, (((∀ o : Int, -(S.F : Int) ≤ o → o < S.K → b ≠ S.winAddr o) ∧
+        ∀ s x, BInv S s x → ¬ Ryo.Proofs.Call.InAlloc s.world b) ∨
+        ∃ o : Int, 0 ≤ o ∧ o < 16 ∧ b = fpAddr x o) → x'.mem b = x.mem b) →
+      x'.rsp = x.rsp ∧ (∀ i, Saved S.c.mode.pe i → i ≠ 5 → x'.regs i = x.regs i) ∧
+      (∀ j, j < S.body.code.size → x'.mem (addrAt S.ctx j) = x.mem (addrAt S.ctx j)) ∧
+      (∀ j, j < S.ro.size → x'.mem (S.ctx.addrOf (.ro j)) = x.mem (S.ctx.addrOf (.ro j))) ∧
+      x'.mem.read64 (x.reg .rbp) = x.mem.read64 (x.reg .rbp) ∧
+      x'.mem.read64 (x.reg .rbp + 8) = x.mem.read64 (x.reg .rbp + 8) := by
+    intro Clob hcl hk hm
+    obtain ⟨hrsp, hsv⟩ := inline_regs_of hcl hk hpeO
+    refine ⟨hrsp, hsv, fun j hj => ?_, fun j hj => ?_,
+      inline_link_kept (fun o h0 h16 => hm _ (.inr ⟨o, h0, h16, rfl⟩))⟩
+    · obtain ⟨-, -, hw, hal⟩ := H.codeApart _ (.inl ⟨j, hj, rfl⟩)
+      exact hm _ (.inl ⟨hw, hal⟩)
+    · obtain ⟨-, -, hw, hal⟩ := H.codeApart _ (.inr ⟨j, hj, rfl⟩)
+      exact hm _ (.inl ⟨hw, hal⟩)
+  have hmW : MemOutW S.c f ops x x' → ∀ b, (((∀ o : Int, -(S.F : Int) ≤ o → o < S.K →
+      b ≠ S.winAddr o) ∧ ∀ s x, BInv S s x → ¬ Ryo.Proofs.Call.InAlloc s.world b) ∨
+      ∃ o : Int, 0 ≤ o ∧ o < 16 ∧ b = fpAddr x o) → x'.mem b = x.mem b :=
+    fun ho b hb => ho vals hn b (inline_memW_cases H hf hwin hoff (hb.imp_left (fun h => h.1)))
+  have hcl01 : ∀ i : Fin 16, (i = 0 ∨ i = 1) → i.val ≤ 2 := by
+    rintro i (rfl | rfl) <;> decide
+  have cached : SoundC cls → x'.rsp = x.rsp ∧
+      (∀ i, Saved S.c.mode.pe i → i ≠ 5 → x'.regs i = x.regs i) ∧
+      (∀ j, j < S.body.code.size → x'.mem (addrAt S.ctx j) = x.mem (addrAt S.ctx j)) ∧
+      (∀ j, j < S.ro.size → x'.mem (S.ctx.addrOf (.ro j)) = x.mem (S.ctx.addrOf (.ro j))) ∧
+      x'.mem.read64 (x.reg .rbp) = x.mem.read64 (x.reg .rbp) ∧
+      x'.mem.read64 (x.reg .rbp + 8) = x.mem.read64 (x.reg .rbp + 8) := fun hsd => by
+    obtain ⟨x1, hx1, -, -, -, -, hk, ho⟩ := inline_step_cached_regs S.ctx hsd hci hf.rrel hi hfull
+      hok hext (fun _ _ he => by subst he; simp [laterClass] at hlater) hseq hstep
+    cases hx.symm.trans hx1
+    exact fin (Clob := (· ∈ clobbers cls)) (inline_clobbers_le2 cls) hk (hmW ho)
+  cases cls with
+  | load w =>
+    obtain ⟨x1, hx1, -, -, -, -, -, -, hk, ho⟩ := load_step_sep_cached_regs S.ctx hci hf.rrel
+      hf.mem hf.sep (hfb.window hf.win) (hfb.scopesIn s.pc) (hfb.scope_size s.pc)
+      (fun vals hv s1 hsc => H.loadPrivate s y s1 op ops f w vals hby hi hfull hok.shape hv hsc)
+      (hfb.wrIn hi hfull) hi hfull hok hseq hstep
+    cases hx.symm.trans hx1
+    exact fin (Clob := fun i => i = 0 ∨ i = 1) hcl01 hk (hmW ho)
+  | store w =>
+    obtain ⟨x1, hx1, -, -, -, -, -, -, hk, ho⟩ := store_step_sep_cached_regs S.ctx hci hf.rrel
+      hf.mem hf.sep (hfb.window hf.win) (hfb.scopesIn s.pc) (hfb.scope_size s.pc)
+      hi hfull hok hseq hstep
+    cases hx.symm.trans hx1
+    exact fin (Clob := fun i => i = 0 ∨ i = 1) hcl01 hk
+      (fun b hb => ho s1 hsc b (inline_store_apart' H hf hby hsc hb))
+  | addrConst =>
+    obtain ⟨st0, x0, hg⟩ := H.globals
+    obtain ⟨x1, hx1, -, -, -, -, -, hk, ho⟩ := rip_step_sep_cached_regs S.ctx rfl hci hf.rrel
+      hf.mem hg hf.sep (hfb.window hf.win) (hfb.scopesIn s.pc) (hfb.scope_size s.pc)
+      (hfb.wrIn hi hfull) hi hfull hok hseq hstep
+    cases hx.symm.trans hx1
+    exact fin (Clob := fun i => i = 0 ∨ i = 1) hcl01 hk (hmW ho)
+  | addrSym =>
+    obtain ⟨st0, x0, hg⟩ := H.globals
+    obtain ⟨x1, hx1, -, -, -, -, -, hk, ho⟩ := rip_step_sep_cached_regs S.ctx rfl hci hf.rrel
+      hf.mem hg hf.sep (hfb.window hf.win) (hfb.scopesIn s.pc) (hfb.scope_size s.pc)
+      (hfb.wrIn hi hfull) hi hfull hok hseq hstep
+    cases hx.symm.trans hx1
+    exact fin (Clob := fun i => i = 0 ∨ i = 1) hcl01 hk (hmW ho)
+  | addrSymInd =>
+    obtain ⟨st0, x0, hg⟩ := H.globals
+    obtain ⟨x1, hx1, -, -, -, -, -, hk, ho⟩ := rip_step_sep_cached_regs S.ctx rfl hci hf.rrel
+      hf.mem hg hf.sep (hfb.window hf.win) (hfb.scopesIn s.pc) (hfb.scope_size s.pc)
+      (hfb.wrIn hi hfull) hi hfull hok hseq hstep
+    cases hx.symm.trans hx1
+    exact fin (Clob := fun i => i = 0 ∨ i = 1) hcl01 hk (hmW ho)
+  | ovf aop sg w =>
+    rcases hovf aop sg w rfl with rfl | rfl
+    · exact cached (inline_soundC _ (.inr rfl))
+    · exact cached (inline_soundC _ (.inr rfl))
+  | mulOvf sg w => exact cached (inline_soundC _ (.inr rfl))
+  | mov w => exact cached (inline_soundC _ (.inl rfl))
+  | mov128 => exact cached (inline_soundC _ (.inl rfl))
+  | imm w => exact cached (inline_soundC _ (.inl rfl))
+  | addr => exact cached (inline_soundC _ (.inl rfl))
+  | ptrAdd => exact cached (inline_soundC _ (.inl rfl))
+  | ptrIndex => exact cached (inline_soundC _ (.inl rfl))
+  | bin o w => exact cached (inline_soundC _ (.inl rfl))
+  | binImm o w => exact cached (inline_soundC _ (.inl rfl))
+  | mul w => exact cached (inline_soundC _ (.inl rfl))
+  | mulImm w => exact cached (inline_soundC _ (.inl rfl))
+  | shiftImm sh w => exact cached (inline_soundC _ (.inl (hshi sh w rfl)))
+  | cmp c w => exact cached (inline_soundC _ (.inl rfl))
+  | cmpImm c w => exact cached (inline_soundC _ (.inl rfl))
+  | br => exact cached (inline_soundC _ (.inl rfl))
+  | brCmp c w => exact cached (inline_soundC _ (.inl rfl))
+  | brCmpImm c w => exact cached (inline_soundC _ (.inl rfl))
+  | ext a b sx => exact cached (inline_soundC _ (.inl rfl))
+  | shiftVar | div | count | cmp3 | bswap => simp [laterClass] at hlater
 
 /-- `MemRel` and `FrameSep` after an inline instruction's emitted items. `load` and `store`
 from `load_step_fb`/`store_step_fb` (`execItems` is a function, so their run is `x'`). Open for

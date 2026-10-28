@@ -142,6 +142,7 @@ theorem inline_sound_ovf (c : Class) (hc : ovfClass c = true) (hq : c ≠ .mulOv
   (inline_soundC_ovf c hc).sound (by
     unfold clobbers; split
     · exact absurd rfl hq
+    · simp [ovfClass] at hc
     · rfl)
 
 /-- Unsigned 64-bit `mul.ovf`, which also changes `rdx`. -/

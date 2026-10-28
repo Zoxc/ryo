@@ -52,8 +52,7 @@ Its output at this commit: the seven opaque instances of §1.2 and the `sorry`s 
 ### 1.1 `sorry`: only `decode_sound`'s open glue (the representation theorems have none)
 
 `Ryo`'s `sorry`s are all in the glue of M3's `decode_sound` (aot.md §C2 "Composition"):
-`Ryo/Proofs/DecodeSound.lean` leaves the body `bodySim_inline` and the inline dense switch
-index's `bodySim_dense` as `sorry`, so
+`Ryo/Proofs/DecodeSound.lean` leaves the body `bodySim_inline` as `sorry`, so
 `decode_sound` depends on them; the other bodies, the counter check and the decoder facts are
 proved in `Ryo/Proofs/DSWork/` (`Boundary`, `Arg`, `Ret`, `Counter`, `Island`, `Call`,
 `Handler`, in the default build). Its open prerequisites are hypotheses (`Hyps`), not `sorry`s.

@@ -1369,7 +1369,10 @@ theorem handler_general' (hD : Decodes S code relocs rodata callSites dropped sc
       rw [List.getElem?_map, List.getElem?_map, hget, List.getElem?_eq_getElem hil'] at h1
       simpa using h1
     obtain ⟨htb, hbtb, hes31⟩ :=
-      htable (atPos (atPos S.body p) (hat + len)) tb pE es rfl hdT hes
+      htable (atPos (atPos S.body p) (hat + len)) tb pE es k rfl rfl rfl hdT hes
+        (List.ne_nil_of_length_pos (by omega)) hlt (fun e he => by
+          rw [hpk]
+          simp [Proto.targets, R.Then.targets] <;> exact ⟨e, he, rfl⟩)
     exact hdl_switch H (pT := hat + len) hlt hdT hbe' hripT hes htb hbtb hes31 hil' hpe
       (by
         rw [hpk]

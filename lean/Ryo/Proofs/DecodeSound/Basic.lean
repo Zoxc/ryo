@@ -554,19 +554,6 @@ def LinkPrivate (S : Setup) : Prop :=
     ∀ o : Int, 0 ≤ o → o < 16 →
       s1.st.escapedAt o = none ∧ ∀ l ∈ S.c.lendsAt s.pc, ¬ (l.1 ≤ o ∧ o < l.1 + l.2)
 
-/-- Open: the frame-offset facts `FrameBounds` lacks: a handler call's frame writes lie in the
-window (`FrameBounds.writes` covers the native instructions only), and so does a call's result
-slot (as `FrameBounds.ret`'s). To join `FrameBounds` once `DecodeLink/Bounds.lean` derives it
-(the decoder reads the offsets; a bound check like `FrameBounds`' discharges them). -/
-structure MoreBounds (S : Setup) : Prop where
-  handler : ∀ (k : Nat) (h : Full.Opcode) (args : List R.Arg) (t : R.Then Nat) (vals : Operands),
-    S.c.d.insns[k]? = some (.handler h args t) →
-    R.unpack S.c.ρ h S.c.mode args = some vals → WrIn (-(S.F : Int)) S.K h vals
-  result : ∀ (k : Nat) (op : Reduced.Opcode) (d : BitVec 32) (fo : R.Opnd Nat) (kk : BitVec 64)
-    (ws : List (BitVec 32)) (f : Full.Opcode),
-    S.c.d.insns[k]? = some (.native op [.slot d, fo, .imm kk, .words ws]) →
-    op.full = some f → f.info.shape = .call → -(S.F : Int) ≤ d.toInt ∧ d.toInt + 16 ≤ S.K
-
 /-- Open (image): the callees' stack argument areas (`Code.stackSize`, from the image's
 `FuncEntry`s) fit: below `2^62` with the frame (`call_sound`'s `hb`; `tail_call_step`'s `hn`
 follows), on PE a call's holds the 32-byte shadow space, and every callee's area (with PE's
@@ -586,16 +573,22 @@ structure StackSizes (S : Setup) : Prop where
 it; the image checks of the relocations, §C4, or the decoder could). -/
 def RelocsIn (S : Setup) : Prop := ∀ r ∈ S.rs.toList, r.pos + 4 ≤ S.body.code.size
 
-/-- Open (checkable, code layout): every switch table read from the function's code starts at a
-relocation boundary, and it and its targets lie below `2 ^ 31` (`Switch.switch_tail`'s
-hypotheses: a function under 2 GiB, no relocated field straddling the table's start;
-`bodySim_handler'`). Nothing trusted: the decoder reads the table (`table_read`) but checks
-neither bound nor the boundary at its start; a size check on the code (`LinkOk.small` gives
-`2 ^ 32` only) and `RelocsIn`-like check of the relocations could discharge it. -/
+/-- Open (checkable, code layout): every switch table the decoder reads from the function's code
+(read with the body's relocations, a non-empty table whose entries are the targets of the
+instruction `k`) starts at a relocation boundary, and it and its targets lie below `2 ^ 31`
+(`Switch.switch_tail`'s hypotheses: a function under 2 GiB, no relocated field straddling the
+table's start; `bodySim_handler'`, `bodySim_dense`). Nothing trusted: the decoder reads the table
+(`table_read`) but checks neither bound nor the boundary at its start. The entries are
+restricted to `k`'s targets (not any run of words `tableEntry` accepts, which past the table's
+end are arbitrary): the targets' bound is a check of the decoded protos, the table's start below
+`2 ^ 31` follows from its first entry within code under `2 ^ 31`, and the boundary from a check
+that no relocated field straddles a table start. -/
 def HdlTables (S : Setup) : Prop :=
-  ∀ (c0 : Cursor) (tb : BitVec 32) (pE : Nat) (es : List (BitVec 32)), c0.code = S.body.code →
+  ∀ (c0 : Cursor) (tb : BitVec 32) (pE : Nat) (es : List (BitVec 32)) (k : Nat),
+    c0.code = S.body.code → c0.fields = S.body.fields → c0.spFrame = S.body.spFrame →
     Dec c0 c0.pos (Switch.switchItems tb) pE →
     (∀ i (hi : i < es.length), (atPos c0 (tb.toNat + 4 * i)).tableEntry tb = some es[i]) →
+    es ≠ [] → ∀ hk : k < S.r.protos.size, (∀ e ∈ es, e.toNat ∈ S.r.protos[k].targets) →
     tb.toNat < 2 ^ 31 ∧ Boundary S.rs tb.toNat ∧ ∀ e ∈ es, e.toNat < 2 ^ 31
 
 /-- What `decode_sound` assumes (see the module comment): the trusted contracts, facts proved
@@ -626,7 +619,6 @@ structure Hyps (S : Setup) : Prop where
   argSizeK : (16 + S.c.argSize : Int) ≤ S.K
   -- Open prerequisites: the decoded code (checkable).
   frameBounds : FrameBounds S.c S.K
-  moreBounds : MoreBounds S
   relocsIn : RelocsIn S
   hdlTables : HdlTables S
   argsOk : ArgsOk S

@@ -645,7 +645,7 @@ variable {S : Setup} {code : ByteArray} {relocs : Array Reloc} {rodata : ByteArr
 /-- A call's result slots are apart after its return (`Call.call_return`'s `hres`). Proof idea:
 `ResultPrivate` gives them private after the scopes (the call's step and its answer keep
 `escaped`: `st` is the state after the answer); the `FrameSep` after the answer (`SepAcross.call`'s `AllocFacts`, `FrameSep.extend`) has `FrameOwn`,
-so a private window byte (`MoreBounds.result`: the slots are in the window) is in no live
+so a private window byte (`FrameBounds.result`: the slots are in the window) is in no live
 allocation. -/
 theorem call_resultApart' (H : Hyps S) {s s1 : R.RState} {x x' : X86.State} {op : Reduced.Opcode}
     {d : BitVec 32} {fo : R.Opnd Nat} {k : BitVec 64} {ws : List (BitVec 32)} {f : Full.Opcode}
@@ -659,7 +659,8 @@ theorem call_resultApart' (H : Hyps S) {s s1 : R.RState} {x x' : X86.State} {op 
   have hpriv := H.resultPrivate s x s1 op d fo k ws f hf hi hof hsh hsc parts hp q hq i hil
   have hpe : st.escapedAt (d.toInt + q.1.off + i) = none := by
     unfold OpSem.State.escapedAt at hpriv ⊢; rw [hesc]; exact hpriv
-  have hb := H.moreBounds.result s.pc op d fo k ws f hi hof hsh
+  have hb : -(S.F : Int) ≤ d.toInt ∧ d.toInt + 16 ≤ S.K :=
+    H.frameBounds.result s.pc op d fo k ws f hi hof hsh
   have h16 := ((CallLemmas.retRegsS_parts hp d).2.1 q hq).2.2
   refine ⟨hpe, fun id al hg hl hin => ?_⟩
   obtain ⟨e, hem, h1, h2, -⟩ := hsep.own id al _ hg hl (by omega) (by omega) hin

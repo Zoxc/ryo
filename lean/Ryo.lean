@@ -15,6 +15,7 @@ import Ryo.Vm.OpSem
 import Ryo.Vm.R.View
 import Ryo.Vm.R.Run
 import Ryo.Proofs.Inline
+import Ryo.Proofs.Inline.All
 import Ryo.Proofs.Counter
 import Ryo.Proofs.Scope
 import Ryo.Proofs.Step

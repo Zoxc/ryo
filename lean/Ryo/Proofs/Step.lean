@@ -195,4 +195,56 @@ theorem inline_stepC (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.State}
         rw [← hp, hpc]
       | _ => simp [R.Then.succ] at hp
 
+/-- `inline_stepC`, also keeping memory outside the written frame ranges (`PostC.memOut`). -/
+theorem inline_stepC_mem (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.State}
+    {ch : OpSem.Choice} {op : Reduced.Opcode} {ops : List (R.Opnd Nat)} {f : Full.Opcode}
+    {cls : Class} {items : List Item} {br : Option Cond} (hsound : SoundC cls)
+    (hr : RRel s x) (hi : c.d.insns[s.pc]? = some (.native op ops)) (hf : op.full = some f)
+    (hok : InlineOk f cls) (hseq : sequence cls ops = some (items, br))
+    (h : R.step c s ch = .ok (.step s')) :
+    ∃ x', execItems ctx items x = .ok x' ∧ RRel s' x' ∧
+      x'.rip = x.rip + BitVec.ofNat 64 (items.map Item.size).sum ∧
+      (∀ i : Fin 16, i ∉ clobbers cls → x'.regs i = x.regs i) ∧
+      (match br with
+      | none => s'.pc = s.pc + 1
+      | some cond => ∃ neg t b, R.nativeCtl f ops = some (.branch neg t) ∧
+          cond.eval x'.flags = .ok b ∧ s'.pc = if b then t else s.pc + 1) ∧
+      (∀ vals, nativeVals c.ρ f ops = some vals → ∀ a,
+        (∀ r ∈ wranges f vals, r.2 ≤ (a - fpAddr x r.1).toNat) → x'.mem a = x.mem a) := by
+  obtain ⟨s1, hsc, hv⟩ := step_native hi hf hok.opShape h
+  have hr1 := rrel_scopes hr hsc
+  have hpc : s1.pc = s.pc := (scopes_keeps _ hsc).pc
+  obtain ⟨vals, t, ctl, st', pc', hn, hc, ho, hp, hs'⟩ :=
+    stepView_native hf hok.opShape hok.notResume hok.notUnreachable hv
+  cases hs'
+  obtain ⟨x', hx, hpost⟩ :=
+    hsound ctx c.ρ f ops items br vals s1.st st' ctl ch x hok.shape hseq hn ho hr1.rel
+  have h5 : (5 : Fin 16) ∉ clobbers cls := by unfold clobbers; split <;> decide
+  refine ⟨x', hx, ⟨hpost.rel, ?_, escWF_of_sameButWrites hr1.wf hpost.same⟩, hpost.rip,
+    hpost.regs, ?_, ?_⟩
+  · have := hpost.regs 5 h5
+    simp only [X86.State.reg] at hr1 ⊢
+    rw [show X86.Reg.rbp.idx = 5 from rfl, this]
+    exact hr1.rbp
+  · have hctl := hpost.ctl
+    cases br with
+    | none =>
+      simp only at hctl ⊢
+      subst hctl
+      cases t <;> simp [R.Then.succ] at hp
+      rw [← hp, hpc]
+    | some cond =>
+      simp only at hctl ⊢
+      obtain ⟨b, rfl, hb⟩ := hctl
+      cases t with
+      | branch neg tt =>
+        refine ⟨neg, tt, b != neg, hc, hb neg tt hc, ?_⟩
+        simp only [R.Then.succ, Option.some.injEq] at hp
+        rw [← hp, hpc]
+      | _ => simp [R.Then.succ] at hp
+  · intro vals' hv'
+    have e : vals' = vals := Option.some.inj (hv'.symm.trans hn)
+    subst e
+    exact hpost.memOut
+
 end Ryo.Proofs.Step

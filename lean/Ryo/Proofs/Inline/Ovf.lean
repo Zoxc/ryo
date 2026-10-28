@@ -19,9 +19,10 @@ open Ryo.Spec Ryo.Vm Ryo.Vm.OpSem Ryo.X86 Ryo.Vm.Asm
 /-! ### The statement -/
 
 /-- The registers a class's sequence may change: `rax`, `rcx`, and `rdx` for unsigned 64-bit
-`mul.ovf` (`mul`). -/
+`mul.ovf` (`mul`) and for `div`/`rem` (`cdq` or `xor edx, edx`, the remainder). -/
 def clobbers : Class → List (Fin 16)
   | .mulOvf false .q => [0, 1, 2]
+  | .div .. => [0, 1, 2]
   | _ => [0, 1]
 
 /-- `Post`, with the registers outside `clobbers c` unchanged. -/

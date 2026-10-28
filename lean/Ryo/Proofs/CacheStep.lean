@@ -7,7 +7,9 @@ cache emits it (aot.md §C2 "Register cache", "Inline steps"; milestone M3 `deco
 - `sequence_ok`/`sequence_cacheSafe`: every item of `sequence cls ops` is `cacheSafe` and names
   no register but `rax`, `rcx` and `rbp` (`onlyARB`), given that `cls` isn't a sign extension
   from 64 bits (whose `movsx` at 64 bits `update` doesn't track; no inline opcode is one,
-  `inlineOps_ext`) nor one of the classes added later (`laterClass`: not covered yet).
+  `inlineOps_ext`) nor one of the classes added later (`laterClass`). `sequence_ok2` covers
+  those too (but `count` below 64 bits, whose `bsf`/`bsr` aren't `cacheSafe`): `div`'s items
+  may name `rdx`, but its `div` keeps `emit` on `rax` (`isMulQ`).
 - `exec_swap`/`execItems_swap`: renaming is a register swap. With `rax` and `xr` swapped in the
   state (`swapS`) and the items (`swapR`), a `cacheSafe` sequence without `mulQ` (whose `rax`
   and `rdx` are fixed) runs as before, but for `rip` (a renamed item may be longer). On the
@@ -62,6 +64,14 @@ def onlyARB : Item → Bool
   | .aluImm _ _ rm _ | .mulQ rm => okRm rm
   | .shift _ _ r _ | .setReg r _ | .lea r _ | .loadRip r _ => okReg r
   | .setccCl _ => true
+  | .shiftCl _ _ r | .bswap _ r | .setccR _ r => okReg r
+  | .cmov _ _ r rm | .bsf _ r rm | .bsr _ r rm => okReg r && okRm rm
+  -- `div`, `cdq` (`rdx:rax`) and the `rdx` items of a `div` sequence: kept on `rax` by `emit`.
+  | _ => false
+
+/-- The items whose registers are fixed (`rdx:rax`): `emit` keeps a sequence with one on `rax`. -/
+def isMulQ : Item → Bool
+  | .mulQ _ | .div .. => true
   | _ => false
 
 /-- The items of the inline sequences: tracked by `update`, on `rax`, `rcx` and `rbp` only. -/
@@ -91,6 +101,92 @@ theorem sequence_ok {T : Type} {cls : Class} {ops : List (R.Opnd T)} {items : Li
     simp [seqItemOk, cacheSafe, onlyARB, okReg, okRm] <;>
     (try (cases ‹W› <;> simp_all))
   all_goals exact Classical.or_iff_not_imp_right.2 fun h => hext (Classical.not_not.1 h)
+
+set_option maxHeartbeats 1000000 in
+/-- The later classes but `div` (`count` at 64 bits only: at 32 bits `bsf`/`bsr` aren't
+`cacheSafe`). -/
+theorem sequence_ok_later {T : Type} {cls : Class} {ops : List (R.Opnd T)} {items : List Item}
+    {br : Option Cond} (hl : laterClass cls = true) (hdiv : ∀ a b c, cls ≠ .div a b c)
+    (hcount : ∀ lz w, cls = .count lz w → w = .q)
+    (h : sequence cls ops = some (items, br)) :
+    ∀ it ∈ items, seqItemOk it = true := by
+  intro it hit
+  cases cls <;> simp [laterClass] at hl
+  all_goals (try exact absurd rfl (hdiv _ _ _))
+  all_goals (try (have hq := hcount _ _ rfl; subst hq))
+  all_goals simp only [sequence, bind, Option.bind_eq_some_iff, pure] at h
+  all_goals (repeat' (first
+    | (obtain ⟨_, hs, h⟩ := h
+       split at hs <;> (try simp only [Option.some.injEq, reduceCtorEq] at hs) <;> (try subst hs))
+    | split at h)) <;>
+    (try simp only [Option.some.injEq, Prod.mk.injEq] at h) <;>
+    (try obtain ⟨rfl, _⟩ := h) <;>
+    (repeat' (first
+      | (obtain rfl | hit := hit)
+      | subst hit
+      | split at hit
+      | (simp only [List.mem_cons, List.mem_append, List.not_mem_nil,
+          or_false, or_assoc, ld, st, R, C, M.frame, Mrax, flagSeq, cmpImmSeq] at hit))) <;>
+    simp [seqItemOk, cacheSafe, onlyARB, okReg, okRm] <;>
+    (try (cases ‹W› <;> simp_all)) <;>
+    (try (cases ‹Sh› <;> simp_all))
+  all_goals simp_all
+
+set_option maxHeartbeats 1000000 in
+theorem sequence_div_safe {T : Type} {sg rem : Bool} {w : W} {ops : List (R.Opnd T)}
+    {items : List Item} {br : Option Cond} (h : sequence (.div sg rem w) ops = some (items, br)) :
+    ∀ it ∈ items, cacheSafe it = true := by
+  intro it hit
+  simp only [sequence, bind, Option.bind_eq_some_iff, pure] at h
+  all_goals (repeat' (first
+    | (obtain ⟨_, hs, h⟩ := h
+       split at hs <;> (try simp only [Option.some.injEq, reduceCtorEq] at hs) <;> (try subst hs))
+    | split at h)) <;>
+    (try simp only [Option.some.injEq, Prod.mk.injEq] at h) <;>
+    (try obtain ⟨rfl, _⟩ := h) <;>
+    (repeat' (first
+      | (obtain rfl | hit := hit)
+      | subst hit
+      | split at hit
+      | (simp only [List.mem_cons, List.mem_append, List.not_mem_nil,
+          or_false, or_assoc, ld, st, R, C, M.frame, Mrax, flagSeq, cmpImmSeq] at hit))) <;>
+    simp [cacheSafe] <;>
+    (try (cases ‹W› <;> simp_all)) <;>
+    (try (cases ‹Bool› <;> simp_all))
+
+set_option maxHeartbeats 1000000 in
+/-- A `div` sequence has its `div`, which keeps `emit` on `rax`. -/
+theorem sequence_div_pinned {T : Type} {sg rem : Bool} {w : W} {ops : List (R.Opnd T)}
+    {items : List Item} {br : Option Cond} (h : sequence (.div sg rem w) ops = some (items, br)) :
+    ∃ d ∈ items, isMulQ d = true := by
+  simp only [sequence, bind, Option.bind_eq_some_iff, pure] at h
+  repeat' (first
+    | (obtain ⟨_, hs, h⟩ := h
+       split at hs <;> (try simp only [Option.some.injEq, reduceCtorEq] at hs) <;> (try subst hs))
+    | split at h)
+  all_goals (try simp only [Option.some.injEq, Prod.mk.injEq] at h)
+  all_goals (try obtain ⟨rfl, _⟩ := h)
+  all_goals (try (cases ‹W›)) <;> simp [isMulQ, ld, st, R, C]
+
+/-- The items of every inline sequence (but `count` at 8 to 32 bits) are `cacheSafe`, and name
+only `rax`, `rcx` and `rbp` unless the sequence has a `mul`/`div`, which keeps it on `rax`. -/
+theorem sequence_ok2 {T : Type} {cls : Class} {ops : List (R.Opnd T)} {items : List Item}
+    {br : Option Cond} (hext : ∀ b, cls ≠ .ext .q b true)
+    (hcount : ∀ lz w, cls = .count lz w → w = .q)
+    (h : sequence cls ops = some (items, br)) :
+    ∀ it ∈ items, cacheSafe it = true ∧ (onlyARB it = true ∨ ∃ d ∈ items, isMulQ d = true) := by
+  intro it hit
+  cases hl : laterClass cls
+  · have := sequence_ok hext hl h it hit
+    simp only [seqItemOk, Bool.and_eq_true] at this
+    exact ⟨this.1, .inl this.2⟩
+  · by_cases hdv : ∃ a b c, cls = .div a b c
+    · obtain ⟨a, b, c, rfl⟩ := hdv
+      exact ⟨sequence_div_safe h it hit, .inr (sequence_div_pinned h)⟩
+    · have hd : ∀ a b c, cls ≠ .div a b c := fun a b c e => hdv ⟨a, b, c, e⟩
+      have := sequence_ok_later hl hd hcount h it hit
+      simp only [seqItemOk, Bool.and_eq_true] at this
+      exact ⟨this.1, .inl this.2⟩
 
 /-- Every item of an inline sequence is one `update` tracks. -/
 theorem sequence_cacheSafe {T : Type} {cls : Class} {ops : List (R.Opnd T)} {items : List Item}
@@ -201,18 +297,17 @@ theorem ea_swapS (xr : Reg) (x : X86.State) (m : M) :
 @[simp] theorem reg_jump (x : X86.State) (a : BitVec 64) (r : Reg) : (x.jump a).reg r = x.reg r := rfl
 @[simp] theorem mem_jump (x : X86.State) (a : BitVec 64) : (x.jump a).mem = x.mem := rfl
 
-def isMulQ : Item → Bool
-  | .mulQ _ => true
-  | _ => false
 
 /-- A tracked item other than `mulQ` (whose `rax` and `rdx` are fixed) runs on the swapped
 state as it does on the state, but for `rip` (the renamed item may have another length). -/
 theorem exec_swap (ctx : Ctx) {xr : Reg} (hc : xr ≠ .rcx) {it : Item} (hs : cacheSafe it = true)
-    (hm : isMulQ it = false) {y z : X86.State} (h : it.exec ctx y = .ok z) :
+    (hm : isMulQ it = false) (ha : onlyARB it = true) {y z : X86.State} (h : it.exec ctx y = .ok z) :
     (mapRegs (swapR xr) it).exec ctx (swapS xr y) =
       .ok ((swapS xr z).jump (y.rip + BitVec.ofNat 64 (mapRegs (swapR xr) it).size)) := by
   have hrcx : swapR xr .rcx = .rcx := by simp [swapR, Ne.symm hc]
-  cases it <;> simp only [cacheSafe, isMulQ, reduceCtorEq] at hs hm <;>
+  have hrc : ∀ x : X86.State, (swapS xr x).reg .rcx = x.reg .rcx := fun x => by
+    have := reg_swapS xr .rcx x; rwa [hrcx] at this
+  cases it <;> simp only [cacheSafe, isMulQ, onlyARB, reduceCtorEq] at hs hm ha <;>
     simp only [Item.exec, mapRegs, bind, Except.bind, pure, Except.pure, jump_setReg, jump_setFlags,
       jump_setMem, jump_setMemW, jump_setRegW, jump_setRmW, mem_jump, regW_jump, ea_jump,
       rmW_jump, memW_jump, flags_jump, rip_swapS] at h ⊢
@@ -220,8 +315,13 @@ theorem exec_swap (ctx : Ctx) {xr : Reg} (hc : xr ≠ .rcx) {it : Item} (hs : ca
   all_goals (first | (simp only [reduceCtorEq] at h; done) | (simp only [Except.ok.injEq] at h; subst h))
   all_goals simp only [swapS_jump, swapS_setReg, swapS_setFlags, swapS_setMemW, swapS_setMem,
     swapS_setRegW, swapS_setRmW, jump_jump, regW_swapS, ea_swapS', rmW_swapS, memW_swapS,
-    flags_swapS, mem_swapS, hrcx]
+    flags_swapS, mem_swapS, hrcx, hrc]
   all_goals (try simp_all)
+  -- `shiftCl` past the width: the flags through `Option.map`.
+  all_goals
+    obtain ⟨a, ha1, ha2⟩ := ‹∃ a, _ = some a ∧ _›
+    subst ha2
+    simp only [ha1, Option.map_some]
 
 /-! ### The opcode tables -/
 
@@ -310,7 +410,8 @@ theorem swapR_ne_rbp {xr : Reg} (hb : xr ≠ .rbp) (r : Reg) (hr : r ≠ .rbp) :
 swapped final state, but for `rip`. -/
 theorem execItems_swap (ctx : Ctx) {xr : Reg} (hc : xr ≠ .rcx) (hb : xr ≠ .rbp) :
     ∀ (items : List Item) (y z : X86.State) (a : BitVec 64),
-      (∀ it ∈ items, cacheSafe it = true ∧ isMulQ it = false) → execItems ctx items y = .ok z →
+      (∀ it ∈ items, cacheSafe it = true ∧ isMulQ it = false ∧ onlyARB it = true) →
+      execItems ctx items y = .ok z →
       ∃ z', execItems ctx (items.map (mapRegs (swapR xr))) ((swapS xr y).jump a) = .ok z' ∧
         z' = (swapS xr z).jump z'.rip
   | [], y, z, a, _, h => by
@@ -325,7 +426,7 @@ theorem execItems_swap (ctx : Ctx) {xr : Reg} (hc : xr ≠ .rcx) (hb : xr ≠ .r
       rw [hy] at h
       have h1 := hs it (by simp)
       have hsafe := cacheSafe_mapRegs (swapR_ne_rbp hb) h1.1
-      have hx := exec_swap ctx hc h1.1 h1.2 hy
+      have hx := exec_swap ctx hc h1.1 h1.2.1 h1.2.2 hy
       obtain ⟨z', hz', he⟩ := execItems_swap ctx hc hb rest y1 z
         (a + BitVec.ofNat 64 (mapRegs (swapR xr) it).size) (fun i hi => hs i (by simp [hi])) h
       refine ⟨z', ?_, he⟩
@@ -443,7 +544,7 @@ theorem inline_step_cached (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.S
     {cls : Class} {cand : List Item} {br : Option Cond} {cache : Cache} (hsound : SoundC cls)
     (hinv : CacheInv cache x) (hr : RRel s x) (hi : c.d.insns[s.pc]? = some (.native op ops))
     (hf : op.full = some f) (hok : InlineOk f cls) (hext : ∀ b, cls ≠ .ext .q b true)
-    (hlater : laterClass cls = false)
+    (hcount : ∀ lz w, cls = .count lz w → w = .q)
     (hseq : sequence cls ops = some (cand, br)) (h : R.step c s ch = .ok (.step s')) :
     ∃ x', execItems ctx (cache.emit cand).1 x = .ok x' ∧ RRel s' x' ∧
       CacheInv (cache.emit cand).2 x' ∧
@@ -452,9 +553,8 @@ theorem inline_step_cached (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.S
       | none => s'.pc = s.pc + 1
       | some cond => ∃ neg t b, R.nativeCtl f ops = some (.branch neg t) ∧
           cond.eval x'.flags = .ok b ∧ s'.pc = if b then t else s.pc + 1 := by
-  have hok' := sequence_ok hext hlater hseq
-  have hsafe : ∀ it ∈ cand, cacheSafe it = true := fun it hit => by
-    have := hok' it hit; simp only [seqItemOk, Bool.and_eq_true] at this; exact this.1
+  have hok' := sequence_ok2 hext hcount hseq
+  have hsafe : ∀ it ∈ cand, cacheSafe it = true := fun it hit => (hok' it hit).1
   -- The register `emit` puts the sequence in.
   generalize hxr : pool[(emitHead { cache with tick := cache.tick + 1 } cand).1]! = xr
   have hb : xr ≠ .rbp := hxr ▸ pool_ne_rbp' _
@@ -478,13 +578,15 @@ theorem inline_step_cached (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.S
       refine ⟨x1, ?_, rfl, rfl, rfl⟩
       rw [List.map_congr_left (fun it _ => ren_rax it), List.map_id']
       exact hx1
-    · have hm : ∀ it ∈ cand, cacheSafe it = true ∧ isMulQ it = false := fun it hit =>
-        ⟨hsafe it hit, by cases e : isMulQ it; rfl; exact absurd ⟨it, hit, e⟩ hq⟩
+    · have hA : ∀ it ∈ cand, onlyARB it = true := fun it hit =>
+        (hok' it hit).2.resolve_right hq
+      have hm : ∀ it ∈ cand, cacheSafe it = true ∧ isMulQ it = false ∧ onlyARB it = true :=
+        fun it hit => ⟨hsafe it hit, by cases e : isMulQ it; rfl; exact absurd ⟨it, hit, e⟩ hq,
+          hA it hit⟩
       obtain ⟨z, hz, hze⟩ := execItems_swap ctx hc hb cand (swapS xr x) x1 x.rip hm hx1
       rw [swapS_swapS, jump_rip] at hz
       refine ⟨z, ?_, ?_, ?_, ?_⟩
-      · rw [List.map_congr_left (fun it hit => ren_eq_swap hc hb (by
-          have := hok' it hit; simp only [seqItemOk, Bool.and_eq_true] at this; exact this.2))]
+      · rw [List.map_congr_left (fun it hit => ren_eq_swap hc hb (hA it hit))]
         exact hz
       · rw [hze]
         show (swapS xr x1).reg .rbp = _
