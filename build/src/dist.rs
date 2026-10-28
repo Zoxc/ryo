@@ -100,16 +100,17 @@ pub fn build_in(dist: &Path, target: &Path, o: &BuildOptions) -> Result<String, 
     let mut all = vec![info.host.clone()];
     all.extend(o.targets.iter().filter(|t| **t != info.host).cloned());
     let mut host_jit = None;
+    let rb = RuntimeBuild { root: &root, target: &target, info: &info, tag: &tag };
     for triple in &all {
         let target_lib = dist_lib.join("rustlib").join(triple).join("lib");
         crate::utils::create_dir(&target_lib)?;
         install_llvm_sysroot(&info, &dist, triple)?;
-        let cross = (*triple != info.host).then_some(triple.as_str());
-        let jit = if crate::jit::supported(triple) { Some(crate::jit::build(&root, &target, &info, triple, cross, false, &tag)?) } else { None };
+        let cross = rb.cross(triple);
+        let jit = if crate::jit::supported(triple) { Some(crate::jit::build(&rb, triple, false)?) } else { None };
         // For the host, also the checked JIT `y test` runs (design/build.md#build): `ryo_rt`
         // with it swapped in, in `dist/jit-checked/`.
-        let checked = if cross.is_none() && jit.is_some() { Some(crate::jit::build(&root, &target, &info, triple, None, true, &tag)?) } else { None };
-        for (krate, rlib) in build_runtime(&root, &target, &dist, cross, jit.as_deref(), &tag)? {
+        let checked = if cross.is_none() && jit.is_some() { Some(crate::jit::build(&rb, triple, true)?) } else { None };
+        for (krate, rlib) in build_runtime(&rb, &dist, triple, jit.as_deref())? {
             copy(&rlib, &target_lib.join(format!("lib{krate}.rlib")))?;
             if krate == "ryo_rt"
                 && let Some(sealed) = &checked
@@ -204,18 +205,38 @@ fn is_std_lib(file_name: &str) -> bool {
     !rustc_dev && !file_name.contains("LLVM")
 }
 
+/// What every runtime build of a `y build` (the JIT's, `ryo_rt`'s) shares: the repository,
+/// cargo's target directory, the toolchain and the ABI tag.
+pub struct RuntimeBuild<'a> {
+    pub root: &'a Path,
+    pub target: &'a Path,
+    pub info: &'a RustcInfo,
+    pub tag: &'a str,
+}
+
+impl RuntimeBuild<'_> {
+    /// `triple` if it is a cross target (cargo's `--target`), `None` for the host.
+    pub fn cross<'t>(&self, triple: &'t str) -> Option<&'t str> {
+        (triple != self.info.host).then_some(triple)
+    }
+}
+
+/// The features `RYO_RT_FEATURES` adds to `ryo_rt` (split on commas and spaces, sorted), such
+/// as `fp-rbp` for measurements (design/build.md#test-and-bench).
+fn rt_features() -> Vec<String> {
+    let mut features: Vec<String> =
+        std::env::var("RYO_RT_FEATURES").unwrap_or_default().split([',', ' ']).filter(|f| !f.is_empty()).map(str::to_owned).collect();
+    features.sort();
+    features.dedup();
+    features
+}
+
 /// Builds `ryo_rt` (and `ryo_bytecode`) with the stock LLVM backend against `dist/`'s std, for
-/// the host or the `cross` target, and returns their crate names and rlibs. With `jit`, the
+/// `triple`, and returns their crate names and rlibs. With `jit`, the
 /// directory of the sealed JIT ([`crate::jit::build`]), `ryo_rt` gets its `jit` feature and
 /// bundles it.
-fn build_runtime(
-    root: &Path,
-    target: &Path,
-    dist: &Path,
-    cross: Option<&str>,
-    jit: Option<&Path>,
-    tag: &str,
-) -> Result<Vec<(&'static str, PathBuf)>, String> {
+fn build_runtime(rb: &RuntimeBuild, dist: &Path, triple: &str, jit: Option<&Path>) -> Result<Vec<(&'static str, PathBuf)>, String> {
+    let (root, target, tag, cross) = (rb.root, rb.target, rb.tag, rb.cross(triple));
     eprintln!("[y] runtime: ryo_rt{}", cross.map(|t| format!(" for {t}")).unwrap_or_default());
     let mut sysroot_flag = String::from("--sysroot=");
     sysroot_flag.push_str(dist.to_str().ok_or("dist/ path is not UTF-8")?);
@@ -228,18 +249,13 @@ fn build_runtime(
         rustflags.push(crate::jit::NO_REDZONE);
     }
     let mut cargo = cmd("cargo");
-    // The JIT (design/jit.md); `RYO_RT_FEATURES` adds features, such as `fp-rbp` for
-    // measurements (design/build.md#test-and-bench).
-    let mut features = String::from(if jit.is_some() { "jit" } else { "" });
+    // The JIT (design/jit.md), and what `RYO_RT_FEATURES` adds.
+    let mut features = rt_features();
     if let Some(dir) = jit {
         cargo.env("RYO_JIT_LIB_DIR", dir);
+        features.insert(0, "jit".to_owned());
     }
-    for f in std::env::var("RYO_RT_FEATURES").unwrap_or_default().split([',', ' ']).filter(|f| !f.is_empty()) {
-        if !features.is_empty() {
-            features.push(',');
-        }
-        features.push_str(f);
-    }
+    let features = features.join(",");
     cargo.args(["build", "--release", "-p", "ryo_rt", "--features", &features]);
     if let Some(t) = cross {
         cargo.args(["--target", t]);
@@ -336,7 +352,8 @@ pub fn runtime_hash(root: &Path) -> Result<u64, String> {
     for f in ["Cargo.toml", "Cargo.lock"] {
         hash_file(&mut h, &vm.join(f))?;
     }
-    h.write(std::env::var("RYO_RT_FEATURES").unwrap_or_default().as_bytes());
+    // Parsed, so that spellings of the same features give the same tag.
+    h.write(rt_features().join(",").as_bytes());
     Ok(h.finish())
 }
 

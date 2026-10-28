@@ -52,9 +52,10 @@ pub const NO_REDZONE: &str = "-Cno-redzone=yes";
 ///
 /// `checked`: with `-Cdebug-assertions=on -Coverflow-checks=on` on top of the release
 /// optimizations, in `target/jit-checked/`: the JIT `y test` runs ([`CHECKED_DIR`]).
-pub fn build(root: &Path, target: &Path, info: &RustcInfo, triple: &str, cross: Option<&str>, checked: bool, tag: &str) -> Result<PathBuf, String> {
+pub fn build(rb: &crate::dist::RuntimeBuild, triple: &str, checked: bool) -> Result<PathBuf, String> {
+    let (root, info, cross) = (rb.root, rb.info, rb.cross(triple));
     eprintln!("[y] jit: ryo_jit{}{}", if checked { " (checked)" } else { "" }, cross.map(|t| format!(" for {t}")).unwrap_or_default());
-    let target_dir = target.join(if checked { "jit-checked" } else { "jit" });
+    let target_dir = rb.target.join(if checked { CHECKED_DIR } else { "jit" });
     let mut rustflags: Vec<&str> = Vec::new();
     // Its trips are `sysv64` code too: no red zone on Windows (design/platforms.md).
     if is_windows(triple) {
@@ -88,7 +89,7 @@ pub fn build(root: &Path, target: &Path, info: &RustcInfo, triple: &str, cross: 
     }
     let staticlib = built.join("release").join(static_lib_name(triple, "ryo_jit"));
     let out = target_dir.join("sealed").join(triple);
-    seal(info, &staticlib, &out, triple, tag)?;
+    seal(info, &staticlib, &out, triple, rb.tag)?;
     Ok(out)
 }
 
