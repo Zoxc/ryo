@@ -5,7 +5,7 @@
 use std::fs;
 use std::io::{IsTerminal, Write as _};
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
+use std::process::{Command, ExitCode};
 
 use crate::utils::{PINNED_VERSION, capture, cmd, copy_dir, create_dir, root, run, write};
 
@@ -92,6 +92,15 @@ pub struct ToolchainRecord {
 }
 
 impl Manifest {
+    /// `install/manifest.toml`.
+    fn path(install: &Path) -> PathBuf {
+        install.join("manifest.toml")
+    }
+
+    fn save(&self, install: &Path) -> Result<(), String> {
+        write(Manifest::path(install), self.to_toml())
+    }
+
     pub fn to_toml(&self) -> String {
         let list = |l: &[String]| format!("[{}]", l.iter().map(|s| quote(s)).collect::<Vec<_>>().join(", "));
         let t = &self.toolchain;
@@ -205,7 +214,7 @@ fn install_dir() -> PathBuf {
 }
 
 fn read_manifest(install: &Path) -> Result<Option<Manifest>, String> {
-    let path = install.join("manifest.toml");
+    let path = Manifest::path(install);
     match fs::read_to_string(&path) {
         Ok(text) => Manifest::parse(&text).map(Some).map_err(|e| format!("{}: {e}", path.display())),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -232,7 +241,9 @@ fn rustup(args: &[&str]) -> Result<String, String> {
 /// rustup's `Default host:` (from `rustup show`).
 fn rustup_host() -> Result<String, String> {
     if capture(cmd("rustup").arg("--version")).is_err() {
-        return Err("ryo needs rustup to manage its pinned toolchain (1.99.1 with rustc-dev); install it from https://rustup.rs and rerun".to_owned());
+        return Err(format!(
+            "ryo needs rustup to manage its pinned toolchain ({PINNED_VERSION} with rustc-dev); install it from https://rustup.rs and rerun"
+        ));
     }
     let show = rustup(&["show"])?;
     show.lines()
@@ -653,26 +664,15 @@ fn plan_install(o: &InstallOptions) -> Result<InstallPlan, String> {
     })
 }
 
-pub fn install(o: &InstallOptions) -> ExitCode {
-    let plan = match plan_install(o) {
-        Ok(plan) => plan,
-        Err(e) => {
-            eprintln!("error: {e}");
-            return ExitCode::FAILURE;
-        }
-    };
+/// `y install`; `Some` is the exit code of a dry run or an unconfirmed plan.
+pub fn install(o: &InstallOptions) -> Result<Option<ExitCode>, String> {
+    let plan = plan_install(o)?;
     println!("{}", plan.render());
     if let Some(code) = confirm("install", o.yes, o.dry_run) {
-        return code;
+        return Ok(Some(code));
     }
-    match do_install(&plan) {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(e) => {
-            eprintln!("error: {e}");
-            eprintln!("[y] the previous install (if any) still works; rerun ./y.sh install");
-            ExitCode::FAILURE
-        }
-    }
+    do_install(&plan).map_err(|e| format!("{e}\n[y] the previous install (if any) still works; rerun ./y.sh install"))?;
+    Ok(None)
 }
 
 fn do_install(plan: &InstallPlan) -> Result<(), String> {
@@ -699,9 +699,9 @@ fn do_install(plan: &InstallPlan) -> Result<(), String> {
     // Targets still to be removed (step 7) stay recorded until they are.
     record.targets_added.extend(plan.remove_targets.iter().cloned());
     manifest.toolchain = record;
-    write(install.join("manifest.toml"), manifest.to_toml())?;
+    manifest.save(install)?;
     let vv = crate::utils::output(cmd("rustc").arg(format!("+{t}")).arg("-vV"))?;
-    let release = vv.lines().find_map(|l| l.strip_prefix("release: ")).unwrap_or("?");
+    let release = crate::utils::field(&vv, "release").unwrap_or("?");
     if release != PINNED_VERSION {
         return Err(format!("toolchain {t} reports release {release}"));
     }
@@ -725,7 +725,7 @@ fn do_install(plan: &InstallPlan) -> Result<(), String> {
     manifest.build_id = build_id;
     manifest.targets = plan.targets.clone();
     manifest.sysroots = if plan.ryo_std { vec!["llvm".into(), "ryo".into()] } else { vec!["llvm".into()] };
-    write(install.join("manifest.toml"), manifest.to_toml())?;
+    manifest.save(install)?;
 
     // 5. Launchers.
     run(cmd("cargo")
@@ -746,7 +746,7 @@ fn do_install(plan: &InstallPlan) -> Result<(), String> {
     if !plan.remove_targets.is_empty() {
         run(cmd("rustup").args(["target", "remove", "--toolchain", t]).args(&plan.remove_targets))?;
         manifest.toolchain.targets_added.retain(|x| !plan.remove_targets.contains(x));
-        write(install.join("manifest.toml"), manifest.to_toml())?;
+        manifest.save(install)?;
     }
 
     // 8. Report.
@@ -794,15 +794,35 @@ enum Step {
 }
 
 impl Step {
-    fn describe(&self) -> String {
+    /// The command the step runs, if it runs one.
+    fn command(&self) -> Option<Command> {
+        let mut c;
         match self {
             Step::Launchers(root) => {
-                format!("cargo uninstall --root {} cargo-ryo (cargo-ryo, rustc-ryo in {})", root.display(), root.join("bin").display())
+                c = cmd("cargo");
+                c.args(["uninstall", "--root"]).arg(root).arg("cargo-ryo");
             }
+            Step::RemoveToolchain(t) => {
+                c = cmd("rustup");
+                c.args(["toolchain", "uninstall", t]);
+            }
+            Step::RemoveComponents(t, items) | Step::RemoveTargets(t, items) => {
+                let what = if matches!(self, Step::RemoveComponents(..)) { "component" } else { "target" };
+                c = cmd("rustup");
+                c.args([what, "remove", "--toolchain", t]).args(items);
+            }
+            Step::KeepLaunchers(_) | Step::Keep(_) | Step::RemoveInstall(_) => return None,
+        }
+        Some(c)
+    }
+
+    fn describe(&self) -> String {
+        let command = self.command().map(|c| crate::utils::describe(&c));
+        match self {
+            Step::Launchers(root) => format!("{} (cargo-ryo, rustc-ryo in {})", command.unwrap(), root.join("bin").display()),
             Step::KeepLaunchers(why) => format!("launchers: kept ({why})"),
-            Step::RemoveToolchain(t) => format!("rustup toolchain uninstall {t} (installed by ryo; its components go with it)"),
-            Step::RemoveComponents(t, c) => format!("rustup component remove --toolchain {t} {} (added by ryo)", c.join(" ")),
-            Step::RemoveTargets(t, c) => format!("rustup target remove --toolchain {t} {} (added by ryo)", c.join(" ")),
+            Step::RemoveToolchain(_) => format!("{} (installed by ryo; its components go with it)", command.unwrap()),
+            Step::RemoveComponents(..) | Step::RemoveTargets(..) => format!("{} (added by ryo)", command.unwrap()),
             Step::Keep(why) => format!("keep {why}"),
             Step::RemoveInstall(dir) => format!("delete {} (build output, installed versions, manifest)", dir_display(dir)),
         }
@@ -867,56 +887,44 @@ fn plan_uninstall(o: &UninstallOptions, manifest: Option<&Manifest>) -> Result<V
     Ok(steps)
 }
 
-pub fn uninstall(o: &UninstallOptions) -> ExitCode {
+/// `y uninstall`; `Some` is the exit code of a dry run or an unconfirmed plan.
+pub fn uninstall(o: &UninstallOptions) -> Result<Option<ExitCode>, String> {
     let install = install_dir();
-    let result = (|| -> Result<Option<ExitCode>, String> {
-        let manifest = read_manifest(&install)?;
-        let steps = plan_uninstall(o, manifest.as_ref())?;
-        let acts = steps.iter().any(|s| !matches!(s, Step::KeepLaunchers(_) | Step::Keep(_)));
-        if manifest.is_none() && !acts {
-            println!("[y] ryo is not installed in this checkout");
-            return Ok(None);
-        }
-        let version = manifest.as_ref().map_or("(unknown version)".to_owned(), |m| m.version.clone());
-        let mut plan = format!("ryo uninstall plan (ryo {version})\n\n");
-        for (n, s) in steps.iter().enumerate() {
-            plan.push_str(&format!("  {}. {}\n", n + 1, s.describe()));
-        }
-        plan.push_str(
-            "\n  Not touched: cargo's download cache, development builds (dist/, target/), your\n  \
-             projects' target/ dirs, and any .cargo/config.toml, rust-toolchain.toml or rustup\n  \
-             override selecting ryo.\n",
-        );
-        println!("{plan}");
-        if let Some(code) = confirm("uninstall", o.yes, o.dry_run) {
-            return Ok(Some(code));
-        }
-        let lock = if install.exists() { Some(Lock::take(&install)?) } else { None };
-        for s in &steps {
-            match s {
-                Step::Launchers(root) => run(cmd("cargo").args(["uninstall", "--root"]).arg(root).arg("cargo-ryo"))?,
-                Step::RemoveToolchain(t) => run(cmd("rustup").args(["toolchain", "uninstall", t]))?,
-                Step::RemoveComponents(t, c) => run(cmd("rustup").args(["component", "remove", "--toolchain", t]).args(c))?,
-                Step::RemoveTargets(t, c) => run(cmd("rustup").args(["target", "remove", "--toolchain", t]).args(c))?,
-                Step::KeepLaunchers(_) | Step::Keep(_) => {}
-                Step::RemoveInstall(dir) => {
-                    drop(lock);
-                    crate::utils::remove_dir_if_exists(dir)?;
-                    break;
-                }
-            }
-            println!("[y]   {}", s.describe());
-        }
-        println!("[y] removed ryo {version}");
-        Ok(None)
-    })();
-    match result {
-        Ok(code) => code.unwrap_or(ExitCode::SUCCESS),
-        Err(e) => {
-            eprintln!("error: {e}");
-            ExitCode::FAILURE
-        }
+    let manifest = read_manifest(&install)?;
+    let steps = plan_uninstall(o, manifest.as_ref())?;
+    let acts = steps.iter().any(|s| !matches!(s, Step::KeepLaunchers(_) | Step::Keep(_)));
+    if manifest.is_none() && !acts {
+        println!("[y] ryo is not installed in this checkout");
+        return Ok(None);
     }
+    let version = manifest.as_ref().map_or("(unknown version)".to_owned(), |m| m.version.clone());
+    let mut plan = format!("ryo uninstall plan (ryo {version})\n\n");
+    for (n, s) in steps.iter().enumerate() {
+        plan.push_str(&format!("  {}. {}\n", n + 1, s.describe()));
+    }
+    plan.push_str(
+        "\n  Not touched: cargo's download cache, development builds (dist/, target/), your\n  \
+         projects' target/ dirs, and any .cargo/config.toml, rust-toolchain.toml or rustup\n  \
+         override selecting ryo.\n",
+    );
+    println!("{plan}");
+    if let Some(code) = confirm("uninstall", o.yes, o.dry_run) {
+        return Ok(Some(code));
+    }
+    let lock = if install.exists() { Some(Lock::take(&install)?) } else { None };
+    for s in &steps {
+        if let Step::RemoveInstall(dir) = s {
+            drop(lock);
+            crate::utils::remove_dir_if_exists(dir)?;
+            break;
+        }
+        if let Some(mut c) = s.command() {
+            run(&mut c)?;
+        }
+        println!("[y]   {}", s.describe());
+    }
+    println!("[y] removed ryo {version}");
+    Ok(None)
 }
 
 #[cfg(test)]

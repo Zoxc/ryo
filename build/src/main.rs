@@ -204,6 +204,8 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    // `y install`/`uninstall`'s exit code for a dry run or an unconfirmed plan.
+    let mut exit = ExitCode::SUCCESS;
     let result = match cmd {
         Cmd::Help => {
             print!("{}", usage());
@@ -219,12 +221,12 @@ fn main() -> ExitCode {
         Cmd::Lean(LeanMode::Check) => lean::check(false),
         Cmd::Lean(LeanMode::Proofs) => lean::check(true),
         Cmd::Lean(LeanMode::Generate) => lean::generate(),
-        Cmd::Install(o) => return install::install(&o),
-        Cmd::Uninstall(o) => return install::uninstall(&o),
+        Cmd::Install(o) => install::install(&o).map(|code| exit = code.unwrap_or(ExitCode::SUCCESS)),
+        Cmd::Uninstall(o) => install::uninstall(&o).map(|code| exit = code.unwrap_or(ExitCode::SUCCESS)),
         Cmd::Clean => dist::clean(),
     };
     match result {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(()) => exit,
         Err(msg) => {
             eprintln!("error: {msg}");
             ExitCode::FAILURE

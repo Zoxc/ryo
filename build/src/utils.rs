@@ -263,7 +263,7 @@ fn find_driver(sysroot: &Path) -> Result<PathBuf, String> {
 }
 
 /// A `key: value` line from `rustc -vV`.
-fn field<'a>(vv: &'a str, key: &str) -> Option<&'a str> {
+pub fn field<'a>(vv: &'a str, key: &str) -> Option<&'a str> {
     vv.lines().find_map(|l| l.strip_prefix(key)?.strip_prefix(": "))
 }
 
