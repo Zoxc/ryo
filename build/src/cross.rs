@@ -154,39 +154,15 @@ pub fn run(target: &str) -> Result<(), String> {
                     None => s.trim().to_owned(),
                 })
                 .collect();
-            Ok(())
+            Ok(String::new())
         });
-        match res {
-            Ok(()) => eprintln!("[y] test --cross {target} jit-sealed: ok"),
-            Err(msg) => {
-                eprintln!("[y] test --cross {target} jit-sealed: FAILED: {msg}");
-                failed.push("jit-sealed");
-            }
-        }
+        report(target, &mut failed, "jit-sealed", res);
     }
     // `ryo_rt` keeps to `core` (`y test` checks the host's).
-    match crate::test::rt_core_only(&info, &root, target) {
-        Ok(()) => eprintln!("[y] test --cross {target} rt-core-only: ok"),
-        Err(msg) => {
-            eprintln!("[y] test --cross {target} rt-core-only: FAILED: {msg}");
-            failed.push("rt-core-only");
-        }
-    }
+    report(target, &mut failed, "rt-core-only", crate::test::rt_core_only(&info, &root, target).map(|()| String::new()));
     if !macho {
-        match win64_i128(&info, target, &out.join("win64-i128")) {
-            Ok(()) => eprintln!("[y] test --cross {target} win64-i128: ok"),
-            Err(msg) => {
-                eprintln!("[y] test --cross {target} win64-i128: FAILED: {msg}");
-                failed.push("win64-i128");
-            }
-        }
-        match no_red_zone(&info, &rlib, &out.join("red-zone")) {
-            Ok(n) => eprintln!("[y] test --cross {target} red-zone: ok ({n} objects)"),
-            Err(msg) => {
-                eprintln!("[y] test --cross {target} red-zone: FAILED: {msg}");
-                failed.push("red-zone");
-            }
-        }
+        report(target, &mut failed, "win64-i128", win64_i128(&info, target, &out.join("win64-i128")).map(|()| String::new()));
+        report(target, &mut failed, "red-zone", no_red_zone(&info, &rlib, &out.join("red-zone")).map(|n| format!("{n} objects")));
     }
     for program in CORPUS {
         let res = (|| {
@@ -218,30 +194,30 @@ pub fn run(target: &str) -> Result<(), String> {
             }
             Ok(unwind)
         })();
-        match res {
-            Ok(0) => eprintln!("[y] test --cross {target} {}: ok", program.name),
-            Ok(n) => eprintln!("[y] test --cross {target} {}: ok ({n} unwind entries checked)", program.name),
-            Err(msg) => {
-                eprintln!("[y] test --cross {target} {}: FAILED: {msg}", program.name);
-                failed.push(program.name);
-            }
-        }
+        report(target, &mut failed, program.name, res.map(|n| if n == 0 { String::new() } else { format!("{n} unwind entries checked") }));
     }
     // Mach-O has no constructor priorities: the registry's must come first in input order.
     if macho && !failed.contains(&"vm_sysroot") {
         let exe = out.join("vm_sysroot").join("ryo").join("vm_sysroot");
-        match registry_first(&info, &exe) {
-            Ok(()) => eprintln!("[y] test --cross {target} registry-first: ok"),
-            Err(msg) => {
-                eprintln!("[y] test --cross {target} registry-first: FAILED: {msg}");
-                failed.push("registry-first");
-            }
-        }
+        report(target, &mut failed, "registry-first", registry_first(&info, &exe).map(|()| String::new()));
     }
     if !failed.is_empty() {
         return Err(format!("failed cross tests: {}", failed.join(", ")));
     }
     Ok(())
+}
+
+/// Prints the outcome of the check `name` (`Ok` holds a note such as "3 objects", or nothing)
+/// and records a failure in `failed`.
+fn report(target: &str, failed: &mut Vec<&'static str>, name: &'static str, res: Result<String, String>) {
+    match res {
+        Ok(note) if note.is_empty() => eprintln!("[y] test --cross {target} {name}: ok"),
+        Ok(note) => eprintln!("[y] test --cross {target} {name}: ok ({note})"),
+        Err(msg) => {
+            eprintln!("[y] test --cross {target} {name}: FAILED: {msg}");
+            failed.push(name);
+        }
+    }
 }
 
 /// The initializers of the linked Mach-O program `exe` run the registry constructor first and
