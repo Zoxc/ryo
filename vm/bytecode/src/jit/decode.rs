@@ -593,7 +593,7 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Re
             } else {
                 let e = effects(h).ok_or(Unsupported("handler"))?;
                 // The extent of block operands: the lengths the operands give.
-                let imm_of = |name: &str| l.locs[info.operand_index(name)?].imm(&args, 0);
+                let imm_of = |name: &str| l.imm(h, name, &args);
                 let block = imm_of("len").or_else(|| Some(imm_of("elem_size")?.saturating_mul(imm_of("count")?))).unwrap_or(16);
                 let block = u32::try_from(block).map_err(|_| Unsupported("a block too large"))?;
                 let mut slots = Vec::new();

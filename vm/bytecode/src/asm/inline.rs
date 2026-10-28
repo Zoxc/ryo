@@ -235,19 +235,23 @@ pub fn ssa_as_handler(op: Opcode) -> bool {
     matches!(class(op), Some(Class::ShiftVar(..) | Class::Div { .. }))
 }
 
+/// The width of the `switch.dense` opcode `op` with `n` cases if its index computation is
+/// inline ([`dense_index`]): up to 64 bits, `n` below 2^31.
+pub(crate) fn dense_width(op: Opcode, n: u64) -> Option<W> {
+    let w = match op.fw() {
+        Some((Family::SwitchDense, w)) => reg_width(w.int()?)?,
+        _ => return None,
+    };
+    (n < 1 << 31).then_some(w)
+}
+
 /// The index computation of `switch.dense.wN` (`N` up to 64) in place of its handler call,
 /// before the jump table: `s - base` (wrapping at `N` bits) in `rax`, or the default's index
 /// `n` if it isn't below `n`, the case count (below 2^31), or `None` if it doesn't apply. `s`
 /// is a frame slot, read plainly (the register cache is cleared by any instruction that
 /// isn't inline).
 pub(super) fn dense_index(op: Opcode, s: i32, base: u64, n: u64) -> Option<Vec<Item>> {
-    let w = match op.fw() {
-        Some((Family::SwitchDense, w)) => reg_width(w.int()?)?,
-        _ => return None,
-    };
-    if n >= 1 << 31 {
-        return None;
-    }
+    let w = dense_width(op, n)?;
     let mut v = vec![ld(w, M::frame(s))];
     // `sub al`/`sub ax` keep the zero bits above from the `movzx`.
     let sub = |imm: i32| Item::AluImm { op: Alu::Sub, w, rm: Rm::Reg(R), imm };

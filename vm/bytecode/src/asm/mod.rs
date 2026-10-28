@@ -65,6 +65,8 @@ pub use encode::{
     pe_region_start, prologue_len, push_words, word_len,
 };
 #[cfg(feature = "alloc")]
+pub(crate) use inline::dense_width;
+#[cfg(feature = "alloc")]
 pub use inline::{has_inline, ssa_as_handler};
 #[cfg(feature = "alloc")]
 pub use list::InsnList;
@@ -214,6 +216,13 @@ impl Layout {
     /// The location of the operand called `name`.
     pub const fn loc(&self, op: Opcode, name: &str) -> Loc {
         self.locs[crate::full::operand_index_const(op, name)]
+    }
+
+    /// The immediate of `op`'s operand called `name` in the reduced handler call's
+    /// arguments `args` ([`Loc::imm`] from its first register): `None` without such an
+    /// operand or when it isn't an immediate.
+    pub fn imm(&self, op: Opcode, name: &str, args: &[crate::reduced::Arg]) -> Option<u64> {
+        self.locs[op.info().operand_index(name)?].imm(args, 0)
     }
 }
 

@@ -1166,10 +1166,7 @@ impl Asm {
         // `s`, `base` and the case count.
         let dense = (|| {
             let l = layout(op, self.mode);
-            let arg = |name: &str| match args.get(l.locs[op.info().operand_index(name)?].reg as usize) {
-                Some(Arg::Imm(v)) => Some(*v),
-                _ => None,
-            };
+            let arg = |name: &str| l.imm(op, name, args);
             super::inline::dense_index(op, arg("s")? as u32 as i32, arg("base")?, arg("table")?)
         })();
         if dense.is_none() {

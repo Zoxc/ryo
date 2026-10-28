@@ -803,16 +803,10 @@ fn s_next(code: &Code, i: usize) -> Result<u32, Unsupported> {
 /// For a `switch.dense.w8`-`w64` handler call, its width, base and case count (from the
 /// arguments its layout gives them in), as [`Op::SwitchIdx`] takes them.
 fn dense_switch(h: crate::full::Opcode, args: &[Arg], mode: crate::asm::Mode) -> Option<(u8, u64, u32)> {
-    let w = match h.fw() {
-        Some((crate::full::Family::SwitchDense, w)) if w != crate::full::OpWidth::W128 => w.bytes(),
-        _ => return None,
-    };
     let l = crate::asm::layout(h, mode);
-    let arg = |name: &str| match args.get(l.locs[h.info().operand_index(name)?].reg as usize) {
-        Some(Arg::Imm(v)) => Some(*v),
-        _ => None,
-    };
-    Some((w, arg("base")?, u32::try_from(arg("table")?).ok().filter(|&n| n < 1 << 31)?))
+    let n = l.imm(h, "table", args)?;
+    let w = crate::asm::dense_width(h, n)?;
+    Some((w.bytes() as u8, l.imm(h, "base", args)?, n as u32))
 }
 
 /// The handlers that are native binary operations in the SSA tier: shifts and rotates by a
