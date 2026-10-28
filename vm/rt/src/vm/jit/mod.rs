@@ -1030,6 +1030,7 @@ mod tests {
             opt: JitOpt::Ssa,
             ssa_limit: u64::MAX,
             licm: false,
+            rotate: false,
             stats: 1,
             count: true,
         };
