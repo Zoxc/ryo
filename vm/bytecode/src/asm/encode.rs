@@ -120,26 +120,7 @@ pub struct Scope {
     pub kind: ScopeKind,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum ScopeKind {
-    /// A pointer to the object escapes here (`addr`, or a call argument passed by address).
-    /// Until a later `End` covers them, any access through a pointer may read or write any
-    /// of the object's bytes.
-    Escape {
-        /// The object's alignment in bytes (a power of two, at most 16): what an optimizer
-        /// needs to move an escaped object, or to merge two into one slot.
-        align: u32,
-    },
-    /// The object's storage ends here (`StorageDead`, or the temporaries' reset after a
-    /// statement). Pointers to it dangle afterwards, so earlier escapes of these bytes stop
-    /// here, and other locals may reuse them.
-    End,
-    /// An island operand: the island's template reads and writes the object, at its type,
-    /// during the call only (it keeps no pointer to it). Not an escape: liveness and the
-    /// escape dataflow ignore it. It gives the JIT the extent of the operand, which the code
-    /// doesn't show (an island's operand array holds only offsets).
-    Lend,
-}
+pub use super::list::ScopeKind;
 
 /// A store of an inline sequence the encoder dropped: the sequence ends at `at` without it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

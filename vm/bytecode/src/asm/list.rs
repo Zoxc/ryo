@@ -32,7 +32,7 @@
 use alloc::vec::Vec;
 
 #[cfg(feature = "alloc")]
-use super::encode::{DroppedStore, Scope, ScopeKind};
+use super::encode::{DroppedStore, Scope};
 use super::leb::Reader;
 #[cfg(feature = "alloc")]
 use super::leb::{put, zigzag};
@@ -58,6 +58,53 @@ impl Hint {
     }
 }
 
+/// What a [`super::Scope`] says about its object.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ScopeKind {
+    /// A pointer to the object escapes here (`addr`, or a call argument passed by address).
+    /// Until a later `End` covers them, any access through a pointer may read or write any
+    /// of the object's bytes.
+    Escape {
+        /// The object's alignment in bytes (a power of two, at most 16): what an optimizer
+        /// needs to move an escaped object, or to merge two into one slot.
+        align: u32,
+    },
+    /// The object's storage ends here (`StorageDead`, or the temporaries' reset after a
+    /// statement). Pointers to it dangle afterwards, so earlier escapes of these bytes stop
+    /// here, and other locals may reuse them.
+    End,
+    /// An island operand: the island's template reads and writes the object, at its type,
+    /// during the call only (it keeps no pointer to it). Not an escape: liveness and the
+    /// escape dataflow ignore it. It gives the JIT the extent of the operand, which the code
+    /// doesn't show (an island's operand array holds only offsets).
+    Lend,
+}
+
+/// The modifier kinds.
+const TARGET: u64 = 0;
+const DROPPED: u64 = 1;
+const ESCAPE: u64 = 2;
+const END: u64 = 3;
+const LEND: u64 = 4;
+
+/// The order of the entries at one position: targets, scopes, dropped stores, instructions.
+const ORDER_TARGET: u8 = 0;
+const ORDER_SCOPE: u8 = 1;
+const ORDER_DROPPED: u8 = 2;
+const ORDER_INSN: u8 = 3;
+
+#[cfg(feature = "alloc")]
+impl ScopeKind {
+    /// Its modifier kind in the stream.
+    const fn code(self) -> u64 {
+        match self {
+            ScopeKind::Escape { .. } => ESCAPE,
+            ScopeKind::End => END,
+            ScopeKind::Lend => LEND,
+        }
+    }
+}
+
 /// An entry of the stream, as [`walk`] reads it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Entry {
@@ -73,13 +120,23 @@ pub enum Entry {
         size: u8,
         reg: u8,
     },
-    /// `kind` 2 (escape, of alignment `align`), 3 (end) or 4 (lend; `align` 0 but for escapes).
     Scope {
         frame_offset: i32,
         size: u32,
-        kind: u8,
-        align: u32,
+        kind: ScopeKind,
     },
+}
+
+impl Entry {
+    /// Its rank among the entries at one position, which come in this order.
+    fn order(&self) -> u8 {
+        match self {
+            Entry::Target => ORDER_TARGET,
+            Entry::Scope { .. } => ORDER_SCOPE,
+            Entry::Dropped { .. } => ORDER_DROPPED,
+            Entry::Insn { .. } => ORDER_INSN,
+        }
+    }
 }
 
 /// A function's instruction list, its entries by kind, each sorted by position.
@@ -108,13 +165,13 @@ pub fn walk(bytes: &[u8], code_len: u32, mut f: impl FnMut(u32, Entry)) -> Optio
         if delta != 0 {
             last = None;
         }
-        let (order, e) = if v & 1 == 0 {
+        let e = if v & 1 == 0 {
             let op = Opcode::from_u16(u16::try_from(b.u64()?).ok()?)?;
-            (3, Entry::Insn { op, sel: b.u32()?.wrapping_sub(1) })
+            Entry::Insn { op, sel: b.u32()?.wrapping_sub(1) }
         } else {
             match b.u64()? {
-                0 => (0, Entry::Target),
-                1 => {
+                TARGET => Entry::Target,
+                DROPPED => {
                     let frame_offset = b.zigzag_i32()?;
                     let sr = b.u64()?;
                     let size = match sr >> 4 {
@@ -125,18 +182,23 @@ pub fn walk(bytes: &[u8], code_len: u32, mut f: impl FnMut(u32, Entry)) -> Optio
                     if !matches!(reg, 0 | 2 | 6..=11) {
                         return None;
                     }
-                    (2, Entry::Dropped { frame_offset, size, reg })
+                    Entry::Dropped { frame_offset, size, reg }
                 }
-                k @ 2..=4 => {
+                k @ (ESCAPE | END | LEND) => {
                     let frame_offset = b.zigzag_i32()?;
                     let size = b.u32()?;
-                    let align = if k == 2 { b.u32().filter(|a| a.is_power_of_two() && *a <= 16)? } else { 0 };
-                    (1, Entry::Scope { frame_offset, size, kind: k as u8, align })
+                    let kind = match k {
+                        ESCAPE => ScopeKind::Escape { align: b.u32().filter(|a| a.is_power_of_two() && *a <= 16)? },
+                        END => ScopeKind::End,
+                        _ => ScopeKind::Lend,
+                    };
+                    Entry::Scope { frame_offset, size, kind }
                 }
                 _ => return None,
             }
         };
-        if last.is_some_and(|l| order < l || (order == l && order == 0)) {
+        let order = e.order();
+        if last.is_some_and(|l| order < l || (order == l && order == ORDER_TARGET)) {
             return None;
         }
         last = Some(order);
@@ -154,46 +216,41 @@ impl InsnList {
 
     /// The stream.
     pub fn write(&self) -> Vec<u8> {
-        // (position, kind order, index in its list)
+        // (position, kind order, index in its list): the entries in stream order.
         let mut es: Vec<(u32, u8, usize)> = Vec::new();
-        es.extend(self.targets.iter().enumerate().map(|(i, &t)| (t, 0, i)));
-        es.extend(self.scopes.iter().enumerate().map(|(i, s)| (s.code_offset, 1, i)));
-        es.extend(self.dropped.iter().enumerate().map(|(i, d)| (d.at, 2, i)));
-        es.extend(self.hints.iter().enumerate().map(|(i, h)| (h.at, 3, i)));
+        es.extend(self.targets.iter().enumerate().map(|(i, &t)| (t, ORDER_TARGET, i)));
+        es.extend(self.scopes.iter().enumerate().map(|(i, s)| (s.code_offset, ORDER_SCOPE, i)));
+        es.extend(self.dropped.iter().enumerate().map(|(i, d)| (d.at, ORDER_DROPPED, i)));
+        es.extend(self.hints.iter().enumerate().map(|(i, h)| (h.at, ORDER_INSN, i)));
         es.sort_unstable();
         let mut out = Vec::new();
         let mut pos = 0;
         for (at, k, i) in es {
             let delta = (at - pos) as u64;
             pos = at;
-            put(&mut out, delta << 1 | (k != 3) as u64);
-            match k {
-                0 => put(&mut out, 0),
-                1 => {
-                    let s = &self.scopes[i];
-                    let kind = match s.kind {
-                        ScopeKind::Escape { .. } => 2,
-                        ScopeKind::End => 3,
-                        ScopeKind::Lend => 4,
-                    };
-                    put(&mut out, kind);
-                    put(&mut out, zigzag(s.frame_offset));
-                    put(&mut out, s.size as u64);
-                    if let ScopeKind::Escape { align } = s.kind {
-                        put(&mut out, align as u64);
-                    }
+            if k == ORDER_INSN {
+                let h = self.hints[i];
+                put(&mut out, delta << 1);
+                put(&mut out, h.op as u64);
+                put(&mut out, h.sel.wrapping_add(1) as u64);
+                continue;
+            }
+            put(&mut out, delta << 1 | 1);
+            if k == ORDER_SCOPE {
+                let s = &self.scopes[i];
+                put(&mut out, s.kind.code());
+                put(&mut out, zigzag(s.frame_offset));
+                put(&mut out, s.size as u64);
+                if let ScopeKind::Escape { align } = s.kind {
+                    put(&mut out, align as u64);
                 }
-                2 => {
-                    let (off, size, reg) = self.dropped[i].parts();
-                    put(&mut out, 1);
-                    put(&mut out, zigzag(off));
-                    put(&mut out, ((size.trailing_zeros() as u64) << 4) | reg as u64);
-                }
-                _ => {
-                    let h = self.hints[i];
-                    put(&mut out, h.op as u64);
-                    put(&mut out, h.sel.wrapping_add(1) as u64);
-                }
+            } else if k == ORDER_DROPPED {
+                let (off, size, reg) = self.dropped[i].parts();
+                put(&mut out, DROPPED);
+                put(&mut out, zigzag(off));
+                put(&mut out, ((size.trailing_zeros() as u64) << 4) | reg as u64);
+            } else {
+                put(&mut out, TARGET);
             }
         }
         out
@@ -210,14 +267,7 @@ impl InsnList {
                 Some(d) => l.dropped.push(d),
                 None => ok = false,
             },
-            Entry::Scope { frame_offset, size, kind, align } => {
-                let kind = match kind {
-                    2 => ScopeKind::Escape { align },
-                    3 => ScopeKind::End,
-                    _ => ScopeKind::Lend,
-                };
-                l.scopes.push(Scope { code_offset: at, frame_offset, size, kind });
-            }
+            Entry::Scope { frame_offset, size, kind } => l.scopes.push(Scope { code_offset: at, frame_offset, size, kind }),
         })?;
         ok.then_some(l)
     }
