@@ -15,6 +15,12 @@
 //! copied, re-raised or caught on the way, so the panic count, the hook, `__except` filters
 //! and foreign exceptions behave as through native frames.
 //!
+//! As LLVM's code for rustc (`__CxxFrameHandler3` with `/EHs`), cleanups run only for C++
+//! exceptions: an SEH exception (an access violation caught by `__except`, `longjmp`) unwinds
+//! the frame without them. And a C++ exception that leaves a cleanup pad (a panic in a drop
+//! during an unwind) terminates the process at once in the search phase, as MSVC's
+//! `__FrameUnwindFilter` does, before anything below unwinds.
+//!
 //! [`decide`] is the handler's logic, without the OS: tested on every host.
 
 use ryo_bytecode::asm::lsda;
@@ -32,12 +38,24 @@ pub const EXCEPTION_TARGET_UNWIND: u32 = 0x20;
 pub const EXCEPTION_COLLIDED_UNWIND: u32 = 0x40;
 /// The exception code of MSVC's C++ `throw` (`'msc' | 0xE0000000`), and of Rust panics.
 pub const CXX_EXCEPTION: u32 = 0xE06D_7363;
+/// `STATUS_UNWIND_CONSOLIDATE`: the record of the unwind a C++ `catch` starts (MSVC's
+/// `_UnwindNestedFrames`, which Rust's `catch_unwind` reaches too).
+pub const STATUS_UNWIND_CONSOLIDATE: u32 = 0x8000_0029;
 
 /// Whether a record of `code` whose first parameter is `magic` (with `params` parameters) is
 /// a C++ exception: `_CxxThrowException`'s, whose parameters start with one of the
 /// `EH_MAGIC_NUMBER`s.
 pub fn is_cxx(code: u32, params: u32, magic: usize) -> bool {
     code == CXX_EXCEPTION && params >= 3 && matches!(magic, 0x1993_0520..=0x1993_0522)
+}
+
+/// Whether the handler acts for a record of `code` (first parameter `magic`, `params`
+/// parameters) with `flags`: a C++ exception ([`is_cxx`]), or in the unwind phase also the
+/// consolidation record of a C++ `catch`'s unwind. `__CxxFrameHandler3` of `/EHs` code (all
+/// LLVM emits) ignores everything else, so no cleanup runs for SEH exceptions.
+pub fn is_cxx_unwind(flags: u32, code: u32, params: u32, magic: usize) -> bool {
+    let unwinding = flags & (EXCEPTION_UNWINDING | EXCEPTION_EXIT_UNWIND) != 0;
+    is_cxx(code, params, magic) || unwinding && code == STATUS_UNWIND_CONSOLIDATE
 }
 
 /// What the handler does for one VM frame.
@@ -53,11 +71,15 @@ pub enum Action {
     UnwindTo(u32),
     /// Aborts with this message.
     Abort(&'static str),
+    /// Terminates the process without a message, as C++'s `terminate` (a C++ exception left
+    /// a cleanup pad).
+    Terminate,
 }
 
 /// The handler's action for the frame of a VM function whose handler data is `data`, its
 /// pc `pc` bytes past the function's start (a return address: the call before it is the call
-/// site), for an exception record with `flags` that is ([`is_cxx`]) a C++ exception or not.
+/// site), for an exception record with `flags` that is ([`is_cxx_unwind`]) a C++ exception or
+/// not.
 /// `entered` is whether the frame's pad was already called in this unwind: the handler sets
 /// `DispatcherContext.ScopeIndex` before it calls one, as `__C_specific_handler` does with
 /// the index of the next scope. The dispatcher starts each frame at 0, and a collided unwind
@@ -80,13 +102,16 @@ pub fn decide(flags: u32, cxx: bool, pc: u32, entered: bool, data: &PeHandlerDat
         Some(s) => match (s.pad, s.catch) {
             (None, _) => Action::Continue,
             // A terminate stub's pad catches every C++ exception, as rustc's catch-all
-            // terminate pads; non-C++ exceptions (`catch (...)` doesn't take them) pass.
+            // terminate pads; non-C++ exceptions (`catch (...)` doesn't take them) pass. In
+            // the pad region the exception leaves a cleanup run during an unwind: MSVC
+            // terminates there, before the cleanup's own frames unwind.
+            (Some(_), true) if cxx && !unwinding && data.region != 0 && pc >= data.region => Action::Terminate,
             (Some(pad), true) if cxx && !unwinding => Action::UnwindTo(pad),
             (Some(_), true) => Action::Continue,
-            // Cleanups run while the frame is unwound, for every exception (a C++ catch's
+            // Cleanups run while the frame is unwound for C++ exceptions (a C++ catch's
             // unwind is `STATUS_UNWIND_CONSOLIDATE`'s), but not in the frame the unwind
             // goes to.
-            (Some(pad), false) if unwinding && flags & EXCEPTION_TARGET_UNWIND == 0 => Action::CallPad(pad),
+            (Some(pad), false) if cxx && unwinding && flags & EXCEPTION_TARGET_UNWIND == 0 => Action::CallPad(pad),
             (Some(_), false) => Action::Continue,
         },
     }
@@ -102,8 +127,8 @@ mod win {
 
     use ryo_bytecode::image::PeHandlerData;
 
-    use super::{Action, decide, is_cxx, ryo_seh_call_pad};
-    use crate::vm::sys::fatal;
+    use super::{Action, decide, is_cxx_unwind, ryo_seh_call_pad};
+    use crate::vm::sys::{fatal, terminate};
 
     /// `EXCEPTION_RECORD` (x64).
     #[repr(C)]
@@ -183,7 +208,7 @@ mod win {
             let func = begin.wrapping_sub(data.begin as u64);
             let pc = dc.control_pc.wrapping_sub(func) as u32;
             let r = &*rec;
-            let cxx = is_cxx(r.code, r.params, r.info[0]);
+            let cxx = is_cxx_unwind(r.flags, r.code, r.params, r.info[0]);
             match decide(r.flags, cxx, pc, dc.scope_index != 0, &data) {
                 Action::Continue => {}
                 Action::CallPad(pad) => {
@@ -196,6 +221,7 @@ mod win {
                     fatal("RtlUnwindEx returned");
                 }
                 Action::Abort(msg) => fatal(msg),
+                Action::Terminate => terminate(),
             }
             EXCEPTION_CONTINUE_SEARCH
         }
@@ -335,20 +361,22 @@ mod tests {
             // Continue sites: nothing, in both phases.
             (search, true, 5, Action::Continue),
             (unwind, true, 5, Action::Continue),
-            // A cleanup pad runs in the unwind phase only (for every exception), not in the
+            // A cleanup pad runs in the unwind phase only (for C++ exceptions), not in the
             // unwind's target frame.
             (search, true, 15, Action::Continue),
             (unwind, true, 15, Action::CallPad(103)),
-            (unwind, false, 15, Action::CallPad(103)),
-            (EXCEPTION_EXIT_UNWIND, false, 15, Action::CallPad(103)),
+            (unwind, false, 15, Action::Continue),
+            (EXCEPTION_EXIT_UNWIND, true, 15, Action::CallPad(103)),
+            (EXCEPTION_EXIT_UNWIND, false, 15, Action::Continue),
             (target, true, 15, Action::Continue),
             // A terminate pad catches C++ exceptions in the search phase.
             (search, true, 26, Action::UnwindTo(80)),
             (search, false, 26, Action::Continue),
             (unwind, true, 26, Action::Continue),
             (target, true, 26, Action::Continue),
-            // The region's call site, the same.
-            (search, true, 115, Action::UnwindTo(140)),
+            // The region's call site: a C++ exception leaving a cleanup terminates.
+            (search, true, 115, Action::Terminate),
+            (search, false, 115, Action::Continue),
             (unwind, true, 115, Action::Continue),
             // No call site: a C++ exception aborts in the search phase, others pass.
             (search, true, 9, Action::Abort("an exception unwinds out of a VM call that can't unwind")),
@@ -373,13 +401,12 @@ mod tests {
         let bytes = data();
         let d = PeHandlerData::parse(&bytes).unwrap();
         let collided = EXCEPTION_UNWINDING | EXCEPTION_COLLIDED_UNWIND;
-        for cxx in [false, true] {
-            assert_eq!(decide(EXCEPTION_UNWINDING, cxx, 15, false, &d), Action::CallPad(103));
-            assert_eq!(decide(collided, cxx, 15, true, &d), Action::Continue);
-            assert_eq!(decide(EXCEPTION_UNWINDING, cxx, 15, true, &d), Action::Continue);
-            assert_eq!(decide(EXCEPTION_EXIT_UNWIND, cxx, 15, true, &d), Action::Continue);
-            assert_eq!(decide(collided, cxx, 15, false, &d), Action::CallPad(103));
-        }
+        let cxx = true;
+        assert_eq!(decide(EXCEPTION_UNWINDING, cxx, 15, false, &d), Action::CallPad(103));
+        assert_eq!(decide(collided, cxx, 15, true, &d), Action::Continue);
+        assert_eq!(decide(EXCEPTION_UNWINDING, cxx, 15, true, &d), Action::Continue);
+        assert_eq!(decide(EXCEPTION_EXIT_UNWIND, cxx, 15, true, &d), Action::Continue);
+        assert_eq!(decide(collided, cxx, 15, false, &d), Action::CallPad(103));
         // The search phase doesn't look at it.
         assert_eq!(decide(0, true, 26, true, &d), Action::UnwindTo(80));
     }
@@ -392,5 +419,10 @@ mod tests {
         assert!(!is_cxx(CXX_EXCEPTION, 2, 0x1993_0520));
         // An access violation.
         assert!(!is_cxx(0xC000_0005, 2, 0));
+        // A C++ catch's unwind, but not an `__except`'s (the original record) nor a search.
+        assert!(is_cxx_unwind(EXCEPTION_UNWINDING, STATUS_UNWIND_CONSOLIDATE, 15, 0));
+        assert!(is_cxx_unwind(EXCEPTION_UNWINDING, CXX_EXCEPTION, 4, 0x1993_0520));
+        assert!(!is_cxx_unwind(EXCEPTION_UNWINDING, 0xC000_0005, 2, 0));
+        assert!(!is_cxx_unwind(0, STATUS_UNWIND_CONSOLIDATE, 15, 0));
     }
 }

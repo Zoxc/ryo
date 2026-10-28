@@ -128,6 +128,16 @@ pub(crate) fn pid() -> u32 {
     }
 }
 
+/// Aborts the process without a message, as C++'s `terminate` does.
+#[cfg_attr(not(windows), allow(dead_code))]
+#[cold]
+#[inline(never)]
+pub(crate) fn terminate() -> ! {
+    abort()
+}
+
+/// Aborts as Rust's `std::process::abort`: `abort()`, or on Windows the fail-fast exception
+/// (`__fastfail(FAST_FAIL_FATAL_APP_EXIT)`, exit code 0xC0000409, as MSVC's `abort`).
 fn abort() -> ! {
     #[cfg(unix)]
     // SAFETY: always safe to call.
@@ -135,7 +145,10 @@ fn abort() -> ! {
         os::abort()
     }
     #[cfg(windows)]
-    core::intrinsics::abort()
+    // SAFETY: `int 0x29` raises the non-continuable fail-fast exception; it doesn't return.
+    unsafe {
+        core::arch::asm!("int 0x29", in("ecx") 7, options(noreturn, nostack));
+    }
 }
 
 /// Maps `len` bytes (a multiple of [`PAGE`]) of zeroed read-write memory, page-aligned. The
