@@ -719,17 +719,21 @@ const SLOW_VM_TESTS: [&str; 1] = ["every_opcode_round_trips"];
 const CODEGEN_TESTS: [&str; 2] = ["win64_handlers_preserve_xmm6_to_15", "handlers_read_rbp_first_and_hot_ones_have_no_prologue"];
 
 pub fn run(opts: &Options) -> Result<(), String> {
+    use crate::wrapper_common::{JIT_CHECKED_VAR, jit_checked_value};
     let start = Instant::now();
     let root = root();
     let rustc_ryo = crate::utils::require_dist(&root)?;
     let info = crate::utils::RustcInfo::get()?;
     // The checked JIT (debug assertions, overflow checks; design/build.md#build) unless the
     // caller set `RYO_JIT_CHECKED`; `rustc-ryo` reads it, for host compilations.
-    if std::env::var_os("RYO_JIT_CHECKED").is_none() {
-        // SAFETY: no other thread runs yet.
-        unsafe { std::env::set_var("RYO_JIT_CHECKED", "1") };
-    }
-    let checked = std::env::var_os("RYO_JIT_CHECKED").is_some_and(|v| !v.is_empty() && v != "0");
+    let checked = match std::env::var_os(JIT_CHECKED_VAR) {
+        Some(v) => jit_checked_value(&v),
+        None => {
+            // SAFETY: no other thread runs yet.
+            unsafe { std::env::set_var(JIT_CHECKED_VAR, "1") };
+            true
+        }
+    };
     if checked && !root.join("dist").join(crate::jit::CHECKED_DIR).is_dir() {
         return Err("dist/jit-checked/ is missing; run `./y.sh build`".to_owned());
     }

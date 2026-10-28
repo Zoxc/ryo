@@ -13,6 +13,10 @@ mod target;
 mod test;
 mod utils;
 
+/// The wrappers' shared code, for what `y` and `rustc-ryo` agree on (the checked JIT).
+#[path = "../../scripts/wrapper_common.rs"]
+mod wrapper_common;
+
 #[cfg(test)]
 #[path = "../../scripts/rustc-ryo.rs"]
 mod rustc_ryo;

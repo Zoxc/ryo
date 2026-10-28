@@ -95,7 +95,7 @@ pub fn build(rb: &crate::dist::RuntimeBuild, triple: &str, checked: bool) -> Res
 
 /// Where a sysroot (`dist/`, `dist/sysroot-ryo/`) keeps its host `ryo_rt` with the checked
 /// JIT ([`build`]'s `checked`), which `rustc-ryo` links instead under `RYO_JIT_CHECKED=1`.
-pub const CHECKED_DIR: &str = "jit-checked";
+pub const CHECKED_DIR: &str = crate::wrapper_common::JIT_CHECKED_DIR;
 
 /// Writes `dst_dir/<rlib's name>`: the `ryo_rt` `rlib` with its bundled JIT object replaced by
 /// the one in `sealed` (a [`build`] output). The rest, metadata included, stays as is, so

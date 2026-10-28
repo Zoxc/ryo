@@ -13,6 +13,24 @@ use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// The variable that makes `rustc-ryo` link the checked JIT (design/build.md#build); `y test`
+/// sets it unless the caller did.
+pub const JIT_CHECKED_VAR: &str = "RYO_JIT_CHECKED";
+
+/// Where a sysroot (`dist/`, `dist/sysroot-ryo/`) keeps its host `ryo_rt` with the checked JIT,
+/// which `y build` installs and `rustc-ryo` links under [`JIT_CHECKED_VAR`].
+pub const JIT_CHECKED_DIR: &str = "jit-checked";
+
+/// Whether a value of [`JIT_CHECKED_VAR`] asks for the checked JIT: set, non-empty, not `0`.
+pub fn jit_checked_value(v: &std::ffi::OsStr) -> bool {
+    !v.is_empty() && v != "0"
+}
+
+/// Whether [`JIT_CHECKED_VAR`] asks for the checked JIT.
+pub fn jit_checked() -> bool {
+    env::var_os(JIT_CHECKED_VAR).is_some_and(|v| jit_checked_value(&v))
+}
+
 /// The directory of this executable (`dist/bin/`).
 pub fn bin_dir() -> PathBuf {
     let exe = real_path(env::current_exe().expect("current_exe"));

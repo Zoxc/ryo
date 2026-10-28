@@ -16,7 +16,7 @@ fn main() {
     let mut passed: Vec<OsString> = env::args_os().skip(1).collect();
     let stats = take_ryo_stats(&mut passed).unwrap_or_else(|msg| common::fail(&msg));
     let verbose_version = is_verbose_version(&passed);
-    let checked = env::var_os("RYO_JIT_CHECKED").is_some_and(|v| !v.is_empty() && v != "0");
+    let checked = common::jit_checked();
     let args = ryo_args(&common::dist_dir(), passed, checked).unwrap_or_else(|msg| common::fail(&msg));
     let mut cmd = common::toolchain_command("rustc");
     cmd.args(args);
@@ -164,12 +164,12 @@ pub fn take_ryo_stats(args: &mut Vec<OsString>) -> Result<Option<String>, String
 
 /// The `ryo_rt` rlib with the checked JIT in `sysroot`'s `jit-checked/`.
 fn checked_rt(sysroot: &Path) -> Result<PathBuf, String> {
-    let dir = sysroot.join("jit-checked");
+    let dir = sysroot.join(common::JIT_CHECKED_DIR);
     let found =
         std::fs::read_dir(&dir).ok().into_iter().flatten().flatten().map(|e| e.path()).find(|p| {
             p.extension().is_some_and(|e| e == "rlib") && p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("libryo_rt"))
         });
-    found.ok_or_else(|| format!("RYO_JIT_CHECKED: no ryo_rt rlib in {}; run `./y.sh build`", dir.display()))
+    found.ok_or_else(|| format!("{}: no ryo_rt rlib in {}; run `./y.sh build`", common::JIT_CHECKED_VAR, dir.display()))
 }
 
 // Run by `cargo test` in `build/`, which includes this file as a module.
