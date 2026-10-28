@@ -1,6 +1,6 @@
 /-
 Ryo.Vm.DecodeReduced — machine code back to R (aot.md §C2): `decodeReduced`, a port of Rust's
-`asm::decode_reduced` (`vm/bytecode/src/asm/decode.rs`, with `asm/reduced.rs`'s `words`).
+`asm::decode_reduced` (`vm/bytecode/src/asm/decode.rs`, with `asm/reduce.rs`'s `words`).
 
 It accepts only the canonical sequences (`asm::x86`, read by `Ryo.X86.decodeItem`), with operand
 registers set in order, and recovers every operand, the frame size and the unwind entries:

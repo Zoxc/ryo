@@ -1,7 +1,7 @@
 //! Instruction emission helpers: opcode selection by family and width, immediate operands.
 //!
 //! The families ([`IntOp`], [`FloatOp`]) and their tables come from the opcode list in
-//! `ryo_bytecode` (`ops.rs`); a missing combination is `None` there, and a lowering bug that
+//! `ryo_bytecode` (`full_ops.rs`); a missing combination is `None` there, and a lowering bug that
 //! panics with the mnemonic here.
 
 use ryo_bytecode::full::Opcode;

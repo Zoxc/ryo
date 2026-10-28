@@ -3,11 +3,11 @@
 //!
 //! - [`full`]: the full instruction set: opcodes ([`Opcode`], [`OP_INFO`]), the decoded
 //!   instruction type [`Insn`], decoder, encoder and disassembler. Generated from the opcode
-//!   list in `src/ops.rs`.
+//!   list in `src/isa/full_ops.rs`.
 //! - [`abi`]: frame header constants and [`abi::check_arg_block`], the argument block check.
 //! - [`asm`]: the machine-code form of instructions: handler register layouts, and (`alloc`)
 //!   the x86-64 encoder and decoder, and the mapping to the reduced set ([`asm::reduce`]).
-//! - [`reduced`]: the reduced instruction set, generated from `src/reduced_ops.rs`: the
+//! - [`reduced`]: the reduced instruction set, generated from `src/isa/reduced_ops.rs`: the
 //!   instructions that run as native code, and one `handler` instruction for the rest. It
 //!   shares [`full`]'s operand machinery (`define_ops!`), hence `full`'s `#[macro_use]`.
 //! - [`image`]: the image format, its zero-copy reader, the writer (`alloc`), and the portal
@@ -44,13 +44,13 @@ pub const ABI_TAG: &str = match option_env!("RYO_ABI") {
 pub const ABI: u64 = image::fnv1a(ABI_TAG.as_bytes());
 
 #[macro_use]
-pub mod full;
+mod isa;
 pub mod abi;
 pub mod asm;
 pub mod image;
 pub mod jit;
 pub mod jit_abi;
-pub mod reduced;
 pub mod vmem;
 
 pub use full::{ALL_OPCODES, Insn, OP_INFO, OpInfo, Opcode};
+pub use isa::{full, reduced};

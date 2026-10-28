@@ -674,7 +674,7 @@ macro_rules! reg_addr {
     };
 }
 
-/// Generates the handlers from the handler list. Every opcode with a handler in `ops.rs`
+/// Generates the handlers from the handler list. Every opcode with a handler in `full_ops.rs`
 /// must have one entry (checked by `HANDLED`, below).
 macro_rules! handlers {
     (() $($name:ident => $kind:ident ($($p:tt)*) $(-> $ret:tt)?;)*) => {
@@ -804,7 +804,7 @@ const _: () = {
     while i < Opcode::COUNT {
         let op = ryo_bytecode::ALL_OPCODES[i];
         let asm_written = matches!(op, Opcode::Resume);
-        assert!(HANDLED[i] == (asm::has_handler(op) && !asm_written), "the handler list doesn't match ops.rs");
+        assert!(HANDLED[i] == (asm::has_handler(op) && !asm_written), "the handler list doesn't match full_ops.rs");
         i += 1;
     }
 };

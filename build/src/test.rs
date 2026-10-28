@@ -284,8 +284,8 @@ const RULES: &[(&str, Rule)] = &[
     ("lean/", Rule::Lean),
     ("tests/lean/", Rule::Lean),
     ("vm/bytecode/src/asm/", Rule::Bytecode),
-    ("vm/bytecode/src/full.rs", Rule::Bytecode),
-    ("vm/bytecode/src/reduced.rs", Rule::Bytecode),
+    ("vm/bytecode/src/isa/full.rs", Rule::Bytecode),
+    ("vm/bytecode/src/isa/reduced.rs", Rule::Bytecode),
     ("vm/bytecode/src/abi.rs", Rule::Bytecode),
     ("vm/bytecode/src/jit", Rule::Jit),
     // The workspace run (the fast set) runs them.
@@ -1221,14 +1221,14 @@ mod tests {
         assert_eq!(rule("notes/x.md"), Some(Rule::Nothing));
         assert_eq!(rule("AGENTS.md"), Some(Rule::Nothing));
         assert_eq!(rule("lean/README.md"), Some(Rule::Lean));
-        assert_eq!(rule("vm/bytecode/src/full.rs"), Some(Rule::Bytecode));
+        assert_eq!(rule("vm/bytecode/src/isa/full.rs"), Some(Rule::Bytecode));
         assert_eq!(rule("vm/bytecode/src/jit/ssa.rs"), Some(Rule::Jit));
         assert_eq!(rule("vm/rt/src/vm/handlers.rs"), Some(Rule::Handlers));
         assert_eq!(rule("vm/rt/src/vm/interp.rs"), Some(Rule::Rt));
         assert_eq!(rule("vm/Cargo.lock"), Some(Rule::Full));
         assert_eq!(rule("bench/codegen/x.txt"), Some(Rule::Nothing));
         assert_eq!(rule("bench/x.rs"), Some(Rule::Full));
-        assert_eq!(rule("vm/bytecode/src/ops.rs"), None);
+        assert_eq!(rule("vm/bytecode/src/isa/full_ops.rs"), None);
         let mut sel = super::Sel::fast();
         assert!(sel.add_path("tests/vm_cross/lib2.rs").is_ok());
         assert!(sel.add_path("tests/vm_c/main.c").is_ok());

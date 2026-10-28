@@ -20,7 +20,7 @@ consequences of the memory model instead of extra rules (§C0.3).
 
 The reduced set (`reduced_ops.rs`, generated into Lean): native ops, and `handler h args neg
 t` where `args` are argument-register values: `Fp`, `Exception`, `Imm`, or the address of a
-`Const`/`Data`/`Sym`/`Site`/`Ro` (`reduced.rs`). Targets are instruction indices. Each
+`Const`/`Data`/`Sym`/`Site`/`Ro` (`isa/reduced.rs`). Targets are instruction indices. Each
 function comes with its side data, read from the image object by the Lean decoder: the scope
 table (escapes and storage ends,
 [vm.md](../../design/vm.md#escapes-storage-ends-and-island-operands)), the cleanup entries

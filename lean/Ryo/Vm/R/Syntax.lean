@@ -2,7 +2,7 @@
 Ryo.Vm.R.Syntax — the syntax of the reduced VM level R (reduced.md §C0.1), as the decoder
 gives it.
 
-Mirrors `vm/bytecode/src/reduced.rs` (`Arg`, the reduced `Insn`), `asm/reduced.rs` (`Then`,
+Mirrors `vm/bytecode/src/isa/reduced.rs` (`Arg`, the reduced `Insn`), `asm/reduce.rs` (`Then`,
 `Insn`: native instructions of the full set's reduced subset, and `handler h args neg t`),
 `asm/encode.rs` (`Opnd`, `Scope`, `ScopeKind`, `CallSite`) and `asm/decode.rs` (`Decoded`):
 
@@ -86,7 +86,7 @@ def targetsOf {T : Type} : Opnd T → List T
 
 end Opnd
 
-/-- What follows a handler call: its shape's control flow (`asm::reduced::Then`). -/
+/-- What follows a handler call: its shape's control flow (`asm::reduce::Then`). -/
 inductive Then (T : Type)
   /-- The next instruction (`op`, `lpad`). -/
   | next
@@ -113,7 +113,7 @@ def targets {T : Type} : Then T → List T
 
 end Then
 
-/-- A reduced instruction (`asm::reduced::Insn`), targets instruction indices: a native one
+/-- A reduced instruction (`asm::reduce::Insn`), targets instruction indices: a native one
 (an opcode of the reduced set other than `handler`), or a handler call. -/
 inductive Insn
   | native (op : Reduced.Opcode) (ops : List (Opnd Nat))

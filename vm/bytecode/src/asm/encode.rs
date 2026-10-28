@@ -12,7 +12,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use super::list::Hint;
-use super::reduced::Then;
+use super::reduce::Then;
 use super::x86::{Cond, Item, M, Reg, STACK_ARG, Sh, W, handler_reg, island_args, padding};
 use super::{ArgReg, Layout, Loc, Mode, RetPart, layout, ret_parts};
 use crate::full::{Const, Data, DecodeError, ElemKind, Func, Opcode, OperandKind, Shape, Sym};
@@ -1240,7 +1240,7 @@ impl Asm {
                     Some(items) => self.dense_index(items),
                     None => self.handler_call(op, ops, None),
                 }
-                self.table(super::reduced::switch_targets(op, ops));
+                self.table(super::reduce::switch_targets(op, ops));
             }
             Shape::Trap if op == Opcode::Unreachable => self.fixed(Item::Ud2),
             Shape::Trap => {

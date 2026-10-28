@@ -363,7 +363,7 @@ A plain `y test` runs the fast set plus the tests the changed paths select
   - `notes/`, `design/`, `.github/`, `*.md` outside `lean/`, `vm/bytecode/tests/` (the fast
     set runs them) and `bench/codegen/`: nothing extra.
   - `lean/`, `tests/lean/`: `y lean` (if `lake` is present).
-  - `vm/bytecode/src/{asm/,asm.rs,full.rs,reduced.rs,abi.rs}`: the whole corpus under `ryo`
+  - `vm/bytecode/src/{asm/,isa/,abi.rs}`: the whole corpus under `ryo`
     and the JIT variants, all six `ryo_jit` runs, the slow vm tests, `y lean`.
   - `vm/bytecode/src/jit*`, `vm/jit/`: all six `ryo_jit` runs, the corpus under the JIT
     variants (`ryo-jit-ssa`, `-osr`, `-shuffle` and the `ryo-std-jit*` ones), `jit-private-std`.

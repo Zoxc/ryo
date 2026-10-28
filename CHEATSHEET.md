@@ -47,7 +47,7 @@ and uses a JIT with debug assertions (`RYO_JIT_CHECKED=0` for the release one).
 ## Lean
 
 - `./y.sh lean`: checks the generated tables, then `lake build` and `lake test`.
-- `./y.sh lean gen`: regenerates the tables after editing `ops.rs`.
+- `./y.sh lean gen`: regenerates the tables after editing `full_ops.rs`.
 - `./y.sh lean --proofs`: also the slow proofs.
 - `(cd lean && lake build ryo-lean)`: rebuilds `ryo-lean` ("unknown opcode" means it's
   stale).

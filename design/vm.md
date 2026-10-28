@@ -106,7 +106,7 @@ native frames, and unwind natively ([Unwinding](#unwinding)). The runtime lives 
   its lowering emits machine code directly ([Machine code](#machine-code)). The first word holds the
   opcode (low 16 bits; the high 16 must be 0). The operands follow in list order, each with
   the words of its kind (`ryo_bytecode::full`).
-- The opcode list is defined once in `ryo_bytecode` (`vm/bytecode/src/ops.rs`): every opcode
+- The opcode list is defined once in `ryo_bytecode` (`vm/bytecode/src/isa/full_ops.rs`): every opcode
   with its mnemonic, its *shape* ([Machine code](#machine-code)) and its operands. The
   opcode enum, the operand table, the decoder, the encoder and the disassembler of
   instruction words, and the handler register layouts are all generated from it. Opcode
@@ -350,7 +350,7 @@ consists of: the instructions of the full set that run as native code, which are
 instructions and the instructions without a handler (`jmp`, the calls, `ret`, `arg`, `island`,
 `unreachable`), with
 the same mnemonics, shapes and operands, plus `handler` for every handler call. Its list
-(`vm/bytecode/src/reduced_ops.rs`) goes through the same `define_ops!` as the full one, so it
+(`vm/bytecode/src/isa/reduced_ops.rs`) goes through the same `define_ops!` as the full one, so it
 has its own `Opcode`, `Insn`, decoder, encoder and disassembly, in the same word encoding;
 `Opcode::full` and `Opcode::of_full` map between the two. Nothing stores it.
 

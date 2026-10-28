@@ -3,7 +3,7 @@
 //! [`crate::asm::reduce`]) is the subset of it that runs as native code, with every handler
 //! call one `handler` instruction.
 //!
-//! Everything here is derived from the single opcode list in `src/ops.rs`: the [`Opcode`]
+//! Everything here is derived from the single opcode list in `src/isa/full_ops.rs`: the [`Opcode`]
 //! enum, the [`OP_INFO`] table (mnemonic, operand names and kinds, fixed length), the decoded
 //! [`Insn`] enum, the decoder, the encoder and the [`Display`](fmt::Display) disassembly. So
 //! the VM, the backend's encoder and the disassembler can't drift apart.
@@ -1257,7 +1257,7 @@ macro_rules! define_ops {
     };
 }
 
-include!("ops.rs");
+include!("full_ops.rs");
 
 /// A code buffer for one function, with helpers to emit instructions and patch branch
 /// targets once the target position is known.

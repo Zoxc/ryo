@@ -2,12 +2,12 @@
 // parameters and, unless it is `()`, the handler's return type. Included by interp.rs,
 // whose `*_!` body macros implement the kinds. `handlers!` is invoked as
 // `for_each_handler!(handlers!())` and receives `Name => kind(params) [-> R]; ...`.
-// A family of ops.rs is one entry, `fam Add => kind(params) @ [W8(u8), W16(u16)];`: the
+// A family of full_ops.rs is one entry, `fam Add => kind(params) @ [W8(u8), W16(u16)];`: the
 // members `AddW8 => kind(u8, params); AddW16 => kind(u16, params);` (`fam Pre * Post` for
 // `PreW8Post`), the parameters of each width first.
 //
-// `ops.rs` has no handler for `jmp`, the calls, `ret`, `arg` and `island`; `resume` is
-// written in assembly (interp.rs). The list is checked against `ops.rs` when built.
+// `full_ops.rs` has no handler for `jmp`, the calls, `ret`, `arg` and `island`; `resume` is
+// written in assembly (interp.rs). The list is checked against `full_ops.rs` when built.
 // Kinds: integer types select the width and signedness (`i*` for `.s` forms), float
 // types the format; `Atomic*` the atomic type; orderings are `core::sync::atomic::Ordering`
 // variants. The `*_ptr` atomic kinds are `AtomicPtr`'s: the same machine operations as the

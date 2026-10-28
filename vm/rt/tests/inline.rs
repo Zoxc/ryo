@@ -1,7 +1,7 @@
 //! The inline sequences against the handlers: every opcode with an inline form, in random
 //! one-instruction functions run through the VM, and its handler called directly on a frame
 //! holding the same arguments and memory. The handlers are checked against a model in
-//! `ops.rs`.
+//! `full_ops.rs`.
 
 #![cfg(all(target_arch = "x86_64", any(target_os = "linux", target_vendor = "apple")))]
 
@@ -39,7 +39,7 @@ extern "win64" fn call_with_fp(a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: 
 }
 
 /// Calls `op`'s handler with `vals` (one per operand, in operand order) on frame `fp`, as
-/// `ops.rs` does.
+/// `full_ops.rs` does.
 fn call_handler(op: Opcode, vals: &[u128], fp: *mut u8) -> u64 {
     let l = layout(op, MODE);
     // A memory operand's instruction words are slot | k << 32; its registers take k in the

@@ -1,7 +1,7 @@
 # Instruction set
 
 The VM's instructions, as the lowering emits them: the *full* set, defined once in
-`vm/bytecode/src/ops.rs`. Each instruction has a mnemonic, a *shape* that says how it runs
+`vm/bytecode/src/isa/full_ops.rs`. Each instruction has a mnemonic, a *shape* that says how it runs
 as machine code, and typed operands ([vm.md](vm.md#instruction-words)).
 
 This file says what each instruction does, where the lowering ([lowering.md](lowering.md))
@@ -12,7 +12,7 @@ uses it, and what machine code it becomes ([vm.md](vm.md#machine-code)). That is
   `unreachable`);
 - a call of its handler `ryo_h_<Opcode>` in `ryo_rt` ([vm.md](vm.md#handlers)).
 
-The native ones are the *reduced* set (`vm/bytecode/src/reduced_ops.rs`,
+The native ones are the *reduced* set (`vm/bytecode/src/isa/reduced_ops.rs`,
 [vm.md](vm.md#reduced-instructions)), plus `handler` for every handler call.
 
 ## Conventions

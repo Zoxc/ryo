@@ -4,7 +4,7 @@
 //! full opcode whose handler it calls, the values of its argument registers and the control
 //! flow after the call.
 //!
-//! Generated from the list in `src/reduced_ops.rs` like the full set from `src/ops.rs`:
+//! Generated from the list in `src/isa/reduced_ops.rs` like the full set from `src/isa/full_ops.rs`:
 //! [`Opcode`], [`OP_INFO`], the decoded [`Insn`], its decoder, encoder and disassembly, in the
 //! same word encoding. [`Opcode::full`] and [`Opcode::of_full`] map between the sets.
 //! [`crate::asm::reduce`] maps full code to it, and [`crate::asm::decode_reduced`] reads

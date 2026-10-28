@@ -39,7 +39,7 @@ L2  x86-64 subset (asm::x86::Item, prologue, stubs, OSR code)                 Pa
 
 - **No full-VM level.** The lowering calls `Asm::insn(opcode, operands)`, which turns each
   instruction straight into x86 pieces; images store no instruction words, and nothing
-  executes them. What survives of the full set is the **opcode vocabulary** (`ops.rs`): it
+  executes them. What survives of the full set is the **opcode vocabulary** (`full_ops.rs`): it
   names the handlers, `asm::layout`, and the native reduced ops. Its meaning lives in one
   per-handler-kind library, `opSem` (§1.3, Part D), that both native R instructions and
   handler contracts use.
@@ -140,7 +140,7 @@ plan validates offline: the guarantee covers every compilation the test corpus p
 
   So an inline form and a handler call of the same opcode agree by construction, which
   matters because `is_native(op, ops)` depends on the operands.
-- **Generated tables.** The opcode list (`ops.rs`, `reduced_ops.rs`), shapes, operand kinds,
+- **Generated tables.** The opcode list (`full_ops.rs`, `reduced_ops.rs`), shapes, operand kinds,
   `asm::layout`, handler kinds (`handlers.rs`) and the `Item` byte forms are generated into
   Lean (`lean/Ryo/Vm/Generated/*.lean`) by a small Rust program in the workspace, which
   fails when they are stale, so Lean and Rust can't drift.

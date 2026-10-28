@@ -14,7 +14,7 @@ use super::encode::{
 };
 use super::inline::Cache;
 use super::list::{Hint, InsnList};
-use super::reduced::{self, Then, addr_arg};
+use super::reduce::{self, Then, addr_arg};
 use super::x86::{BadItem, Cond, Cursor, Fields, Item, M, Reg, STACK_ARG, W, handler_reg, island_args};
 use super::{ARG_ADDR, ArgReg, Mode, RetPart, has_handler, layout, ret_kind};
 use crate::full::{ElemKind, Opcode, OperandKind, Shape, Sym};
@@ -236,15 +236,15 @@ fn reduced_of(r: Read, pe: bool) -> Result<Decoded, AsmError> {
                     Then::Table(ts) => Then::Table(ts.into_iter().map(|t| index(at, t)).collect::<Result<_, _>>()?),
                     Then::Trap => Then::Trap,
                 };
-                reduced::Insn::Handler(p.op, args, then)
+                reduce::Insn::Handler(p.op, args, then)
             }
             None => {
                 let ops = p.ops.into_iter().map(|o| o.map_targets(|b| index(at, b))).collect::<Result<_, _>>()?;
-                reduced::Insn::Native(p.op, ops)
+                reduce::Insn::Native(p.op, ops)
             }
         });
     }
-    let d = reduced::words(&insns, &cleanup, &scopes, &dropped, frame_size, pe);
+    let d = reduce::words(&insns, &cleanup, &scopes, &dropped, frame_size, pe);
     debug_assert_eq!(d.heads.len(), heads.len());
     Ok(d)
 }

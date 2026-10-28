@@ -3,7 +3,7 @@
 import Ryo.Vm.Generated.Types
 
 /-!
-# The reduced opcode list (`vm/bytecode/src/reduced_ops.rs`)
+# The reduced opcode list (`vm/bytecode/src/isa/reduced_ops.rs`)
 
 The full opcodes that run as native code (inline or without a handler), with the same
 mnemonics, shapes and operands, plus `handler`. `Opcode.full` and `Opcode.ofFull` are

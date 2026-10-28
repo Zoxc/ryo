@@ -95,7 +95,7 @@ def tySize (t : String) : Option Nat := (Ty.parse t).map Ty.size
 private def rd (n : String) (k : Nat) : Access := ⟨n, .bytes k⟩
 
 /-- The footprint of a handler kind with its parameters (`HandlerInfo`); `none` if a type
-parameter is unknown. Operand names follow `ops.rs`'s conventions, which the tests check
+parameter is unknown. Operand names follow `full_ops.rs`'s conventions, which the tests check
 against every opcode's operands. -/
 def footprintOf (k : HandlerKind) (ps : List String) : Option Footprint := do
   let w : Option Nat := ps.head?.bind tySize

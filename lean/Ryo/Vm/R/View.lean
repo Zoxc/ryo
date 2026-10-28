@@ -11,7 +11,7 @@ from its argument registers, and `view`, an R instruction as a full opcode with 
 - `view mode ρ i`: a native instruction as its full opcode with its operands as `Val`s; a
   `handler h args t` as `h` with `unpack` and `t`. It mirrors Rust's `asm::decode`, which reads
   the same machine code to full instructions (`insn`, `handler_operands`, `then`), and the
-  checks `encode_reduced` makes of a `handler` (`asm/reduced.rs`).
+  checks `encode_reduced` makes of a `handler` (`asm/reduce.rs`).
 
 **Addresses.** `Val.addr` is a pointer with provenance, which the argument doesn't carry: the
 argument names a constant, data offset, symbol slot or code constant, whose

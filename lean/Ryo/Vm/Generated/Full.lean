@@ -3,7 +3,7 @@
 import Ryo.Vm.Generated.Types
 
 /-!
-# The full opcode list (`vm/bytecode/src/ops.rs`)
+# The full opcode list (`vm/bytecode/src/isa/full_ops.rs`)
 
 `opInfos` is `full::OP_INFO`, and `Opcode.<name>` the opcode of Rust's `Opcode::<Name>`.
 -/
