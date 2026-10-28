@@ -114,8 +114,7 @@ impl NativeLib {
             c.args(["--target", t]);
         }
         crate::utils::run(&mut c)?;
-        let msvc = target.unwrap_or(&info.host).contains("msvc");
-        let lib = if msvc { format!("{}.lib", self.name) } else { format!("lib{}.a", self.name) };
+        let lib = crate::target::static_lib_name(target.unwrap_or(&info.host), self.name);
         let ar = info.tool("llvm-ar");
         crate::utils::run(cmd(ar).arg("rcs").arg(dir.join(lib)).arg(&obj))
     }

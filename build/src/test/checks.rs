@@ -376,7 +376,7 @@ pub(super) fn same_exports(info: &crate::utils::RustcInfo, rustc_ryo: &Path, src
             // `ryo_bytecode`, the handlers included. A cdylib and an executable export none.
             let runtime = |s: &str| s.contains("6ryo_rt") || s.contains("12ryo_bytecode") || is_rt_internal(s);
             let mut syms: Vec<String> =
-                syms.lines().map(|s| crate::jit::unprefixed(&info.host, s)).filter(|s| !runtime(s)).map(str::to_owned).collect();
+                syms.lines().map(|s| crate::target::unprefixed(&info.host, s)).filter(|s| !runtime(s)).map(str::to_owned).collect();
             syms.sort();
             lists.push(syms);
         }
@@ -441,7 +441,7 @@ pub(crate) fn rt_core_only(info: &crate::utils::RustcInfo, root: &Path, triple: 
         let bad: Vec<&str> = syms
             .lines()
             .map(str::trim)
-            .map(|s| crate::jit::unprefixed(triple, s))
+            .map(|s| crate::target::unprefixed(triple, s))
             .filter(|s| {
                 if let Some(member) = s.strip_suffix(':') {
                     in_jit = member == crate::jit::OBJECT;
@@ -586,7 +586,7 @@ pub(super) fn panic_path(objdump: &Path, rt: &Path, bytecode: &Path, triple: &st
                 continue;
             }
             if let Some((_, name)) = line.strip_suffix(">:").and_then(|l| l.split_once(" <")) {
-                let name = crate::jit::unprefixed(triple, name).to_owned();
+                let name = crate::target::unprefixed(triple, name).to_owned();
                 if is_rt {
                     roots.push(name.clone());
                 }
@@ -596,7 +596,7 @@ pub(super) fn panic_path(objdump: &Path, rt: &Path, bytecode: &Path, triple: &st
                 (&cur, line.find("R_X86_64_").or_else(|| line.find("X86_64_RELOC_")).or_else(|| line.find("IMAGE_REL_AMD64_")))
             {
                 let target = line[i..].split_whitespace().nth(1).unwrap_or("");
-                let target = crate::jit::unprefixed(triple, target.split(['+', '-']).next().unwrap_or("")).to_owned();
+                let target = crate::target::unprefixed(triple, target.split(['+', '-']).next().unwrap_or("")).to_owned();
                 edges.entry(f.clone()).or_default().push(target);
             }
         }

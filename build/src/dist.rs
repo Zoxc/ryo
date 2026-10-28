@@ -192,7 +192,7 @@ fn build_runtime(
     let metadata = format!("-Cmetadata={tag}");
     let mut rustflags = vec![sysroot_flag.as_str(), "-Ccodegen-units=1", "-Cpanic=unwind", metadata.as_str()];
     // Windows: no red zone in the `sysv64` handlers either (design/platforms.md).
-    if cross.map_or(cfg!(windows), |t| t.contains("-windows")) {
+    if cross.map_or(cfg!(windows), crate::target::is_windows) {
         rustflags.push(crate::jit::NO_REDZONE);
     }
     let mut cargo = cmd("cargo");

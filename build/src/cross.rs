@@ -117,10 +117,10 @@ pub fn run(target: &str) -> Result<(), String> {
     let _ = fs::remove_dir_all(&out);
     let stubs = out.join("stub-libs");
     crate::utils::create_dir(&stubs)?;
-    let macho = crate::jit::macho(target);
+    let macho = crate::target::is_macho(target);
     if macho {
         for lib in STUB_LIBS_MACHO {
-            crate::utils::write(stubs.join(format!("lib{lib}.a")), b"!<arch>\n")?;
+            crate::utils::write(stubs.join(crate::target::static_lib_name(target, lib)), b"!<arch>\n")?;
         }
         // std's dylib loads libSystem by its install name, which lld looks up as a text stub
         // under the SDK root (`SDKROOT`, below): one that exports nothing.
@@ -129,7 +129,7 @@ pub fn run(target: &str) -> Result<(), String> {
         crate::utils::write(usr_lib.join("libSystem.B.tbd"), LIBSYSTEM_TBD)?;
     } else {
         for lib in STUB_LIBS {
-            crate::utils::write(stubs.join(format!("{lib}.lib")), b"!<arch>\n")?;
+            crate::utils::write(stubs.join(crate::target::static_lib_name(target, lib)), b"!<arch>\n")?;
         }
     }
     let rt_imports = if macho { RT_IMPORTS_MACHO } else { RT_IMPORTS };

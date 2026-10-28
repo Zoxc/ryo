@@ -5,6 +5,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::target::{is_coff, is_macho, is_windows, static_lib_name, symbol, unprefixed};
 use crate::utils::{RustcInfo, cmd, output, run};
 
 /// The JIT's one global symbol, before the ABI tag: `ryo_jit_start_<tag>`.
@@ -17,42 +18,17 @@ pub const OBJECT: &str = "ryo_jit.o";
 /// the tag and `$`, so that two ryo builds' sealed objects never define the same name.
 const COFF_PREFIX: &str = "__ryo_jit$";
 
-/// The symbol `s` of an object for `triple` as its C or Rust name: without Mach-O's `_`.
-pub fn unprefixed<'a>(triple: &str, s: &'a str) -> &'a str {
-    if macho(triple) { s.strip_prefix('_').unwrap_or(s) } else { s }
-}
-
 /// Whether `ryo_rt` gets the JIT on `triple`: x86_64 Linux, windows-msvc and macOS
 /// (design/jit.md#packaging). Elsewhere `ryo_rt` has no `jit` feature, and its trips are the
 /// no-op JIT.
 pub fn supported(triple: &str) -> bool {
-    triple.starts_with("x86_64-") && (triple.contains("-linux-") || coff(triple) || macho(triple))
-}
-
-/// Whether `triple` is a Mach-O (Apple) target.
-pub fn macho(triple: &str) -> bool {
-    triple.contains("-apple-")
-}
-
-/// The object-file name of the C symbol `name` on `triple`: Mach-O prefixes an `_`.
-pub fn symbol(triple: &str, name: &str) -> String {
-    if macho(triple) { format!("_{name}") } else { name.to_owned() }
+    triple.starts_with("x86_64-") && (triple.contains("-linux-") || is_coff(triple) || is_macho(triple))
 }
 
 /// The flag that keeps `ryo_rt`'s and the JIT's code for Windows out of the memory below
 /// `rsp`: LLVM gives `sysv64` functions a red zone by their convention, even on Windows,
 /// where exception dispatch, APCs and debuggers may write there (design/platforms.md).
 pub const NO_REDZONE: &str = "-Cno-redzone=yes";
-
-/// Whether `triple` is a COFF (windows-msvc) target.
-fn coff(triple: &str) -> bool {
-    triple.ends_with("-windows-msvc")
-}
-
-/// The sealed library's file name for `triple`, as `-l static=ryo_jit` looks for it.
-pub fn lib_name(triple: &str) -> &'static str {
-    if coff(triple) { "ryo_jit.lib" } else { "libryo_jit.a" }
-}
 
 /// Builds `ryo_jit` for `triple` (`cross` unless it is the host) as a staticlib, with fat LTO
 /// against the toolchain's std (the one `dist/` copies), and seals it into
@@ -81,7 +57,7 @@ pub fn build(root: &Path, target: &Path, info: &RustcInfo, triple: &str, cross: 
     let target_dir = target.join(if checked { "jit-checked" } else { "jit" });
     let mut rustflags: Vec<&str> = Vec::new();
     // Its trips are `sysv64` code too: no red zone on Windows (design/platforms.md).
-    if triple.contains("-windows") {
+    if is_windows(triple) {
         rustflags.push(NO_REDZONE);
     }
     if checked {
@@ -110,7 +86,7 @@ pub fn build(root: &Path, target: &Path, info: &RustcInfo, triple: &str, cross: 
     if let Some(t) = cross {
         built.push(t);
     }
-    let staticlib = built.join("release").join(lib_name(triple));
+    let staticlib = built.join("release").join(static_lib_name(triple, "ryo_jit"));
     let out = target_dir.join("sealed").join(triple);
     seal(info, &staticlib, &out, triple, tag)?;
     Ok(out)
@@ -146,12 +122,12 @@ fn seal(info: &RustcInfo, staticlib: &Path, out: &Path, triple: &str, tag: &str)
     let lto = lto_member(&members)?;
     run(cmd(&ar).arg("x").arg(staticlib).arg(&lto).arg("--output").arg(out))?;
     let obj = out.join(OBJECT);
-    let lib = out.join(lib_name(triple));
+    let lib = out.join(static_lib_name(triple, "ryo_jit"));
     // Without debug information (std's, mostly), which would land in every binary; local
     // symbols stay, for profilers and backtraces of the JIT thread.
     let mut seal = cmd(&objcopy);
     seal.arg("--strip-debug");
-    if coff(triple) {
+    if is_coff(triple) {
         let nm = info.tool("llvm-nm");
         let defined = output(cmd(&nm).args(["--extern-only", "--defined-only", "--no-demangle", "-j"]).arg(out.join(&lto)))?;
         let renames: String = defined.lines().map(str::trim).filter(|s| coff_renamed(s)).map(|s| format!("{s} {COFF_PREFIX}{tag}${s}\n")).collect();
@@ -163,7 +139,7 @@ fn seal(info: &RustcInfo, staticlib: &Path, out: &Path, triple: &str, tag: &str)
     }
     run(seal.arg(out.join(&lto)).arg(&obj))?;
     fs::remove_file(out.join(&lto)).map_err(|e| e.to_string())?;
-    if coff(triple) {
+    if is_coff(triple) {
         // The staticlib without its objects: its import members, then the sealed object.
         crate::utils::copy(staticlib, &lib)?;
         let mut objects: Vec<&str> = members.lines().map(str::trim).filter(|m| !m.is_empty() && !m.ends_with(".dll")).collect();
@@ -171,7 +147,7 @@ fn seal(info: &RustcInfo, staticlib: &Path, out: &Path, triple: &str, tag: &str)
         objects.dedup();
         run(cmd(&ar).arg("d").arg(&lib).args(&objects))?;
         run(cmd(&ar).arg("r").arg(&lib).arg(&obj))
-    } else if macho(triple) {
+    } else if is_macho(triple) {
         run(cmd(&ar).args(["rcs", "--format=darwin"]).arg(&lib).arg(&obj))
     } else {
         run(cmd(&ar).arg("rcs").arg(&lib).arg(&obj))
@@ -222,7 +198,7 @@ pub fn check_sealed(info: &RustcInfo, rlib: &Path, dir: &Path, triple: &str) -> 
     };
     let globals = names(&["--extern-only", "--defined-only"])?;
     let bad: Vec<&String> =
-        globals.iter().filter(|s| !s.starts_with(START) && (!coff(triple) || (coff_renamed(s) && !s.starts_with(COFF_PREFIX)))).collect();
+        globals.iter().filter(|s| !s.starts_with(START) && (!is_coff(triple) || (coff_renamed(s) && !s.starts_with(COFF_PREFIX)))).collect();
     if !bad.is_empty() || globals.iter().filter(|s| s.starts_with(START)).count() != 1 {
         return Err(format!("{} defines globals {bad:?} (and must define one {START}<tag>)", obj.display()));
     }
@@ -235,13 +211,13 @@ pub fn check_sealed(info: &RustcInfo, rlib: &Path, dir: &Path, triple: &str) -> 
     if !unwinder.is_empty() {
         return Err(format!("{} defines the unwinder's {unwinder:?}", obj.display()));
     }
-    if coff(triple) {
+    if is_coff(triple) {
         let sections = output(cmd(info.tool("llvm-objdump")).arg("-h").arg(&obj))?;
         if let Some(s) = sections.lines().find(|l| l.contains(".drectve") || l.contains(".CRT$X")) {
             return Err(format!("{} has the section {}", obj.display(), s.trim()));
         }
     }
-    if macho(triple) {
+    if is_macho(triple) {
         let sections = output(cmd(info.tool("llvm-objdump")).arg("-h").arg(&obj))?;
         if let Some(s) = sections.lines().find(|l| l.contains("__mod_init_func") || l.contains("__init_offsets") || l.contains("__mod_term_func")) {
             return Err(format!("{} has the section {}", obj.display(), s.trim()));
@@ -279,7 +255,5 @@ mod tests {
         assert!(super::supported("x86_64-apple-darwin"));
         assert!(!super::supported("aarch64-apple-darwin"));
         assert!(!super::supported("x86_64-pc-windows-gnu"));
-        assert_eq!(super::symbol("x86_64-apple-darwin", "ryo_jit_start"), "_ryo_jit_start");
-        assert_eq!(super::symbol("x86_64-unknown-linux-gnu", "ryo_jit_start"), "ryo_jit_start");
     }
 }

@@ -9,6 +9,7 @@ mod install;
 mod jit;
 mod lean;
 mod sysroot;
+mod target;
 mod test;
 mod utils;
 
