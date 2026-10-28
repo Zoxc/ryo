@@ -1908,6 +1908,106 @@ fn pe_frames_at(saves: PeSaves, shuffle: bool, k: Option<i64>) {
     }
 }
 
+/// PE vectors through the SSA tier: ten vectors live around a loop, enough to take
+/// `xmm6`–`xmm13` (and the scratch `xmm14`, `xmm15`), which the prologue saves for the Win64
+/// caller and the OSR entries save as they find them, entered at the entry and by OSR. The
+/// results are the AOT code's, and every callee-saved register of Win64 survives.
+/// f(pa, n): v_i = pa[16i..] for i < 10, d = 0; for j < n { for i < 10 { d = xor(d, v_i);
+/// d = or(d, veq(d, v_((i + 3) % 10))); d = xor(d, vlt.s(v_i, d)) } }; ret vmsb(d).
+#[test]
+fn pe_vectors() {
+    let (_g, before) = start();
+    let mut n_compiled = 0;
+    for k in [None, Some(0i64), Some(3)] {
+        pe_vectors_at(k);
+        n_compiled += 1;
+    }
+    check_stats(before, n_compiled);
+}
+
+fn pe_vectors_at(k: Option<i64>) {
+    let what = format!("osr at {k:?}");
+    let mut w = ImageWriter::new(unique_scid());
+    let mut defs = Defs::default();
+    let v = |i: i32| Slot(-32 - 16 * i);
+    let (d, t, j, m, x) = (Slot(-192), Slot(-208), Slot(-216), Slot(-224), Slot(-232));
+    let mut a = Asm::new();
+    for i in 0..10 {
+        a.i(Insn::LoadCopy { d: v(i), m: Mem { p: Slot(48), k: 16 * i }, len: 16 });
+    }
+    a.i(Insn::Zero { d, len: 16 });
+    a.i(Insn::ImmW64 { d: j, imm: 0 });
+    let head = a.i(Insn::BrLtUW64 { a: j, b: Slot(56), neg: F, t: Target(0) });
+    for i in 0..10 {
+        a.i(Insn::XorW128 { d, a: d, b: v(i) });
+        a.i(Insn::VeqI8x16 { d: t, a: d, b: v((i + 3) % 10) });
+        a.i(Insn::OrW128 { d, a: d, b: t });
+        a.i(Insn::VltSI8x16 { d: t, a: v(i), b: d });
+        a.i(Insn::XorW128 { d, a: d, b: t });
+    }
+    a.i(Insn::AddImmW64 { d: j, a: j, imm: 1 });
+    let back = a.i(Insn::Jmp { t: Target(0) });
+    a.patch(back, "t", head);
+    let done = a.i(Insn::VmsbI8x16 { d: m, a: d });
+    a.patch(head, "t", done);
+    a.i(Insn::ZextW16W64 { d: x, s: m });
+    a.ret(x, 8);
+    let f = defs.add(&mut w, func(a.done(), 256, 16, 8), vec![]);
+    w.prepare(PE);
+    w.validate_functions().unwrap();
+    let enc = defs.0.iter().map(|(f, sc)| ryo_bytecode::asm::encode(&f.code, f.frame_size, &f.cleanup, sc, PE).unwrap()).collect();
+    let mut obj = w.finish_encoded(enc).unwrap();
+    // Off Windows nothing reads `.pdata` and `.xdata`.
+    obj.relocs.retain(|r| r.kind != ryo_bytecode::image::RelocKind::Rva32);
+    obj.unwind.clear();
+    let img = link(obj, &[]);
+    register(&[&img]);
+
+    let vs = simd_vectors();
+    let buf: Vec<u8> = (0..10).flat_map(|i| vs[(3 * i + 1) % vs.len()]).collect();
+    let n = 7u64;
+    let mut saved = [
+        0x1111111111111111u64,
+        0x2222222222222222,
+        0x3333333333333333,
+        0x4444444444444444,
+        0x5555555555555555,
+        0x6666666666666666,
+        0x7777777777777777,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ];
+    for x in 6..16u64 {
+        saved[x as usize + 1] = x * 0x0101010101010101;
+    }
+    // The AOT code first: no trips.
+    img.set_counters(f, -(1 << 40), -(1 << 40));
+    let mut regs = [0u64; 17];
+    let want = call_checked_pe(img.code(f), buf.as_ptr() as u64, n, &mut regs, 0);
+    assert_eq!(regs, saved, "{what}: AOT: callee-saved registers");
+    match k {
+        None => img.trip_after(f, 0, 0),
+        Some(k) => img.trip_after(f, 1, k),
+    }
+    for call in 0..2 {
+        let mut regs = [0u64; 17];
+        let got = call_checked_pe(img.code(f), buf.as_ptr() as u64, n, &mut regs, 0);
+        assert_eq!(got, want, "{what}, call {call}");
+        // The first call's trip into the JIT is Linux code: it keeps only the SysV registers.
+        let nr = if call == 0 { 7 } else { 17 };
+        assert_eq!(regs[..nr], saved[..nr], "{what}, call {call}: callee-saved registers");
+        assert_eq!(state(&img, f), JIT_DONE, "{what}");
+    }
+}
+
 /// Loads from the constant pool, which the SSA tier folds: a vtable-like constant's function
 /// pointer (called through), its pointer to a string (read through), its plain field, a
 /// partial read of a pointer field (which stays a load), and a 16-byte `const` copy of a

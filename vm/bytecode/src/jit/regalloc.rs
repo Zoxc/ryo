@@ -4,8 +4,9 @@
 //!
 //! Two register classes: 1 to 8-byte values take general-purpose registers, 16-byte vectors
 //! `xmm` registers ([`xmm_registers`]). No `xmm` register is callee-saved for the SSA tier
-//! (SysV has none; on PE it never names `xmm6`–`xmm15`), so a vector live across a call
-//! lives in a 16-byte spill slot (two 8-byte ones).
+//! (SysV has none; on PE the prologue saves the `xmm6`–`xmm15` it uses for its caller, but
+//! values don't live in them across calls), so a vector live across a call lives in a
+//! 16-byte spill slot (two 8-byte ones).
 
 use alloc::vec::Vec;
 
@@ -25,10 +26,10 @@ pub enum Loc {
 }
 
 /// The allocatable `xmm` registers, and the emitter's two scratch ones: `xmm0`–`xmm13` and
-/// `xmm14`, `xmm15`; on PE, where `xmm6`–`xmm15` are callee-saved and the SSA tier never
-/// names them, `xmm0`–`xmm3` and `xmm4`, `xmm5`.
-pub fn xmm_registers(pe: bool) -> (core::ops::Range<u8>, [u8; 2]) {
-    if pe { (0..4, [4, 5]) } else { (0..14, [14, 15]) }
+/// `xmm14`, `xmm15`. The same on PE, where the prologue saves the callee-saved `xmm6`–`xmm15`
+/// the code uses (the emit module's `xmm_saves`).
+pub fn xmm_registers() -> (core::ops::Range<u8>, [u8; 2]) {
+    (0..14, [14, 15])
 }
 
 /// The spill slots a value of `w` bytes takes.
@@ -547,7 +548,7 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
     let mut free = [true; 16];
     let mut saved = Vec::new();
     // The same for the vectors' `xmm` registers.
-    let (xregs, _) = xmm_registers(f.pe);
+    let (xregs, _) = xmm_registers();
     let mut xactive: Vec<(u32, usize, u8)> = Vec::new();
     let mut xfree = [true; 16];
     for v in order {
@@ -721,7 +722,7 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
 pub fn check(f: &Func, al: &Alloc, frame_pointer: bool) -> Result<(), alloc::string::String> {
     use alloc::format;
     let live = live_in(f);
-    let (xregs, _) = xmm_registers(f.pe);
+    let (xregs, _) = xmm_registers();
     // A location's numbers: registers, `xmm` registers from 16, spill slots from 32 (two for
     // a vector).
     let slot = |v: Value| -> Option<(usize, usize)> {

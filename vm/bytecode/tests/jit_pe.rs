@@ -1,8 +1,9 @@
 //! The SSA tier's PE frames (`ryo_bytecode::jit`, PE mode): each function's prologue is run
 //! symbolically and unwound at every step by its `UNWIND_INFO`, as the Win64 unwinder does
 //! (`RtlVirtualUnwind`), which must give back the caller's `rsp` and every callee-saved
-//! register; its epilogues must restore them in the form the unwinder recognizes; and no code
-//! touches `xmm6`–`xmm15`. The functions take callee-saved registers across calls, with saves
+//! register (and `xmm6`–`xmm15`, saved to 16-byte aligned slots); its epilogues must restore
+//! them in the form the unwinder recognizes; and every `xmm6`–`xmm15` the code names has a
+//! save. The functions take callee-saved registers across calls, with saves
 //! pushed and, below a pinned alloca, stored; a frame that probes the stack; tail calls.
 
 use std::collections::HashMap;
@@ -57,6 +58,8 @@ const CALLEE_SAVED: [u8; 8] = [3, 5, 6, 7, 12, 13, 14, 15];
 #[derive(Clone, Debug)]
 struct State {
     regs: [u64; 16],
+    /// The `xmm` registers, one symbolic value each (`0x2000 + n` in the caller).
+    xmm: [u64; 16],
     mem: HashMap<i64, u64>,
 }
 
@@ -69,7 +72,7 @@ impl State {
     fn entry() -> State {
         let mut regs: [u64; 16] = std::array::from_fn(|n| 0x1000 + n as u64);
         regs[RSP] = 0;
-        State { regs, mem: HashMap::from([(0, RET)]) }
+        State { regs, xmm: std::array::from_fn(|n| 0x2000 + n as u64), mem: HashMap::from([(0, RET)]) }
     }
     fn rsp(&self) -> i64 {
         self.regs[RSP] as i64
@@ -90,6 +93,9 @@ fn i32_at(c: &[u8], k: usize) -> i64 {
 /// Runs the one instruction at `c[k..]` of the forms a PE prologue or epilogue has, and
 /// returns its length, or `None` for anything else.
 fn step(s: &mut State, c: &[u8], k: usize) -> Option<usize> {
+    if c[k] == 0x66 {
+        return step_xmm(s, c, k);
+    }
     let (rex, o) = if c[k] & 0xf0 == 0x40 { (c[k], k + 1) } else { (0, k) };
     let (b, r) = ((rex & 1) << 3, (rex & 4) << 1);
     let op = c[o];
@@ -149,6 +155,49 @@ fn step(s: &mut State, c: &[u8], k: usize) -> Option<usize> {
     }
 }
 
+/// `movdqa [rbp + disp], x` or `movdqa x, [rbp + disp]`, its slot 16-byte aligned (the
+/// entry's `rsp`, 0 here, is 8 modulo 16).
+fn step_xmm(s: &mut State, c: &[u8], k: usize) -> Option<usize> {
+    let (rex, o) = if c[k + 1] & 0xf0 == 0x40 { (c[k + 1], k + 2) } else { (0, k + 1) };
+    if c[o] != 0x0f || !matches!(c[o + 1], 0x6f | 0x7f) || rex & 0xb != 0 {
+        return None;
+    }
+    let m = c[o + 2];
+    let (md, x, rm) = (m >> 6, ((m >> 3) & 7) | (rex & 4) << 1, m & 7);
+    if rm != 5 {
+        return None;
+    }
+    let (disp, end) = match md {
+        1 => (i8_at(c, o + 3), o + 4),
+        2 => (i32_at(c, o + 3), o + 7),
+        _ => return None,
+    };
+    let a = s.regs[RBP] as i64 + disp;
+    assert_eq!(a.rem_euclid(16), 8, "an xmm slot at {a}, not 16-byte aligned");
+    if c[o + 1] == 0x7f {
+        s.mem.insert(a, s.xmm[x as usize]);
+    } else {
+        s.xmm[x as usize] = s.load(a);
+    }
+    Some(end - k)
+}
+
+/// The length of the `movdqa x, [rbp + disp]` ending at `c[..b]`, if one does.
+fn xmm_restore_before(c: &[u8], b: usize) -> Option<usize> {
+    [5, 6, 8, 9].into_iter().find(|&n| {
+        let Some(i) = b.checked_sub(n).map(|a| &c[a..b]) else { return false };
+        let rex = n % 3 == 0;
+        let i = if rex && i[1] == 0x44 {
+            &i[2..]
+        } else if !rex {
+            &i[1..]
+        } else {
+            return false;
+        };
+        i[..2] == [0x0f, 0x6f] && i[2] & 0xc7 == if n < 8 { 0x45 } else { 0x85 } && c[b - n] == 0x66
+    })
+}
+
 /// The unwind codes of `info`: (offset after the operation, op, info, operand).
 fn codes(info: &[u8]) -> Vec<(u8, u8, u8, u32)> {
     let n = info[2] as usize;
@@ -195,7 +244,8 @@ fn unwind(info: &[u8], at: Option<u32>, s: &State) -> State {
             1 | 2 => u.regs[RSP] = (u.rsp() + arg as i64) as u64,
             3 => u.regs[RSP] = frame as u64,
             4 | 5 => u.regs[i as usize] = u.load(frame + arg as i64),
-            _ => panic!("an xmm save"),
+            8 | 9 => u.xmm[i as usize] = u.load(frame + arg as i64),
+            _ => panic!("unwind code {op}"),
         }
     }
     assert_eq!(u.load(u.rsp()), RET, "the return address");
@@ -209,6 +259,9 @@ fn check_caller(u: &State, what: &str) {
     for r in CALLEE_SAVED.iter().filter(|&&r| r as usize != RSP) {
         assert_eq!(u.regs[*r as usize], 0x1000 + *r as u64, "{what}: register {r}");
     }
+    for x in 6..16 {
+        assert_eq!(u.xmm[x], 0x2000 + x as u64, "{what}: xmm{x}");
+    }
 }
 
 /// What [`check_frames`] found.
@@ -221,6 +274,8 @@ struct Found {
     probe: bool,
     /// Whether some are in the home space above the return address.
     home: bool,
+    /// The `xmm` saves the unwind codes describe.
+    xsaves: usize,
 }
 
 /// The checks of the module documentation on `o`.
@@ -250,6 +305,7 @@ fn check_frames(o: &Output, what: &str) -> Found {
     let stored = cs.iter().any(|x| x.1 == 4);
     let k = 16 * (info[3] >> 4) as u32;
     let home = cs.iter().any(|x| x.1 == 4 && x.3 >= k + 16);
+    let xsaved: Vec<u8> = cs.iter().filter(|x| x.1 == 8 || x.1 == 9).map(|x| x.2).collect();
     // Epilogues: `lea rsp, [rbp + d]` (with a register restore by `mov`s before it, body
     // code), only pops after it, then `ret`, a `jmp rel32`, `jmp [rip + d]` or `rex.w jmp r`.
     let mut epilogues = 0;
@@ -258,14 +314,24 @@ fn check_frames(o: &Output, what: &str) -> Found {
             continue;
         }
         let mut t = s.clone();
+        // The body may have changed the saved `xmm` registers.
+        for &x in &xsaved {
+            t.xmm[x as usize] = 0;
+        }
         // The restores before it, as the code has them.
         let mut b = e;
         let restore = |b: usize| {
             let reg = (c[b - 2] >> 3) & 7 | (c[b - 4] & 4) << 1;
             c[b - 4] & 0xf8 == 0x48 && c[b - 3] == 0x8b && c[b - 2] & 0xc7 == 0x45 && CALLEE_SAVED.contains(&reg)
         };
-        while b >= 4 && restore(b) {
-            b -= 4;
+        loop {
+            if b >= 4 && restore(b) {
+                b -= 4;
+            } else if let Some(n) = xmm_restore_before(c, b) {
+                b -= n;
+            } else {
+                break;
+            }
         }
         let mut k = b;
         while k < e {
@@ -284,12 +350,13 @@ fn check_frames(o: &Output, what: &str) -> Found {
         check_caller(&t, &format!("{what}: the epilogue at {e}"));
         epilogues += 1;
     }
-    no_xmm6_to_15(c, what);
-    Found { saves, stored, home, epilogues, probe: prologue >= 10 && c[..prologue].windows(1).any(|w| w[0] == 0xe8) }
+    xmm_saved(c, &xsaved, what);
+    Found { saves, stored, home, epilogues, xsaves: xsaved.len(), probe: prologue >= 10 && c[..prologue].windows(1).any(|w| w[0] == 0xe8) }
 }
 
-/// No instruction of `code` names `xmm6`–`xmm15` (GNU objdump, if there is one).
-fn no_xmm6_to_15(code: &[u8], what: &str) {
+/// Every `xmm6`–`xmm15` an instruction of `code` names is among `saved` (GNU objdump, if
+/// there is one).
+fn xmm_saved(code: &[u8], saved: &[u8], what: &str) {
     const OBJDUMP: &str = "/usr/bin/objdump";
     if !std::path::Path::new(OBJDUMP).exists() {
         return;
@@ -300,8 +367,8 @@ fn no_xmm6_to_15(code: &[u8], what: &str) {
     std::fs::write(&f, code).unwrap();
     let out = std::process::Command::new(OBJDUMP).args(["-D", "-b", "binary", "-m", "i386:x86-64"]).arg(&f).output().unwrap();
     let text = String::from_utf8_lossy(&out.stdout);
-    for x in 6..16 {
-        assert!(!text.contains(&format!("%xmm{x}")), "{what}: uses xmm{x}\n{text}");
+    for x in 6..16u8 {
+        assert!(saved.contains(&x) || !text.contains(&format!("%xmm{x}")), "{what}: uses xmm{x} without saving it\n{text}");
     }
 }
 
@@ -430,10 +497,10 @@ fn xmm6_using_handlers_compiled() {
     assert!(r.is_ok(), "{r:?}");
 }
 
-/// Eight vectors live at once and across a call: on PE the SSA tier keeps them in `xmm0`–`xmm3`
-/// (scratch `xmm4`, `xmm5`) and spill slots, never naming `xmm6`–`xmm15`.
+/// Eight vectors live at once and across a call: on PE the SSA tier takes the SysV set,
+/// `xmm0`–`xmm13` (scratch `xmm14`, `xmm15`), saving the callee-saved ones it names.
 #[test]
-fn vectors_without_xmm6_to_15() {
+fn vectors_save_xmm6_to_15() {
     let mut v = vec![arg(-8, 0)];
     for i in 0..8i32 {
         v.push(Insn::LoadCopy { d: Slot(-32 - 16 * i), m: Mem { p: Slot(-8), k: 16 * i }, len: 16 });
@@ -449,7 +516,28 @@ fn vectors_without_xmm6_to_15() {
     v.push(Insn::VmsbI8x16 { d: Slot(-176), a: Slot(-32) });
     v.push(Insn::ZextW16W64 { d: Slot(-184), s: Slot(-176) });
     v.push(Insn::Ret { s: Slot(-184), k: 8 });
-    each(&v, 192, &[], "vectors", |_, _| {});
+    each(&v, 192, &[], "vectors", |f, what| assert!(f.xsaves >= 2 && f.epilogues >= 1, "{what}"));
+}
+
+/// Vectors below a pinned alloca: the `xmm` saves are stored into the 16-byte aligned slots
+/// within the frame offset that the alloca leaves free.
+#[test]
+fn vectors_below_a_pinned_alloca() {
+    let (mut v, frame, sc) = pinned_loop(-24, 8, false);
+    let ret = v.pop().unwrap();
+    let base = -(frame as i32) - 8;
+    v.push(Insn::LoadCopy { d: Slot(base - 16), m: Mem { p: Slot(-40), k: 0 }, len: 16 });
+    v.push(Insn::LoadCopy { d: Slot(base - 32), m: Mem { p: Slot(-40), k: 0 }, len: 16 });
+    v.push(Insn::XorW128 { d: Slot(base - 16), a: Slot(base - 16), b: Slot(base - 32) });
+    v.push(Insn::StoreCopy { m: Mem { p: Slot(-40), k: 0 }, s: Slot(base - 16), len: 16 });
+    v.push(ret);
+    let frame = ((-base) as u32 + 32).next_multiple_of(16);
+    let mut stored = false;
+    each(&v, frame, &sc, "pinned vectors", |f, what| {
+        assert!(f.xsaves >= 2 && f.epilogues >= 1, "{what}");
+        stored |= f.stored;
+    });
+    assert!(stored, "no stored saves");
 }
 
 /// The SSA tier doesn't lay out PE pad regions (design/vm.md#pe-seh): a function with a
@@ -479,7 +567,8 @@ fn cleanup_pads_go_to_reencoding() {
         let enc = asm::encode(&words, 32, &cleanup, &[], PE).expect("encodes");
         assert_eq!(enc.region < enc.code.len() as u32, !catch, "a pad region");
         let d = asm::decode_reduced(&enc, PE).expect("decodes");
-        let r = jit::compile(&d, &[], PE, &Options { alloc: Allocator::LinearScan, stress: false, check: true, dump: false, licm: false }, None, None);
+        let r =
+            jit::compile(&d, &[], PE, &Options { alloc: Allocator::LinearScan, stress: false, check: true, dump: false, licm: false }, None, None);
         if catch {
             assert!(r.is_ok(), "a terminate pad compiles");
         } else {

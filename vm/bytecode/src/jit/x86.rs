@@ -477,6 +477,16 @@ impl X86 {
         self.sse(0xf3, 0x7f, x, X::M(m), &[]);
     }
 
+    /// `movdqa [m], x` (`m` 16-byte aligned).
+    pub fn movdqa_store(&mut self, m: Mem, x: u8) {
+        self.sse(0x66, 0x7f, x, X::M(m), &[]);
+    }
+
+    /// `movdqa x, [m]` (`m` 16-byte aligned).
+    pub fn movdqa_load(&mut self, x: u8, m: Mem) {
+        self.sse(0x66, 0x6f, x, X::M(m), &[]);
+    }
+
     /// A packed operation `d = d op s` (`66 0F op /r`), register to register.
     pub fn packed(&mut self, op: Packed, d: u8, s: u8) {
         self.sse(0x66, op as u8, d, X::X(s), &[]);

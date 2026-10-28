@@ -545,22 +545,25 @@ innermost first, so a value invariant in several levels leaves each in turn.
   registers like `rbx` and `r12`–`r15` (Win64, the handlers' convention too: saved only
   when used). The prologue is `push rbp`, the pushed saves, a `sub rsp` up to the frame
   offset `K` if the pushes don't reach a multiple of 16, `lea rbp, [rsp + K]`, the probe,
-  `sub rsp, F - K`, then the stored saves; each with its unwind code (the shared encoder
-  `image::pe_unwind_codes`: `UWOP_PUSH_NONVOL`, `UWOP_ALLOC_*`, `UWOP_SET_FPREG`,
-  `UWOP_SAVE_NONVOL`). Win64 sets the frame register after the pushes and addresses stored
+  `sub rsp, F - K`, then the stored saves and the `xmm` saves; each with its unwind code
+  (the shared encoder `image::pe_unwind_codes`: `UWOP_PUSH_NONVOL`, `UWOP_ALLOC_*`,
+  `UWOP_SET_FPREG`, `UWOP_SAVE_NONVOL`, `UWOP_SAVE_XMM128`). The `xmm` saves are of the
+  callee-saved `xmm6`–`xmm15` the code may write (those the allocation names, and the
+  scratch `xmm14`, `xmm15` if there is any vector), `movdqa` to 16-byte aligned slots:
+  below the pushed saves, or with pinned allocas in the free 16-byte slots within 240 bytes
+  below `rbp`; OSR entries store them as they store the other saves. Win64 sets the frame register after the pushes and addresses stored
   saves upward from `rbp - K`, `K` at most 240, so with pinned allocas the saves go into the
   caller's home space (`fp + 16` to `fp + 48`, unless a stack argument is read there) and
   the 8-byte slots within 240 bytes below `rbp` that no pinned alloca covers, the rest of
   the frame below them; without room the function is re-encoded. The epilogue is the
-  stored saves' loads, `lea rsp, [rbp - 8n]`, the pops, then `ret` or the tail jump, a
+  stored saves' and the `xmm` saves' loads, `lea rsp, [rbp - 8n]`, the pops, then `ret` or the tail jump, a
   register one as `rex.w jmp` so that the unwinder sees an epilogue. Calls (handlers, VM
   functions, natives and islands; Win64: `rcx rdx r8 r9`, `xmm0`–`xmm3` by position) get
   32 bytes of shadow space at the bottom of the frame, if the stack arguments don't cover
   it, and 8 more for a handler's stack argument (`atomic.cxchg`, `mov [rsp + 32], r11d`).
   Register entries there take at most four arguments, and return two values in `xmm0`,
-  which the call moves to `rax` and `rdx` (`movq`, `punpckhqdq`, `movq`). The tier never
-  names `xmm6`–`xmm15` (which every call preserves now, but the tier would have to save
-  with `UWOP_SAVE_XMM128` to use), nor compiles arguments past the fourth.
+  which the call moves to `rax` and `rdx` (`movq`, `punpckhqdq`, `movq`). The tier doesn't
+  compile arguments past the fourth.
 - **Instruction selection**: per instruction over the allocated locations; two-address
   forms with a hint to reuse the first operand's register, immediates where they fit
   (`r10` takes the others), `lea` for an add or subtract into another register (32-bit
@@ -798,8 +801,8 @@ operations, not handler calls, with exact 16-byte accesses (2 for `vmsb`'s mask,
   zeros and ones. `opt::hoist` moves a `vsplat` of an invariant byte out of its loops
   ([LICM](#loop-invariant-code-motion)).
 - **Registers**: a second class, `xmm0`–`xmm13` with `xmm14`/`xmm15` the emitter's scratch
-  registers; on PE `xmm0`–`xmm3` and `xmm4`/`xmm5`, so that the tier never names the
-  callee-saved `xmm6`–`xmm15`. No `xmm` register survives a call: a vector live across one
+  registers, on PE too, whose prologue saves the callee-saved `xmm6`–`xmm15` it names
+  ([PE frames](#back-end)). No `xmm` register survives a call: a vector live across one
   takes a 16-byte spill slot (two 8-byte ones). The checker checks the classes, the reserved
   registers and that no vector is in an `xmm` register across a call; edge moves, OSR entries
   (`OsrLoad`s of 16 bytes) and parameters handle both classes.

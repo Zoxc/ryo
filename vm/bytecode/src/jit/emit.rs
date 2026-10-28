@@ -335,6 +335,9 @@ struct Frame {
     scratch: i32,
     /// The callee-saved registers the code uses, each by its save's offset.
     saves: Vec<(R, i32)>,
+    /// PE: the callee-saved `xmm6`–`xmm15` the code uses ([`xmm_saves`]), each by its save's
+    /// offset, 16-byte aligned, below the frame register's base (`UWOP_SAVE_XMM128`).
+    xsaves: Vec<(u8, i32)>,
     /// Whether the saves are pushed and popped: they sit at the frame's top (nothing pinned
     /// above them), right below `rbp`'s save or, without a frame pointer, from the slot
     /// that is the alignment padding below the return address.
@@ -404,8 +407,33 @@ fn layout(f: &Func, al: &Alloc, mode: Mode, opts: Opts) -> Frame {
         cur -= 8;
         saves.push((r, cur));
     }
+    // PE: the `xmm` saves, 16-byte slots below the pushes, or (not pushed) in the 16-byte
+    // aligned slots within 240 bytes of `rbp` that neither a pinned alloca nor a save covers.
+    let mut xsaves = Vec::new();
+    if mode.pe {
+        let xs = xmm_saves(f, al);
+        if pushed {
+            cur -= cur.rem_euclid(16);
+            for x in xs {
+                cur -= 16;
+                xsaves.push((x, cur));
+            }
+        } else {
+            let free = |o: i32| {
+                !f.allocas.iter().any(|a| a.pinned && a.kind != AllocaKind::Incoming && o < a.aot_off + a.size as i32 && o + 16 > a.aot_off)
+                    && !saves.iter().any(|&(_, s)| s >= o && s < o + 16)
+            };
+            let mut slots = (1..=15).map(|j| -16 * j).filter(|&o| free(o));
+            for x in xs {
+                match slots.next() {
+                    Some(o) => xsaves.push((x, o)),
+                    None => pe_short = true,
+                }
+            }
+        }
+    }
     // The rest of the frame below the PE saves.
-    cur = saves.iter().map(|s| s.1).fold(cur, i32::min);
+    cur = saves.iter().map(|s| s.1).chain(xsaves.iter().map(|s| s.1)).fold(cur, i32::min);
     cur = cur.min(0);
     let mut alloca = alloc::vec![0i32; f.allocas.len()];
     let mut order: Vec<usize> = (0..f.allocas.len()).collect();
@@ -455,19 +483,34 @@ fn layout(f: &Func, al: &Alloc, mode: Mode, opts: Opts) -> Frame {
     let frameless = leaf && size == 0 && saves.is_empty();
     let pe_fp = if !mode.pe {
         0
-    } else if pushed {
-        (8 * saves.len() as u32).next_multiple_of(16)
     } else if pe_short {
         u32::MAX
     } else {
-        saves.iter().map(|&(_, o)| (-o).max(0) as u32).max().unwrap_or(0).next_multiple_of(16)
+        saves.iter().map(|s| s.1).chain(xsaves.iter().map(|s| s.1)).map(|o| (-o).max(0) as u32).max().unwrap_or(0).next_multiple_of(16)
     };
     for (k, a) in f.allocas.iter().enumerate() {
         if a.kind == AllocaKind::Outgoing {
             alloca[k] = -(size as i32);
         }
     }
-    Frame { size, alloca, spill0, scratch, saves, pushed, pe_fp, frameless }
+    Frame { size, alloca, spill0, scratch, saves, xsaves, pushed, pe_fp, frameless }
+}
+
+/// PE: the callee-saved `xmm` registers (`xmm6`–`xmm15`) the code may write: those the
+/// allocation names, and the emitter's scratch ones if there is any vector.
+fn xmm_saves(f: &Func, al: &Alloc) -> Vec<u8> {
+    let mut used = [false; 16];
+    for l in &al.loc {
+        if let Loc::Xmm(x) = *l {
+            used[x as usize] = true;
+        }
+    }
+    if f.values.iter().any(|v| v.w == 16) {
+        for x in super::regalloc::xmm_registers().1 {
+            used[x as usize] = true;
+        }
+    }
+    (6..16).filter(|&x| used[x as usize]).collect()
 }
 
 struct E<'a> {
@@ -527,7 +570,7 @@ impl<'a> E<'a> {
 
     /// The emitter's scratch `xmm` registers.
     fn xs(&self) -> [u8; 2] {
-        super::regalloc::xmm_registers(self.mode.pe).1
+        super::regalloc::xmm_registers().1
     }
 
     /// Where the vector `v` is.
@@ -928,6 +971,11 @@ impl<'a> E<'a> {
                 ops.push((self.a.x().pos(), U::Save(r.num(), (o + k as i32) as u32)));
             }
         }
+        for i in 0..self.fr.xsaves.len() {
+            let (x, o) = self.fr.xsaves[i];
+            self.a.x().movdqa_store(Mem::base(R::Rbp, o), x);
+            ops.push((self.a.x().pos(), U::SaveXmm(x, (o + k as i32) as u32)));
+        }
         self.pe_prologue = self.a.x().pos();
         self.pe_ops = ops;
     }
@@ -942,6 +990,10 @@ impl<'a> E<'a> {
                     let (r, o) = self.fr.saves[i];
                     self.a.x().mov(8, Rm::R(r), Rm::M(Mem::base(R::Rbp, o)));
                 }
+            }
+            for i in 0..self.fr.xsaves.len() {
+                let (x, o) = self.fr.xsaves[i];
+                self.a.x().movdqa_load(x, Mem::base(R::Rbp, o));
             }
             let n = if self.fr.pushed { self.fr.saves.len() as i32 } else { 0 };
             self.a.x().lea(R::Rsp, Mem::base(R::Rbp, -8 * n));
@@ -2192,6 +2244,9 @@ fn osr_code(f: &Func, al: &Alloc, mode: Mode, fr: &Frame, lab: &[u32], at: u32) 
         // The callee-saved registers still hold the caller's values: save them.
         for &(r, o) in &fr.saves {
             x.mov(8, Rm::M(mem_of(base, o)), Rm::R(r));
+        }
+        for &(r, o) in &fr.xsaves {
+            x.movdqa_store(mem_of(base, o), r);
         }
         for &(_, to, size, k) in &copies {
             copy(&mut x, (R::Rsp, k), (base, to), size);
