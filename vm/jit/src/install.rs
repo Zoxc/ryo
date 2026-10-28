@@ -316,6 +316,7 @@ impl Jit {
             check: self.rt.settings.check,
             dump: self.dump.is_some(),
             licm: self.rt.settings.licm,
+            rotate: self.rt.settings.rotate,
         };
         let header = h as *const _ as usize;
         let mut env = InlineEnv {

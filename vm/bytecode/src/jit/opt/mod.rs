@@ -16,6 +16,7 @@
 //! - `dce`: dead code elimination, effect-free handler calls included.
 //! - `thread`: jump threading through empty blocks.
 //! - `layout`: cold blocks last, and values crossing calls in them split off.
+//! - `rotate`: loop rotation, run once after the others ([`super::compile`]).
 //! - `promote`: promotion of memory allocas nothing takes the address of any more (after
 //!   inlining), run between two rounds of the others.
 
@@ -29,6 +30,7 @@ pub mod layout;
 pub mod lvn;
 pub mod osr;
 pub mod promote;
+pub mod rotate;
 pub mod simplify;
 pub mod thread;
 

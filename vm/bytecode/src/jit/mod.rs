@@ -68,6 +68,8 @@ pub struct Options {
     pub dump: bool,
     /// General loop-invariant code motion (`RYO_JIT_LICM`), off by default.
     pub licm: bool,
+    /// Loop rotation ([`opt::rotate`], `RYO_JIT_ROTATE=1`), off by default.
+    pub rotate: bool,
 }
 
 /// Why [`compile`] gave no code.
@@ -157,6 +159,9 @@ pub fn compile(
             f.verify().map_err(|e| Error::Check(alloc::format!("IR after promotion: {e}{}", ir(&f))))?;
         }
         opt::run(&mut f, mem);
+    }
+    if opts.rotate {
+        opt::rotate::rotate(&mut f);
     }
     if let Some(env) = env {
         inline::retarget(&mut f, env);

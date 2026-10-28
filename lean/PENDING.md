@@ -217,3 +217,11 @@ remove it once a Lean session has handled it.
   `DecodeReduced`'s tail call, `Call.tailHead`) needs a `jmpRaxW` with the same semantics
   as `jmpRax`; then add `Item::JmpRaxW` to `lean_x86_vectors.rs`'s `gen_items`. The JIT-only
   `JmpAbs` is now `jmp [rip]; .quad` (14 bytes), never decoded.
+
+- JIT SSA loop rotation (design/jit.md#loop-rotation): new pass `opt::rotate`, only with
+  `RYO_JIT_ROTATE=1`, run once after `opt::run`'s last round (before `regalloc::remat`): a
+  head that is only a compare branch gets the branch copied to the end of its one latch,
+  which then branches to the body or the exit; the body and exit blocks take the head's
+  values as new parameters. The OSR entry still targets the unchanged head. Matters for the
+  Lean description of the SSA tier's passes (`lean/docs/jit.md`) if it lists them. Commit:
+  "JIT SSA: Loop rotation behind RYO_JIT_ROTATE".

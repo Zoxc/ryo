@@ -176,6 +176,7 @@ fn from_env() -> Config {
             check: flag(c"RYO_JIT_CHECK"),
             opt: opt(),
             licm: flag(c"RYO_JIT_LICM"),
+            rotate: flag(c"RYO_JIT_ROTATE"),
             ssa_limit: var(c"RYO_JIT_SSA_LIMIT").and_then(parse_i64).and_then(|n| u64::try_from(n).ok()).unwrap_or(u64::MAX),
             stats,
             count: stats >= 1,
@@ -796,9 +797,15 @@ fn startup_line(cfg: &Config, pid: u32, l: &mut Line) {
     if cfg.threshold.is_some() {
         l.bytes(b" (RYO_JIT_THRESHOLD)");
     }
-    for (on, name) in
-        [(cfg.sync, &b"sync"[..]), (cfg.shuffle, b"shuffle"), (j.check, b"check"), (j.licm, b"licm"), (j.perfmap, b"perfmap"), (j.log, b"log")]
-    {
+    for (on, name) in [
+        (cfg.sync, &b"sync"[..]),
+        (cfg.shuffle, b"shuffle"),
+        (j.check, b"check"),
+        (j.licm, b"licm"),
+        (j.rotate, b"rotate"),
+        (j.perfmap, b"perfmap"),
+        (j.log, b"log"),
+    ] {
         if on {
             l.bytes(b", ");
             l.bytes(name);

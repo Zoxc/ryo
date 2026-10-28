@@ -112,7 +112,8 @@ code that calls the VM's handlers; cg_llvm compiles everything else. Start at
   0 = first call), `RYO_JIT_SYNC=1` (deterministic; needed for cachegrind),
   `RYO_JIT_OPT=ssa|ssa-naive|reencode`, `RYO_JIT_CHECK=1`, `RYO_JIT_DUMP=<dir>`,
   `RYO_JIT_LOG=1`, `RYO_JIT_SHUFFLE=1`, `RYO_JIT_PERFMAP=1`, `RYO_JIT_SSA_LIMIT=n` (bisect
-  miscompiles), `RYO_JIT_LICM=1` (general LICM, off by default), `RYO_JIT_STATS=1|2` (startup
+  miscompiles), `RYO_JIT_LICM=1` (general LICM, off by default), `RYO_JIT_ROTATE=1` (loop rotation, off by
+  default), `RYO_JIT_STATS=1|2` (startup
   line and exit summary on stderr; `2` adds progress at most once a minute), `RYO_JIT_TEST_PANIC=1`, `RYO_JIT_TEST_OOM=1`.
 - `y test` passes its env to the corpus: `RYO_JIT_THRESHOLD=0 RYO_JIT_SYNC=1 ./y.sh test`
   runs everything through the JIT.

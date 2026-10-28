@@ -67,6 +67,8 @@ pub struct JitSettings {
     /// Whether the JIT thread times its compiles for the statistics (`RYO_JIT_STATS` set, or
     /// tests); its other counters always count.
     pub count: bool,
+    /// Loop rotation in the SSA tier (`RYO_JIT_ROTATE=1`), off by default.
+    pub rotate: bool,
 }
 
 /// What the runtime gives the JIT: built once, before the JIT starts, and never changed.

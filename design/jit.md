@@ -534,6 +534,30 @@ innermost first, so a value invariant in several levels leaves each in turn.
   register's save and restore in a hashmap probe, say). Cheap operations feeding a moved one
   are copied out with it, the originals left for their other uses.
 
+
+### Loop rotation
+
+`opt::rotate`, once after the other passes (before `regalloc::remat`), only with
+`RYO_JIT_ROTATE=1`. A loop whose head is only a test (no instructions, a compare branch out
+of the loop or into it) and whose one latch jumps back to it gets the test copied to the end
+of the latch, branching back into the body, so an iteration runs no jump of its own. The
+head stays for the preheader and its OSR entry, which still lands there.
+- **Shape**: the head's in-loop successor `b` has no other predecessor and starts no AOT loop
+  head; no call runs in the loop but on cold paths (the added parameters would cross it).
+  The exit gets a new block on the head's edge unless it has the head as its only
+  predecessor.
+- **SSA repair**: the head's parameters (and results) used outside it become parameters of
+  `b` and of the exit block, passed the originals by the head and the copies by the latch;
+  a use neither dominates cancels the rotation.
+- **Why off**: it pays only when the register allocator gives the latch's new values their
+  parameters' registers, so the back edge has no moves. Sieve's inner loop then loses its
+  jump (run Ir -9.5%, estimated cycles -8.4%), but elsewhere the back edge
+  keeps its moves (same instruction count, more code) or the extra parameters shift spills:
+  sort +0.9% Ir (+1.1% cycles), hashmap +0.1% Ir (+1.6% cycles, I1 misses). Copying heads
+  with instructions (loads) cost sort more, a move per iteration. Strength reduction of
+  index IVs to pointers isn't done: the benches' loops reload their base pointers each
+  iteration (no alias analysis), and `[base + index]` addressing already covers the rest.
+
 ### Back end
 
 - **Frame** (`jit::emit`): `fp` is the address below the return address, as in AOT code.
@@ -916,6 +940,7 @@ for shuffled frames per image, `RtApi::shuffled`):
 | `RYO_JIT_CHECK=1` | the SSA tier's checkers: a failure is printed on stderr and the function falls back |
 | `RYO_JIT_DUMP=dir` | the SSA tier writes each function's reduced code, IR before and after value numbering and the folds, locations and code (or, for one it doesn't handle, the reason and the reduced code) to `dir/f<index>-<image header address>.txt`, and every installed function's code with its relocations by name to `dir/f<index>-<image header address>.code` (for `y bench codegen`, [build.md](build.md#test-and-bench)); read by the JIT thread itself, not passed in `RtApi` |
 | `RYO_JIT_LICM=1` | the SSA tier's general [loop-invariant code motion](#loop-invariant-code-motion); off by default, when only splats are hoisted |
+| `RYO_JIT_ROTATE=1` | the SSA tier's [loop rotation](#loop-rotation); off by default |
 | `RYO_JIT_SSA_LIMIT=n` | debugging: only the first `n` functions the JIT compiles go to the SSA tier, the rest are re-encoded (bisects a miscompile) |
 | `RYO_JIT_STATS=1\|2` | [statistics](#statistics) on stderr: `1` a startup line at the first image registration and a summary at exit, `2` also a progress line from the JIT thread at most once a minute; another value warns and means `1`. Independent of `RYO_JIT_LOG` |
 

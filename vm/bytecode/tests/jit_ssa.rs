@@ -1049,6 +1049,45 @@ fn licm_through_an_osr_head() {
     assert!(f.layout.contains(&land) && f.layout[0] == b0, "{f}");
 }
 
+/// `while i < 100 { i += 1 }` with an OSR entry at the head, and the exit using `i`: rotation
+/// copies the test to the end of the latch, which branches back into the body; the head stays
+/// for the entry and the OSR entry, and the body and the exit take `i` as parameters.
+#[test]
+fn rotation_keeps_the_osr_head() {
+    use ryo_bytecode::jit::ir::{BinOp, Cc};
+    let mut f = IrFunc::default();
+    let (b0, b1, b2, b3) = (f.block(BlockKind::Entry), f.block(BlockKind::Body), f.block(BlockKind::Body), f.block(BlockKind::Body));
+    let bo = f.block(BlockKind::Osr(0));
+    f.blocks[b1.idx()].head = Some(0);
+    f.osr = vec![Some(bo)];
+    let i = f.param(b1, 8);
+    let (z, one, n) = (f.konst(0, 8), f.konst(1, 8), f.konst(100, 8));
+    f.terminate(b0, Term::Jmp(Edge { to: b1, args: vec![z] }));
+    let l1 = f.inst(bo, Op::OsrLoad(-8, 8), vec![], &[8]);
+    let l1 = f.result(l1);
+    f.terminate(bo, Term::Jmp(Edge { to: b1, args: vec![l1] }));
+    let c = f.inst(b1, Op::Cmp(Cc::LtU, 8), vec![i, n], &[1]);
+    let c = f.result(c);
+    f.terminate(b1, Term::Br { cond: c, t: Edge::to(b2), f: Edge::to(b3) });
+    let i2 = f.inst(b2, Op::Bin(BinOp::Add, 8), vec![i, one], &[8]);
+    let i2 = f.result(i2);
+    f.terminate(b2, Term::Jmp(Edge { to: b1, args: vec![i2] }));
+    f.terminate(b3, Term::Ret { k: 8, parts: vec![i] });
+    f.layout = vec![b0, b1, b2, b3];
+    let mut f = opt(f);
+    assert!(ryo_bytecode::jit::opt::rotate::rotate(&mut f), "{f}");
+    f.verify().unwrap_or_else(|e| panic!("{e}\n{f}"));
+    // The latch ends in the copied test, back into the body or out.
+    let Term::BrCmp { t, f: e, .. } = &f.blocks[b2.idx()].term else { panic!("{f}") };
+    assert_eq!((t.to, e.to), (b2, b3), "{f}");
+    assert_eq!(f.blocks[b1.idx()].head, Some(0), "{f}");
+    assert!(f.blocks[b1.idx()].preds.iter().all(|&(p, _)| p != b2), "{f}");
+    let Term::Jmp(e) = &f.blocks[bo.idx()].term else { panic!("{f}") };
+    assert_eq!(e.to, b1, "{f}");
+    assert_eq!(f.blocks[b2.idx()].params.len(), 1, "{f}");
+    assert_eq!(f.blocks[b3.idx()].params.len(), 1, "{f}");
+}
+
 /// A loop dividing by `[p]` and storing through `p` or `q`: the load (and so the division)
 /// moves out only when no store may write its bytes (one through `p` itself at other bytes
 /// can't).

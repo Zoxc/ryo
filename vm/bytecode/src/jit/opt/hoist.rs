@@ -72,29 +72,29 @@ pub fn hoist(f: &mut Func) {
     }
 }
 
-struct Loop {
-    head: Block,
-    latches: Vec<Block>,
+pub(super) struct Loop {
+    pub(super) head: Block,
+    pub(super) latches: Vec<Block>,
     /// By block, whether it is in the loop.
-    body: Vec<bool>,
+    pub(super) body: Vec<bool>,
     size: usize,
 }
 
-struct Analysis {
+pub(super) struct Analysis {
     rpo: Vec<Block>,
     /// By block, its index in reverse postorder (`u32::MAX` if unreachable).
     ord: Vec<u32>,
     /// Without the OSR edges.
     ndom: Dom,
-    loops: Vec<Loop>,
+    pub(super) loops: Vec<Loop>,
 }
 
 /// Immediate dominators, `None` for the roots and unreachable blocks.
 #[derive(Clone)]
-struct Dom(Vec<Option<Block>>);
+pub(super) struct Dom(pub(super) Vec<Option<Block>>);
 
 impl Dom {
-    fn dominates(&self, a: Block, b: Block) -> bool {
+    pub(super) fn dominates(&self, a: Block, b: Block) -> bool {
         let mut x = Some(b);
         while let Some(y) = x {
             if y == a {
@@ -107,7 +107,7 @@ impl Dom {
 }
 
 impl Analysis {
-    fn new(f: &Func) -> Analysis {
+    pub(super) fn new(f: &Func) -> Analysis {
         let rpo = f.rpo();
         let mut ord = alloc::vec![u32::MAX; f.blocks.len()];
         for (k, b) in rpo.iter().enumerate() {
