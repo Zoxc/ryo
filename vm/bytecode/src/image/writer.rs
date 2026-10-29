@@ -304,10 +304,9 @@ pub fn validate_code(code: &[u32], lim: &CodeLimits) -> Result<Vec<bool>, (u32, 
         last = Some(insn.opcode());
         at += n;
     }
-    if let Some(op) = last {
-        if op.info().shape.falls_through() {
-            return Err((code.len() as u32, CodeError::FallsOffEnd));
-        }
+    // An empty body falls off its end too.
+    if last.is_none_or(|op| op.info().shape.falls_through()) {
+        return Err((code.len() as u32, CodeError::FallsOffEnd));
     }
     let target_ok = |at: usize, t: i32| -> bool {
         let p = at as i64 + t as i64;
