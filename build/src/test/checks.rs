@@ -419,6 +419,7 @@ fn in_crate(sym: &str, krate: &str) -> bool {
 /// Whether `s` is one of `ryo_rt`'s own `#[rustc_std_internal_symbol]`s (mangled under the
 /// `__rustc` root, with the ABI tag): the handlers `ryo_h_*`, `ryo_probe_stack`,
 /// `ryo_vm_register`, `ryo_seh_handler` and the JIT's trip entry points `ryo_jit_trip_*`.
+/// The names are defined in `vm/bytecode/src/rt_symbols.rs`; keep this list in sync.
 pub(super) fn is_rt_internal(s: &str) -> bool {
     s.starts_with("_R")
         && s.contains("7___rustc")

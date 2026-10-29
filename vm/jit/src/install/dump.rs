@@ -38,9 +38,9 @@ impl Jit {
         }
         for r in relocs {
             let to = match r.to {
-                Ref::Handler(op) => std::format!("ryo_h_{op:?}"),
-                Ref::RegHandler(op) => std::format!("ryo_hr_{op:?}"),
-                Ref::Probe => "ryo_probe_stack".into(),
+                Ref::Handler(op) => ryo_bytecode::rt_symbols::handler(op).to_string(),
+                Ref::RegHandler(op) => ryo_bytecode::rt_symbols::reg_handler(op).to_string(),
+                Ref::Probe => ryo_bytecode::rt_symbols::PROBE.into(),
                 Ref::Func(g) => g.to_string(),
                 Ref::Sym(x) => x.to_string(),
                 Ref::Const(x) => x.to_string(),

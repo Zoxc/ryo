@@ -307,7 +307,7 @@ static DISABLED: AtomicBool = AtomicBool::new(false);
 /// so an asynchronous walk does too.
 #[unsafe(naked)]
 #[rustc_std_internal_symbol]
-#[unsafe(export_name = tagged!("ryo_jit_trip_entry"))]
+#[unsafe(export_name = tagged!(ryo_bytecode::rt_sym!(trip_entry)))]
 pub unsafe extern "sysv64" fn trip_entry() {
     core::arch::naked_asm!(
         cfi!(".cfi_startproc"),
@@ -426,7 +426,7 @@ const TRIP_ENTRY_AREA: usize = if cfg!(any(windows, feature = "pe-test")) { 320 
 #[cfg(any(windows, feature = "pe-test"))]
 #[unsafe(naked)]
 #[rustc_std_internal_symbol]
-#[unsafe(export_name = tagged!("ryo_jit_trip_osr"))]
+#[unsafe(export_name = tagged!(ryo_bytecode::rt_sym!(trip_osr)))]
 pub unsafe extern "sysv64" fn trip_osr() {
     core::arch::naked_asm!(
         cfi!(".cfi_startproc"),
@@ -517,7 +517,7 @@ pub unsafe extern "sysv64" fn trip_osr() {
 #[cfg(not(any(windows, feature = "pe-test")))]
 #[unsafe(naked)]
 #[rustc_std_internal_symbol]
-#[unsafe(export_name = tagged!("ryo_jit_trip_osr"))]
+#[unsafe(export_name = tagged!(ryo_bytecode::rt_sym!(trip_osr)))]
 pub unsafe extern "sysv64" fn trip_osr() {
     core::arch::naked_asm!(
         cfi!(".cfi_startproc"),

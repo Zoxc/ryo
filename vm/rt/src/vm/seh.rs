@@ -192,7 +192,7 @@ mod win {
     /// Called by the system's exception dispatcher, with the handler data the image writer
     /// put after the `UNWIND_INFO`.
     #[rustc_std_internal_symbol]
-    #[unsafe(export_name = tagged!("ryo_seh_handler"))]
+    #[unsafe(export_name = tagged!(ryo_bytecode::rt_sym!(seh_handler)))]
     pub unsafe extern "system-unwind" fn handler(
         rec: *mut ExceptionRecord,
         establisher: *mut c_void,

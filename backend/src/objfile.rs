@@ -10,6 +10,7 @@ use object::{
 };
 use ryo_bytecode::full::Opcode;
 use ryo_bytecode::image::{FuncSymbol, ImageObject, RelocKind, RelocTarget, SYM_INDIRECT, Section, SymVisibility};
+use ryo_bytecode::rt_symbols;
 
 /// The symbol an image defines: `__ryo_image_<StableCrateId>_<CGU hash>`, both in hex
 /// (`image::cgu_hash` of the codegen unit's name).
@@ -18,7 +19,7 @@ pub fn image_symbol(stable_crate_id: u64, cgu_hash: u64) -> String {
 }
 
 /// The pointer slot `ryo_rt::entry::c_main` loads the entry fn's address from.
-pub const MAIN_SLOT_SYMBOL: &str = "__ryo_main";
+pub const MAIN_SLOT_SYMBOL: &str = rt_symbols::MAIN_SLOT;
 
 /// Defined (weak, or a COMDAT on PE) by every registry stub; every image object references it
 /// (its header's `anchor` field): `__ryo_registry_anchor_<tag>`, so that each ryo build's
@@ -28,26 +29,26 @@ pub fn anchor_symbol() -> String {
 }
 
 /// The registration entry point in `ryo_rt` (before tagging and mangling).
-pub const REGISTER_SYMBOL: &str = "ryo_vm_register";
+pub const REGISTER_SYMBOL: &str = rt_symbols::REGISTER;
 
 /// The stack probe of large frames, in `ryo_rt` (before mangling).
-pub const PROBE_SYMBOL: &str = "ryo_probe_stack";
+pub const PROBE_SYMBOL: &str = rt_symbols::PROBE;
 /// `ryo_rt`'s language handler of VM code's PE unwind info (design/vm.md#unwinding).
-pub const SEH_HANDLER_SYMBOL: &str = "ryo_seh_handler";
+pub const SEH_HANDLER_SYMBOL: &str = rt_symbols::SEH_HANDLER;
 
 /// The no-op JIT's trip entry points in `ryo_rt`, which the JIT records' slots start at
 /// (before mangling).
-pub const TRIP_ENTRY_SYMBOL: &str = "ryo_jit_trip_entry";
-pub const TRIP_OSR_SYMBOL: &str = "ryo_jit_trip_osr";
+pub const TRIP_ENTRY_SYMBOL: &str = rt_symbols::TRIP_ENTRY;
+pub const TRIP_OSR_SYMBOL: &str = rt_symbols::TRIP_OSR;
 
 /// The name of opcode `op`'s handler in `ryo_rt` (before mangling).
 pub fn handler_name(op: Opcode) -> String {
-    format!("ryo_h_{op:?}")
+    rt_symbols::handler(op).to_string()
 }
 
 /// The name of opcode `op`'s register entry in `ryo_rt` (JIT code only; before mangling).
 pub fn reg_handler_name(op: Opcode) -> String {
-    format!("ryo_hr_{op:?}")
+    rt_symbols::reg_handler(op).to_string()
 }
 
 /// The object-format-specific parts of the image and registry objects.

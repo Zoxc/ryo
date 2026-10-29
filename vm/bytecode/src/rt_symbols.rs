@@ -1,0 +1,69 @@
+//! The names of `ryo_rt`'s entry points that the backend and the JIT reference (before the
+//! ABI tag and mangling), and of the symbols around images: the one definition `ryo_rt`'s
+//! `export_name`s, the backend's objects and the JIT's dumps share. `build`'s
+//! `rt-core-only` check (`build/src/test/checks.rs`, zero deps) keeps its own copy.
+
+use core::fmt;
+
+use crate::full::Opcode;
+
+/// The name literals, for attributes that need one (`ryo_rt`'s
+/// `export_name = tagged!(rt_sym!(probe))`): `handler` and `reg_handler` are the prefixes of
+/// [`handler`] and [`reg_handler`].
+#[macro_export]
+macro_rules! rt_sym {
+    (handler) => {
+        "ryo_h_"
+    };
+    (reg_handler) => {
+        "ryo_hr_"
+    };
+    (probe) => {
+        "ryo_probe_stack"
+    };
+    (register) => {
+        "ryo_vm_register"
+    };
+    (seh_handler) => {
+        "ryo_seh_handler"
+    };
+    (trip_entry) => {
+        "ryo_jit_trip_entry"
+    };
+    (trip_osr) => {
+        "ryo_jit_trip_osr"
+    };
+}
+
+/// The stack probe of large frames.
+pub const PROBE: &str = rt_sym!(probe);
+/// The registration entry point.
+pub const REGISTER: &str = rt_sym!(register);
+/// The language handler of VM code's PE unwind info (design/vm.md#unwinding).
+pub const SEH_HANDLER: &str = rt_sym!(seh_handler);
+/// The no-op JIT's trip entry points, which the JIT records' slots start at.
+pub const TRIP_ENTRY: &str = rt_sym!(trip_entry);
+pub const TRIP_OSR: &str = rt_sym!(trip_osr);
+
+/// The pointer slot `ryo_rt::entry::c_main` loads the entry fn's address from (untagged).
+pub const MAIN_SLOT: &str = "__ryo_main";
+
+/// A symbol name with an opcode: `ryo_h_AddW32`.
+#[derive(Clone, Copy, Debug)]
+pub struct OpSymbol(&'static str, Opcode);
+
+impl fmt::Display for OpSymbol {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}{:?}", self.0, self.1)
+    }
+}
+
+/// The name of opcode `op`'s handler.
+pub fn handler(op: Opcode) -> OpSymbol {
+    OpSymbol(rt_sym!(handler), op)
+}
+
+/// The name of opcode `op`'s register entry (JIT code only).
+pub fn reg_handler(op: Opcode) -> OpSymbol {
+    OpSymbol(rt_sym!(reg_handler), op)
+}

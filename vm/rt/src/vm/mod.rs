@@ -52,7 +52,7 @@ pub use jit::{trip_entry, trip_osr};
 /// `C-unwind`, so the compiler adds no abort-on-unwind guard, which would reference core's
 /// panic path (design/vm.md, "No re-entry"); nothing in it panics (`y test`'s `rt-core-only`).
 #[rustc_std_internal_symbol]
-#[unsafe(export_name = tagged!("ryo_vm_register"))]
+#[unsafe(export_name = tagged!(ryo_bytecode::rt_sym!(register)))]
 pub unsafe extern "C-unwind" fn ryo_vm_register(start: *const *const u8, end: *const *const u8, anchor: *const u8) {
     // SAFETY: per the caller.
     unsafe { registry::register(start, end, anchor) }

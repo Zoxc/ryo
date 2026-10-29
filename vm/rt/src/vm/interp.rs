@@ -730,7 +730,7 @@ macro_rules! handlers {
             const M: asm::Mode = MODE;
             $(
                 #[rustc_std_internal_symbol]
-                #[unsafe(export_name = tagged!(concat!("ryo_h_", stringify!($name))))]
+                #[unsafe(export_name = tagged!(concat!(ryo_bytecode::rt_sym!(handler), stringify!($name))))]
                 #[allow(non_snake_case, unused_variables, unused_unsafe, clippy::unused_unit)]
                 pub unsafe extern "C-unwind" fn $name(a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) $(-> $ret)? {
                     let a = [a0, a1, a2, a3, a4, a5];
@@ -858,7 +858,7 @@ const _: () = {
 #[cfg(not(windows))]
 #[unsafe(naked)]
 #[rustc_std_internal_symbol]
-#[unsafe(export_name = tagged!("ryo_h_Resume"))]
+#[unsafe(export_name = tagged!(concat!(ryo_bytecode::rt_sym!(handler), "Resume")))]
 pub unsafe extern "sysv64-unwind" fn resume() -> ! {
     #[cfg(feature = "fp-rbp")]
     core::arch::naked_asm!(
@@ -893,7 +893,7 @@ unsafe extern "C-unwind" {
 /// region `resume` returns to the trampoline that called the landing pad, design/vm.md#unwinding).
 #[cfg(windows)]
 #[rustc_std_internal_symbol]
-#[unsafe(export_name = tagged!("ryo_h_Resume"))]
+#[unsafe(export_name = tagged!(concat!(ryo_bytecode::rt_sym!(handler), "Resume")))]
 pub unsafe extern "C-unwind" fn resume() -> ! {
     super::sys::fatal("resume: VM unwinding isn't supported on this target")
 }
@@ -903,7 +903,7 @@ pub unsafe extern "C-unwind" fn resume() -> ! {
 /// before `sub rsp, F`; preserves every register but `r11`.
 #[unsafe(naked)]
 #[rustc_std_internal_symbol]
-#[unsafe(export_name = tagged!("ryo_probe_stack"))]
+#[unsafe(export_name = tagged!(ryo_bytecode::rt_sym!(probe)))]
 pub unsafe extern "sysv64-unwind" fn probe_stack() {
     // On Windows the guard page's fault is raised here: its unwind info (`push rax` as an
     // 8-byte allocation) lets the dispatcher walk on into the caller, whose prologue is before
