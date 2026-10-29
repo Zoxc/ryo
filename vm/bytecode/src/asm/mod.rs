@@ -158,7 +158,7 @@ pub const FUNC_FAR: u32 = 1 << 29;
 /// The bits of [`FUNC_SLOT`], [`FUNC_NEAR`] and [`FUNC_FAR`].
 pub const FUNC_KINDS: u32 = FUNC_SLOT | FUNC_NEAR | FUNC_FAR;
 
-/// Where a handler finds an operand: `count` argument registers from `reg` (0 is `rdi`),
+/// Where a handler finds an operand: `count` argument positions from `reg` ([`handler_arg`]),
 /// the first shifted right by `shift` (32 for the high half of a shared register). `count`
 /// is 0 for operands handlers don't receive (branch targets, call targets, polarities).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
