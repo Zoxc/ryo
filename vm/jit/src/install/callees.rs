@@ -303,20 +303,18 @@ impl Jit {
         let mut at = 0;
         while at < words.len() {
             let op = reduced::Opcode::from_u16(words[at] as u16);
-            let (field, c, name) = match op {
-                Some(reduced::Opcode::Call) => (at + 2, Callee::Vm(header, words[at + 2]), Name::Func(words[at + 2])),
-                Some(reduced::Opcode::TailCall) => (at + 1, Callee::Vm(header, words[at + 1]), Name::Func(words[at + 1])),
+            let call = match op {
+                Some(reduced::Opcode::Call) => Some((at + 2, Callee::Vm(header, words[at + 2]), Name::Func(words[at + 2]))),
+                Some(reduced::Opcode::TailCall) => Some((at + 1, Callee::Vm(header, words[at + 1]), Name::Func(words[at + 1]))),
                 Some(reduced::Opcode::CallSym) => {
                     let s = words[at + 2];
-                    match sym_callee(self.rt, img, s) {
-                        Some(c) => (at + 2, c, Name::Sym(s)),
-                        None => (0, Callee::Addr(0), Name::Sym(s)),
-                    }
+                    sym_callee(self.rt, img, s).map(|c| (at + 2, c, Name::Sym(s)))
                 }
-                _ => (0, Callee::Addr(0), Name::Sym(0)),
+                _ => None,
             };
-            let is_self = c == Callee::Vm(header, func);
-            if field != 0 && !is_self {
+            if let Some((field, c, name)) = call
+                && c != Callee::Vm(header, func)
+            {
                 // Of the callee's image: a symbol may name another image's function.
                 let c = c.checked().ok_or("function out of range")?;
                 words[field] = callee(place, c, name, ext, memo);
