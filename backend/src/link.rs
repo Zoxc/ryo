@@ -115,7 +115,11 @@ pub fn link(
             }
         }
     }
-    if n > 1 {
+    // Unpacked split debuginfo points at the objects and `.dwo` files, which rustc keeps for
+    // it: so must we for every output but the last.
+    let unpacked =
+        sess.opts.debuginfo != rustc_session::config::DebugInfo::None && sess.split_debuginfo() == rustc_target::spec::SplitDebuginfo::Unpacked;
+    if n > 1 && !unpacked {
         remove_temp(sess, &scratch);
     }
 }
