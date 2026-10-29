@@ -1,13 +1,17 @@
 //! The inline form of the common VM instructions (design/vm.md, "Inline instructions"):
-//! moves, immediates, addresses (of slots, constants and symbols), address arithmetic, loads and stores, integer add/sub/logic/multiply, byte swaps,
-//! shifts and rotates (by an immediate or a slot), compares and compare-branches, at widths up to 64 bits (and
-//! 128-bit moves, as two 64-bit halves). They
-//! are short native sequences on `rax` and `rcx` instead of handler calls; the register cache
-//! ([`Cache`]) renames `rax` as it emits them.
+//! moves, immediates, addresses (of slots, constants and symbols), address arithmetic, loads
+//! and stores, integer add/sub/logic/multiply, division and remainder, overflow-checked
+//! add/sub/mul, byte swaps, bit counts (`cttz`/`ctlz`), extensions and truncations, shifts and
+//! rotates (by an immediate or a slot), compares (including `cmp3`) and compare-branches, at
+//! widths up to 64 bits (and 128-bit moves, as two 64-bit halves). They are short native
+//! sequences on `rax` and `rcx` instead of handler calls; the register cache ([`Cache`])
+//! renames `rax` as it emits them.
 //!
 //! Every sequence ends in its last write (to the frame or to memory), or in a conditional
-//! branch, and the only earlier write is `mov.w128`'s store of `rcx` to the frame, so the
-//! decoder knows where a sequence ends. Each opcode has one sequence per operand pattern, and no two opcodes share
+//! branch. The only earlier writes are `mov.w128`'s store of `rcx` to the frame and an
+//! overflow op's result store before its flag's (`setcc cl; mov [o], cl`,
+//! [`Item::ends_inline_at`](super::x86::Item::ends_inline_at)), so the decoder knows where a
+//! sequence ends. Each opcode has one sequence per operand pattern, and no two opcodes share
 //! one: the decoder recovers the opcode and operands by matching against [`sequence`].
 
 use alloc::vec;
