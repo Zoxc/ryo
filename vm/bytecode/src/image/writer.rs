@@ -30,7 +30,7 @@ use core::{mem, slice};
 use super::unwind::{unwind_elf, unwind_pe};
 use super::*;
 use crate::asm::{self, CallSite, Encoded, Mode, Ref};
-use crate::full::{Abs, Const, Data, DecodeError, Decoder, Func, Insn, Opcode, OperandKind, Sym};
+use crate::full::{Abs, Const, Data, DecodeError, Func, Insn, Opcode, OperandKind, Sym};
 
 /// A symbol referenced by the image.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -282,30 +282,33 @@ pub enum WriteError {
 
 /// Index ranges that [`validate_code`] checks operands against.
 #[derive(Clone, Copy, Debug)]
-pub struct CodeLimits {
+pub struct CodeLimits<'a> {
     pub functions: u32,
-    pub symbols: u32,
+    /// The symbols, whose slots must be indirect exactly when an instruction loads through
+    /// them.
+    pub symbols: &'a [SymbolDef],
     /// Constant pool size in bytes.
     pub consts: u32,
     /// Fixup area size in bytes.
     pub data: u32,
 }
 
-/// Decodes all of `code` (one function) and checks every operand: indices in range, branch
-/// targets on instruction starts within the function, and no fall-through past the end.
-/// Returns the instruction start bitmap.
-pub fn validate_code(code: &[u32], lim: &CodeLimits) -> Result<Vec<bool>, (u32, CodeError)> {
+/// Decodes all of `code` (one function) and checks every operand: indices in range, `sym`
+/// operands' slots indirect exactly when the instruction loads through them
+/// (`addr.sym.ind`, `call.sym.ind`'s `sym`), branch targets on instruction starts within the
+/// function, and no fall-through past the end. Returns the instruction start bitmap.
+pub fn validate_code(code: &[u32], lim: &CodeLimits<'_>) -> Result<Vec<bool>, (u32, CodeError)> {
     let mut starts = vec![false; code.len()];
-    let mut last = None;
+    let mut insns = Vec::new();
     let mut at = 0;
     while at < code.len() {
         let (insn, n) = Insn::decode(&code[at..]).map_err(|e| (at as u32, CodeError::Decode(e)))?;
         starts[at] = true;
-        last = Some(insn.opcode());
+        insns.push((at, insn.opcode()));
         at += n;
     }
     // An empty body falls off its end too.
-    if last.is_none_or(|op| op.info().shape.falls_through()) {
+    if insns.last().is_none_or(|&(_, op)| op.info().shape.falls_through()) {
         return Err((code.len() as u32, CodeError::FallsOffEnd));
     }
     let target_ok = |at: usize, t: i32| -> bool {
@@ -313,25 +316,28 @@ pub fn validate_code(code: &[u32], lim: &CodeLimits) -> Result<Vec<bool>, (u32, 
         p >= 0 && (p as usize) < code.len() && starts[p as usize]
     };
     let mut args_only = true;
-    for r in Decoder::new(code) {
-        let (at, insn) = r.unwrap();
+    for (at, op) in insns {
         let words = &code[at..];
         let fail = |e| Err((at as u32, e));
         if !crate::asm::return_ok(words) {
             return fail(CodeError::BadReturn);
         }
-        if insn.opcode() == Opcode::Arg && !args_only {
+        if op == Opcode::Arg && !args_only {
             return fail(CodeError::ArgNotFirst);
         }
-        args_only &= insn.opcode() == Opcode::Arg;
-        let info = insn.opcode().info();
+        args_only &= op == Opcode::Arg;
+        let info = op.info();
         if !info.branch_offsets(&words[1..]).all(|t| target_ok(at, t)) {
             return fail(CodeError::BadTarget);
         }
         for (o, w) in info.operand_words(&words[1..]) {
             match o.kind {
                 OperandKind::Func if w[0] >= lim.functions => return fail(CodeError::FuncOutOfRange),
-                OperandKind::Sym if w[0] >= lim.symbols => return fail(CodeError::SymOutOfRange),
+                OperandKind::Sym => match lim.symbols.get(w[0] as usize) {
+                    None => return fail(CodeError::SymOutOfRange),
+                    Some(s) if (s.flags & SYM_INDIRECT != 0) != op.loads_through_sym() => return fail(CodeError::SymIndirection),
+                    Some(_) => {}
+                },
                 OperandKind::Const if w[0] > lim.consts => return fail(CodeError::ConstOutOfRange),
                 OperandKind::Abs => match Abs::from_word(w[0]) {
                     Abs::Const(k) if k.0 > lim.consts => return fail(CodeError::ConstOutOfRange),
@@ -345,30 +351,9 @@ pub fn validate_code(code: &[u32], lim: &CodeLimits) -> Result<Vec<bool>, (u32, 
     Ok(starts)
 }
 
-/// Checks that every `sym` operand's slot is indirect exactly when the instruction loads
-/// through it (`addr.sym.ind`, `call.sym.ind`'s `sym`). `code` must have passed
-/// [`validate_code`] with these symbols.
-fn check_indirection(code: &[u32], symbols: &[SymbolDef]) -> Result<(), (u32, CodeError)> {
-    for r in Decoder::new(code) {
-        let (at, insn) = r.unwrap();
-        let op = insn.opcode();
-        for (o, w) in op.info().operand_words(&code[at + 1..]) {
-            if o.kind == OperandKind::Sym {
-                let indirect = symbols[w[0] as usize].flags & SYM_INDIRECT != 0;
-                if indirect != op.loads_through_sym() {
-                    return Err((at as u32, CodeError::SymIndirection));
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
 /// Validates function `i`'s code and sorts and checks its cleanup entries.
-fn check_function(i: u32, f: &mut FunctionDef, lim: &CodeLimits, symbols: &[SymbolDef]) -> Result<(), WriteError> {
-    let starts = validate_code(&f.code, lim)
-        .and_then(|s| check_indirection(&f.code, symbols).map(|()| s))
-        .map_err(|(offset, error)| WriteError::Code { func: i, offset, error })?;
+fn check_function(i: u32, f: &mut FunctionDef, lim: &CodeLimits<'_>) -> Result<(), WriteError> {
+    let starts = validate_code(&f.code, lim).map_err(|(offset, error)| WriteError::Code { func: i, offset, error })?;
     f.cleanup.sort();
     for (j, e) in f.cleanup.iter().enumerate() {
         let op_at = |o: u32| (starts.get(o as usize) == Some(&true)).then(|| Opcode::from_u16(f.code[o as usize] as u16)).flatten();
@@ -534,20 +519,16 @@ impl ImageWriter {
     /// [`finish`](Self::finish), not by [`finish_encoded`](Self::finish_encoded)), so that
     /// only valid code gets encoded.
     pub fn validate_functions(&mut self) -> Result<(), WriteError> {
-        let lim = self.limits();
-        for (i, f) in self.functions.iter_mut().enumerate() {
-            check_function(i as u32, f, &lim, &self.symbols)?;
-        }
-        Ok(())
-    }
-
-    fn limits(&self) -> CodeLimits {
-        CodeLimits {
+        let lim = CodeLimits {
             functions: self.functions.len() as u32,
-            symbols: self.symbols.len() as u32,
+            symbols: &self.symbols,
             consts: self.consts.len() as u32,
             data: self.data.len() as u32,
+        };
+        for (i, f) in self.functions.iter_mut().enumerate() {
+            check_function(i as u32, f, &lim)?;
         }
+        Ok(())
     }
 
     /// Adds what the unwind information of `mode`'s format refers to (the slot of
