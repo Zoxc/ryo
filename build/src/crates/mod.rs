@@ -379,8 +379,9 @@ pub struct Report {
 pub const RUSTFLAGS: &str = "-Cdebuginfo=0 -Ccodegen-units=1 -Zthreads=1";
 
 /// The `dev` profile (and `test`, which inherits it, but some crates override it, e.g.
-/// memchr's `opt-level = 3`) with cargo's defaults restated, so a crate's own `[profile]`
-/// can't change them.
+/// memchr's `opt-level = 3`) pinned, so a crate's own `[profile]` can't change it: cargo's
+/// `dev` defaults, except no debuginfo, one codegen unit and no incremental compilation
+/// (matching [`RUSTFLAGS`]).
 const PROFILE_ENV: &[(&str, &str)] = &[
     ("OPT_LEVEL", "0"),
     ("DEBUG", "0"),
