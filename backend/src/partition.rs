@@ -854,7 +854,8 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
 
     /// Instantiates the island templates CGU `u`'s image calls (design/stubs.md): linked to an
     /// upstream copy where one is exported, otherwise defined once in the crate, `External` +
-    /// `Hidden`, by the first CGU that calls it (`owners`), which the others link to. Not a
+    /// `Hidden`: by the CGU rustc put a unique one in ([`Self::expose_unique`]), else by the
+    /// first CGU that calls it (`owners`), which the others link to. Not a
     /// `WeakODR` copy per CGU: LLVM's function merging (`-Zmerge-functions=aliases`, on at
     /// `-O2` and up) turns a copy identical to another function into an alias of it, which is
     /// a strong symbol on Mach-O (ld64: duplicate symbol) and a weak external whose default
@@ -877,11 +878,14 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             if island.upstream_monomorphization(tcx).is_some() || !tcx.should_codegen_locally(island) || elsewhere {
                 continue;
             }
-            if let Some(&h) = self.owners.get(&item)
-                && h != u
-            {
-                // (An addition of a stub walk there is internal until now.)
-                self.units[h].hide_added(item, (Linkage::External, Visibility::Hidden));
+            // A unique one rustc internalized into another CGU: that copy, made linkable.
+            if unique(tcx, item) && self.homes.get(&item).is_some_and(|homes| homes.iter().any(|&h| h != u)) {
+                self.expose_unique(u, item);
+                continue;
+            }
+            // Its owner added it External + Hidden already (this runs before the stub walks,
+            // the only other additions).
+            if self.owners.get(&item).is_some_and(|&h| h != u) {
                 continue;
             }
             self.owners.insert(item, u);
