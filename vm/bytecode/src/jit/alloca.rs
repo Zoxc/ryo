@@ -217,7 +217,8 @@ fn bytes(code: &Code, frame_size: u32) -> Result<FrameBytes, Unsupported> {
             uf.union(at(lo) as u32, at(b) as u32);
         }
     };
-    // Per byte: explicitly read, escaped, a block (island, handler length), an address.
+    // Per byte: explicitly read; opaque (a block, island or handler length, or an address);
+    // accessed at all; part of an access that isn't a whole scalar or vector one.
     let mut read = alloc::vec![false; n];
     let mut opaque = alloc::vec![false; n];
     let mut accessed = alloc::vec![false; n];
