@@ -72,26 +72,47 @@ fn opt() -> JitOpt {
     var(c"RYO_JIT_OPT").and_then(JitOpt::parse).unwrap_or(JitOpt::Ssa)
 }
 
-/// The boolean settings, on with `<var>=1`: the variable, the startup line's label (`None`:
-/// not shown), and the field's offset in [`Config`] (an offset, not an accessor function:
-/// an indirect call could unwind, which would pull core's panic path into `at_exit`).
-const FLAGS: [(&CStr, Option<&str>, usize); 9] = [
-    (c"RYO_JIT_SYNC", Some("sync"), offset_of!(Config, sync)),
-    (c"RYO_JIT_SHUFFLE", Some("shuffle"), offset_of!(Config, shuffle)),
-    (c"RYO_JIT_CHECK", Some("check"), offset_of!(Config, jit.check)),
-    (c"RYO_JIT_LICM", Some("licm"), offset_of!(Config, jit.licm)),
-    (c"RYO_JIT_ROTATE", Some("rotate"), offset_of!(Config, jit.rotate)),
-    (c"RYO_JIT_PERFMAP", Some("perfmap"), offset_of!(Config, jit.perfmap)),
-    (c"RYO_JIT_LOG", Some("log"), offset_of!(Config, jit.log)),
-    (c"RYO_JIT_TEST_PANIC", None, offset_of!(Config, jit.test_panic)),
-    (c"RYO_JIT_TEST_OOM", None, offset_of!(Config, jit.test_oom)),
-];
+/// A `bool` field of [`Config`], by offset (an offset, not an accessor function: an indirect
+/// call could unwind, which would pull core's panic path into `at_exit`). Built only by
+/// [`flag!`], which checks the field's type.
+#[derive(Clone, Copy)]
+struct Flag(usize);
 
-/// The flag of [`FLAGS`] at `offset` in `cfg`.
-fn flag(cfg: &mut Config, offset: usize) -> &mut bool {
-    // SAFETY: `offset` is a `bool` field's ([`FLAGS`]).
-    unsafe { &mut *(cfg as *mut Config).cast::<u8>().add(offset).cast::<bool>() }
+/// The [`Flag`] for `Config`'s field `$f` (a path such as `jit.check`), which must be a `bool`.
+macro_rules! flag {
+    ($($f:ident).+) => {{
+        fn _is_bool(c: &Config) -> bool {
+            c.$($f).+
+        }
+        Flag(offset_of!(Config, $($f).+))
+    }};
 }
+
+impl Flag {
+    fn get(self, cfg: &Config) -> bool {
+        // SAFETY: `self.0` is a `bool` field's offset ([`flag!`]).
+        unsafe { *(cfg as *const Config).cast::<u8>().add(self.0).cast::<bool>() }
+    }
+
+    fn set(self, cfg: &mut Config, v: bool) {
+        // SAFETY: `self.0` is a `bool` field's offset ([`flag!`]).
+        unsafe { *(cfg as *mut Config).cast::<u8>().add(self.0).cast::<bool>() = v }
+    }
+}
+
+/// The boolean settings, on with `<var>=1`: the variable, the startup line's label (`None`:
+/// not shown), and the field.
+const FLAGS: [(&CStr, Option<&str>, Flag); 9] = [
+    (c"RYO_JIT_SYNC", Some("sync"), flag!(sync)),
+    (c"RYO_JIT_SHUFFLE", Some("shuffle"), flag!(shuffle)),
+    (c"RYO_JIT_CHECK", Some("check"), flag!(jit.check)),
+    (c"RYO_JIT_LICM", Some("licm"), flag!(jit.licm)),
+    (c"RYO_JIT_ROTATE", Some("rotate"), flag!(jit.rotate)),
+    (c"RYO_JIT_PERFMAP", Some("perfmap"), flag!(jit.perfmap)),
+    (c"RYO_JIT_LOG", Some("log"), flag!(jit.log)),
+    (c"RYO_JIT_TEST_PANIC", None, flag!(jit.test_panic)),
+    (c"RYO_JIT_TEST_OOM", None, flag!(jit.test_oom)),
+];
 
 /// A static written once: [`UNINIT`], then [`BUSY`] while one thread writes it, then
 /// [`READY`].
@@ -229,8 +250,8 @@ fn from_env() -> Config {
         },
         stats_bad,
     };
-    for (name, _, field) in FLAGS {
-        *flag(&mut cfg, field) = var(name) == Some(b"1");
+    for (name, _, flag) in FLAGS {
+        flag.set(&mut cfg, var(name) == Some(b"1"));
     }
     cfg
 }
@@ -801,10 +822,9 @@ fn startup_line(cfg: &Config, pid: u32, l: &mut Line) {
     if cfg.threshold.is_some() {
         l.bytes(b" (RYO_JIT_THRESHOLD)");
     }
-    let mut c = *cfg;
-    for (_, label, field) in FLAGS {
+    for (_, label, flag) in FLAGS {
         if let Some(label) = label
-            && *flag(&mut c, field)
+            && flag.get(cfg)
         {
             l.bytes(b", ");
             l.bytes(label.as_bytes());
