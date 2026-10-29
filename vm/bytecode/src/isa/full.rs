@@ -502,6 +502,10 @@ macro_rules! case_elem {
             fn fmt_elem(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 write!(f, "{} => {}", self.value, self.target)
             }
+            /// The value's bits above its width must be 0, as for the scalar operands.
+            fn valid(w: &[u32]) -> bool {
+                words_to_u128(&w[..$n]) <= <$v>::MAX as u128
+            }
         }
     };
 }
