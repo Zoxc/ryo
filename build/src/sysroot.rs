@@ -180,7 +180,12 @@ pub fn build(info: &RustcInfo, dist: &Path, target: &Path, jits: Option<&crate::
     // cargo's `-L dependency=` isn't one.
     let mut crate_path = String::from("-Lcrate=");
     crate_path.push_str(deps.to_str().ok_or("non-UTF-8 target path")?);
-    let rustflags = [crate_path.as_str(), "-Zforce-unstable-if-unmarked", "--sysroot=/dev/null"];
+    let mut rustflags = vec![crate_path.as_str(), "-Zforce-unstable-if-unmarked", "--sysroot=/dev/null"];
+    // Windows: no red zone in `ryo_rt`'s `sysv64` handlers, as in `dist/` (design/platforms.md);
+    // the rest of std is Win64 code, which has none anyway.
+    if crate::target::is_windows(&info.host) {
+        rustflags.push(crate::jit::NO_REDZONE);
+    }
     let mut cargo = cmd("cargo");
     if let Some(dir) = jit {
         cargo.env(crate::dist::JIT_LIB_DIR_VAR, dir);
@@ -304,14 +309,20 @@ fn prepare_sources(info: &RustcInfo, root: &Path, dst: &Path, jit: bool) -> Resu
             "[package]\nname = \"ryo_rt\"\nversion = \"0.1.0\"\nedition = \"2024\"\nbuild = {}\n\n\
              [lib]\npath = {}\ntest = false\nbench = false\ndoc = false\n\n\
              [dependencies]\ncore = {{ path = \"../core\" }}\ncompiler_builtins = {{ path = \"../compiler-builtins/compiler-builtins\", features = [\"compiler-builtins\"] }}\n\
-             ryo_bytecode = {{ path = \"../ryo_bytecode\" }}\n\n[features]\njit = []\n",
+             ryo_bytecode = {{ path = \"../ryo_bytecode\" }}\n\n[features]\nfp-rbp = []\njit = []\npe-test = []\n",
             path(vm.join("rt").join("build.rs"))?,
             path(vm.join("rt").join("src").join("lib.rs"))?,
         ),
     )?;
     // The crates directly on `core` that the ryo backend builds depend on `ryo_rt` through
     // these two (everything else in the sysroot depends on one of them).
-    let dep = if jit { "ryo_rt = { path = \"../ryo_rt\", features = [\"jit\"] }\n" } else { "ryo_rt = { path = \"../ryo_rt\" }\n" };
+    // The JIT, and what `RYO_RT_FEATURES` adds, as in `dist/`'s `ryo_rt`.
+    let mut features = crate::dist::rt_features();
+    if jit {
+        features.insert(0, "jit".to_owned());
+    }
+    let features: Vec<String> = features.iter().map(|f| format!("{f:?}")).collect();
+    let dep = format!("ryo_rt = {{ path = \"../ryo_rt\", features = [{}] }}\n", features.join(", "));
     for krate in ["alloc", "rustc-std-workspace-core"] {
         let manifest = dst.join(krate).join("Cargo.toml");
         let text = crate::utils::read(src.join(krate).join("Cargo.toml"))?;

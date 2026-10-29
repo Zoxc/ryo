@@ -22,13 +22,20 @@ const COFF_PREFIX: &str = "__ryo_jit$";
 /// (design/jit.md#packaging). Elsewhere `ryo_rt` has no `jit` feature, and its trips are the
 /// no-op JIT.
 pub fn supported(triple: &str) -> bool {
-    triple.starts_with("x86_64-") && (triple.contains("-linux-") || is_coff(triple) || is_macho(triple))
+    triple.starts_with("x86_64-") && (triple.contains("-linux-") || is_coff(triple) || (is_macho(triple) && triple.ends_with("-darwin")))
 }
 
 /// The flag that keeps `ryo_rt`'s and the JIT's code for Windows out of the memory below
 /// `rsp`: LLVM gives `sysv64` functions a red zone by their convention, even on Windows,
 /// where exception dispatch, APCs and debuggers may write there (design/platforms.md).
 pub const NO_REDZONE: &str = "-Cno-redzone=yes";
+
+/// The host's sealed JIT directories, both made by [`build`] (assembled in `dist::build_in`): the
+/// release one bundled into `ryo_rt`, and the checked one `y test` swaps in.
+pub struct SealedJits {
+    pub release: PathBuf,
+    pub checked: PathBuf,
+}
 
 /// Builds `ryo_jit` for `triple` (`cross` unless it is the host) as a staticlib, with fat LTO
 /// against the toolchain's std (the one `dist/` copies), and seals it into
@@ -52,13 +59,6 @@ pub const NO_REDZONE: &str = "-Cno-redzone=yes";
 ///
 /// `checked`: with `-Cdebug-assertions=on -Coverflow-checks=on` on top of the release
 /// optimizations, in `target/jit-checked/`: the JIT `y test` runs ([`CHECKED_DIR`]).
-/// The host's sealed JIT directories ([`build`]): the release one bundled into `ryo_rt`, and
-/// the checked one `y test` swaps in.
-pub struct SealedJits {
-    pub release: PathBuf,
-    pub checked: PathBuf,
-}
-
 pub fn build(rb: &crate::dist::RuntimeBuild, triple: &str, checked: bool) -> Result<PathBuf, String> {
     let (root, info, cross) = (rb.root, rb.info, rb.cross(triple));
     eprintln!("[y] jit: ryo_jit{}{}", if checked { " (checked)" } else { "" }, cross.map(|t| format!(" for {t}")).unwrap_or_default());
