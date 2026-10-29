@@ -36,6 +36,13 @@ pub fn codegen() -> Result<(), String> {
         let src = root.join("bench").join(format!("{program}.rs"));
         let dump = dump_dir.join(format!("{program}.txt"));
         let mut c = cmd(&rustc_ryo);
+        // Inherited backend switches (`RYO_ASM_ALIGN`, `RYO_NO_VM`, ...) would change the dumps.
+        for (k, _) in std::env::vars_os() {
+            let k_ = k.to_string_lossy();
+            if k_.starts_with("RYO_") && !k_.starts_with("RYO_Y_") {
+                c.env_remove(&k);
+            }
+        }
         c.args(["--edition=2024", &path_str(&src)?, "-o", &path_str(&out.join(exe_name(program)))?]);
         // One image, as the benchmarks build (`bench`'s `DEV_FLAGS`), whatever rustc's
         // default codegen units.
