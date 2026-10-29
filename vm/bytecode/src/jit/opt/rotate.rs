@@ -1,7 +1,7 @@
 //! Loop rotation (design/jit.md, "Loop rotation"): a loop whose head only tests whether to
-//! leave (a branch out of the loop or into it, after at most [`MAX_INSTS`] pure instructions or
-//! loads) and
-//! whose one latch jumps back to it gets the head's code copied to the end of the latch, so
+//! leave (a branch out of the loop or into it, and no instructions: a copied instruction's
+//! result rarely gets the register of the body's parameter for it, a move per iteration) and
+//! whose one latch jumps back to it gets the head's branch copied to the end of the latch, so
 //! each iteration ends in that test, branching back into the body, and runs no jump of its
 //! own. The head stays as it was for the entry from the preheader and for its OSR entry,
 //! which still lands there: rotation only adds a path around it.
@@ -13,7 +13,7 @@
 //! - **Exit**: if `x` has other predecessors (or is an AOT loop head), the edge `h -> x` goes
 //!   through a new block that jumps on to `x`, so the exit has a block the head and the copy
 //!   both enter alone.
-//! - **SSA repair**: the values `h` defines (its parameters and results) that blocks other than
+//! - **SSA repair**: the values `h` defines (its parameters) that blocks other than
 //!   `h` use become parameters of `b` and the exit block, which `h` passes the originals and the
 //!   copy their copies: a use in a block `b` dominates takes `b`'s, one the exit block
 //!   dominates the exit's. A use that neither dominates (a block both reach) cancels the
@@ -26,10 +26,6 @@ use alloc::vec::Vec;
 
 use super::hoist::Analysis;
 use crate::jit::ir::*;
-
-/// The most instructions a head may have to be copied: none, as a copied instruction's result
-/// rarely gets the register of the body's parameter for it (a move per iteration).
-const MAX_INSTS: usize = 0;
 
 /// Rotates the loops of `f` that have the shape. Whether any changed.
 pub fn rotate(f: &mut Func) -> bool {
@@ -61,16 +57,10 @@ struct Shape {
 fn shape(f: &Func, h: Block, latches: &[Block], body: &[bool]) -> Option<Shape> {
     let hd = &f.blocks[h.idx()];
     let &[l] = latches else { return None };
-    if hd.kind != BlockKind::Body || l == h || hd.insts.len() > MAX_INSTS {
+    if hd.kind != BlockKind::Body || l == h || !hd.insts.is_empty() {
         return None;
     }
     if !matches!(&f.blocks[l.idx()].term, Term::Jmp(e) if e.to == h) || hd.preds.iter().filter(|p| p.0 == l).count() != 1 {
-        return None;
-    }
-    if !hd.insts.iter().all(|i| {
-        let op = &f.insts[i.idx()].op;
-        (op.pure() && !matches!(op, Op::OsrLoad(..))) || matches!(op, Op::Load(..) | Op::ALoad(..))
-    }) {
         return None;
     }
     if !matches!(hd.term, Term::Br { .. } | Term::BrCmp { .. }) {
@@ -136,11 +126,7 @@ fn rotate_loop(f: &mut Func, s: Shape) -> bool {
     };
 
     // The values `h` defines, by index in `defs`.
-    let hd = &f.blocks[h.idx()];
-    let mut defs: Vec<Value> = hd.params.clone();
-    for &i in &hd.insts {
-        defs.extend(f.insts[i.idx()].results());
-    }
+    let defs: Vec<Value> = f.blocks[h.idx()].params.clone();
     let mut slot = alloc::vec![u32::MAX; f.values.len()];
     for (k, &v) in defs.iter().enumerate() {
         slot[v.idx()] = k as u32;
@@ -206,17 +192,9 @@ fn rotate_loop(f: &mut Func, s: Shape) -> bool {
     ht.edge_mut(kout).args.extend(eout.iter().map(|e| e.1));
     let mut t = ht.clone();
 
-    // The copy at the end of `l`: `h`'s parameters are the jump's arguments.
+    // The copy of `h`'s branch at the end of `l`: `h`'s parameters are the jump's arguments.
     let Term::Jmp(je) = core::mem::replace(&mut f.blocks[l.idx()].term, Term::None) else { unreachable!() };
-    let mut map: Vec<(Value, Value)> = f.blocks[h.idx()].params.iter().copied().zip(je.args).collect();
-    for i in f.blocks[h.idx()].insts.clone() {
-        let id = &f.insts[i.idx()];
-        let (op, res) = (id.op.clone(), id.results().collect::<Vec<_>>());
-        let args: Vec<Value> = id.args.iter().map(|&a| map.iter().find(|m| m.0 == a).map_or(a, |m| m.1)).collect();
-        let ws: Vec<u8> = res.iter().map(|&r| f.w(r)).collect();
-        let n = f.inst(l, op, args, &ws);
-        map.extend(res.into_iter().zip(f.insts[n.idx()].results()));
-    }
+    let map: Vec<(Value, Value)> = f.blocks[h.idx()].params.iter().copied().zip(je.args).collect();
     let sub = |v: &mut Value| {
         if let Some(m) = map.iter().find(|m| m.0 == *v) {
             *v = m.1;
