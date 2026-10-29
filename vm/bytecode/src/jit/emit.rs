@@ -47,21 +47,6 @@ pub struct Output {
 const S1: R = R::R11;
 const S2: R = R::R10;
 
-/// The DWARF number of a register.
-fn dw(r: R) -> u8 {
-    match r {
-        R::Rax => 0,
-        R::Rdx => 1,
-        R::Rcx => 2,
-        R::Rbx => 3,
-        R::Rsi => 4,
-        R::Rdi => 5,
-        R::Rbp => 6,
-        R::Rsp => 7,
-        r => r.num(),
-    }
-}
-
 fn xcc(c: Cc) -> X {
     match c {
         Cc::Eq => X::E,
@@ -885,7 +870,7 @@ impl<'a> E<'a> {
             self.a.x().mov(8, Rm::R(R::Rbp), Rm::R(R::Rsp));
             let m = self.a.mark();
             let mut v = Vec::new();
-            cfa::def_cfa_register(&mut v, dw(R::Rbp));
+            cfa::def_cfa_register(&mut v, cfa::RBP);
             self.cfi.push((m, v));
         }
         if self.fr.frameless {
@@ -2171,7 +2156,7 @@ fn cfa_offset(off: u32) -> Vec<u8> {
 /// `DW_CFA_offset r, n`: `r` saved at `CFA - 8n`.
 fn cfa_saved(r: R, n: u32) -> Vec<u8> {
     let mut v = Vec::new();
-    cfa::offset(&mut v, dw(r), n);
+    cfa::offset(&mut v, cfa::reg(r.num()), n);
     v
 }
 

@@ -15,10 +15,25 @@ pub mod cfa {
 
     use crate::asm::leb;
 
+    /// The DWARF number of the general-purpose register with x86 number `x86`.
+    pub const fn reg(x86: u8) -> u8 {
+        match x86 {
+            0 => 0, // rax
+            1 => 2, // rcx
+            2 => 1, // rdx
+            3 => 3, // rbx
+            4 => 7, // rsp
+            5 => 6, // rbp
+            6 => 4, // rsi
+            7 => 5, // rdi
+            r => r, // r8 to r15
+        }
+    }
+
     /// DWARF register numbers.
-    pub const RDX: u8 = 1;
-    pub const RBP: u8 = 6;
-    pub const RSP: u8 = 7;
+    pub const RDX: u8 = reg(2);
+    pub const RBP: u8 = reg(5);
+    pub const RSP: u8 = reg(4);
     /// The return address column.
     pub const RA: u8 = 16;
 
