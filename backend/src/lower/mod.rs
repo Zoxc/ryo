@@ -25,6 +25,7 @@
 //! | [`simd`] | `simd_*` intrinsics with an instruction |
 //! | [`constant`] | constants and constant-pool references |
 //! | [`island`] | island instructions and requests |
+//! | [`uses`] | the use analysis of MIR locals (fusion, dead hints) |
 //!
 //! Every MIR enum is matched exhaustively (no `_` arm), so a MIR change in a toolchain bump is
 //! a compile error. What isn't implemented yet reports [`NeedsNative`] with a precise reason
@@ -46,6 +47,7 @@ mod rvalue;
 mod sig;
 mod simd;
 mod terminator;
+mod uses;
 
 use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use rustc_middle::mir::interpret::AllocId;
@@ -337,8 +339,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// blocks stay in the body.
     fn blocks(&mut self) -> Result<(), NeedsNative> {
         let body = self.body;
-        let uses = terminator::local_uses(body);
-        let dead = frame::dead_after_read(body);
+        let uses::LocalUses { count: uses, dead_after_read: dead } = uses::analyze(body);
         let pe = self.cx.mode.pe;
         let reachable = rustc_middle::mir::traversal::mono_reachable_as_bitset(body, self.tcx, self.instance);
         let mut order: Vec<BasicBlock> = body.basic_blocks.indices().collect();

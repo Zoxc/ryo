@@ -20,8 +20,7 @@
 
 use rustc_index::IndexVec;
 use rustc_index::bit_set::{BitMatrix, DenseBitSet};
-use rustc_middle::mir::visit::{MutatingUseContext, NonMutatingUseContext, PlaceContext, Visitor};
-use rustc_middle::mir::{BasicBlock, Body, Local, Location, Place, ProjectionElem, StatementKind, TerminatorKind, UnwindAction};
+use rustc_middle::mir::{BasicBlock, Body, Local, StatementKind, TerminatorKind, UnwindAction};
 use rustc_middle::ty::layout::TyAndLayout;
 use ryo_bytecode::abi::{self, HEADER_SIZE};
 use ryo_bytecode::full::Opcode;
@@ -457,77 +456,4 @@ fn storage_effects(stmts: &[rustc_middle::mir::Statement<'_>], live: &mut DenseB
             _ => {}
         }
     }
-}
-
-/// The locals whose value is dead after the statement that reads it, with that statement's
-/// location, sorted: locals other than `_0` and the arguments that are read once, by a
-/// statement, defined once (as a whole) earlier in the same block, and never borrowed, dropped
-/// or indexed (which the lowering does through the local's address). Every execution of the
-/// read follows the definition, so nothing reads the value after it.
-pub fn dead_after_read(body: &Body<'_>) -> Vec<(Location, Local)> {
-    #[derive(Clone, Copy, Default)]
-    struct Use {
-        reads: u32,
-        read: Option<Location>,
-        defs: u32,
-        def: Option<Location>,
-        escapes: bool,
-    }
-    fn escaping(cx: PlaceContext) -> bool {
-        matches!(
-            cx,
-            PlaceContext::MutatingUse(
-                MutatingUseContext::Borrow | MutatingUseContext::RawBorrow | MutatingUseContext::Drop | MutatingUseContext::AsmOutput,
-            ) | PlaceContext::NonMutatingUse(
-                NonMutatingUseContext::SharedBorrow | NonMutatingUseContext::FakeBorrow | NonMutatingUseContext::RawBorrow,
-            )
-        )
-    }
-    struct Uses(IndexVec<Local, Use>);
-    impl<'tcx> Visitor<'tcx> for Uses {
-        fn visit_place(&mut self, place: &Place<'tcx>, cx: PlaceContext, loc: Location) {
-            // Borrowing, dropping or indexing the local itself (not through a pointer in it)
-            // takes its address. The local alone only gets a projection context.
-            let direct = !place.projection.iter().any(|e| matches!(e, ProjectionElem::Deref));
-            let indexed = place
-                .projection
-                .iter()
-                .take_while(|e| !matches!(e, ProjectionElem::Deref))
-                .any(|e| matches!(e, ProjectionElem::Index(_) | ProjectionElem::ConstantIndex { .. } | ProjectionElem::Subslice { .. }));
-            if indexed || (direct && escaping(cx)) {
-                self.0[place.local].escapes = true;
-            }
-            self.super_place(place, cx, loc);
-        }
-
-        fn visit_local(&mut self, local: Local, cx: PlaceContext, loc: Location) {
-            let u = &mut self.0[local];
-            match cx {
-                PlaceContext::NonUse(_) => {}
-                PlaceContext::MutatingUse(MutatingUseContext::Store | MutatingUseContext::Call) => {
-                    u.defs += 1;
-                    u.def = Some(loc);
-                }
-                cx if escaping(cx) => u.escapes = true,
-                // Reads, and partial writes (which keep the other bytes).
-                _ => {
-                    u.reads += 1;
-                    u.read = Some(loc);
-                }
-            }
-        }
-    }
-    let mut v = Uses(IndexVec::from_elem(Use::default(), &body.local_decls));
-    v.visit_body(body);
-    let mut out: Vec<(Location, Local)> =
-        v.0.iter_enumerated()
-            .filter(|&(l, u)| l.as_usize() > body.arg_count && !u.escapes && u.reads == 1 && u.defs == 1)
-            .filter_map(|(l, u)| {
-                let (r, d) = (u.read?, u.def?);
-                let in_stmt = r.statement_index < body.basic_blocks[r.block].statements.len();
-                (in_stmt && d.block == r.block && d.statement_index < r.statement_index).then_some((r, l))
-            })
-            .collect();
-    out.sort_unstable();
-    out
 }

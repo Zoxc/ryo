@@ -9,10 +9,9 @@
 use rustc_abi::{TagEncoding, Variants};
 use rustc_hir::attrs::lang_items::LangItem;
 use rustc_index::IndexVec;
-use rustc_middle::mir::visit::{PlaceContext, Visitor};
 use rustc_middle::mir::{
-    AssertKind, BasicBlock, BasicBlockData, BinOp, Body, Local, Location, Operand, Place, Rvalue, SourceInfo, StatementKind, SwitchTargets,
-    Terminator, TerminatorKind, UnwindAction, UnwindTerminateReason,
+    AssertKind, BasicBlock, BasicBlockData, BinOp, Local, Operand, Place, Rvalue, SourceInfo, StatementKind, SwitchTargets, Terminator,
+    TerminatorKind, UnwindAction, UnwindTerminateReason,
 };
 use rustc_middle::ty::{self, Instance, Ty};
 use ryo_bytecode::asm::Opnd;
@@ -65,22 +64,6 @@ pub enum Fused<'tcx> {
     /// `_d = discriminant(p)` of a niche-encoded enum, `_d` only feeding the `SwitchInt`: the
     /// switch tests the tag of `p` directly ([`FnCx::switch_niche`]).
     Discr(Place<'tcx>),
-}
-
-/// How often each local is used (defined, read, borrowed), not counting storage markers and
-/// debug info.
-pub fn local_uses(body: &Body<'_>) -> IndexVec<Local, u32> {
-    struct Count(IndexVec<Local, u32>);
-    impl<'tcx> Visitor<'tcx> for Count {
-        fn visit_local(&mut self, local: Local, cx: PlaceContext, _: Location) {
-            if !matches!(cx, PlaceContext::NonUse(_)) {
-                self.0[local] += 1;
-            }
-        }
-    }
-    let mut c = Count(IndexVec::from_elem(0, &body.local_decls));
-    c.visit_body(body);
-    c.0
 }
 
 /// A niche switch with at most this many tested arms branches on the tag with `br.eq.imm`.
