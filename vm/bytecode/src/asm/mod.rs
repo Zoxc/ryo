@@ -61,7 +61,7 @@ pub(crate) mod x86;
 pub use decode::{AsmError, Decoded, Resolver, decode, decode_linked, decode_reduced, decode_reduced_indexed};
 #[cfg(feature = "alloc")]
 pub use encode::{
-    Asm, CallSite, DroppedStore, EncodeError, Encoded, InsnId, Label, Opnd, PROBE_FROM, Ref, Reloc, Scope, ScopeKind, Unwind, encode, operands,
+    Asm, DroppedStore, EncodeError, Encoded, InsnId, Label, Opnd, PROBE_FROM, Ref, Reloc, Scope, ScopeKind, Unwind, encode, operands,
     pe_region_start, prologue_len, push_words, word_len,
 };
 #[cfg(feature = "alloc")]
@@ -71,6 +71,7 @@ pub use inline::{has_inline, ssa_as_handler};
 #[cfg(feature = "alloc")]
 pub use list::InsnList;
 pub use list::{HANDLER_SEL, Hint};
+pub use lsda::CallSite;
 #[cfg(feature = "alloc")]
 pub use reduce::{as_handler, encode_reduced, encode_reduced_at, is_native, reduce};
 

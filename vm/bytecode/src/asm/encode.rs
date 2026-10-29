@@ -54,18 +54,7 @@ pub struct Reloc {
     pub to: Ref,
 }
 
-/// A call that may unwind: the call instruction's bytes, and its landing pad (the position
-/// of an `lpad`), or `None` if unwinding continues in the caller. Calls without a call site
-/// can't unwind (the unwinder aborts if they do).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct CallSite {
-    pub start: u32,
-    pub len: u32,
-    pub pad: Option<u32>,
-    /// The landing pad catches every exception, rather than being a cleanup
-    /// ([`crate::image::CATCH`]).
-    pub catch: bool,
-}
+pub use super::lsda::CallSite;
 
 /// One function's machine code.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

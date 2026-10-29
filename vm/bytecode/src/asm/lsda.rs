@@ -12,8 +12,6 @@
 use alloc::vec::Vec;
 
 #[cfg(feature = "alloc")]
-use super::CallSite;
-#[cfg(feature = "alloc")]
 use super::leb;
 use super::leb::Reader;
 
@@ -22,13 +20,16 @@ fn uleb(out: &mut Vec<u8>, v: u32) {
     leb::put(out, v.into());
 }
 
-/// A call site [`find`] found: its range, its landing pad (none: unwinding continues) and
-/// whether that catches.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Site {
+/// A call that may unwind: the call instruction's bytes, and its landing pad (the position
+/// of an `lpad`), or `None` if unwinding continues in the caller. Calls without a call site
+/// can't unwind (the unwinder aborts if they do).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct CallSite {
     pub start: u32,
     pub len: u32,
     pub pad: Option<u32>,
+    /// The landing pad catches every exception, rather than being a cleanup
+    /// ([`crate::image::CATCH`]).
     pub catch: bool,
 }
 
@@ -52,23 +53,43 @@ pub fn write(sites: &[CallSite]) -> Vec<u8> {
     out
 }
 
-/// The call site of the LSDA `lsda` (written by [`write`]) that contains the code offset
-/// `pc`: `Some(None)` if none does, `None` if `lsda` isn't one. Without allocating or
-/// panicking, for the runtime's PE exception handler.
-pub fn find(lsda: &[u8], pc: u32) -> Option<Option<Site>> {
+/// The call-site table of the LSDA `lsda` (written by [`write`]), yielding `None` for a
+/// malformed record (and then ending), and the bytes after it (the action records). `None`
+/// if `lsda` has no valid header and table length. Without allocating or panicking.
+fn sites(lsda: &[u8]) -> Option<(impl Iterator<Item = Option<CallSite>> + '_, &[u8])> {
     if lsda.get(..3)? != [0xff, 0xff, 0x01] {
         return None;
     }
     let mut r = Reader(lsda.get(3..)?);
     let len = r.minimal_u32()? as usize;
-    let mut table = Reader(r.0.get(..len)?);
-    while !table.0.is_empty() {
-        let (start, l, pad, action) = (table.minimal_u32()?, table.minimal_u32()?, table.minimal_u32()?, table.minimal_u32()?);
-        if action > 1 || (action == 1 && pad == 0) {
+    let (mut table, actions) = (Reader(r.0.get(..len)?), r.0.get(len..)?);
+    let mut bad = false;
+    let iter = core::iter::from_fn(move || {
+        if bad || table.0.is_empty() {
             return None;
         }
-        if pc.wrapping_sub(start) < l {
-            return Some(Some(Site { start, len: l, pad: (pad != 0).then_some(pad), catch: action == 1 }));
+        let mut record = || {
+            let (start, len, pad, action) = (table.minimal_u32()?, table.minimal_u32()?, table.minimal_u32()?, table.minimal_u32()?);
+            if action > 1 || (action == 1 && pad == 0) {
+                return None;
+            }
+            Some(CallSite { start, len, pad: (pad != 0).then_some(pad), catch: action == 1 })
+        };
+        let site = record();
+        bad = site.is_none();
+        Some(site)
+    });
+    Some((iter, actions))
+}
+
+/// The call site of the LSDA `lsda` (written by [`write`]) that contains the code offset
+/// `pc`: `Some(None)` if none does, `None` if `lsda` isn't one. Without allocating or
+/// panicking, for the runtime's PE exception handler.
+pub fn find(lsda: &[u8], pc: u32) -> Option<Option<CallSite>> {
+    for site in sites(lsda)?.0 {
+        let site = site?;
+        if pc.wrapping_sub(site.start) < site.len {
+            return Some(Some(site));
         }
     }
     Some(None)
@@ -78,20 +99,8 @@ pub fn find(lsda: &[u8], pc: u32) -> Option<Option<Site>> {
 /// its shortest encoding, as [`write`] never writes one).
 #[cfg(feature = "alloc")]
 pub fn parse(lsda: &[u8]) -> Option<Vec<CallSite>> {
-    if lsda.get(..3)? != [0xff, 0xff, 0x01] {
-        return None;
-    }
-    let mut r = Reader(&lsda[3..]);
-    let len = r.minimal_u32()? as usize;
-    let (mut table, actions) = (Reader(r.0.get(..len)?), &r.0[len..]);
-    let mut out = Vec::new();
-    while !table.0.is_empty() {
-        let (start, l, pad, action) = (table.minimal_u32()?, table.minimal_u32()?, table.minimal_u32()?, table.minimal_u32()?);
-        if action > 1 || (action == 1 && pad == 0) {
-            return None;
-        }
-        out.push(CallSite { start, len: l, pad: (pad != 0).then_some(pad), catch: action == 1 });
-    }
+    let (sites, actions) = sites(lsda)?;
+    let out = sites.collect::<Option<Vec<_>>>()?;
     let want: &[u8] = if out.iter().any(|s| s.catch) { &[1, 0] } else { &[] };
     (actions == want).then_some(out)
 }

@@ -475,7 +475,6 @@ fn pe_unwind_with_handler() {
     assert_eq!(unsafe { PeHandlerData::from_ptr(data.as_ptr()) }, Some(d));
     assert_eq!(PeHandlerData::parse(&data[..data.len() - 1]), None);
     for (pc, want) in [(9, None), (10, Some(sites[0])), (14, Some(sites[0])), (15, None), (25, Some(sites[1])), (134, Some(sites[2])), (500, None)] {
-        let want = want.map(|s: CallSite| lsda::Site { start: s.start, len: s.len, pad: s.pad, catch: s.catch });
         assert_eq!(lsda::find(d.lsda, pc), Some(want), "pc {pc}");
     }
     assert_eq!(lsda::find(&l[1..], 10), None);
