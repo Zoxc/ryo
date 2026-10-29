@@ -208,8 +208,10 @@ impl<'tcx> Frame<'tcx> {
     }
 
     /// The object the slot `s` is part of, as its slot, size and alignment: the local
-    /// `base`, or else the live temporary or the only local containing it. `None` if none
-    /// is known, or if locals sharing the bytes make it ambiguous.
+    /// `base`, or else the live temporary or the only local containing it. A zero-sized local
+    /// counts as covering its slot's byte, which may be another local's first byte: there the
+    /// sized local wins (escaping it covers the zero-sized one too). `None` if none is known,
+    /// or if locals sharing the bytes make it ambiguous.
     pub fn object(&self, s: u32, base: Option<Local>) -> Option<(u32, u32, u32)> {
         let local = |l: &LocalSlot<'_>| (l.off, l.layout.size.bytes() as u32, l.layout.align.abi.bytes().min(16) as u32);
         let within = |&(o, n, _): &(u32, u32, u32)| s.wrapping_sub(o) < n.max(1);
@@ -220,11 +222,14 @@ impl<'tcx> Frame<'tcx> {
         if let Some(t) = self.temps.iter().copied().find(within) {
             return Some(t);
         }
-        let mut found = self.locals.iter().map(local).filter(within);
-        match (found.next(), found.next()) {
-            (Some(o), None) => Some(o),
-            _ => None,
-        }
+        let only = |sized: bool| {
+            let mut found = self.locals.iter().map(local).filter(within).filter(|&(_, n, _)| !sized || n > 0);
+            match (found.next(), found.next()) {
+                (Some(o), None) => Some(o),
+                _ => None,
+            }
+        };
+        only(false).or_else(|| only(true))
     }
 
     /// Bytes below `fp` the locals take, and the locals with the most temporaries took (the
