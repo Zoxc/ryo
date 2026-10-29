@@ -302,11 +302,12 @@ fn disassemble_function(out: &mut String, code: &[u8], relocs: &[(u32, String)],
         }
         let insn = d.decode();
         // The JIT's tables: `lea r11, [rip + T]` (its OSR dispatcher and the SSA tier's
-        // switches).
+        // switches). A relocated operand (`lea rcx, [image.kN]`) is no table.
         let r = insn.op0_register();
         if insn.mnemonic() == iced_x86::Mnemonic::Lea
-            && (r == iced_x86::Register::RCX || (r == iced_x86::Register::R11 && reloc_at(relocs, &insn).is_none()))
+            && (r == iced_x86::Register::RCX || r == iced_x86::Register::R11)
             && insn.is_ip_rel_memory_operand()
+            && reloc_at(relocs, &insn).is_none()
         {
             table = Some(insn.ip_rel_memory_address() as usize);
         }
