@@ -231,15 +231,17 @@ impl Jit {
         } else {
             stats::add(&STATS.ssa_limit, 1);
         }
-        // Again in a new region if the one it was compiled for filled up (once is enough: the
-        // new one is empty, and the function fits half of one).
-        let r = match self.compile_once(rec, ssa, false) {
-            Err(CompileError::Retry) => {
-                stats::add(&STATS.region_retries, 1);
-                self.compile_once(rec, ssa, true)
+        // Again in another region if the one it was compiled for filled up. That one may be a
+        // used region reaching the image, so it can be full as well (each retry retires one);
+        // a newly mapped region is empty, and the function fits half of one.
+        let mut r = self.compile_once(rec, ssa, false);
+        for _ in 0..4 {
+            if !matches!(r, Err(CompileError::Retry)) {
+                break;
             }
-            r => r,
-        };
+            stats::add(&STATS.region_retries, 1);
+            r = self.compile_once(rec, ssa, true);
+        }
         r.map_err(|e| match e {
             CompileError::Retry => Fail::RegionFull,
             CompileError::Fail(why) => why,
