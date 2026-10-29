@@ -17,7 +17,7 @@ the facts `emit` and the decoder rely on (aot.md §C2, "Register cache"; milesto
   at branch targets and non-inline instructions (vm.md#register-cache).
 - `CacheInv.find_read`: a frame operand `find … false` hits reads as the low bits of the
   register; `CacheInv.exec_withRm`: so `withRm it (.reg pool[i])` runs as `it` but for `rip`,
-  for each form `readOperand` covers (`alu`, `aluImm cmp`, `imul`, `imulImm`, `mulQ`).
+  for each form `readOperand` covers (`alu`, `aluImm cmp`, `imul`, `imulImm`, `mulQ`, `div`).
 - `CacheInv.reload` (and `reload_of`, from the slot directly): a reload `find … true` hits
   changes nothing but `rip`, so dropping it is sound.
 - `emit_sound`: `emit` as a whole. From a state with the invariant, if the sequence (all
