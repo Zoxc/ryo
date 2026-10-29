@@ -732,8 +732,107 @@ pub fn cvt_f2f(a: FloatWidth, b: FloatWidth) -> Option<Opcode> {
     }
 }
 
-/// The opcode with mnemonic `m` (`atomic.load.w32.acquire`), for families with more
-/// components than width and format.
-pub fn by_mnemonic(m: &str) -> Option<Opcode> {
-    ALL_OPCODES.iter().copied().find(|op| op.mnemonic() == m)
+families! {
+    /// Atomic operation families: an ordering (two for `cxchg`) and, except `fence`, an
+    /// [`OpWidth`].
+    AtomicOp {
+        Load("atomic.load"), Store("atomic.store"), Xchg("atomic.xchg"),
+        Add("atomic.add"), Sub("atomic.sub"), And("atomic.and"), Nand("atomic.nand"),
+        Or("atomic.or"), Xor("atomic.xor"), Min("atomic.min"), Max("atomic.max"),
+        Umin("atomic.umin"), Umax("atomic.umax"),
+        Cxchg("atomic.cxchg"), CxchgWeak("atomic.cxchg.weak"), Fence("fence"),
+    }
+}
+
+/// A memory ordering of the atomic families, the last components of their mnemonics.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AtomicOrd {
+    Relaxed,
+    Acquire,
+    Release,
+    Acqrel,
+    Seqcst,
+}
+
+impl AtomicOrd {
+    pub const ALL: [AtomicOrd; 5] = [AtomicOrd::Relaxed, AtomicOrd::Acquire, AtomicOrd::Release, AtomicOrd::Acqrel, AtomicOrd::Seqcst];
+
+    /// The mnemonic component: `acquire`.
+    pub const fn mnemonic(self) -> &'static str {
+        ["relaxed", "acquire", "release", "acqrel", "seqcst"][self as usize]
+    }
+}
+
+/// `m` without a last component that is an ordering, and that ordering.
+const fn strip_ord(m: &[u8]) -> Option<(&[u8], usize)> {
+    let mut o = 0;
+    while o < AtomicOrd::ALL.len() {
+        if let Some(h) = strip_last(m, AtomicOrd::ALL[o].mnemonic().as_bytes()) {
+            return Some((h, o));
+        }
+        o += 1;
+    }
+    None
+}
+
+/// The atomic opcodes: `[op][width][first ordering][second ordering]`, the second index 5
+/// for the families with one ordering; `fence` under every width.
+static ATOMICS: [[[[Option<Opcode>; 6]; 5]; 6]; AtomicOp::ALL.len()] = {
+    let mut t = [[[[None; 6]; 5]; 6]; AtomicOp::ALL.len()];
+    let mut i = 0;
+    'ops: while i < ALL_OPCODES.len() {
+        let op = ALL_OPCODES[i];
+        i += 1;
+        let Some((m, last)) = strip_ord(op.mnemonic().as_bytes()) else { continue };
+        let (m, o1, o2) = match strip_ord(m) {
+            Some((m, first)) => (m, first, last),
+            None => (m, last, 5),
+        };
+        let mut w = 0;
+        while w < OpWidth::ALL.len() {
+            if let Some(m) = strip_last(m, OpWidth::ALL[w].mnemonic().as_bytes()) {
+                let mut a = 0;
+                while a < AtomicOp::ALL.len() {
+                    if bytes_eq(m, AtomicOp::ALL[a].stem().as_bytes()) {
+                        t[a][w][o1][o2] = Some(op);
+                        continue 'ops;
+                    }
+                    a += 1;
+                }
+            }
+            w += 1;
+        }
+        if bytes_eq(m, AtomicOp::Fence.stem().as_bytes()) {
+            let mut w = 0;
+            while w < OpWidth::ALL.len() {
+                t[AtomicOp::Fence as usize][w][o1][o2] = Some(op);
+                w += 1;
+            }
+        }
+    }
+    // Every family has its `seqcst` form at some width.
+    let mut a = 0;
+    while a < AtomicOp::ALL.len() {
+        let o2 = if matches!(AtomicOp::ALL[a], AtomicOp::Cxchg | AtomicOp::CxchgWeak) { 4 } else { 5 };
+        let mut any = false;
+        let mut w = 0;
+        while w < OpWidth::ALL.len() {
+            any |= t[a][w][4][o2].is_some();
+            w += 1;
+        }
+        assert!(any, "an AtomicOp family without a seqcst opcode");
+        a += 1;
+    }
+    t
+};
+
+/// The atomic opcode `op` at width `w` (ignored for `fence`) with orderings `ords` (two for
+/// `cxchg`, else one): `atomic.load.w32.acquire`. `None` if the VM lacks the combination.
+pub fn atomic_op(op: AtomicOp, w: OpWidth, ords: &[AtomicOrd]) -> Option<Opcode> {
+    let (o1, o2) = match *ords {
+        [o] => (o as usize, 5),
+        [o1, o2] => (o1 as usize, o2 as usize),
+        _ => return None,
+    };
+    ATOMICS[op as usize][w as usize][o1][o2]
 }

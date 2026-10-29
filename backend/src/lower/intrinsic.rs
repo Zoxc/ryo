@@ -18,16 +18,16 @@ use super::emit::{FloatOp, FloatWidth, IntOp, Width, opf, opw};
 use super::island::templates;
 use super::place::Loc;
 use super::{FnCx, NeedsNative, SPLIT_MAX, native};
-use ryo_bytecode::full::by_mnemonic;
+use ryo_bytecode::full::{AtomicOp, AtomicOrd, OpWidth, atomic_op};
 
-/// The suffix of an atomic opcode for an ordering.
-fn ord_name(o: ty::AtomicOrdering) -> &'static str {
+/// The VM's ordering for a Rust one.
+fn atomic_ord(o: ty::AtomicOrdering) -> AtomicOrd {
     match o {
-        ty::AtomicOrdering::Relaxed => "relaxed",
-        ty::AtomicOrdering::Release => "release",
-        ty::AtomicOrdering::Acquire => "acquire",
-        ty::AtomicOrdering::AcqRel => "acqrel",
-        ty::AtomicOrdering::SeqCst => "seqcst",
+        ty::AtomicOrdering::Relaxed => AtomicOrd::Relaxed,
+        ty::AtomicOrdering::Release => AtomicOrd::Release,
+        ty::AtomicOrdering::Acquire => AtomicOrd::Acquire,
+        ty::AtomicOrdering::AcqRel => AtomicOrd::Acqrel,
+        ty::AtomicOrdering::SeqCst => AtomicOrd::Seqcst,
     }
 }
 
@@ -491,19 +491,12 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// `atomic_*` intrinsics: the VM's atomic instructions. An ordering combination the VM
     /// doesn't have uses `SeqCst`, which is stronger than any other.
     fn atomic(&mut self, name: &str, callee: Instance<'tcx>, args: &[ArgSrc<'_, 'tcx>], cont: &CallCont<'tcx>) -> Result<bool, NeedsNative> {
-        let ord = |i: usize| ord_name(callee.args.const_at(i).to_value().to_branch()[0].to_leaf().to_atomic_ordering());
-        // By mnemonic (`atomic.cxchg.weak.w64.acquire.relaxed`): orderings are a third axis.
-        let pick = |base: String, ords: &[&str]| -> Result<Opcode, NeedsNative> {
-            let exact = format!("{base}.{}", ords.join("."));
-            by_mnemonic(&exact)
-                .or_else(|| {
-                    let mut strong = base;
-                    for _ in ords {
-                        strong.push_str(".seqcst");
-                    }
-                    by_mnemonic(&strong)
-                })
-                .ok_or_else(|| NeedsNative(format!("no opcode {exact}")))
+        let ord = |i: usize| atomic_ord(callee.args.const_at(i).to_value().to_branch()[0].to_leaf().to_atomic_ordering());
+        // Orderings are a third axis besides family and width (`atomic.cxchg.weak.w64.acquire.relaxed`).
+        let pick = |op: AtomicOp, w: OpWidth, ords: &[AtomicOrd]| -> Result<Opcode, NeedsNative> {
+            atomic_op(op, w, ords)
+                .or_else(|| atomic_op(op, w, &[AtomicOrd::Seqcst; 2][..ords.len()]))
+                .ok_or_else(|| NeedsNative(format!("no opcode for {op:?} {w:?} {ords:?}")))
         };
         if name == "atomic_singlethreadfence" {
             // Every ordering is the same barrier to the VM and the JIT; no machine code.
@@ -511,7 +504,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             return Ok(true);
         }
         if name == "atomic_fence" {
-            let op = pick("fence".to_owned(), &[ord(0)])?;
+            let op = pick(AtomicOp::Fence, OpWidth::W64, &[ord(0)])?;
             self.op(op, &[]);
             return Ok(true);
         }
@@ -522,24 +515,25 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         };
         // A thin raw pointer uses the `ptr` forms, whose value is a pointer, not an integer
         // (provenance kept, lean/docs/reduced.md §D.1); they have no `nand`, `min` or `max`.
-        let ws = if ty.is_raw_ptr() { "ptr" } else { w.mnemonic() };
+        let ws = if ty.is_raw_ptr() { OpWidth::Ptr } else { OpWidth::ALL[w as usize] };
+        // The family, and the index of the ordering among the generic arguments.
         let rmw = |op: &str| match op {
-            "atomic_xchg" => Some(("xchg", 1)),
-            "atomic_xadd" => Some(("add", 2)),
-            "atomic_xsub" => Some(("sub", 2)),
-            "atomic_and" => Some(("and", 2)),
-            "atomic_nand" => Some(("nand", 2)),
-            "atomic_or" => Some(("or", 2)),
-            "atomic_xor" => Some(("xor", 2)),
-            "atomic_max" => Some(("max", 1)),
-            "atomic_min" => Some(("min", 1)),
-            "atomic_umax" => Some(("umax", 1)),
-            "atomic_umin" => Some(("umin", 1)),
+            "atomic_xchg" => Some((AtomicOp::Xchg, 1)),
+            "atomic_xadd" => Some((AtomicOp::Add, 2)),
+            "atomic_xsub" => Some((AtomicOp::Sub, 2)),
+            "atomic_and" => Some((AtomicOp::And, 2)),
+            "atomic_nand" => Some((AtomicOp::Nand, 2)),
+            "atomic_or" => Some((AtomicOp::Or, 2)),
+            "atomic_xor" => Some((AtomicOp::Xor, 2)),
+            "atomic_max" => Some((AtomicOp::Max, 1)),
+            "atomic_min" => Some((AtomicOp::Min, 1)),
+            "atomic_umax" => Some((AtomicOp::Umax, 1)),
+            "atomic_umin" => Some((AtomicOp::Umin, 1)),
             _ => None,
         };
         match name {
             "atomic_load" => {
-                let op = pick(format!("atomic.load.{ws}"), &[ord(1)])?;
+                let op = pick(AtomicOp::Load, ws, &[ord(1)])?;
                 let [p] = self.arg_slots::<1>(args)?;
                 self.into_dest(cont, |fx, d| {
                     fx.op(op, &[d, p]);
@@ -547,14 +541,14 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 })
             }
             "atomic_store" => {
-                let op = pick(format!("atomic.store.{ws}"), &[ord(1)])?;
+                let op = pick(AtomicOp::Store, ws, &[ord(1)])?;
                 let [p, v] = self.arg_slots::<2>(args)?;
                 self.op(op, &[p, v]);
                 Ok(true)
             }
             "atomic_cxchg" | "atomic_cxchgweak" => {
-                let weak = if name == "atomic_cxchgweak" { ".weak" } else { "" };
-                let op = pick(format!("atomic.cxchg{weak}.{ws}"), &[ord(1), ord(2)])?;
+                let family = if name == "atomic_cxchgweak" { AtomicOp::CxchgWeak } else { AtomicOp::Cxchg };
+                let op = pick(family, ws, &[ord(1), ord(2)])?;
                 let [p, old, new] = self.arg_slots::<3>(args)?;
                 let Some(dest) = cont.dest else { return native("intrinsic without a destination") };
                 let (o0, o1) = (dest.layout.fields.offset(0).bytes() as u32, dest.layout.fields.offset(1).bytes() as u32);
@@ -565,7 +559,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             }
             n => match rmw(n) {
                 Some((family, ord_at)) => {
-                    let op = pick(format!("atomic.{family}.{ws}"), &[ord(ord_at)])?;
+                    let op = pick(family, ws, &[ord(ord_at)])?;
                     let [p, v] = self.arg_slots::<2>(args)?;
                     self.into_dest(cont, |fx, d| {
                         fx.op(op, &[d, p, v]);
