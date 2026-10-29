@@ -316,16 +316,6 @@ macro_rules! shift_imm {
         put!($a, $fp, $op, d, get!($t, $a, $fp, $op, a).$m(imm_of!($t, $a, $op, imm) as u32))
     };
 }
-macro_rules! cmp {
-    ($a:ident, $fp:ident, $op:ident, $t:ty, $o:tt) => {
-        put!($a, $fp, $op, d, get!($t, $a, $fp, $op, a) $o get!($t, $a, $fp, $op, b))
-    };
-}
-macro_rules! cmp_imm {
-    ($a:ident, $fp:ident, $op:ident, $t:ty, $o:tt) => {
-        put!($a, $fp, $op, d, get!($t, $a, $fp, $op, a) $o imm_of!($t, $a, $op, imm))
-    };
-}
 macro_rules! cmp3 {
     ($a:ident, $fp:ident, $op:ident, $t:ty) => {
         put!($a, $fp, $op, d, get!($t, $a, $fp, $op, a).cmp(&get!($t, $a, $fp, $op, b)) as i8)
@@ -334,11 +324,6 @@ macro_rules! cmp3 {
 macro_rules! rot {
     ($a:ident, $fp:ident, $op:ident, $t:ty, $m:ident) => {
         put!($a, $fp, $op, d, get!($t, $a, $fp, $op, a).$m(get!(u32, $a, $fp, $op, b)))
-    };
-}
-macro_rules! count {
-    ($a:ident, $fp:ident, $op:ident, $t:ty, $m:ident) => {
-        put!($a, $fp, $op, d, get!($t, $a, $fp, $op, a).$m())
     };
 }
 macro_rules! un {
@@ -353,29 +338,9 @@ macro_rules! ovf {
         put!($a, $fp, $op, o, o)
     }};
 }
-macro_rules! fbin {
-    ($a:ident, $fp:ident, $op:ident, $t:ty, $o:tt) => {
-        put!($a, $fp, $op, d, get!($t, $a, $fp, $op, a) $o get!($t, $a, $fp, $op, b))
-    };
-}
 macro_rules! fneg {
     ($a:ident, $fp:ident, $op:ident, $t:ty) => {
         put!($a, $fp, $op, d, -get!($t, $a, $fp, $op, a))
-    };
-}
-macro_rules! fun {
-    ($a:ident, $fp:ident, $op:ident, $t:ty, $m:ident) => {
-        put!($a, $fp, $op, d, get!($t, $a, $fp, $op, a).$m())
-    };
-}
-macro_rules! fmeth {
-    ($a:ident, $fp:ident, $op:ident, $t:ty, $m:ident) => {
-        put!($a, $fp, $op, d, get!($t, $a, $fp, $op, a).$m(get!($t, $a, $fp, $op, b)))
-    };
-}
-macro_rules! fcmp {
-    ($a:ident, $fp:ident, $op:ident, $t:ty, $o:tt) => {
-        put!($a, $fp, $op, d, get!($t, $a, $fp, $op, a) $o get!($t, $a, $fp, $op, b))
     };
 }
 macro_rules! vsplat {
@@ -411,25 +376,25 @@ macro_rules! cvt {
     };
 }
 macro_rules! aload {
-    ($a:ident, $fp:ident, $op:ident, $at:ident, $t:ty, $o:ident) => {
-        put!($a, $fp, $op, d, $at::from_ptr(get!(*mut $t, $a, $fp, $op, p)).load(Ordering::$o))
+    ($a:ident, $fp:ident, $op:ident, $at:ty, $t:ty, $o:ident) => {
+        put!($a, $fp, $op, d, <$at>::from_ptr(get!(*mut $t, $a, $fp, $op, p)).load(Ordering::$o))
     };
 }
 macro_rules! astore {
-    ($a:ident, $fp:ident, $op:ident, $at:ident, $t:ty, $o:ident) => {
-        $at::from_ptr(get!(*mut $t, $a, $fp, $op, p)).store(get!($t, $a, $fp, $op, s), Ordering::$o)
+    ($a:ident, $fp:ident, $op:ident, $at:ty, $t:ty, $o:ident) => {
+        <$at>::from_ptr(get!(*mut $t, $a, $fp, $op, p)).store(get!($t, $a, $fp, $op, s), Ordering::$o)
     };
 }
 macro_rules! armw {
-    ($a:ident, $fp:ident, $op:ident, $at:ident, $t:ty, $m:ident, $o:ident) => {
-        put!($a, $fp, $op, d, $at::from_ptr(get!(*mut $t, $a, $fp, $op, p)).$m(get!($t, $a, $fp, $op, s), Ordering::$o))
+    ($a:ident, $fp:ident, $op:ident, $at:ty, $t:ty, $m:ident, $o:ident) => {
+        put!($a, $fp, $op, d, <$at>::from_ptr(get!(*mut $t, $a, $fp, $op, p)).$m(get!($t, $a, $fp, $op, s), Ordering::$o))
     };
 }
 macro_rules! cxchg {
-    ($a:ident, $fp:ident, $op:ident, $at:ident, $t:ty, $m:ident, $os:ident, $of:ident) => {{
+    ($a:ident, $fp:ident, $op:ident, $at:ty, $t:ty, $m:ident, $os:ident, $of:ident) => {{
         let p = get!(*mut $t, $a, $fp, $op, p);
         let (old, new) = (get!($t, $a, $fp, $op, old), get!($t, $a, $fp, $op, new));
-        let (v, ok) = match $at::from_ptr(p).$m(old, new, Ordering::$os, Ordering::$of) {
+        let (v, ok) = match <$at>::from_ptr(p).$m(old, new, Ordering::$os, Ordering::$of) {
             Ok(v) => (v, true),
             Err(v) => (v, false),
         };
@@ -437,36 +402,38 @@ macro_rules! cxchg {
         put!($a, $fp, $op, o, ok)
     }};
 }
-// `AtomicPtr`'s: the value is a `*mut u8`, a read-modify-write's operand a `usize`.
+// Kinds that share another kind's body: the table (and the Lean model) keeps them apart
+// because their semantics differ there (floats, pointers with provenance).
+macro_rules! cmp { ($($t:tt)*) => { binop!($($t)*) }; }
+macro_rules! cmp_imm { ($($t:tt)*) => { binop_imm!($($t)*) }; }
+macro_rules! count { ($($t:tt)*) => { un!($($t)*) }; }
+macro_rules! fbin { ($($t:tt)*) => { binop!($($t)*) }; }
+macro_rules! fcmp { ($($t:tt)*) => { binop!($($t)*) }; }
+macro_rules! fun { ($($t:tt)*) => { un!($($t)*) }; }
+macro_rules! fmeth { ($($t:tt)*) => { bin!($($t)*) }; }
+// `AtomicPtr`'s: the value is a `*mut u8`, a non-swap read-modify-write's operand a `usize`.
 macro_rules! aload_ptr {
     ($a:ident, $fp:ident, $op:ident, $o:ident) => {
-        put!($a, $fp, $op, d, AtomicPtr::<u8>::from_ptr(get!(*mut *mut u8, $a, $fp, $op, p)).load(Ordering::$o))
+        aload!($a, $fp, $op, AtomicPtr<u8>, *mut u8, $o)
     };
 }
 macro_rules! astore_ptr {
     ($a:ident, $fp:ident, $op:ident, $o:ident) => {
-        AtomicPtr::<u8>::from_ptr(get!(*mut *mut u8, $a, $fp, $op, p)).store(get!(*mut u8, $a, $fp, $op, s), Ordering::$o)
+        astore!($a, $fp, $op, AtomicPtr<u8>, *mut u8, $o)
     };
 }
 macro_rules! armw_ptr {
     ($a:ident, $fp:ident, $op:ident, swap, $o:ident) => {
-        put!($a, $fp, $op, d, AtomicPtr::<u8>::from_ptr(get!(*mut *mut u8, $a, $fp, $op, p)).swap(get!(*mut u8, $a, $fp, $op, s), Ordering::$o))
+        armw!($a, $fp, $op, AtomicPtr<u8>, *mut u8, swap, $o)
     };
     ($a:ident, $fp:ident, $op:ident, $m:ident, $o:ident) => {
         put!($a, $fp, $op, d, AtomicPtr::<u8>::from_ptr(get!(*mut *mut u8, $a, $fp, $op, p)).$m(get!(usize, $a, $fp, $op, s), Ordering::$o))
     };
 }
 macro_rules! cxchg_ptr {
-    ($a:ident, $fp:ident, $op:ident, $m:ident, $os:ident, $of:ident) => {{
-        let p = get!(*mut *mut u8, $a, $fp, $op, p);
-        let (old, new) = (get!(*mut u8, $a, $fp, $op, old), get!(*mut u8, $a, $fp, $op, new));
-        let (v, ok) = match AtomicPtr::<u8>::from_ptr(p).$m(old, new, Ordering::$os, Ordering::$of) {
-            Ok(v) => (v, true),
-            Err(v) => (v, false),
-        };
-        put!($a, $fp, $op, d, v);
-        put!($a, $fp, $op, o, ok)
-    }};
+    ($a:ident, $fp:ident, $op:ident, $m:ident, $os:ident, $of:ident) => {
+        cxchg!($a, $fp, $op, AtomicPtr<u8>, *mut u8, $m, $os, $of)
+    };
 }
 macro_rules! fence {
     ($a:ident, $fp:ident, $op:ident, $o:ident) => {
