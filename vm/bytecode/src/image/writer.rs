@@ -218,7 +218,7 @@ pub enum CodeError {
     FuncOutOfRange,
     SymOutOfRange,
     /// A `sym` operand's slot is indirect ([`SYM_INDIRECT`]) but the instruction loads it
-    /// directly, or the other way round. Only `addr.sym.ind` and `call.ext.ind` load through
+    /// directly, or the other way round. Only `addr.sym.ind` and `call.sym.ind` load through
     /// the slot; island symbols (`isl`) are always direct.
     SymIndirection,
     ConstOutOfRange,
@@ -346,7 +346,7 @@ pub fn validate_code(code: &[u32], lim: &CodeLimits) -> Result<Vec<bool>, (u32, 
 }
 
 /// Checks that every `sym` operand's slot is indirect exactly when the instruction loads
-/// through it (`addr.sym.ind`, `call.ext.ind`'s `sym`). `code` must have passed
+/// through it (`addr.sym.ind`, `call.sym.ind`'s `sym`). `code` must have passed
 /// [`validate_code`] with these symbols.
 fn check_indirection(code: &[u32], symbols: &[SymbolDef]) -> Result<(), (u32, CodeError)> {
     for r in Decoder::new(code) {
@@ -476,7 +476,7 @@ impl ImageWriter {
 
     /// Interns a symbol slot and returns its index. Slots are keyed by name and flags, so
     /// one symbol used both directly (e.g. as an island) and indirectly (PE `__imp_`, e.g.
-    /// by `call.ext.ind`) gets two slots. A leading `\x01` (as in bindgen's
+    /// by `call.sym.ind`) gets two slots. A leading `\x01` (as in bindgen's
     /// `#[link_name = "\u{1}_ZN..."]` for C++ methods) means "this name verbatim" to LLVM:
     /// it is kept, for the object writer, which drops it and doesn't mangle the rest (Mach-O's
     /// `_`).
