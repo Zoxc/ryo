@@ -82,9 +82,10 @@ fn anchor(a: &Acc) -> i32 {
     if a.how == How::Addr && a.off == 0 { -1 } else { a.off }
 }
 
-/// Whether `a` accesses any bytes: a zero-sized block (an island operand) accesses nothing.
+/// Whether `a` accesses any bytes: a zero-sized block (an island operand, a zero-length
+/// copy or fill) accesses nothing.
 fn touches(a: &Acc) -> bool {
-    a.size != 0 || a.how != How::Block
+    a.size != 0 || !matches!(a.how, How::Block | How::BlockWrite)
 }
 
 /// The bytes `[lo, end)` `a` accesses, from its [`anchor`] (an address at least one).
@@ -346,6 +347,11 @@ fn classify(fb: &mut FrameBytes) -> (Vec<Alloca>, Of) {
         al.size = (off - al.aot_off as i64 + 1) as u32;
         if escaped[b] {
             al.escaped = true;
+        }
+        // The outgoing area stays at the bottom however its class reaches past `out_end` (its
+        // first bytes come first, so this is set before those).
+        if al.kind == AllocaKind::Outgoing {
+            continue;
         }
         if escaped[b] || opaque[b] || odd[b] {
             al.kind = AllocaKind::Memory;
