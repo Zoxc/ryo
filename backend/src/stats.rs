@@ -79,14 +79,15 @@ pub(super) fn native_text<'tcx>(
     kept.sort();
     kept.dedup();
     let mut n_vm = 0;
-    let mut with: Vec<(String, BTreeMap<Symbol, usize>)> = Vec::new();
+    let mut with: Vec<(String, BTreeMap<String, usize>)> = Vec::new();
     let mut templates: BTreeMap<&str, (usize, usize)> = BTreeMap::new();
     for v in fresh.iter().flat_map(|f| f.vm.iter()) {
         n_vm += 1;
-        let mut by: BTreeMap<Symbol, usize> = BTreeMap::new();
+        // By name: `Symbol`'s order is the interner's, which varies between compilations.
+        let mut by: BTreeMap<String, usize> = BTreeMap::new();
         for r in &v.lowered.relocs {
             if let CodeReloc::Island { template, .. } = *r {
-                *by.entry(template).or_default() += 1;
+                *by.entry(template.to_string()).or_default() += 1;
             }
         }
         if !by.is_empty() {
