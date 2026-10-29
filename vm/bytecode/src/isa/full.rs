@@ -908,8 +908,8 @@ impl<O: 'static> OpInfo<O> {
         self.operand_words(words).flat_map(|(o, w)| {
             let (w, step) = match o.kind {
                 OperandKind::Target => (&w[..1], 1),
-                // A case's target is its last word; a word list has none.
-                OperandKind::List(e) if e != ElemKind::Word => (&w[1..], e.words()),
+                // A case's target is its last word; word and argument lists have none.
+                OperandKind::List(e) if !matches!(e, ElemKind::Word | ElemKind::Arg) => (&w[1..], e.words()),
                 _ => (&w[..0], 1),
             };
             w.chunks(step).map(|el| el[el.len() - 1] as i32)

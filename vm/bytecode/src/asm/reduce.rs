@@ -332,13 +332,13 @@ fn check_handler<'c>(h: Opcode, args: &[Arg], neg: bool, ts: Vec<Label>, code_co
         return Err(());
     }
     let mut values: &[u8] = &[];
-    let mut cases = 0;
+    let mut cases = 0u64;
     let mut ro_args = 0;
     for (k, o) in info.operands.iter().enumerate() {
         let r = l.locs[k].reg as usize;
         match o.kind {
             OperandKind::List(ElemKind::Target) => match args[r] {
-                Arg::Imm(n) => cases += n,
+                Arg::Imm(n) => cases = cases.checked_add(n).ok_or(())?,
                 _ => return Err(()),
             },
             OperandKind::List(e) if let Some(size) = e.case_bytes() => {
@@ -346,13 +346,15 @@ fn check_handler<'c>(h: Opcode, args: &[Arg], neg: bool, ts: Vec<Label>, code_co
                 // value size.
                 let (Arg::Ro(off), Arg::Imm(n)) = (args[r], args[r + 1]) else { return Err(()) };
                 values = case_values(code_consts, off, n, size).ok_or(())?;
-                cases += n;
+                cases = cases.checked_add(n).ok_or(())?;
                 ro_args += 1;
             }
             _ => {}
         }
     }
-    if args.iter().filter(|a| matches!(a, Arg::Ro(_))).count() != ro_args || matches!(&then, Then::Table(ts) if ts.len() as u64 != cases + 1) {
+    if args.iter().filter(|a| matches!(a, Arg::Ro(_))).count() != ro_args
+        || matches!(&then, Then::Table(ts) if Some(ts.len() as u64) != cases.checked_add(1))
+    {
         return Err(());
     }
     Ok((then, values))

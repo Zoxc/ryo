@@ -444,8 +444,9 @@ pub(super) fn sequence<T>(op: Opcode, ops: &[Opnd<T>]) -> Option<(Vec<Item>, Opt
                 ]);
             } else {
                 // `cl`'s mask at 32 and 64 bits is the width's; rotates at 8 and 16 bits
-                // need none.
-                v.extend([Item::Ld { w: W::D, sx: false, dst: C, m: slot(2) }, Item::ShiftCl { op: sh, w, reg: R }]);
+                // need none. The amount is read at the width (at most 4 bytes), as declared.
+                let aw = if narrow { w } else { W::D };
+                v.extend([Item::Ld { w: aw, sx: false, dst: C, m: slot(2) }, Item::ShiftCl { op: sh, w, reg: R }]);
             }
             v.push(st(w, slot(0)));
         }

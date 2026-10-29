@@ -586,7 +586,7 @@ def sequence {T : Type} (c : Class) (ops : List (Opnd T)) : Option (List Item ×
     let b ← slot 2
     let d ← slot 0
     let body : List Item :=
-      if sh == .rol || sh == .ror then [.ld .d false C b, .shiftCl sh w R]
+      if sh == .rol || sh == .ror then [.ld (if narrow then w else .d) false C b, .shiftCl sh w R]
       else if narrow then
         [.ld w false C b, .aluImm .and .d (.reg C) (BitVec.ofNat 32 (w.bits - 1)), .shiftCl sh .d R]
       else [.ld .d false C b, .shiftCl sh w R]

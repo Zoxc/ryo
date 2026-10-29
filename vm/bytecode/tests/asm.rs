@@ -963,9 +963,9 @@ fn templates_are_pinned() {
         h
     };
     let elf = hash(&[MODES[0], MODES[1], MODES[8], MODES[10], MODES[11], MODES[18]], 7);
-    assert_eq!(elf, 0xbf712340b229077e, "ELF template hash {elf:#x}");
+    assert_eq!(elf, 0x73357b5fb8bb904e, "ELF template hash {elf:#x}");
     let pe = hash(&[MODES[6], MODES[16]], 8);
-    assert_eq!(pe, 0x8af0d9bf8da365fa, "PE template hash {pe:#x}");
+    assert_eq!(pe, 0x689e5169659cabc8, "PE template hash {pe:#x}");
 }
 
 /// Without a frame pointer, an SSE load or store of the slot at `rsp` has no displacement.

@@ -904,7 +904,9 @@ fn params(c: &mut Cursor<'_>, mode: Mode) -> Vec<u32> {
             Ok(Item::LeaM { dst, m }) if m.base == Reg::Rbp && int_index(dst, mode).is_some() => {
                 (m.disp, ArgReg { xmm: false, size: 8, index: int_index(dst, mode).unwrap() }.word() | ARG_ADDR)
             }
-            Ok(Item::Sse { st: false, size, x, m }) => (m.disp, ArgReg { xmm: true, size: size as u32, index: x as u32 }.word()),
+            Ok(Item::Sse { st: false, size, x, m }) if m.base == Reg::Rbp => {
+                (m.disp, ArgReg { xmm: true, size: size as u32, index: x as u32 }.word())
+            }
             Ok(Item::Ld { w: super::x86::W::W, sx: false, dst: F16_TMP, m }) if m.base == Reg::Rbp => match c.item() {
                 Ok(Item::Movd { to_xmm: true, x, r: F16_TMP }) => (m.disp, ArgReg { xmm: true, size: 2, index: x as u32 }.word()),
                 _ => {

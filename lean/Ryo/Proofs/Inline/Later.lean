@@ -405,24 +405,41 @@ theorem shift_w (sh : Sh) (hsh : sh.isShift = true) (A B : BitVec 16) :
       rfl | rfl | rfl <;>
     simp (config := { decide := true }) only [shv, ↓reduceIte] <;> bv_decide
 
-/-- Rotates at 8 bits: the count from 4 bytes, `rol al, cl` (8 divides `cl`'s 5-bit mask). -/
-theorem rot_b (sh : Sh) (hsh : sh.isShift = false) (A : BitVec 8) (rb : Nat) (f : Flags) :
-    shv sh A (rb % 8) =
+/-- The low `n` bytes of a longer read (the narrow rotates load only the count's low bytes). -/
+theorem readNat_lo (m : Ryo.X86.Mem) (a : BitVec 64) (n k : Nat) :
+    m.readNat a n = m.readNat a (n + k) % 2 ^ (8 * n) := by
+  rw [readNat_eq, readNat_eq, bytesAt_add, leDecode_append, bytesAt_length]
+  have h := Theorems.leDecode_lt (bytesAt m a n)
+  rw [bytesAt_length] at h
+  rw [Nat.add_mul_mod_self_left, Nat.mod_eq_of_lt h]
+
+/-- Rotates at 8 bits with the count loaded at 8 bits (`movzx ecx, byte`). -/
+theorem rot_b (sh : Sh) (hsh : sh.isShift = false) (A : BitVec 8) (m : Ryo.X86.Mem) (a : BitVec 64)
+    (f : Flags) :
+    shv sh A (m.readNat a 4 % 8) =
       ((((A.setWidth 32).setWidth 64) &&& ~~~(0xff : BitVec 64)) |||
         ((rotF sh (((A.setWidth 32).setWidth 64).setWidth 8)
-          (((BitVec.ofNat 32 rb).setWidth 64).toNat % 32) f).1).setWidth 64).setWidth 8 := by
+          ((((BitVec.ofNat 8 (m.readNat a 1)).setWidth 32).setWidth 64).toNat % 32) f).1).setWidth 64).setWidth 8 := by
   rw [merge_b, rotF_fst' sh hsh, zx_b]
   apply shv_rot_congr sh hsh
-  rw [BitVec.toNat_setWidth, BitVec.toNat_ofNat, mod_chain32 rb 8 (by decide), Nat.mod_mod]
+  rw [BitVec.toNat_setWidth, BitVec.toNat_setWidth, BitVec.toNat_ofNat, readNat_lo m a 1 3]
+  simp only [Nat.mod_mod_of_dvd _ (by decide : 8 ∣ 32), Nat.mod_mod_of_dvd _ (by decide : 8 ∣ 2 ^ 64),
+    Nat.mod_mod_of_dvd _ (by decide : 8 ∣ 2 ^ 32), Nat.mod_mod_of_dvd _ (by decide : 8 ∣ 2 ^ 8)]
+  exact Nat.mod_mod _ _
 
-theorem rot_w (sh : Sh) (hsh : sh.isShift = false) (A : BitVec 16) (rb : Nat) (f : Flags) :
-    shv sh A (rb % 16) =
+/-- Rotates at 16 bits with the count loaded at 16 bits (`movzx ecx, word`). -/
+theorem rot_w (sh : Sh) (hsh : sh.isShift = false) (A : BitVec 16) (m : Ryo.X86.Mem) (a : BitVec 64)
+    (f : Flags) :
+    shv sh A (m.readNat a 4 % 16) =
       ((((A.setWidth 32).setWidth 64) &&& ~~~(0xffff : BitVec 64)) |||
         ((rotF sh (((A.setWidth 32).setWidth 64).setWidth 16)
-          (((BitVec.ofNat 32 rb).setWidth 64).toNat % 32) f).1).setWidth 64).setWidth 16 := by
+          ((((BitVec.ofNat 16 (m.readNat a 2)).setWidth 32).setWidth 64).toNat % 32) f).1).setWidth 64).setWidth 16 := by
   rw [merge_w, rotF_fst' sh hsh, zx_w]
   apply shv_rot_congr sh hsh
-  rw [BitVec.toNat_setWidth, BitVec.toNat_ofNat, mod_chain32 rb 16 (by decide), Nat.mod_mod]
+  rw [BitVec.toNat_setWidth, BitVec.toNat_setWidth, BitVec.toNat_ofNat, readNat_lo m a 2 2]
+  simp only [Nat.mod_mod_of_dvd _ (by decide : 16 ∣ 32), Nat.mod_mod_of_dvd _ (by decide : 16 ∣ 2 ^ 64),
+    Nat.mod_mod_of_dvd _ (by decide : 16 ∣ 2 ^ 32), Nat.mod_mod_of_dvd _ (by decide : 16 ∣ 2 ^ 16)]
+  exact Nat.mod_mod _ _
 
 theorem rot_d (sh : Sh) (hsh : sh.isShift = false) (A : BitVec 32) (rb : Nat) (f : Flags) :
     shv sh A (rb % 32) =
@@ -567,8 +584,8 @@ theorem sound_shiftVar_rot (sh : Sh) (w : W) (hsh : sh.isShift = false) : Sound 
     | with_reducible rfl
     | (simp only [State.regW, X86S.reg_jump, reg_setFlags?]
        first
-       | exact rot_b _ (by decide) _ _ _
-       | exact rot_w _ (by decide) _ _ _
+       | exact rot_b _ (by decide) _ _ _ _
+       | exact rot_w _ (by decide) _ _ _ _
        | exact rot_d _ (by decide) _ _ _
        | exact rot_q _ (by decide) _ _ _)
     | (xobs; done)
