@@ -67,15 +67,14 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 if size == 0 {
                     return Ok(());
                 }
-                self.check_alloc(alloc_id)?;
-                let offset = u32::try_from(offset.bytes()).map_err(|_| NeedsNative("constant offset".into()))?;
                 if needs_fixup(self.tcx, alloc_id) {
                     // Copied out of the fixup area through its address.
                     let p = self.temp8();
-                    let a = Abs::Data(Data(self.reloc(CodeReloc::Data { alloc: alloc_id, offset }))).to_word();
-                    self.op(Opcode::AddrConst, &[p, a]);
+                    self.pool_addr_into(p, alloc_id, offset.bytes())?;
                     return self.copy_val(dst, Loc::Mem { p, k: 0 }, size);
                 }
+                self.check_alloc(alloc_id)?;
+                let offset = u32::try_from(offset.bytes()).map_err(|_| NeedsNative("constant offset".into()))?;
                 self.with_slot(dst, size, |fx, d| {
                     let k = fx.reloc(CodeReloc::Const { alloc: alloc_id, offset });
                     fx.op(Opcode::Const, &[d, k, size]);
@@ -94,16 +93,12 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             GlobalAlloc::VTable(ty, dyn_ty) => self.pool_addr_into(d, vtable_alloc(tcx, ty, dyn_ty), offset)?,
             GlobalAlloc::Function { instance } => {
                 self.addr_sym(d, CodeReloc::Symbol { target: instance });
-                if offset != 0 {
-                    self.ptr_add(d, d, offset as i64);
-                }
+                self.ptr_add(d, d, offset as i64);
             }
             GlobalAlloc::Static(def_id) => {
                 check_static(tcx, def_id)?;
                 self.addr_sym(d, CodeReloc::Static { def_id });
-                if offset != 0 {
-                    self.ptr_add(d, d, offset as i64);
-                }
+                self.ptr_add(d, d, offset as i64);
             }
             // A type id's "pointer" has no address: base 0, and the offset is part of the hash
             // (as in `rustc_codegen_llvm/src/common.rs:201-205`). It is a pointer-sized
