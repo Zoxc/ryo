@@ -977,8 +977,8 @@ the stderr it compares), each with one `write`:
   state leaves `Queued` (`JitRecord::publish`, `JitRecord::fail`), so a `RYO_JIT_SYNC` waiter
   sees them. Compile timing is gated by `JitSettings::count` (on with stats, and in tests).
 - **Summary**: the `atexit` handler calls the JIT's report (formatted on the stack, no lock,
-  no waiting for the JIT thread), or prints `JIT off`, `no function reached a threshold` or
-  `JIT thread failed to start`. Read mid-compile, the counters needn't balance: `in flight`
+  no waiting for the JIT thread), or prints `JIT off`, `no function reached a threshold`,
+  `JIT thread failed to start` or `JIT thread still starting`. Read mid-compile, the counters needn't balance: `in flight`
   saturates at 0. A forked child prints nothing; `_exit`, `abort`, signals and `exec` skip it.
 - **Progress** (`2`): the JIT thread checks after each batch, so an idle JIT prints none.
 - With `RYO_JIT_SYNC` in a single-threaded program, everything but the times and the pid is

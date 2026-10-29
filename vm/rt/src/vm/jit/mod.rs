@@ -837,8 +837,11 @@ extern "C" fn at_exit() {
         b"JIT off"
     } else if !STARTED.load(Relaxed) {
         b"no function reached a threshold"
-    } else if DISABLED.load(Relaxed) || report.is_null() {
+    } else if DISABLED.load(Relaxed) {
         b"JIT thread failed to start"
+    } else if report.is_null() {
+        // `push` sets `STARTED` before `start` stores the report.
+        b"JIT thread still starting"
     } else {
         // SAFETY: `ryo_jit_start`'s report, an `extern "C" fn()`.
         let report: extern "C" fn() = unsafe { core::mem::transmute(report) };
