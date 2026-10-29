@@ -240,6 +240,9 @@ pub(super) fn multi_version(info: &RustcInfo, root: &Path, rustc_ryo: &Path, src
         .env(crate::dist::ABI_OVERRIDE_VAR, "alt")
         .env(crate::dist::DIST_DIR_VAR, &alt_dist)
         .env(crate::dist::TARGET_DIR_VAR, alt.join("target")))?;
+    // Only the alt `dist/` is used from here on; its build tree is several GB, enough to fill a
+    // CI runner's disk.
+    std::fs::remove_dir_all(alt.join("target")).map_err(|e| format!("removing the alt build tree: {e}"))?;
     let alt_rustc = alt_dist.join("bin").join(crate::utils::exe_name("rustc-ryo"));
     let dir = out.join("multi-version");
     crate::utils::create_dir(&dir)?;

@@ -23,6 +23,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      # ubuntu-latest has ~20 GB free; `y test` (multi-version's second `y build`) needs more.
+      - if: runner.os == 'Linux'
+        name: Free disk space
+        run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup && sudo docker image prune -af
       - name: Install the toolchain
         run: rustup toolchain install 1.99.1 --profile minimal --component rustc-dev,rust-src,llvm-tools
       # No developer shell on Windows: rustc finds link.exe itself, and `y test` finds `cl` for
