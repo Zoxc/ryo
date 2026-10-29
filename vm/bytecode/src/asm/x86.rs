@@ -7,9 +7,30 @@ use alloc::vec::Vec;
 use super::decode::Resolver;
 use super::encode::{Ref, Reloc};
 
+/// A fieldless `#[repr(u8)]` enum whose discriminants are x86 numbers, with `from_num`, the
+/// inverse of `as u8`.
+macro_rules! numbered {
+    ($(#[$m:meta])* pub enum $t:ident { $($(#[$vm:meta])* $v:ident = $n:literal,)* }) => {
+        $(#[$m])*
+        #[repr(u8)]
+        pub enum $t {
+            $($(#[$vm])* $v = $n,)*
+        }
+
+        impl $t {
+            pub(super) fn from_num(n: u8) -> Option<$t> {
+                match n {
+                    $($n => Some($t::$v),)*
+                    _ => None,
+                }
+            }
+        }
+    };
+}
+
+numbered! {
 /// The general-purpose registers the encoder uses, by their x86 number.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-#[repr(u8)]
 pub enum Reg {
     Rax = 0,
     Rcx = 1,
@@ -23,25 +44,9 @@ pub enum Reg {
     R10 = 10,
     R11 = 11,
 }
+}
 
 impl Reg {
-    pub(super) fn from_num(n: u8) -> Option<Reg> {
-        Some(match n {
-            0 => Reg::Rax,
-            1 => Reg::Rcx,
-            2 => Reg::Rdx,
-            4 => Reg::Rsp,
-            5 => Reg::Rbp,
-            6 => Reg::Rsi,
-            7 => Reg::Rdi,
-            8 => Reg::R8,
-            9 => Reg::R9,
-            10 => Reg::R10,
-            11 => Reg::R11,
-            _ => return None,
-        })
-    }
-
     fn low(self) -> u8 {
         self as u8 & 7
     }
@@ -69,72 +74,46 @@ pub const fn island_args(pe: bool) -> [Reg; 2] {
     if pe { [Reg::Rcx, Reg::Rdx] } else { [Reg::Rdi, Reg::Rsi] }
 }
 
-/// A branch condition, on the flags of the `test` or `cmp` before it.
+numbered! {
+/// A branch condition, on the flags of the `test` or `cmp` before it, by its x86 condition
+/// code (`jcc rel8` is `0x70 | cc`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Cond {
-    Always,
+    /// No condition (`jmp`): not a condition code.
+    Always = 0x10,
     /// `jz`: the value tested was zero (false), or the compared values are equal.
-    Z,
+    Z = 0x4,
     /// `jnz`.
-    Nz,
+    Nz = 0x5,
     /// Signed `<`, `>=`, `<=`, `>` (`jl`, `jge`, `jle`, `jg`).
-    L,
-    Ge,
-    Le,
-    G,
+    L = 0xc,
+    Ge = 0xd,
+    Le = 0xe,
+    G = 0xf,
     /// Unsigned `<`, `>=`, `<=`, `>` (`jb`, `jae`, `jbe`, `ja`).
-    B,
-    Ae,
-    Be,
-    A,
+    B = 0x2,
+    Ae = 0x3,
+    Be = 0x6,
+    A = 0x7,
     /// `js`, `jns`: the result was negative (a counter ran out).
-    S,
-    Ns,
+    S = 0x8,
+    Ns = 0x9,
     /// `jo`, `jno`: signed overflow.
-    O,
-    No,
+    O = 0x0,
+    No = 0x1,
+}
 }
 
 impl Cond {
     /// The x86 condition code (`jcc rel8` is `0x70 | cc`).
     fn cc(self) -> u8 {
-        match self {
-            Cond::Always => unreachable!("no condition code"),
-            Cond::O => 0x0,
-            Cond::No => 0x1,
-            Cond::B => 0x2,
-            Cond::Ae => 0x3,
-            Cond::Z => 0x4,
-            Cond::Nz => 0x5,
-            Cond::Be => 0x6,
-            Cond::A => 0x7,
-            Cond::S => 0x8,
-            Cond::Ns => 0x9,
-            Cond::L => 0xc,
-            Cond::Ge => 0xd,
-            Cond::Le => 0xe,
-            Cond::G => 0xf,
-        }
+        assert!(self != Cond::Always, "no condition code");
+        self as u8
     }
 
+    /// The condition of x86 condition code `cc` (0 to 15).
     fn from_cc(cc: u8) -> Option<Cond> {
-        Some(match cc {
-            0x0 => Cond::O,
-            0x1 => Cond::No,
-            0x2 => Cond::B,
-            0x3 => Cond::Ae,
-            0x4 => Cond::Z,
-            0x5 => Cond::Nz,
-            0x6 => Cond::Be,
-            0x7 => Cond::A,
-            0x8 => Cond::S,
-            0x9 => Cond::Ns,
-            0xc => Cond::L,
-            0xd => Cond::Ge,
-            0xe => Cond::Le,
-            0xf => Cond::G,
-            _ => return None,
-        })
+        Cond::from_num(cc).filter(|&c| c != Cond::Always)
     }
 
     /// The opposite condition.
@@ -284,9 +263,9 @@ impl Rm {
     }
 }
 
+numbered! {
 /// The integer ALU operations, by their x86 `/digit`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u8)]
 pub enum Alu {
     Add = 0,
     Or = 1,
@@ -295,31 +274,19 @@ pub enum Alu {
     Xor = 6,
     Cmp = 7,
 }
-
-impl Alu {
-    fn from_num(n: u8) -> Option<Alu> {
-        Some(match n {
-            0 => Alu::Add,
-            1 => Alu::Or,
-            4 => Alu::And,
-            5 => Alu::Sub,
-            6 => Alu::Xor,
-            7 => Alu::Cmp,
-            _ => return None,
-        })
-    }
 }
 
+numbered! {
 /// The shifts and rotates, by their x86 `/digit`. The immediate shifts ([`Item::Shift`]) are
 /// `Shl`, `Shr` and `Sar` only.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u8)]
 pub enum Sh {
     Rol = 0,
     Ror = 1,
     Shl = 4,
     Shr = 5,
     Sar = 7,
+}
 }
 
 /// Whether `v` fits a sign-extended 8-bit immediate.
@@ -1325,25 +1292,13 @@ impl<'a> Cursor<'a> {
             }
             (_, 0xc1) => {
                 let (r, rm, j) = modrm(i)?;
-                let op = match r {
-                    4 => Sh::Shl,
-                    5 => Sh::Shr,
-                    7 => Sh::Sar,
-                    _ => return Err(bad),
-                };
+                let op = Sh::from_num(r).filter(|op| matches!(op, Sh::Shl | Sh::Shr | Sh::Sar)).ok_or(bad)?;
                 Item::Shift { op, w: dq(w)?, reg: rm_reg(rm)?, amt: self.byte(j)? }
             }
             (_, 0xd2 | 0xd3) => {
                 let w = if op == 0xd2 { if w == W::D { W::B } else { return Err(bad) } } else { w };
                 let (r, rm, _) = modrm(i)?;
-                let op = match r {
-                    0 => Sh::Rol,
-                    1 => Sh::Ror,
-                    4 => Sh::Shl,
-                    5 => Sh::Shr,
-                    7 => Sh::Sar,
-                    _ => return Err(bad),
-                };
+                let op = Sh::from_num(r).ok_or(bad)?;
                 Item::ShiftCl { op, w, reg: rm_reg(rm)? }
             }
             (W::D, 0xf6) => {
