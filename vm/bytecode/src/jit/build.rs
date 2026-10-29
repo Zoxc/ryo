@@ -181,6 +181,10 @@ impl<'a> B<'a> {
         };
         self.f.values[p.idx()].def = ValueDef::Alias(same);
         let users = core::mem::take(&mut self.phi(p).users);
+        // `p`'s users now use `same`: re-examine them if it turns out trivial too.
+        if let Some(Some(s)) = self.phis.get_mut(same.idx()) {
+            s.users.extend(users.iter().copied().filter(|&u| u != p));
+        }
         for u in users {
             if u != p && matches!(self.f.def(u), ValueDef::Param(..)) {
                 self.try_remove_trivial(u);
