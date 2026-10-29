@@ -431,18 +431,17 @@ fn block(f: &mut Func, w: &mut Walk, b: Block) -> bool {
     f.blocks[b.idx()]
         .insts
         .retain(|&i| !(matches!(insts[i.idx()].op, Op::Cmp(..)) && matches!(values[insts[i.idx()].res as usize].def, ValueDef::Const(_))));
-    let to = match &f.blocks[b.idx()].term {
-        Term::BrOvf { f: e, .. } if !matches!(f.blocks[b.idx()].insts.last().map(|&i| &f.insts[i.idx()].op), Some(Op::Ovf(..))) => Some(e),
-        Term::BrCmp { cc, w: cw, a, b: bb, t, f: e } => w.decide(f, *cc, *cw, *a, *bb).map(|r| if r { t } else { e }),
-        Term::Br { cond, t, f: e } => match f.def(*cond) {
-            ValueDef::Const(c) => Some(if c & 0xff != 0 { t } else { e }),
+    let k = match &f.blocks[b.idx()].term {
+        Term::BrOvf { .. } if !matches!(f.blocks[b.idx()].insts.last().map(|&i| &f.insts[i.idx()].op), Some(Op::Ovf(..))) => Some(1),
+        Term::BrCmp { cc, w: cw, a, b: bb, .. } => w.decide(f, *cc, *cw, *a, *bb).map(|r| !r as usize),
+        t => t.taken_on(|v, w| match f.def(v) {
+            ValueDef::Const(c) => Some(mask(c, w)),
             _ => None,
-        },
-        _ => None,
+        }),
     };
-    match to.cloned() {
-        Some(e) => {
-            f.set_term(b, Term::Jmp(e));
+    match k {
+        Some(k) => {
+            f.fold_branch(b, k);
             true
         }
         None => false,

@@ -706,6 +706,16 @@ impl Term {
         EdgesMut { two: two.into_iter().flatten(), rest: rest.iter_mut() }
     }
 
+    /// The edge ([`Term::edges`] order) a `Br` or `BrCmp` takes when `k` gives the constant
+    /// its operands hold, masked to the width it reads (a condition's low byte).
+    pub fn taken_on(&self, k: impl Fn(Value, u8) -> Option<u64>) -> Option<usize> {
+        match *self {
+            Term::Br { cond, .. } => k(cond, 1).map(|c| (c == 0) as usize),
+            Term::BrCmp { cc, w, a, b, .. } => Some(!cc.holds(w, k(a, w)?, k(b, w)?) as usize),
+            _ => None,
+        }
+    }
+
     /// Edge `k` ([`Term::edges`] order).
     pub fn edge(&self, k: usize) -> &Edge {
         self.edges().nth(k).unwrap_or_else(|| panic!("no edge {k}"))
@@ -1011,6 +1021,12 @@ impl Func {
     }
 
     /// Replaces the terminator of `b` by `t`, keeping its successors' predecessor lists right.
+    /// Makes `b`'s branch a jump along its edge `k`.
+    pub fn fold_branch(&mut self, b: Block, k: usize) {
+        let e = self.blocks[b.idx()].term.edge(k).clone();
+        self.set_term(b, Term::Jmp(e));
+    }
+
     pub fn set_term(&mut self, b: Block, t: Term) {
         let old = core::mem::replace(&mut self.blocks[b.idx()].term, Term::None);
         for e in old.edges() {

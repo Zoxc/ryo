@@ -164,14 +164,10 @@ impl Sccp {
     fn taken(&self, f: &Func, b: usize) -> Option<usize> {
         let bd = &f.blocks[b];
         match &bd.term {
-            Term::Br { cond, .. } => match self.at(*cond, 1) {
-                Lat::C(c) => Some((c == 0) as usize),
+            t @ (Term::Br { .. } | Term::BrCmp { .. }) => t.taken_on(|v, w| match self.at(v, w) {
+                Lat::C(c) => Some(c),
                 _ => None,
-            },
-            Term::BrCmp { cc, w, a, b, .. } => match (self.at(*a, *w), self.at(*b, *w)) {
-                (Lat::C(x), Lat::C(y)) => Some(!cc.holds(*w, x, y) as usize),
-                _ => None,
-            },
+            }),
             Term::BrOvf { .. } => {
                 let i = *bd.insts.last()?;
                 match self.at(Value(f.insts[i.idx()].res + 1), 1) {
@@ -319,8 +315,7 @@ fn sccp(f: &mut Func) -> bool {
             continue;
         }
         if let Some(k) = s.taken(f, b.idx()) {
-            let e = f.blocks[b.idx()].term.edge(k).clone();
-            f.set_term(b, Term::Jmp(e));
+            f.fold_branch(b, k);
             folded = true;
         }
     }

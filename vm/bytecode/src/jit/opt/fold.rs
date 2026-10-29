@@ -84,20 +84,15 @@ fn fold_not(f: &mut Func) {
 fn fold_const_branches(f: &mut Func) {
     let mut changed = false;
     for b in 0..f.blocks.len() {
-        let e = match &f.blocks[b].term {
-            Term::Br { cond, t, f: e } => match f.def(*cond) {
-                ValueDef::Const(c) => Some(if c & 0xff != 0 { t } else { e }),
-                ValueDef::Undef => Some(e),
+        let k = match f.blocks[b].term {
+            Term::Br { cond, .. } if matches!(f.def(cond), ValueDef::Undef) => Some(1),
+            ref t => t.taken_on(|v, w| match f.def(v) {
+                ValueDef::Const(c) => Some(mask(c, w)),
                 _ => None,
-            },
-            Term::BrCmp { cc, w, a, b: bb, t, f: e } => match (f.def(*a), f.def(*bb)) {
-                (ValueDef::Const(x), ValueDef::Const(y)) => Some(if cc.holds(*w, x, y) { t } else { e }),
-                _ => None,
-            },
-            _ => None,
+            }),
         };
-        if let Some(e) = e.cloned() {
-            f.set_term(Block(b as u32), Term::Jmp(e));
+        if let Some(k) = k {
+            f.fold_branch(Block(b as u32), k);
             changed = true;
         }
     }
