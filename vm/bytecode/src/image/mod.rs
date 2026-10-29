@@ -9,14 +9,14 @@
 //! |---|---|
 //! | header | [`Header`] |
 //! | functions | `[FuncEntry]`, sorted by code offset; index = [`Func`](crate::full::Func) |
-//! | instruction lists | bytes: each function's instruction list ([`crate::asm::list`], [`FuncEntry::list`]) |
-//! | call sites | `[CallSiteEntry]`, each function's in a run ([`FuncEntry::call_sites`]) |
 //! | code constants | what the machine code refers to: island operand arrays, switch values |
 //! | fixups | `[FixupEntry]` (PE only, otherwise empty) |
 //! | symbol flags | `[u8]`, one per symbol ([`SYM_INDIRECT`]) |
 //! | function flags | `[u8]`, one per function ([`FUNC_INLINE_ALWAYS`] etc.) |
 //! | symbols | `[u64]`: one pointer slot per symbol, filled by the linker |
 //! | constants | the constant pool, aligned to its most aligned allocation |
+//! | call sites | `[CallSiteEntry]`, each function's in a run ([`FuncEntry::call_sites`]) |
+//! | instruction lists | bytes: each function's instruction list ([`crate::asm::list`], [`FuncEntry::list`]) |
 //! | constant relocations | `[u32]`, sorted: the pool offset of every relocated (pointer) field in the pool |
 //!
 //! **Writable**: the fixup area at offset 0 (the [`Data`](crate::full::Data) allocations,
