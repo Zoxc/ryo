@@ -131,7 +131,7 @@ def prefixes (i : Item) : List UInt8 :=
 /-- The encoded bytes (relocated fields as zeros) and the relocations, at position `pos`
 (`Item::write`). -/
 def encode (i : Item) (pos : BitVec 32) : List UInt8 × List Reloc :=
-  -- A field relocated against `to`, `off` bytes into the item.
+  -- A field relocated against `to`, after the bytes `pre` (and before `post`).
   let reloc (pre : List UInt8) (to : Ref) (post : List UInt8 := []) : List UInt8 × List Reloc :=
     (pre ++ [0, 0, 0, 0] ++ post, [⟨pos.toNat + pre.length, to⟩])
   -- A field holding the offset of `target` from the field's end.
