@@ -118,7 +118,7 @@ substitutes a default. Each use, and what keeps it from mattering:
 | `createFrame` (Call.lean:152–208, `body.locals[l]!`, `locals[l]!`) | panic | `Wf.checkBody`: `argCount < locals.size`, `spreadArg ≤ argCount`; `n > 0` checked first |
 | `recordConstCopy` (`arr[g]!`) | panic | the array was grown to `g + 1` just before |
 | `Wf.checkBody` (`b.blocks[0]!`) | panic | `blocks.size > 0` checked just before |
-| `Ty.size`, `Ty.align` (Types.lean:151) | `0`, `1` for unsized types | callers check `isSized`; `Wf.checkBody` rejects unsized locals; `Ty.wf` requires sized fields/elements. `prepareInPlace`, the destination de-init in `evalTerminator` and `allocSlot` use them on locals/places that are sized |
+| `Ty.size`, `Ty.align` (Types.lean:151) | `0`, `1` for unsized types | callers check `isSized`; `Wf.checkBody` rejects unsized locals; `Ty.wf` requires sized fields/elements. the destination de-init in `evalTerminator` and `allocSlot` use them on locals/places that are sized |
 | `Ty.layout` of `array`/`slice` with an unsized element (Types.lean:133, 137) | `.sized 0 1` / `.slice 0 1` | `Ty.wf` rejects unsized elements |
 | `tagForVariant` (`discr` default `0`), `variantInhabited` (default `false`), `evalRvalue .discriminant` (default `0`) | defaults for an out-of-range variant index | indices come from `tagToVariant`/`readDiscriminant` (in range) or `SetDiscriminant`/`Aggregate` (checked by `Wf.checkStatement` for both) |
 | `contUnwind`, `callInstance` (`catch_unwind`), `evalTerminator .drop` (`locals[1]?.getD …`) | argument type `*mut u8` / `*mut T` when the callee has no parameter | the callee is a body with that parameter; the default only names the caller-side type of the argument |

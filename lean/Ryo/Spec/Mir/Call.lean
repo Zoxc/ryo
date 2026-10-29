@@ -126,11 +126,6 @@ def untupleLast (args : List ArgVal) : SemM (List ArgVal) := do
   | some _ => throwIllFormed "rust-call: last argument is not a tuple"
   | none => throwIllFormed "rust-call: no arguments"
 
-/-- Check that a place can be used in place at type `ty` and de-initialize it
-(`prepare_for_inplace_passing`). -/
-def prepareInPlace (pl : Place) (ty : Ty) : SemM Unit := do
-  memUpdate (·.deinit pl.ptr.thin ty.size ty.align)
-
 /-! ## Frames -/
 
 /-- Locals mentioned by a `StorageLive`/`StorageDead` statement. -/
