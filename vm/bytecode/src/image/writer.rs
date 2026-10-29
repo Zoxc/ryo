@@ -625,8 +625,10 @@ impl ImageWriter {
         } else {
             Span::default()
         };
-        let fixup_offsets: alloc::collections::BTreeSet<u32> = self.fixups.iter().map(|x| x.offset).collect();
-        if fixup_offsets.len() != self.fixups.len() || self.data_relocs.iter().any(|r| fixup_offsets.contains(&r.offset)) {
+        // Fixups and relocations of the writable section mustn't share or overlap pointers.
+        let mut data_offs: Vec<u32> = self.fixups.iter().map(|x| x.offset).chain(self.data_relocs.iter().map(|r| r.offset)).collect();
+        data_offs.sort_unstable();
+        if data_offs.windows(2).any(|w| (w[1] as u64) < w[0] as u64 + 8) {
             return Err(WriteError::AllocReloc);
         }
         let nsyms = self.symbols.len() as u32;
@@ -664,7 +666,7 @@ impl ImageWriter {
         let lists = span(t.lists.len(), 1, 1)?;
         let mut const_reloc_offs: Vec<u32> = self.const_relocs.iter().map(|r| r.offset).collect();
         const_reloc_offs.sort_unstable();
-        if const_reloc_offs.windows(2).any(|w| w[1] < w[0] + 8) {
+        if const_reloc_offs.windows(2).any(|w| (w[1] as u64) < w[0] as u64 + 8) {
             return Err(WriteError::AllocReloc);
         }
         let const_relocs = span(const_reloc_offs.len(), 4, 4)?;
