@@ -192,8 +192,7 @@ pub fn check_sealed(info: &RustcInfo, rlib: &Path, dir: &Path, triple: &str) -> 
     run(cmd(&ar).arg("x").arg(rlib).arg(OBJECT).arg("--output").arg(dir)).map_err(|e| format!("no sealed JIT in {}: {e}", rlib.display()))?;
     let obj = dir.join(OBJECT);
     let globals = nm_symbols(info, &["--extern-only", "--defined-only", "--no-demangle"], &obj, triple)?;
-    let bad: Vec<&String> =
-        globals.iter().filter(|s| !s.starts_with(START) && (!is_coff(triple) || (coff_renamed(s) && !s.starts_with(COFF_PREFIX)))).collect();
+    let bad: Vec<&String> = globals.iter().filter(|s| !allowed_global(s, triple)).collect();
     if !bad.is_empty() || globals.iter().filter(|s| s.starts_with(START)).count() != 1 {
         return Err(format!("{} defines globals {bad:?} (and must define one {START}<tag>)", obj.display()));
     }
@@ -209,23 +208,34 @@ pub fn check_sealed(info: &RustcInfo, rlib: &Path, dir: &Path, triple: &str) -> 
     if !unwinder.is_empty() {
         return Err(format!("{} defines the unwinder's {unwinder:?}", obj.display()));
     }
-    if is_coff(triple) {
-        let sections = output(cmd(info.tool("llvm-objdump")).arg("-h").arg(&obj))?;
-        if let Some(s) = sections.lines().find(|l| l.contains(".drectve") || l.contains(".CRT$X")) {
+    let objdump = info.tool("llvm-objdump");
+    let forbidden: &[&str] = if is_coff(triple) {
+        &[".drectve", ".CRT$X"]
+    } else if is_macho(triple) {
+        &["__mod_init_func", "__init_offsets", "__mod_term_func"]
+    } else {
+        &[]
+    };
+    if !forbidden.is_empty() {
+        let sections = output(cmd(&objdump).arg("-h").arg(&obj))?;
+        if let Some(s) = sections.lines().find(|l| forbidden.iter().any(|f| l.contains(f))) {
             return Err(format!("{} has the section {}", obj.display(), s.trim()));
         }
     }
     if is_macho(triple) {
-        let sections = output(cmd(info.tool("llvm-objdump")).arg("-h").arg(&obj))?;
-        if let Some(s) = sections.lines().find(|l| l.contains("__mod_init_func") || l.contains("__init_offsets") || l.contains("__mod_term_func")) {
-            return Err(format!("{} has the section {}", obj.display(), s.trim()));
-        }
-        let commands = output(cmd(info.tool("llvm-objdump")).arg("--private-headers").arg(&obj))?;
+        let commands = output(cmd(&objdump).arg("--private-headers").arg(&obj))?;
         if commands.contains("LC_LINKER_OPTION") {
             return Err(format!("{} has linker options (LC_LINKER_OPTION)", obj.display()));
         }
     }
     Ok(undefined)
+}
+
+/// Whether the sealed JIT for `triple` may define the global `s`: `ryo_jit_start<tag>`, and on
+/// COFF the renamed `__ryo_jit$…` symbols and what [`coff_renamed`] leaves alone (LLVM's
+/// constants).
+fn allowed_global(s: &str, triple: &str) -> bool {
+    s.starts_with(START) || (is_coff(triple) && (!coff_renamed(s) || s.starts_with(COFF_PREFIX)))
 }
 
 #[cfg(test)]
@@ -243,6 +253,19 @@ mod tests {
         assert!(super::coff_renamed("_RNvNtCs1_3std9panicking11EMPTY_PANIC"));
         assert!(!super::coff_renamed("ryo_jit_start_0123456789abcdef"));
         assert!(!super::coff_renamed("__xmm@00000000000000010000000000000001"));
+    }
+
+    #[test]
+    fn allowed_globals() {
+        let start = format!("{}0123456789abcdef", super::START);
+        let renamed = format!("{}0123456789abcdef$rust_eh_personality", super::COFF_PREFIX);
+        for triple in ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"] {
+            assert!(super::allowed_global(&start, triple));
+            assert!(!super::allowed_global("rust_eh_personality", triple));
+        }
+        assert!(super::allowed_global(&renamed, "x86_64-pc-windows-msvc"));
+        assert!(super::allowed_global("__xmm@00000000000000010000000000000001", "x86_64-pc-windows-msvc"));
+        assert!(!super::allowed_global("__xmm@00000000000000010000000000000001", "x86_64-unknown-linux-gnu"));
     }
 
     #[test]
