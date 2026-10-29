@@ -203,7 +203,7 @@ impl Jit {
             let ro = img.bytes().as_ptr() as usize;
             let ends = [(ro, h.size as usize), (h.data as usize, h.data_size as usize), (h.text as usize, h.text_size as usize)];
             let span = Span { lo: ends.iter().map(|e| e.0).min().unwrap_or(0), hi: ends.iter().map(|e| e.0 + e.1).max().unwrap_or(0) };
-            let personality = img.symbols().iter().position(|&s| s == p).map(|i| ro + h.symbols.off as usize + 8 * i);
+            let personality = img.symbols().iter().position(|&s| s == p).and_then(|i| image_ref_addr(img, Ref::Sym(Sym(i as u32))));
             ImageInfo { span, personality }
         })
     }
