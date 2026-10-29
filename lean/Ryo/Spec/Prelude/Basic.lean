@@ -1,7 +1,7 @@
 /-
 Ryo.Spec.Prelude.Basic — basic numeric domains of the L0 (MIR) spec.
 
-Ports: libspecr's `Int`, `Size`, `Align`, `List`, `Map`, `Name` as used by MiniRust
+Ports: libspecr's `Int`, `Size`, `Align` as used by MiniRust
 (github.com/minirust/minirust, commit d821c6e3), and `lang/types.md` § "Integer type convenience
 functions" (`IntType::can_represent`, `bring_in_bounds`).
 
@@ -142,7 +142,7 @@ def manBits : FloatTy → Nat
   | f16 => 10 | f32 => 23 | f64 => 52 | f128 => 112
 end FloatTy
 
-/-- Read the low `n*8` bits of a little-endian byte list. -/
+/-- The value of a little-endian byte list. -/
 def leDecode : List UInt8 → Nat
   | [] => 0
   | b :: bs => b.toNat + 256 * leDecode bs
