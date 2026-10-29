@@ -61,12 +61,9 @@ use ryo_bytecode::full::{Abs, Const, ElemKind, Func, Opcode, OperandKind, Sym};
 pub use self::cast::upcast_entry;
 pub use self::constant::{is_import, is_tls_shim, vtable_alloc};
 use self::emit::{IntOp, Width};
-use self::frame::{Frame, OUT_END};
+use self::frame::{Frame, PE_SHADOW};
 pub use self::operand::SPLIT_MAX;
 pub use self::sig::{AbiSig, abi_sig};
-
-/// PE: the 32 bytes of shadow space at the bottom of every frame (`FnCx::finish`).
-const PE_SHADOW: u32 = 32;
 
 /// A lowered function: its machine code, whose `Func`, `Sym`, `Const` and `Data`
 /// references are indices into `relocs` until the merge pass resolves them.
@@ -360,7 +357,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 self.unwind_targets(pads)?;
             }
             let data = &body.basic_blocks[bb];
-            self.bind(self.block_labels[bb.as_usize()]);
+            self.bind(self.block_label(bb));
             self.next_block = order.get(i + 1).copied().filter(|_| i + 1 != cleanup_at);
             if !reachable.contains(bb) {
                 self.fused = None;
@@ -434,7 +431,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     self.asm.set_unwind(id, Unwind::Continue);
                     continue;
                 }
-                UnwindTo::Block(bb) => (self.block_labels[bb.as_usize()], false),
+                UnwindTo::Block(bb) => (self.block_label(bb), false),
                 // As cg_llvm's terminate pads: a catch-all, so it runs even when nothing up
                 // the stack catches.
                 UnwindTo::Terminate(r) => (stubs.iter().find(|s| s.0 == r).expect("terminate stub").1, true),
@@ -484,13 +481,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
 
     // ---- emission ----
 
-    /// Emits an instruction.
-    pub fn emit(&mut self, op: Opcode, ops: Vec<Opnd<Label>>) -> InsnId {
-        self.insn(op, &ops)
-    }
-
     /// Emits `op` with operands `ops`, counting it.
-    fn insn(&mut self, op: Opcode, ops: &[Opnd<Label>]) -> InsnId {
+    pub fn emit(&mut self, op: Opcode, ops: &[Opnd<Label>]) -> InsnId {
         self.insns += 1;
         // PE: a handler's fifth argument goes past the shadow space (`asm::handler_arg`).
         if self.cx.mode.pe
@@ -504,7 +496,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
 
     /// `jmp` to `l`.
     pub fn jmp_label(&mut self, l: Label) {
-        self.insn(Opcode::Jmp, &[Opnd::Target(l)]);
+        self.emit(Opcode::Jmp, &[Opnd::Target(l)]);
     }
 
     /// Binds `l` to the current position.
@@ -516,21 +508,21 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// instruction-word encoding of each operand kind (`sym`, `func`, `k` operands:
     /// indices into [`FnCx::relocs`]).
     pub fn op(&mut self, op: Opcode, operands: &[u32]) -> InsnId {
-        let mut ops = std::mem::take(&mut self.scratch);
-        opnds(op, operands, &mut ops);
-        let id = self.insn(op, &ops);
-        self.scratch = ops;
-        id
+        self.op_with(op, operands, &[])
     }
 
     /// Emits a branch to `bb`: an instruction whose last operands are its polarity and target.
     /// With `neg`, it branches when its condition is false.
     pub fn op_branch(&mut self, op: Opcode, operands: &[u32], neg: bool, bb: BasicBlock) -> InsnId {
+        self.op_with(op, operands, &[Opnd::Neg(neg), Opnd::Target(self.block_label(bb))])
+    }
+
+    /// [`Self::op`] with the operands `tail` after those from the words `operands`.
+    fn op_with(&mut self, op: Opcode, operands: &[u32], tail: &[Opnd<Label>]) -> InsnId {
         let mut ops = std::mem::take(&mut self.scratch);
         opnds(op, operands, &mut ops);
-        ops.push(Opnd::Neg(neg));
-        ops.push(Opnd::Target(self.block_labels[bb.as_usize()]));
-        let id = self.insn(op, &ops);
+        ops.extend_from_slice(tail);
+        let id = self.emit(op, &ops);
         self.scratch = ops;
         id
     }
@@ -570,7 +562,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// `jmp` to `bb`, unless it is the next block.
     pub fn jump(&mut self, bb: BasicBlock) {
         if Some(bb) != self.next_block {
-            self.jmp_label(self.block_labels[bb.as_usize()]);
+            self.jmp_label(self.block_label(bb));
         }
     }
 
@@ -596,13 +588,6 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             neg,
             bb,
         );
-    }
-
-    /// The outgoing argument block's field at `off`: the slot at `fp - F + off`, once the
-    /// frame size `F` is known (`frame.rs`).
-    pub fn out(off: u32) -> u32 {
-        debug_assert!(off < OUT_END);
-        off
     }
 
     /// Where an island's argument block starts in the outgoing area: past the shadow space on

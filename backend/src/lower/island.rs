@@ -63,7 +63,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         for &(s, size) in ops {
             self.asm.lend(s, size);
         }
-        let at = self.emit(Opcode::Island, vec![Opnd::Sym(Sym(isl)), Opnd::Words(ops.iter().map(|o| o.0).collect())]);
+        let at = self.emit(Opcode::Island, &[Opnd::Sym(Sym(isl)), Opnd::Words(ops.iter().map(|o| o.0).collect())]);
         if let Some(u) = unwind {
             self.unwind_entry(at, u);
         }

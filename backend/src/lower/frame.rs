@@ -14,7 +14,7 @@
 //!
 //! Slots are handed out *biased*, as `BIAS + off` for the signed frame offset `off`, so the
 //! lowering's arithmetic on them (`slot + field offset`) never wraps. Slots in the outgoing
-//! block ([`FnCx::out`]) are their offset in the block, below [`OUT_END`], since `F` is only
+//! block ([`out_slot`]) are their offset in the block, below [`OUT_END`], since `F` is only
 //! known once the whole function is lowered. [`FnCx::finish`] has the assembler turn both
 //! kinds into signed offsets ([`frame_offset`]) as it writes the machine code.
 
@@ -35,6 +35,16 @@ pub const BIAS: u32 = 1 << 31;
 
 /// Outgoing-block slots are below this, and frames and argument blocks must be smaller.
 pub const OUT_END: u32 = 1 << 30;
+
+/// PE: the 32 bytes of shadow space at the bottom of every frame (`FnCx::finish`).
+pub const PE_SHADOW: u32 = 32;
+
+/// The slot of the outgoing argument block's field at `off`: the slot at `fp - F + off`,
+/// once the frame size `F` is known ([`frame_offset`]).
+pub const fn out_slot(off: u32) -> u32 {
+    debug_assert!(off < OUT_END);
+    off
+}
 
 /// The biased slot of the frame offset `off`.
 pub const fn slot(off: i32) -> u32 {

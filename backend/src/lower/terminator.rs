@@ -258,7 +258,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         } else {
             let vals = cases.iter().map(|&(v, _)| v).collect();
             let targets = cases.iter().map(|&(_, bb)| self.block_label(bb)).collect();
-            self.emit(opw(IntOp::SwitchSparse, w), vec![Opnd::Slot(s as i32), Opnd::Target(default), Opnd::Cases(vals, targets)]);
+            self.emit(opw(IntOp::SwitchSparse, w), &[Opnd::Slot(s as i32), Opnd::Target(default), Opnd::Cases(vals, targets)]);
         }
         Ok(())
     }
@@ -320,7 +320,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// `switch.dense s, lo, default, targets`: to `targets[s - lo]`, else to `default`.
     fn switch_dense(&mut self, w: Width, s: u32, lo: u128, default: Label, targets: Vec<Label>) {
         let base = if w == Width::W128 { Opnd::Imm128(lo) } else { Opnd::Imm(lo as u64) };
-        self.emit(opw(IntOp::SwitchDense, w), vec![Opnd::Slot(s as i32), base, Opnd::Target(default), Opnd::Targets(targets)]);
+        self.emit(opw(IntOp::SwitchDense, w), &[Opnd::Slot(s as i32), base, Opnd::Target(default), Opnd::Targets(targets)]);
     }
 
     /// A call of the lang item for `reason` (`panic_cannot_unwind`, `panic_in_cleanup`), which

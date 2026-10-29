@@ -337,7 +337,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     fn emit_call(&mut self, target: Target<'tcx>, sig: &AbiSig<'tcx>, homes: &[u32], cont: CallCont<'tcx>) -> Result<(), NeedsNative> {
         let tcx = self.tcx;
         let (d, after) = self.call_dest(&cont, sig)?;
-        let block = Self::out(self.island_block());
+        let block = frame::out_slot(self.island_block());
         let k = if sig.ret_kind == RET_SRET { 0 } else { sig.ret_kind };
         let rd = if k == 0 { 0 } else { d };
         // The island calls' operands: the argument block, the result, and the callee.
@@ -421,7 +421,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         if self.in_region && plan.locs.iter().flatten().any(|l| matches!(l, ArgLoc::Stack { .. } | ArgLoc::PtrStack(_))) {
             return native("a call with stack arguments in PE cleanup code");
         }
-        let stack = |at: u32| if tail { frame::slot((HEADER_SIZE + at) as i32) } else { Self::out(at) };
+        let stack = |at: u32| if tail { frame::slot((HEADER_SIZE + at) as i32) } else { frame::out_slot(at) };
         for (i, locs) in plan.locs.iter().enumerate() {
             let home = homes[i];
             // A tail call reuses the incoming `Indirect` value's memory.
@@ -578,7 +578,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let home = |fx: &mut Self, i: usize, s: u32| -> u32 {
             let f = sig.fields[i];
             if island {
-                let at = Self::out(fx.island_block() + f.offset);
+                let at = frame::out_slot(fx.island_block() + f.offset);
                 fx.mov(at, s, f.size);
                 at
             } else if sig.indirect(i) {
@@ -622,7 +622,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             }
         }
         if sig.caller_location {
-            let t = if island { Self::out(self.island_block() + sig.fields[n].offset) } else { self.temp8() };
+            let t = if island { frame::out_slot(self.island_block() + sig.fields[n].offset) } else { self.temp8() };
             self.caller_location_into(source_info, t)?;
             homes.push(t);
         }
