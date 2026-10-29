@@ -235,7 +235,8 @@ struct Sel {
     codegen: bool,
     /// [`SLOW_VM_TESTS`].
     slow_vm: bool,
-    /// The workspace cargo run, rt-core-only and jit-sealed.
+    /// The workspace cargo run, `vm rt jit`, rt-core-only, jit-sealed, multi-staticlib and
+    /// multi-dylib.
     rt: bool,
     /// The corpus under every variant without a ryo std, and every check.
     backend: bool,
@@ -275,7 +276,7 @@ const RULES: &[(&str, Rule)] = &[
     ("vm/bytecode/src/isa/full.rs", Rule::Bytecode),
     ("vm/bytecode/src/isa/reduced.rs", Rule::Bytecode),
     ("vm/bytecode/src/abi.rs", Rule::Bytecode),
-    ("vm/bytecode/src/jit", Rule::Jit),
+    ("vm/bytecode/src/jit/", Rule::Jit),
     // The workspace run (the fast set) runs them.
     ("vm/bytecode/tests/", Rule::Nothing),
     ("vm/rt/src/vm/handlers.rs", Rule::Handlers),
@@ -366,7 +367,7 @@ impl Sel {
             }
             Rule::Rt => {
                 self.area(Area::Rt);
-                "rt (fp-rbp runs, codegen.rs, rt-core-only, jit-sealed)"
+                "rt (vm rt jit, fp-rbp runs, codegen.rs, rt-core-only, jit-sealed, multi-staticlib/dylib)"
             }
             Rule::Jit => {
                 self.jit = true;
@@ -627,7 +628,7 @@ impl Check {
 fn changed_paths(root: &Path) -> Result<Vec<String>, String> {
     let git = |args: &[&str]| output(cmd("git").current_dir(root).args(args));
     let base = git(&["merge-base", "HEAD", "main"])?;
-    let mut paths: Vec<String> = git(&["diff", "--name-only", base.trim()])?.lines().map(str::to_owned).collect();
+    let mut paths: Vec<String> = git(&["diff", "--name-only", "--no-renames", base.trim()])?.lines().map(str::to_owned).collect();
     paths.extend(git(&["ls-files", "--others", "--exclude-standard"])?.lines().map(str::to_owned));
     paths.sort();
     paths.dedup();
@@ -752,7 +753,7 @@ pub fn run(opts: &Options) -> Result<(), String> {
         if crate::lean::have_lake() {
             let t = Instant::now();
             report("lean", t, crate::lean::run_mode(crate::lean::Mode::Check), &failed);
-        } else if sel.lean {
+        } else {
             eprintln!("[y] test lean: skipped (no `lake`)");
         }
     }
@@ -781,7 +782,16 @@ pub fn run(opts: &Options) -> Result<(), String> {
         }
     }
     let failed = failed.into_inner().unwrap();
-    eprintln!("[y] test: {} in {:.1}s", if sel.full { "full suite" } else { "fast suite" }, start.elapsed().as_secs_f64());
+    let suite = if corpus_only {
+        "selected programs"
+    } else if sel.full {
+        "full suite"
+    } else if sel.fast {
+        "fast suite"
+    } else {
+        "selected areas"
+    };
+    eprintln!("[y] test: {} in {:.1}s", suite, start.elapsed().as_secs_f64());
     if !failed.is_empty() {
         return Err(format!("failed tests: {}", failed.join(", ")));
     }
@@ -982,8 +992,8 @@ impl Ctx<'_> {
             Compiler::Rustc => cmd("rustc"),
             Compiler::Ryo => {
                 let mut c = cmd(&self.rustc_ryo);
-                // Every function's machine code is decoded back and compared with its
-                // instructions (design/backend.md#debugging-switches).
+                // The markers show the backend built each crate, and the statistics list its VM
+                // functions (design/backend.md#debugging-switches).
                 c.env("RYO_BACKEND_MARKER", "1").env("RYO_STATS", "1");
                 if variant.ryo_std {
                     c.args(["--sysroot", "ryo"]);
