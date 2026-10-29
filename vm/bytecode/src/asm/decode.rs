@@ -18,7 +18,7 @@ use super::reduce::{self, Then, addr_arg};
 use super::x86::{BadItem, Cond, Cursor, Fields, Item, M, Reg, STACK_ARG, W, handler_reg, island_args};
 use super::{ARG_ADDR, ArgReg, Mode, RetPart, has_handler, layout, ret_kind};
 use crate::full::{ElemKind, Opcode, OperandKind, Shape, Sym};
-use crate::image::{Cleanup, CleanupEntry, op_may_unwind};
+use crate::image::{Cleanup, CleanupEntry};
 use crate::reduced::Arg;
 
 /// A function decoded from machine code.
@@ -496,7 +496,7 @@ fn unwind_actions(protos: &[Proto], ipos: &[u32], call_sites: &[CallSite], rs: u
         match action {
             Some(_) if missing => return Err(err(ipos[i], "call sites of one instruction disagree")),
             Some((pad, catch)) => {
-                if !op_may_unwind(p.op) {
+                if !p.op.may_unwind() {
                     return Err(err(ipos[i], "call site of an instruction that can't unwind"));
                 }
                 let pad = match pad {

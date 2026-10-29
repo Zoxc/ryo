@@ -17,7 +17,7 @@ use std::fmt::Write as _;
 
 use ryo_bytecode::asm::{self, Mode, Opnd, Scope, ScopeKind};
 use ryo_bytecode::full::*;
-use ryo_bytecode::image::{CATCH, CONTINUE, CleanupEntry, op_may_unwind};
+use ryo_bytecode::image::{CATCH, CONTINUE, CleanupEntry};
 
 struct Rng(u64);
 impl Rng {
@@ -367,7 +367,7 @@ fn every_opcode(rng: &mut Rng, out: &mut Out) {
             f.insns.push(vec![Opcode::Abort as u32]);
             // On PE a cleanup landing pad would start the pad region, which `jmp 0` crosses:
             // catching pads only there (`lean_reduced_vectors.rs` covers the region).
-            if op_may_unwind(op) && list_len != 1 {
+            if op.may_unwind() && list_len != 1 {
                 f.unwind.push((1, if list_len == 0 { None } else { Some((pad, k % 2 == 0 || mode.pe)) }));
             }
             out.push(&f, FRAMES[k % FRAMES.len()], mode);

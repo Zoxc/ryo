@@ -208,7 +208,7 @@ def Proto.targets (p : Proto) : List Nat :=
     | some (_, t) => t.targets
     | none => [])
 
-/-- `op_may_unwind`. -/
+/-- `Opcode::may_unwind`. -/
 def opMayUnwind (op : Full.Opcode) : Bool :=
   op == .call || op == .callSym || op == .callSymInd || op == .callPtr || op == .island ||
     op == .resume

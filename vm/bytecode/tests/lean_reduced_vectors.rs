@@ -18,7 +18,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use ryo_bytecode::asm::{self, Mode, Ref, Scope, ScopeKind};
 use ryo_bytecode::full::*;
-use ryo_bytecode::image::{CATCH, CONTINUE, CleanupEntry, op_may_unwind};
+use ryo_bytecode::image::{CATCH, CONTINUE, CleanupEntry};
 use ryo_bytecode::reduced;
 
 struct Rng(u64);
@@ -503,7 +503,7 @@ fn every_opcode(rng: &mut Rng, out: &mut Out) {
         // [abort], insn, filler…, lpad, jmp 0, abort. On PE, a cleanup landing pad starts the
         // pad region, which nothing branches into or out of: [abort], insn, filler…, abort,
         // lpad, jmp, abort (as in `asm.rs`).
-        let region = mode.pe && op_may_unwind(op) && list_len == 3 && !catch;
+        let region = mode.pe && op.may_unwind() && list_len == 3 && !catch;
         let last = 2 + fillers + 2 + usize::from(region);
         let mut target = |rng: &mut Rng| {
             let k = rng.below(4) as usize;
@@ -527,7 +527,7 @@ fn every_opcode(rng: &mut Rng, out: &mut Out) {
         f.insns.push(vec![Opcode::Jmp as u32, 0]);
         f.targets.push((pad + 1, 1, if region { pad + 2 } else { 0 }));
         f.insns.push(vec![Opcode::Abort as u32]);
-        if op_may_unwind(op) && list_len != 1 {
+        if op.may_unwind() && list_len != 1 {
             f.unwind.push((1, if list_len == 0 { None } else { Some((pad, catch)) }));
         }
         let enc = encode_fn(&f, FRAMES[k % FRAMES.len()], mode);

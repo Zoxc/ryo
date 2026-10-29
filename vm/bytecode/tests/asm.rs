@@ -3,7 +3,7 @@
 
 use ryo_bytecode::asm::{self, Mode, Scope, ScopeKind, lsda};
 use ryo_bytecode::full::*;
-use ryo_bytecode::image::{CATCH, CONTINUE, CleanupEntry, op_may_unwind};
+use ryo_bytecode::image::{CATCH, CONTINUE, CleanupEntry};
 use ryo_bytecode::reduced;
 
 struct Rng(u64);
@@ -448,7 +448,7 @@ fn every_opcode_round_trips() {
                 let mut f = Fn { insns: vec![vec![Opcode::Abort as u32]], targets: Vec::new(), unwind: Vec::new() };
                 let fillers = [0, 2, 40][(round + list_len) % 3];
                 let catch = round % 2 == 0;
-                let region = mode.pe && op_may_unwind(op) && list_len == 3 && !catch;
+                let region = mode.pe && op.may_unwind() && list_len == 3 && !catch;
                 let last = 2 + fillers + 2 + usize::from(region);
                 let mut target = |rng: &mut Rng| {
                     let k = rng.below(4) as usize;
@@ -474,7 +474,7 @@ fn every_opcode_round_trips() {
                 f.insns.push(vec![Opcode::Jmp as u32, 0]);
                 f.targets.push((pad + 1, 1, if region { pad + 2 } else { 0 }));
                 f.insns.push(vec![Opcode::Abort as u32]);
-                if op_may_unwind(op) && list_len != 1 {
+                if op.may_unwind() && list_len != 1 {
                     f.unwind.push((1, if list_len == 0 { None } else { Some((pad, catch)) }));
                 }
                 check(&f, FRAMES[(round + list_len) % FRAMES.len()], *mode, op.mnemonic());
@@ -948,7 +948,7 @@ fn templates_are_pinned() {
                 f.insns.push(vec![Opcode::Abort as u32]);
                 // On PE a cleanup landing pad would start the pad region, which can't be
                 // the first instruction: a catching one.
-                if op_may_unwind(op) {
+                if op.may_unwind() {
                     f.unwind.push((1, Some((0, mode.pe))));
                 }
                 let enc = check(&f, 4096, mode, op.mnemonic());

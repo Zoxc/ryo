@@ -738,7 +738,7 @@ pub fn encode(code: &[u32], frame_size: u32, cleanup: &[CleanupEntry], scopes: &
     let mut action: Vec<Option<Unwind>> = vec![None; starts.len()];
     for e in cleanup {
         let i = idx(e.offset).map_err(|_| EncodeError::BadCleanup(e.offset))?;
-        if !crate::image::op_may_unwind(starts[i].1) || action[i].is_some() {
+        if !starts[i].1.may_unwind() || action[i].is_some() {
             return Err(EncodeError::BadCleanup(e.offset));
         }
         action[i] = Some(match e.action() {

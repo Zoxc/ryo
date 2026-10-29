@@ -286,11 +286,6 @@ pub struct CodeLimits {
     pub data: u32,
 }
 
-/// Whether `op` calls code that may unwind, so it can have a cleanup entry.
-pub fn op_may_unwind(op: Opcode) -> bool {
-    matches!(op, Opcode::Call | Opcode::CallSym | Opcode::CallSymInd | Opcode::CallPtr | Opcode::Island | Opcode::Resume)
-}
-
 /// Decodes all of `code` (one function) and checks every operand: indices in range, branch
 /// targets on instruction starts within the function, and no fall-through past the end.
 /// Returns the instruction start bitmap.
@@ -355,8 +350,7 @@ fn check_indirection(code: &[u32], symbols: &[SymbolDef]) -> Result<(), (u32, Co
         for (o, w) in op.info().operand_words(&code[at + 1..]) {
             if o.kind == OperandKind::Sym {
                 let indirect = symbols[w[0] as usize].flags & SYM_INDIRECT != 0;
-                let loads_through = matches!(op, Opcode::AddrSymInd | Opcode::CallSymInd) && o.name == "sym";
-                if indirect != loads_through {
+                if indirect != op.loads_through_sym() {
                     return Err((at as u32, CodeError::SymIndirection));
                 }
             }
@@ -373,7 +367,7 @@ fn check_function(i: u32, f: &mut FunctionDef, lim: &CodeLimits, symbols: &[Symb
     f.cleanup.sort();
     for (j, e) in f.cleanup.iter().enumerate() {
         let op_at = |o: u32| (starts.get(o as usize) == Some(&true)).then(|| Opcode::from_u16(f.code[o as usize] as u16)).flatten();
-        let call = op_at(e.offset).is_some_and(op_may_unwind);
+        let call = op_at(e.offset).is_some_and(Opcode::may_unwind);
         let pad = match e.action() {
             Cleanup::Pad(p, _) => op_at(p) == Some(Opcode::Lpad),
             Cleanup::Continue => true,

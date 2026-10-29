@@ -346,7 +346,7 @@ fn cleanup_actions(cleanup: &[CleanupEntry], starts: &[u32], insns: &[reduced::I
     for e in cleanup {
         let bad = EncodeError::BadCleanup(e.offset);
         let i = idx(e.offset).map_err(|_| bad)?;
-        if !crate::image::op_may_unwind(insns[i].full_opcode()) || action[i].is_some() {
+        if !insns[i].full_opcode().may_unwind() || action[i].is_some() {
             return Err(bad);
         }
         action[i] = Some(match e.action() {

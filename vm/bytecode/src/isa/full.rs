@@ -232,6 +232,18 @@ impl Opcode {
             _ => None,
         })
     }
+
+    /// Whether the instruction calls code that may unwind, so it can have a cleanup entry:
+    /// the calls, `island` and `resume`.
+    pub const fn may_unwind(self) -> bool {
+        matches!(self.info().shape, Shape::Call | Shape::Island) || matches!(self, Opcode::Resume)
+    }
+
+    /// Whether the instruction loads through the slot of its `Sym` operand (`addr.sym.ind`,
+    /// `call.sym.ind`), so the symbol must be indirect; the other `Sym` operands must not be.
+    pub const fn loads_through_sym(self) -> bool {
+        matches!(self, Opcode::AddrSymInd | Opcode::CallSymInd)
+    }
 }
 
 impl OperandKind {
