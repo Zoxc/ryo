@@ -300,7 +300,6 @@ impl std::fmt::Display for CellError {
 pub struct Cell {
     /// Build or run errors. A failed build stops the backend for this crate.
     pub errors: Vec<CellError>,
-    pub build_failed: bool,
     /// `cargo build --lib` from a clean target directory.
     pub dep_build: Vec<Step>,
     /// `cargo build --lib` of only the crate.
@@ -316,6 +315,14 @@ pub struct Cell {
     pub workload_output: Option<String>,
     pub workload_size: Option<u64>,
     pub tests_size: Option<u64>,
+}
+
+impl Cell {
+    /// Whether preparing the sources or building failed: a [`Phase::Prepare`] or
+    /// [`Phase::Build`] error.
+    pub fn build_failed(&self) -> bool {
+        self.errors.iter().any(|e| matches!(e.phase, Phase::Prepare | Phase::Build))
+    }
 }
 
 pub struct CrateResult {
@@ -397,7 +404,6 @@ pub fn run(opts: Options) -> Result<(), String> {
                 eprintln!("[y] {}: preparing the sources FAILED: {e}", krate.name());
                 for cell in &mut cells {
                     cell.errors.push(CellError::new(Phase::Prepare, e.to_string()));
-                    cell.build_failed = true;
                 }
             }
         }
@@ -442,7 +448,7 @@ fn build_phase(ctx: &Ctx, krate: &Target, sources: &Sources, cells: &mut [Cell])
         let clean = i <= opts.dep_samples;
         for (bi, &backend) in opts.backends.iter().enumerate() {
             let cell = &mut cells[bi];
-            if cell.build_failed {
+            if cell.build_failed() {
                 continue;
             }
             let label = match i {
@@ -478,7 +484,6 @@ fn build_phase(ctx: &Ctx, krate: &Target, sources: &Sources, cells: &mut [Cell])
                 Err(e) => {
                     eprintln!("[y] {} build {label} [{}]: FAILED", krate.name(), backend.name());
                     cell.errors.push(CellError::new(Phase::Build, e.to_string()));
-                    cell.build_failed = true;
                 }
             }
         }
@@ -498,7 +503,7 @@ fn run_phase(ctx: &Ctx, krate: &Target, sources: &Sources, artifacts: &[Artifact
     for i in (0..=opts.run_samples).filter(|_| opts.run_samples > 0) {
         for (bi, &backend) in opts.backends.iter().enumerate() {
             let (cell, a) = (&mut cells[bi], &artifacts[bi]);
-            if cell.build_failed {
+            if cell.build_failed() {
                 continue;
             }
             let label = if i == 0 { "warm-up".to_owned() } else { format!("{i}/{}", opts.run_samples) };

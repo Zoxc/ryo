@@ -180,7 +180,7 @@ fn esc(s: &str) -> String {
 /// Whether a cell has a problem the tables must show, for a metric of phase `phase`: a failed
 /// build, or the tests' or the workload's failures.
 fn cell_state(cell: &Cell, phase: Phase) -> Option<String> {
-    if cell.build_failed {
+    if cell.build_failed() {
         return Some("build failed".into());
     }
     if !matches!(phase, Phase::Test | Phase::Workload) {
@@ -744,7 +744,7 @@ mod tests {
         assert_eq!(cell_state(&cell, Phase::Workload).as_deref(), Some("1 workload failure(s)"));
         assert_eq!(cell_state(&cell, Phase::Test), None);
         assert_eq!(cell_state(&cell, Phase::Build), None);
-        let cell = Cell { build_failed: true, ..Cell::default() };
+        let cell = Cell { errors: vec![CellError::new(Phase::Build, "error")], ..Cell::default() };
         assert_eq!(cell_state(&cell, Phase::Build).as_deref(), Some("build failed"));
     }
 
