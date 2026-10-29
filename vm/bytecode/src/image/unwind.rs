@@ -68,6 +68,45 @@ pub mod cfa {
     }
 }
 
+/// How `.eh_frame` encodes the FDEs' first address, range and LSDA pointer
+/// ([`ImageWriter::set_eh_pointers`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum EhPointers {
+    /// 4 bytes, `DW_EH_PE_pcrel | DW_EH_PE_sdata4` ([`RelocKind::Pc32`]): ELF, and the JIT.
+    #[default]
+    Sdata4,
+    /// 8 bytes, `DW_EH_PE_pcrel | DW_EH_PE_absptr` ([`RelocKind::Pc64`]): Mach-O, as LLVM
+    /// writes `__eh_frame` there. lld reads 4-byte pointers as unsigned, so it loses FDEs
+    /// whose code comes before them; Apple's linkers only ever see LLVM's form.
+    Abs8,
+}
+
+impl EhPointers {
+    /// The size in bytes of a pointer.
+    pub const fn size(self) -> usize {
+        match self {
+            EhPointers::Sdata4 => 4,
+            EhPointers::Abs8 => 8,
+        }
+    }
+
+    /// Its `DW_EH_PE` encoding.
+    pub const fn dw_eh_pe(self) -> u8 {
+        match self {
+            EhPointers::Sdata4 => PCREL_SDATA4,
+            EhPointers::Abs8 => PCREL_ABSPTR,
+        }
+    }
+
+    /// The relocation kind of a pointer field.
+    pub const fn reloc_kind(self) -> RelocKind {
+        match self {
+            EhPointers::Sdata4 => RelocKind::Pc32,
+            EhPointers::Abs8 => RelocKind::Pc64,
+        }
+    }
+}
+
 /// `.eh_frame` and `.gcc_except_table`: one CIE naming `rust_eh_personality` (through the
 /// symbol slot at `personality_slot` of the read-only section, `DW_EH_PE_indirect`), then per
 /// function an FDE with the rules of [`eh_fde_rules`] and its LSDA ([`asm::lsda`]).
@@ -79,10 +118,7 @@ pub(super) fn unwind_elf(
     relocs: &mut Vec<Reloc>,
 ) -> Vec<(Section, Vec<u8>)> {
     let pc = |offset, target, addend, kind| Reloc { section: Section::EhFrame, offset, target: RelocTarget::Section(target), addend, kind };
-    let kind = match ptrs {
-        EhPointers::Sdata4 => RelocKind::Pc32,
-        EhPointers::Abs8 => RelocKind::Pc64,
-    };
+    let kind = ptrs.reloc_kind();
     let mut eh = Vec::new();
     let p = eh_cie_with(&mut eh, ptrs);
     // The personality field is 4 bytes in both encodings.
@@ -117,10 +153,7 @@ pub fn eh_cie(eh: &mut Vec<u8>) -> usize {
 /// [`eh_cie`] with the LSDA and FDE pointers encoded as `ptrs` says (the personality stays
 /// `sdata4`, indirect).
 fn eh_cie_with(eh: &mut Vec<u8>, ptrs: EhPointers) -> usize {
-    let enc = match ptrs {
-        EhPointers::Sdata4 => PCREL_SDATA4,
-        EhPointers::Abs8 => PCREL_ABSPTR,
-    };
+    let enc = ptrs.dw_eh_pe();
     let mut cie = vec![0, 0, 0, 0, 1];
     cie.extend_from_slice(b"zPLR\0");
     cie.extend_from_slice(&[1, 0x78, 16]); // code align 1, data align -8, return address r16
@@ -220,10 +253,7 @@ fn eh_fde_rows_with(eh: &mut Vec<u8>, cie: usize, len: u32, rows: &[(u32, Vec<u8
     let at = eh.len();
     let mut fde = Vec::new();
     fde.extend_from_slice(&((at + 4 - cie) as u32).to_le_bytes()); // back to the CIE
-    let size = match ptrs {
-        EhPointers::Sdata4 => 4,
-        EhPointers::Abs8 => 8,
-    };
+    let size = ptrs.size();
     let pc_begin = at + 4 + fde.len();
     fde.extend_from_slice(&[0; 8][..size]);
     fde.extend_from_slice(&u64::from(len).to_le_bytes()[..size]);

@@ -393,19 +393,6 @@ pub struct ImageWriter {
     eh_pointers: EhPointers,
 }
 
-/// How `.eh_frame` encodes the FDEs' first address, range and LSDA pointer
-/// ([`ImageWriter::set_eh_pointers`]).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub enum EhPointers {
-    /// 4 bytes, `DW_EH_PE_pcrel | DW_EH_PE_sdata4` ([`RelocKind::Pc32`]): ELF, and the JIT.
-    #[default]
-    Sdata4,
-    /// 8 bytes, `DW_EH_PE_pcrel | DW_EH_PE_absptr` ([`RelocKind::Pc64`]): Mach-O, as LLVM
-    /// writes `__eh_frame` there. lld reads 4-byte pointers as unsigned, so it loses FDEs
-    /// whose code comes before them; Apple's linkers only ever see LLVM's form.
-    Abs8,
-}
-
 /// The personality routine of VM code's unwind information (ELF).
 pub const PERSONALITY: &str = "rust_eh_personality";
 
