@@ -671,7 +671,8 @@ offsets in the function, and the function's LSDA, the ELF one.
   ([jit.md](jit.md#unwinding-and-profiling)); the SSA tier leaves functions with cleanup
   landing pads to re-encoding.
 
-Like the rest of the PE column this is only cross-checked from Linux ([platforms.md](platforms.md)).
+On Windows `y test --full` runs it: panics, C++ exceptions and `__except` access violations
+through VM frames ([platforms.md](platforms.md)).
 
 ## Handlers
 

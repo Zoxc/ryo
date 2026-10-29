@@ -51,7 +51,7 @@ after scripted edits with `-Zincremental-verify-ich`.
 **Targets**: `x86_64-unknown-linux-gnu` (ELF), `x86_64-pc-windows-msvc` (PE/COFF) and
 `x86_64-apple-darwin` (Mach-O; arm64 Macs run it under Rosetta). Every format-specific
 mechanism has an ELF, a PE and a Mach-O variant ([platforms.md](platforms.md)), and `y test`
-runs on Linux and Windows. macOS support is implemented but has not run on a Mac.
+passes on Linux and Windows. macOS support is implemented but has not run on a Mac.
 
 ## Terms
 

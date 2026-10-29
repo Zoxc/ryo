@@ -145,4 +145,4 @@ code that calls the VM's handlers; cg_llvm compiles everything else. Start at
   exclude `target/` when searching, and remove them with `git worktree remove`.
 - Toolchain is pinned to stable 1.99.1 with `RUSTC_BOOTSTRAP=1` (`rust-toolchain.toml`,
   `design/build.md#toolchain`).
-- The JIT is built for Linux, Windows and x86_64 macOS, but has only ever run on Linux.
+- The JIT is built for Linux, Windows and x86_64 macOS; it has run on Linux and Windows, never on a Mac.

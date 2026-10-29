@@ -990,11 +990,12 @@ the stderr it compares), each with one `write`:
 ## Limits
 
 - A child of `fork` has no JIT thread, so with `RYO_JIT_SYNC` its trips wait forever.
-- The JIT runs on Linux, Windows and x86_64 macOS (`sys`). On Windows it is built and link-checked from
-  Linux only (`y test --cross`), and its code is run on Linux (`jit.rs`'s `pe_code`), but
-  it has never run on Windows: the unwind registration, the exit behaviour and the regions
-  (`VirtualAlloc` at each hint, which fails where taken; 32 MiB committed per region) are
-  untested there. Exit: `ExitProcess` kills the JIT thread wherever it is, so there is no
+- The JIT runs on Linux, Windows and x86_64 macOS (`sys`). On Windows `y test` passes with the JIT
+  from the first call, by OSR, shuffled, with each tier and `RYO_JIT_CHECK=1`, and with
+  `RYO_JIT_TEST_PANIC`/`RYO_JIT_TEST_OOM`, including panics unwinding through JIT frames
+  (Windows 11, 2026-10-29); `jit.rs` and `ssa.rs` don't build there (Linux and Apple only),
+  and the exit race, regions far apart (`VirtualAlloc` at each hint, which fails where taken;
+  32 MiB committed per region) and walks by debuggers and profilers are untested. Exit: `ExitProcess` kills the JIT thread wherever it is, so there is no
   `atexit` handler to close the registry (it could wait on a lock the thread died holding;
   the registry isn't torn down anyway); a thread killed inside `RtlAddFunctionTable` could
   leave ntdll's function table lock held, which would hang only an unwind through
@@ -1061,7 +1062,8 @@ the stderr it compares), each with one `write`:
   the caller's registers in the form the unwinder recognizes (a `jmp rel32` within the
   function isn't one), that the OSR code writes no callee-saved register and stores every
   save before it jumps to its post part, ending in no epilogue form, and that no code names
-  `xmm6`–`xmm15`. The Windows registration itself has never run.
+  `xmm6`–`xmm15`. On Windows the registration has run for the corpus's panics through JIT
+  frames; debugger and profiler walks haven't been tried.
 - **The corpus**: `RYO_JIT_THRESHOLD=0 RYO_JIT_SYNC=1 y test` runs it with every function's
   JIT code from its first call, and `RYO_JIT_THRESHOLD=2,0` instead enters it by OSR at the
   first loop head pass of each function's first call (whose entry check doesn't trip),
