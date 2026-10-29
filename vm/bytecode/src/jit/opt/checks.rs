@@ -149,10 +149,7 @@ impl Walk {
     /// The range of `a op b` at `w` bytes, where it can be told.
     fn bin_range(&self, f: &Func, o: BinOp, w: u8, a: Value, b: Value, depth: u32) -> Option<Range> {
         let all = mask(u64::MAX, w);
-        let kb = match f.def(b) {
-            ValueDef::Const(c) => Some(mask(c, w)),
-            _ => None,
-        };
+        let kb = f.const_at(b, w);
         match o {
             BinOp::And => {
                 let (x, y) = (self.range(f, a, w, depth), self.range(f, b, w, depth));
@@ -241,7 +238,7 @@ impl Walk {
 
     /// Whether `a op b` at `w` bytes, signed or not, can't overflow.
     fn no_overflow(&self, f: &Func, o: BinOp, signed: bool, w: u8, a: Value, b: Value) -> bool {
-        let one = |v: Value| matches!(f.def(v), ValueDef::Const(c) if mask(c, w) == 1);
+        let one = |v: Value| f.const_at(v, w) == Some(1);
         // Relational: `x + 1` with `x < z`, and `x - y` with `y <= x`.
         match (o, signed) {
             (BinOp::Add, s) if one(b) && self.has_rel(Some(a), None, w, s, true) => return true,
@@ -284,10 +281,7 @@ impl Walk {
         if undef(a) || undef(b) {
             return;
         }
-        let konst = |v: Value| match f.def(v) {
-            ValueDef::Const(c) => Some(mask(c, w)),
-            _ => None,
-        };
+        let konst = |v: Value| f.const_at(v, w);
         // Constant on the right.
         let (cc, a, b) = if konst(a).is_some() && konst(b).is_none() { (cc.swap(), b, a) } else { (cc, a, b) };
         if let Some(c) = konst(b) {
@@ -434,10 +428,7 @@ fn block(f: &mut Func, w: &mut Walk, b: Block) -> bool {
     let k = match &f.blocks[b.idx()].term {
         Term::BrOvf { .. } if !matches!(f.blocks[b.idx()].insts.last().map(|&i| &f.insts[i.idx()].op), Some(Op::Ovf(..))) => Some(1),
         Term::BrCmp { cc, w: cw, a, b: bb, .. } => w.decide(f, *cc, *cw, *a, *bb).map(|r| !r as usize),
-        t => t.taken_on(|v, w| match f.def(v) {
-            ValueDef::Const(c) => Some(mask(c, w)),
-            _ => None,
-        }),
+        t => t.taken_on(|v, w| f.const_at(v, w)),
     };
     match k {
         Some(k) => {

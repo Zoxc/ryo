@@ -127,20 +127,11 @@ impl Simp {
 
 /// Folds or rewrites the pure instruction `i` in place.
 pub(super) fn simplify(f: &mut Func, i: Inst) -> Simp {
-    let konst = |f: &Func, v: Value| match f.def(v) {
-        ValueDef::Const(c) => Some(c),
-        _ => None,
-    };
-    // The instruction defining `v`, its only result.
-    let def_inst = |f: &Func, v: Value| match f.def(v) {
-        ValueDef::Inst(d, 0) => Some(d),
-        _ => None,
-    };
     // The first two operands (the others take no more; a missing one is never read).
     let args = f.insts[i.idx()].args2();
     if let Op::HCall(h) = &f.insts[i.idx()].op {
         // `bit_count` checks there is exactly one operand.
-        return match bit_count(f, i, h).and_then(|g| Some(g(konst(f, args[0])?))) {
+        return match bit_count(f, i, h).and_then(|g| Some(g(f.const_of(args[0])?))) {
             Some(c) => Simp::Const(c as u64),
             None => Simp::Keep,
         };
@@ -149,7 +140,7 @@ pub(super) fn simplify(f: &mut Func, i: Inst) -> Simp {
     let op = f.insts[i.idx()].op.clone();
     let n = f.insts[i.idx()].args.len().min(2);
     let mut xs = [0; 2];
-    if args[..n].iter().zip(&mut xs).all(|(&a, x)| konst(f, a).map(|c| *x = c).is_some()) {
+    if args[..n].iter().zip(&mut xs).all(|(&a, x)| f.const_of(a).map(|c| *x = c).is_some()) {
         if let Some(c) = op.fold(&xs[..n]) {
             return Simp::Const(c);
         }
@@ -194,12 +185,12 @@ pub(super) fn simplify(f: &mut Func, i: Inst) -> Simp {
         }
         Op::Bin(o, w) => {
             let (mut a, mut b) = (args[0], args[1]);
-            if o.commutative() && konst(f, a).is_some() {
+            if o.commutative() && f.const_of(a).is_some() {
                 core::mem::swap(&mut a, &mut b);
                 f.insts[i.idx()].args.swap(0, 1);
             }
             let all = mask(u64::MAX, w);
-            match (o, konst(f, b).map(|c| mask(c, w))) {
+            match (o, f.const_of(b).map(|c| mask(c, w))) {
                 (BinOp::Add | BinOp::Sub | BinOp::Or | BinOp::Xor | BinOp::Shl | BinOp::ShrS | BinOp::ShrU | BinOp::Rotl | BinOp::Rotr, Some(0)) => {
                     return Simp::Value(a);
                 }
@@ -228,7 +219,7 @@ pub(super) fn simplify(f: &mut Func, i: Inst) -> Simp {
             if a == b && !matches!(f.def(a), ValueDef::Undef) {
                 return Simp::Const(cc.reflexive() as u64);
             }
-            if konst(f, a).is_some() {
+            if f.const_of(a).is_some() {
                 f.insts[i.idx()].op = Op::Cmp(cc.swap(), w);
                 f.insts[i.idx()].args.swap(0, 1);
             }
@@ -239,7 +230,7 @@ pub(super) fn simplify(f: &mut Func, i: Inst) -> Simp {
                 return Simp::Value(args[0]);
             }
             // The low bytes of a zero extension back to its source's width: the source.
-            if let Some(d) = def_inst(f, args[0])
+            if let Some(d) = f.def_inst(args[0])
                 && let Op::Ext { from: f0, to: t0, sx: false } = f.insts[d.idx()].op
                 && t0 > f0
                 && t0 == from
@@ -254,7 +245,7 @@ pub(super) fn simplify(f: &mut Func, i: Inst) -> Simp {
             if k == 0 {
                 return Simp::Value(args[0]);
             }
-            let d = def_inst(f, args[0]);
+            let d = f.def_inst(args[0]);
             match d.map(|d| &f.insts[d.idx()].op) {
                 Some(&Op::PtrAdd(j)) => {
                     let p = f.insts[d.unwrap().idx()].args[0];
@@ -279,7 +270,7 @@ pub(super) fn simplify(f: &mut Func, i: Inst) -> Simp {
         }
         Op::Cmp3(..) if args[0] == args[1] => Simp::Const(0),
         Op::PtrIndex(s) => {
-            if let Some(x) = konst(f, args[1]) {
+            if let Some(x) = f.const_of(args[1]) {
                 f.insts[i.idx()].op = Op::PtrAdd(x.wrapping_mul(s as u64) as i64);
                 f.insts[i.idx()].args.truncate(1);
                 // The new `PtrAdd` may fold further.
@@ -321,7 +312,6 @@ fn pieces(f: &Func, v: Value, depth: u32, out: &mut Vec<(u32, u32, Value, u32)>)
         let mut p = Vec::new();
         pieces(f, x, depth - 1, &mut p).then_some(p)
     };
-    let konst = |x: Value| if let ValueDef::Const(c) = f.def(x) { Some(c) } else { None };
     match id.op {
         Op::Ext { from, to, sx: false } if to > from => {
             let Some(p) = sub(id.args[0]) else { return false };
@@ -333,8 +323,8 @@ fn pieces(f: &Func, v: Value, depth: u32, out: &mut Vec<(u32, u32, Value, u32)>)
             cut(p, 0, w, out);
             true
         }
-        Op::Bin(o @ (BinOp::Shl | BinOp::ShrU), bw) if bw <= 8 && konst(id.args[1]).is_some() => {
-            let c = konst(id.args[1]).unwrap() & (8 * bw as u64 - 1);
+        Op::Bin(o @ (BinOp::Shl | BinOp::ShrU), bw) if bw <= 8 && f.const_of(id.args[1]).is_some() => {
+            let c = f.const_of(id.args[1]).unwrap() & (8 * bw as u64 - 1);
             let Some(p) = sub(id.args[0]) else { return false };
             let mut q = Vec::new();
             cut(p, 0, 8 * bw as u32, &mut q);
@@ -374,13 +364,9 @@ fn reassembled(f: &Func, v: Value, w: u8) -> Option<Value> {
 
 /// `v` as a 16-byte constant: a constant (zero-extended) or a [`Op::VConst`].
 pub(crate) fn vconst(f: &Func, v: Value) -> Option<u128> {
-    match f.def(v) {
-        ValueDef::Const(c) => Some(c as u128),
-        ValueDef::Inst(d, 0) => match f.insts[d.idx()].op {
-            Op::VConst(c) => Some(c),
-            _ => None,
-        },
-        _ => None,
+    match f.def_op(v) {
+        Some(&Op::VConst(c)) => Some(c),
+        _ => f.const_of(v).map(u128::from),
     }
 }
 
@@ -408,15 +394,11 @@ fn simplify_v(f: &mut Func, i: Inst, o: VOp, args: [Value; 2]) -> Simp {
         return if rw == 16 { set_vconst(f, i, r) } else { Simp::Const(r as u64) };
     }
     let same = n == 2 && args[0] == args[1] && !matches!(f.def(args[0]), ValueDef::Undef);
-    let def = |f: &Func, v: Value| match f.def(v) {
-        ValueDef::Inst(d, 0) => Some(d),
-        _ => None,
-    };
     match o {
         VOp::Eq if same => set_vconst(f, i, u128::MAX),
         VOp::LtS if same => Simp::Const(0),
         VOp::Msb => {
-            if let Some(d) = def(f, args[0])
+            if let Some(d) = f.def_inst(args[0])
                 && f.insts[d.idx()].op == Op::V(VOp::LtS)
                 && vconst(f, f.insts[d.idx()].args[1]) == Some(0)
             {
@@ -425,11 +407,11 @@ fn simplify_v(f: &mut Func, i: Inst, o: VOp, args: [Value; 2]) -> Simp {
             }
             Simp::Keep
         }
-        VOp::Half(h) => match def(f, args[0]) {
+        VOp::Half(h) => match f.def_inst(args[0]) {
             Some(d) if f.insts[d.idx()].op == Op::V(VOp::Pair) => Simp::Value(f.insts[d.idx()].args[h as usize]),
             _ => Simp::Keep,
         },
-        VOp::Pair => match (def(f, args[0]), def(f, args[1])) {
+        VOp::Pair => match (f.def_inst(args[0]), f.def_inst(args[1])) {
             (Some(x), Some(y))
                 if f.insts[x.idx()].op == Op::V(VOp::Half(0))
                     && f.insts[y.idx()].op == Op::V(VOp::Half(1))
@@ -567,11 +549,8 @@ fn halves(f: &mut Func, kept: &mut Vec<Inst>, b: Block, mem: &[(Loc, u8, Value)]
 /// become its halves. Whether `i`, the pair, became that load.
 fn pair_load(f: &mut Func, kept: &mut Vec<Inst>, i: Inst) -> bool {
     let (x, y) = (f.insts[i.idx()].args[0], f.insts[i.idx()].args[1]);
-    let load = |f: &Func, v: Value| match f.def(v) {
-        ValueDef::Inst(d, 0) => match f.insts[d.idx()].op {
-            Op::Load(8, k) => Some((d, f.insts[d.idx()].args[0], k)),
-            _ => None,
-        },
+    let load = |f: &Func, v: Value| match (f.def_inst(v), f.def_op(v)) {
+        (Some(d), Some(&Op::Load(8, k))) => Some((d, f.insts[d.idx()].args[0], k)),
         _ => None,
     };
     let (Some((lx, px, kx)), Some((ly, py, ky))) = (load(f, x), load(f, y)) else { return false };

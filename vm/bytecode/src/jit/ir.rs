@@ -1004,6 +1004,32 @@ impl Func {
         self.values[v.idx()].def
     }
 
+    /// `v`'s bits if it is a constant.
+    pub fn const_of(&self, v: Value) -> Option<u64> {
+        match self.def(v) {
+            ValueDef::Const(c) => Some(c),
+            _ => None,
+        }
+    }
+
+    /// [`Func::const_of`], masked to `w` bytes.
+    pub fn const_at(&self, v: Value, w: u8) -> Option<u64> {
+        self.const_of(v).map(|c| mask(c, w))
+    }
+
+    /// The instruction defining `v` as its first result.
+    pub fn def_inst(&self, v: Value) -> Option<Inst> {
+        match self.def(v) {
+            ValueDef::Inst(d, 0) => Some(d),
+            _ => None,
+        }
+    }
+
+    /// The operation of [`Func::def_inst`].
+    pub fn def_op(&self, v: Value) -> Option<&Op> {
+        self.def_inst(v).map(|d| &self.insts[d.idx()].op)
+    }
+
     /// Follows aliases.
     pub fn resolve(&self, mut v: Value) -> Value {
         while let ValueDef::Alias(a) = self.values[v.idx()].def {

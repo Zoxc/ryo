@@ -86,10 +86,7 @@ fn fold_const_branches(f: &mut Func) {
     for b in 0..f.blocks.len() {
         let k = match f.blocks[b].term {
             Term::Br { cond, .. } if matches!(f.def(cond), ValueDef::Undef) => Some(1),
-            ref t => t.taken_on(|v, w| match f.def(v) {
-                ValueDef::Const(c) => Some(mask(c, w)),
-                _ => None,
-            }),
+            ref t => t.taken_on(|v, w| f.const_at(v, w)),
         };
         if let Some(k) = k {
             f.fold_branch(Block(b as u32), k);
