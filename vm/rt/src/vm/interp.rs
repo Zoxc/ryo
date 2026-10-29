@@ -87,8 +87,20 @@ fn read_fp(a: &[u64; ARG_REGS], mode: asm::Mode) -> *mut u8 {
         a[0] as usize as *mut u8
     } else {
         let fp: *mut u8;
+        // Apple's targets give every function a frame pointer (`frame-pointer=all`), so by
+        // now the handler's prologue has pushed the caller's `rbp` and pointed `rbp` at it:
+        // read it back from there. (`fp-rbp` is rejected there; this is for the PE handler
+        // set of `pe-test`, whose Win64 handlers take `fp` in `rbp`.)
+        #[cfg(target_vendor = "apple")]
+        // SAFETY: `rbp` points at the saved `rbp` of this handler's frame.
+        unsafe {
+            core::arch::asm!("mov {}, [rbp]", out(reg) fp, options(readonly, nostack, preserves_flags))
+        };
+        #[cfg(not(target_vendor = "apple"))]
         // SAFETY: reads a register.
-        unsafe { core::arch::asm!("mov {}, rbp", out(reg) fp, options(nomem, nostack, preserves_flags)) };
+        unsafe {
+            core::arch::asm!("mov {}, rbp", out(reg) fp, options(nomem, nostack, preserves_flags))
+        };
         fp
     }
 }
