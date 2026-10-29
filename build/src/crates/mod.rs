@@ -545,6 +545,7 @@ fn run_phase(ctx: &Ctx, krate: &Target, sources: &Sources, artifacts: &[Artifact
             }
             let label = if i == 0 { "warm-up".to_owned() } else { format!("{i}/{}", opts.run_samples) };
             let (time, outcome) = run_tests(&sources.dir, krate, &a.test_exes, opts.timeout);
+            let tests = if outcome.failures.is_empty() { format!("{time:.2}s") } else { format!("{time:.2}s (failed)") };
             if i == 0 {
                 cell.errors.extend(outcome.failures.iter().map(|f| CellError::new(Phase::Test, f.clone())));
                 cell.tests = Some(outcome);
@@ -555,6 +556,11 @@ fn run_phase(ctx: &Ctx, krate: &Target, sources: &Sources, artifacts: &[Artifact
                 cell.errors.push(CellError::new(Phase::Test, format!("run sample {i} dropped: {}", outcome.failures.join("; "))));
             }
             let w = a.example.as_ref().map(|e| run_timed(Command::new(e).current_dir(&sources.dir), opts.timeout));
+            let workload = match &w {
+                None => "-".to_owned(),
+                Some(Ok((t, _))) => format!("{t:.3}s"),
+                Some(Err(_)) => "FAILED".to_owned(),
+            };
             match w {
                 None => {}
                 Some(Ok((_, out))) if i == 0 => cell.workload_output = Some(out),
@@ -562,12 +568,7 @@ fn run_phase(ctx: &Ctx, krate: &Target, sources: &Sources, artifacts: &[Artifact
                 Some(Err(e)) if i == 0 => cell.errors.push(CellError::new(Phase::Workload, e.to_string())),
                 Some(Err(e)) => cell.errors.push(CellError::new(Phase::Workload, format!("run sample {i} dropped: {e}"))),
             }
-            eprintln!(
-                "[y] {} run {label} [{}]: tests {time:.2}s, workload {}",
-                krate.name(),
-                backend.name(),
-                cell.workload.last().map_or("-".to_owned(), |t| format!("{t:.3}s"))
-            );
+            eprintln!("[y] {} run {label} [{}]: tests {tests}, workload {workload}", krate.name(), backend.name());
         }
     }
 }
