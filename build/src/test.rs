@@ -463,7 +463,7 @@ const CARGO_RUNS: &[CargoRun] = &[
     CargoRun {
         name: "vm",
         args: &["test", "--workspace", "--exclude", "ryo_jit"],
-        selected: |s| s.fast || s.rt,
+        selected: |s| s.fast || s.rt || s.slow_vm,
         codegen_tests: true,
         slow_tests: true,
         ..CARGO_RUN
