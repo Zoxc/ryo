@@ -201,7 +201,7 @@ fn pe_instructions(dis: &str) -> Vec<Insn<'_>> {
 /// Whether `insn` writes `rsp`, other than as a call or a return does.
 fn moves_rsp(insn: &Insn<'_>) -> bool {
     insn.op.starts_with("push")
-        || insn.op.starts_with("pop")
+        || (insn.op.starts_with("pop") && !insn.op.starts_with("popcnt"))
         || (insn.args.ends_with("%rsp") && !insn.op.starts_with("cmp") && !insn.op.starts_with("test"))
 }
 
