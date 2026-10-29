@@ -150,7 +150,9 @@ impl<'a> B<'a> {
             let v = self.read_var(var, self.f.blocks[b.idx()].preds[k].0);
             row.push(v);
         }
+        // Resolved: reading a later predecessor may have made an earlier entry an alias.
         for &v in &row {
+            let v = self.f.resolve(v);
             if let ValueDef::Param(..) = self.f.def(v)
                 && let Some(Some(u)) = self.phis.get_mut(v.idx())
             {
