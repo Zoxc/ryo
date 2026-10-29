@@ -53,15 +53,7 @@ pub fn stats() -> Snapshot {
 #[cfg(target_arch = "x86_64")]
 #[doc(hidden)]
 pub fn code_len(rec: *const ryo_bytecode::image::JitRecord) -> usize {
-    // SAFETY: a live record; its JIT code, once published, starts `CODE_AT` bytes into its
-    // allocation, which holds the length at `CODE_LEN_AT`.
-    unsafe {
-        let code = (*rec).jit_code;
-        if code.is_null() {
-            return 0;
-        }
-        code.sub(install::CODE_AT - install::CODE_LEN_AT).cast::<u32>().read_unaligned() as usize
-    }
+    install::installed_len(rec)
 }
 
 /// Without a JIT for this target: fails, so the runtime acts as the no-op JIT.

@@ -37,12 +37,25 @@ use region::{Place, REGION, Region, Span};
 const PAGE: usize = vmem::PAGE;
 
 /// Where a function's code starts in its allocation: 16-aligned, after the entry prefix.
-pub(crate) const CODE_AT: usize = 16;
+const CODE_AT: usize = 16;
 const _: () = assert!(JIT_ENTRY_PREFIX <= CODE_AT);
-/// Where the allocation holds the code's length, a `u32` ([`crate::code_len`]): before the
+/// Where the allocation holds the code's length, a `u32` ([`installed_len`]): before the
 /// entry prefix.
-pub(crate) const CODE_LEN_AT: usize = 0;
+const CODE_LEN_AT: usize = 0;
 const _: () = assert!(CODE_LEN_AT + 4 <= CODE_AT - JIT_ENTRY_PREFIX);
+
+/// The length of the code the JIT installed for the record at `rec`, 0 if none.
+pub(crate) fn installed_len(rec: *const JitRecord) -> usize {
+    // SAFETY: a live record; its JIT code, once published, starts `CODE_AT` bytes into its
+    // allocation, which holds the length at `CODE_LEN_AT`.
+    unsafe {
+        let code = (*rec).jit_code;
+        if code.is_null() {
+            return 0;
+        }
+        code.sub(CODE_AT - CODE_LEN_AT).cast::<u32>().read_unaligned() as usize
+    }
+}
 
 /// The profile of a function: how many times its AOT code was called, and how many loop
 /// iterations it ran, from its record's counters ([`JitRecord`]).
