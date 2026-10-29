@@ -677,93 +677,77 @@ macro_rules! reg_handler {
 
 /// The address of a register entry, if `op` has one.
 macro_rules! reg_addr {
-    ($m:ident, $hr:ident, $name:ident, !) => {
+    ($m:ident, $name:ident, !) => {
         None
     };
-    ($m:ident, $hr:ident, $name:ident, $($ret:tt)?) => {
-        if const { ryo_bytecode::jit::effects::reg_entry(Opcode::$name, $m).is_some() } { Some($hr::$name as *const ()) } else { None }
+    ($m:ident, $name:ident, $($ret:tt)?) => {
+        if const { ryo_bytecode::jit::effects::reg_entry(Opcode::$name, $m).is_some() } { Some($name as *const ()) } else { None }
+    };
+}
+
+/// One handler set: the handlers of the ABI `$abi` and mode `$mode` in `mod $h`, one per
+/// opcode, with `$h::handler(op)` their addresses; the register entries (`RegEntry`) in
+/// `mod $hr`, with `$hr::reg_handler(op)`. `$export` (`all()` or `any()`) says whether the
+/// handlers get their `ryo_h_<Opcode>` symbols; the register entries have none (the JIT, which
+/// finds them by address, calls them `ryo_hr_<Opcode>` in its dumps).
+macro_rules! handler_set {
+    ($h:ident, $hr:ident, $abi:literal, $mode:ident, export($export:meta);
+     $($name:ident => $kind:ident ($($p:tt)*) $(-> $ret:tt)?;)*) => {
+        mod $h {
+            #[allow(unused_imports)]
+            use super::*;
+            const M: asm::Mode = $mode;
+            $(
+                #[cfg_attr($export, rustc_std_internal_symbol)]
+                #[cfg_attr($export, unsafe(export_name = tagged!(concat!(ryo_bytecode::rt_sym!(handler), stringify!($name)))))]
+                #[allow(non_snake_case, unused_variables, unused_unsafe, clippy::unused_unit)]
+                pub unsafe extern $abi fn $name(a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) $(-> $ret)? {
+                    let a = [a0, a1, a2, a3, a4, a5];
+                    let fp = read_fp(&a, M);
+                    // SAFETY: see the module docs.
+                    unsafe { $kind!(a, fp, $name, $($p)*) }
+                }
+            )*
+
+            /// The address of opcode `op`'s handler.
+            pub fn handler(op: Opcode) -> Option<*const ()> {
+                match op {
+                    $(Opcode::$name => Some($name as *const ()),)*
+                    Opcode::Resume => Some(resume as *const ()),
+                    _ => None,
+                }
+            }
+        }
+
+        mod $hr {
+            #[allow(unused_imports)]
+            use super::*;
+            const M: asm::Mode = $mode;
+            $(reg_handler!($abi, $name, $kind, ($($p)*), $($ret)?);)*
+
+            /// The address of opcode `op`'s register entry, if it has one.
+            pub fn reg_handler(op: Opcode) -> Option<*const ()> {
+                match op {
+                    $(Opcode::$name => reg_addr!(M, $name, $($ret)?),)*
+                    _ => None,
+                }
+            }
+        }
     };
 }
 
 /// Generates the handlers from the handler list. Every opcode with a handler in `full_ops.rs`
 /// must have one entry (checked by `HANDLED`, below).
 macro_rules! handlers {
-    (() $($name:ident => $kind:ident ($($p:tt)*) $(-> $ret:tt)?;)*) => {
-        /// The handlers, one per opcode. Others reach them by their `ryo_h_<Opcode>` symbols
-        /// or through [`handler`].
-        mod h {
-            #[allow(unused_imports)]
-            use super::*;
-            const M: asm::Mode = MODE;
-            $(
-                #[rustc_std_internal_symbol]
-                #[unsafe(export_name = tagged!(concat!(ryo_bytecode::rt_sym!(handler), stringify!($name))))]
-                #[allow(non_snake_case, unused_variables, unused_unsafe, clippy::unused_unit)]
-                pub unsafe extern "C-unwind" fn $name(a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) $(-> $ret)? {
-                    let a = [a0, a1, a2, a3, a4, a5];
-                    let fp = read_fp(&a, M);
-                    // SAFETY: see the module docs.
-                    unsafe { $kind!(a, fp, $name, $($p)*) }
-                }
-            )*
-        }
+    (() $($name:ident => $kind:ident $p:tt $(-> $ret:tt)?;)*) => {
+        // The target's handlers: others reach them by their `ryo_h_<Opcode>` symbols or
+        // through [`handler`].
+        handler_set!(h, hr, "C-unwind", MODE, export(all()); $($name => $kind $p $(-> $ret)?;)*);
 
-        /// The register entries (`RegEntry`), for the JIT, which finds them by
-        /// [`reg_handler`]'s addresses: they have no symbols (`hr::<Opcode>`; the JIT's dumps
-        /// call them `ryo_hr_<Opcode>`).
-        mod hr {
-            #[allow(unused_imports)]
-            use super::*;
-            const M: asm::Mode = MODE;
-            $(reg_handler!("C-unwind", $name, $kind, ($($p)*), $($ret)?);)*
-        }
-
-        /// The PE form's handlers (`pe-test`): Win64, without symbols.
+        // The PE form's handlers (`pe-test`; tests run PE code off Windows with them): Win64,
+        // without symbols.
         #[cfg(all(feature = "pe-test", not(windows)))]
-        mod hpe {
-            #[allow(unused_imports)]
-            use super::*;
-            const M: asm::Mode = PE_MODE;
-            $(
-                #[allow(non_snake_case, unused_variables, unused_unsafe, clippy::unused_unit)]
-                pub unsafe extern "win64-unwind" fn $name(a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) $(-> $ret)? {
-                    let a = [a0, a1, a2, a3, a4, a5];
-                    let fp = read_fp(&a, M);
-                    // SAFETY: see the module docs.
-                    unsafe { $kind!(a, fp, $name, $($p)*) }
-                }
-            )*
-        }
-
-        /// The PE form's register entries (`pe-test`).
-        #[cfg(all(feature = "pe-test", not(windows)))]
-        mod hrpe {
-            #[allow(unused_imports)]
-            use super::*;
-            const M: asm::Mode = PE_MODE;
-            $(reg_handler!("win64-unwind", $name, $kind, ($($p)*), $($ret)?);)*
-        }
-
-        /// The PE form's handler of `op` (`pe-test`; tests run PE code off Windows with it).
-        #[cfg(all(feature = "pe-test", not(windows)))]
-        #[doc(hidden)]
-        pub fn pe_handler(op: Opcode) -> Option<*const ()> {
-            match op {
-                $(Opcode::$name => Some(hpe::$name as *const ()),)*
-                Opcode::Resume => Some(resume as *const ()),
-                _ => None,
-            }
-        }
-
-        /// The PE form's register entry of `op` (`pe-test`).
-        #[cfg(all(feature = "pe-test", not(windows)))]
-        #[doc(hidden)]
-        pub fn pe_reg_handler(op: Opcode) -> Option<*const ()> {
-            match op {
-                $(Opcode::$name => reg_addr!(PE_MODE, hrpe, $name, $($ret)?),)*
-                _ => None,
-            }
-        }
+        handler_set!(hpe, hrpe, "win64-unwind", PE_MODE, export(any()); $($name => $kind $p $(-> $ret)?;)*);
 
         /// Every opcode with a handler written in Rust, by value.
         const HANDLED: [bool; Opcode::COUNT] = {
@@ -771,28 +755,24 @@ macro_rules! handlers {
             $(t[Opcode::$name as usize] = true;)*
             t
         };
-
-        /// The address of opcode `op`'s handler (for the JIT's handler table, and for tests
-        /// that call handlers directly).
-        #[doc(hidden)]
-        pub fn handler(op: Opcode) -> Option<*const ()> {
-            match op {
-                $(Opcode::$name => Some(h::$name as *const ()),)*
-                Opcode::Resume => Some(resume as *const ()),
-                _ => None,
-            }
-        }
-
-        /// The address of opcode `op`'s register entry, if it has one (`RegEntry`).
-        #[doc(hidden)]
-        pub fn reg_handler(op: Opcode) -> Option<*const ()> {
-            match op {
-                $(Opcode::$name => reg_addr!(MODE, hr, $name, $($ret)?),)*
-                _ => None,
-            }
-        }
     };
 }
+
+/// The address of opcode `op`'s handler (for the JIT's handler table, and for tests that call
+/// handlers directly).
+#[doc(hidden)]
+pub use h::handler;
+/// The PE form's handler of `op` (`pe-test`).
+#[cfg(all(feature = "pe-test", not(windows)))]
+#[doc(hidden)]
+pub use hpe::handler as pe_handler;
+/// The address of opcode `op`'s register entry, if it has one (`RegEntry`).
+#[doc(hidden)]
+pub use hr::reg_handler;
+/// The PE form's register entry of `op` (`pe-test`).
+#[cfg(all(feature = "pe-test", not(windows)))]
+#[doc(hidden)]
+pub use hrpe::reg_handler as pe_reg_handler;
 
 include!("handlers.rs");
 for_each_handler!(handlers!());
