@@ -19,13 +19,16 @@ IMAGE_SUFFIX = ".ryo_image.rcgu.o"
 IMAGE_GLOB = "*" + IMAGE_SUFFIX
 
 
-def run(cmd, cwd=None, env=None, timeout=TIMEOUT):
-    """(exit status or None on timeout, stdout, stderr)."""
+def run(cmd, cwd=None, env=None, timeout=TIMEOUT, keep_partial=False):
+    """(exit status as the shell reports it (128 + n for signal n) or None on timeout, stdout,
+    stderr). With `keep_partial`, a timed-out run keeps the output it wrote."""
     try:
         p = subprocess.run(cmd, cwd=cwd or ROOT, env=env, capture_output=True, timeout=timeout)
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as e:
+        if keep_partial:
+            return None, e.stdout or b"", (e.stderr or b"") + b"\n<timeout>"
         return None, b"", b"<timeout>"
-    return p.returncode, p.stdout, p.stderr
+    return 128 - p.returncode if p.returncode < 0 else p.returncode, p.stdout, p.stderr
 
 
 def picked(names, label):
@@ -161,18 +164,21 @@ def work_dir(keep, prefix):
     return work
 
 
+def pool_map(jobs, fn, items):
+    """`fn(*args)` for every `args` in `items`, run on `jobs` threads, in `items`' order."""
+    with concurrent.futures.ThreadPoolExecutor(jobs) as pool:
+        return list(pool.map(lambda args: fn(*args), items))
+
+
 def check_all(jobs, check, items):
     """Runs `check(*args)` (rows, report lines, skip reason) for every `(label, args)` in `items`
     on `jobs` threads: (rows sorted by label and object, report lines, [(label, skip reason)])."""
     rows, reports, skipped = [], [], []
-    with concurrent.futures.ThreadPoolExecutor(jobs) as pool:
-        futs = {pool.submit(check, *args): label for label, args in items}
-        for f in concurrent.futures.as_completed(futs):
-            r, rep, why = f.result()
-            if why:
-                skipped.append((futs[f], why))
-            rows += r
-            reports += rep
+    for (label, _), (r, rep, why) in zip(items, pool_map(jobs, check, [args for _, args in items])):
+        if why:
+            skipped.append((label, why))
+        rows += r
+        reports += rep
     rows.sort(key=lambda r: (r[0], r[1]))
     return rows, reports, skipped
 
@@ -204,30 +210,46 @@ def parse_rows(text, label, tool, line, fields, folds=()):
     return rows, report
 
 
+def print_rows(head, widths, rows, skipped=(), reports=()):
+    """Prints a table: the header `head` (the label column's name, then one per column), the
+    `rows` of string cells `(label, cell...)` right-aligned to `widths` (0: unpadded), the
+    skipped programs (`-` cells and the reason in the last column), then each report after a
+    blank line."""
+    w = max([len(r[0]) for r in rows] + [len(l) for l, _ in skipped] + [len(head[0])])
+
+    def line(label, cells):
+        print(f"{label:<{w}}  " + "  ".join(f"{c:>{wd}}" for c, wd in zip(cells, widths)))
+
+    line(head[0], head[1:])
+    for r in rows:
+        line(r[0], r[1:])
+    for label, why in sorted(skipped):
+        line(label, ["-"] * (len(widths) - 1) + [f"skipped: {why}"])
+    for rep in reports:
+        print()
+        print(rep)
+
+
 def print_table(rows, cols, width, is_bad, skipped, reports, note=lambda vals: ""):
     """Prints `rows` (from `parse_rows`) as a table of `cols` with a total row, then the skipped
     programs and the report lines: (totals, number of bad rows: unreadable or `is_bad(vals)`)."""
-    w = max([len(r[0]) for r in rows] + [7])
-    print(f"{'program':<{w}}  " + "  ".join(f"{c:>{width}}" for c in cols))
     tot = dict.fromkeys(cols, 0)
     bad = 0
+    out = []
     for label, obj, vals in rows:
         if vals is None:
-            print(f"{label:<{w}}  unreadable object {obj}")
+            out.append((label, f"unreadable object {obj}"))
             bad += 1
             continue
-        print(f"{label:<{w}}  " + "  ".join(f"{vals.get(c, '-'):>{width}}" for c in cols) + note(vals))
+        cells = [str(vals.get(c, "-")) for c in cols]
+        out.append((label, *cells[:-1], f"{cells[-1]:>{width}}" + note(vals)))
         for c in cols:
             tot[c] += vals.get(c, 0)
         if is_bad(vals):
             bad += 1
-    print(f"{'total':<{w}}  " + "  ".join(f"{tot[c]:>{width}}" for c in cols))
-    for label, why in sorted(skipped):
-        print(f"{label:<{w}}  skipped: {why}")
-    if reports:
-        print()
-        for line in reports:
-            print(line)
+    out.append(("total", *(str(tot[c]) for c in cols)))
+    widths = [width] * len(cols)
+    print_rows(["program", *cols], widths, out, skipped, ["\n".join(reports)] if reports else [])
     return tot, bad
 
 

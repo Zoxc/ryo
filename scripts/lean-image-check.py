@@ -29,11 +29,10 @@ Exits nonzero if any group has a mismatch. Run `./y.sh build` and `lake build` i
 """
 
 import argparse
-import concurrent.futures
 import re
 from pathlib import Path
 
-from lean_corpus import IMAGE_GLOB, add_common_args, build_all, compile_program, corpus_dirs, finish, require, run, sysroot_images, variants, work_dir
+from lean_corpus import IMAGE_GLOB, add_common_args, build_all, compile_program, corpus_dirs, finish, pool_map, print_rows, require, run, sysroot_images, variants, work_dir
 
 
 def group_objects(d):
@@ -104,29 +103,20 @@ def main():
     groups.sort(key=lambda g: g[0])
 
     rows, reports = [], []
-    with concurrent.futures.ThreadPoolExecutor(args.j) as pool:
-        futs = [pool.submit(check, args.ryo_lean, images, reg, images[0].parent if args.keep and not args.corpus else None)
-                for _, images, reg in groups]
-        for (label, images, reg), f in zip(groups, futs):
-            funcs, n, bad, err = f.result()
-            if err:
-                st = f"ERROR: {err}"
-            elif n:
-                st = f"{n} MISMATCHES"
-                reports.append(f"=== {label} ===\n" + "\n".join(bad))
-            else:
-                st = "ok"
-            rows.append((label, len(images), "yes" if reg else "-", funcs, st))
+    keep = args.keep and not args.corpus
+    results = pool_map(args.j, check, [(args.ryo_lean, images, reg, images[0].parent if keep else None) for _, images, reg in groups])
+    for (label, images, reg), (funcs, n, bad, err) in zip(groups, results):
+        if err:
+            st = f"ERROR: {err}"
+        elif n:
+            st = f"{n} MISMATCHES"
+            reports.append(f"=== {label} ===\n" + "\n".join(bad))
+        else:
+            st = "ok"
+        rows.append((label, len(images), "yes" if reg else "-", funcs, st))
 
-    w = max([len(r[0]) for r in rows] + [5])
-    print(f"{'group':<{w}}  {'objs':>4}  {'registry':>8}  {'funcs':>6}  result")
-    for label, nobj, reg, funcs, st in rows:
-        print(f"{label:<{w}}  {nobj:>4}  {reg:>8}  {funcs:>6}  {st}")
-    for label, err in sorted(skipped):
-        print(f"{label:<{w}}  {'-':>4}  {'-':>8}  {'-':>6}  skipped: {err}")
-    for rep in reports:
-        print()
-        print(rep)
+    print_rows(["group", "objs", "registry", "funcs", "result"], [4, 8, 6, 0],
+               [(l, str(n), r, str(f), st) for l, n, r, f, st in rows], skipped, reports)
     bad = sum(1 for r in rows if r[4] != "ok")
     print(f"\n{len(rows) - bad}/{len(rows)} groups pass: {sum(r[1] for r in rows)} image objects, "
           f"{sum(1 for r in rows if r[2] == 'yes')} registry objects, {sum(r[3] for r in rows)} functions; {len(skipped)} programs skipped")

@@ -41,12 +41,11 @@ sysroot's objects) and `lake build` in lean/ first.
 """
 
 import argparse
-import concurrent.futures
 import difflib
 import re
 import sys
 
-from lean_corpus import IMAGE_GLOB, ROOT, add_common_args, build_all, compile_program, finish, require, run, sysroot_images, variants, work_dir
+from lean_corpus import IMAGE_GLOB, ROOT, add_common_args, build_all, compile_program, finish, pool_map, print_rows, require, run, sysroot_images, variants, work_dir
 
 REF_DIR = ROOT / "scripts" / "lean-decode-ref"
 
@@ -330,30 +329,19 @@ def main():
     objs.sort()
 
     rows, reports = [], []
-    with concurrent.futures.ThreadPoolExecutor(args.j) as pool:
-        futs = [pool.submit(check, o, args, ref) for _, o in objs]
-        for (label, o), f in zip(objs, futs):
-            funcs, res = f.result()
-            status = []
-            for what, r in res.items():
-                if r is None:
-                    status.append(f"{what} ok")
-                elif isinstance(r, str):
-                    status.append(f"{what}: {r}")
-                else:
-                    status.append(f"{what} DIFFERS")
-                    reports.append(f"=== {label}: {what} ({o.name}) ===\n" + "\n".join(r))
-            rows.append((label, funcs, ", ".join(status)))
+    for (label, o), (funcs, res) in zip(objs, pool_map(args.j, check, [(o, args, ref) for _, o in objs])):
+        status = []
+        for what, r in res.items():
+            if r is None:
+                status.append(f"{what} ok")
+            elif isinstance(r, str):
+                status.append(f"{what}: {r}")
+            else:
+                status.append(f"{what} DIFFERS")
+                reports.append(f"=== {label}: {what} ({o.name}) ===\n" + "\n".join(r))
+        rows.append((label, funcs, ", ".join(status)))
 
-    w = max([len(r[0]) for r in rows] + [6])
-    print(f"{'object':<{w}}  {'funcs':>6}  result")
-    for label, funcs, st in rows:
-        print(f"{label:<{w}}  {funcs:>6}  {st}")
-    for label, err in sorted(skipped):
-        print(f"{label:<{w}}  {'-':>6}  skipped: {err}")
-    for rep in reports:
-        print()
-        print(rep)
+    print_rows(["object", "funcs", "result"], [6, 0], [(l, str(f), st) for l, f, st in rows], skipped, reports)
     bad = sum(1 for r in rows if "DIFFERS" in r[2])
     print(f"\n{len(rows) - bad}/{len(rows)} objects agree, {sum(r[1] for r in rows)} functions; {len(skipped)} programs skipped")
     finish(work, args.keep, bad)

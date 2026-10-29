@@ -22,28 +22,17 @@ import argparse
 import difflib
 import os
 import shutil
-import subprocess
 import sys
 
-from lean_corpus import ROOT, RUSTC_RYO, RYO_LEAN, finish, require, rustc_cmd, variants, work_dir
+from lean_corpus import ROOT, RUSTC_RYO, RYO_LEAN, finish, print_rows, require, rustc_cmd, variants, work_dir
+from lean_corpus import run as corpus_run
 
 TESTS = ROOT / "tests" / "lean"
 TIMEOUT = 600
 
 
-def status(code):
-    """A process's exit status as the shell reports it (128 + n for signal n)."""
-    return 128 - code if code < 0 else code
-
-
-def run(cmd, env=None, timeout=TIMEOUT):
-    """(shell-style exit status or None on timeout, stdout, stderr), keeping the output a
-    timed-out run wrote."""
-    try:
-        p = subprocess.run(cmd, cwd=ROOT, env=env, capture_output=True, timeout=timeout)
-    except subprocess.TimeoutExpired as e:
-        return None, e.stdout or b"", (e.stderr or b"") + b"\n<timeout>"
-    return status(p.returncode), p.stdout, p.stderr
+def run(cmd, env=None):
+    return corpus_run(cmd, env=env, timeout=TIMEOUT, keep_partial=True)
 
 
 def build(compiler, src, out_dir, flags, env=None):
@@ -133,13 +122,7 @@ def main():
                     rep += ["  " + l for l in lines[-6:]]
                 reports.append("\n".join(rep))
 
-    w = max(len(r[0]) for r in rows + [("program",)])
-    print(f"{'program':<{w}}  {'rustc':>6}  {'ryo':>6}  {'lean':>6}  match")
-    for label, r, y, l, m in rows:
-        print(f"{label:<{w}}  {r:>6}  {y:>6}  {l:>6}  {m}")
-    for rep in reports:
-        print()
-        print(rep)
+    print_rows(["program", "rustc", "ryo", "lean", "match"], [6, 6, 6, 0], rows, reports=reports)
     bad = sum(1 for r in rows if r[4] != "yes")
     print(f"\n{len(rows) - bad}/{len(rows)} match")
     finish(work, args.keep, bad)
