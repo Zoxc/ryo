@@ -1182,8 +1182,7 @@ fn build_cgu<'tcx>(
     let mut dump = String::new();
     let mut code_dump = String::new();
     let image = build_image(tcx, rt, mode, switches, cgu.name(), &mut vm, &mut dump, &mut code_dump);
-    let at = std::mem::offset_of!(ryo_bytecode::image::Header, consts) + 4;
-    let pool = image.rodata.get(at..at + 4).map_or(0, |b| u32::from_le_bytes(b.try_into().unwrap()) as usize);
+    let pool = image.consts_len as usize;
     let cgu_vm = CguVm { vm: vm.iter().map(|v| (v.instance, v.global)).collect(), islands, refs, main };
     let side = cgu_vm.save(tcx);
     ImagePart {

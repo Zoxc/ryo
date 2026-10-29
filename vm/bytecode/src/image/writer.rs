@@ -207,6 +207,11 @@ pub struct ImageObject {
     /// Symbols, indexed by [`Sym`].
     pub symbols: Vec<SymbolDef>,
     pub relocs: Vec<Reloc>,
+    /// The header's identity fields ([`ImageWriter::new`], [`ImageWriter::set_cgu_hash`]).
+    pub stable_crate_id: u64,
+    pub cgu_hash: u64,
+    /// The size of the constant pool in bytes (the header's `consts.count`).
+    pub consts_len: u32,
 }
 
 /// An invalid instruction or operand.
@@ -582,6 +587,9 @@ impl ImageWriter {
             unwind,
             symbols: self.symbols,
             relocs,
+            stable_crate_id: self.stable_crate_id,
+            cgu_hash: self.cgu_hash,
+            consts_len: header.consts.count,
         })
     }
 

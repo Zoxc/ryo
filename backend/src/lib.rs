@@ -496,9 +496,7 @@ fn write_fresh_image(
     let side_path = image_path.with_extension(partition::WP_SIDE);
     write(&side_path, side);
     if let Some(image) = image {
-        let scid = symbols::local_stable_crate_id(tcx);
-        let cgu_hash = ryo_bytecode::image::cgu_hash(img.cgu_name.as_str().as_bytes());
-        let bytes = objfile::write_image(fmt, image, scid, cgu_hash, img.main_symbol.as_deref(), &|name: &str| symbols::rt_symbol(tcx, name))
+        let bytes = objfile::write_image(fmt, image, img.main_symbol.as_deref(), &|name: &str| symbols::rt_symbol(tcx, name))
             .unwrap_or_else(|e| tcx.dcx().fatal(e));
         write(image_path, &bytes);
     }

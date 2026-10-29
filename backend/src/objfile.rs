@@ -627,8 +627,6 @@ fn coff_entries(obj: &mut Object<'static>, suffix: &str) -> object::write::Secti
 pub fn write_image(
     fmt: &dyn ObjectFormat,
     image: &ImageObject,
-    stable_crate_id: u64,
-    cgu_hash: u64,
     main_symbol: Option<&str>,
     rt_symbol: &dyn Fn(&str) -> String,
 ) -> Result<Vec<u8>, String> {
@@ -658,7 +656,14 @@ pub fn write_image(
         Section::Text => text,
         Section::EhFrame | Section::Lsda | Section::Pdata | Section::Xdata => unwind.iter().find(|u| u.0 == s).expect("unwind section").1,
     };
-    fmt.hidden_global(&mut obj, &fmt.mangle(&image_symbol(stable_crate_id, cgu_hash)), ro, 0, image.rodata.len() as u64, SymbolKind::Data);
+    fmt.hidden_global(
+        &mut obj,
+        &fmt.mangle(&image_symbol(image.stable_crate_id, image.cgu_hash)),
+        ro,
+        0,
+        image.rodata.len() as u64,
+        SymbolKind::Data,
+    );
 
     // Indirect slots relocate against the import slot (design/platforms.md). The writer only
     // relocates against indirect symbols from their slots (constants pointing at them are
@@ -835,6 +840,7 @@ mod tests {
     /// Two functions, one global and one local, calling a symbol.
     fn image() -> ImageObject {
         let mut w = ImageWriter::new(SCID);
+        w.set_cgu_hash(CGU);
         w.set_eh_pointers(ryo_bytecode::image::EhPointers::Abs8);
         let ext = w.symbol("ext_fn", 0);
         let mut c = CodeBuf::default();
@@ -858,7 +864,7 @@ mod tests {
 
     /// The written image object, read back.
     fn written(img: &ImageObject) -> Vec<u8> {
-        write_image(&fmt(), img, SCID, CGU, Some("main_fn"), &rt).expect("write_image")
+        write_image(&fmt(), img, Some("main_fn"), &rt).expect("write_image")
     }
 
     fn section<'a>(file: &'a MachOFile64<'a, Endianness>, name: &str) -> object::read::macho::MachOSection64<'a, 'a, Endianness> {
@@ -998,6 +1004,7 @@ mod tests {
     fn pe_unwind_handler() {
         use object::read::coff::CoffFile;
         let mut w = ImageWriter::new(SCID);
+        w.set_cgu_hash(CGU);
         let ext = w.symbol("ext_fn", 0);
         let mut c = CodeBuf::default();
         c.emit(&Insn::CallSym { d: Slot(-16), sym: ext, k: 8, a: List::from_words(&[]) });
@@ -1006,7 +1013,7 @@ mod tests {
         w.add_function(def("f"));
         w.add_function(def("g"));
         let img = w.finish(Mode { pe: true, ..MODE }).expect("image");
-        let bytes = write_image(&Coff, &img, SCID, CGU, None, &rt).expect("write_image");
+        let bytes = write_image(&Coff, &img, None, &rt).expect("write_image");
         let file = CoffFile::<&[u8]>::parse(&*bytes).unwrap();
         let xdata = file.sections().find(|s| s.name() == Ok(".xdata")).expect(".xdata");
         let data = xdata.data().unwrap();
