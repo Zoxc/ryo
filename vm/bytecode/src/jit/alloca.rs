@@ -10,7 +10,7 @@
 use alloc::vec::Vec;
 
 use super::Unsupported;
-use super::decode::{Code, How, Kind};
+use super::decode::{Acc, Code, How, Kind};
 use super::ir::{Alloca, AllocaId, AllocaKind};
 use crate::asm::ScopeKind;
 
@@ -75,6 +75,12 @@ impl Uf {
 /// incoming argument area starts past them.
 const RET_AREA: i64 = 16;
 
+/// The byte that access `a` names: an address at offset 0 (the frame's end: one past its
+/// topmost object) names that object's last byte, not the return address.
+fn anchor(a: &Acc) -> i32 {
+    if a.how == How::Addr && a.off == 0 { -1 } else { a.off }
+}
+
 const NONE: u16 = u16::MAX;
 const CONFLICT: u16 = u16::MAX - 1;
 
@@ -126,7 +132,7 @@ fn bytes(code: &Code, frame_size: u32) -> Result<FrameBytes, Unsupported> {
     let mut hi = RET_AREA;
     for i in &code.insns {
         for a in i.accs.iter().filter(|a| a.size != 0 || a.how != How::Block) {
-            let (lo, end) = (a.off as i64, a.off as i64 + a.size.max(1) as i64);
+            let (lo, end) = (anchor(a) as i64, anchor(a) as i64 + a.size.max(1) as i64);
             if lo < -f {
                 return Err(Unsupported("a frame access below the frame"));
             }
@@ -188,8 +194,9 @@ fn bytes(code: &Code, frame_size: u32) -> Result<FrameBytes, Unsupported> {
         }
         // A zero-sized island operand accesses nothing.
         for a in i.accs.iter().filter(|a| a.size != 0 || a.how != How::Block) {
-            span(&mut uf, a.off as i64, a.size.max(1));
-            let r = at(a.off as i64)..at(a.off as i64 + a.size.max(1) as i64).min(n);
+            let off = anchor(a) as i64;
+            span(&mut uf, off, a.size.max(1));
+            let r = at(off)..at(off + a.size.max(1) as i64).min(n);
             for b in r.clone() {
                 accessed[b] = true;
                 match a.how {
@@ -524,7 +531,7 @@ fn resolve(code: &Code, lay: &Of, allocas: &[Alloca], var_of: &[u32], vars: &mut
                 res[i][k] = Res::Undef;
                 continue;
             }
-            let al = match alloca_at(a.off) {
+            let al = match alloca_at(anchor(a)) {
                 Some(al) => al,
                 None => return Err(Unsupported("an access outside every alloca")),
             };

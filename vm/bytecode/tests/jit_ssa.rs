@@ -122,6 +122,25 @@ fn reaching_shapes() {
     assert_eq!(f.allocas[0].kind, AllocaKind::Memory, "{f}");
 }
 
+/// A pointer one past the frame's topmost object (an `Addr` at offset 0, the frame's end)
+/// is its alloca's end address, not an access of the return address (which rejected the
+/// function).
+#[test]
+fn address_at_the_frame_end() {
+    let v = vec![
+        Insn::ImmW64 { d: Slot(-8), imm: 5 },
+        Insn::Addr { d: Slot(-16), s: Slot(0) },
+        Insn::LoadW64 { d: Slot(-16), m: Mem { p: Slot(-16), k: -8 } },
+        Insn::Ret { s: Slot(-16), k: 8 },
+    ];
+    let d = decoded(&v, 16, &[(1, -8, 8, ScopeKind::Escape { align: 8 })]);
+    let f = ir(&d);
+    let a8 = f.allocas.iter().position(|a| a.aot_off == -8).unwrap_or_else(|| panic!("{f}"));
+    assert_eq!(f.allocas[a8].kind, AllocaKind::Memory, "{f}");
+    // The load 8 bytes below the end pointer reads the stored value.
+    assert_eq!(ret_const(&f), Some(5), "{f}");
+}
+
 /// A local whose address escapes before a loop is memory, and pinned to its AOT offset (it
 /// is escaped at the OSR entry); one that escapes only after the loop moves.
 #[test]
