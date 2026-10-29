@@ -249,7 +249,8 @@ fn tip_text(crate_name: &str, backend: Backend, s: &Summary, unit: Measure, llvm
 }
 
 /// A dot plot of each backend's median relative to LLVM's, per crate, on a log axis, with
-/// whiskers at ± one standard deviation. Absolute values are in the tooltips and the table.
+/// whiskers at ± one standard deviation, the lower one clamped at half the median (the axis
+/// is logarithmic). Absolute values and the stddev are in the tooltips and the table.
 fn ratio_chart(r: &Report, m: &Metric, data: &[Vec<Option<Summary>>]) -> String {
     let Some(llvm) = r.backends.iter().position(|&b| b == Backend::Llvm) else { return String::new() };
     let mut ratios: Vec<f64> = vec![1.0];
@@ -619,7 +620,7 @@ pub fn render(r: &Report) -> String {
     }
     let _ = write!(
         s,
-        "</p><p class=\"muted\">Charts: each backend's median relative to LLVM's (log axis, dashed line = 1×), whiskers ± one standard deviation, absolute median as the label; hover for details. Tables: median (ratio to LLVM), ± stddev, min, n. Yellow cells are noisy (stddev &gt; {:.0}% of median), red cells failed.</p>",
+        "</p><p class=\"muted\">Charts: each backend's median relative to LLVM's (log axis, dashed line = 1×), whiskers ± one standard deviation (the lower one at most down to half the median), absolute median as the label; hover for details. Tables: median (ratio to LLVM), ± stddev, min, n. Yellow cells are noisy (stddev &gt; {:.0}% of median), red cells failed.</p>",
         NOISY * 100.0
     );
     s.push_str(&tests_section(r));
