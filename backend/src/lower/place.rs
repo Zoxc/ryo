@@ -19,6 +19,17 @@ pub enum Loc {
     Mem { p: u32, k: i32 },
 }
 
+/// Bytes in a thin pointer. A wide pointer is the data pointer followed by its metadata at
+/// offset [`META`].
+pub const PTR: u32 = 8;
+/// Offset of a wide pointer's metadata.
+pub const META: u32 = PTR;
+
+/// Whether a pointer-like layout is a wide pointer (data plus metadata), from its size.
+pub fn is_wide_ptr(l: TyAndLayout<'_>) -> bool {
+    l.size.bytes() == u64::from(2 * PTR)
+}
+
 impl Loc {
     /// The location `d` bytes further.
     pub fn offset(self, d: u64) -> Result<Loc, NeedsNative> {
@@ -144,15 +155,15 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             return native("deref of an unsized place");
         }
         // From the pointer's size, not the pointee: pointers to extern types are thin.
-        let wide = pv.layout.size.bytes() == 16;
+        let wide = is_wide_ptr(pv.layout);
         let (p, meta) = match pv.loc {
-            Loc::Slot(s) => (s, wide.then_some(s + 8)),
+            Loc::Slot(s) => (s, wide.then_some(s + META)),
             Loc::Mem { .. } => {
                 // `(*(*_n).f).g`: load the inner pointer first.
-                let size = if wide { 16 } else { 8 };
-                let t = self.frame.temp(size, 8);
-                self.load(t, pv.loc, size as u32);
-                (t, wide.then_some(t + 8))
+                let size = if wide { 2 * PTR } else { PTR };
+                let t = self.frame.temp(size.into(), PTR.into());
+                self.load(t, pv.loc, size);
+                (t, wide.then_some(t + META))
             }
         };
         Ok(PlaceVal { loc: Loc::Mem { p, k: 0 }, layout: pointee, meta, base: None })

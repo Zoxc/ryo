@@ -7,7 +7,7 @@ use rustc_middle::ty;
 use super::cast::ScalarKind;
 use super::emit::{FloatOp, FloatWidth, IntOp, Width, opf, opw};
 use super::island::templates;
-use super::place::PlaceVal;
+use super::place::{META, PTR, PlaceVal, is_wide_ptr};
 use super::{FnCx, NeedsNative, native};
 use ryo_bytecode::full::Opcode;
 
@@ -214,7 +214,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
 
     fn compare(&mut self, dst: PlaceVal<'tcx>, cmp: Cmp, a: &Operand<'tcx>, b: &Operand<'tcx>) -> Result<(), NeedsNative> {
         let la = self.operand_layout(a)?;
-        if matches!(la.ty.kind(), ty::RawPtr(..) | ty::Ref(..) | ty::FnPtr(..)) && la.size.bytes() == 16 {
+        if matches!(la.ty.kind(), ty::RawPtr(..) | ty::Ref(..) | ty::FnPtr(..)) && is_wide_ptr(la) {
             return self.compare_wide(dst, cmp, a, b);
         }
         let kind = self.scalar_kind(la)?;
@@ -266,7 +266,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         if let Cmp::Eq | Cmp::Ne = cmp {
             let (name, combine) = if let Cmp::Eq = cmp { (Opcode::EqW64, Opcode::AndW8) } else { (Opcode::NeW64, Opcode::OrW8) };
             self.op(name, &[t, sa, sb]);
-            self.op(name, &[t + 1, sa + 8, sb + 8]);
+            self.op(name, &[t + 1, sa + META, sb + META]);
             return self.op_to(dst, combine, &[t, t + 1]);
         }
         // x < y is x.data < y.data, or equal data and x.meta < y.meta (`<=` on the metadata
@@ -275,7 +275,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let meta = if let Cmp::Lt | Cmp::Gt = cmp { Opcode::LtUW64 } else { Opcode::LeUW64 };
         self.op(Opcode::LtUW64, &[t, x, y]);
         self.op(Opcode::EqW64, &[t + 1, x, y]);
-        self.op(meta, &[t + 2, x + 8, y + 8]);
+        self.op(meta, &[t + 2, x + META, y + META]);
         self.op(Opcode::AndW8, &[t + 1, t + 1, t + 2]);
         self.op_to(dst, Opcode::OrW8, &[t, t + 1])
     }
@@ -284,12 +284,12 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let la = self.operand_layout(a)?;
         match op {
             UnOp::PtrMetadata => {
-                if la.size.bytes() != 16 {
+                if !is_wide_ptr(la) {
                     return Ok(()); // thin pointer: `()`
                 }
                 let (s, _) = self.operand_slot(a)?;
                 self.into_place(dst, |fx, d| {
-                    fx.mov(d, s + 8, 8);
+                    fx.mov(d, s + META, PTR);
                 })
             }
             UnOp::Not | UnOp::Neg => {

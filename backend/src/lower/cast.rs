@@ -7,7 +7,7 @@ use rustc_middle::ty::layout::TyAndLayout;
 use rustc_middle::ty::{self, FloatTy, Instance, Ty, TyCtxt, TypingEnv};
 
 use super::emit::{FloatWidth, Width};
-use super::place::{Loc, PlaceVal};
+use super::place::{Loc, META, PTR, PlaceVal, is_wide_ptr};
 use super::{CodeReloc, FnCx, NeedsNative, native};
 use ryo_bytecode::full::{Opcode, cvt_f2f, cvt_f2i, cvt_i2f, int_cast_op};
 
@@ -73,15 +73,14 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 })
             }
             CastKind::PtrToPtr => {
-                let (from, to) = (src.size.bytes(), to_layout.size.bytes());
-                if from == to {
+                if src.size == to_layout.size {
                     return self.operand_into(op, dst.loc);
                 }
-                if from == 16 && to == 8 {
+                if is_wide_ptr(src) && to_layout.size.bytes() == u64::from(PTR) {
                     // Wide to thin: drop the metadata.
                     let (s, _) = self.operand_slot(op)?;
                     self.into_place(dst, |fx, d| {
-                        fx.mov(d, s, 8);
+                        fx.mov(d, s, PTR);
                     })
                 } else {
                     native("PtrToPtr between unexpected sizes")
@@ -154,18 +153,17 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             }
             (ty::Ref(_, a, _), ty::Ref(_, b, _) | ty::RawPtr(b, _)) | (ty::RawPtr(a, _), ty::RawPtr(b, _)) => {
                 let (a, b) = (*a, *b);
-                let src_wide = match sl.size.bytes() {
-                    8 => false,
-                    16 => true,
-                    _ => return native("unsize of an unexpected layout"),
-                };
-                if dl.size.bytes() != 16 {
+                let src_wide = is_wide_ptr(sl);
+                if !src_wide && sl.size.bytes() != u64::from(PTR) {
+                    return native("unsize of an unexpected layout");
+                }
+                if !is_wide_ptr(dl) {
                     return native("unsize to an unexpected layout");
                 }
                 let s = self.loc_slot(src, sl)?;
-                self.with_slot(dst, 16, |fx, d| {
-                    fx.mov(d, s, 8);
-                    fx.unsized_info(d + 8, a, b, src_wide.then_some(s + 8))
+                self.with_slot(dst, 2 * PTR, |fx, d| {
+                    fx.mov(d, s, PTR);
+                    fx.unsized_info(d + META, a, b, src_wide.then_some(s + META))
                 })
             }
             (ty::Adt(da, _), ty::Adt(db, _)) if da == db && da.is_struct() => {

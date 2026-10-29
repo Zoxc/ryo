@@ -5,7 +5,7 @@ use rustc_middle::mir::{ConstValue, NonDivergingIntrinsic, Operand, Place, Rvalu
 use ryo_bytecode::full::Opcode;
 
 use super::emit::Width;
-use super::place::{Loc, PlaceVal};
+use super::place::{Loc, META, PTR, PlaceVal, is_wide_ptr};
 use super::{CodeReloc, FnCx, NeedsNative, SPLIT_MAX, native};
 
 impl<'a, 'tcx> FnCx<'a, 'tcx> {
@@ -77,14 +77,13 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// `&place` / `&raw place`: the address, plus the metadata for unsized places.
     fn address_of(&mut self, dst: PlaceVal<'tcx>, p: Place<'tcx>) -> Result<(), NeedsNative> {
         let pv = self.place(p)?;
-        let size = dst.layout.size.bytes();
-        if pv.meta.is_some() != (size == 16) {
+        if pv.meta.is_some() != is_wide_ptr(dst.layout) {
             return native("reference with unexpected metadata");
         }
         self.with_place_slot(dst, |fx, d| {
             fx.addr_into(d, pv.loc, pv.base)?;
             if let Some(m) = pv.meta {
-                fx.mov(d + 8, m, 8);
+                fx.mov(d + META, m, PTR);
             }
             Ok(())
         })
