@@ -33,6 +33,10 @@ impl Reader<'_> {
         while shift < 64 {
             let (&b, rest) = self.0.split_first()?;
             self.0 = rest;
+            // The 10th byte holds only bit 63.
+            if shift == 63 && b & 0x7e != 0 {
+                return None;
+            }
             v |= ((b & 0x7f) as u64) << shift;
             if b & 0x80 == 0 {
                 return Some(v);
