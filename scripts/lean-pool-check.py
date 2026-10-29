@@ -29,14 +29,11 @@ Exits nonzero if any object has a mismatch or an object-level error. Run `./y.sh
 """
 
 import argparse
-import concurrent.futures
 import os
 import re
-import shutil
-import sys
-from pathlib import Path
 
-from lean_corpus import IMAGE_GLOB, add_common_args, build_all, compile_program, require, run, variants, work_dir
+from lean_corpus import (IMAGE_GLOB, add_common_args, build_all, check_all, compile_program, finish, parse_rows, print_table, require, run,
+                         variants, work_dir)
 LINE = re.compile(
     r"^pool-check (\S+): refs (\d+) matched (\d+) \(vtables (\d+)\) reached (\d+) bytes (\d+) not-in-dump (\d+) mismatched (\d+) errors (\d+)$"
 )
@@ -59,30 +56,20 @@ def build(src, flags, out_dir):
     return (objs, dump), None
 
 
+def fold_dump(label, m, cur, rows):
+    if cur is not None:
+        cur[2].update(zip(DUMP_FIELDS, map(int, m.groups()[2:])))
+        cur[2]["main"] = m.group(2) != "-"
+    return cur
+
+
 def check(ryo_lean, label, objs, dump, verbose):
     """Runs check-pool on a program's objects: (objects' rows, report lines, skip reason)."""
     out_dir = dump.parent.parent
     code, out, err = run([ryo_lean, "check-pool", str(dump)] + [str(o) for o in objs] + (["-v"] if verbose else []))
     text = out.decode(errors="replace")
     (out_dir / "check-pool.txt").write_text(text + err.decode(errors="replace"))
-    rows, report, cur = [], [], None
-    for line in text.splitlines():
-        m = LINE.match(line)
-        if m:
-            vals = dict(zip(FIELDS, map(int, m.groups()[1:])))
-            obj = Path(m.group(1)).name
-            cur = (label, obj, vals)
-            rows.append(cur)
-            continue
-        m = DUMP_LINE.match(line)
-        if m and cur is not None:
-            cur[2].update(zip(DUMP_FIELDS, map(int, m.groups()[2:])))
-            cur[2]["main"] = m.group(2) != "-"
-        elif line.startswith("pool-check "):
-            rows.append((label, line.split(":", 1)[0].removeprefix("pool-check "), None))
-            report.append(f"=== {label}: {line}")
-        elif cur is not None and line.strip():
-            report.append(f"{label} {cur[1]}: {line}")
+    rows, report = parse_rows(text, label, "pool-check", LINE, FIELDS, [(DUMP_LINE, fold_dump)])
     if code not in (0, 1) or not rows:
         return [], [], f"check-pool failed ({code}): {err.decode(errors='replace').strip()[-300:]}"
     return rows, report, None
@@ -97,44 +84,13 @@ def main():
     require(args.ryo_lean)
     work = work_dir(args.keep, "lean-pool-check-")
     built, skipped = build_all(args.names, variants(args.opt, codegen_units=args.codegen_units), work, args.j, build)
-    rows, reports = [], []
-    with concurrent.futures.ThreadPoolExecutor(args.j) as pool:
-        jobs = {pool.submit(check, args.ryo_lean, l, objs, dump, args.v): l for l, (objs, dump) in built}
-        for f in concurrent.futures.as_completed(jobs):
-            r, rep, why = f.result()
-            if why:
-                skipped.append((jobs[f], why))
-            rows += r
-            reports += rep
-    rows.sort(key=lambda r: (r[0], r[1]))
-
-    w = max([len(r[0]) for r in rows] + [7])
-    cols = ["refs", "matched", "vtables", "reached", "bytes", "not_in_dump", "mismatched", "errors", "funcs", "in_dump", "slots",
-            "slot_instances", "slot_statics", "dump_errors"]
-    print(f"{'program':<{w}}  " + "  ".join(f"{c:>11}" for c in cols))
-    tot = dict.fromkeys(cols, 0)
-    bad = 0
-    for label, obj, vals in rows:
-        if vals is None:
-            print(f"{label:<{w}}  unreadable object {obj}")
-            bad += 1
-            continue
-        print(f"{label:<{w}}  " + "  ".join(f"{vals.get(c, '-'):>11}" for c in cols) + ("  main" if vals.get("main") else ""))
-        for c in cols:
-            tot[c] += vals.get(c, 0)
-        if vals["mismatched"] or vals["errors"] or vals.get("dump_errors", 1):
-            bad += 1
-    print(f"{'total':<{w}}  " + "  ".join(f"{tot[c]:>11}" for c in cols))
-    for label, why in sorted(skipped):
-        print(f"{label:<{w}}  skipped: {why}")
-    if reports:
-        print()
-        for line in reports:
-            print(line)
+    rows, reports, failed = check_all(args.j, check, [(l, (args.ryo_lean, l, objs, dump, args.v)) for l, (objs, dump) in built])
+    skipped += failed
+    _, bad = print_table(rows, FIELDS + DUMP_FIELDS, 11,
+                         lambda vals: vals["mismatched"] or vals["errors"] or vals.get("dump_errors", 1),
+                         skipped, reports, note=lambda vals: "  main" if vals.get("main") else "")
     print(f"\n{len(rows) - bad}/{len(rows)} objects check; {len(skipped)} programs skipped")
-    if not args.keep:
-        shutil.rmtree(work, ignore_errors=True)
-    sys.exit(1 if bad else 0)
+    finish(work, args.keep, bad)
 
 
 if __name__ == "__main__":

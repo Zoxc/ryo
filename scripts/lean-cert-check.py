@@ -36,14 +36,11 @@ Exits nonzero if any object has an error. Run `./y.sh build` and `lake build` in
 """
 
 import argparse
-import concurrent.futures
 import os
 import re
-import shutil
-import sys
-from pathlib import Path
 
-from lean_corpus import IMAGE_GLOB, add_common_args, build_all, compile_program, corpus_dirs, require, run, variants, work_dir
+from lean_corpus import (IMAGE_GLOB, add_common_args, build_all, check_all, compile_program, corpus_dirs, finish, parse_rows, print_table,
+                         require, run, variants, work_dir)
 LINE = re.compile(
     r"^cert-check (\S+): funcs (\d+) certs (\d+) in-dump (\d+) undecoded (\d+) sig-abi (\d+) blocks (\d+) truncated (\d+) "
     r"calls (\d+) by-entry (\d+) by-abi (\d+) unverified (\d+) islands (\d+) "
@@ -64,6 +61,20 @@ def build(src, flags, out_dir):
     return out_dir, None
 
 
+def fold_dead(label, m, cur, rows):
+    if cur is not None:
+        cur[2].update(zip(DEAD_FIELDS, map(int, m.groups()[1:])))
+    return cur
+
+
+def fold_map(label, m, cur, rows):
+    """The certificates' map: its unmatched images count as errors of the last object; the lines
+    after it are reported under `cert-map`."""
+    if int(m.group(3)) and rows:
+        rows[-1][2]["errors"] += int(m.group(3))
+    return (label, "cert-map", {})
+
+
 def check(ryo_lean, label, out_dir, verbose):
     """Runs check-cert on the program in `out_dir`: (objects' rows, report lines, skip reason)."""
     objs = sorted(out_dir.glob(IMAGE_GLOB))
@@ -79,27 +90,7 @@ def check(ryo_lean, label, out_dir, verbose):
     code, out, err = run([ryo_lean, "check-cert", str(dump), str(cert)] + [str(o) for o in objs] + (["-v"] if verbose else []))
     text = out.decode(errors="replace")
     (out_dir / "check-cert.txt").write_text(text + err.decode(errors="replace"))
-    rows, report, cur = [], [], None
-    for line in text.splitlines():
-        m = LINE.match(line)
-        if m:
-            cur = (label, Path(m.group(1)).name, dict(zip(FIELDS, map(int, m.groups()[1:]))))
-            rows.append(cur)
-            continue
-        m = DEAD_LINE.match(line)
-        if m and cur is not None:
-            cur[2].update(zip(DEAD_FIELDS, map(int, m.groups()[1:])))
-            continue
-        m = MAP_LINE.match(line)
-        if m:
-            if int(m.group(3)) and rows:
-                rows[-1][2]["errors"] += int(m.group(3))
-            cur = (label, "cert-map", {})
-        elif line.startswith("cert-check "):
-            rows.append((label, line.split(":", 1)[0].removeprefix("cert-check "), None))
-            report.append(f"=== {label}: {line}")
-        elif cur is not None and line.strip():
-            report.append(f"{label} {cur[1]}: {line}")
+    rows, report = parse_rows(text, label, "cert-check", LINE, FIELDS, [(DEAD_LINE, fold_dead), (MAP_LINE, fold_map)])
     if code not in (0, 1) or not rows:
         return [], [], f"check-cert failed ({code}): {err.decode(errors='replace').strip()[-300:]}"
     return rows, report, None
@@ -113,52 +104,21 @@ def main():
     args = ap.parse_args()
 
     require(args.ryo_lean, rustc_ryo=not args.corpus)
-    rows, reports, skipped = [], [], []
+    skipped = []
     work = None
     if args.corpus:
         dirs = corpus_dirs(args.corpus, args.names)
     else:
         work = work_dir(args.keep, "lean-cert-check-")
         dirs, skipped = build_all(args.names, variants(args.opt, codegen_units=args.codegen_units), work, args.j, build)
-    with concurrent.futures.ThreadPoolExecutor(args.j) as pool:
-        jobs = {pool.submit(check, args.ryo_lean, label, d, args.v): label for label, d in dirs}
-        for f in concurrent.futures.as_completed(jobs):
-            r, rep, why = f.result()
-            if why:
-                skipped.append((jobs[f], why))
-            rows += r
-            reports += rep
-    rows.sort(key=lambda r: (r[0], r[1]))
-
-    w = max([len(r[0]) for r in rows] + [7])
-    cols = FIELDS + DEAD_FIELDS
-    print(f"{'program':<{w}}  " + "  ".join(f"{c:>10}" for c in cols))
-    tot = dict.fromkeys(cols, 0)
-    bad = 0
-    for label, obj, vals in rows:
-        if vals is None:
-            print(f"{label:<{w}}  unreadable object {obj}")
-            bad += 1
-            continue
-        print(f"{label:<{w}}  " + "  ".join(f"{vals.get(c, '-'):>10}" for c in cols))
-        for c in cols:
-            tot[c] += vals.get(c, 0)
-        if vals["errors"]:
-            bad += 1
-    print(f"{'total':<{w}}  " + "  ".join(f"{tot[c]:>10}" for c in cols))
-    for label, why in sorted(skipped):
-        print(f"{label:<{w}}  skipped: {why}")
-    if reports:
-        print()
-        for line in reports:
-            print(line)
+    rows, reports, failed = check_all(args.j, check, [(label, (args.ryo_lean, label, d, args.v)) for label, d in dirs])
+    skipped += failed
+    tot, bad = print_table(rows, FIELDS + DEAD_FIELDS, 10, lambda vals: vals["errors"], skipped, reports)
     print(f"\n{len(rows) - bad}/{len(rows)} objects check; {tot['calls']} calls: {tot['by_entry']} verified by the callee's entry, "
           f"{tot['by_abi']} by the dump's ABI, {tot['unverified']} neither; {tot['addrs']} frame addresses taken: "
           f"{tot['by_escape']} in an escaped object, {tot['at_end']} at one's end, {tot['zero_sized']} zero-sized; "
           f"{len(skipped)} programs skipped")
-    if work and not args.keep:
-        shutil.rmtree(work, ignore_errors=True)
-    sys.exit(1 if bad else 0)
+    finish(work, args.keep, bad)
 
 
 if __name__ == "__main__":

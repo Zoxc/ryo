@@ -31,11 +31,9 @@ Exits nonzero if any group has a mismatch. Run `./y.sh build` and `lake build` i
 import argparse
 import concurrent.futures
 import re
-import shutil
-import sys
 from pathlib import Path
 
-from lean_corpus import IMAGE_GLOB, add_common_args, build_all, compile_program, corpus_dirs, require, run, sysroot_images, variants, work_dir
+from lean_corpus import IMAGE_GLOB, add_common_args, build_all, compile_program, corpus_dirs, finish, require, run, sysroot_images, variants, work_dir
 
 
 def group_objects(d):
@@ -132,9 +130,7 @@ def main():
     bad = sum(1 for r in rows if r[4] != "ok")
     print(f"\n{len(rows) - bad}/{len(rows)} groups pass: {sum(r[1] for r in rows)} image objects, "
           f"{sum(1 for r in rows if r[2] == 'yes')} registry objects, {sum(r[3] for r in rows)} functions; {len(skipped)} programs skipped")
-    if work and not args.keep:
-        shutil.rmtree(work, ignore_errors=True)
-    sys.exit(1 if bad else 0)
+    finish(work, args.keep, bad)
 
 
 if __name__ == "__main__":

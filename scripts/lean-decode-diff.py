@@ -44,10 +44,9 @@ import argparse
 import concurrent.futures
 import difflib
 import re
-import shutil
 import sys
 
-from lean_corpus import IMAGE_GLOB, ROOT, add_common_args, build_all, compile_program, require, run, sysroot_images, variants, work_dir
+from lean_corpus import IMAGE_GLOB, ROOT, add_common_args, build_all, compile_program, finish, require, run, sysroot_images, variants, work_dir
 
 REF_DIR = ROOT / "scripts" / "lean-decode-ref"
 
@@ -357,9 +356,7 @@ def main():
         print(rep)
     bad = sum(1 for r in rows if "DIFFERS" in r[2])
     print(f"\n{len(rows) - bad}/{len(rows)} objects agree, {sum(r[1] for r in rows)} functions; {len(skipped)} programs skipped")
-    if not args.keep:
-        shutil.rmtree(work, ignore_errors=True)
-    sys.exit(1 if bad else 0)
+    finish(work, args.keep, bad)
 
 
 if __name__ == "__main__":
