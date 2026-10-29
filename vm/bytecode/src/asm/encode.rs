@@ -679,18 +679,20 @@ pub(super) enum RoReq {
 #[derive(Default)]
 pub(super) struct Rodata {
     bytes: Vec<u8>,
-    seen: BTreeMap<(Vec<u8>, usize), u32>,
+    /// By alignment, then bytes (so lookups borrow the bytes).
+    seen: BTreeMap<usize, BTreeMap<Vec<u8>, u32>>,
 }
 
 impl Rodata {
     pub(super) fn add(&mut self, bytes: Vec<u8>, align: usize) -> u32 {
-        if let Some(&off) = self.seen.get(&(bytes.clone(), align)) {
+        let seen = self.seen.entry(align).or_default();
+        if let Some(&off) = seen.get(bytes.as_slice()) {
             return off;
         }
         let off = self.bytes.len().next_multiple_of(align);
         self.bytes.resize(off, 0);
         self.bytes.extend_from_slice(&bytes);
-        self.seen.insert((bytes, align), off as u32);
+        seen.insert(bytes, off as u32);
         off as u32
     }
 

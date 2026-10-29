@@ -148,18 +148,19 @@ pub fn decode(enc: &Encoded, mode: Mode) -> Result<Decoded, AsmError> {
             Some(CleanupEntry { offset: wpos[i], target })
         })
         .collect();
+    let dropped = protos.iter().zip(&wpos).filter(|(p, _)| p.dropped).map(|(_, &w)| w).collect();
     let mut words = Vec::with_capacity(w as usize);
-    for (i, p) in protos.iter().enumerate() {
+    for (i, p) in protos.into_iter().enumerate() {
+        let (op, at) = (p.op, p.pos);
         let ops = p
             .ops
-            .iter()
-            .map(|o| o.clone().map_targets(|b| Ok::<_, AsmError>(wpos[insn_index(&ipos, p.pos, b)?].wrapping_sub(wpos[i]))))
+            .into_iter()
+            .map(|o| o.map_targets(|b| Ok::<_, AsmError>(wpos[insn_index(&ipos, at, b)?].wrapping_sub(wpos[i]))))
             .collect::<Result<Vec<_>, _>>()?;
-        push_words(p.op, &ops, &mut words);
+        push_words(op, &ops, &mut words);
     }
     wpos.push(w);
     let scopes = scopes.into_iter().map(|(i, sc)| Scope { code_offset: wpos[i], ..sc }).collect();
-    let dropped = protos.iter().zip(&wpos).filter(|(p, _)| p.dropped).map(|(_, &w)| w).collect();
     let heads = heads.iter().map(|&i| wpos[i]).collect();
     Ok(Decoded { words, frame_size, cleanup, scopes, dropped, heads })
 }
@@ -462,6 +463,12 @@ fn check_counter_stubs(c: &mut Cursor<'_>, protos: &[Proto], heads: &[usize], en
     Ok(())
 }
 
+/// The first call site starting at `s`. Call sites are in code order (the encoder lays them
+/// out so, and images check it).
+fn site_at(call_sites: &[CallSite], s: u32) -> Option<&CallSite> {
+    call_sites.get(call_sites.partition_point(|cs| cs.start < s)).filter(|cs| cs.start == s)
+}
+
 /// Each instruction's unwind action from the call sites (its landing pad's index, if any, and
 /// whether it catches), checking that every call site belongs to one instruction that may
 /// unwind and lands on an `lpad`. Instructions from `rs` on are the pad region's.
@@ -474,7 +481,7 @@ fn unwind_actions(protos: &[Proto], ipos: &[u32], call_sites: &[CallSite], rs: u
         let mut action: Option<(Option<u32>, bool)> = None;
         let mut missing = false;
         for &(s, l) in &p.sites {
-            match call_sites.iter().find(|cs| cs.start == s) {
+            match site_at(call_sites, s) {
                 Some(cs) if cs.len == l => {
                     used += 1;
                     if action.is_some_and(|a| a != (cs.pad, cs.catch)) || (cs.catch && cs.pad.is_none()) {
@@ -645,7 +652,7 @@ fn instructions(
             }
         };
         // PE: the `nop` after a call with a landing pad that ends its instruction.
-        if fr.mode.pe && p.bare && p.sites.iter().any(|&(at, _)| call_sites.iter().any(|cs| cs.start == at && cs.pad.is_some())) {
+        if fr.mode.pe && p.bare && p.sites.iter().any(|&(at, _)| site_at(call_sites, at).is_some_and(|cs| cs.pad.is_some())) {
             if !c.nop1() {
                 return Err(AsmError { at: c.pos, what: "no nop after a call with a landing pad" });
             }
