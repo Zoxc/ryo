@@ -173,7 +173,7 @@ static CONFIG: Once<Config> = Once::new();
 
 fn config() -> &'static Config {
     // Another thread may be reading the environment: a few `getenv`s.
-    CONFIG.get_or_init(from_env)
+    CONFIG.get_or_init(|| from_env(true))
 }
 
 /// Sets the settings to `make()` unless something else set them first. False if it did.
@@ -215,11 +215,14 @@ fn parse_stats(v: Option<&'static [u8]>) -> (u8, Option<&'static [u8]>) {
     }
 }
 
-fn from_env() -> Config {
+/// The settings from the environment; `RYO_JIT` and `RYO_JIT_THRESHOLD` only with `all`
+/// (else on, no threshold), so that [`configure_jit`], which sets them, doesn't abort on a
+/// malformed one.
+fn from_env(all: bool) -> Config {
     let (stats, stats_bad) = parse_stats(var(c"RYO_JIT_STATS"));
     let mut cfg = Config {
-        enabled: var(c"RYO_JIT") != Some(b"off"),
-        threshold: var(c"RYO_JIT_THRESHOLD")
+        enabled: !all || var(c"RYO_JIT") != Some(b"off"),
+        threshold: (if all { var(c"RYO_JIT_THRESHOLD") } else { None })
             .map(|s| parse_thresholds(s).unwrap_or_else(|| fatal("RYO_JIT_THRESHOLD: expected `L` or `E,L` with decimal thresholds"))),
         sync: false,
         shuffle: false,
@@ -277,7 +280,7 @@ impl Config {
 #[doc(hidden)]
 pub fn configure_jit(sync: bool, threshold: Option<i64>) -> bool {
     set_config(|| {
-        let env = from_env();
+        let env = from_env(false);
         Config {
             enabled: true,
             threshold: threshold.map(thresholds_of),
@@ -918,7 +921,7 @@ mod tests {
     #[test]
     fn count_gate() {
         // `from_env` counts with stats on; `configure_jit` always does.
-        let c = from_env();
+        let c = from_env(true);
         assert_eq!(c.jit.count, c.jit.stats >= 1);
     }
 
