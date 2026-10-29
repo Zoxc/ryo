@@ -25,3 +25,15 @@ remove it once a Lean session has handled it.
   `EhPointers::Abs8` (Mach-O) now appends a second `DW_CFA_offset r16, 1` in place of the two
   `DW_CFA_nop`s of padding (same CIE length). `Ryo/Obj/EhFrame.lean`'s Mach-O CIE form should
   accept it.
+
+- 865dec4 (Image: Range-check sparse switch case values on decode): `Case8`/`Case16` list
+  elements with bits above their width are now rejected on decode (`Elem::valid`). The Lean
+  decoder's case-list reading may need the same check.
+
+- dbb3619 (Backend: Reject PE-invalid argument registers in the encoders): on PE, `encode` and
+  `encode_reduced` return `BadReturn` for an `arg` register or call argument register index of 4
+  or more (`asm::pe_regs_ok`). `Ryo/Proofs/ArgRet.lean` and the `ArgReg` model may want the bound.
+
+- 9307c23 (Backend: Re-emit a dumped constant once it turns out to be a vtable): the
+  `RYO_DUMP_LEAN` dump can now label a global `vtable` (including supertrait vtables) that it
+  previously emitted as `const`. The Lean side reading the dump should expect that.
