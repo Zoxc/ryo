@@ -6,12 +6,11 @@ use std::path::{Path, PathBuf};
 
 use rustc_codegen_ssa::back::archive::{AddArchiveKind, ArArchiveBuilderBuilder, ArchiveBuilderBuilder, ArchiveEntryKind};
 use rustc_codegen_ssa::traits::CodegenBackend;
-use rustc_codegen_ssa::{CompiledModule, CompiledModules, CrateInfo};
+use rustc_codegen_ssa::{CompiledModule, CompiledModules, CrateInfo, ModuleKind};
 use rustc_metadata::EncodedMetadata;
 use rustc_session::Session;
 use rustc_session::config::{CrateType, OutputFilenames, OutputType};
 
-use super::object_module;
 use crate::objfile;
 
 /// What `link` needs from `codegen_crate`.
@@ -220,4 +219,19 @@ pub(crate) fn link_or_copy(sess: &Session, from: &Path, to: &Path) {
 /// Writes `bytes` to `path`; fatal on failure.
 pub(crate) fn write_or_fatal(sess: &Session, path: &Path, bytes: &[u8]) {
     fs::write(path, bytes).unwrap_or_else(|e| sess.dcx().fatal(format!("writing {}: {e}", path.display())));
+}
+
+/// A `CompiledModule` for an object file the backend wrote itself.
+pub(crate) fn object_module(name: String, object: PathBuf) -> CompiledModule {
+    CompiledModule {
+        name,
+        kind: ModuleKind::Regular,
+        object: Some(object),
+        global_asm_object: None,
+        dwarf_object: None,
+        bytecode: None,
+        assembly: None,
+        llvm_ir: None,
+        links_from_incr_cache: Vec::new(),
+    }
 }

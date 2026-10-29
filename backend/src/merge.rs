@@ -13,7 +13,8 @@ use ryo_bytecode::image::{AllocFixup, AllocReloc, AllocTarget, FuncSymbol, Funct
 
 use super::dump;
 use super::lower::{self, CodeReloc};
-use super::partition::{Fresh, ImageCx, RtItems, VmFn};
+use super::partition::{Fresh, ImageCx, VmFn};
+use super::rt::RtItems;
 use super::symbols::{self, local_stable_crate_id, static_symbol};
 
 /// Each island instance the fresh images call: its symbol and its template's name.

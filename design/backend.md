@@ -13,7 +13,8 @@ calls the query through `exported_generic_symbols` (`symbol_export.rs:330`). The
 `eval_always` and computed once. The provider stores the VM results in a `OnceLock`,
 and `codegen_crate` reads them. `partition.rs` holds steps 1–4, `merge.rs` builds each
 image's contents (relocations, constant pool, function symbols), `stats.rs` the `RYO_STATS`
-and `RYO_DUMP_NATIVE` text, and `exports.rs` the exported-symbols overrides.
+and `RYO_DUMP_NATIVE` text, `exports.rs` the exported-symbols overrides, `incr.rs` image
+reuse under incremental compilation and `rt.rs` the runtime crates' identity.
 
 1. **Collect.** Call the original `collect_and_partition_mono_items` provider (saved in
    `provide`). The collector (`collect_crate_mono_items`) is `pub(crate)` in
@@ -271,7 +272,7 @@ and `RYO_DUMP_NATIVE` text, and `exports.rs` the exported-symbols overrides.
 ## Incremental
 
 Under `-Cincremental`, each CGU's image is a work product of its own, reused when nothing it
-depends on changed (`partition.rs`, `image_part`).
+depends on changed (`partition.rs`, `image_part`; the side data and work products in `incr.rs`).
 
 - **Self-contained images.** An image is a function of its CGU's items (with rustc's linkage
   and visibility) and of the queries its lowering reads, nothing else:

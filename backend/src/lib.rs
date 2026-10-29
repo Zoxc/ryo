@@ -34,6 +34,7 @@ extern crate rustc_driver;
 mod dump;
 mod dump_lean;
 mod exports;
+mod incr;
 mod json;
 mod link;
 mod lower;
@@ -41,6 +42,7 @@ mod merge;
 mod objfile;
 mod partition;
 mod persist;
+mod rt;
 mod stats;
 mod switches;
 mod symbols;
@@ -50,7 +52,7 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use rustc_codegen_ssa::traits::CodegenBackend;
-use rustc_codegen_ssa::{CompiledModule, CompiledModules, CrateInfo, ModuleKind, TargetConfig};
+use rustc_codegen_ssa::{CompiledModules, CrateInfo, TargetConfig};
 use rustc_metadata::EncodedMetadata;
 use rustc_metadata::creader::MetadataLoaderDyn;
 use rustc_middle::dep_graph::WorkProductMap;
@@ -145,10 +147,10 @@ fn dylib_dependency_formats<'tcx>(
     cnum: rustc_hir::def_id::CrateNum,
 ) -> &'tcx [(rustc_hir::def_id::CrateNum, rustc_crate_store::LinkagePreference)] {
     let all = (originals().dylib_dependency_formats)(tcx, cnum);
-    if !all.iter().any(|(c, _)| partition::is_runtime_crate(tcx, *c)) {
+    if !all.iter().any(|(c, _)| rt::is_runtime_crate(tcx, *c)) {
         return all;
     }
-    tcx.arena.alloc_from_iter(all.iter().copied().filter(|(c, _)| !partition::is_runtime_crate(tcx, *c)))
+    tcx.arena.alloc_from_iter(all.iter().copied().filter(|(c, _)| !rt::is_runtime_crate(tcx, *c)))
 }
 
 impl CodegenBackend for RyoBackend {
@@ -279,28 +281,12 @@ impl CodegenBackend for RyoBackend {
         // only its own modules', inside cg_llvm's join), or the previous session's kept, before
         // rustc writes the index (design/backend.md#incremental).
         for img in ongoing.images {
-            let mut m = img.path.clone().map(|p| object_module(img.name, p));
-            let wp_name = partition::image_work_product_name(rustc_span::Symbol::intern(&img.cgu));
-            match img.save {
-                ImageSave::Fresh(side) => {
-                    if let Some(incr) = incr_comp_session {
-                        let mut files = vec![(partition::WP_SIDE, side.as_path())];
-                        files.extend(img.path.as_deref().map(|p| (partition::WP_OBJECT, p)));
-                        let (id, wp) = rustc_incremental::copy_cgu_workproduct_to_incr_comp_cache_dir(sess, incr, &wp_name, &files, &[]);
-                        work_products.insert(id, wp);
-                    }
-                    if !sess.opts.cg.save_temps {
-                        let _ = std::fs::remove_file(&side);
-                    }
-                }
-                ImageSave::Reused(wp, from) => {
-                    if let (Some(m), Some(from)) = (&mut m, from) {
-                        m.links_from_incr_cache.push(from);
-                    }
-                    work_products.insert(rustc_middle::dep_graph::WorkProductId::from_cgu_name(&wp_name), wp);
-                }
+            let from = incr::save_work_product(sess, incr_comp_session, img.cgu, img.path.as_deref(), img.save, &mut work_products);
+            if let Some(path) = img.path {
+                let mut m = link::object_module(img.name, path);
+                m.links_from_incr_cache.extend(from);
+                modules.modules.push(m);
             }
-            modules.modules.extend(m);
         }
         (modules, work_products)
     }
@@ -470,10 +456,10 @@ fn write_images(tcx: TyCtxt<'_>, results: &partition::Results) -> Vec<OngoingIma
         let image_path = tcx.output_filenames(()).temp_path_for_cgu(OutputType::Object, &name);
         let save = match &img.image {
             partition::ImageSrc::Fresh { image, side } => write_fresh_image(tcx, &*fmt, img, image.as_ref(), side, &image_path),
-            partition::ImageSrc::Reused(wp) => place_reused_image(tcx, wp, &image_path),
+            partition::ImageSrc::Reused(wp) => incr::place_reused_image(tcx, wp, &image_path),
         };
         let path = img.has_object().then_some(image_path);
-        images.push(OngoingImage { cgu: img.cgu_name.to_string(), name, path, save });
+        images.push(OngoingImage { cgu: img.cgu_name, name, path, save });
     }
     images
 }
@@ -486,48 +472,21 @@ fn write_fresh_image(
     image: Option<&ryo_bytecode::image::ImageObject>,
     side: &[u8],
     image_path: &std::path::Path,
-) -> ImageSave {
+) -> incr::ImageSave {
     // A file left by `-Csave-temps` may still be a hard link into the incremental cache (a
     // reused image's); writing through it would change the cached copy.
     let write = |p: &std::path::Path, bytes: &[u8]| {
         let _ = std::fs::remove_file(p);
         link::write_or_fatal(tcx.sess, p, bytes);
     };
-    let side_path = image_path.with_extension(partition::WP_SIDE);
+    let side_path = image_path.with_extension(incr::WP_SIDE);
     write(&side_path, side);
     if let Some(image) = image {
         let bytes = objfile::write_image(fmt, image, img.main_symbol.as_deref(), &|name: &str| symbols::rt_symbol(tcx, name))
             .unwrap_or_else(|e| tcx.dcx().fatal(e));
         write(image_path, &bytes);
     }
-    ImageSave::Fresh(side_path)
-}
-
-/// Places the previous session's image object, as cg_ssa reuses a CGU's
-/// (`execute_copy_from_cache_work_item`).
-fn place_reused_image(tcx: TyCtxt<'_>, wp: &rustc_middle::dep_graph::WorkProduct, image_path: &std::path::Path) -> ImageSave {
-    let incr = tcx.incr_comp_session.expect("a reused image without an incremental session");
-    let from = wp.saved_files.get(partition::WP_OBJECT).map(|f| rustc_incremental::in_incr_comp_dir_sess(incr, f));
-    if let Some(from) = &from {
-        let _ = std::fs::remove_file(image_path);
-        link::link_or_copy(tcx.sess, from, image_path);
-    }
-    ImageSave::Reused(wp.clone(), from)
-}
-
-/// A `CompiledModule` for an object file the backend wrote itself.
-fn object_module(name: String, object: PathBuf) -> CompiledModule {
-    CompiledModule {
-        name,
-        kind: ModuleKind::Regular,
-        object: Some(object),
-        global_asm_object: None,
-        dwarf_object: None,
-        bytecode: None,
-        assembly: None,
-        llvm_ir: None,
-        links_from_incr_cache: Vec::new(),
-    }
+    incr::ImageSave::Fresh(side_path)
 }
 
 /// The image and registry objects' format for the session's target (design/platforms.md).
@@ -562,15 +521,8 @@ struct RyoOngoingCodegen {
 /// An image object of `codegen_crate`: its CGU, module name and path (none for a CGU without
 /// VM functions, which has only side data), and how its work product is saved.
 struct OngoingImage {
-    cgu: String,
+    cgu: Symbol,
     name: String,
     path: Option<PathBuf>,
-    save: ImageSave,
-}
-
-enum ImageSave {
-    /// Written this session, with its side data at this path.
-    Fresh(PathBuf),
-    /// The previous session's work product, and the cached object it was copied from.
-    Reused(rustc_middle::dep_graph::WorkProduct, Option<PathBuf>),
+    save: incr::ImageSave,
 }

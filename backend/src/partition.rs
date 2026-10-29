@@ -10,7 +10,7 @@ use std::sync::OnceLock;
 use rustc_data_structures::fx::{FxHashMap, FxHashSet, FxIndexMap};
 use rustc_data_structures::unord::UnordSet;
 use rustc_hir::attrs::Linkage;
-use rustc_hir::def_id::{CrateNum, DefId, LOCAL_CRATE};
+use rustc_hir::def_id::{DefId, LOCAL_CRATE};
 use rustc_middle::mono::{CodegenUnit, CollectionMode, MonoItem, MonoItemData, MonoItemPartitions, Visibility};
 use rustc_middle::ty::{self, Instance, Ty, TyCtxt, TypingEnv};
 use rustc_session::config::{CrateType, EntryFnType, OutputType};
@@ -18,38 +18,16 @@ use rustc_span::Symbol;
 use ryo_bytecode::asm;
 use ryo_bytecode::image::ImageObject;
 
-use rustc_middle::dep_graph::{WorkProduct, WorkProductId};
+use rustc_middle::dep_graph::WorkProduct;
 
 use super::dump;
+use super::incr::{self, CguVm, WP_OBJECT, stable_fingerprint};
 use super::lower::{self, CodeReloc, LowerCx, LoweredFn, NeedsNative};
 use super::merge::{alloc_refs, build_image, island_instance, island_names};
-use super::persist;
+use super::rt::{RtItems, is_runtime_crate, rt_items};
 use super::stats::{native_text, print_coverage};
 use super::switches::Switches;
 use super::symbols::{self, local_stable_crate_id, static_symbol};
-
-/// The `ryo_rt` items the backend instantiates or checks (design/stubs.md, Lookup).
-#[derive(Clone, Copy)]
-pub struct RtItems {
-    pub krate: CrateNum,
-    pub c_main: DefId,
-    /// `ryo_rt::vm::FP_ARG`: whether its handlers take `fp` in `rdi`.
-    pub fp_arg: DefId,
-}
-
-impl RtItems {
-    /// `ryo_rt`'s item with diagnostic item name `name` (`#[rustc_diagnostic_item]`).
-    pub fn item(&self, tcx: TyCtxt<'_>, name: Symbol) -> Option<DefId> {
-        rt_item(tcx, self.krate, name)
-    }
-}
-
-fn rt_item(tcx: TyCtxt<'_>, krate: CrateNum, name: Symbol) -> Option<DefId> {
-    tcx.diagnostic_items(krate).name_to_id.get(&name).copied()
-}
-
-/// The diagnostic item name of `ryo_rt::entry::c_main`.
-pub const C_MAIN_ITEM: &str = "ryo_c_main";
 
 /// A value computed once per session and kept in a static: [`Results`], which the partition
 /// provider hands to the exported-symbols providers, and the upstream statics defined here,
@@ -86,22 +64,6 @@ impl<T> SessionCell<T> {
     fn get(&self, tcx: TyCtxt<'_>) -> Option<&T> {
         Some(Self::check(tcx, self.0.get()?))
     }
-}
-
-/// `ryo_rt`'s crate and template items, found through its diagnostic items. `None` if
-/// `ryo_rt` isn't loaded (rustc wasn't run through `rustc-ryo`).
-pub fn rt_items(tcx: TyCtxt<'_>) -> Option<RtItems> {
-    let krate = *tcx.crates(()).iter().find(|&&c| is_rt_crate(tcx, c))?;
-    let get = |name: &str| rt_item(tcx, krate, Symbol::intern(name));
-    Some(RtItems { krate, c_main: get(C_MAIN_ITEM)?, fp_arg: get("ryo_rt_fp_arg")? })
-}
-
-/// The runtime crate's name.
-pub const RT_CRATE: &str = "ryo_rt";
-
-/// Whether `krate` is `ryo_rt`.
-pub fn is_rt_crate(tcx: TyCtxt<'_>, krate: CrateNum) -> bool {
-    tcx.crate_name(krate).as_str() == RT_CRATE
 }
 
 /// What the partition provider hands to the other providers and to `codegen_crate`. Set once:
@@ -273,7 +235,7 @@ fn check_outputs(tcx: TyCtxt<'_>) {
 /// and `#![no_builtins]` crates implement `memcpy` and friends, which the handlers call (VM
 /// code there would recurse), as does a target that sets `no_builtins` (rustc treats every
 /// crate as `#![no_builtins]` then), `#![profiler_runtime]`, the VM's own crates
-/// ([`RUNTIME_CRATES`]), and `core` (and its `-Zbuild-std` alias): the handlers call its
+/// ([`RUNTIME_CRATES`](super::rt::RUNTIME_CRATES)), and `core` (and its `-Zbuild-std` alias): the handlers call its
 /// non-generic functions, which must not re-enter VM code.
 fn vm_enabled(tcx: TyCtxt<'_>, switches: &Switches) -> bool {
     !switches.no_vm
@@ -285,17 +247,6 @@ fn vm_enabled(tcx: TyCtxt<'_>, switches: &Switches) -> bool {
         && !rustc_hir::find_attr!(tcx.hir_krate_attrs(), ProfilerRuntime)
         && !is_runtime_crate(tcx, LOCAL_CRATE)
         && !matches!(tcx.crate_name(LOCAL_CRATE).as_str(), "core" | "rustc_std_workspace_core")
-}
-
-/// The VM's own crates: always native ([`vm_enabled`]), their copies of other crates'
-/// generics are never linked to ([`upstream_monomorphizations`](super::exports::upstream_monomorphizations)), and every final artifact
-/// links a private copy of them (`dylib_dependency_formats`). (`ryo_jit` is sealed into
-/// `ryo_rt`, so it is a crate only when built on its own, as with `-Zbuild-std`.)
-pub const RUNTIME_CRATES: [&str; 3] = [RT_CRATE, "ryo_bytecode", "ryo_jit"];
-
-/// Whether `krate` is one of [`RUNTIME_CRATES`].
-pub fn is_runtime_crate(tcx: TyCtxt<'_>, krate: CrateNum) -> bool {
-    RUNTIME_CRATES.contains(&tcx.crate_name(krate).as_str())
 }
 
 /// How the image's machine code is generated: as `ryo_rt`'s handlers expect `fp`, with a
@@ -339,68 +290,6 @@ pub(super) struct VmFn<'tcx> {
     pub(super) data: MonoItemData,
     pub(super) lowered: LoweredFn<'tcx>,
     pub(super) global: bool,
-}
-
-/// What one CGU's image gives the native CGUs and the exported-symbols queries: its VM
-/// functions (and whether the image defines a global symbol for each), the island instances it
-/// calls, the items it refers to by symbol, and the symbol `__ryo_main` points
-/// at. A function of the CGU's own items and tracked queries alone, so it is saved with the
-/// image and read back when the image is reused (design/backend.md#incremental, `persist.rs`).
-pub(super) struct CguVm<'tcx> {
-    vm: Vec<(Instance<'tcx>, bool)>,
-    islands: Vec<Instance<'tcx>>,
-    refs: Vec<MonoItem<'tcx>>,
-    main: Option<String>,
-}
-
-type CguVmData<'tcx> = (Vec<(Instance<'tcx>, bool)>, Vec<Instance<'tcx>>, Vec<MonoItem<'tcx>>, Option<String>);
-
-impl<'tcx> CguVm<'tcx> {
-    fn empty() -> Self {
-        CguVm { vm: Vec::new(), islands: Vec::new(), refs: Vec::new(), main: None }
-    }
-
-    /// The side data: a byte saying whether the CGU has an image object (it has VM
-    /// functions), readable before the image's dep node is green, a checksum of that byte and
-    /// the rest ([`CguVm::split`]), then the encoded fields.
-    fn save(&self, tcx: TyCtxt<'tcx>) -> Vec<u8> {
-        let body = persist::encode(tcx, &(&self.vm, &self.islands, &self.refs, &self.main));
-        let has_object = u8::from(!self.vm.is_empty());
-        let mut out = vec![has_object];
-        out.extend_from_slice(&side_checksum(has_object, &body));
-        out.extend(body);
-        out
-    }
-
-    /// Saved side data's has-object byte and encoded fields, if it is whole: its checksum
-    /// matches. Checked before the image's dep node is marked green, so a corrupted file
-    /// rebuilds the image rather than panicking in the decoder (`MemDecoder`'s footer check
-    /// only catches truncation).
-    fn split(data: &[u8]) -> Option<(bool, &[u8])> {
-        let (head, body) = data.split_at_checked(SIDE_HEADER)?;
-        (head[1..] == side_checksum(head[0], body)).then_some((head[0] != 0, body))
-    }
-
-    /// Decodes the encoded fields ([`CguVm::split`]'s body).
-    fn load(tcx: TyCtxt<'tcx>, body: &[u8]) -> Option<Self> {
-        let (vm, islands, refs, main): CguVmData<'tcx> = persist::decode(tcx, body)?;
-        Some(CguVm { vm, islands, refs, main })
-    }
-}
-
-/// The length of [`CguVm::save`]'s header: the has-object byte and the checksum.
-const SIDE_HEADER: usize = 17;
-
-/// The stable hash of `v`.
-fn stable_fingerprint<T: std::hash::Hash + ?Sized>(v: &T) -> rustc_data_structures::fingerprint::Fingerprint {
-    let mut h = rustc_data_structures::stable_hash::StableHasher::new();
-    v.hash(&mut h);
-    h.finish()
-}
-
-/// [`CguVm::save`]'s checksum of the side data: its first byte and the encoded fields.
-fn side_checksum(has_object: u8, body: &[u8]) -> [u8; 16] {
-    stable_fingerprint(&(has_object, body)).to_le_bytes()
 }
 
 /// Where a CGU's image object comes from.
@@ -1101,35 +990,11 @@ fn image_part<'tcx>(cx: ImageCx<'_, 'tcx>, cgu: &CodegenUnit<'tcx>) -> ImagePart
     }
     let fp = stable_fingerprint(&key).to_hex();
     let node = CodegenUnit::new(Symbol::intern(&format!("{}.ryo.{fp}", cgu.name()))).codegen_dep_node(tcx);
-    let wp = image_work_product_name(cgu.name());
-    let prev = tcx.dep_graph.previous_work_product(&WorkProductId::from_cgu_name(&wp));
-    let side = prev
-        .as_ref()
-        .and_then(|p| p.saved_files.get(WP_SIDE))
-        .zip(tcx.incr_comp_session)
-        .and_then(|(f, incr)| std::fs::read(rustc_incremental::in_incr_comp_dir_sess(incr, f)).ok());
-    // A work product saved without its object (rustc only warns when a file fails to copy
-    // into the cache) can't be reused; the side data says whether it had one.
-    if let (Some(prev), Some(side)) = (prev, side)
-        && let Some((has_object, body)) = CguVm::split(&side)
-        && (!has_object || prev.saved_files.contains_key(WP_OBJECT))
-        && tcx.dep_graph.try_mark_green(tcx, &node).is_some()
-    {
-        let vm = CguVm::load(tcx, body).unwrap_or_else(|| tcx.dcx().fatal(format!("ryo: the saved image of `{}` is unreadable", cgu.name())));
+    if let Some((prev, vm)) = incr::try_reuse(tcx, cgu.name(), &node) {
         return ImagePart { vm, image: Some(ImageSrc::Reused(prev)), fresh: None };
     }
     tcx.dep_graph.with_task(node, tcx, build, None).0
 }
-
-/// The work product name of CGU `cgu`'s image (its object and side data).
-pub fn image_work_product_name(cgu: Symbol) -> String {
-    format!("{cgu}.ryo")
-}
-
-/// The image work product's file keys (and the side data's extension): the side data
-/// ([`CguVm::save`]) and the image object (none if the CGU has no VM function).
-pub const WP_SIDE: &str = "ryo";
-pub const WP_OBJECT: &str = "o";
 
 /// Classifies, lowers and builds CGU `cgu`'s image from its candidates `cands` (in image
 /// order); `entry` is the entry fn if it is one of them.
@@ -1249,25 +1114,4 @@ fn lower_cgu<'tcx>(
     }
     failed.sort_by_cached_key(|(i, _)| tcx.symbol_name(*i).name);
     (ok, failed)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The checksum covers the has-object byte, which gates reuse, as well as the fields.
-    #[test]
-    fn side_checksum_covers_every_byte() {
-        let body = [1u8, 2, 3, 4];
-        let mut data = vec![1u8];
-        data.extend_from_slice(&side_checksum(1, &body));
-        data.extend_from_slice(&body);
-        assert_eq!(CguVm::split(&data), Some((true, &body[..])));
-        for i in [0, 1, SIDE_HEADER, data.len() - 1] {
-            let mut bad = data.clone();
-            bad[i] ^= 1;
-            assert!(CguVm::split(&bad).is_none(), "byte {i}");
-        }
-        assert!(CguVm::split(&data[..10]).is_none());
-    }
 }

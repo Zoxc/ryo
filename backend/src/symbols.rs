@@ -117,8 +117,8 @@ pub fn local_stable_crate_id(tcx: TyCtxt<'_>) -> u64 {
 /// a crate-unique suffix (design/backend.md, Linkage).
 pub fn symbol_name<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>, original: impl FnOnce() -> ty::SymbolName<'tcx>) -> ty::SymbolName<'tcx> {
     if let InstanceKind::Item(def_id) = instance.def
-        && super::partition::is_rt_crate(tcx, def_id.krate)
-        && tcx.is_diagnostic_item(rustc_span::Symbol::intern(super::partition::C_MAIN_ITEM), def_id)
+        && super::rt::is_rt_crate(tcx, def_id.krate)
+        && tcx.is_diagnostic_item(rustc_span::Symbol::intern(super::rt::C_MAIN_ITEM), def_id)
     {
         return ty::SymbolName::new(tcx, &tcx.sess.target.entry_name);
     }
@@ -144,12 +144,12 @@ fn symbol_from_attrs<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> bool 
 /// `symbol_name_for_instance_in_crate` does), for a Rust dylib's export filter (link.rs):
 /// exact names, so no user item that merely mentions `ryo_rt` is dropped.
 ///
-/// [`RUNTIME_CRATES`]: super::partition::RUNTIME_CRATES
+/// [`RUNTIME_CRATES`]: super::rt::RUNTIME_CRATES
 pub fn runtime_exports(tcx: TyCtxt<'_>) -> rustc_data_structures::fx::FxHashSet<String> {
     use rustc_middle::middle::exported_symbols::ExportedSymbol;
     let mut out = rustc_data_structures::fx::FxHashSet::default();
     for &cnum in tcx.crates(()) {
-        if !super::partition::is_runtime_crate(tcx, cnum) {
+        if !super::rt::is_runtime_crate(tcx, cnum) {
             continue;
         }
         for &(sym, _) in tcx.exported_non_generic_symbols(cnum).iter().chain(tcx.exported_generic_symbols(cnum)) {

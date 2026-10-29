@@ -7,14 +7,15 @@ use rustc_middle::middle::exported_symbols::{ExportedSymbol, SymbolExportInfo, S
 use rustc_middle::mono::Visibility;
 use rustc_middle::ty::{self, Instance, InstanceKind, Ty, TyCtxt};
 
-use super::partition::{is_runtime_crate, results_untracked};
+use super::partition::results_untracked;
+use super::rt::is_runtime_crate;
 
 /// The value of `upstream_monomorphizations`: per generic item, the upstream crate whose copy
 /// of each instance to link to.
 pub type UpstreamMonos<'tcx> = rustc_hir::def_id::DefIdMap<rustc_data_structures::unord::UnordMap<ty::GenericArgsRef<'tcx>, CrateNum>>;
 
 /// Our `upstream_monomorphizations` (design/backend.md#query-overrides): rustc's, without the
-/// copies in the runtime crates ([`RUNTIME_CRATES`](super::partition::RUNTIME_CRATES)) of other crates' generics. rustc shares
+/// copies in the runtime crates ([`RUNTIME_CRATES`](super::rt::RUNTIME_CRATES)) of other crates' generics. rustc shares
 /// `#[inline(never)]` instances even without share-generics; linking to them would turn the
 /// program's own instances into the runtime's native code. A guard: the runtime used to
 /// instantiate std's in its JIT, which is now a sealed object of its own (design/jit.md#packaging).

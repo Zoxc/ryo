@@ -41,7 +41,7 @@ pub mod templates {
 
     /// The wrapper of the SIMD intrinsic `name`, `ryo_island_<name>` (generic like the
     /// intrinsic), if `ryo_rt` has one.
-    pub fn simd(tcx: TyCtxt<'_>, rt: crate::partition::RtItems, name: &str) -> Option<String> {
+    pub fn simd(tcx: TyCtxt<'_>, rt: crate::rt::RtItems, name: &str) -> Option<String> {
         let template = format!("ryo_island_{name}");
         rt.item(tcx, Symbol::intern(&template)).map(|_| template)
     }
