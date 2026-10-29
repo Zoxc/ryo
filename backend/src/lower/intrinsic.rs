@@ -268,8 +268,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             | sym::volatile_copy_memory
             | sym::volatile_copy_nonoverlapping_memory
             | sym::volatile_set_memory => {
+                let Some(template) = templates::wrapper(self.tcx, self.cx.rt, name.as_str()) else { return Ok(Lowered::Fallback) };
                 let ins = self.island_args(args)?;
-                self.wrapper(&format!("ryo_island_{name}"), &[ty0().into()], &ins, cont)?
+                self.wrapper(&template, &[ty0().into()], &ins, cont)?
             }
             sym::nontemporal_store => {
                 let size = self.layout_of(ty0())?.size.bytes() as u32;
@@ -383,7 +384,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         if self.strict_simd {
             return native("simd_* without an opcode in a #[target_feature] fn");
         }
-        let Some(template) = templates::simd(self.tcx, self.cx.rt, n) else { return Ok(false) };
+        let Some(template) = templates::wrapper(self.tcx, self.cx.rt, n) else { return Ok(false) };
         let ins = self.island_args(args)?;
         let generics: Vec<GenericArg<'tcx>> = callee.args.iter().collect();
         if generics.iter().any(|g| g.as_type().is_none()) {

@@ -39,9 +39,9 @@ pub mod templates {
     pub const MUL_OVF_U_W128: &str = "ryo_island_mul_ovf_u_w128";
     pub const MUL_OVF_S_W128: &str = "ryo_island_mul_ovf_s_w128";
 
-    /// The wrapper of the SIMD intrinsic `name`, `ryo_island_<name>` (generic like the
-    /// intrinsic), if `ryo_rt` has one.
-    pub fn simd(tcx: TyCtxt<'_>, rt: crate::rt::RtItems, name: &str) -> Option<String> {
+    /// The wrapper of the intrinsic `name` (`volatile_*`, `simd_*`), `ryo_island_<name>`
+    /// (generic like the intrinsic), if `ryo_rt` has one.
+    pub fn wrapper(tcx: TyCtxt<'_>, rt: crate::rt::RtItems, name: &str) -> Option<String> {
         let template = format!("ryo_island_{name}");
         rt.item(tcx, Symbol::intern(&template)).map(|_| template)
     }
