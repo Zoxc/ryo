@@ -674,7 +674,7 @@ fn start() -> bool {
 unsafe extern "C" {
     /// The JIT's (`ryo_jit`, `ryo_jit_start_<tag>`): starts its thread and returns its exit report
     /// (`RYO_JIT_STATS`), or `None` if the thread can't start.
-    #[link_name = tagged!("ryo_jit_start")]
+    #[link_name = tagged!(ryo_bytecode::rt_sym!(jit_start))]
     fn ryo_jit_start(rt: &'static RtApi) -> Option<extern "C" fn()>;
 }
 

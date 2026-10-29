@@ -77,14 +77,9 @@ macro_rules! xmm6_15 {
     };
 }
 
-/// `$name` with the ABI tag as a suffix, `<name>_<tag>`: the symbol names of the runtime's
-/// entry points, so that two ryo builds' runtimes never share a name
-/// (design/build.md#the-abi-tag, `ryo_bytecode::ABI_TAG`).
-macro_rules! tagged {
-    ($name:expr) => {
-        concat!($name, "_", env!("RYO_ABI"))
-    };
-}
+// `tagged!` (the ABI-tagged entry-point names), in every module.
+#[macro_use(tagged)]
+extern crate ryo_bytecode;
 
 pub mod entry;
 pub mod island;

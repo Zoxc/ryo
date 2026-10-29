@@ -7,7 +7,8 @@ use std::path::{Path, PathBuf};
 use crate::target::{is_coff, is_macho, is_windows, static_lib_name, symbol};
 use crate::utils::{RustcInfo, cmd, is_std_alloc_shim, nm_symbols, output, run};
 
-/// The JIT's one global symbol, before the ABI tag: `ryo_jit_start_<tag>`.
+/// The JIT's one global symbol, before the ABI tag: `ryo_jit_start_<tag>`. Keep in sync with
+/// `ryo_bytecode::rt_symbols::JIT_START` (vm/bytecode/src/rt_symbols.rs; `build` has no deps).
 pub const START: &str = "ryo_jit_start_";
 
 /// The sealed object's name, as a member of the library and of `ryo_rt`'s rlib.

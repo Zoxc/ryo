@@ -33,7 +33,7 @@ use ryo_bytecode::jit_abi::RtApi;
 /// (`RYO_JIT_STATS`'s summary), which the runtime calls at exit. `None` if the thread didn't
 /// start (always without a JIT for this target); the runtime then acts as the no-op JIT.
 /// Called once per runtime.
-#[unsafe(export_name = concat!("ryo_jit_start_", env!("RYO_ABI")))]
+#[unsafe(export_name = ryo_bytecode::tagged!(ryo_bytecode::rt_sym!(jit_start)))]
 pub extern "C" fn ryo_jit_start(rt: &'static RtApi) -> Option<extern "C" fn()> {
     #[cfg(target_arch = "x86_64")]
     return (sys::SUPPORTED && thread::start(rt)).then_some(stats::report as extern "C" fn());

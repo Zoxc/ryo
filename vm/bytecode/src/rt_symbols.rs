@@ -33,6 +33,20 @@ macro_rules! rt_sym {
     (trip_osr) => {
         "ryo_jit_trip_osr"
     };
+    (jit_start) => {
+        "ryo_jit_start"
+    };
+}
+
+/// `$name` with the ABI tag as a suffix, `<name>_<tag>`: the symbol names of the runtime's
+/// entry points and of the JIT's `ryo_jit_start`, so that two ryo builds never share a name
+/// (design/build.md#the-abi-tag, [`crate::ABI_TAG`]). Reads `RYO_ABI` from the calling crate's
+/// environment, which `ryo_rt`'s and `ryo_jit`'s build scripts set.
+#[macro_export]
+macro_rules! tagged {
+    ($name:expr) => {
+        concat!($name, "_", env!("RYO_ABI"))
+    };
 }
 
 /// The stack probe of large frames.
@@ -44,6 +58,8 @@ pub const SEH_HANDLER: &str = rt_sym!(seh_handler);
 /// The no-op JIT's trip entry points, which the JIT records' slots start at.
 pub const TRIP_ENTRY: &str = rt_sym!(trip_entry);
 pub const TRIP_OSR: &str = rt_sym!(trip_osr);
+/// The JIT's one exported symbol (`ryo_jit`), which `ryo_rt` calls to start the JIT thread.
+pub const JIT_START: &str = rt_sym!(jit_start);
 
 /// The pointer slot `ryo_rt::entry::c_main` loads the entry fn's address from (untagged).
 pub const MAIN_SLOT: &str = "__ryo_main";
