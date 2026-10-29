@@ -9,7 +9,8 @@ Besides `Rel` (the frame), they relate L0 memory to x86 memory:
   allocation (`store`);
 - `WrApart op vals st x` (`load`): the frame bytes the instruction writes aren't either;
 - `MemDisjoint st` (stores only): distinct live allocation bytes have distinct x86 addresses
-  (non-overlapping, and none wraps around the address space).
+  (non-overlapping modulo `2^64`; an allocation wrapping around the address space isn't
+  excluded).
 
 `load` gives `Post` and keeps `MemRel`. `store` changes L0 memory, so `Post`'s frame clauses
 don't apply: it gives `PostMem` (both relations after, `st'` differs from `st` only in its
@@ -349,7 +350,7 @@ theorem off_toNat_le (base m : Nat) :
   rw [ofNat_add_sub, BitVec.toNat_ofNat]; exact Nat.mod_le _ _
 
 /-- What a store of `bs` at offset `off` of live allocation `id` (at x86 address
-`a.addr + off`, `n` bytes of `V`) keeps: `MemRel`, `Rel`, and x86 memory outside live
+`a.addr + off`, `bs.length` bytes of `V`) keeps: `MemRel`, `Rel`, and x86 memory outside live
 allocations. -/
 theorem post_store {st : OpSem.State} {mem' : Memory} {x x' : X86.State} {id : AllocId}
     {a : Allocation} {off V : Nat} {bs : List AbstractByte}
