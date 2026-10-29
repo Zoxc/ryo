@@ -326,7 +326,7 @@ pub fn shuffle_map(d: &Decoded, mode: Mode) -> Result<SlotMap, FrameError> {
                     Access::Read(n) | Access::Write(n) | Access::Clobber(n) => n,
                     Access::Addr | Access::Opaque => 1,
                 };
-                if o.access == Access::Addr && (-f..0).contains(&(off as i64)) && !pinned.contains(off) {
+                if o.access == Access::Addr && (-f..0).contains(&(off as i64)) && !escaped.contains(off) {
                     return Err(FrameError { at: i.at, what: "an address of bytes that don't escape" });
                 }
                 if pinned.any_in(off, n) && !pinned.all_in(off, n) {
