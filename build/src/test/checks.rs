@@ -222,8 +222,9 @@ fn msvc_env() -> Option<&'static [(String, String)]> {
 /// `-Cincremental -Zincremental-verify-ich` once per revision in one incremental directory,
 /// each revision an edit of the previous. Each build's output must equal plain rustc's (also
 /// with the JIT compiling every function), and its executable must be byte-identical to a
-/// clean incremental build's. At opt-level 0, at opt-level 2 (where rustc would run
-/// crate-local ThinLTO), and with `RYO_NO_VM` at 16 codegen units, where rustc checks which units are reused. Then a proc
+/// clean incremental build's. At opt-level 0, at 16 codegen units, at opt-level 2 (where rustc
+/// would run crate-local ThinLTO), and with `RYO_NO_VM` at 16 codegen units, where rustc checks
+/// which units are reused. Then a proc
 /// macro (no VM code, any number of codegen units) rebuilt after an edit, and used.
 pub(super) fn incremental(rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result<(), String> {
     const REVISIONS: u32 = 11;
