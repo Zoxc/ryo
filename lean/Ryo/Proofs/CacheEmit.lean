@@ -4,7 +4,9 @@ instruction's run (`DSWork/Inline.lean`'s `inline_fetch'`): the items are canoni
 (`emit_canonical`, from `sequence_wf` per class), and their memory writes are the sequence's
 (`emit_writes`), frame writes in the footprint's write ranges (`sequence_writes_in`), the rest
 through `rax` only for `store`, whose write is last (`emit_store_split`); `exec_writes`,
-`exec_rbp` per item. Split from `CacheStep.lean` (its per-class lemmas are many small ones).
+`exec_rbp` per item. This file has `emit_canonical`; `emit_writes`, `emit_store_split`,
+`exec_writes` and `exec_rbp` are in `CacheEmitWrites.lean`, `sequence_writes_in` in
+`CacheEmitRanges.lean`. Split from `CacheStep.lean` (its per-class lemmas are many small ones).
 Names stay in `Ryo.Proofs.CacheStep`.
 -/
 import Ryo.Proofs.CacheStep
