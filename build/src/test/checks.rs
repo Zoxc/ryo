@@ -294,8 +294,7 @@ pub(super) fn incremental(rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result
             // Image reuse (design/backend.md#incremental): the same revision again reuses
             // every image, and gives the same executable.
             if env.is_empty() {
-                let read = |p: &Path| fs::read(p).map_err(|e| format!("reading {}: {e}", p.display()));
-                let first = read(&exe)?;
+                let first = crate::utils::read_bytes(&exe)?;
                 fresh(&exe);
                 let mut c = cmd(rustc_ryo);
                 c.arg("--edition=2024").arg(&src).args(["--cfg", &cfg]).arg("-o").arg(&exe).args(repro).args(flags).args(chain_flags);
@@ -310,7 +309,7 @@ pub(super) fn incremental(rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result
                     Some((r, n)) if r == n && n != "0" => {}
                     r => return Err(format!("{config} {cfg}: rebuilt unchanged, reused {r:?} images, expected all")),
                 }
-                if read(&exe)? != first {
+                if crate::utils::read_bytes(&exe)? != first {
                     return Err(format!("{config} {cfg}: rebuilt unchanged, {} differs", exe.display()));
                 }
             }
@@ -321,8 +320,7 @@ pub(super) fn incremental(rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result
                 }
             }
             let clean = build(rustc_ryo, Some(&dir.join(config).join(&cfg).join("clean-incr")), &[], "clean")?;
-            let read = |p: &Path| fs::read(p).map_err(|e| format!("reading {}: {e}", p.display()));
-            if read(&exe)? != read(&clean)? {
+            if crate::utils::read_bytes(&exe)? != crate::utils::read_bytes(&clean)? {
                 return Err(format!("{config} {cfg}: {} differs from the clean build {}", exe.display(), clean.display()));
             }
             // Corrupt side data with an intact footer: the image is rebuilt, not an ICE.
@@ -727,7 +725,7 @@ pub(super) fn dump(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), Strin
         let rs = out.join(format!("{name}.rs"));
         let dump = out.join(format!("{name}.dump.txt"));
         let _ = fs::remove_file(&dump);
-        fs::write(&rs, src).map_err(|e| format!("writing {}: {e}", rs.display()))?;
+        crate::utils::write(&rs, src)?;
         capture_ok(cmd(rustc_ryo).args(["--edition=2024", "--crate-type=rlib", "--out-dir"]).arg(out).arg(&rs).env("RYO_DUMP", &dump))?;
         Ok(fs::read_to_string(&dump).unwrap_or_default())
     };
@@ -829,10 +827,10 @@ fn corrupt_side_data(incr: &Path) -> Result<(), String> {
     let mut found = Vec::new();
     walk(incr, &mut found);
     let Some((_, path)) = found.into_iter().max() else { return Err(format!("no saved side data under {}", incr.display())) };
-    let mut bytes = fs::read(&path).map_err(|e| format!("reading {}: {e}", path.display()))?;
+    let mut bytes = crate::utils::read_bytes(&path)?;
     let mid = bytes.len() / 2;
     bytes[mid] ^= 0xff;
-    fs::write(&path, bytes).map_err(|e| format!("writing {}: {e}", path.display()))
+    crate::utils::write(&path, bytes)
 }
 
 /// The backend fails with a clear error, naming the option, where VM code can't honour it
@@ -847,7 +845,7 @@ pub(super) fn reject_unsupported(rustc_ryo: &Path, src: &Path, out: &Path) -> Re
     crate::utils::create_dir(&dir)?;
     let o = dir.join(exe_name("rejected"));
     let argfile = dir.join("args");
-    fs::write(&argfile, "-Zrandomize-layout\n").map_err(|e| format!("writing {}: {e}", argfile.display()))?;
+    crate::utils::write(&argfile, "-Zrandomize-layout\n")?;
     let at_argfile = format!("@{}", argfile.display());
     let cases: &[(&[&str], &str)] = &[
         (&["-Zrandomize-layout"], "-Zrandomize-layout"),
@@ -904,7 +902,7 @@ pub(super) fn reject_unsupported(rustc_ryo: &Path, src: &Path, out: &Path) -> Re
     // Targets without an installed std, checked on a `#![no_core]` crate (`init` runs before
     // crates are loaded): soft-float, and sanitizers the target enables by default.
     let no_core = dir.join("no_core.rs");
-    fs::write(&no_core, "#![feature(no_core)]\n#![no_core]\n").map_err(|e| format!("writing {}: {e}", no_core.display()))?;
+    crate::utils::write(&no_core, "#![feature(no_core)]\n#![no_core]\n")?;
     for (target, needle) in
         [("x86_64-unknown-none", "soft-float"), ("x86_64-unknown-uefi", "soft-float"), ("x86_64-unknown-linux-gnuasan", "sanitizer")]
     {
@@ -921,7 +919,7 @@ pub(super) fn reject_unsupported(rustc_ryo: &Path, src: &Path, out: &Path) -> Re
     let spec = output(cmd("rustc").args(["-Zunstable-options", "--print=target-spec-json", "--target=x86_64-unknown-linux-gnu"]))?;
     let Some(spec) = spec.trim_start().strip_prefix('{') else { return Err(format!("unexpected target spec: {spec}")) };
     let json = dir.join("x86_64-large.json");
-    fs::write(&json, format!("{{\n  \"code-model\": \"large\",{spec}")).map_err(|e| format!("writing {}: {e}", json.display()))?;
+    crate::utils::write(&json, format!("{{\n  \"code-model\": \"large\",{spec}"))?;
     expect_reject(
         cmd(rustc_ryo)
             .args(["--crate-type=lib", "-Zunstable-options"])
@@ -934,7 +932,7 @@ pub(super) fn reject_unsupported(rustc_ryo: &Path, src: &Path, out: &Path) -> Re
     // A library with VM code (`hello.rs`'s `main` is dead code in an rlib). An rlib is
     // written only with `link`, and one written to stdout can't have the images appended.
     let lib = dir.join("reject_lib.rs");
-    fs::write(&lib, "pub fn f(x: u64) -> u64 {\n    x * 3 + 1\n}\n").map_err(|e| format!("writing {}: {e}", lib.display()))?;
+    crate::utils::write(&lib, "pub fn f(x: u64) -> u64 {\n    x * 3 + 1\n}\n")?;
     let rlib = |flags: &[&str]| {
         let mut c = cmd(rustc_ryo);
         c.arg("--edition=2024").arg(&lib).arg("--crate-type=rlib").arg("--out-dir").arg(&dir).args(flags);
@@ -989,17 +987,16 @@ fn expect_reject(c: &mut Command, needle: &str) -> Result<(), String> {
 pub(super) fn cgu_deterministic(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
     let build = |name: &str| -> Result<Vec<(String, Vec<u8>)>, String> {
         let dir = out.join(name);
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        crate::utils::fresh_dir(&dir)?;
         capture_ok(
             cmd(rustc_ryo).args(["--edition=2024", "-Ccodegen-units=16", "-Csave-temps", "--crate-name", "vm_cgu", "--out-dir"]).arg(&dir).arg(src),
         )?;
         let mut images = Vec::new();
-        for e in std::fs::read_dir(&dir).map_err(|e| e.to_string())? {
-            let p = e.map_err(|e| e.to_string())?.path();
+        for e in fs::read_dir(&dir).map_err(|e| format!("reading {}: {e}", dir.display()))? {
+            let p = e.map_err(|e| format!("reading {}: {e}", dir.display()))?.path();
             let name = p.file_name().unwrap_or_default().to_string_lossy().into_owned();
             if name.contains(".ryo_image") {
-                images.push((name, std::fs::read(&p).map_err(|e| e.to_string())?));
+                images.push((name, crate::utils::read_bytes(&p)?));
             }
         }
         images.sort();

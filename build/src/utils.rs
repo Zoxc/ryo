@@ -83,6 +83,12 @@ pub fn read(path: impl AsRef<Path>) -> Result<String, String> {
     std::fs::read_to_string(path).map_err(|e| format!("reading {}: {e}", path.display()))
 }
 
+/// `fs::read`, with the path in the error.
+pub fn read_bytes(path: impl AsRef<Path>) -> Result<Vec<u8>, String> {
+    let path = path.as_ref();
+    std::fs::read(path).map_err(|e| format!("reading {}: {e}", path.display()))
+}
+
 /// `fs::write`, with the path in the error.
 pub fn write(path: impl AsRef<Path>, contents: impl AsRef<[u8]>) -> Result<(), String> {
     let path = path.as_ref();
