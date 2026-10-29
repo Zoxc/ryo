@@ -933,12 +933,11 @@ fn trial(
         })
         .collect();
     if k_cost <= p.trial_cost && consts.iter().any(|x| x.is_some()) {
-        let key = (g, consts.clone());
-        let spec = match trials.iter().find(|t| t.0 == key) {
+        let spec = match trials.iter().find(|t| t.0.0 == g && t.0.1 == consts) {
             Some(t) => Some(t.1.clone()),
             None if trials.len() < p.trials => {
                 let s = Rc::new(specialize(&c, &consts, mem));
-                trials.push((key, s.clone()));
+                trials.push(((g, consts.clone()), s.clone()));
                 Some(s)
             }
             None => None,

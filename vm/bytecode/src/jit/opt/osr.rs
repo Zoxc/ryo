@@ -109,7 +109,8 @@ pub fn through_landings(f: &mut Func) {
             };
             *v = p;
         };
-        for i in f.blocks[t.idx()].insts.clone() {
+        for n in 0..f.blocks[t.idx()].insts.len() {
+            let i = f.blocks[t.idx()].insts[n];
             let mut args = core::mem::take(&mut f.insts[i.idx()].args);
             args.iter_mut().for_each(|a| rename(f, a));
             f.insts[i.idx()].args = args;

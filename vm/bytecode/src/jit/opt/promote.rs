@@ -195,13 +195,13 @@ fn try_promote(f: &mut Func, mut ok: Vec<bool>) -> Result<bool, AllocaId> {
     let mut dead: Vec<Inst> = Vec::new();
     for &b in &live {
         let mut cur: BTreeMap<u32, Value> = BTreeMap::new();
-        let insts = p.f.blocks[b.idx()].insts.clone();
-        for i in insts {
-            let op = p.f.insts[i.idx()].op.clone();
-            let Some(k) = field(&op) else { continue };
-            match op {
+        for n in 0..p.f.blocks[b.idx()].insts.len() {
+            let i = p.f.blocks[b.idx()].insts[n];
+            let id = &p.f.insts[i.idx()];
+            let Some(k) = field(&id.op) else { continue };
+            match id.op {
                 Op::AStore(..) => {
-                    cur.insert(k, p.f.insts[i.idx()].args[0]);
+                    cur.insert(k, id.args[0]);
                 }
                 _ => {
                     let v = match cur.get(&k) {
@@ -252,8 +252,8 @@ fn try_promote(f: &mut Func, mut ok: Vec<bool>) -> Result<bool, AllocaId> {
         let n = f.blocks[b.idx()].params.len() as u16;
         f.values[p.idx()].def = ValueDef::Param(b, n);
         f.blocks[b.idx()].params.push(p);
-        let preds = f.blocks[b.idx()].preds.clone();
-        for (j, (q, e)) in preds.into_iter().enumerate() {
+        for j in 0..f.blocks[b.idx()].preds.len() {
+            let (q, e) = f.blocks[b.idx()].preds[j];
             f.blocks[q.idx()].term.edge_mut(e as usize).args.push(ops[j]);
         }
     }

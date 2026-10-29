@@ -352,7 +352,7 @@ fn licm(f: &mut Func, an: &Analysis, l: &Loop) -> bool {
                 id.args.iter().for_each(|a| used[a.idx()] = true);
             }
         }
-        bd.term.uses().iter().for_each(|a| used[a.idx()] = true);
+        bd.term.uses().for_each(|a| used[a.idx()] = true);
         for e in bd.term.edges().filter(|e| l.body[e.to.idx()]) {
             for (n, &a) in e.args.iter().enumerate() {
                 if e.to != h || f.blocks[h.idx()].params.get(n) != Some(&a) {

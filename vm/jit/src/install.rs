@@ -5,7 +5,7 @@
 
 use core::ptr;
 use core::sync::atomic::AtomicUsize;
-use core::sync::atomic::Ordering::{Acquire, Release, SeqCst};
+use core::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 use std::collections::HashMap;
 use std::io::Write;
 use std::vec::Vec;
@@ -55,14 +55,15 @@ pub(crate) struct Counts {
 /// [`Counts`] of `rec`, with `thresholds` the counters' ([`RtApi::thresholds`]).
 pub(crate) fn counts(rec: *mut JitRecord, thresholds: [i64; 2]) -> Counts {
     let n = |v: i64, t: i64| jit_count(v, t).max(0) as u64;
-    Counts { calls: n(JitRecord::ctr_e(rec).load(Acquire), thresholds[0]), iters: n(JitRecord::ctr_l(rec).load(Acquire), thresholds[1]) }
+    Counts { calls: n(JitRecord::ctr_e(rec).load(Relaxed), thresholds[0]), iters: n(JitRecord::ctr_l(rec).load(Relaxed), thresholds[1]) }
 }
 
 /// Whether a compiled record's counters both have its bias (a racing AOT increment can erase
 /// it: [`crate::thread`] re-checks).
 pub(crate) fn settled(rec: *mut JitRecord) -> bool {
     [JitRecord::ctr_e(rec), JitRecord::ctr_l(rec)].iter().all(|c| {
-        let v = c.load(SeqCst);
+        // Relaxed: only the counter's own value matters, nothing is published through it.
+        let v = c.load(Relaxed);
         v != jit_unbiased(v) && v > 0
     })
 }
@@ -695,9 +696,8 @@ fn assemble(body: &[u8], osr: Option<(usize, &[u8])>, rodata: &[u8], size: usize
     let mut code = std::vec![0xccu8; size];
     // `lea r11, [rip + code]; mov [rsp], r11; ret` (JIT_ENTRY_PREFIX).
     let lea = (JIT_ENTRY_PREFIX - 7) as i32;
-    let mut prefix = std::vec![0x4c, 0x8d, 0x1d];
-    prefix.extend(lea.to_le_bytes());
-    prefix.extend([0x4c, 0x89, 0x1c, 0x24, 0xc3]);
+    let l = lea.to_le_bytes();
+    let prefix = [0x4c, 0x8d, 0x1d, l[0], l[1], l[2], l[3], 0x4c, 0x89, 0x1c, 0x24, 0xc3];
     code[CODE_LEN_AT..][..4].copy_from_slice(&(body.len() as u32).to_le_bytes());
     code[CODE_AT - JIT_ENTRY_PREFIX..CODE_AT].copy_from_slice(&prefix);
     code[CODE_AT..][..body.len()].copy_from_slice(body);

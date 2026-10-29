@@ -591,11 +591,12 @@ impl<'a> B<'a> {
                 let ws: Vec<u8> = parts.iter().map(|p| if matches!(p.size, 1 | 2 | 4 | 8) { p.size as u8 } else { 8 }).collect();
                 let call = Call { target: *target, regs: regs.clone(), parts: parts.clone(), site };
                 let ci = self.f.inst(cur, Op::Call(Box::new(call)), args, &ws);
-                let results: Vec<Value> = self.f.insts[ci.idx()].results().collect();
+                let results = self.f.insts[ci.idx()].results();
                 if let Unwind::Pad { pad, .. } = ri.unwind {
+                    let results: Vec<Value> = results.collect();
                     return Ok(Flow::Ended(self.invoke(cur, i, pad, Some((&results, k)))?));
                 }
-                for (n, v) in results.into_iter().enumerate() {
+                for (n, v) in results.enumerate() {
                     self.write(cur, i, k + n, v);
                 }
             }
@@ -751,11 +752,12 @@ impl<'a> B<'a> {
     /// The edges' arguments, from the operand rows.
     fn write_edge_args(&mut self) {
         for b in 0..self.f.blocks.len() {
-            let params = self.f.blocks[b].params.clone();
-            if params.is_empty() {
+            if self.f.blocks[b].params.is_empty() {
                 continue;
             }
-            let preds = self.f.blocks[b].preds.clone();
+            // Taken while the edges change: those are in the terminators, not here.
+            let params = core::mem::take(&mut self.f.blocks[b].params);
+            let preds = core::mem::take(&mut self.f.blocks[b].preds);
             for (j, &(p, k)) in preds.iter().enumerate() {
                 let args: Vec<Value> = params
                     .iter()
@@ -765,10 +767,10 @@ impl<'a> B<'a> {
                         _ => x,
                     })
                     .collect();
-                let mut t = core::mem::replace(&mut self.f.blocks[p.idx()].term, Term::None);
-                t.edge_mut(k as usize).args = args;
-                self.f.blocks[p.idx()].term = t;
+                self.f.blocks[p.idx()].term.edge_mut(k as usize).args = args;
             }
+            self.f.blocks[b].params = params;
+            self.f.blocks[b].preds = preds;
         }
     }
 }

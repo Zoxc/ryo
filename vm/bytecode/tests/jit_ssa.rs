@@ -674,8 +674,8 @@ impl ryo_bytecode::jit::opt::ConstMem for Pool {
         Some(PoolRead::Bits(bits))
     }
 
-    fn relocs(&self, k: u32, len: u32) -> Vec<u32> {
-        self.relocs.iter().map(|r| r.0).filter(|&r| r + 8 > k && r < k + len).collect()
+    fn relocs(&self, k: u32, len: u32, f: &mut dyn FnMut(u32)) {
+        self.relocs.iter().map(|r| r.0).filter(|&r| r + 8 > k && r < k + len).for_each(f);
     }
 }
 

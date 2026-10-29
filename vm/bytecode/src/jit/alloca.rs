@@ -573,8 +573,9 @@ fn pin_escapes(code: &Code, allocas: &mut [Alloca]) {
             }
             v
         };
+        let mut st: Vec<u64> = Vec::new();
         while let Some(b) = work.pop() {
-            let mut st = ein[b].clone().unwrap();
+            st.clone_from(ein[b].as_ref().unwrap());
             let bl = &code.blocks[b];
             for i in bl.start..bl.end {
                 for &k in &scope_at[i as usize] {

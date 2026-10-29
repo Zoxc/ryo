@@ -1126,10 +1126,10 @@ impl<'a> E<'a> {
         Ok(())
     }
 
-    fn inst(&mut self, i: Inst, pad: Option<u32>) -> Result<(), Unsupported> {
+    /// Instruction `i`, whose results are `res`.
+    fn inst(&mut self, i: Inst, res: &[Value], pad: Option<u32>) -> Result<(), Unsupported> {
         let f = self.f;
         let id = &f.insts[i.idx()];
-        let res: Vec<Value> = id.results().collect();
         let bd = &f.blocks[id.block.idx()];
         let fused = matches!(bd.term, Term::BrOvf { .. }) && bd.insts.last() == Some(&i);
         if id.op.pure() && !fused && res.iter().all(|r| self.uses[r.idx()] == 0) {
@@ -1188,7 +1188,7 @@ impl<'a> E<'a> {
                 let rv = self.xreg(args[0], self.xs()[0]);
                 self.a.x().movdqu_store(m, rv);
             }
-            Op::HCall(_) | Op::Call(_) if args.iter().chain(&res).any(|&v| self.f.w(v) == 16) => {
+            Op::HCall(_) | Op::Call(_) if args.iter().chain(res).any(|&v| self.f.w(v) == 16) => {
                 return Err(Unsupported("a vector operand of a call"));
             }
             Op::Bin(op @ (BinOp::DivS | BinOp::DivU | BinOp::RemS | BinOp::RemU), w) => self.divrem(op, w, args[0], args[1], res[0]),
@@ -1303,9 +1303,9 @@ impl<'a> E<'a> {
             Op::LandingPad => {
                 self.put(res[0], R::Rax);
             }
-            Op::HCall(ref h) if h.reg => self.hcall_reg(h, args, &res, pad)?,
-            Op::HCall(ref h) => self.hcall_mem(h, args, &res, pad)?,
-            Op::Call(ref c) => self.call(c, args, &res, pad),
+            Op::HCall(ref h) if h.reg => self.hcall_reg(h, args, res, pad)?,
+            Op::HCall(ref h) => self.hcall_mem(h, args, res, pad)?,
+            Op::Call(ref c) => self.call(c, args, res, pad),
             Op::Island(ref isl) => self.island(isl, pad),
         }
         Ok(())
@@ -1909,28 +1909,30 @@ impl<'a> E<'a> {
 
     fn block(&mut self, b: Block, next: Option<Block>) -> Result<(), Unsupported> {
         self.a.bind(b.0);
-        let bd = &self.f.blocks[b.idx()];
+        let f = self.f;
+        let bd = &f.blocks[b.idx()];
         if bd.kind == BlockKind::Entry {
             self.prologue();
             self.entry_args(b);
         }
-        let insts = bd.insts.clone();
         let pad = match &bd.term {
             Term::Invoke { pad, .. } => Some(pad.to.0),
             _ => None,
         };
-        for i in insts {
-            self.inst(i, pad)?;
+        let mut res = Vec::new();
+        for &i in &bd.insts {
+            res.clear();
+            res.extend(f.insts[i.idx()].results());
+            self.inst(i, &res, pad)?;
         }
-        let term = self.f.blocks[b.idx()].term.clone();
-        self.term(&term, next)
+        self.term(&bd.term, next)
     }
 
     /// The arguments of the entry block `b` from the ABI registers into their locations.
     fn entry_args(&mut self, b: Block) {
-        let params = self.f.blocks[b.idx()].params.clone();
-        let regs = self.arg_regs(&self.f.entry_regs);
-        self.from_abi(&regs, &params);
+        let f = self.f;
+        let regs = self.arg_regs(&f.entry_regs);
+        self.from_abi(&regs, &f.blocks[b.idx()].params);
     }
 
     /// The terminator `term` of a block laid out before `next`, and its edges' move stubs.

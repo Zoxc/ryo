@@ -73,10 +73,20 @@ pub(super) fn decode(img: Image<'_>, handlers: &[(usize, Opcode)], probe: usize,
     ImageResolver { image: img, handlers, probe }.decode(func, text)
 }
 
-/// The registered image whose header is at `header`.
+std::thread_local! {
+    /// [`image_of`]'s parsed views, by header address: registered images are immutable and
+    /// stay forever, so a view stays valid.
+    static IMAGES: core::cell::RefCell<HashMap<usize, Image<'static>>> = core::cell::RefCell::new(HashMap::new());
+}
+
+/// The registered image whose header is at `header` (parsed once per thread).
 pub(super) fn image_of(header: usize) -> Image<'static> {
-    // SAFETY: a registered image's header: registered images stay forever.
-    unsafe { Image::from_header(header as *const u8) }.expect("a registered image")
+    IMAGES.with(|m| {
+        *m.borrow_mut().entry(header).or_insert_with(|| {
+            // SAFETY: a registered image's header: registered images stay forever.
+            unsafe { Image::from_header(header as *const u8) }.expect("a registered image")
+        })
+    })
 }
 
 impl jit::inline::Env for InlineEnv<'_> {
@@ -100,8 +110,7 @@ impl jit::inline::Env for InlineEnv<'_> {
             Some(Ok(d)) => jit::ir_of(&d, self.mode, Some(&PoolMem { header: g.img, rt: self.rt })).ok().map(std::rc::Rc::new),
             _ => None,
         };
-        self.cache.insert((g.img, g.func.0), f.clone());
-        f
+        self.cache.entry((g.img, g.func.0)).or_insert(f).clone()
     }
 
     fn flags(&self, g: VmFunc) -> u8 {
@@ -208,10 +217,10 @@ impl jit::opt::ConstMem for PoolMem {
         }
     }
 
-    fn relocs(&self, k: u32, len: u32) -> Vec<u32> {
+    fn relocs(&self, k: u32, len: u32, f: &mut dyn FnMut(u32)) {
         let rs = image_of(self.header).const_relocs();
         let lo = rs.partition_point(|&r| r as u64 + 8 <= k as u64);
-        rs[lo..].iter().copied().take_while(|&r| (r as u64) < k as u64 + len as u64).collect()
+        rs[lo..].iter().copied().take_while(|&r| (r as u64) < k as u64 + len as u64).for_each(f);
     }
 }
 

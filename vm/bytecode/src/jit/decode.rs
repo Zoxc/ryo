@@ -369,11 +369,14 @@ fn cut_copies(insns: &mut [RInsn], mem: Option<&dyn super::opt::ConstMem>) {
         let f = |s: &Side| if let Side::Frame(o) = s { Some(*o) } else { None };
         ([f(dst), f(src)], *len)
     };
-    let rel = |cuts: &BTreeSet<i32>, bases: [Option<i32>; 2], len: u32| -> BTreeSet<u32> {
-        let mut r: BTreeSet<u32> = [0, len].into_iter().collect();
+    // Sorted, without duplicates.
+    let rel = |cuts: &BTreeSet<i32>, bases: [Option<i32>; 2], len: u32| -> Vec<u32> {
+        let mut r: Vec<u32> = alloc::vec![0, len];
         for b in bases.into_iter().flatten() {
             r.extend(cuts.range(b + 1..b + len as i32).map(|&c| (c - b) as u32));
         }
+        r.sort_unstable();
+        r.dedup();
         r
     };
     // Carry the cuts across frame-to-frame copies, a few rounds (chains of copies).
@@ -401,7 +404,7 @@ fn cut_copies(insns: &mut [RInsn], mem: Option<&dyn super::opt::ConstMem>) {
             let mut changed = false;
             for &i in &copies {
                 let ([Some(d), Some(s)], len) = frames(&insns[i].kind) else { continue };
-                for r in rel(&cuts, [Some(d), Some(s)], len).into_iter().collect::<Vec<u32>>().windows(2) {
+                for r in rel(&cuts, [Some(d), Some(s)], len).windows(2) {
                     if r[1] - r[0] == 16 && (whole.contains(&(d + r[0] as i32)) || whole.contains(&(s + r[0] as i32))) {
                         changed |= whole.insert(d + r[0] as i32) | whole.insert(s + r[0] as i32);
                     }
@@ -419,12 +422,14 @@ fn cut_copies(insns: &mut [RInsn], mem: Option<&dyn super::opt::ConstMem>) {
         // A pool source's relocated fields are pieces of their own, which the fold makes
         // `RefAddr`s.
         if let (Kind::Copy { src: Side::Pool(k), .. }, Some(mem)) = (&insns[i].kind, mem) {
-            for f in mem.relocs(*k, len) {
-                let at = f as i64 - *k as i64;
+            let k = *k;
+            mem.relocs(k, len, &mut |f| {
+                let at = f as i64 - k as i64;
                 r.extend([at, at + 8].into_iter().filter(|&c| c > 0 && c < len as i64).map(|c| c as u32));
-            }
+            });
         }
-        let r: Vec<u32> = r.into_iter().collect();
+        r.sort_unstable();
+        r.dedup();
         let split = |r: &[u32]| {
             let mut ps = Vec::new();
             for w in r.windows(2) {
@@ -572,13 +577,13 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Re
                 return Err(Unsupported("handler arguments"));
             }
             let ts: Vec<u32> = t.iter().map(|t| rel(t.0)).collect();
+            succ.extend(ts.iter().copied());
             let then = match info.shape {
                 Shape::Br => Then::Branch { neg: neg.0, t: ts[0] },
-                Shape::Switch => Then::Table(ts.clone()),
+                Shape::Switch => Then::Table(ts),
                 Shape::Trap => Then::Trap,
                 _ => Then::Next,
             };
-            succ.extend(ts.iter().copied());
             falls = matches!(info.shape, Shape::Op | Shape::Br | Shape::Lpad);
             if info.shape == Shape::Lpad {
                 let x = info.operand_index("x").expect("x");

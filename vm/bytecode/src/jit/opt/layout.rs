@@ -86,7 +86,7 @@ fn split(f: &mut Func, b: Block, preds: &[Block]) {
         _ => true,
     };
     // Backward: the values used later, and those of them live across a call.
-    let mut later: Vec<Value> = bd.term.uses().into_iter().filter(|&v| tracked(v) && !local(v)).collect();
+    let mut later: Vec<Value> = bd.term.uses().filter(|&v| tracked(v) && !local(v)).collect();
     let mut cross: Vec<Value> = Vec::new();
     for &i in bd.insts.iter().rev() {
         let id = &f.insts[i.idx()];
@@ -112,12 +112,11 @@ fn split(f: &mut Func, b: Block, preds: &[Block]) {
             *x = ps[k];
         }
     };
-    let insts = f.blocks[b.idx()].insts.clone();
-    for i in insts {
+    for &i in &f.blocks[b.idx()].insts {
         f.insts[i.idx()].args.iter_mut().for_each(rename);
     }
     // Not its edges' arguments: `cross` comes from the terminator's uses and the insts only.
-    f.blocks[b.idx()].term.uses_mut().into_iter().for_each(rename);
+    f.blocks[b.idx()].term.uses_mut().for_each(rename);
     let mut done: Vec<Block> = Vec::new();
     for &p in preds {
         if done.contains(&p) {

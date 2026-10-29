@@ -68,9 +68,8 @@ pub fn dce(f: &mut Func) {
         }
     }
     for b in 0..f.blocks.len() {
-        let insts = core::mem::take(&mut f.blocks[b].insts);
-        f.blocks[b].insts =
-            insts.into_iter().filter(|&i| f.insts[i.idx()].results().any(|r| live[r.idx()]) || !removable(&f.insts[i.idx()].op)).collect();
+        let insts = &f.insts;
+        f.blocks[b].insts.retain(|&i| insts[i.idx()].results().any(|r| live[r.idx()]) || !removable(&insts[i.idx()].op));
     }
     for b in 0..f.blocks.len() {
         let keep: Vec<bool> = f.blocks[b].params.iter().map(|&p| live[p.idx()]).collect();
@@ -85,8 +84,8 @@ pub fn dce(f: &mut Func) {
             f.values[p.idx()].def = ValueDef::Param(Block(b as u32), n as u16);
         }
         f.blocks[b].params = params;
-        let preds = f.blocks[b].preds.clone();
-        for (p, k) in preds {
+        for j in 0..f.blocks[b].preds.len() {
+            let (p, k) = f.blocks[b].preds[j];
             let e = f.blocks[p.idx()].term.edge_mut(k as usize);
             e.args = e.args.iter().zip(&keep).filter(|(_, k)| **k).map(|(&a, _)| a).collect();
         }

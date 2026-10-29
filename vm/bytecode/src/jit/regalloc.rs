@@ -266,6 +266,7 @@ pub fn remat(f: &mut Func) {
     }
     // Per block: the clone of each candidate valid since the last call.
     let mut cur: Vec<(Value, Value)> = Vec::new();
+    let (mut us, mut subst): (Vec<Value>, Vec<(Value, Value)>) = (Vec::new(), Vec::new());
     let clone = |f: &mut Func, b: Block, at: usize, v: Value| -> Value {
         let ValueDef::Inst(i, _) = f.values[v.idx()].def else { unreachable!() };
         let op = f.insts[i.idx()].op.clone();
@@ -314,11 +315,12 @@ pub fn remat(f: &mut Func) {
         }
         let fused = matches!(f.blocks[b.idx()].term, super::ir::Term::BrOvf { .. });
         let mut term = core::mem::replace(&mut f.blocks[b.idx()].term, super::ir::Term::None);
-        let mut us: Vec<Value> = term.uses();
+        us.clear();
+        us.extend(term.uses());
         for e in term.edges() {
             us.extend(&e.args);
         }
-        let mut subst: Vec<(Value, Value)> = Vec::new();
+        subst.clear();
         for u in &mut us {
             if !cand(f, *u) {
                 continue;

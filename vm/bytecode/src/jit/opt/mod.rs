@@ -99,8 +99,8 @@ pub trait ConstMem {
     /// absolute one gives the field's bits (every image part is an exposed allocation).
     fn read(&self, a: ConstAt, w: u8) -> Option<PoolRead>;
     /// The pool offsets of the relocated fields of the IR's image that overlap `[k, k +
-    /// len)`, in order.
-    fn relocs(&self, k: u32, len: u32) -> Vec<u32>;
+    /// len)`, in order, passed to `f` (no allocation per query).
+    fn relocs(&self, k: u32, len: u32, f: &mut dyn FnMut(u32));
 }
 
 /// The one value the operands `ops` of parameter `p` pass but `p` itself (the trivial-phi

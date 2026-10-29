@@ -691,33 +691,36 @@ impl Term {
 
     /// Applies `g` to every value it reads: [`Term::uses_mut`], then its edges' arguments.
     pub fn operands_mut(&mut self, mut g: impl FnMut(&mut Value)) {
-        self.uses_mut().into_iter().for_each(&mut g);
+        self.uses_mut().for_each(&mut g);
         for e in self.edges_mut() {
             e.args.iter_mut().for_each(&mut g);
         }
     }
 
     /// The values it reads, but for its edges' arguments.
-    pub fn uses(&self) -> Vec<Value> {
-        match self {
-            Term::Br { cond, .. } => alloc::vec![*cond],
-            Term::BrCmp { a, b, .. } => alloc::vec![*a, *b],
-            Term::Switch { idx, .. } => alloc::vec![*idx],
-            Term::Ret { parts, .. } => parts.clone(),
-            Term::TailCall { args, .. } => args.clone(),
-            _ => Vec::new(),
-        }
+    pub fn uses(&self) -> impl Iterator<Item = Value> + '_ {
+        let (two, rest): ([Option<Value>; 2], &[Value]) = match self {
+            Term::Br { cond, .. } => ([Some(*cond), None], &[]),
+            Term::BrCmp { a, b, .. } => ([Some(*a), Some(*b)], &[]),
+            Term::Switch { idx, .. } => ([Some(*idx), None], &[]),
+            Term::Ret { parts, .. } => ([None, None], &parts[..]),
+            Term::TailCall { args, .. } => ([None, None], &args[..]),
+            _ => ([None, None], &[]),
+        };
+        two.into_iter().flatten().chain(rest.iter().copied())
     }
 
-    pub fn uses_mut(&mut self) -> Vec<&mut Value> {
-        match self {
-            Term::Br { cond, .. } => alloc::vec![cond],
-            Term::BrCmp { a, b, .. } => alloc::vec![a, b],
-            Term::Switch { idx, .. } => alloc::vec![idx],
-            Term::Ret { parts, .. } => parts.iter_mut().collect(),
-            Term::TailCall { args, .. } => args.iter_mut().collect(),
-            _ => Vec::new(),
-        }
+    /// [`Term::uses`], mutably.
+    pub fn uses_mut(&mut self) -> impl Iterator<Item = &mut Value> + '_ {
+        let (two, rest): ([Option<&mut Value>; 2], &mut [Value]) = match self {
+            Term::Br { cond, .. } => ([Some(cond), None], Default::default()),
+            Term::BrCmp { a, b, .. } => ([Some(a), Some(b)], Default::default()),
+            Term::Switch { idx, .. } => ([Some(idx), None], Default::default()),
+            Term::Ret { parts, .. } => ([None, None], &mut parts[..]),
+            Term::TailCall { args, .. } => ([None, None], &mut args[..]),
+            _ => ([None, None], Default::default()),
+        };
+        two.into_iter().flatten().chain(rest.iter_mut())
     }
 }
 
@@ -859,10 +862,11 @@ impl Func {
         let mut live = self.live_blocks();
         live.sort_unstable();
         for b in live {
-            let tos: Vec<Block> = self.blocks[b.idx()].term.edges().map(|e| e.to).collect();
-            for (k, to) in tos.into_iter().enumerate() {
-                self.blocks[to.idx()].preds.push((b, k as u16));
+            let t = core::mem::replace(&mut self.blocks[b.idx()].term, Term::None);
+            for (k, e) in t.edges().enumerate() {
+                self.blocks[e.to.idx()].preds.push((b, k as u16));
             }
+            self.blocks[b.idx()].term = t;
         }
     }
 
@@ -975,10 +979,10 @@ impl Func {
 
     /// Replaces the terminator of `b` by `t`, keeping its successors' predecessor lists right.
     pub fn set_term(&mut self, b: Block, t: Term) {
-        for e in self.blocks[b.idx()].term.edges().map(|e| e.to).collect::<Vec<_>>() {
-            self.blocks[e.idx()].preds.retain(|&(p, _)| p != b);
+        let old = core::mem::replace(&mut self.blocks[b.idx()].term, Term::None);
+        for e in old.edges() {
+            self.blocks[e.to.idx()].preds.retain(|&(p, _)| p != b);
         }
-        self.blocks[b.idx()].term = Term::None;
         self.terminate(b, t);
     }
 
@@ -1006,17 +1010,18 @@ impl Func {
         }
         // Parameters: keep the live ones, renumbered, and their arguments.
         for b in 0..self.blocks.len() {
-            let keep: Vec<bool> = self.blocks[b].params.iter().map(|&p| !matches!(self.values[p.idx()].def, ValueDef::Alias(_))).collect();
-            if keep.iter().all(|&k| k) {
+            let live = |p: &Value| !matches!(self.values[p.idx()].def, ValueDef::Alias(_));
+            if self.blocks[b].params.iter().all(live) {
                 continue;
             }
+            let keep: Vec<bool> = self.blocks[b].params.iter().map(live).collect();
             let params: Vec<Value> = self.blocks[b].params.iter().zip(&keep).filter(|(_, k)| **k).map(|(&p, _)| p).collect();
             for (n, &p) in params.iter().enumerate() {
                 self.values[p.idx()].def = ValueDef::Param(Block(b as u32), n as u16);
             }
             self.blocks[b].params = params;
-            let preds = self.blocks[b].preds.clone();
-            for (p, k) in preds {
+            for j in 0..self.blocks[b].preds.len() {
+                let (p, k) = self.blocks[b].preds[j];
                 let e = self.blocks[p.idx()].term.edge_mut(k as usize);
                 debug_assert_eq!(e.args.len(), keep.len());
                 e.args = e.args.iter().zip(&keep).filter(|(_, k)| **k).map(|(&a, _)| a).collect();
