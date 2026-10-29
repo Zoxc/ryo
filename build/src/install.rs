@@ -483,7 +483,10 @@ impl Lock {
 
 impl Drop for Lock {
     fn drop(&mut self) {
-        let _ = fs::remove_file(&self.0);
+        // Only while it is still ours (a takeover race may have replaced it).
+        if fs::read_to_string(&self.0).ok().and_then(|p| p.trim().parse::<u32>().ok()) == Some(std::process::id()) {
+            let _ = fs::remove_file(&self.0);
+        }
     }
 }
 
@@ -705,7 +708,9 @@ fn plan_install(o: &InstallOptions) -> Result<InstallPlan, String> {
     if !toolchain_present {
         record.installed_by_ryo = true;
     }
-    let remove_targets: Vec<String> = prev_record.targets_added.iter().filter(|t| !targets.contains(t)).cloned().collect();
+    // Only those still there: `rustup target remove` fails for a missing one.
+    let remove_targets: Vec<String> =
+        prev_record.targets_added.iter().filter(|t| !targets.contains(t) && installed_targets.contains(t)).cloned().collect();
     if o.no_toolchain_install && (!toolchain_present || !add_components.is_empty() || !add_targets.is_empty()) {
         let mut cmds = Vec::new();
         if !toolchain_present {
@@ -753,24 +758,27 @@ pub fn install(o: &InstallOptions) -> Result<Option<ExitCode>, String> {
     if let Some(code) = confirm("install", o.yes, o.dry_run) {
         return Ok(Some(code));
     }
-    do_install(&plan).map_err(|e| format!("{e}\n[y] the previous install (if any) still works; rerun ./y.sh install"))?;
+    do_install(&plan)?;
     Ok(None)
 }
 
 fn do_install(plan: &InstallPlan) -> Result<(), String> {
     let install = &plan.install;
-    let _lock = Lock::take(install)?;
+    // Until `install_version` switches `current`.
+    let still_works = |e: String| format!("{e}\n[y] the previous install (if any) still works; rerun ./y.sh install");
+    let _lock = Lock::take(install).map_err(still_works)?;
     remove_leftovers(install);
     let t = &plan.toolchain;
-    let mut manifest = install_toolchain(plan)?;
+    let mut manifest = install_toolchain(plan).map_err(still_works)?;
     // Build, with the pinned toolchain for everything `y` spawns.
     // SAFETY: `y` is single-threaded here.
     unsafe { std::env::set_var("RUSTUP_TOOLCHAIN", t) };
     let build = install.join("build");
-    let build_id = crate::dist::build_in(&build, &install.join("target"), &plan.build)?;
-    install_version(plan, &build, build_id, &mut manifest)?;
+    let build_id = crate::dist::build_in(&build, &install.join("target"), &plan.build).map_err(still_works)?;
+    install_version(plan, &build, build_id, &mut manifest).map_err(still_works)?;
     install_launchers(plan)?;
-    remove_superseded(plan, &mut manifest)?;
+    remove_superseded(plan, &mut manifest)
+        .map_err(|e| format!("{e}\n[y] ryo {} is installed; rerun ./y.sh install to finish the cleanup", plan.version))?;
     print_install_report(plan, &manifest);
     Ok(())
 }
@@ -865,12 +873,18 @@ fn remove_superseded(plan: &InstallPlan, manifest: &mut Manifest) -> Result<(), 
         manifest.save(install)?;
     }
     if !plan.old_toolchains.is_empty() {
+        // Records of toolchains kept because they are in use stay, for a later run.
+        let mut kept = Vec::new();
         for r in &plan.old_toolchains {
-            for s in toolchain_steps(r, &plan.host)? {
+            let (steps, keep_record) = toolchain_steps(r, &plan.host)?;
+            for s in steps {
                 s.run()?;
             }
+            if keep_record {
+                kept.push(r.clone());
+            }
         }
-        manifest.old_toolchains.clear();
+        manifest.old_toolchains = kept;
         manifest.save(install)?;
     }
     Ok(())
@@ -999,20 +1013,28 @@ fn plan_uninstall(o: &UninstallOptions, manifest: Option<&Manifest>) -> Result<V
         } else if let Some(source) = &other_owner {
             steps.push(Step::Keep(format!("what ryo added to toolchain {}: the launchers from {source} may still use it", r.name)));
         } else {
-            steps.extend(toolchain_steps(r, &m.host)?);
+            steps.extend(toolchain_steps(r, &m.host)?.0);
         }
     }
     steps.push(Step::RemoveInstall(install));
     Ok(steps)
 }
 
-/// The steps removing what `r` records ryo added to its toolchain.
-fn toolchain_steps(r: &ToolchainRecord, host: &str) -> Result<Vec<Step>, String> {
+/// The steps removing what `r` records ryo added to its toolchain, and whether they leave
+/// something ryo added in place (a toolchain in use), so that the record should stay. `host`
+/// is the fallback for a toolchain name without one: components carry the toolchain's host
+/// as their suffix, which may not be the current one.
+fn toolchain_steps(r: &ToolchainRecord, host: &str) -> Result<(Vec<Step>, bool), String> {
     let mut steps = Vec::new();
+    let mut keep_record = false;
+    let host = r.name.split_once('-').map_or(host, |(_, h)| h);
     match toolchain_state(&r.name)? {
         None => steps.push(Step::Keep(format!("toolchain {}: already removed", r.name))),
         Some(_) if r.installed_by_ryo => match toolchain_in_use(&r.name)? {
-            Some(why) => steps.push(Step::Keep(format!("toolchain {} (installed by ryo, but {why})", r.name))),
+            Some(why) => {
+                keep_record = true;
+                steps.push(Step::Keep(format!("toolchain {} (installed by ryo, but {why})", r.name)));
+            }
             None => steps.push(Step::RemoveToolchain(r.name.clone())),
         },
         Some((components, targets)) => {
@@ -1027,7 +1049,7 @@ fn toolchain_steps(r: &ToolchainRecord, host: &str) -> Result<Vec<Step>, String>
             steps.push(Step::Keep(format!("toolchain {}: yours", r.name)));
         }
     }
-    Ok(steps)
+    Ok((steps, keep_record))
 }
 
 /// `y uninstall`; `Some` is the exit code of a dry run or an unconfirmed plan.
