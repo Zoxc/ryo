@@ -51,6 +51,13 @@ pub const NO_REDZONE: &str = "-Cno-redzone=yes";
 ///
 /// `checked`: with `-Cdebug-assertions=on -Coverflow-checks=on` on top of the release
 /// optimizations, in `target/jit-checked/`: the JIT `y test` runs ([`CHECKED_DIR`]).
+/// The host's sealed JIT directories ([`build`]): the release one bundled into `ryo_rt`, and
+/// the checked one `y test` swaps in.
+pub struct SealedJits {
+    pub release: PathBuf,
+    pub checked: PathBuf,
+}
+
 pub fn build(rb: &crate::dist::RuntimeBuild, triple: &str, checked: bool) -> Result<PathBuf, String> {
     let (root, info, cross) = (rb.root, rb.info, rb.cross(triple));
     eprintln!("[y] jit: ryo_jit{}{}", if checked { " (checked)" } else { "" }, cross.map(|t| format!(" for {t}")).unwrap_or_default());

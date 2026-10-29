@@ -146,14 +146,13 @@ fn is_ryo_crate(name: &str) -> bool {
 
 /// Builds std with the ryo backend for the host and installs it, with `ryo_rt`, into
 /// `dist/sysroot-ryo` (with the toolchain's `bin/`, for `rust-lld`). `dist/` must already hold
-/// the backend and `rustc-ryo`. With `jit`, the sealed JIT's directory
-/// ([`crate::jit::build`]), `ryo_rt` gets its `jit` feature and bundles it, as in `dist/`: the
-/// JIT has a std of its own, the native one, so it never enters this sysroot's VM code. The
-/// second directory is the checked JIT's, swapped into a copy of `ryo_rt` in
+/// the backend and `rustc-ryo`. With `jit`, `ryo_rt` gets its `jit` feature and bundles the
+/// release JIT, as in `dist/`: the JIT has a std of its own, the native one, so it never
+/// enters this sysroot's VM code. The checked JIT is swapped into a copy of `ryo_rt` in
 /// `sysroot-ryo/jit-checked/` as for `dist/`.
 /// `target`: cargo's target directory (the work directory is `<target>/sysroot-ryo`).
-pub fn build(info: &RustcInfo, dist: &Path, target: &Path, jit: Option<(&Path, &Path)>) -> Result<(), String> {
-    let (jit, checked) = (jit.map(|j| j.0), jit.map(|j| j.1));
+pub fn build(info: &RustcInfo, dist: &Path, target: &Path, jits: Option<&crate::jit::SealedJits>) -> Result<(), String> {
+    let (jit, checked) = (jits.map(|j| j.release.as_path()), jits.map(|j| j.checked.as_path()));
     eprintln!("[y] sysroot: std with the ryo backend");
     let root = root();
     let work = target.join("sysroot-ryo");

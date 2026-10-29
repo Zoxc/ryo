@@ -119,15 +119,17 @@ pub fn build_in(dist: &Path, target: &Path, o: &BuildOptions) -> Result<String, 
             }
             build_files.push(rlib);
         }
-        if cross.is_none() {
-            host_jit = jit.zip(checked);
+        if cross.is_none()
+            && let (Some(release), Some(checked)) = (jit, checked)
+        {
+            host_jit = Some(crate::jit::SealedJits { release, checked });
         }
     }
 
     let build_id = build_id(&build_files)?;
     build_wrappers(&root, &dist_bin, &info, &build_id)?;
     if o.sysroot == Sysroot::Ryo {
-        crate::sysroot::build(&info, &dist, &target, host_jit.as_ref().map(|(j, c)| (j.as_path(), c.as_path())))?;
+        crate::sysroot::build(&info, &dist, &target, host_jit.as_ref())?;
     }
     eprintln!("[y] done: {}", dist.display());
     Ok(build_id)
