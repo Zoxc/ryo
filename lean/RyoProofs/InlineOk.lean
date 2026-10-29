@@ -4,7 +4,7 @@ opcode of `Asm.inlineOps` (aot.md §C2, toward `decode_sound`).
 
 - `all_kindOk`: every opcode whose handler is of an inline class's kind (`inlineKind`) has an
   `opSem` shape, isn't `resume` or `unreachable`, and isn't a `cvt` from `i64` to a signed
-  integer (`kindOk`, `Ryo/Proofs/CacheStep.lean`). A `decide +kernel` over the 901 opcodes,
+  integer (`kindOk`, `Ryo/Proofs/CacheStep.lean`). A `decide +kernel` over every opcode,
   slow on a busy machine, hence here, outside the default build (like `InlineOps.lean`).
 - `inlineOps_ok`: `(op, cls) ∈ inlineOps` gives `InlineOk op cls` (`shapeOk` is
   `inlineOps_shape`, the rest `all_kindOk` through the handler kind `shapeOk` fixes).
