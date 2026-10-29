@@ -433,71 +433,38 @@ fn confirm(what: &str, yes: bool, dry_run: bool) -> Option<ExitCode> {
     Some(ExitCode::FAILURE)
 }
 
-/// `install/.lock`, held while `y install`/`uninstall` run: created exclusively, holding the
-/// pid; a lock of a dead process is taken over.
-struct Lock(PathBuf);
+/// `install/.lock`, held while `y install`/`uninstall` run: an exclusive file lock
+/// ([`fs::File::try_lock`]), which the OS releases when the process ends, so a crashed run
+/// leaves no stale lock. The file holds the holder's pid, for the error message.
+struct Lock(#[allow(dead_code)] fs::File);
 
 impl Lock {
     fn take(install: &Path) -> Result<Lock, String> {
         create_dir(install)?;
         let path = install.join(".lock");
-        // Written in full under a private name, then linked into place: the lock never exists
-        // without its pid.
-        let me = std::process::id();
-        let tmp = install.join(format!(".lock.{me}"));
-        write(&tmp, me.to_string())?;
-        let res = Self::link(&tmp, &path);
-        let _ = fs::remove_file(&tmp);
-        res.map(|()| Lock(path))
-    }
-
-    fn link(tmp: &Path, path: &Path) -> Result<(), String> {
-        for _ in 0..3 {
-            match fs::hard_link(tmp, path) {
-                Ok(()) => return Ok(()),
-                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                    let held = fs::read_to_string(path).ok();
-                    let pid = held.as_deref().and_then(|p| p.trim().parse::<u32>().ok());
-                    if let Some(pid) = pid
-                        && process_alive(pid)
-                    {
-                        return Err(format!("another `y install`/`y uninstall` (pid {pid}) is running ({})", path.display()));
-                    }
-                    // Move the stale lock aside rather than delete it, and check that it was the
-                    // one read: another process may have taken it over in between, and then
-                    // gets it back.
-                    let aside = tmp.with_extension(format!("{}.stale", std::process::id()));
-                    if fs::rename(path, &aside).is_ok() {
-                        if fs::read_to_string(&aside).ok() != held {
-                            let _ = fs::hard_link(&aside, path);
-                        }
-                        let _ = fs::remove_file(&aside);
-                    }
-                }
-                Err(e) => return Err(format!("creating {}: {e}", path.display())),
+        let mut file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&path)
+            .map_err(|e| format!("creating {}: {e}", path.display()))?;
+        match file.try_lock() {
+            Ok(()) => {}
+            Err(fs::TryLockError::WouldBlock) => {
+                // Unreadable while locked on Windows.
+                let pid = fs::read_to_string(&path).ok().and_then(|p| p.trim().parse::<u32>().ok());
+                let pid = pid.map_or(String::new(), |p| format!(" (pid {p})"));
+                return Err(format!("another `y install`/`y uninstall`{pid} is running ({})", path.display()));
             }
+            Err(fs::TryLockError::Error(e)) => return Err(format!("locking {}: {e}", path.display())),
         }
-        Err(format!("couldn't take {}", path.display()))
-    }
-}
-
-impl Drop for Lock {
-    fn drop(&mut self) {
-        // Only while it is still ours (a takeover race may have replaced it).
-        if fs::read_to_string(&self.0).ok().and_then(|p| p.trim().parse::<u32>().ok()) == Some(std::process::id()) {
-            let _ = fs::remove_file(&self.0);
-        }
-    }
-}
-
-fn process_alive(pid: u32) -> bool {
-    if cfg!(windows) {
-        let out = capture(std::process::Command::new("tasklist").args(["/FI", &format!("PID eq {pid}"), "/NH"]));
-        out.is_ok_and(|o| o.stdout.split_whitespace().any(|w| w == pid.to_string()))
-    } else {
-        // EPERM: alive, owned by another user.
-        capture(std::process::Command::new("kill").args(["-0", &pid.to_string()]))
-            .is_ok_and(|o| o.status.success() || o.stderr.contains("not permitted"))
+        // Not removed on drop: deleting a locked file lets another process lock a new one
+        // while a third still holds the old.
+        file.set_len(0)
+            .and_then(|()| file.write_all(std::process::id().to_string().as_bytes()))
+            .map_err(|e| format!("writing {}: {e}", path.display()))?;
+        Ok(Lock(file))
     }
 }
 
@@ -767,6 +734,10 @@ fn do_install(plan: &InstallPlan) -> Result<(), String> {
     // Until `install_version` switches `current`.
     let still_works = |e: String| format!("{e}\n[y] the previous install (if any) still works; rerun ./y.sh install");
     let _lock = Lock::take(install).map_err(still_works)?;
+    // The plan was made from the manifest before the lock was taken.
+    if read_manifest(install)? != plan.previous {
+        return Err(still_works(format!("{} changed while confirming (another install?)", Manifest::path(install).display())));
+    }
     remove_leftovers(install);
     let t = &plan.toolchain;
     let mut manifest = install_toolchain(plan).map_err(still_works)?;
@@ -930,8 +901,9 @@ enum Step {
     RemoveTargets(String, Vec<String>),
     /// Toolchain pieces kept, with the reason.
     Keep(String),
-    /// Delete `install/`.
-    RemoveInstall(PathBuf),
+    /// Delete `install/`, then save the manifest if there is one: the records of what ryo
+    /// added to toolchains that are kept, for a later uninstall.
+    RemoveInstall(PathBuf, Option<Manifest>),
 }
 
 impl Step {
@@ -952,7 +924,7 @@ impl Step {
                 c = cmd("rustup");
                 c.args([what, "remove", "--toolchain", t]).args(items);
             }
-            Step::KeepLaunchers(_) | Step::Keep(_) | Step::RemoveInstall(_) => return None,
+            Step::KeepLaunchers(_) | Step::Keep(_) | Step::RemoveInstall(..) => return None,
         }
         Some(c)
     }
@@ -974,7 +946,10 @@ impl Step {
             Step::RemoveToolchain(_) => format!("{} (installed by ryo; its components go with it)", command.unwrap()),
             Step::RemoveComponents(..) | Step::RemoveTargets(..) => format!("{} (added by ryo)", command.unwrap()),
             Step::Keep(why) => format!("keep {why}"),
-            Step::RemoveInstall(dir) => format!("delete {} (build output, installed versions, manifest)", dir_display(dir)),
+            Step::RemoveInstall(dir, None) => format!("delete {} (build output, installed versions, manifest)", dir_display(dir)),
+            Step::RemoveInstall(dir, Some(_)) => {
+                format!("delete {} (build output, installed versions), keeping the manifest's records of the kept toolchains", dir_display(dir))
+            }
         }
     }
 }
@@ -1005,18 +980,28 @@ fn plan_uninstall(o: &UninstallOptions, manifest: Option<&Manifest>) -> Result<V
         steps.push(Step::Keep("rustup as it is: there is no manifest, so what ryo added to it is unknown".to_owned()));
         return Ok(steps);
     };
-    for r in std::iter::once(&m.toolchain).chain(&m.old_toolchains) {
+    // Records of what ryo added that stays in place, so that a later uninstall removes it.
+    let mut kept = Vec::new();
+    // A manifest an uninstall kept has no current toolchain (no name).
+    for r in std::iter::once(&m.toolchain).chain(&m.old_toolchains).filter(|r| !r.name.is_empty()) {
         if o.keep_toolchain {
             steps.push(Step::Keep(format!("toolchain {} and what ryo added to it (--keep-toolchain)", r.name)));
         } else if r.is_empty() {
             steps.push(Step::Keep(format!("toolchain {}: yours, ryo added nothing", r.name)));
         } else if let Some(source) = &other_owner {
             steps.push(Step::Keep(format!("what ryo added to toolchain {}: the launchers from {source} may still use it", r.name)));
+            kept.push(r.clone());
         } else {
-            steps.extend(toolchain_steps(r, &m.host)?.0);
+            let (s, keep_record) = toolchain_steps(r, &m.host)?;
+            steps.extend(s);
+            if keep_record {
+                kept.push(r.clone());
+            }
         }
     }
-    steps.push(Step::RemoveInstall(install));
+    let keep =
+        (!kept.is_empty()).then(|| Manifest { host: m.host.clone(), cargo_root: m.cargo_root.clone(), old_toolchains: kept, ..Default::default() });
+    steps.push(Step::RemoveInstall(install, keep));
     Ok(steps)
 }
 
@@ -1077,10 +1062,18 @@ pub fn uninstall(o: &UninstallOptions) -> Result<Option<ExitCode>, String> {
         return Ok(Some(code));
     }
     let lock = if install.exists() { Some(Lock::take(&install)?) } else { None };
+    // The plan was made from the manifest before the lock was taken.
+    if read_manifest(&install)? != manifest {
+        return Err(format!("{} changed while confirming (another install?); rerun ./y.sh uninstall", Manifest::path(&install).display()));
+    }
     for s in &steps {
-        if let Step::RemoveInstall(dir) = s {
+        if let Step::RemoveInstall(dir, keep) = s {
             drop(lock);
             crate::utils::remove_dir_if_exists(dir)?;
+            if let Some(m) = keep {
+                create_dir(dir)?;
+                m.save(dir)?;
+            }
             break;
         }
         s.run()?;

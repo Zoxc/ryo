@@ -38,7 +38,7 @@ Everything except the launchers and what is added to rustup is under `<checkout>
 | `install/<version>/` | the installed ryo: a copy of `install/build/` |
 | `install/current` | a text file naming the active `<version>` (a file, not a symlink) |
 | `install/manifest.toml` | what the install added |
-| `install/.lock` | held while `y install`/`uninstall` run (exclusive create, with the pid; taken over if that process is dead) |
+| `install/.lock` | locked (an OS file lock, released when the process ends) while `y install`/`uninstall` run; holds the pid |
 
 - `dist::build_in` takes the output and target dirs as parameters (`y build` passes `dist/`
   and `target/`), so a dev build and an install can run at once without sharing cargo locks
