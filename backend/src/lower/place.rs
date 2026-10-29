@@ -143,7 +143,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         if pv.meta.is_some() {
             return native("deref of an unsized place");
         }
-        let wide = pointee.is_unsized();
+        // From the pointer's size, not the pointee: pointers to extern types are thin.
+        let wide = pv.layout.size.bytes() == 16;
         let (p, meta) = match pv.loc {
             Loc::Slot(s) => (s, wide.then_some(s + 8)),
             Loc::Mem { .. } => {
