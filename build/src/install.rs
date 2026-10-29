@@ -387,20 +387,38 @@ impl Lock {
     fn take(install: &Path) -> Result<Lock, String> {
         create_dir(install)?;
         let path = install.join(".lock");
-        for _ in 0..2 {
-            match fs::OpenOptions::new().write(true).create_new(true).open(&path) {
-                Ok(mut f) => {
-                    let _ = write!(f, "{}", std::process::id());
-                    return Ok(Lock(path));
-                }
+        // Written in full under a private name, then linked into place: the lock never exists
+        // without its pid.
+        let me = std::process::id();
+        let tmp = install.join(format!(".lock.{me}"));
+        fs::write(&tmp, me.to_string()).map_err(|e| format!("writing {}: {e}", tmp.display()))?;
+        let res = Self::link(&tmp, &path);
+        let _ = fs::remove_file(&tmp);
+        res.map(|()| Lock(path))
+    }
+
+    fn link(tmp: &Path, path: &Path) -> Result<(), String> {
+        for _ in 0..3 {
+            match fs::hard_link(tmp, path) {
+                Ok(()) => return Ok(()),
                 Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                    let pid = fs::read_to_string(&path).ok().and_then(|p| p.trim().parse::<u32>().ok());
+                    let held = fs::read_to_string(path).ok();
+                    let pid = held.as_deref().and_then(|p| p.trim().parse::<u32>().ok());
                     if let Some(pid) = pid
                         && process_alive(pid)
                     {
                         return Err(format!("another `y install`/`y uninstall` (pid {pid}) is running ({})", path.display()));
                     }
-                    let _ = fs::remove_file(&path);
+                    // Move the stale lock aside rather than delete it, and check that it was the
+                    // one read: another process may have taken it over in between, and then
+                    // gets it back.
+                    let aside = tmp.with_extension(format!("{}.stale", std::process::id()));
+                    if fs::rename(path, &aside).is_ok() {
+                        if fs::read_to_string(&aside).ok() != held {
+                            let _ = fs::hard_link(&aside, path);
+                        }
+                        let _ = fs::remove_file(&aside);
+                    }
                 }
                 Err(e) => return Err(format!("creating {}: {e}", path.display())),
             }
@@ -420,7 +438,9 @@ fn process_alive(pid: u32) -> bool {
         let out = capture(std::process::Command::new("tasklist").args(["/FI", &format!("PID eq {pid}"), "/NH"]));
         out.is_ok_and(|o| o.stdout.split_whitespace().any(|w| w == pid.to_string()))
     } else {
-        capture(std::process::Command::new("kill").args(["-0", &pid.to_string()])).is_ok_and(|o| o.status.success())
+        // EPERM: alive, owned by another user.
+        capture(std::process::Command::new("kill").args(["-0", &pid.to_string()]))
+            .is_ok_and(|o| o.status.success() || o.stderr.contains("not permitted"))
     }
 }
 
