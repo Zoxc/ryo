@@ -18,7 +18,7 @@ theorem noArg_dec_item {c : Cursor} {q : Nat} {l : List Item} (hl : l ≠ [])
   | nil => exact absurd rfl hl
   | cons hi _ => intro hn; rw [hn] at hi; cases hi
 
-/-- The  cursor is the position's, unless no item decodes there. -/
+/-- The quirk's cursor is the position's, unless no item decodes there. -/
 theorem noArg_cases {fr : Frame} {c : Cursor} {p : Nat} {a : Bool} {cur : Cursor}
     (hn : NoArg fr c p a cur) : cur = atPos c p ∨ decodeItem cur = none := by
   rcases hn with ⟨-, h⟩ | ⟨-, h⟩
