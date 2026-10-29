@@ -522,6 +522,7 @@ fn branch_targets(pieces: &[Piece], labels: &[usize]) -> Vec<bool> {
 /// pointer access if a pointer may reach the slot. Pointers into the frame only come from the
 /// function's `addr`s, so a dead range no `addr` points into is out of every pointer's reach.
 fn drop_dead_stores(pieces: &mut [Piece], target: &[bool]) {
+    use super::inline::overlaps;
     struct Pending {
         k: usize,
         lo: i32,
@@ -530,7 +531,6 @@ fn drop_dead_stores(pieces: &mut [Piece], target: &[bool]) {
         ptr: bool,
     }
     let within = |lo: i32, len: u32, a: i32, n: u32| (a.wrapping_sub(lo) as u32) <= len.saturating_sub(n) && n <= len;
-    let overlaps = |a: i32, n: u32, b: i32, m: u32| (b.wrapping_sub(a) as u32) < n || (a.wrapping_sub(b) as u32) < m;
     let addrs: Vec<i32> = pieces
         .iter()
         .filter_map(|p| match p {
@@ -1604,7 +1604,7 @@ fn prune_storage_ends(pieces: &mut [Piece]) {
         .collect();
     for p in pieces {
         if let Piece::Scope { slot, size, kind: ScopeKind::End } = *p
-            && !escapes.iter().any(|&(e, n)| e.wrapping_sub(slot) < size || slot.wrapping_sub(e) < n)
+            && !escapes.iter().any(|&(e, n)| super::inline::overlaps(slot as i32, size, e as i32, n))
         {
             *p = Piece::Gone;
         }

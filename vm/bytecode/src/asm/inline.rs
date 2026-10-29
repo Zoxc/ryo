@@ -816,7 +816,7 @@ pub(super) struct Cache {
 
 /// Whether the `n`-byte range at `a` overlaps the `m`-byte one at `b` (wrapping: raw slots
 /// are biased).
-fn overlaps(a: i32, n: u32, b: i32, m: u32) -> bool {
+pub(super) fn overlaps(a: i32, n: u32, b: i32, m: u32) -> bool {
     (b.wrapping_sub(a) as u32) < n || (a.wrapping_sub(b) as u32) < m
 }
 
