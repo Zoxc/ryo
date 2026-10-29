@@ -229,22 +229,12 @@ pub(super) fn incremental(rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result
     let src = dir_in.join("edits.rs");
     let dir = out.join("incremental");
     let _ = fs::remove_dir_all(&dir);
-    let run = |exe: &Path, env: &[(&str, &str)]| -> Result<String, String> {
-        let res = Command::new(exe).envs(env.iter().copied()).output().map_err(|e| format!("running {}: {e}", exe.display()))?;
-        if !res.status.success() {
-            return Err(format!("{}: {}\nstderr:\n{}", exe.display(), res.status, String::from_utf8_lossy(&res.stderr)));
-        }
-        Ok(String::from_utf8_lossy(&res.stdout).into_owned())
-    };
+    let run = |exe: &Path, env: &[(&str, &str)]| -> Result<String, String> { Ok(capture_ok(Command::new(exe).envs(env.iter().copied()))?.stdout) };
+    let read = |p: &Path| fs::read(p).map_err(|e| format!("reading {}: {e}", p.display()));
     let reuse = &["--cfg", "reuse", "-Zquery-dep-graph"][..];
     // link.exe stamps the time into the executable (and a random PDB GUID): `/Brepro` derives
     // both from the contents, so identical builds give identical files.
     let repro: &[&str] = if cfg!(target_env = "msvc") { &["-Clink-arg=/Brepro"] } else { &[] };
-    // link.exe updates a PDB that is already there, and bumps its age, which the executable
-    // records: a link into the chain's directory starts without the previous one's.
-    let fresh = |exe: &Path| {
-        let _ = fs::remove_file(exe.with_extension("pdb"));
-    };
     // Name, flags, flags for the incremental chain only, environment.
     // `O0` gets incremental's default of 256 codegen units, so one image per CGU.
     let configs: [(&str, &[&str], &[&str], &[(&str, &str)]); 4] = [
@@ -253,63 +243,51 @@ pub(super) fn incremental(rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result
         ("O2", &["-Copt-level=2"], &[], &[]),
         ("no-vm-16", &["-Ccodegen-units=16"], reuse, &[("RYO_NO_VM", "1")]),
     ];
-    // Set for the rebuild after corrupting side data, which reuses all but that image.
-    let corrupted = std::cell::Cell::new(false);
     for (config, flags, chain_flags, env) in configs {
         let incr = dir.join(config).join("incr");
+        // The chain's output path stays the same: it is part of the session.
+        let chain_dir = dir.join(config).join("chain");
+        let chain = Some((incr.as_path(), chain_flags));
         for rev in 1..=REVISIONS {
             let cfg = format!("rev{rev}");
-            let build = |rustc: &Path, incr: Option<&Path>, extra: &[&str], sub: &str| -> Result<PathBuf, String> {
-                // The chain's output path stays the same: it is part of the session.
-                let d = if sub == "incr" { dir.join(config).join("chain") } else { dir.join(config).join(&cfg).join(sub) };
-                crate::utils::create_dir(&d)?;
-                let exe = d.join(exe_name("edits"));
-                fresh(&exe);
-                let mut c = cmd(rustc);
-                c.arg("--edition=2024").arg(&src).args(["--cfg", &cfg]).arg("-o").arg(&exe).args(repro);
-                if let Some(incr) = incr {
-                    c.args(flags).args(extra).envs(env.iter().copied());
-                    c.arg(format!("-Cincremental={}", incr.display())).arg("-Zincremental-verify-ich");
-                }
-                // rev11 only shifts `main`'s `DefIndex`: the chain must reuse every image.
-                let check_reuse = sub == "incr" && rev == 11 && env.is_empty() && !corrupted.get();
-                if check_reuse {
-                    c.env("RYO_STATS", "1");
-                }
-                let res = capture(&mut c).map_err(|e| format!("{config} {cfg} {sub}: {e}"))?;
-                if !res.status.success() {
-                    return Err(format!("{config} {cfg} {sub}: {}\nstderr:\n{}", res.status, res.stderr));
-                }
-                if check_reuse {
-                    let reused = res.stderr.lines().find_map(|l| l.strip_prefix("ryo: ")?.strip_suffix(" images reused"));
-                    match reused.and_then(|r| r.split_once(" of ")) {
-                        Some((r, n)) if r == n && n != "0" => {}
-                        r => return Err(format!("{config} {cfg}: an unused item ahead of `main` re-lowered images: reused {r:?}")),
+            // Builds `edits.rs` into `out_dir` with `rustc`, incrementally in `incr` with the
+            // config's flags plus `extra` if given. With `reuse_check`, it must reuse every
+            // image, else fails with that message.
+            let build =
+                |rustc: &Path, out_dir: &Path, incr: Option<(&Path, &[&str])>, what: &str, reuse_check: Option<&str>| -> Result<PathBuf, String> {
+                    crate::utils::create_dir(out_dir)?;
+                    let exe = out_dir.join(exe_name("edits"));
+                    // link.exe updates a PDB that is already there, and bumps its age, which the
+                    // executable records: a link into the chain's directory starts without the
+                    // previous one's.
+                    let _ = fs::remove_file(exe.with_extension("pdb"));
+                    let mut c = cmd(rustc);
+                    c.arg("--edition=2024").arg(&src).args(["--cfg", &cfg]).arg("-o").arg(&exe).args(repro);
+                    if let Some((incr, extra)) = incr {
+                        c.args(flags).args(extra).envs(env.iter().copied());
+                        c.arg(format!("-Cincremental={}", incr.display())).arg("-Zincremental-verify-ich");
                     }
-                }
-                Ok(exe)
-            };
-            let reference = run(&build(Path::new("rustc"), None, &[], "rustc")?, &[])?;
-            let exe = build(rustc_ryo, Some(&incr), chain_flags, "incr")?;
+                    if reuse_check.is_some() {
+                        c.env("RYO_STATS", "1");
+                    }
+                    let res = capture_ok(&mut c).map_err(|e| format!("{config} {cfg} {what}: {e}"))?;
+                    if let Some(msg) = reuse_check
+                        && let Err(r) = all_images_reused(&res.stderr)
+                    {
+                        return Err(format!("{config} {cfg}: {msg}: reused {r:?}"));
+                    }
+                    Ok(exe)
+                };
+            let reference = run(&build(Path::new("rustc"), dir.join(config).join(&cfg).join("rustc").as_path(), None, "rustc", None)?, &[])?;
+            // rev11 only shifts `main`'s `DefIndex`: the chain must reuse every image.
+            let check = (rev == 11 && env.is_empty()).then_some("an unused item ahead of `main` re-lowered images");
+            let exe = build(rustc_ryo, chain_dir.as_path(), chain, "incr", check)?;
             // Image reuse (design/backend.md#incremental): the same revision again reuses
             // every image, and gives the same executable.
             if env.is_empty() {
-                let first = crate::utils::read_bytes(&exe)?;
-                fresh(&exe);
-                let mut c = cmd(rustc_ryo);
-                c.arg("--edition=2024").arg(&src).args(["--cfg", &cfg]).arg("-o").arg(&exe).args(repro).args(flags).args(chain_flags);
-                c.arg(format!("-Cincremental={}", incr.display())).arg("-Zincremental-verify-ich").env("RYO_STATS", "1");
-                let res = c.output().map_err(|e| format!("{config} {cfg} again: {e}"))?;
-                let stderr = String::from_utf8_lossy(&res.stderr);
-                if !res.status.success() {
-                    return Err(format!("{config} {cfg} again: {}\n{stderr}", res.status));
-                }
-                let reused = stderr.lines().find_map(|l| l.strip_prefix("ryo: ")?.strip_suffix(" images reused"));
-                match reused.and_then(|r| r.split_once(" of ")) {
-                    Some((r, n)) if r == n && n != "0" => {}
-                    r => return Err(format!("{config} {cfg}: rebuilt unchanged, reused {r:?} images, expected all")),
-                }
-                if crate::utils::read_bytes(&exe)? != first {
+                let first = read(&exe)?;
+                build(rustc_ryo, chain_dir.as_path(), chain, "again", Some("rebuilt unchanged, expected all images reused"))?;
+                if read(&exe)? != first {
                     return Err(format!("{config} {cfg}: rebuilt unchanged, {} differs", exe.display()));
                 }
             }
@@ -319,24 +297,40 @@ pub(super) fn incremental(rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result
                     return Err(format!("{config} {cfg} {env:?}: output {got:?}, plain rustc's {reference:?}"));
                 }
             }
-            let clean = build(rustc_ryo, Some(&dir.join(config).join(&cfg).join("clean-incr")), &[], "clean")?;
-            if crate::utils::read_bytes(&exe)? != crate::utils::read_bytes(&clean)? {
+            let clean_dir = dir.join(config).join(&cfg);
+            let clean = build(rustc_ryo, clean_dir.join("clean").as_path(), Some((clean_dir.join("clean-incr").as_path(), &[][..])), "clean", None)?;
+            if read(&exe)? != read(&clean)? {
                 return Err(format!("{config} {cfg}: {} differs from the clean build {}", exe.display(), clean.display()));
             }
-            // Corrupt side data with an intact footer: the image is rebuilt, not an ICE.
+            // Corrupt side data with an intact footer: the image is rebuilt (so not all are
+            // reused), not an ICE.
             if config == "O0" && rev == REVISIONS {
                 corrupt_side_data(&incr)?;
-                corrupted.set(true);
-                let exe = build(rustc_ryo, Some(&incr), chain_flags, "incr").map_err(|e| format!("after corrupting side data: {e}"))?;
+                let exe = build(rustc_ryo, chain_dir.as_path(), chain, "incr", None).map_err(|e| format!("after corrupting side data: {e}"))?;
                 let got = run(&exe, &[])?;
                 if got != reference {
                     return Err(format!("{config} {cfg} after corrupting side data: output {got:?}, plain rustc's {reference:?}"));
                 }
-                corrupted.set(false);
             }
         }
     }
+    incremental_proc_macro(rustc_ryo, dir_in, &dir)?;
+    let _ = fs::remove_dir_all(&dir);
+    Ok(())
+}
 
+/// `ryo: R of N images reused` in a `RYO_STATS` build's stderr: `Err` with what was found
+/// unless all of at least one image were reused.
+fn all_images_reused(stderr: &str) -> Result<(), Option<(&str, &str)>> {
+    let reused = stderr.lines().find_map(|l| l.strip_prefix("ryo: ")?.strip_suffix(" images reused"));
+    match reused.and_then(|r| r.split_once(" of ")) {
+        Some((r, n)) if r == n && n != "0" => Ok(()),
+        r => Err(r),
+    }
+}
+
+/// [`incremental`]'s proc macro, rebuilt after an edit, and used.
+fn incremental_proc_macro(rustc_ryo: &Path, dir_in: &Path, dir: &Path) -> Result<(), String> {
     let pm_dir = dir.join("pm");
     crate::utils::create_dir(&pm_dir)?;
     for (rev, want) in [("rev1", "41\n"), ("rev2", "42\n")] {
@@ -349,12 +343,11 @@ pub(super) fn incremental(rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result
         extern_pm.push(pm_dir.join(dll_name("pm")));
         crate::utils::run(cmd(rustc_ryo).arg("--edition=2024").arg(dir_in.join("pm_user.rs")).arg("--extern").arg(extern_pm).arg("-o").arg(&exe))
             .map_err(|e| format!("proc macro user {rev}: {e}"))?;
-        let got = run(&exe, &[])?;
+        let got = capture_ok(&mut Command::new(&exe))?.stdout;
         if got != want {
             return Err(format!("proc macro {rev}: output {got:?}, expected {want:?}"));
         }
     }
-    let _ = fs::remove_dir_all(&dir);
     Ok(())
 }
 
