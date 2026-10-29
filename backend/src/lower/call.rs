@@ -31,7 +31,7 @@ use super::cert::CallKind;
 use super::emit::{IntOp, Width};
 use super::frame;
 use super::island::templates;
-use super::place::{Loc, PlaceVal};
+use super::place::{Loc, META, PTR, PlaceVal, vtable_off};
 use super::sig::{AbiSig, ArgLoc, ArgPlan, CallConv, fn_ptr_sig, tys_sig, virtual_sig};
 use super::{CodeReloc, FnCx, NeedsNative, native, no_trim};
 
@@ -251,7 +251,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             let sig = virtual_sig(tcx, callee, recv_ty)?;
             // The method's entry in the vtable (`VirtualIndex::get_fn`).
             let f = self.temp8();
-            let k = u32::try_from(idx * 8).map_err(|_| NeedsNative("vtable index".into()))?;
+            let k = vtable_off(idx)?;
             self.op(Opcode::LoadW64, &[f, vtable, k]);
             args[0] = ArgSrc::Slot(data);
             (Target::of(sig.conv, Callee::Ptr(f)), sig)
@@ -706,11 +706,11 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         if let ty::Dynamic(..) = ty.kind() {
             return self.virtual_drop(pv, target, unwind);
         }
-        let ptr_size = if pv.meta.is_some() { 16 } else { 8 };
-        let ptr = self.frame.temp(u64::from(ptr_size), 8);
+        let ptr_size = if pv.meta.is_some() { 2 * PTR } else { PTR };
+        let ptr = self.frame.temp(u64::from(ptr_size), u64::from(PTR));
         self.addr_into(ptr, pv.loc, pv.base)?;
         if let Some(m) = pv.meta {
-            self.mov(ptr + 8, m, 8);
+            self.mov(ptr + META, m, PTR);
         }
         if self.cx.vm.contains(&glue) {
             // The glue of an unsized type takes the wide pointer.
@@ -731,8 +731,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     fn virtual_drop(&mut self, pv: PlaceVal<'tcx>, target: BasicBlock, unwind: UnwindAction) -> Result<(), NeedsNative> {
         let Some(vtable) = pv.meta else { return native("trait object without metadata") };
         let f = self.temp8();
-        let idx = ty::COMMON_VTABLE_ENTRIES_DROPINPLACE as u32;
-        self.op(Opcode::LoadW64, &[f, vtable, idx * 8]);
+        self.op(Opcode::LoadW64, &[f, vtable, vtable_off(ty::COMMON_VTABLE_ENTRIES_DROPINPLACE)?]);
         self.br_imm(IntOp::Eq, Width::W64, f, 0, false, target);
         let ptr = self.temp8();
         self.addr_into(ptr, pv.loc, pv.base)?;

@@ -7,7 +7,7 @@ use rustc_middle::ty::layout::TyAndLayout;
 use rustc_middle::ty::{self, FloatTy, Instance, Ty, TyCtxt, TypingEnv};
 
 use super::emit::{FloatWidth, Width};
-use super::place::{Loc, META, PTR, PlaceVal, is_wide_ptr};
+use super::place::{Loc, META, PTR, PlaceVal, is_wide_ptr, vtable_off};
 use super::{CodeReloc, FnCx, NeedsNative, native};
 use ryo_bytecode::full::{Opcode, cvt_f2f, cvt_f2i, cvt_i2f, int_cast_op};
 
@@ -194,7 +194,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 let Some(old) = old else { return native("dyn upcast of a thin pointer") };
                 match upcast_entry(tcx, sa, sb) {
                     Some(idx) => {
-                        self.op(Opcode::LoadW64, &[d, old, (idx * 8) as u32]);
+                        self.op(Opcode::LoadW64, &[d, old, vtable_off(idx)?]);
                     }
                     None => self.mov(d, old, 8),
                 }

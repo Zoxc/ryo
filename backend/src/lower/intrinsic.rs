@@ -17,7 +17,7 @@ use super::call::{ArgSrc, CallCont};
 use super::cast::ScalarKind;
 use super::emit::{FloatOp, FloatWidth, IntOp, Width, opf, opw};
 use super::island::templates;
-use super::place::Loc;
+use super::place::{Loc, META, vtable_off};
 use super::{FnCx, NeedsNative, SPLIT_MAX, native};
 use ryo_bytecode::full::{AtomicOp, AtomicOrd, OpWidth, atomic_op};
 
@@ -313,7 +313,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             sym::vtable_size | sym::vtable_align => {
                 let [p] = self.arg_slots::<1>(args)?;
                 let idx = if name == sym::vtable_size { ty::COMMON_VTABLE_ENTRIES_SIZE } else { ty::COMMON_VTABLE_ENTRIES_ALIGN };
-                self.op_to_dest(cont, Opcode::LoadW64, &[p, idx as u32 * 8])?
+                self.op_to_dest(cont, Opcode::LoadW64, &[p, vtable_off(idx)?])?
             }
             sym::unchecked_funnel_shl | sym::unchecked_funnel_shr => {
                 let l = self.layout_of(ty0())?;
@@ -415,13 +415,12 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 self.slice_size_or_align(el, p, size, cont)
             }
             ty::Dynamic(..) => {
-                // vtable entries 1 and 2: size, align.
-                let idx: u32 = if size { 1 } else { 2 };
-                self.op_to_dest(cont, Opcode::LoadW64, &[p + 8, idx * 8])
+                let idx = if size { ty::COMMON_VTABLE_ENTRIES_SIZE } else { ty::COMMON_VTABLE_ENTRIES_ALIGN };
+                self.op_to_dest(cont, Opcode::LoadW64, &[p + META, vtable_off(idx)?])
             }
             _ => {
                 // A struct with an unsized tail (place.rs).
-                let (s, a) = self.size_and_align_of_dst(layout, Some(p + 8))?;
+                let (s, a) = self.size_and_align_of_dst(layout, Some(p + META))?;
                 let v = self.dyn_slot(if size { s } else { a });
                 self.into_dest(cont, |fx, d| {
                     fx.mov(d, v, 8);
@@ -435,7 +434,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let (s, a) = (el.size.bytes(), el.align.abi.bytes());
         self.into_dest(cont, |fx, d| {
             if size {
-                fx.op_imm(IntOp::Mul, Width::W64, d, p + 8, u128::from(s));
+                fx.op_imm(IntOp::Mul, Width::W64, d, p + META, u128::from(s));
             } else {
                 fx.imm(Width::W64, d, u128::from(a));
             }

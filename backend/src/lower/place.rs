@@ -25,6 +25,12 @@ pub const PTR: u32 = 8;
 /// Offset of a wide pointer's metadata.
 pub const META: u32 = PTR;
 
+/// Offset of vtable entry `idx` (a `ty::COMMON_VTABLE_ENTRIES_*` constant or a method's
+/// `VirtualIndex`) from the vtable pointer.
+pub fn vtable_off(idx: usize) -> Result<u32, NeedsNative> {
+    idx.checked_mul(PTR as usize).and_then(|k| u32::try_from(k).ok()).ok_or_else(|| NeedsNative("vtable index".into()))
+}
+
 /// Whether a pointer-like layout is a wide pointer (data plus metadata), from its size.
 pub fn is_wide_ptr(l: TyAndLayout<'_>) -> bool {
     l.size.bytes() == u64::from(2 * PTR)
@@ -214,10 +220,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let Some(meta) = meta else { return native("unsized value without metadata") };
         match layout.ty.kind() {
             ty::Dynamic(..) => {
-                // vtable entries 1 and 2: size, align.
                 let (s, a) = (self.temp8(), self.temp8());
-                let size = ty::COMMON_VTABLE_ENTRIES_SIZE as u32 * 8;
-                let align = ty::COMMON_VTABLE_ENTRIES_ALIGN as u32 * 8;
+                let size = vtable_off(ty::COMMON_VTABLE_ENTRIES_SIZE)?;
+                let align = vtable_off(ty::COMMON_VTABLE_ENTRIES_ALIGN)?;
                 self.op(opw(IntOp::Load, Width::W64), &[s, meta, size]);
                 self.op(opw(IntOp::Load, Width::W64), &[a, meta, align]);
                 Ok((DynVal::Slot(s), DynVal::Slot(a)))
