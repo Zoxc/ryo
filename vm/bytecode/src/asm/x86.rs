@@ -383,7 +383,7 @@ pub enum Item {
     JmpAbs(Ref),
     /// JIT code only: `jmp [rip + disp32]`, a tail call through a call slot.
     JmpMem(Ref),
-    /// A jump within the function: `jmp`, `jz` or `jnz`, `rel8` or (`long`) `rel32`.
+    /// A jump within the function: `jmp` or a `jcc` on any [`Cond`], `rel8` or (`long`) `rel32`.
     Branch { cond: Cond, target: u32, long: bool },
     /// `test al, al`
     TestAl,
