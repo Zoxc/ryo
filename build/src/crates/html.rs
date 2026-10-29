@@ -475,7 +475,7 @@ fn coverage_row(name: &str, units: usize, c: &Coverage) -> String {
 fn coverage_section(r: &Report) -> String {
     let Some(ryo) = r.column(Compiler::Ryo) else { return String::new() };
     let mut s = String::from(
-        "<h2 id=\"coverage\">ryo coverage (-Zryo-stats)</h2><p class=\"muted\">From ryo's warm-up build \
+        "<h2 id=\"coverage\">ryo coverage (RYO_STATS=1)</h2><p class=\"muted\">From ryo's warm-up build \
          (RYO_STATS=1, not timed). VM and native functions are mono items ryo compiled; native items \
          instantiated in the prebuilt LLVM std are not counted. Islands: distinct island instances.</p>\
          <table><tr><th>crate</th><th>units</th><th>VM fns</th><th>native fns</th><th>VM %</th><th>islands</th></tr>",

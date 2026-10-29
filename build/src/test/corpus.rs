@@ -204,7 +204,7 @@ pub(crate) const CORPUS: &[Program] = &[
         "vm_refs",
         vm: &["main", "from_static", "<S as Get>::get", "from_const"]
     ),
-    // Milestone 4 (design/lowering.md): each feature's functions must be bytecode.
+    // Each feature's functions must be bytecode.
     single!(
         "vm_ints",
         vm: &["main", "ops32", "ops_u8", "wide", "casts", "float_casts", "floats", "checked", "chars", "bits", "neg", "cmp"],
@@ -220,7 +220,7 @@ pub(crate) const CORPUS: &[Program] = &[
         // `speak` is a `call.ind` through the vtable; `P`'s `Debug` impl is called through a
         // vtable by native `fmt` code.
     ),
-    // Milestone 5 (design/lowering.md#calls).
+    // Dynamic dispatch (design/lowering.md#calls).
     single!(
         "vm_dyn",
         vm: &[
@@ -257,7 +257,7 @@ pub(crate) const CORPUS: &[Program] = &[
         "vm_tail",
         vm: &["main", "count", "even", "odd", "big", "big2", "via_ptr", "to_upstream", "to_native", "virt", "panicky"]
     ),
-    // Milestone 5: `#[track_caller]` and unwinding. The panic hook is a VM closure that the
+    // `#[track_caller]` and unwinding. The panic hook is a VM closure that the
     // native panic machinery calls.
     single!(
         "vm_unwind",

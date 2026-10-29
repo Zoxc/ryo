@@ -431,8 +431,8 @@ pub(super) fn outside(s: &str) -> bool {
     s.starts_with("_R") && !is_rt_internal(s) && crate_roots(s).iter().any(|c| !CRATES.contains(&c.as_str()))
 }
 
-/// `ryo_rt` must use only `core`, its own crates, libc, and the panic runtime's two entry
-/// points (native: a panic runtime is never VM code): with `--sysroot ryo`, std's allocator,
+/// `ryo_rt` must use only `core`, its own crates, libc, and the panic runtime's entry
+/// points and personality (native: a panic runtime is never VM code): with `--sysroot ryo`, std's allocator,
 /// locks and TLS may be VM functions, which the runtime must not call while it switches VM
 /// state (design/vm.md, "No re-entry into the VM from the runtime"). Checked on the undefined
 /// symbols of every sysroot's `ryo_rt` rlib for `triple`, by crate in their v0 mangled names.

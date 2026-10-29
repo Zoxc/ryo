@@ -281,7 +281,8 @@ This gives a third backend, built from the same toolchain, to compare against.
 - `test --clif`: also builds the corpus with `rustc-clif` and diffs its output too. That
   helps tell ryo bugs from test-corpus problems.
 - `bench [--runs N]`: hyperfine comparisons of each program in `bench/` (fib, sieve,
-  sort, hashmap) built with LLVM `-O0`, LLVM `-O1` and ryo; `--clif` adds Cranelift (`rustc-clif`). Each comparison
+  sort, hashmap) built with LLVM `-O0`, LLVM `-O1` and ryo; `--llvm`, `--clif` (Cranelift, `rustc-clif`) and `--ryo` pick the columns instead
+  (any of them replaces the defaults). Each comparison
   covers compile time (Cranelift is the fast-compile reference ryo competes with) and run
   time, printed as two tables of mean and standard deviation. Every backend builds
   with cargo's dev profile, except one CGU, no incremental and no debuginfo: what `cargo
