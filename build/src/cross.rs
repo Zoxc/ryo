@@ -108,6 +108,19 @@ const RT_IMPORTS_MACHO: &[&str] = &[
     "_mach_vm_read_overwrite",
 ];
 
+/// What differs between the object formats `y test --cross` covers.
+struct Flavor {
+    /// The libraries to replace by empty archives.
+    stub_libs: &'static [&'static str],
+    /// The unresolved symbols allowed besides plain rustc's.
+    rt_imports: &'static [&'static str],
+    /// Mach-O (ld64.lld) rather than PE (lld-link).
+    macho: bool,
+}
+
+const PE: Flavor = Flavor { stub_libs: STUB_LIBS, rt_imports: RT_IMPORTS, macho: false };
+const MACHO: Flavor = Flavor { stub_libs: STUB_LIBS_MACHO, rt_imports: RT_IMPORTS_MACHO, macho: true };
+
 pub fn run(target: &str) -> Result<(), String> {
     let root = root();
     let info = RustcInfo::get()?;
@@ -125,22 +138,19 @@ pub fn run(target: &str) -> Result<(), String> {
     crate::utils::remove_dir_if_exists(&out)?;
     let stubs = out.join("stub-libs");
     crate::utils::create_dir(&stubs)?;
-    let macho = crate::target::is_macho(target);
+    let flavor = if crate::target::is_macho(target) { &MACHO } else { &PE };
+    let macho = flavor.macho;
+    for lib in flavor.stub_libs {
+        crate::utils::write(stubs.join(crate::target::static_lib_name(target, lib)), b"!<arch>\n")?;
+    }
     if macho {
-        for lib in STUB_LIBS_MACHO {
-            crate::utils::write(stubs.join(crate::target::static_lib_name(target, lib)), b"!<arch>\n")?;
-        }
         // std's dylib loads libSystem by its install name, which lld looks up as a text stub
         // under the SDK root (`SDKROOT`, below): one that exports nothing.
         let usr_lib = stubs.join("usr").join("lib");
         crate::utils::create_dir(&usr_lib)?;
         crate::utils::write(usr_lib.join("libSystem.B.tbd"), LIBSYSTEM_TBD)?;
-    } else {
-        for lib in STUB_LIBS {
-            crate::utils::write(stubs.join(crate::target::static_lib_name(target, lib)), b"!<arch>\n")?;
-        }
     }
-    let rt_imports = if macho { RT_IMPORTS_MACHO } else { RT_IMPORTS };
+    let rt_imports = flavor.rt_imports;
     let std_dir = crate::utils::rustlib(&dist, target).join("lib");
     let link = Link { info: &info, target, lld, stubs, macho, std_dir };
 
