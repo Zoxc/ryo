@@ -2,7 +2,9 @@
 //! JIT thread writes, so a bump is a `Relaxed` load and store, no read-modify-write; other
 //! threads (the exit report, tests) read them with `Relaxed` loads, without a lock. A record's
 //! counters are stored before its state leaves `Queued` (`JitRecord::publish`'s or
-//! `JitRecord::fail`'s `SeqCst` store), so a `RYO_JIT_SYNC` waiter sees them.
+//! `JitRecord::fail`'s `SeqCst` store), so a `RYO_JIT_SYNC` waiter sees them; not the timing
+//! counters (`timed`, `compile_ns`, `compile_max_ns`) and `largest_batch`, stored after the
+//! compile or batch, so a snapshot then can be one record behind on those.
 //!
 //! Read at exit, while the JIT thread may be mid-compile, the counters are a snapshot of
 //! independent values: the summary doesn't print sums that must balance.
