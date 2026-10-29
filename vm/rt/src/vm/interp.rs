@@ -69,7 +69,7 @@ pub const MODE: asm::Mode = asm::Mode {
 
 /// The mode of the PE handler set (`pe-test`): Win64 handlers that read `fp` from `rbp`.
 #[cfg(all(feature = "pe-test", not(windows)))]
-pub const PE_MODE: asm::Mode = asm::Mode { fp_arg: false, frame_pointer: true, align_loops: false, pe: true, counters: false, far_rt: false };
+pub const PE_MODE: asm::Mode = asm::Mode { fp_arg: false, frame_pointer: true, pe: true, ..MODE };
 
 /// Whether handlers take `fp` in `rdi`; the backend checks it agrees with its encoding.
 #[rustc_diagnostic_item = "ryo_rt_fp_arg"]
