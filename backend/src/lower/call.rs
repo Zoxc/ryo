@@ -484,7 +484,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         p
     }
 
-    /// `TerminatorKind::TailCall` (`become`): the arguments are staged in temporaries, their
+    /// `TerminatorKind::TailCall` (`become`): `Indirect` arguments and the caller location are
+    /// staged in temporaries, the others read from their own slots (frame homes, never the
+    /// incoming stack area: the prologue copies incoming stack arguments out of it), their
     /// stack pieces stored over the function's own incoming ones, then `tail_call` (a VM
     /// function of this image) or `tail_call.ptr` (anything else with an address) loads the
     /// argument registers and jumps (design/vm.md#calls-and-islands).

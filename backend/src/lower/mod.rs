@@ -26,6 +26,7 @@
 //! | [`constant`] | constants and constant-pool references |
 //! | [`island`] | island instructions and requests |
 //! | [`uses`] | the use analysis of MIR locals (fusion, dead hints) |
+//! | [`cert`] | the certificate for the Lean lowering check (`RYO_DUMP_LEAN`) |
 //!
 //! Every MIR enum is matched exhaustively (no `_` arm), so a MIR change in a toolchain bump is
 //! a compile error. What isn't implemented yet reports [`NeedsNative`] with a precise reason

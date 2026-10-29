@@ -299,7 +299,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             }
             sym::disjoint_bitor => {
                 let l = self.layout_of(ty0())?;
-                let ScalarKind::Int { w, .. } = self.scalar_kind(l)? else { return native("float exact_div") };
+                let ScalarKind::Int { w, .. } = self.scalar_kind(l)? else { return native("non-integer disjoint_bitor") };
                 let [a, b] = self.arg_slots::<2>(args)?;
                 self.op_to_dest(cont, opw(IntOp::Or, w), &[a, b])?
             }
@@ -441,8 +441,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         })
     }
 
-    /// An intrinsic wrapper island: `ops` = the inputs, then the destination (each a slot and
-    /// its size).
+    /// An intrinsic wrapper island: its operands are `ins`, then the destination (each a slot
+    /// and its size).
     fn wrapper(&mut self, template: &str, generics: &[GenericArg<'tcx>], ins: &[(u32, u32)], cont: &CallCont<'tcx>) -> Result<bool, NeedsNative> {
         let mut ops = Vec::with_capacity(ins.len() + 1);
         ops.extend_from_slice(ins);

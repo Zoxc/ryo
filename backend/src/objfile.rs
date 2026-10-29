@@ -624,9 +624,11 @@ fn coff_entries(obj: &mut Object<'static>, suffix: &str) -> object::write::Secti
 
 /// The image object: the image sections, `__ryo_image_<id>_<cgu>` at the start of the
 /// read-only one, a symbol per VM function (global for those native code calls by name), its
-/// registration entry (a pointer to the header), a reference to the registry anchor, and, for binaries with a VM `main`, the `__ryo_main` slot
-/// pointing at `main_symbol`. `rt_symbol` names `ryo_rt`'s handlers (`ryo_h_<op>`) and
-/// `ryo_probe_stack`, as rustc mangles them.
+/// registration entry (a pointer to the header), a reference to the registry anchor, and, for
+/// binaries with a VM `main`, the `__ryo_main` slot pointing at `main_symbol`. On Mach-O also
+/// the `.eh_frame` personality's GOT reference and a `GCC_except_table<n>` symbol per LSDA.
+/// `rt_symbol` names the `ryo_rt` symbols relocations target (the handlers `ryo_h_<op>`,
+/// `ryo_probe_stack`, the JIT trip entries and the SEH handler), as rustc mangles them.
 pub fn write_image(
     fmt: &dyn ObjectFormat,
     image: &ImageObject,
@@ -824,8 +826,8 @@ pub fn write_registry(fmt: &dyn ObjectFormat, register: &str) -> Result<Vec<u8>,
 
 #[cfg(test)]
 mod tests {
-    //! The Mach-O objects, read back with `object` (design/platforms.md). Nothing links or
-    //! runs them here.
+    //! The Mach-O objects (and one PE/COFF object, `pe_unwind_handler`), read back with
+    //! `object` (design/platforms.md). Nothing links or runs them here.
     use object::read::macho::MachOFile64;
     use object::read::{Object as _, ObjectSection as _, ObjectSymbol as _, RelocationTarget};
     use object::{Endianness, RelocationFlags, SymbolScope, macho};
@@ -956,7 +958,8 @@ mod tests {
 
     /// Every image relocation outside `__eh_frame` becomes an extern relocation of the
     /// expected type at the same place, with the ELF addend as the implicit one (plus 4 for
-    /// PC-relative fields), against a local symbol at the start of a target section.
+    /// PC-relative fields), against a local symbol at the start of the target section for
+    /// section targets, else against the undefined external it names.
     #[test]
     fn image_relocations() {
         let img = image();
