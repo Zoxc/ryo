@@ -6,14 +6,13 @@
 #[path = "wrapper_common.rs"]
 mod common;
 
-use std::env;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 #[cfg(not(test))]
 fn main() {
     common::check_driver("rustc-ryo", "`./y.sh build`");
-    let mut passed: Vec<OsString> = env::args_os().skip(1).collect();
+    let mut passed: Vec<OsString> = std::env::args_os().skip(1).collect();
     let stats = take_ryo_stats(&mut passed).unwrap_or_else(|msg| common::fail(&msg));
     let verbose_version = is_verbose_version(&passed);
     let checked = common::jit_checked();
@@ -72,12 +71,7 @@ pub fn ryo_args(dist: &Path, passed: Vec<OsString>, checked: bool) -> Result<Vec
         rt.push(checked_rt(&sysroot)?);
     }
 
-    let mut args: Vec<OsString> = Vec::new();
-    if !user_sysroot {
-        args.push("--sysroot".into());
-        args.push(dist.into());
-    }
-    args.push(common::backend_arg(dist, "rustc_codegen_ryo"));
+    let mut args = common::base_args(dist, "rustc_codegen_ryo", user_sysroot);
     for a in ["-Zunstable-options", "--extern"] {
         args.push(a.into());
     }
@@ -188,7 +182,7 @@ mod tests {
         // `join`, so the separator is right on Windows too.
         let backend = dist.join("lib").join(crate::utils::dll_name("rustc_codegen_ryo"));
         let backend = format!("-Zcodegen-backend={}", backend.display());
-        let mut want = args(&["--sysroot", "/d", &backend, "-Zunstable-options", "--extern", "force:ryo_rt", "foo.rs", "-Ccodegen-units=16"]);
+        let want = args(&["--sysroot", "/d", &backend, "-Zunstable-options", "--extern", "force:ryo_rt", "foo.rs", "-Ccodegen-units=16"]);
         assert_eq!(got, want);
     }
 

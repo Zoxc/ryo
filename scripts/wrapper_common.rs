@@ -107,6 +107,18 @@ pub fn backend_arg(dist: &Path, crate_name: &str) -> OsString {
     arg
 }
 
+/// The arguments a wrapper puts before the user's: `--sysroot <dist>` unless the user gave a
+/// sysroot, and the backend `crate_name` in `dist`.
+pub fn base_args(dist: &Path, crate_name: &str, user_sysroot: bool) -> Vec<OsString> {
+    let mut args: Vec<OsString> = Vec::new();
+    if !user_sysroot {
+        args.push("--sysroot".into());
+        args.push(dist.into());
+    }
+    args.push(backend_arg(dist, crate_name));
+    args
+}
+
 /// `p` canonicalized, without the `\\?\` prefix `canonicalize` adds on Windows, which some
 /// tools don't accept in paths derived from it (`--sysroot`, linker search paths).
 pub fn real_path(p: PathBuf) -> PathBuf {

@@ -1,7 +1,7 @@
 //! `rustc-clif`: runs the pinned rustc with cg_clif (built by `y build-clif`) and the `dist/`
 //! sysroot, which has the toolchain's prebuilt LLVM std (design/build.md#build-clif).
 //!
-//! Like `rustc-ryo`, without `force:ryo_rt` and the forced `-Ccodegen-units=1`.
+//! Like `rustc-ryo`, without `force:ryo_rt` and `--sysroot ryo`.
 
 #[path = "wrapper_common.rs"]
 mod common;
@@ -25,13 +25,8 @@ pub fn clif_args(dist: &Path, passed: Vec<OsString>) -> Vec<OsString> {
         // Show rustc's help, like plain `rustc` does.
         return passed;
     }
-    let mut args: Vec<OsString> = Vec::new();
     let user_sysroot = passed.iter().any(|a| a == "--sysroot" || a.to_str().is_some_and(|s| s.starts_with("--sysroot=")));
-    if !user_sysroot {
-        args.push("--sysroot".into());
-        args.push(dist.into());
-    }
-    args.push(common::backend_arg(dist, "rustc_codegen_cranelift"));
+    let mut args = common::base_args(dist, "rustc_codegen_cranelift", user_sysroot);
     args.extend(passed);
     args
 }
