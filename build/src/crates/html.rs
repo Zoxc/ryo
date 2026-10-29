@@ -253,7 +253,7 @@ fn tip_text(crate_name: &str, backend: Compiler, s: &Summary, unit: Measure, llv
 /// whiskers at ± one standard deviation, the lower one clamped at half the median (the axis
 /// is logarithmic). Absolute values and the stddev are in the tooltips and the table.
 fn ratio_chart(r: &Report, m: &Metric, data: &[Vec<Option<Summary>>]) -> String {
-    let Some(llvm) = r.backends.iter().position(|&b| b == Compiler::Llvm) else { return String::new() };
+    let Some(llvm) = r.column(Compiler::Llvm) else { return String::new() };
     let mut ratios: Vec<f64> = vec![1.0];
     for row in data {
         let Some(base) = row[llvm].as_ref().filter(|s| s.median > 0.0) else { continue };
@@ -402,12 +402,8 @@ fn metric_data(r: &Report, m: &Metric) -> Vec<Vec<Option<Summary>>> {
 }
 
 fn metric_table(r: &Report, m: &Metric, data: &[Vec<Option<Summary>>]) -> String {
-    let llvm = r.backends.iter().position(|&b| b == Compiler::Llvm);
-    let mut s = String::from("<table><tr><th>crate</th>");
-    for b in &r.backends {
-        let _ = write!(s, "<th>{}</th>", b.name());
-    }
-    s.push_str("</tr>");
+    let llvm = r.column(Compiler::Llvm);
+    let mut s = header_row("crate", &r.backends);
     for (ci, row) in data.iter().enumerate() {
         let c = &r.crates[ci];
         let _ = write!(s, "<tr><td>{}</td>", c.krate.name());
@@ -452,6 +448,17 @@ fn metric_table(r: &Report, m: &Metric, data: &[Vec<Option<Summary>>]) -> String
     s
 }
 
+/// `<table>` and its header row: `first` (raw HTML between `<th>` tags), then one column per
+/// backend.
+fn header_row(first: &str, backends: &[Compiler]) -> String {
+    let mut s = format!("<table><tr><th>{first}</th>");
+    for b in backends {
+        let _ = write!(s, "<th>{}</th>", b.name());
+    }
+    s.push_str("</tr>");
+    s
+}
+
 fn coverage_row(name: &str, units: usize, c: &Coverage) -> String {
     format!(
         "<tr><td>{}</td><td>{units}</td><td>{}</td><td>{}</td><td>{:.1}%</td><td>{}</td></tr>",
@@ -466,14 +473,13 @@ fn coverage_row(name: &str, units: usize, c: &Coverage) -> String {
 /// Coverage from ryo's warm-up builds (`RYO_STATS=1`): the crate's library, its dependencies,
 /// and the test targets.
 fn coverage_section(r: &Report) -> String {
-    let Some(ryo) = r.backends.iter().position(|&b| b == Compiler::Ryo) else { return String::new() };
+    let Some(ryo) = r.column(Compiler::Ryo) else { return String::new() };
     let mut s = String::from(
         "<h2 id=\"coverage\">ryo coverage (-Zryo-stats)</h2><p class=\"muted\">From ryo's warm-up build \
          (RYO_STATS=1, not timed). VM and native functions are mono items ryo compiled; native items \
          instantiated in the prebuilt LLVM std are not counted. Islands: distinct island instances.</p>\
          <table><tr><th>crate</th><th>units</th><th>VM fns</th><th>native fns</th><th>VM %</th><th>islands</th></tr>",
     );
-    let mut all: Vec<&Unit> = Vec::new();
     for c in &r.crates {
         let cell = &c.cells[ryo];
         let Some(super::BuildSteps { lib: build, tests }) = &cell.warmup else {
@@ -483,14 +489,13 @@ fn coverage_section(r: &Report) -> String {
         let leaf: Vec<&Unit> = build.units.iter().filter(|u| u.primary).collect();
         let deps: Vec<&Unit> = build.units.iter().filter(|u| !u.primary).collect();
         let test: Vec<&Unit> = tests.units.iter().filter(|u| u.primary).collect();
-        all.extend(build.units.iter().chain(&tests.units));
         for (what, units) in [("library", &leaf), ("dependencies", &deps), ("test targets", &test)] {
             let cov = coverage(units.iter().copied());
             s.push_str(&coverage_row(&format!("{} {what}", c.krate.name()), units.len(), &cov));
         }
     }
     s.push_str("</table>");
-    let cov = coverage(all.iter().copied());
+    let cov = coverage(r.ryo_warmup_units().unwrap_or_default());
     let _ = write!(
         s,
         "<p>All crates (build and test build units): <b>{} VM</b>, {} native functions ({:.1}% VM), {} islands.</p>",
@@ -528,11 +533,7 @@ fn unit_details(r: &Report) -> String {
                 }
             }
         }
-        let _ = write!(s, "<details><summary>{} ({} units)</summary><table><tr><th>unit</th><th>step</th>", c.krate.name(), keys.len());
-        for b in &r.backends {
-            let _ = write!(s, "<th>{}</th>", b.name());
-        }
-        s.push_str("</tr>");
+        let _ = write!(s, "<details><summary>{} ({} units)</summary>{}", c.krate.name(), keys.len(), header_row("unit</th><th>step", &r.backends));
         for (krate, kind, primary, si) in &keys {
             let _ = write!(
                 s,
@@ -565,11 +566,7 @@ fn unit_details(r: &Report) -> String {
 }
 
 fn tests_section(r: &Report) -> String {
-    let mut s = String::from("<h2 id=\"tests\">Test results and failures</h2><table><tr><th>crate</th>");
-    for b in &r.backends {
-        let _ = write!(s, "<th>{}</th>", b.name());
-    }
-    s.push_str("</tr>");
+    let mut s = format!("<h2 id=\"tests\">Test results and failures</h2>{}", header_row("crate", &r.backends));
     let mut problems = String::new();
     for c in &r.crates {
         let _ = write!(s, "<tr><td>{} {}</td>", c.krate.name(), c.krate.version());
@@ -660,10 +657,8 @@ pub fn text_summary(r: &Report) -> String {
         }
         let _ = write!(out, "\n{} (median; * noisy, ! failures)\n{}", m.title, crate::utils::text_table(&lines, false));
     }
-    if let Some(ryo) = r.backends.iter().position(|&b| b == Compiler::Ryo) {
-        let all: Vec<&Unit> =
-            r.crates.iter().flat_map(|c| c.cells[ryo].warmup.iter()).flat_map(|w| [&w.lib, &w.tests]).flat_map(|s| &s.units).collect();
-        let cov = coverage(all.iter().copied());
+    if let Some(units) = r.ryo_warmup_units() {
+        let cov = coverage(units);
         let _ =
             writeln!(out, "\nryo coverage: {} VM, {} native functions ({:.1}% VM), {} islands", cov.vm, cov.native, cov.vm_percent(), cov.islands);
     }

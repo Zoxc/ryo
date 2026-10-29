@@ -339,6 +339,20 @@ pub struct Report {
     pub total_time: f64,
 }
 
+impl Report {
+    /// The column of backend `b`, if it was benchmarked.
+    pub fn column(&self, b: Compiler) -> Option<usize> {
+        self.backends.iter().position(|&x| x == b)
+    }
+
+    /// The units of ryo's warm-up builds (library and tests steps) of every crate; `None`
+    /// without a ryo column.
+    pub fn ryo_warmup_units(&self) -> Option<Vec<&Unit>> {
+        let ryo = self.column(Compiler::Ryo)?;
+        Some(self.crates.iter().flat_map(|c| c.cells[ryo].warmup.iter()).flat_map(|w| [&w.lib, &w.tests]).flat_map(|s| &s.units).collect())
+    }
+}
+
 /// `RUSTFLAGS` for every backend and every crate (dependencies, build scripts and proc macros
 /// included, since no `--target` is passed).
 pub const RUSTFLAGS: &str = "-Cdebuginfo=0 -Ccodegen-units=1 -Zthreads=1";
