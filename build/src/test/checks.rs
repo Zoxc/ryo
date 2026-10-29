@@ -534,28 +534,10 @@ pub(super) fn jit_private_std(info: &crate::utils::RustcInfo, rustc_ryo: &Path, 
     for (name, flags, env, want_err) in cases {
         let exe = out.join(exe_name(name));
         crate::utils::run(cmd(rustc_ryo).arg("--edition=2024").arg(src).args(flags).arg("-o").arg(&exe))?;
-        // Into files, which never block the program as a full pipe would.
-        let (out_file, err_file) = (out.join(format!("{name}.stdout")), out.join(format!("{name}.stderr")));
-        let file = |p: &Path| fs::File::create(p).map_err(|e| format!("{}: {e}", p.display()));
-        let mut child = Command::new(&exe)
-            .envs(sync)
-            .envs(env.iter().copied())
-            .stdout(file(&out_file)?)
-            .stderr(file(&err_file)?)
-            .spawn()
-            .map_err(|e| e.to_string())?;
         // A deadlock shows as a hang.
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
-        while child.try_wait().map_err(|e| e.to_string())?.is_none() {
-            if std::time::Instant::now() > deadline {
-                let _ = child.kill();
-                return Err(format!("{name}: no exit within 60 s (deadlock?)"));
-            }
-            std::thread::sleep(std::time::Duration::from_millis(50));
-        }
-        let status = child.wait().map_err(|e| e.to_string())?;
-        let stdout = fs::read_to_string(&out_file).unwrap_or_default();
-        let stderr = fs::read_to_string(&err_file).unwrap_or_default();
+        let res = crate::utils::output_timeout(Command::new(&exe).envs(sync).envs(env.iter().copied()), std::time::Duration::from_secs(60))
+            .map_err(|e| format!("{name} (a deadlock?): {e}"))?;
+        let (status, stdout, stderr) = (res.status, String::from_utf8_lossy(&res.stdout), String::from_utf8_lossy(&res.stderr));
         // The compiles failed: the log says why and that the functions stayed on AOT code.
         let failed = want_err.is_empty() || (stderr.contains(want_err) && stderr.contains(": panicked\n"));
         if !status.success() || stdout != want || !failed {
