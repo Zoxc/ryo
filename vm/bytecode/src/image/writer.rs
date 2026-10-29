@@ -30,7 +30,7 @@ use core::{mem, slice};
 use super::unwind::{unwind_elf, unwind_pe};
 use super::*;
 use crate::asm::{self, CallSite, Encoded, Mode, Ref};
-use crate::full::{Abs, Const, Data, DecodeError, Decoder, Func, Opcode, OperandKind, Sym};
+use crate::full::{Abs, Const, Data, DecodeError, Decoder, Func, Insn, Opcode, OperandKind, Sym};
 
 /// A symbol referenced by the image.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -297,10 +297,12 @@ pub fn op_may_unwind(op: Opcode) -> bool {
 pub fn validate_code(code: &[u32], lim: &CodeLimits) -> Result<Vec<bool>, (u32, CodeError)> {
     let mut starts = vec![false; code.len()];
     let mut last = None;
-    for r in Decoder::new(code) {
-        let (at, insn) = r.map_err(|e| (code.len() as u32, CodeError::Decode(e)))?;
+    let mut at = 0;
+    while at < code.len() {
+        let (insn, n) = Insn::decode(&code[at..]).map_err(|e| (at as u32, CodeError::Decode(e)))?;
         starts[at] = true;
         last = Some(insn.opcode());
+        at += n;
     }
     if let Some(op) = last {
         if op.info().shape.falls_through() {
