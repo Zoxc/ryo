@@ -167,7 +167,7 @@ def byteAt (st : State) (o : Int) : M AbstractByte :=
       if !a.live then illFormed s!"escaped frame object at {e.off} is not live"
       else match a.data[(o - e.off).toNat]? with
         | some b => pure b
-        | none => illFormed s!"escaped frame object at {e.off} is smaller than its allocation"
+        | none => illFormed s!"escaped frame object at {e.off} is larger than its allocation"
     | none => illFormed s!"escaped frame object at {e.off} has no allocation"
 
 /-- `n` frame bytes from `off`. -/
