@@ -85,7 +85,7 @@ theorem push_other (lo sp a : BitVec 64) (hlo : lo.toNat + 8 ≤ sp.toNat)
   · rw [Nat.mod_eq_of_lt (by omega)]
     omega
 
-/-- Bytes `[a, a + n)` with `n < 2^62` are at least 8 above `a - 8`. -/
+/-- The byte at offset `i` from `a`, with `i + 8 < 2^64`, is at least 8 above `a - 8`. -/
 theorem above_push (a : BitVec 64) (i : Nat) (hi : i + 8 < 2 ^ 64) :
     8 ≤ (a + BitVec.ofNat 64 i - (a - 8)).toNat := by
   have : a + BitVec.ofNat 64 i - (a - 8) = BitVec.ofNat 64 (i + 8) := by
