@@ -14,37 +14,31 @@ use rustc_middle::mir::{
     TerminatorKind, UnwindAction, UnwindTerminateReason,
 };
 use rustc_middle::ty::{self, Instance, Ty};
-use ryo_bytecode::asm::Opnd;
+use ryo_bytecode::asm::{Label, Opnd};
 use ryo_bytecode::full::Opcode;
 
 use super::call::{ArgSrc, CallCont};
 use super::emit::{IntOp, Width, opw};
 use super::{FnCx, NeedsNative, native};
 
-/// The branch that tests `a op b`: the compare it calls (`"Eq"`, `"Lt"`, `"Gt"`), whether
-/// `a` and `b` are swapped, and its polarity (`neg`: branch when the compare is false). The
-/// register forms exist for `eq` and `lt`, the immediate forms (`imm`, `b` the immediate)
-/// also for `gt`.
-pub fn branch_form(op: BinOp, imm: bool) -> (BrCmp, bool, bool) {
+/// The branch that tests `a op b` (`signed` operands): the compare it calls (`Eq`, `Lt*`,
+/// `Gt*`), whether `a` and `b` are swapped, and its polarity (`neg`: branch when the compare
+/// is false). The register forms exist for `eq` and `lt`, the immediate forms (`imm`, `b` the
+/// immediate) also for `gt`.
+pub fn branch_form(op: BinOp, imm: bool, signed: bool) -> (IntOp, bool, bool) {
+    let lt = if signed { IntOp::LtS } else { IntOp::LtU };
+    let gt = if signed { IntOp::GtS } else { IntOp::GtU };
     match (op, imm) {
-        (BinOp::Eq, _) => (BrCmp::Eq, false, false),
-        (BinOp::Ne, _) => (BrCmp::Eq, false, true),
-        (BinOp::Lt, _) => (BrCmp::Lt, false, false),
-        (BinOp::Ge, _) => (BrCmp::Lt, false, true),
-        (BinOp::Gt, false) => (BrCmp::Lt, true, false),
-        (BinOp::Le, false) => (BrCmp::Lt, true, true),
-        (BinOp::Gt, true) => (BrCmp::Gt, false, false),
-        (BinOp::Le, true) => (BrCmp::Gt, false, true),
+        (BinOp::Eq, _) => (IntOp::Eq, false, false),
+        (BinOp::Ne, _) => (IntOp::Eq, false, true),
+        (BinOp::Lt, _) => (lt, false, false),
+        (BinOp::Ge, _) => (lt, false, true),
+        (BinOp::Gt, false) => (lt, true, false),
+        (BinOp::Le, false) => (lt, true, true),
+        (BinOp::Gt, true) => (gt, false, false),
+        (BinOp::Le, true) => (gt, false, true),
         _ => unreachable!("not a compare: {op:?}"),
     }
-}
-
-/// The compare of a compare-and-branch instruction, signedness aside.
-#[derive(Clone, Copy)]
-pub enum BrCmp {
-    Eq,
-    Lt,
-    Gt,
 }
 
 /// An integer compare `a op b` (`Eq` … `Ge`) whose `bool` result only feeds the block's
@@ -159,26 +153,19 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let layout = self.operand_layout(c.a)?;
         let Some(w) = Width::of_size(layout.size.bytes()) else { return native("compare of a non-scalar") };
         let signed = layout.ty.is_signed();
-        let name = |cmp: BrCmp| match cmp {
-            BrCmp::Eq => IntOp::Eq,
-            BrCmp::Lt if signed => IntOp::LtS,
-            BrCmp::Lt => IntOp::LtU,
-            BrCmp::Gt if signed => IntOp::GtS,
-            BrCmp::Gt => IntOp::GtU,
-        };
         let (sa, _) = self.operand_slot(c.a)?;
         if let Some(v) = self.const_int(c.b)? {
-            let (cmp, _, neg) = branch_form(c.op, true);
-            if name(cmp).br_imm_at(w).is_none() {
+            let (cmp, _, neg) = branch_form(c.op, true, signed);
+            if cmp.br_imm_at(w).is_none() {
                 return native("no br.imm for the width");
             }
-            self.br_imm(name(cmp), w, sa, v, neg == when, bb);
+            self.br_imm(cmp, w, sa, v, neg == when, bb);
             return Ok(());
         }
         let (sb, _) = self.operand_slot(c.b)?;
-        let (cmp, swap, neg) = branch_form(c.op, false);
+        let (cmp, swap, neg) = branch_form(c.op, false, signed);
         let (x, y) = if swap { (sb, sa) } else { (sa, sb) };
-        let Some(opc) = name(cmp).br_at(w) else {
+        let Some(opc) = cmp.br_at(w) else {
             return native("no br for the width");
         };
         self.op_branch(opc, &[x, y], neg == when, bb);
@@ -198,15 +185,15 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     }
 
     fn switch_int(&mut self, discr: &Operand<'tcx>, targets: &SwitchTargets) -> Result<(), NeedsNative> {
-        if let Some(Fused::Discr(p)) = self.fused {
-            self.fused = None;
-            return self.switch_niche(p, targets);
-        }
-        if let Some(Fused::Cmp(c)) = self.fused.take() {
-            // A `bool`: one case, 0 or 1 (`fusable_compare`).
-            let (v, bb) = targets.iter().next().expect("one case");
-            let (t, f) = if v == 0 { (targets.otherwise(), bb) } else { (bb, targets.otherwise()) };
-            return self.branch_cmp2(c, t, f);
+        match self.fused.take() {
+            Some(Fused::Discr(p)) => return self.switch_niche(p, targets),
+            Some(Fused::Cmp(c)) => {
+                // A `bool`: one case, 0 or 1 (`fusable_compare`).
+                let (v, bb) = targets.iter().next().expect("one case");
+                let (t, f) = if v == 0 { (targets.otherwise(), bb) } else { (bb, targets.otherwise()) };
+                return self.branch_cmp2(c, t, f);
+            }
+            None => {}
         }
         let (s, layout) = self.operand_slot(discr)?;
         let Some(w) = Width::of_size(layout.size.bytes()) else { return native("switch on a non-integer") };
@@ -253,7 +240,6 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         }
         let (lo, hi) = (cases[0].0, cases[cases.len() - 1].0);
         let span = (hi - lo).saturating_add(1);
-        let base = |v: u128| if w == Width::W128 { Opnd::Imm128(v) } else { Opnd::Imm(v as u64) };
         let default = self.block_label(otherwise);
         if span <= DENSE_MAX_SPAN && span <= 2 * cases.len() as u128 + 4 {
             let mut next = cases.iter().peekable();
@@ -268,7 +254,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 };
                 targets.push(self.block_label(bb));
             }
-            self.emit(opw(IntOp::SwitchDense, w), vec![Opnd::Slot(s as i32), base(lo), Opnd::Target(default), Opnd::Targets(targets)]);
+            self.switch_dense(w, s, lo, default, targets);
         } else {
             let vals = cases.iter().map(|&(v, _)| v).collect();
             let targets = cases.iter().map(|&(_, bb)| self.block_label(bb)).collect();
@@ -326,10 +312,15 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         self.op_imm(IntOp::Sub, tw, r, n.slot, n.niche_start);
         self.br_imm(IntOp::GtU, tw, r, u128::from(n.end - n.start), false, untagged_bb);
         let labels = (n.start..=n.end).map(|i| self.block_label(target(i))).collect();
-        let base = if tw == Width::W128 { Opnd::Imm128(0) } else { Opnd::Imm(0) };
         let default = self.block_label(untagged_bb);
-        self.emit(opw(IntOp::SwitchDense, tw), vec![Opnd::Slot(r as i32), base, Opnd::Target(default), Opnd::Targets(labels)]);
+        self.switch_dense(tw, r, 0, default, labels);
         Ok(())
+    }
+
+    /// `switch.dense s, lo, default, targets`: to `targets[s - lo]`, else to `default`.
+    fn switch_dense(&mut self, w: Width, s: u32, lo: u128, default: Label, targets: Vec<Label>) {
+        let base = if w == Width::W128 { Opnd::Imm128(lo) } else { Opnd::Imm(lo as u64) };
+        self.emit(opw(IntOp::SwitchDense, w), vec![Opnd::Slot(s as i32), base, Opnd::Target(default), Opnd::Targets(targets)]);
     }
 
     /// A call of the lang item for `reason` (`panic_cannot_unwind`, `panic_in_cleanup`), which
