@@ -251,42 +251,48 @@ pub(super) fn incremental(rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result
         for rev in 1..=REVISIONS {
             let cfg = format!("rev{rev}");
             // Builds `edits.rs` into `out_dir` with `rustc`, incrementally in `incr` with the
-            // config's flags plus `extra` if given. With `reuse_check`, it must reuse every
-            // image, else fails with that message.
-            let build =
-                |rustc: &Path, out_dir: &Path, incr: Option<(&Path, &[&str])>, what: &str, reuse_check: Option<&str>| -> Result<PathBuf, String> {
-                    crate::utils::create_dir(out_dir)?;
-                    let exe = out_dir.join(exe_name("edits"));
-                    // link.exe updates a PDB that is already there, and bumps its age, which the
-                    // executable records: a link into the chain's directory starts without the
-                    // previous one's.
-                    let _ = fs::remove_file(exe.with_extension("pdb"));
-                    let mut c = cmd(rustc);
-                    c.arg("--edition=2024").arg(&src).args(["--cfg", &cfg]).arg("-o").arg(&exe).args(repro);
-                    if let Some((incr, extra)) = incr {
-                        c.args(flags).args(extra).envs(env.iter().copied());
-                        c.arg(format!("-Cincremental={}", incr.display())).arg("-Zincremental-verify-ich");
+            // config's flags plus `extra` if given. With `reuse_check` `(all, msg)`, it must
+            // reuse every image if `all`, else not all of them, or fails with `msg`.
+            let build = |rustc: &Path,
+                         out_dir: &Path,
+                         incr: Option<(&Path, &[&str])>,
+                         what: &str,
+                         reuse_check: Option<(bool, &str)>|
+             -> Result<PathBuf, String> {
+                crate::utils::create_dir(out_dir)?;
+                let exe = out_dir.join(exe_name("edits"));
+                // link.exe updates a PDB that is already there, and bumps its age, which the
+                // executable records: a link into the chain's directory starts without the
+                // previous one's.
+                let _ = fs::remove_file(exe.with_extension("pdb"));
+                let mut c = cmd(rustc);
+                c.arg("--edition=2024").arg(&src).args(["--cfg", &cfg]).arg("-o").arg(&exe).args(repro);
+                if let Some((incr, extra)) = incr {
+                    c.args(flags).args(extra).envs(env.iter().copied());
+                    c.arg(format!("-Cincremental={}", incr.display())).arg("-Zincremental-verify-ich");
+                }
+                if reuse_check.is_some() {
+                    c.env("RYO_STATS", "1");
+                }
+                let res = capture_ok(&mut c).map_err(|e| format!("{config} {cfg} {what}: {e}"))?;
+                if let Some((all, msg)) = reuse_check {
+                    match all_images_reused(&res.stderr) {
+                        Err(r) if all || r.is_none() => return Err(format!("{config} {cfg}: {msg}: reused {r:?}")),
+                        Ok(()) if !all => return Err(format!("{config} {cfg}: {msg}")),
+                        _ => {}
                     }
-                    if reuse_check.is_some() {
-                        c.env("RYO_STATS", "1");
-                    }
-                    let res = capture_ok(&mut c).map_err(|e| format!("{config} {cfg} {what}: {e}"))?;
-                    if let Some(msg) = reuse_check
-                        && let Err(r) = all_images_reused(&res.stderr)
-                    {
-                        return Err(format!("{config} {cfg}: {msg}: reused {r:?}"));
-                    }
-                    Ok(exe)
-                };
+                }
+                Ok(exe)
+            };
             let reference = run(&build(Path::new("rustc"), dir.join(config).join(&cfg).join("rustc").as_path(), None, "rustc", None)?, &[])?;
             // rev11 only shifts `main`'s `DefIndex`: the chain must reuse every image.
-            let check = (rev == 11 && env.is_empty()).then_some("an unused item ahead of `main` re-lowered images");
+            let check = (rev == 11 && env.is_empty()).then_some((true, "an unused item ahead of `main` re-lowered images"));
             let exe = build(rustc_ryo, chain_dir.as_path(), chain, "incr", check)?;
             // Image reuse (design/backend.md#incremental): the same revision again reuses
             // every image, and gives the same executable.
             if env.is_empty() {
                 let first = read(&exe)?;
-                build(rustc_ryo, chain_dir.as_path(), chain, "again", Some("rebuilt unchanged, expected all images reused"))?;
+                build(rustc_ryo, chain_dir.as_path(), chain, "again", Some((true, "rebuilt unchanged, expected all images reused")))?;
                 if read(&exe)? != first {
                     return Err(format!("{config} {cfg}: rebuilt unchanged, {} differs", exe.display()));
                 }
@@ -302,11 +308,12 @@ pub(super) fn incremental(rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result
             if read(&exe)? != read(&clean)? {
                 return Err(format!("{config} {cfg}: {} differs from the clean build {}", exe.display(), clean.display()));
             }
-            // Corrupt side data with an intact footer: the image is rebuilt (so not all are
-            // reused), not an ICE.
+            // Corrupt side data with an intact footer: the image is rebuilt (checked: not all
+            // are reused), not an ICE.
             if config == "O0" && rev == REVISIONS {
                 corrupt_side_data(&incr)?;
-                let exe = build(rustc_ryo, chain_dir.as_path(), chain, "incr", None).map_err(|e| format!("after corrupting side data: {e}"))?;
+                let check = Some((false, "corrupted side data, expected an image rebuilt"));
+                let exe = build(rustc_ryo, chain_dir.as_path(), chain, "incr", check).map_err(|e| format!("after corrupting side data: {e}"))?;
                 let got = run(&exe, &[])?;
                 if got != reference {
                     return Err(format!("{config} {cfg} after corrupting side data: output {got:?}, plain rustc's {reference:?}"));
