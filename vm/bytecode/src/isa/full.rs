@@ -1309,7 +1309,7 @@ impl CodeBuf {
     }
 
     /// Sets element `i` of the `Targets` list operand `operand` of the instruction at
-    /// `insn_at` (a `switch.dense` table or an island's targets) to branch to `target_at`.
+    /// `insn_at` (a `switch.dense` table) to branch to `target_at`.
     pub fn set_list_target(&mut self, insn_at: u32, operand: usize, i: usize, target_at: u32) {
         let at = insn_at as usize;
         let op = Opcode::from_u16(self.words[at] as u16).expect("not an instruction");
