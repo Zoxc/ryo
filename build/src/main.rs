@@ -84,22 +84,11 @@ enum Cmd {
     Bench(bench::Options),
     BenchCodegen,
     BenchCrates(crates::Options),
-    Lean(LeanMode),
+    Lean(lean::Mode),
     Install(install::InstallOptions),
     Uninstall(install::UninstallOptions),
     Clean,
     Help,
-}
-
-/// What `y lean` does.
-#[derive(Debug, PartialEq)]
-enum LeanMode {
-    /// `lean`: check the generated tables, then `lake build` and `lake test`.
-    Check,
-    /// `lean --proofs`: `Check`, plus the slow proofs.
-    Proofs,
-    /// `lean gen`: regenerate the tables.
-    Generate,
 }
 
 fn parse_args(args: &[String]) -> Result<Cmd, String> {
@@ -130,9 +119,9 @@ fn parse_args(args: &[String]) -> Result<Cmd, String> {
             opts => bench::parse_options(opts).map(Cmd::Bench),
         },
         "lean" => match rest.as_slice() {
-            [] => Ok(Cmd::Lean(LeanMode::Check)),
-            ["gen"] => Ok(Cmd::Lean(LeanMode::Generate)),
-            ["--proofs"] => Ok(Cmd::Lean(LeanMode::Proofs)),
+            [] => Ok(Cmd::Lean(lean::Mode::Check)),
+            ["gen"] => Ok(Cmd::Lean(lean::Mode::Generate)),
+            ["--proofs"] => Ok(Cmd::Lean(lean::Mode::Proofs)),
             [arg, ..] => Err(format!("unexpected argument `{arg}`")),
         },
         "install" => install::parse_install(&rest).map(Cmd::Install),
@@ -203,9 +192,7 @@ fn main() -> ExitCode {
         Cmd::Bench(opts) => bench::run(&opts),
         Cmd::BenchCodegen => bench::codegen(),
         Cmd::BenchCrates(opts) => crates::run(opts),
-        Cmd::Lean(LeanMode::Check) => lean::check(false),
-        Cmd::Lean(LeanMode::Proofs) => lean::check(true),
-        Cmd::Lean(LeanMode::Generate) => lean::generate(),
+        Cmd::Lean(mode) => lean::run_mode(mode),
         Cmd::Install(o) => install::install(&o).map(|code| exit = code.unwrap_or(ExitCode::SUCCESS)),
         Cmd::Uninstall(o) => install::uninstall(&o).map(|code| exit = code.unwrap_or(ExitCode::SUCCESS)),
         Cmd::Clean => dist::clean(),
@@ -263,9 +250,9 @@ mod tests {
         assert_eq!(parse(&["bench", "codegen"]), Ok(Cmd::BenchCodegen));
         assert!(matches!(parse(&["bench", "crates", "--quick"]), Ok(Cmd::BenchCrates(o)) if o.run_samples == 1));
         assert!(parse(&["bench", "crates", "--frob"]).is_err());
-        assert_eq!(parse(&["lean"]), Ok(Cmd::Lean(LeanMode::Check)));
-        assert_eq!(parse(&["lean", "gen"]), Ok(Cmd::Lean(LeanMode::Generate)));
-        assert_eq!(parse(&["lean", "--proofs"]), Ok(Cmd::Lean(LeanMode::Proofs)));
+        assert_eq!(parse(&["lean"]), Ok(Cmd::Lean(lean::Mode::Check)));
+        assert_eq!(parse(&["lean", "gen"]), Ok(Cmd::Lean(lean::Mode::Generate)));
+        assert_eq!(parse(&["lean", "--proofs"]), Ok(Cmd::Lean(lean::Mode::Proofs)));
         assert!(parse(&["lean", "x"]).is_err());
         assert!(matches!(parse(&["install", "--yes"]), Ok(Cmd::Install(o)) if o.yes));
         assert!(matches!(parse(&["uninstall", "--dry-run"]), Ok(Cmd::Uninstall(o)) if o.dry_run));

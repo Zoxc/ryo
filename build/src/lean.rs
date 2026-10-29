@@ -56,26 +56,32 @@ fn effects_table() -> Result<(PathBuf, String), String> {
     Ok((path, crate::utils::capture_ok(cmd(&exe).arg("effects"))?.stdout))
 }
 
-/// `y lean gen`.
-pub fn generate() -> Result<(), String> {
-    tables(true)?;
-    run(cmd(lake()).current_dir(root().join("lean")).arg("build"))?;
-    let (path, want) = effects_table()?;
-    crate::utils::write(&path, want)
+/// What `y lean` does.
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum Mode {
+    /// `lean`: check the generated tables, then `lake build` and `lake test`.
+    Check,
+    /// `lean --proofs`: `Check`, plus the slow proofs.
+    Proofs,
+    /// `lean gen`: regenerate the tables.
+    Generate,
 }
 
-/// `y lean`, and with `proofs` `y lean --proofs`.
-pub fn check(proofs: bool) -> Result<(), String> {
-    tables(false)?;
+/// `y lean` in `mode`.
+pub fn run_mode(mode: Mode) -> Result<(), String> {
+    tables(mode == Mode::Generate)?;
     let lake = lake();
     let dir = root().join("lean");
     run(cmd(&lake).current_dir(&dir).arg("build"))?;
     let (path, want) = effects_table()?;
+    if mode == Mode::Generate {
+        return crate::utils::write(&path, want);
+    }
     if std::fs::read_to_string(&path).ok().as_deref() != Some(want.as_str()) {
         return Err(format!("{} is out of date with the Lean footprints: run `./y.sh lean gen`", path.display()));
     }
     run(cmd(&lake).current_dir(&dir).arg("test"))?;
-    if proofs {
+    if mode == Mode::Proofs {
         run(cmd(&lake).current_dir(&dir).args(["build", "RyoProofs"]))?;
     }
     Ok(())

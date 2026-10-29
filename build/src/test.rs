@@ -749,7 +749,7 @@ pub fn run(opts: &Options) -> Result<(), String> {
     if !corpus_only && (sel.full || sel.lean) {
         if crate::lean::have_lake() {
             let t = Instant::now();
-            report("lean", t, crate::lean::check(false), &failed);
+            report("lean", t, crate::lean::run_mode(crate::lean::Mode::Check), &failed);
         } else if sel.lean {
             eprintln!("[y] test lean: skipped (no `lake`)");
         }
