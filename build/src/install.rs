@@ -866,13 +866,8 @@ fn remove_superseded(plan: &InstallPlan, manifest: &mut Manifest) -> Result<(), 
     }
     if !plan.old_toolchains.is_empty() {
         for r in &plan.old_toolchains {
-            let mut steps = Vec::new();
-            toolchain_steps(r, &plan.host, &mut steps)?;
-            for s in &steps {
-                if let Some(mut c) = s.command() {
-                    run(&mut c)?;
-                }
-                println!("[y]   {}", s.describe());
+            for s in toolchain_steps(r, &plan.host)? {
+                s.run()?;
             }
         }
         manifest.old_toolchains.clear();
@@ -948,6 +943,15 @@ impl Step {
         Some(c)
     }
 
+    /// Runs the step's command, if any, then logs it as done.
+    fn run(&self) -> Result<(), String> {
+        if let Some(mut c) = self.command() {
+            run(&mut c)?;
+        }
+        println!("[y]   {}", self.describe());
+        Ok(())
+    }
+
     fn describe(&self) -> String {
         let command = self.command().map(|c| crate::utils::describe(&c));
         match self {
@@ -995,7 +999,7 @@ fn plan_uninstall(o: &UninstallOptions, manifest: Option<&Manifest>) -> Result<V
         } else if let Some(source) = &other_owner {
             steps.push(Step::Keep(format!("what ryo added to toolchain {}: the launchers from {source} may still use it", r.name)));
         } else {
-            toolchain_steps(r, &m.host, &mut steps)?;
+            steps.extend(toolchain_steps(r, &m.host)?);
         }
     }
     steps.push(Step::RemoveInstall(install));
@@ -1003,7 +1007,8 @@ fn plan_uninstall(o: &UninstallOptions, manifest: Option<&Manifest>) -> Result<V
 }
 
 /// The steps removing what `r` records ryo added to its toolchain.
-fn toolchain_steps(r: &ToolchainRecord, host: &str, steps: &mut Vec<Step>) -> Result<(), String> {
+fn toolchain_steps(r: &ToolchainRecord, host: &str) -> Result<Vec<Step>, String> {
+    let mut steps = Vec::new();
     match toolchain_state(&r.name)? {
         None => steps.push(Step::Keep(format!("toolchain {}: already removed", r.name))),
         Some(_) if r.installed_by_ryo => match toolchain_in_use(&r.name)? {
@@ -1022,7 +1027,7 @@ fn toolchain_steps(r: &ToolchainRecord, host: &str, steps: &mut Vec<Step>) -> Re
             steps.push(Step::Keep(format!("toolchain {}: yours", r.name)));
         }
     }
-    Ok(())
+    Ok(steps)
 }
 
 /// `y uninstall`; `Some` is the exit code of a dry run or an unconfirmed plan.
@@ -1056,10 +1061,7 @@ pub fn uninstall(o: &UninstallOptions) -> Result<Option<ExitCode>, String> {
             crate::utils::remove_dir_if_exists(dir)?;
             break;
         }
-        if let Some(mut c) = s.command() {
-            run(&mut c)?;
-        }
-        println!("[y]   {}", s.describe());
+        s.run()?;
     }
     println!("[y] removed ryo {version}");
     Ok(None)
