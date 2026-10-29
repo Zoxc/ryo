@@ -233,7 +233,8 @@ pub fn encode<'tcx, T: Encodable<Enc<'tcx>>>(tcx: TyCtxt<'tcx>, v: &T) -> Vec<u8
     e.finish()
 }
 
-/// Decodes a `T` from `data`, `None` if it isn't one.
+/// Decodes a `T` from `data`, `None` if it lacks the end marker (e.g. truncated). Like
+/// rustc's own incremental data, a corrupt body or one naming items that are gone panics.
 pub fn decode<'a, 'tcx, T: Decodable<Dec<'a, 'tcx>>>(tcx: TyCtxt<'tcx>, data: &'a [u8]) -> Option<T> {
     let mut d = Dec::new(tcx, data)?;
     Some(T::decode(&mut d))
