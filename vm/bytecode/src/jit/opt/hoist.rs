@@ -311,21 +311,39 @@ fn licm(f: &mut Func, an: &Analysis, l: &Loop) -> bool {
     // only if it ran on every iteration, the loop has no call, and it takes the register of an
     // operand that nothing else in the loop needs: it then costs no register there (a loop
     // that runs once would pay for a new one, a callee-saved register's save and restore say).
-    let moved: Vec<bool> = cand
-        .iter()
-        .map(|&i| {
+    // A candidate that doesn't move keeps its operands live in the loop: until nothing more
+    // stays.
+    let moved: Vec<bool> = loop {
+        let moved: Vec<bool> = cand
+            .iter()
+            .map(|&i| {
+                let id = &f.insts[i.idx()];
+                let every = || l.latches.iter().all(|&p| an.ndom.dominates(id.block, p));
+                let frees = || {
+                    id.args.iter().any(|&a| match f.def(a) {
+                        ValueDef::Inst(j, _) => !used[a.idx()] && class(f, &f.insts[j.idx()].op) != Some(Class::Remat),
+                        ValueDef::Param(..) => !used[a.idx()],
+                        _ => false,
+                    })
+                };
+                id.results().any(|r| used[r.idx()]) && (expensive(&id.op) || (!has_call && every() && frees()))
+            })
+            .collect();
+        let mut more = false;
+        for (&i, _) in cand.iter().zip(&moved).filter(|x| !*x.1) {
             let id = &f.insts[i.idx()];
-            let every = || l.latches.iter().all(|&p| an.ndom.dominates(id.block, p));
-            let frees = || {
-                id.args.iter().any(|&a| match f.def(a) {
-                    ValueDef::Inst(j, _) => !used[a.idx()] && class(f, &f.insts[j.idx()].op) != Some(Class::Remat),
-                    ValueDef::Param(..) => !used[a.idx()],
-                    _ => false,
-                })
-            };
-            id.results().any(|r| used[r.idx()]) && (expensive(&id.op) || (!has_call && every() && frees()))
-        })
-        .collect();
+            // One the loop doesn't use stays only as a dead copy.
+            if !id.results().any(|r| used[r.idx()]) {
+                continue;
+            }
+            for &a in &id.args {
+                more |= !core::mem::replace(&mut used[a.idx()], true);
+            }
+        }
+        if !more {
+            break moved;
+        }
+    };
     let mut want = alloc::vec![false; f.values.len()];
     let mut copied = alloc::vec![false; cand.len()];
     for k in (0..cand.len()).rev() {
