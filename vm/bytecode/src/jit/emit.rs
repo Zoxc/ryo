@@ -404,6 +404,11 @@ pub struct Opts {
     pub stress: bool,
 }
 
+/// Whether the `len` bytes at frame offset `o` overlap a pinned alloca that isn't incoming.
+fn pinned_overlaps(f: &Func, o: i32, len: i32) -> bool {
+    f.allocas.iter().any(|a| a.pinned && a.kind != AllocaKind::Incoming && o < a.aot_off + a.size as i32 && o + len > a.aot_off)
+}
+
 fn layout(f: &Func, al: &Alloc, mode: Mode, opts: Opts) -> Frame {
     let top0 = 0;
     let mut top = top0;
@@ -437,9 +442,7 @@ fn layout(f: &Func, al: &Alloc, mode: Mode, opts: Opts) -> Frame {
         if home {
             pe_slots.extend([16, 24, 32, 40]);
         }
-        let free =
-            |o: i32| !f.allocas.iter().any(|a| a.pinned && a.kind != AllocaKind::Incoming && o < a.aot_off + a.size as i32 && o + 8 > a.aot_off);
-        pe_slots.extend((1..=30).map(|j| -8 * j).filter(|&o| free(o)));
+        pe_slots.extend((1..=30).map(|j| -8 * j).filter(|&o| !pinned_overlaps(f, o, 8)));
     }
     let mut pe_short = false;
     for (k, &r) in al.saved.iter().enumerate() {
@@ -465,10 +468,7 @@ fn layout(f: &Func, al: &Alloc, mode: Mode, opts: Opts) -> Frame {
                 xsaves.push((x, cur));
             }
         } else {
-            let free = |o: i32| {
-                !f.allocas.iter().any(|a| a.pinned && a.kind != AllocaKind::Incoming && o < a.aot_off + a.size as i32 && o + 16 > a.aot_off)
-                    && !saves.iter().any(|&(_, s)| s >= o && s < o + 16)
-            };
+            let free = |o: i32| !pinned_overlaps(f, o, 16) && !saves.iter().any(|&(_, s)| s >= o && s < o + 16);
             let mut slots = (1..=15).map(|j| -16 * j).filter(|&o| free(o));
             for x in xs {
                 match slots.next() {
@@ -1002,22 +1002,14 @@ impl<'a> E<'a> {
         if self.mode.pe {
             // `lea rsp, [rbp - 8n]` and the pops: a Win64 epilogue (after the saves' loads,
             // which are body code).
-            if !self.fr.pushed {
-                for i in 0..self.fr.saves.len() {
-                    let (r, o) = self.fr.saves[i];
-                    self.a.x().mov(8, Rm::R(r), Rm::M(Mem::base(R::Rbp, o)));
-                }
-            }
+            self.load_saves(true);
             for i in 0..self.fr.xsaves.len() {
                 let (x, o) = self.fr.xsaves[i];
                 self.a.x().movdqa_load(x, Mem::base(R::Rbp, o));
             }
             let n = if self.fr.pushed { self.fr.saves.len() as i32 } else { 0 };
             self.a.x().lea(R::Rsp, Mem::base(R::Rbp, -8 * n));
-            for i in (self.fr.saves.len() - n as usize..self.fr.saves.len()).rev() {
-                let r = self.fr.saves[i].0;
-                self.a.x().pop(r);
-            }
+            self.pop_saves(n as usize);
             self.a.x().pop(R::Rbp);
             return;
         }
@@ -1025,13 +1017,7 @@ impl<'a> E<'a> {
         if self.fr.frameless {
             return;
         }
-        if !self.fr.pushed {
-            for i in 0..self.fr.saves.len() {
-                let (r, o) = self.fr.saves[i];
-                let m = self.fp_mem(o);
-                self.a.x().mov(8, Rm::R(r), Rm::M(m));
-            }
-        }
+        self.load_saves(false);
         let n = if self.fr.pushed { self.fr.saves.len() as u32 } else { 0 };
         if fp && n == 0 {
             self.a.x().leave();
@@ -1046,12 +1032,28 @@ impl<'a> E<'a> {
                 self.a.x().alu_imm(Alu::Add, 8, Rm::R(R::Rsp), rest as i64);
             }
         }
-        for i in (self.fr.saves.len() - n as usize..self.fr.saves.len()).rev() {
-            let r = self.fr.saves[i].0;
-            self.a.x().pop(r);
-        }
+        self.pop_saves(n as usize);
         if fp {
             self.a.x().pop(R::Rbp);
+        }
+    }
+
+    /// Reloads the saved registers that aren't pushed from their slots, addressed from `rbp`
+    /// or else by [`E::fp_mem`].
+    fn load_saves(&mut self, from_rbp: bool) {
+        if self.fr.pushed {
+            return;
+        }
+        for &(r, o) in &self.fr.saves {
+            let m = if from_rbp { Mem::base(R::Rbp, o) } else { self.fp_mem(o) };
+            self.a.x().mov(8, Rm::R(r), Rm::M(m));
+        }
+    }
+
+    /// Pops the last `n` saved registers, in reverse.
+    fn pop_saves(&mut self, n: usize) {
+        for &(r, _) in self.fr.saves[self.fr.saves.len() - n..].iter().rev() {
+            self.a.x().pop(r);
         }
     }
 
