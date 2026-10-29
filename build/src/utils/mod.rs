@@ -29,7 +29,8 @@ pub const LIB_PATH_VAR: &str = if cfg!(windows) {
 /// The PATH-like variable `var` with `dirs` prepended.
 pub fn prepend_paths(var: &str, dirs: impl IntoIterator<Item = PathBuf>) -> Result<std::ffi::OsString, String> {
     let mut paths: Vec<PathBuf> = dirs.into_iter().collect();
-    paths.extend(std::env::split_paths(&std::env::var_os(var).unwrap_or_default()));
+    // An empty entry would mean the current directory.
+    paths.extend(std::env::split_paths(&std::env::var_os(var).unwrap_or_default()).filter(|p| !p.as_os_str().is_empty()));
     std::env::join_paths(paths).map_err(|e| format!("{var}: {e}"))
 }
 
