@@ -23,6 +23,7 @@ mod os {
     unsafe extern "C" {
         pub fn write(fd: c_int, buf: *const c_void, n: usize) -> isize;
         pub fn abort() -> !;
+        #[cfg(feature = "jit")]
         pub fn getpid() -> c_int;
     }
 }
@@ -37,6 +38,7 @@ mod os {
     unsafe extern "system" {
         pub fn GetStdHandle(which: u32) -> *mut c_void;
         pub fn WriteFile(h: *mut c_void, buf: *const u8, n: u32, written: *mut u32, ov: *mut c_void) -> i32;
+        #[cfg(feature = "jit")]
         pub fn GetCurrentProcessId() -> u32;
     }
 }
@@ -115,6 +117,7 @@ pub(crate) fn write_stderr(s: &[u8]) {
 }
 
 /// The process's id.
+#[cfg(feature = "jit")]
 pub(crate) fn pid() -> u32 {
     #[cfg(unix)]
     // SAFETY: always safe to call.
@@ -252,6 +255,7 @@ impl Bump {
 /// terminates every other thread (the JIT thread included) before it runs the exiting
 /// thread's TLS destructors and the modules' detach callbacks, which may still run VM code.
 /// Elsewhere other threads live on through `exit`'s handlers: always false.
+#[cfg(feature = "jit")]
 pub(crate) fn exiting() -> bool {
     #[cfg(windows)]
     {
