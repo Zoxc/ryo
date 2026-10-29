@@ -824,6 +824,15 @@ struct FnDump<'a, 'tcx> {
 /// `Err(what)`: something the AST can't express.
 type Res<T> = Result<T, String>;
 
+/// The parts `call` and `tailCall` terminators share.
+struct CallParts {
+    f: J,
+    args: J,
+    /// `callerLocation`.
+    loc: J,
+    abi: J,
+}
+
 impl<'a, 'tcx> FnDump<'a, 'tcx> {
     fn block(&mut self, d: &mut Dumper<'tcx>, bb: BasicBlock) -> J {
         let data = &self.body.basic_blocks[bb];
@@ -849,18 +858,37 @@ impl<'a, 'tcx> FnDump<'a, 'tcx> {
     fn unsupported(&self, d: &mut Dumper<'tcx>, what: &str) -> J {
         eprintln!("ryo: RYO_DUMP_LEAN: {}: unsupported {what}", rustc_middle::ty::print::with_no_trimmed_paths!(self.inst.to_string()));
         let i = d.unsupported_inst(what);
-        ctor(
-            "call",
-            vec![
-                ("f", ctor("inst", vec![("i", num(i))])),
-                ("args", J::Arr(vec![])),
-                ("dest", obj(vec![("base", num(0)), ("proj", J::Arr(vec![]))])),
-                ("target", J::Null),
-                ("unwind", tag("unreachable")),
-                ("callerLocation", J::Null),
-                ("abi", J::Null),
-            ],
-        )
+        let f = ctor("inst", vec![("i", num(i))]);
+        let dest = obj(vec![("base", num(0)), ("proj", J::Arr(vec![]))]);
+        Self::call_json(CallParts { f, args: J::Arr(vec![]), loc: J::Null, abi: J::Null }, dest, J::Null, tag("unreachable"))
+    }
+
+    /// A `Call` or `TailCall`'s callee, arguments, caller location and ABI. cg_ssa's
+    /// `codegen_call_terminator` takes the location of `fn_span`, in `at`.
+    fn call_parts(
+        &mut self,
+        d: &mut Dumper<'tcx>,
+        func: &Operand<'tcx>,
+        args: &[rustc_span::Spanned<Operand<'tcx>>],
+        at: SourceInfo,
+        tail: bool,
+    ) -> Res<CallParts> {
+        let (f, abi, tc) = self.callee(d, func, tail)?;
+        let args = self.operands(d, args.iter().map(|a| &a.node))?;
+        let loc = tc.then(|| self.caller_location(d, at));
+        Ok(CallParts { f, args: J::Arr(args), loc: opt(loc), abi: opt(abi) })
+    }
+
+    /// A `call` terminator from [`call_parts`](Self::call_parts).
+    fn call_json(CallParts { f, args, loc, abi }: CallParts, dest: J, target: J, unwind: J) -> J {
+        ctor("call", vec![("f", f), ("args", args), ("dest", dest), ("target", target), ("unwind", unwind), ("callerLocation", loc), ("abi", abi)])
+    }
+
+    fn operands<'o>(&mut self, d: &mut Dumper<'tcx>, ops: impl IntoIterator<Item = &'o Operand<'tcx>>) -> Res<Vec<J>>
+    where
+        'tcx: 'o,
+    {
+        ops.into_iter().map(|o| self.operand(d, o)).collect()
     }
 
     fn statement(&mut self, d: &mut Dumper<'tcx>, s: &StatementKind<'tcx>) -> Res<J> {
@@ -983,7 +1011,7 @@ impl<'a, 'tcx> FnDump<'a, 'tcx> {
                     AggregateKind::RawPtr(..) => tag("rawPtr"),
                     AggregateKind::Coroutine(..) | AggregateKind::CoroutineClosure(..) => return Err("coroutine aggregate".into()),
                 };
-                let ops = ops.iter().map(|o| self.operand(d, o)).collect::<Res<Vec<_>>>()?;
+                let ops = self.operands(d, ops.iter())?;
                 ctor("aggregate", vec![("k", k), ("ops", J::Arr(ops))])
             }
             Rvalue::CopyForDeref(p) => ctor("copyForDeref", vec![("p", self.place(d, *p))]),
@@ -1154,28 +1182,13 @@ impl<'a, 'tcx> FnDump<'a, 'tcx> {
                 )
             }
             TerminatorKind::Call { func, args, destination, target, unwind, fn_span, .. } => {
-                let (f, abi, tc) = self.callee(d, func, false)?;
-                let args = args.iter().map(|a| self.operand(d, &a.node)).collect::<Res<Vec<_>>>()?;
-                // cg_ssa's `codegen_call_terminator` takes the location of `fn_span`.
-                let loc = tc.then(|| self.caller_location(d, SourceInfo { span: *fn_span, ..t.source_info }));
-                ctor(
-                    "call",
-                    vec![
-                        ("f", f),
-                        ("args", J::Arr(args)),
-                        ("dest", self.place(d, *destination)),
-                        ("target", opt(target.map(|bb| num(bb.as_usize())))),
-                        ("unwind", self.unwind(*unwind)),
-                        ("callerLocation", opt(loc)),
-                        ("abi", opt(abi)),
-                    ],
-                )
+                let c = self.call_parts(d, func, args, SourceInfo { span: *fn_span, ..t.source_info }, false)?;
+                let dest = self.place(d, *destination);
+                Self::call_json(c, dest, opt(target.map(|bb| num(bb.as_usize()))), self.unwind(*unwind))
             }
             TerminatorKind::TailCall { func, args, fn_span } => {
-                let (f, abi, tc) = self.callee(d, func, true)?;
-                let args = args.iter().map(|a| self.operand(d, &a.node)).collect::<Res<Vec<_>>>()?;
-                let loc = tc.then(|| self.caller_location(d, SourceInfo { span: *fn_span, ..t.source_info }));
-                ctor("tailCall", vec![("f", f), ("args", J::Arr(args)), ("callerLocation", opt(loc)), ("abi", opt(abi))])
+                let CallParts { f, args, loc, abi } = self.call_parts(d, func, args, SourceInfo { span: *fn_span, ..t.source_info }, true)?;
+                ctor("tailCall", vec![("f", f), ("args", args), ("callerLocation", loc), ("abi", abi)])
             }
             TerminatorKind::Assert { cond, expected, msg, target, unwind } => {
                 // cg_ssa's `codegen_assert_terminator`: optional overflow checks pass when the
@@ -1201,7 +1214,7 @@ impl<'a, 'tcx> FnDump<'a, 'tcx> {
                 };
                 let def_id = tcx.require_lang_item(item, t.source_info.span);
                 let panic = Instance::mono(tcx, def_id);
-                let args = ops.into_iter().map(|o| self.operand(d, o)).collect::<Res<Vec<_>>>()?;
+                let args = self.operands(d, ops)?;
                 let loc = panic.def.requires_caller_location(tcx).then(|| self.caller_location(d, t.source_info));
                 let msg = obj(vec![("panicFn", num(d.instance(panic))), ("args", J::Arr(args)), ("callerLocation", opt(loc))]);
                 ctor(
