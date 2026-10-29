@@ -126,7 +126,7 @@ impl<'tcx> Frame<'tcx> {
                 // and stack slots.
                 alloc_below(&mut end, size, align)?
             } else if size == 0 {
-                slot(-(end as i32))
+                slot(-(end.next_multiple_of(align) as i32))
             } else if sharing.as_ref().is_some_and(|s| s.shareable.contains(local)) {
                 shared.push(local);
                 0
