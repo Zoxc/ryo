@@ -399,7 +399,7 @@ pub fn run(opts: Options) -> Result<(), String> {
     };
     let y = std::env::current_exe().map_err(|e| format!("current_exe: {e}"))?;
     let header = header(&info, &root, &opts);
-    let ctx = Ctx { info: &info, root: &root, y: &y, base: &base, opts: &opts };
+    let ctx = Ctx { info: &info, root: &root, y: &y, base: &base, logs: base.join("logs"), opts: &opts };
 
     let mut results = Vec::new();
     for krate in selected {
@@ -440,6 +440,8 @@ struct Ctx<'a> {
     y: &'a Path,
     /// `target/bench-crates`.
     base: &'a Path,
+    /// `RYO_Y_BENCH_WRAPPER`'s log directory for a build step.
+    logs: PathBuf,
     opts: &'a Options,
 }
 
@@ -470,19 +472,9 @@ fn build_phase(ctx: &Ctx, krate: &Target, sources: &Sources, cells: &mut [Cell])
                 _ if clean => format!("clean {i}/{}", opts.dep_samples),
                 _ => format!("leaf {}/{}", i - opts.dep_samples, opts.leaf_samples),
             };
-            let target = ctx.base.join("target").join(krate.name()).join(backend.name());
-            let env = Env {
-                info: ctx.info,
-                root: ctx.root,
-                y: ctx.y,
-                backend,
-                target: &target,
-                src: &sources.dir,
-                stock: opts.stock,
-                overrides: &sources.overrides,
-            };
+            let env = Env::new(ctx, krate, sources, backend);
             let t = Instant::now();
-            match build_sample(&env, sources, &ctx.base.join("logs"), clean, i == 0 && backend == Compiler::Ryo) {
+            match build_sample(&env, clean, i == 0 && backend == Compiler::Ryo) {
                 Ok(sample) => {
                     eprintln!("[y] {} build {label} [{}]: {:.1}s", krate.name(), backend.name(), t.elapsed().as_secs_f64());
                     artifacts[bi] = sample.artifacts;
@@ -657,28 +649,30 @@ fn sha256(path: &Path) -> Result<String, String> {
 
 /// What a cargo invocation of a build sample needs.
 struct Env<'a> {
-    info: &'a RustcInfo,
-    root: &'a Path,
-    y: &'a Path,
+    ctx: &'a Ctx<'a>,
+    sources: &'a Sources,
     backend: Compiler,
-    target: &'a Path,
-    src: &'a Path,
-    stock: bool,
-    /// A local workspace's per-package profile overrides (`prepare_local`).
-    overrides: &'a [String],
+    /// `CARGO_TARGET_DIR`, per crate and backend.
+    target: PathBuf,
 }
 
-impl Env<'_> {
-    fn cargo(&self, log_dir: &Path, stats: bool) -> Command {
+impl<'a> Env<'a> {
+    fn new(ctx: &'a Ctx<'a>, krate: &Target, sources: &'a Sources, backend: Compiler) -> Self {
+        let target = ctx.base.join("target").join(krate.name()).join(backend.name());
+        Env { ctx, sources, backend, target }
+    }
+
+    fn cargo(&self, stats: bool) -> Command {
+        let stock = self.ctx.opts.stock;
         let mut c = cmd("cargo");
-        c.current_dir(self.src);
-        for o in override_configs(self.overrides).iter().filter(|_| !self.stock) {
+        c.current_dir(&self.sources.dir);
+        for o in override_configs(&self.sources.overrides).iter().filter(|_| !stock) {
             c.args(["--config", o]);
         }
         for v in CLEARED_ENV {
             c.env_remove(v);
         }
-        for (k, v) in PROFILE_ENV.iter().filter(|_| !self.stock) {
+        for (k, v) in PROFILE_ENV.iter().filter(|_| !stock) {
             for p in ["DEV", "TEST", "DEV_BUILD_OVERRIDE", "TEST_BUILD_OVERRIDE"] {
                 // Build overrides can't set `lto`, `panic` or `incremental`.
                 if p.ends_with("OVERRIDE") && matches!(*k, "LTO" | "PANIC" | "INCREMENTAL") {
@@ -687,12 +681,12 @@ impl Env<'_> {
                 c.env(format!("CARGO_PROFILE_{p}_{k}"), v);
             }
         }
-        c.env("RUSTUP_TOOLCHAIN", &self.info.toolchain)
-            .env("RUSTC", self.backend.rustc(self.root))
-            .env("RUSTC_WRAPPER", self.y)
-            .env(WRAPPER_VAR, log_dir)
-            .env("CARGO_TARGET_DIR", self.target);
-        if !self.stock {
+        c.env("RUSTUP_TOOLCHAIN", &self.ctx.info.toolchain)
+            .env("RUSTC", self.backend.rustc(self.ctx.root))
+            .env("RUSTC_WRAPPER", self.ctx.y)
+            .env(WRAPPER_VAR, &self.ctx.logs)
+            .env("CARGO_TARGET_DIR", &self.target);
+        if !stock {
             c.env("RUSTFLAGS", RUSTFLAGS).env("CARGO_INCREMENTAL", "0").env("CARGO_BUILD_JOBS", "1");
         }
         if stats {
@@ -717,11 +711,12 @@ struct BuildSample {
 /// Builds the crate: library, tests, then the workload. `clean` starts from a clean target
 /// directory; otherwise only the crate's own artifacts are cleaned (`cargo clean -p`), so
 /// the dependencies aren't rebuilt, and a rebuilt one is an error.
-fn build_sample(env: &Env, sources: &Sources, logs: &Path, clean: bool, stats: bool) -> Result<BuildSample, String> {
+fn build_sample(env: &Env, clean: bool, stats: bool) -> Result<BuildSample, String> {
+    let (sources, logs) = (env.sources, &env.ctx.logs);
     if clean {
-        crate::utils::remove_dir_if_exists(env.target)?;
+        crate::utils::remove_dir_if_exists(&env.target)?;
     } else {
-        let mut c = env.cargo(logs, false);
+        let mut c = env.cargo(false);
         c.args(["clean", "--offline"]);
         for m in &sources.members {
             c.args(["-p", m]);
@@ -730,7 +725,7 @@ fn build_sample(env: &Env, sources: &Sources, logs: &Path, clean: bool, stats: b
     }
     let step = |args: &[&str]| -> Result<(Step, String), String> {
         crate::utils::remove_dir_if_exists(logs)?;
-        let mut c = env.cargo(logs, stats);
+        let mut c = env.cargo(stats);
         c.args(["build", "--locked", "--offline", "-Zsection-timings", "--timings"]).args(args);
         let start = Instant::now();
         let out = c.output().map_err(|e| format!("running cargo: {e}"))?;
