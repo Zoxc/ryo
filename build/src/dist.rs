@@ -361,12 +361,7 @@ pub fn dist_abi_tag(dist: &Path) -> Result<String, String> {
 
 /// A hash of `files`' contents: the backend dylib and the runtime rlibs.
 fn build_id(files: &[PathBuf]) -> Result<String, String> {
-    use std::hash::Hasher;
-    let mut h = std::hash::DefaultHasher::new();
-    for f in files {
-        h.write(&fs::read(f).map_err(|e| format!("{}: {e}", f.display()))?);
-    }
-    Ok(format!("{:016x}", h.finish()))
+    Ok(format!("{:016x}", crate::utils::hash_files(files)?))
 }
 
 fn build_wrappers(root: &Path, dist_bin: &Path, info: &RustcInfo, build_id: &str) -> Result<(), String> {

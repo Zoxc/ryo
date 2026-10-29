@@ -67,24 +67,18 @@ pub fn ryo_sysroot_status(info: &RustcInfo, dist: &Path) -> SysrootStatus {
 /// The inputs of the ryo sysroot, a `key=value` line each. `jit`: whether `ryo_rt` bundles
 /// the JIT (as [`build`] gets it).
 fn stamp(info: &RustcInfo, root: &Path, dist: &Path, jit: bool) -> Result<String, String> {
-    use std::hash::Hasher;
+    use crate::utils::hash_bytes;
     // The runtime's sources even when `RYO_ABI_OVERRIDE` fixes `abi=`.
     let vm = crate::dist::runtime_hash(root)?;
-    // `prepare_sources` (how the library is patched) and the build's flags are in this file.
-    let mut y = std::hash::DefaultHasher::new();
-    y.write(include_str!("sysroot.rs").as_bytes());
     let src = info.rust_src_library();
     Ok(format!(
         "rustc={:x}\nrust-src={}\nbackend={:x}\nvm={:x}\ny={:x}\njit={jit}\nabi={}\n",
-        {
-            let mut h = std::hash::DefaultHasher::new();
-            h.write(info.version.as_bytes());
-            h.finish()
-        },
+        hash_bytes(info.version.as_bytes()),
         src.display(),
         backend_stamp(dist)?,
         vm,
-        y.finish(),
+        // `prepare_sources` (how the library is patched) and the build's flags are in this file.
+        hash_bytes(include_str!("sysroot.rs").as_bytes()),
         crate::dist::dist_abi_tag(dist)?,
     ))
 }
@@ -332,13 +326,7 @@ fn prepare_sources(info: &RustcInfo, root: &Path, dst: &Path, jit: bool) -> Resu
 /// A hash of `dist/`'s backend's contents (`y build` copies it fresh each time, so its
 /// modification time always changes).
 fn backend_stamp(dist: &Path) -> Result<u64, String> {
-    use std::hash::Hasher;
-    let backend = dist.join("lib").join(crate::utils::dll_name("rustc_codegen_ryo"));
-    let bytes = fs::read(&backend).map_err(|e| format!("{}: {e}", backend.display()))?;
-    // `DefaultHasher::new` uses fixed keys, so the hash is stable across runs.
-    let mut h = std::hash::DefaultHasher::new();
-    h.write(&bytes);
-    Ok(h.finish())
+    crate::utils::hash_files(&[dist.join("lib").join(crate::utils::dll_name("rustc_codegen_ryo"))])
 }
 
 fn write_if_changed(path: &Path, text: &str) -> Result<(), String> {

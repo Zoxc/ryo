@@ -393,6 +393,25 @@ pub fn hash_tree(dir: &Path, rel: &Path, h: &mut std::hash::DefaultHasher) -> Re
     Ok(())
 }
 
+/// A hash of `bytes`. `DefaultHasher::new` uses fixed keys, so it is stable across runs
+/// (which stamps and build ids rely on).
+pub fn hash_bytes(bytes: &[u8]) -> u64 {
+    use std::hash::Hasher;
+    let mut h = std::hash::DefaultHasher::new();
+    h.write(bytes);
+    h.finish()
+}
+
+/// A hash of the contents of `files`, in order.
+pub fn hash_files(files: &[impl AsRef<Path>]) -> Result<u64, String> {
+    use std::hash::Hasher;
+    let mut h = std::hash::DefaultHasher::new();
+    for f in files {
+        hash_file(&mut h, f.as_ref())?;
+    }
+    Ok(h.finish())
+}
+
 /// Hashes the contents of `path`.
 pub fn hash_file(h: &mut std::hash::DefaultHasher, path: &Path) -> Result<(), String> {
     use std::hash::Hasher;
