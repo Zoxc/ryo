@@ -840,6 +840,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                     }
                     self.owners.insert(n, u);
                 } else if self.global_elsewhere(u, n) {
+                    self.flip_linkonce(n);
                     continue;
                 }
                 let data =
@@ -876,7 +877,11 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             // Upstream copies, and non-generic templates, which `ryo_rt` itself defines; and a
             // copy another CGU defines globally (perhaps exported: a hidden copy here would
             // take it out of the exports, `hidden_for_image`).
-            if island.upstream_monomorphization(tcx).is_some() || !tcx.should_codegen_locally(island) || elsewhere {
+            if island.upstream_monomorphization(tcx).is_some() || !tcx.should_codegen_locally(island) {
+                continue;
+            }
+            if elsewhere {
+                self.flip_linkonce(item);
                 continue;
             }
             // A unique one rustc internalized into another CGU: that copy, made linkable.
@@ -893,6 +898,21 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             self.units[u].add_hidden(tcx, island, Linkage::External);
         }
         self.units[u].vm.islands = islands;
+    }
+
+    /// For an item another CGU defines globally and `u` references from outside that CGU's
+    /// module: a linkonce copy becomes its weak form (LLVM drops linkonce items no native code
+    /// of their own module uses), in every CGU holding it that hasn't flipped it already (to
+    /// a hidden weak form, say).
+    fn flip_linkonce(&mut self, item: MonoItem<'tcx>) {
+        for &h in self.homes.get(&item).map_or(&[][..], |v| &v[..]) {
+            let unit = &mut self.units[h];
+            if unit.flips.contains_key(&item) {
+                continue;
+            }
+            let flip = linkable(&unit.cgu.items()[&item], None);
+            unit.flip(item, flip);
+        }
     }
 
     /// Makes a native item CGU `u`'s image refers to by symbol linkable from the image's
@@ -940,11 +960,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         // A `LocalCopy` defined globally by another CGU: a native item there needs at most the
         // linkonce flip.
         if self.global_elsewhere(u, item) {
-            for &h in self.homes.get(&item).map_or(&[][..], |v| &v[..]) {
-                let unit = &mut self.units[h];
-                let flip = linkable(&unit.cgu.items()[&item], None);
-                unit.flip(item, flip);
-            }
+            self.flip_linkonce(item);
             return;
         }
         if let MonoItem::Fn(f) = item
