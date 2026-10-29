@@ -99,40 +99,7 @@ fn positions(f: &Func) -> Positions {
 }
 
 /// A set of values, one bit each.
-#[derive(Clone, PartialEq, Eq)]
-struct BitSet(Vec<u64>);
-
-impl BitSet {
-    fn new(f: &Func) -> Self {
-        BitSet(alloc::vec![0; f.values.len().div_ceil(64)])
-    }
-    fn insert(&mut self, v: Value) {
-        self.0[v.idx() / 64] |= 1 << (v.idx() % 64);
-    }
-    fn remove(&mut self, v: Value) {
-        self.0[v.idx() / 64] &= !(1 << (v.idx() % 64));
-    }
-    fn contains(&self, v: Value) -> bool {
-        self.0[v.idx() / 64] >> (v.idx() % 64) & 1 != 0
-    }
-    fn union_with(&mut self, o: &BitSet) {
-        for (w, x) in self.0.iter_mut().zip(&o.0) {
-            *w |= x;
-        }
-    }
-    fn iter(&self) -> impl Iterator<Item = Value> + '_ {
-        self.0.iter().enumerate().flat_map(|(w, &bits)| {
-            let mut x = bits;
-            core::iter::from_fn(move || {
-                (x != 0).then(|| {
-                    let v = Value((w * 64) as u32 + x.trailing_zeros());
-                    x &= x - 1;
-                    v
-                })
-            })
-        })
-    }
-}
+type BitSet = super::bits::BitSet<Value>;
 
 /// Whether liveness tracks `v`: an instruction result or a block parameter (constants and
 /// undefined values need no location).
@@ -144,7 +111,7 @@ fn tracked(f: &Func, v: Value) -> bool {
 /// their parameters) plus the edge arguments, plus its terminator's uses.
 fn live_out(f: &Func, live: &[BitSet], b: Block) -> BitSet {
     let bd = &f.blocks[b.idx()];
-    let mut cur = BitSet::new(f);
+    let mut cur = BitSet::new(f.values.len());
     for e in bd.term.edges() {
         // Remove the parameters from this successor's own live-in only: one may be live
         // into another successor.
@@ -193,7 +160,7 @@ fn walk_back(f: &Func, b: Block, cur: &mut BitSet, mut at: impl FnMut(&super::ir
 /// layout (block parameters are defined at their block's start, edge arguments used at the
 /// predecessor's end).
 fn live_in(f: &Func) -> Vec<BitSet> {
-    let mut live = alloc::vec![BitSet::new(f); f.blocks.len()];
+    let mut live = alloc::vec![BitSet::new(f.values.len()); f.blocks.len()];
     let mut changed = true;
     while changed {
         changed = false;
@@ -428,7 +395,7 @@ fn intervals(f: &Func, pos: &Positions, live: &[BitSet]) -> (Vec<u32>, Vec<u32>)
         for &p in &bd.params {
             ext(p.idx(), s, s);
         }
-        let mut out = BitSet::new(f);
+        let mut out = BitSet::new(f.values.len());
         for ed in bd.term.edges() {
             out.union_with(&live[ed.to.idx()]);
             for &a in &ed.args {

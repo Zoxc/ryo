@@ -10,6 +10,7 @@
 use alloc::vec::Vec;
 
 use super::Unsupported;
+use super::bits::BitSet;
 use super::decode::{Acc, Code, How, Kind};
 use super::ir::{Alloca, AllocaId, AllocaKind};
 use crate::asm::ScopeKind;
@@ -95,6 +96,47 @@ fn extent(a: &Acc) -> (i64, i64) {
 /// Whether `n` is a scalar access width.
 fn scalar(n: u32) -> bool {
     matches!(n, 1 | 2 | 4 | 8)
+}
+
+/// A forward dataflow over `code`'s blocks to its fixed point: block 0 starts at `entry`;
+/// `run(b, st, before_last)` turns block `b`'s entry state into its end state, and for a
+/// block with a landing pad sets `before_last` to the state before its last instruction's
+/// effects (what the pad starts from); `join(into, from)` merges a predecessor's state in,
+/// whether that changed it. Each block's entry state, `None` if it isn't reached.
+fn forward<S: Clone>(code: &Code, entry: S, mut run: impl FnMut(usize, &mut S, &mut S), mut join: impl FnMut(&mut S, &S) -> bool) -> Vec<Option<S>> {
+    let nb = code.blocks.len();
+    let mut inn: Vec<Option<S>> = alloc::vec![None; nb];
+    if nb == 0 {
+        return inn;
+    }
+    let mut st = entry.clone();
+    let mut before = entry.clone();
+    inn[0] = Some(entry);
+    let mut work: Vec<usize> = alloc::vec![0];
+    let mut queued = alloc::vec![false; nb];
+    queued[0] = true;
+    while let Some(b) = work.pop() {
+        queued[b] = false;
+        st.clone_from(inn[b].as_ref().unwrap());
+        run(b, &mut st, &mut before);
+        let bl = &code.blocks[b];
+        for &s in &bl.succ {
+            let from = if Some(s) == bl.pad { &before } else { &st };
+            let s = s as usize;
+            let changed = match &mut inn[s] {
+                Some(x) => join(x, from),
+                x @ None => {
+                    *x = Some(from.clone());
+                    true
+                }
+            };
+            if changed && !queued[s] {
+                queued[s] = true;
+                work.push(s);
+            }
+        }
+    }
+    inn
 }
 
 const NONE: u16 = u16::MAX;
@@ -319,6 +361,34 @@ fn classify(fb: &mut FrameBytes) -> (Vec<Alloca>, Of) {
     (allocas, Of { f, of })
 }
 
+/// The shapes `(off, w)` the writes and updates of promoted allocas make, and each write's
+/// shape id by instruction and access (`NONE` for the other accesses).
+fn assign_shapes(code: &Code, promoted: &dyn Fn(&[Alloca], i32) -> bool, allocas: &[Alloca]) -> Result<(Vec<(i32, u8)>, Vec<Vec<u16>>), Unsupported> {
+    let mut shapes: Vec<(i32, u8)> = Vec::new();
+    let mut wshape: Vec<Vec<u16>> = Vec::with_capacity(code.insns.len());
+    for i in &code.insns {
+        let mut v = Vec::with_capacity(i.accs.len());
+        for a in &i.accs {
+            v.push(if matches!(a.how, How::Write | How::Update) && promoted(allocas, a.off) {
+                if shapes.len() >= (CONFLICT - 1) as usize {
+                    return Err(Unsupported("too many shapes"));
+                }
+                match shapes.iter().position(|&x| x == (a.off, a.size as u8)) {
+                    Some(k) => k as u16,
+                    None => {
+                        shapes.push((a.off, a.size as u8));
+                        shapes.len() as u16 - 1
+                    }
+                }
+            } else {
+                NONE
+            });
+        }
+        wshape.push(v);
+    }
+    Ok((shapes, wshape))
+}
+
 /// What the promoted allocas' accesses name: per byte the write shape (an access `(off, w)`)
 /// that wrote it last, `NONE` if none, or `CONFLICT`, by a forward dataflow. Promoted
 /// allocas read at a shape that doesn't reach become memory. Returns the shapes, each write's
@@ -328,16 +398,6 @@ fn reaching_shapes(code: &Code, lay: &Of, allocas: &mut [Alloca]) -> Result<(Vec
     let n = lay.of.len();
     let of = &lay.of;
     let alloca_at = |off: i32| lay.at(off);
-    let mut shapes: Vec<(i32, u8)> = Vec::new();
-    let shape_id = |shapes: &mut Vec<(i32, u8)>, s: (i32, u8)| -> u16 {
-        match shapes.iter().position(|&x| x == s) {
-            Some(i) => i as u16,
-            None => {
-                shapes.push(s);
-                shapes.len() as u16 - 1
-            }
-        }
-    };
     // Promoted bytes, densely.
     let mut pbyte = alloc::vec![u32::MAX; n];
     let mut np = 0u32;
@@ -348,25 +408,9 @@ fn reaching_shapes(code: &Code, lay: &Of, allocas: &mut [Alloca]) -> Result<(Vec
         }
     }
     let promoted = |allocas: &[Alloca], off: i32| alloca_at(off).is_some_and(|a| allocas[a.idx()].kind == AllocaKind::Promoted);
-    // Shape ids of each write, by instruction and access.
-    let mut wshape: Vec<Vec<u16>> = Vec::with_capacity(code.insns.len());
-    for i in &code.insns {
-        let mut v = Vec::with_capacity(i.accs.len());
-        for a in &i.accs {
-            v.push(if matches!(a.how, How::Write | How::Update) && promoted(&allocas, a.off) {
-                if shapes.len() >= (CONFLICT - 1) as usize {
-                    return Err(Unsupported("too many shapes"));
-                }
-                shape_id(&mut shapes, (a.off, a.size as u8))
-            } else {
-                NONE
-            });
-        }
-        wshape.push(v);
-    }
-    let nb = code.blocks.len();
+    let (shapes, wshape) = assign_shapes(code, &promoted, allocas)?;
     let np = np as usize;
-    let join = |into: &mut [u16], from: &[u16]| -> bool {
+    let join = |into: &mut Vec<u16>, from: &Vec<u16>| -> bool {
         let mut changed = false;
         for (x, &y) in into.iter_mut().zip(from) {
             let z = if *x == y || y == NONE {
@@ -383,98 +427,77 @@ fn reaching_shapes(code: &Code, lay: &Of, allocas: &mut [Alloca]) -> Result<(Vec
         }
         changed
     };
-    // `None` until a block is reached.
-    let mut inn: Vec<Option<Vec<u16>>> = alloc::vec![None; nb];
-    let mut demote = alloc::vec![false; allocas.len()];
-    let mut res: Vec<Vec<Res>> = code.insns.iter().map(|i| alloc::vec![Res::Undef; i.accs.len()]).collect();
-    if np > 0 && nb > 0 {
-        inn[0] = Some(alloc::vec![NONE; np]);
-        let mut work: Vec<usize> = alloc::vec![0];
-        let mut queued = alloc::vec![false; nb];
-        queued[0] = true;
-        // Runs block `b` from its entry state: the state at the end, and before the last
-        // instruction's writes (for its landing pad; only when it has one, and not while
-        // resolving).
-        let run = |b: usize, st: &mut Vec<u16>, before_last: &mut Vec<u16>, res: Option<&mut Vec<Vec<Res>>>, demote: &mut Vec<bool>| {
-            let bl = &code.blocks[b];
-            let mut res = res;
-            for i in bl.start..bl.end {
-                let ri = &code.insns[i as usize];
-                for (k, a) in ri.accs.iter().enumerate() {
-                    if !matches!(a.how, How::Read | How::Update) || !promoted(&allocas, a.off) {
-                        continue;
-                    }
-                    let al = alloca_at(a.off).unwrap();
-                    let bytes = (a.off as i64 + f) as usize..(a.off as i64 + f) as usize + a.size as usize;
-                    let first = st[pbyte[bytes.start] as usize];
-                    let all = bytes.clone().all(|x| st[pbyte[x] as usize] == first);
-                    let r = if all && first == NONE {
-                        Some(Res::Undef)
-                    } else if all
-                        && first != CONFLICT
-                        && shapes[first as usize].0 == a.off
-                        && shapes[first as usize].1 as u32 >= a.size
-                        && (shapes[first as usize].1 == 16) == (a.size == 16)
-                    {
-                        Some(Res::Var(first as u32))
-                    } else {
-                        None
-                    };
-                    match r {
-                        None => demote[al.idx()] = true,
-                        Some(r) => {
-                            if let Some(res) = res.as_deref_mut() {
-                                res[i as usize][k] = r;
-                            }
-                        }
-                    }
-                }
-                if i + 1 == bl.end && bl.pad.is_some() && res.is_none() {
-                    before_last.clone_from(st);
-                }
-                for (k, a) in ri.accs.iter().enumerate() {
-                    let s = wshape[i as usize][k];
-                    if s == NONE {
-                        continue;
-                    }
-                    let lo = (a.off as i64 + f) as usize;
-                    for x in lo..lo + a.size as usize {
-                        st[pbyte[x] as usize] = s;
-                    }
-                    if let Some(res) = res.as_deref_mut()
-                        && a.how == How::Write
-                    {
-                        res[i as usize][k] = Res::Var(s as u32);
-                    }
-                }
-            }
-        };
-        let (mut st, mut before) = (Vec::new(), Vec::new());
-        while let Some(b) = work.pop() {
-            queued[b] = false;
-            st.clone_from(inn[b].as_ref().unwrap());
-            run(b, &mut st, &mut before, None, &mut demote);
-            let bl = &code.blocks[b];
-            for &s in &bl.succ {
-                let from = if Some(s) == bl.pad { &before } else { &st };
-                let s = s as usize;
-                let changed = match &mut inn[s] {
-                    Some(x) => join(x, from),
-                    x @ None => {
-                        *x = Some(from.clone());
-                        true
-                    }
-                };
-                if changed && !queued[s] {
-                    queued[s] = true;
-                    work.push(s);
+    // What the promoted read `a` names in state `st`: `None` if no one shape wrote all its
+    // bytes (its alloca becomes memory).
+    let read = |st: &[u16], a: &Acc| -> Option<Res> {
+        let bytes = (a.off as i64 + f) as usize..(a.off as i64 + f) as usize + a.size as usize;
+        let first = st[pbyte[bytes.start] as usize];
+        let all = bytes.clone().all(|x| st[pbyte[x] as usize] == first);
+        if all && first == NONE {
+            Some(Res::Undef)
+        } else if all
+            && first != CONFLICT
+            && shapes[first as usize].0 == a.off
+            && shapes[first as usize].1 as u32 >= a.size
+            && (shapes[first as usize].1 == 16) == (a.size == 16)
+        {
+            Some(Res::Var(first as u32))
+        } else {
+            None
+        }
+    };
+    let is_read = |a: &Acc| matches!(a.how, How::Read | How::Update) && promoted(allocas, a.off);
+    // Instruction `i`'s writes, applied to `st`.
+    let write = |st: &mut [u16], i: usize| {
+        for (k, a) in code.insns[i].accs.iter().enumerate() {
+            let s = wshape[i][k];
+            if s != NONE {
+                let lo = (a.off as i64 + f) as usize;
+                for x in lo..lo + a.size as usize {
+                    st[pbyte[x] as usize] = s;
                 }
             }
         }
+    };
+    let mut demote = alloc::vec![false; allocas.len()];
+    let mut res: Vec<Vec<Res>> = code.insns.iter().map(|i| alloc::vec![Res::Undef; i.accs.len()]).collect();
+    if np > 0 {
+        let inn = forward(
+            code,
+            alloc::vec![NONE; np],
+            |b, st, before_last| {
+                let bl = &code.blocks[b];
+                for i in bl.start as usize..bl.end as usize {
+                    for a in code.insns[i].accs.iter().filter(|a| is_read(a)) {
+                        if read(&st[..], a).is_none() {
+                            demote[alloca_at(a.off).unwrap().idx()] = true;
+                        }
+                    }
+                    if i + 1 == bl.end as usize && bl.pad.is_some() {
+                        before_last.clone_from(st);
+                    }
+                    write(&mut st[..], i);
+                }
+            },
+            join,
+        );
         // The resolutions, from the fixed point.
-        for b in 0..nb {
-            if let Some(mut st) = inn[b].take() {
-                run(b, &mut st, &mut before, Some(&mut res), &mut demote);
+        for (b, st) in inn.into_iter().enumerate() {
+            let Some(mut st) = st else { continue };
+            let bl = &code.blocks[b];
+            for i in bl.start as usize..bl.end as usize {
+                for (k, a) in code.insns[i].accs.iter().enumerate().filter(|(_, a)| is_read(a)) {
+                    match read(&st[..], a) {
+                        None => demote[alloca_at(a.off).unwrap().idx()] = true,
+                        Some(r) => res[i][k] = r,
+                    }
+                }
+                write(&mut st[..], i);
+                for (k, a) in code.insns[i].accs.iter().enumerate() {
+                    if wshape[i][k] != NONE && a.how == How::Write {
+                        res[i][k] = Res::Var(wshape[i][k] as u32);
+                    }
+                }
             }
         }
     }
@@ -572,75 +595,53 @@ fn resolve(code: &Code, lay: &Of, allocas: &[Alloca], var_of: &[u32], vars: &mut
 /// Escapes at the enterable heads, by a forward may-dataflow over the memory allocas: the
 /// allocas that may be escaped at an OSR entry are pinned.
 fn pin_escapes(code: &Code, allocas: &mut [Alloca]) {
-    let nb = code.blocks.len();
-    let na = allocas.len();
-    let words = na.div_ceil(64);
-    let mut ein: Vec<Option<Vec<u64>>> = alloc::vec![None; nb];
-    if nb > 0 && code.scopes.iter().any(|s| matches!(s.kind, ScopeKind::Escape { .. })) {
-        ein[0] = Some(alloc::vec![0; words]);
-        let mut work: Vec<usize> = alloc::vec![0];
-        let mut scope_at: Vec<Vec<usize>> = alloc::vec![Vec::new(); code.insns.len() + 1];
-        for (k, s) in code.scopes.iter().enumerate() {
-            scope_at[s.at as usize].push(k);
-        }
-        let covered = |off: i32, size: u32| -> Vec<(usize, bool)> {
-            // The allocas the range touches, and whether it covers each whole.
-            let mut v: Vec<(usize, bool)> = Vec::new();
-            for (a, al) in allocas.iter().enumerate() {
-                let (lo, end) = (al.aot_off as i64, al.aot_off as i64 + al.size as i64);
-                let (s, e) = (off as i64, off as i64 + size as i64);
-                if s < end && lo < e {
-                    v.push((a, s <= lo && end <= e));
-                }
+    if !code.scopes.iter().any(|s| matches!(s.kind, ScopeKind::Escape { .. })) {
+        return;
+    }
+    let mut scope_at: Vec<Vec<usize>> = alloc::vec![Vec::new(); code.insns.len() + 1];
+    for (k, s) in code.scopes.iter().enumerate() {
+        scope_at[s.at as usize].push(k);
+    }
+    let covered = |off: i32, size: u32| -> Vec<(usize, bool)> {
+        // The allocas the range touches, and whether it covers each whole.
+        let mut v: Vec<(usize, bool)> = Vec::new();
+        for (a, al) in allocas.iter().enumerate() {
+            let (lo, end) = (al.aot_off as i64, al.aot_off as i64 + al.size as i64);
+            let (s, e) = (off as i64, off as i64 + size as i64);
+            if s < end && lo < e {
+                v.push((a, s <= lo && end <= e));
             }
-            v
-        };
-        let mut st: Vec<u64> = Vec::new();
-        while let Some(b) = work.pop() {
-            st.clone_from(ein[b].as_ref().unwrap());
+        }
+        v
+    };
+    let ein = forward(
+        code,
+        BitSet::new(allocas.len()),
+        |b, st, before_last| {
             let bl = &code.blocks[b];
             for i in bl.start..bl.end {
                 for &k in &scope_at[i as usize] {
                     let s = &code.scopes[k];
                     match s.kind {
-                        ScopeKind::Escape { .. } => covered(s.off, s.size).iter().for_each(|&(a, _)| st[a / 64] |= 1 << (a % 64)),
-                        ScopeKind::End => covered(s.off, s.size).iter().filter(|x| x.1).for_each(|&(a, _)| st[a / 64] &= !(1 << (a % 64))),
+                        ScopeKind::Escape { .. } => covered(s.off, s.size).iter().for_each(|&(a, _)| st.insert(a)),
+                        ScopeKind::End => covered(s.off, s.size).iter().filter(|x| x.1).for_each(|&(a, _)| st.remove(a)),
                         ScopeKind::Lend => {}
                     }
                 }
             }
-            for &s in &bl.succ {
-                let s = s as usize;
-                let changed = match &mut ein[s] {
-                    Some(x) => {
-                        let mut c = false;
-                        for (p, q) in x.iter_mut().zip(&st) {
-                            if *p | q != *p {
-                                *p |= q;
-                                c = true;
-                            }
-                        }
-                        c
-                    }
-                    x @ None => {
-                        *x = Some(st.clone());
-                        true
-                    }
-                };
-                if changed {
-                    work.push(s);
-                }
+            // A landing pad starts from the end state too.
+            if bl.pad.is_some() {
+                before_last.clone_from(st);
             }
-        }
-        for (b, bl) in code.blocks.iter().enumerate() {
-            if let (Some(h), Some(st)) = (bl.head, &ein[b])
-                && code.enterable[h as usize]
-            {
-                for a in 0..na {
-                    if st[a / 64] >> (a % 64) & 1 != 0 {
-                        allocas[a].pinned = true;
-                    }
-                }
+        },
+        |into, from| into.union_with(from),
+    );
+    for (b, bl) in code.blocks.iter().enumerate() {
+        if let (Some(h), Some(st)) = (bl.head, &ein[b])
+            && code.enterable[h as usize]
+        {
+            for a in st.iter() {
+                allocas[a].pinned = true;
             }
         }
     }

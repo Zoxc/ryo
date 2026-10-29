@@ -9,6 +9,7 @@
 //! - `alloca`: the frame as allocas: which are promoted, memory, the outgoing and incoming
 //!   areas, which are pinned at OSR entries, and the variable each access names.
 //! - `ir`: the IR, its printer and verifier.
+//! - `bits`: a dense bit set (liveness, escapes).
 //! - `build`: SSA construction (Braun et al.).
 //! - `opt`: the optimization passes on the IR: value numbering, the folds, DCE, jump
 //!   threading and the promotion of allocas.
@@ -19,6 +20,8 @@
 
 #[cfg(feature = "alloc")]
 pub mod alloca;
+#[cfg(feature = "alloc")]
+pub mod bits;
 #[cfg(feature = "alloc")]
 pub mod build;
 #[cfg(feature = "alloc")]
