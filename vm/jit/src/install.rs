@@ -1,6 +1,7 @@
-//! The JIT thread's compiler: decodes a function from its image, encodes it again without
-//! counters (in another frame layout with `RYO_JIT_SHUFFLE`), builds the OSR entries of its
-//! loop heads, and installs the code near the image: code memory, relocation, unwind
+//! The JIT thread's compiler: decodes a function from its image, compiles it with the SSA
+//! tier (`RYO_JIT_OPT=ssa`, the default) or, as the fallback and with `reencode`, encodes it
+//! again without counters (in another frame layout with `RYO_JIT_SHUFFLE`), builds the OSR
+//! entries of its loop heads, and installs the code near the image: code memory, relocation, unwind
 //! information, the perf map, and the record's publication (design/jit.md, "Compiling and installing").
 
 use core::ptr;
@@ -262,8 +263,8 @@ impl Jit {
     }
 
     /// Compiles `rec`'s function with the SSA tier if `ssa`, else (or where that doesn't
-    /// compile it) by re-encoding; `retry` if this is the second attempt, whose stats the
-    /// first one already counted.
+    /// compile it) by re-encoding; `retry` for any attempt after the first, whose stats
+    /// the first one already counted.
     fn compile_once(&mut self, rec: *mut JitRecord, ssa: bool, retry: bool) -> Result<(), CompileError> {
         // SAFETY: a record of a linked image, whose header it points at.
         let (func, img) = unsafe { ((*rec).func, Image::from_header((*rec).header.cast()).map_err(|_| "invalid image")?) };
@@ -556,7 +557,7 @@ struct Job<'a> {
     shuffled: bool,
     place: Place,
     personality: usize,
-    /// The second attempt, after [`CompileError::Retry`]: the first counted the stats.
+    /// An attempt after the first, after [`CompileError::Retry`]: the first counted the stats.
     retry: bool,
 }
 
@@ -564,10 +565,11 @@ struct Job<'a> {
 /// ([`Eh::patch`]). ELF: the CIE, the FDE, the OSR code's FDE, the terminator, then the
 /// LSDA. PE: the `RUNTIME_FUNCTION`s, then their `UNWIND_INFO`s: the body's
 /// (`pe_unwind_info`, the AOT code's form, or the SSA tier's own, from the same encoder,
-/// `pe_unwind_codes`), over the OSR code too unless a pad region lies between: past the
-/// prologue every `rsp` is described by `rbp`, the OSR code's included, which keeps the
-/// AOT frame's `rbp`; the pad region's; and if apart, the OSR code's (the body's, all of it
-/// past the prologue). The body's and the region's name `ryo_seh_handler` through a thunk
+/// `pe_unwind_codes`); for the AOT form, over the OSR code too unless a pad region lies
+/// between: past the prologue every `rsp` is described by `rbp`, the OSR code's included,
+/// which keeps the AOT frame's `rbp`; the pad region's; and if apart, or always for the SSA
+/// tier's code, the OSR code's (the body's, all of it past the prologue; for the SSA tier's
+/// without a pad region, `pe_osr_unwind_info`). The body's and the region's name `ryo_seh_handler` through a thunk
 /// after the code, with the LSDA as their handler data (design/jit.md, "Unwinding and
 /// profiling").
 enum Eh {

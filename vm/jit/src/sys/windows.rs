@@ -4,7 +4,7 @@
 //! `raw-dylib`; `ryo_bytecode`'s `vmem` links `kernel32` as usual, which the program's link
 //! provides (std imports from it too).
 //!
-//! Untested on Windows itself: only built and link-checked from Linux.
+//! Has run on Windows itself; the cross build is also link-checked from Linux.
 
 use core::ffi::c_void;
 

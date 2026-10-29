@@ -88,12 +88,12 @@ pub enum Action {
 /// unwind's context, so the pad doesn't run a second time.
 pub fn decide(flags: u32, cxx: bool, pc: u32, entered: bool, data: &PeHandlerData<'_>) -> Action {
     let unwinding = flags & (EXCEPTION_UNWINDING | EXCEPTION_EXIT_UNWIND) != 0;
-    // `pc - 1` is in the call a return address follows. For a frame that faulted itself the
-    // pc is the faulting instruction's, so a fault right after a cleanup call matches that
-    // call's site, and the unwind runs that site's pad (or a search takes its terminate pad).
     if unwinding && entered {
         return Action::Continue;
     }
+    // `pc - 1` is in the call a return address follows. For a frame that faulted itself the
+    // pc is the faulting instruction's, so a fault right after a cleanup call matches that
+    // call's site; a fault is an SEH exception, not a C++ one (`cxx` false), so no pad runs.
     let Some(site) = lsda::find(data.lsda, pc.wrapping_sub(1)) else { return Action::Abort("a VM function's LSDA is invalid") };
     match site {
         // A call that can't unwind (as on ELF, where the personality finds no call site).

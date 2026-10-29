@@ -975,7 +975,7 @@ the stderr it compares), each with one `write`:
   (`vm/jit/src/stats.rs`) are atomics only the JIT thread writes, with a `Relaxed` load
   and store; other threads read them with `Relaxed` loads. A record's are stored before its
   state leaves `Queued` (`JitRecord::publish`, `JitRecord::fail`), so a `RYO_JIT_SYNC` waiter
-  sees them. Compile timing is gated by `JitSettings::count` (on with stats, and in tests).
+  sees them; the timing counters and `largest_batch` come after, so they can be one behind. Compile timing is gated by `JitSettings::count` (on with stats, and in tests).
 - **Summary**: the `atexit` handler calls the JIT's report (formatted on the stack, no lock,
   no waiting for the JIT thread), or prints `JIT off`, `no function reached a threshold`,
   `JIT thread failed to start` or `JIT thread still starting`. Read mid-compile, the counters needn't balance: `in flight`

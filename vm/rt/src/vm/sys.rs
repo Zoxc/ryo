@@ -1,7 +1,7 @@
 //! OS services for the VM: page mappings (through `ryo_bytecode::vmem`), fatal errors, the
 //! runtime lock, and a bump allocator; for the JIT, the environment, futexes and reads of
 //! possibly unmapped memory. Every OS call of the runtime is declared here or in
-//! `ryo_bytecode` (`vmem`, `os`).
+//! `ryo_bytecode` (`vmem`, `os`), but `seh.rs`'s `RtlUnwindEx`.
 //!
 //! Everything here uses `core` and direct OS calls only (libc on ELF, kernel32 on PE). Under
 //! `--sysroot ryo`, std's allocator, `Mutex` and I/O may be VM functions, so the runtime must
