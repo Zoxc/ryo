@@ -155,7 +155,15 @@ struct RuntimeFunction {
 fn pe_runtime_functions(dump: &str) -> Result<Vec<RuntimeFunction>, String> {
     let addr = |l: &str| l.rsplit_once("(0x").and_then(|(_, a)| u64::from_str_radix(a.trim_end_matches(')'), 16).ok());
     let mut funcs: Vec<RuntimeFunction> = Vec::new();
+    // The depth inside a chained entry's nested `Chained { ... }` block, which prints the
+    // parent's range: not this entry's.
+    let mut nested = 0;
     for l in dump.lines().map(str::trim) {
+        if nested > 0 || l.starts_with("Chained {") {
+            nested += usize::from(l.ends_with('{'));
+            nested -= usize::from(l == "}");
+            continue;
+        }
         if l.starts_with("RuntimeFunction {") {
             funcs.push(RuntimeFunction { begin: 0, end: 0, prolog: 0, chained: false, codes: Vec::new() });
         }

@@ -40,7 +40,7 @@ const STUB_LIBS: &[&str] = &[
 ];
 
 /// CRT and SDK symbols `ryo_rt` uses that a plain rustc build of a program may not: its
-/// kernel32 imports (`vm/rt/src/vm/sys.rs`, `seh.rs`, `jit/merge.rs`, `vm/bytecode/src/vmem.rs`, as lld names their `__imp_` references) and the
+/// kernel32 imports (`vm/rt/src/vm/sys.rs`, `seh.rs`, `jit/merge.rs`, `vm/bytecode/src/vmem.rs`, `vm/bytecode/src/os.rs`, as lld names their `__imp_` references) and the
 /// C runtime functions its code needs. The only unresolved symbols allowed besides plain
 /// rustc's.
 const RT_IMPORTS: &[&str] = &[
@@ -50,9 +50,6 @@ const RT_IMPORTS: &[&str] = &[
     "__declspec(dllimport) GetStdHandle",
     "__declspec(dllimport) FlushInstructionCache",
     "__declspec(dllimport) WriteFile",
-    "__declspec(dllimport) FlsAlloc",
-    "__declspec(dllimport) FlsSetValue",
-    "__declspec(dllimport) GetEnvironmentVariableA",
     // The run-time merge's rendezvous and module pinning (`vm/rt/src/vm/jit/merge.rs`, `sys.rs`).
     "__declspec(dllimport) ReadProcessMemory",
     "__declspec(dllimport) GetModuleHandleExW",

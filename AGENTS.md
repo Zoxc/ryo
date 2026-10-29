@@ -60,7 +60,7 @@ code that calls the VM's handlers; cg_llvm compiles everything else. Start at
     wrapper (`entry.rs`), the JIT trips (`src/vm/jit/`).
   - `jit/` `ryo_jit`: the JIT thread (compile, install); sealed with its own std by
     `y build`, an rlib in `vm/`'s tests.
-- `build/` (workspace): the `y` build tool, zero deps (`design/build.md`).
+- `build/` (workspace): the `y` build tool, its one dependency iced-x86 (`design/build.md`).
 - `scripts/`: `rustc-ryo`/`cargo-ryo`/`rustc-clif` wrappers, the `y install` launcher
   package (`Cargo.toml`, `launcher.rs`), `compare-branches.py`,
   `lean-*` checkers.

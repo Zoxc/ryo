@@ -469,7 +469,7 @@ real crates.io crates, in cargo's `dev` profile only. The default is `llvm,ryo`.
 
 ```
 y.sh, y.cmd, y.ps1                         entry points for the build tool
-build/          bin        y                   build tool (own Cargo.lock, no deps)
+build/          bin        y                   build tool (own Cargo.lock, iced-x86 only)
   clif/                                        cg_clif sources copied by `y build-clif` (not committed)
 scripts/                                       rustc-ryo.rs, cargo-ryo.rs, rustc-clif.rs wrappers;
                                                Cargo.toml, launcher.rs: `y install`'s launchers
