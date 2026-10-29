@@ -1,6 +1,6 @@
 /-
-Ryo.Proofs.Counter — a JIT counter check and its trip stub refine a no-op (aot.md §C2,
-"Counters and stubs"; the trip contract is jit.md §E.2).
+Ryo.Proofs.Counter — a JIT counter check and its trip stub refine a no-op (vm.md
+"JIT records and counters"; the trip contract is jit.md "Records and trips").
 
 With `Mode.counters` the decoder (`Ryo.Vm.DecodeReduced`, `read`/`instructions`) accepts at the
 entry and at each loop head the check `inc qword [rip + ctr]; jns stub`
@@ -20,8 +20,8 @@ call [r11 + 8|16]; jmp back`), where `back` is the position right after the chec
 - `counter_noop`: from `x` at the check, either way (fall-through, or taken + stub + trip
   return) the program reaches `after` in a state that `Agree`s with `x`: `rsp`, the
   callee-saved registers, and memory outside `Owned ∪ [lo, x.rsp)`. Caller-saved registers
-  (`rax` and `r11` are written by the stub, the trip may write the rest), the flags and the
-  `xmm`s may differ. The frame relation (`Ryo.Proofs.Inline.Rel`) reads only `rbp` and frame
+  (`rax` and `r11` are written by the stub; the trip keeps the rest, which isn't assumed
+  here), the flags and the `xmm`s may differ. The frame relation (`Ryo.Proofs.Inline.Rel`) reads only `rbp` and frame
   memory, which is at or above `rsp` (no live data below `rsp`: at the entry the frame isn't
   set up yet, at a loop head the frame lies above `rsp`), so it is kept.
 
@@ -31,7 +31,7 @@ state `s` just after `call [r11 + d]` (return address pushed, `rip` at the calle
 the callee-saved registers of `s`, and memory of `s` outside `Owned` (runtime-owned: the
 records with their counters, the queue, code memory) and outside the stack below the caller's
 `rsp` (`[lo, s.rsp + 8)`), given that stack has room for the return address
-(`lo + 8 ≤ s.rsp + 8`). jit.md §E.2's contract (every register but `rax`, `r11` and the flags
+(`lo + 8 ≤ s.rsp + 8`). jit.md's contract (every register but `rax`, `r11` and the flags
 kept) implies this one. Its other outcome (`Done`: transfer to JIT code, which never returns
 here) is not covered: it is a property of the transfer target (`FnSim`), not of this code.
 The counter bytes must be in `Owned` (`counter_noop`'s `hOwn`).
@@ -163,7 +163,7 @@ def CalleeSaved (i : Fin 16) : Prop := i = 3 ∨ i = 5 ∨ i = 12 ∨ i = 13 ∨
 /-- `a` is on the stack below `sp`, down to the limit `lo`: `lo ≤ a < sp` (unsigned). -/
 def InStack (lo sp a : BitVec 64) : Prop := lo.toNat ≤ a.toNat ∧ a.toNat < sp.toNat
 
-/-- The trip contract (jit.md §E.2, its returning outcome): `Returns s s'` for `s` just after
+/-- The trip contract (jit.md "Records and trips", its returning outcome): `Returns s s'` for `s` just after
 `call [r11 + d]` (return address at `s.rsp`, `rip` at the trip) and `s'` the state it returns
 in. -/
 structure TripContract (Owned : BitVec 64 → Prop) (lo : BitVec 64)
