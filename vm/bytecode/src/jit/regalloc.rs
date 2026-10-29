@@ -704,8 +704,8 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
                 }
             }
             None => {
-                // Spill the active interval (that this one may use) ending last, if it ends
-                // after this one.
+                // Spill the active interval (that this one may use) with the lowest spill
+                // density (ending last on ties), if that is lower than this one's.
                 let cand = active
                     .iter()
                     .enumerate()
