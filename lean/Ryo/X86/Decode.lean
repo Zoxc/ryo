@@ -118,9 +118,9 @@ def «local» (c : Cursor) (off len : Nat) : Option (BitVec 32) := do
   | .local t => pure t
   | _ => none
 
-/-- Whether the next bytes are `item`'s encoding, outside its relocated fields, and the
-relocations there are exactly its own (in linked code, its fields resolved to its references
-when it was parsed). Returns its length. -/
+/-- Whether the next bytes are `bs`, outside the relocated fields of `rs`, and the relocations
+there are exactly `rs` (in linked code, the fields resolved to their references when it was
+parsed). -/
 def encodedAt (c : Cursor) (bs : List UInt8) (rs : List Reloc) : Bool :=
   match c.bytes bs.length with
   | none => false
@@ -132,6 +132,7 @@ def encodedAt (c : Cursor) (bs : List UInt8) (rs : List Reloc) : Bool :=
       | .linked .. => true
     same && relocsOk
 
+/-- `item`'s length, if the next bytes are its non-empty encoding (`encodedAt`). -/
 def matchesItem (c : Cursor) (item : Item) : Option Nat :=
   let e := item.encode (BitVec.ofNat 32 c.pos)
   if c.encodedAt e.1 e.2 && 0 < e.1.length then some e.1.length else none
