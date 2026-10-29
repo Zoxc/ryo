@@ -2,6 +2,7 @@
 //! `bench/codegen/` (the dumps renamed and the machine code disassembled).
 
 use std::collections::HashMap;
+use std::fmt::Write;
 use std::fs;
 use std::path::Path;
 use std::process::Stdio;
@@ -67,6 +68,16 @@ pub fn codegen() -> Result<(), String> {
 /// prefix (`Func(Func(8))`, `fn8`).
 const IMAGE_REFS: [(&str, &str); 4] = [("Func(Func(", "fn"), ("Sym(Sym(", "sym"), ("Const(Const(", "k"), ("Data(Data(", "data")];
 
+/// Whether `name` is an image reference as the code dumps name it (`fn8`, `sym2`, ..).
+fn is_image_ref(name: &str) -> bool {
+    IMAGE_REFS.iter().any(|(_, p)| name.strip_prefix(p).is_some_and(|n| !n.is_empty() && digits(n) == n.len()))
+}
+
+/// The number of ASCII digits `s` starts with.
+fn digits(s: &str) -> usize {
+    s.bytes().take_while(u8::is_ascii_digit).count()
+}
+
 /// `ir` with the image's references that the IR prints as `Func(Func(8))` named as the
 /// function's code names them (`local("fn8")`, `fn2`).
 fn local_names(ir: &str, local: &dyn Fn(&str) -> String) -> String {
@@ -75,7 +86,7 @@ fn local_names(ir: &str, local: &dyn Fn(&str) -> String) -> String {
     'scan: while !rest.is_empty() {
         for (debug, name) in IMAGE_REFS {
             if let Some(after) = rest.strip_prefix(debug) {
-                let n = after.bytes().take_while(u8::is_ascii_digit).count();
+                let n = digits(after);
                 if n > 0 && after[n..].starts_with("))") {
                     out.push_str(&local(&format!("{name}{}", &after[..n])));
                     rest = &after[n + 2..];
@@ -98,7 +109,6 @@ fn local_names(ir: &str, local: &dyn Fn(&str) -> String) -> String {
 /// `jit-ssa-post.txt`, the SSA tier's IR as construction leaves it and as register
 /// allocation gets it, after the folds.
 fn jit_dumps(exe: &Path, dir: &Path, aot: &str) -> Result<Vec<(&'static str, String)>, String> {
-    use std::fmt::Write;
     crate::utils::remove_dir_if_exists(dir)?;
     crate::utils::create_dir(dir)?;
     let mut c = cmd(exe);
@@ -110,47 +120,12 @@ fn jit_dumps(exe: &Path, dir: &Path, aot: &str) -> Result<Vec<(&'static str, Str
     c.env("RYO_JIT_SYNC", "1").env("RYO_JIT_OPT", "ssa").env("RYO_JIT_DUMP", dir).stdout(Stdio::null());
     crate::utils::run(&mut c)?;
 
-    // The image's names: per function its path, and per (function, image reference) the
-    // function's own name for it, as in the AOT dumps.
-    let mut paths = HashMap::new();
-    let mut refs = HashMap::new();
-    for line in aot.lines() {
-        let mut w = line.split(' ');
-        match w.next() {
-            Some("image") => {
-                let mut p = line.splitn(3, ' ').skip(1);
-                let (Some(i), Some(path)) = (p.next(), p.next()) else { return Err(format!("RYO_DUMP_CODE: bad line {line:?}")) };
-                paths.insert(i.to_owned(), path.to_owned());
-            }
-            Some("ref") => {
-                let (Some(i), Some(g), Some(l)) = (w.next(), w.next(), w.next()) else { return Err(format!("RYO_DUMP_CODE: bad line {line:?}")) };
-                refs.entry((i.to_owned(), g.to_owned())).or_insert_with(|| l.to_owned());
-            }
-            _ => {}
-        }
-    }
-
-    // `f<func>-<image header>.code` and `.txt`, of the program's one image.
-    let mut funcs = Vec::new();
-    let mut header = None;
-    for e in fs::read_dir(dir).map_err(|e| format!("reading {}: {e}", dir.display()))? {
-        let e = e.map_err(|e| e.to_string())?;
-        let file = e.file_name().to_string_lossy().into_owned();
-        let Some(stem) = file.strip_suffix(".code") else { continue };
-        let (f, h) = stem.strip_prefix('f').and_then(|s| s.split_once('-')).ok_or_else(|| format!("RYO_JIT_DUMP: unexpected file {file}"))?;
-        if header.get_or_insert_with(|| h.to_owned()) != h {
-            return Err("RYO_JIT_DUMP: functions of more than one image".to_owned());
-        }
-        let path = paths.get(f).ok_or_else(|| format!("RYO_JIT_DUMP: function {f} isn't in RYO_DUMP_CODE"))?;
-        funcs.push((path.clone(), f.parse::<u32>().map_err(|e| e.to_string())?, stem.to_owned()));
-    }
-    funcs.sort();
-
+    let names = AotNames::parse(aot)?;
     let read = |f: &str| crate::utils::read(dir.join(f));
     let (mut code, mut pre, mut post) = (String::new(), String::new(), String::new());
-    for (path, f, stem) in &funcs {
+    for (path, f, stem) in &jit_functions(dir, &names)? {
         let text = read(&format!("{stem}.code"))?;
-        let local_ref = |g: &str| refs.get(&(f.to_string(), g.to_owned())).cloned().unwrap_or_else(|| format!("image.{g}"));
+        let local_ref = |g: &str| names.local(*f, g);
         // The retargeted callees, by the function operands the code and the IR call them by:
         // the caller's name, `.slot` through a call slot and `.far` through `r11`.
         let exts: HashMap<&str, String> = text
@@ -167,41 +142,12 @@ fn jit_dumps(exe: &Path, dir: &Path, aot: &str) -> Result<Vec<(&'static str, Str
             })
             .collect();
         let local = |g: &str| exts.get(g).cloned().unwrap_or_else(|| local_ref(g));
-        for line in text.lines() {
-            if line.starts_with("ext ") {
-                continue;
-            }
-            if let Some(tier) = line.strip_prefix("tier ") {
-                // The AOT dumps' `fn <path>`, the tier if it isn't the SSA tier.
-                if tier == "ssa" {
-                    writeln!(code, "fn {path}").unwrap();
-                } else {
-                    writeln!(code, "fn {path} ({tier})").unwrap();
-                }
-            } else if let Some(r) = line.strip_prefix("reloc ") {
-                let (at, to) = r.split_once(' ').ok_or("RYO_JIT_DUMP: bad reloc")?;
-                // The image's functions (and retargeted callees), symbols, constants and data.
-                let image_ref =
-                    IMAGE_REFS.iter().any(|(_, p)| to.strip_prefix(p).is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())));
-                let to = if image_ref { local(to) } else { to.to_owned() };
-                writeln!(code, "reloc {at} {to}").unwrap();
-            } else {
-                writeln!(code, "{line}").unwrap();
-            }
-        }
+        rewrite_code(&mut code, &text, path, &local)?;
         // The SSA tier's description: the IR before value numbering and the folds, then after them.
         let desc = if dir.join(format!("{stem}.txt")).exists() { read(&format!("{stem}.txt"))? } else { String::new() };
-        let section = |name: &str| -> Option<&str> {
-            let start = desc
-                .find(&format!("\n; {name}\n"))
-                .map(|k| k + name.len() + 4)
-                .or_else(|| desc.starts_with(&format!("; {name}\n")).then(|| name.len() + 3))?;
-            let rest = &desc[start..];
-            Some(rest[..rest.find("\n; ").map_or(rest.len(), |k| k + 1)].trim_end())
-        };
         for (out, name) in [(&mut pre, "IR before value numbering and the folds"), (&mut post, "IR")] {
             writeln!(out, "fn {path}").unwrap();
-            match section(name) {
+            match ir_section(&desc, name) {
                 Some(ir) => writeln!(out, "{}", local_names(ir, &local)).unwrap(),
                 None => {
                     let why = desc.lines().next().and_then(|l| l.strip_prefix("; unsupported: ")).unwrap_or("not compiled by the SSA tier");
@@ -214,10 +160,100 @@ fn jit_dumps(exe: &Path, dir: &Path, aot: &str) -> Result<Vec<(&'static str, Str
     Ok(vec![("jit.s", disassemble(&code)?), ("jit-ssa-pre.txt", pre), ("jit-ssa-post.txt", post)])
 }
 
+/// The image's names in `RYO_DUMP_CODE`: per function its path, and per (function, image
+/// reference) the function's own name for it, as in the AOT dumps.
+struct AotNames {
+    paths: HashMap<String, String>,
+    refs: HashMap<(String, String), String>,
+}
+
+impl AotNames {
+    fn parse(aot: &str) -> Result<AotNames, String> {
+        let mut names = AotNames { paths: HashMap::new(), refs: HashMap::new() };
+        for line in aot.lines() {
+            let bad = || format!("RYO_DUMP_CODE: bad line {line:?}");
+            let mut w = line.split(' ');
+            match w.next() {
+                Some("image") => {
+                    let mut p = line.splitn(3, ' ').skip(1);
+                    let (Some(i), Some(path)) = (p.next(), p.next()) else { return Err(bad()) };
+                    names.paths.insert(i.to_owned(), path.to_owned());
+                }
+                Some("ref") => {
+                    let (Some(i), Some(g), Some(l)) = (w.next(), w.next(), w.next()) else { return Err(bad()) };
+                    names.refs.entry((i.to_owned(), g.to_owned())).or_insert_with(|| l.to_owned());
+                }
+                _ => {}
+            }
+        }
+        Ok(names)
+    }
+
+    /// Function `func`'s name for the image reference `g` (`image.<g>` if it has none).
+    fn local(&self, func: u32, g: &str) -> String {
+        self.refs.get(&(func.to_string(), g.to_owned())).cloned().unwrap_or_else(|| format!("image.{g}"))
+    }
+}
+
+/// The functions `RYO_JIT_DUMP` wrote to `dir` (`f<func>-<image header>.code` and `.txt`, of
+/// the program's one image), sorted: (path, function, file stem).
+fn jit_functions(dir: &Path, names: &AotNames) -> Result<Vec<(String, u32, String)>, String> {
+    let mut funcs = Vec::new();
+    let mut header = None;
+    for e in fs::read_dir(dir).map_err(|e| format!("reading {}: {e}", dir.display()))? {
+        let e = e.map_err(|e| e.to_string())?;
+        let file = e.file_name().to_string_lossy().into_owned();
+        let Some(stem) = file.strip_suffix(".code") else { continue };
+        let (f, h) = stem.strip_prefix('f').and_then(|s| s.split_once('-')).ok_or_else(|| format!("RYO_JIT_DUMP: unexpected file {file}"))?;
+        if header.get_or_insert_with(|| h.to_owned()) != h {
+            return Err("RYO_JIT_DUMP: functions of more than one image".to_owned());
+        }
+        let path = names.paths.get(f).ok_or_else(|| format!("RYO_JIT_DUMP: function {f} isn't in RYO_DUMP_CODE"))?;
+        funcs.push((path.clone(), f.parse::<u32>().map_err(|e| e.to_string())?, stem.to_owned()));
+    }
+    funcs.sort();
+    Ok(funcs)
+}
+
+/// Appends a JIT code dump `text` of the function `path` to `code` in the AOT dumps' form:
+/// `ext` lines dropped, `tier` as `fn <path>` (with the tier if it isn't the SSA tier), and
+/// image references in `reloc` lines named by `local`.
+fn rewrite_code(code: &mut String, text: &str, path: &str, local: &dyn Fn(&str) -> String) -> Result<(), String> {
+    for line in text.lines() {
+        if line.starts_with("ext ") {
+            continue;
+        }
+        if let Some(tier) = line.strip_prefix("tier ") {
+            if tier == "ssa" {
+                writeln!(code, "fn {path}").unwrap();
+            } else {
+                writeln!(code, "fn {path} ({tier})").unwrap();
+            }
+        } else if let Some(r) = line.strip_prefix("reloc ") {
+            let (at, to) = r.split_once(' ').ok_or("RYO_JIT_DUMP: bad reloc")?;
+            // The image's functions (and retargeted callees), symbols, constants and data.
+            let to = if is_image_ref(to) { local(to) } else { to.to_owned() };
+            writeln!(code, "reloc {at} {to}").unwrap();
+        } else {
+            writeln!(code, "{line}").unwrap();
+        }
+    }
+    Ok(())
+}
+
+/// The section `; <name>` of an SSA description, up to the next `; ` line.
+fn ir_section<'a>(desc: &'a str, name: &str) -> Option<&'a str> {
+    let start = desc
+        .find(&format!("\n; {name}\n"))
+        .map(|k| k + name.len() + 4)
+        .or_else(|| desc.starts_with(&format!("; {name}\n")).then(|| name.len() + 3))?;
+    let rest = &desc[start..];
+    Some(rest[..rest.find("\n; ").map_or(rest.len(), |k| k + 1)].trim_end())
+}
+
 /// The `RYO_DUMP_CODE` text as x86 assembly: per function, its instructions at offsets from
 /// the function start, with relocated operands named by their targets.
 fn disassemble(dump: &str) -> Result<String, String> {
-    use std::fmt::Write;
     let mut out = String::new();
     let mut code = Vec::new();
     let mut relocs = Vec::new();
@@ -257,7 +293,6 @@ fn disassemble(dump: &str) -> Result<String, String> {
 /// starts (JIT code), which gets a comment line; the padding between them isn't printed.
 fn disassemble_function(out: &mut String, code: &[u8], relocs: &[(u32, String)], osr: Option<(usize, usize)>) {
     use iced_x86::{Decoder, DecoderOptions, Formatter, IntelFormatter};
-    use std::fmt::Write;
     // First pass: the instructions and jump-table entries, and the positions they refer to
     // within the function, which get labels.
     let mut osr = osr;
