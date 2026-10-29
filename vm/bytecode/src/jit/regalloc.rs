@@ -146,10 +146,13 @@ fn live_out(f: &Func, live: &[BitSet], b: Block) -> BitSet {
     let bd = &f.blocks[b.idx()];
     let mut cur = BitSet::new(f);
     for e in bd.term.edges() {
-        cur.union_with(&live[e.to.idx()]);
+        // Remove the parameters from this successor's own live-in only: one may be live
+        // into another successor.
+        let mut l = live[e.to.idx()].clone();
         for &p in &f.blocks[e.to.idx()].params {
-            cur.remove(p);
+            l.remove(p);
         }
+        cur.union_with(&l);
         for &a in &e.args {
             if tracked(f, a) {
                 cur.insert(a);
