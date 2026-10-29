@@ -13,7 +13,8 @@ item list, with the operands it records.
 - `table_read`: `Switch.switchItems tb`, then (after the `int3` padding, not items) one entry
   per 4 bytes from `tb`, each what `Cursor.tableEntry` reads there.
 - `insn_read` (`InsnRead`): `insn`'s result is one of a handler call (setup items, `call h`,
-  then `thenSeq`), `ret`, `unreachable`, `jmp`, `island`.
+  then `thenSeq`), `ret`, `unreachable`, `jmp`, `island`, in the pad region `resume`, or a
+  dense switch (`dense`: only that `denseSwitch` succeeds, not described further yet).
 - `argInsn_read`: `argInsn`'s `arg d, word a` is the stores `argStore a d pe`, re-read from the
   start (the first parse only moves the cursor: `PosOnly`, the `posonly` tactic).
 -/
@@ -409,8 +410,8 @@ theorem Dec.nil_eq {c : Cursor} {p q : Nat} (h : Dec c p [] q) : q = p := by
 /-- What `insn` read (`insn_read`): a handler call (its setup items `setupItems` of its
 arguments, read from the start, then `call h`, then what `thenSeq` reads), or `ret`
 (`retSeq`), `unreachable` (`ud2`), `jmp` (a `jmp` within the function), `island`
-(`islandCall`, and the operand array in the rodata), or in the pad region `resume`
-(`add rsp, 40; ret`). -/
+(`islandCall`, and the operand array in the rodata), in the pad region `resume`
+(`add rsp, 40; ret`), or a dense switch (`denseSwitch`, unconstrained beyond that). -/
 inductive InsnRead (fr : Frame) (ro : ByteArray) (c : Cursor) : Proto → Cursor → Prop
   | handler {items : List Item} {hat n len nn : Nat} {op : Full.Opcode} {args : List Arg}
       {t : Then Nat} {sites : List (Nat × Nat)} {c' : Cursor} :
