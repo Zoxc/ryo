@@ -16,12 +16,29 @@ struct Snapshot {
     /// The registered images, sorted by crate hash (then CGU hash). Immutable once published.
     by_hash: *const Image<'static>,
     n: usize,
+    /// The images' non-empty text and read-only sections, sorted by start address: for
+    /// [`image_at`].
+    by_addr: *const Section,
+    n_addr: usize,
+}
+
+/// A section of a registered image: `[start, start + len)`, in the image with header `header`.
+#[derive(Clone, Copy)]
+struct Section {
+    start: usize,
+    len: usize,
+    header: *const u8,
 }
 
 impl Snapshot {
     fn images(&self) -> &'static [Image<'static>] {
         // SAFETY: `by_hash` holds `n` initialized images, published and never freed.
         unsafe { core::slice::from_raw_parts(self.by_hash, self.n) }
+    }
+
+    fn sections(&self) -> &'static [Section] {
+        // SAFETY: `by_addr` holds `n_addr` initialized sections, published and never freed.
+        unsafe { core::slice::from_raw_parts(self.by_addr, self.n_addr) }
     }
 }
 
@@ -70,9 +87,24 @@ pub unsafe fn register(start: *const *const u8, end: *const *const u8, anchor: *
     // SAFETY: the first `len` entries are initialized, and nothing else views them.
     let list = unsafe { core::slice::from_raw_parts_mut(by_hash, len) };
     sort_by_key(list, |im| (im.crate_hash(), im.header().cgu_hash));
+    let by_addr = g.alloc_forever(2 * len * size_of::<Section>(), align_of::<Section>()).cast::<Section>();
+    let mut n_addr = 0;
+    for im in &*list {
+        let header = (im.header() as *const ryo_bytecode::image::Header).cast::<u8>();
+        let ro = im.bytes();
+        for (start, len) in [(im.text_ptr() as usize, im.header().text_size as usize), (ro.as_ptr() as usize, ro.len())] {
+            if len != 0 {
+                // SAFETY: `by_addr` has room for two entries per image.
+                unsafe { by_addr.add(n_addr).write(Section { start, len, header }) };
+                n_addr += 1;
+            }
+        }
+    }
+    // SAFETY: the first `n_addr` entries are initialized, and nothing else views them.
+    sort_by_key(unsafe { core::slice::from_raw_parts_mut(by_addr, n_addr) }, |s| s.start);
     let snap = g.alloc_forever(size_of::<Snapshot>(), align_of::<Snapshot>()).cast::<Snapshot>();
     // SAFETY: fresh allocation; fully written before it is published.
-    unsafe { snap.write(Snapshot { by_hash, n: len }) };
+    unsafe { snap.write(Snapshot { by_hash, n: len, by_addr, n_addr }) };
     SNAPSHOT.store(snap, Ordering::Release);
 }
 
@@ -163,20 +195,31 @@ unsafe fn admit(h: *const u8, anchor: *const u8, existing: &[Image<'static>]) ->
 #[cfg_attr(not(feature = "jit"), allow(dead_code))]
 pub fn image_at(addr: usize) -> *const u8 {
     let Some(s) = snapshot() else { return ptr::null() };
-    for im in s.images() {
-        let text = im.text_ptr() as usize;
-        let ro = im.bytes();
-        if addr.wrapping_sub(text) < im.header().text_size as usize || addr.wrapping_sub(ro.as_ptr() as usize) < ro.len() {
-            return (im.header() as *const ryo_bytecode::image::Header).cast();
+    let secs = s.sections();
+    // Binary search for the number of sections starting at or below `addr`; sections don't
+    // overlap, so only the last of them can hold it.
+    let (mut lo, mut hi) = (0, secs.len());
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        // SAFETY: `mid < hi <= secs.len()`.
+        if unsafe { secs.get_unchecked(mid) }.start <= addr {
+            lo = mid + 1;
+        } else {
+            hi = mid;
         }
     }
-    ptr::null()
+    if lo == 0 {
+        return ptr::null();
+    }
+    // SAFETY: `0 < lo <= secs.len()`.
+    let sec = unsafe { secs.get_unchecked(lo - 1) };
+    if addr.wrapping_sub(sec.start) < sec.len { sec.header } else { ptr::null() }
 }
 
 /// An insertion sort: core's sorts reference its panic path (`panic_on_ord_violation`), which
-/// the runtime must not reach (design/vm.md, "No re-entry"). Lists are short (one entry per
-/// image).
-fn sort_by_key<K: Ord>(list: &mut [Image<'static>], key: impl Fn(&Image<'static>) -> K) {
+/// the runtime must not reach (design/vm.md, "No re-entry"). Lists are short (one or two
+/// entries per image).
+fn sort_by_key<T, K: Ord>(list: &mut [T], key: impl Fn(&T) -> K) {
     let p = list.as_mut_ptr();
     for i in 1..list.len() {
         let mut j = i;

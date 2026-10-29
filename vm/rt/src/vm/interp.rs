@@ -232,8 +232,19 @@ macro_rules! fill {
         let k = addr_of!($a, $op, k);
         let es = word!($a, $op, elem_size) as usize;
         let d = slot!($a, $fp, $op, d);
-        for i in 0..word!($a, $op, count) as usize {
-            ptr::copy_nonoverlapping(k, d.add(i.wrapping_mul(es)), es);
+        let n = word!($a, $op, count) as usize;
+        if es == 1 {
+            ptr::write_bytes(d, k.read(), n);
+        } else if n != 0 {
+            // One element, then doubling: copy the filled prefix after itself (log2 calls).
+            let total = n.wrapping_mul(es);
+            ptr::copy_nonoverlapping(k, d, es);
+            let mut done = es;
+            while done < total {
+                let c = total.wrapping_sub(done).min(done);
+                ptr::copy_nonoverlapping(d, d.add(done), c);
+                done = done.wrapping_add(c);
+            }
         }
     }};
 }

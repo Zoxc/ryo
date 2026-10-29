@@ -263,15 +263,16 @@ static SHUFFLED_ANY: AtomicBool = AtomicBool::new(false);
 /// their AOT code's, as `RYO_JIT_SHUFFLE=1` does for all (tests).
 #[doc(hidden)]
 pub fn jit_shuffle_image(header: *const u8) {
-    if !SHUFFLED.iter().any(|s| s.compare_exchange(0, header as usize, SeqCst, SeqCst).is_ok()) {
+    if !SHUFFLED.iter().any(|s| s.compare_exchange(0, header as usize, Relaxed, Relaxed).is_ok()) {
         fatal("jit_shuffle_image: too many images");
     }
-    SHUFFLED_ANY.store(true, SeqCst);
+    // Release: publishes the entry to readers that see the flag (Acquire in `shuffled`).
+    SHUFFLED_ANY.store(true, Release);
 }
 
 /// [`RtApi::shuffled`]: whether the image with header `header` gets shuffled frames.
 extern "C-unwind" fn shuffled(header: *const u8) -> bool {
-    config().shuffle || (SHUFFLED_ANY.load(SeqCst) && SHUFFLED.iter().any(|s| s.load(SeqCst) == header as usize))
+    config().shuffle || (SHUFFLED_ANY.load(Acquire) && SHUFFLED.iter().any(|s| s.load(Relaxed) == header as usize))
 }
 
 /// [`RtApi::image_at`].
@@ -596,12 +597,12 @@ fn trip(rec: *mut JitRecord) -> u32 {
     // once the process exits on PE: the JIT thread is gone (`sys::exiting`), the wait would
     // never end, and the record stays queued (its code AOT).
     if cfg.sync && !super::sys::exiting() {
-        while JitRecord::state(rec).load(SeqCst) == JIT_QUEUED && !DISABLED.load(SeqCst) {
+        while JitRecord::state(rec).load(Acquire) == JIT_QUEUED && !DISABLED.load(Acquire) {
             futex_wait(JitRecord::state(rec), JIT_QUEUED);
         }
     }
     JitRecord::settle(rec);
-    JitRecord::state(rec).load(SeqCst)
+    JitRecord::state(rec).load(Acquire)
 }
 
 /// Pushes a record that just became `Queued`, starts the JIT thread with the first push, and
@@ -612,7 +613,12 @@ fn push(rec: *mut JitRecord) {
         // SAFETY: only this thread writes `next` of a record it moved to `Queued`, until the
         // JIT thread pops it.
         unsafe { (*rec).next = head };
-        match QUEUE.compare_exchange_weak(head, rec, SeqCst, Relaxed) {
+        // AcqRel: Release publishes `next` and the record to the JIT thread's Acquire swap;
+        // Acquire makes a failing `push`'s `DISABLED` store (before its swap, which this
+        // may follow) visible to the wait in `trip`. The sleep handshake doesn't need SeqCst
+        // here: a sleeper's SeqCst `WAKE` load that reads the `fetch_add` below synchronizes
+        // with it, so its `QUEUE` load sees this push.
+        match QUEUE.compare_exchange_weak(head, rec, AcqRel, Relaxed) {
             Ok(_) => break,
             Err(h) => head = h,
         }
