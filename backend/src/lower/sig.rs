@@ -288,22 +288,38 @@ fn arg_plan<'tcx>(tcx: TyCtxt<'tcx>, fn_abi: &FnAbi<'tcx, Ty<'tcx>>, sret: bool)
             self.stack = at + size.next_multiple_of(8);
             at
         }
+        /// The next argument register of the class, if one is left. On PE each argument
+        /// takes a position, register or not; on SysV only a register is consumed.
+        fn next_reg(&mut self, xmm: bool) -> Option<u32> {
+            if self.pe {
+                let r = (self.pos < 4).then_some(self.pos);
+                self.pos += 1;
+                return r;
+            }
+            let (n, limit) = if xmm { (&mut self.xmm, 8) } else { (&mut self.gpr, 6) };
+            let r = (*n < limit).then_some(*n);
+            *n += u32::from(r.is_some());
+            r
+        }
+        /// A scalar of `size` bytes at `off`: the next register of the class, else a stack slot.
+        fn reg_or_stack(&mut self, xmm: bool, size: u32, off: u32, out: &mut Vec<ArgLoc>) {
+            match self.next_reg(xmm) {
+                Some(index) => out.push(ArgLoc::Reg { reg: ArgReg { xmm, size, index }, off }),
+                None => {
+                    let at = self.stack(size.max(8));
+                    out.push(ArgLoc::Stack { at, off, size });
+                }
+            }
+        }
         /// An integer of `size` bytes (1 to 8, or 16 for `i128`) at `off`.
-        fn int(&mut self, size: u32, off: u32, out: &mut Vec<ArgLoc>) -> Result<(), NeedsNative> {
+        fn int(&mut self, size: u32, off: u32, out: &mut Vec<ArgLoc>) {
             if self.pe && size == 16 {
                 // Win64 (Rust ABI): an `i128` is two 8-byte arguments, low half first, each
                 // taking the next position, so it can straddle `r9` and the stack.
-                self.int(8, off, out)?;
-                self.int(8, off + 8, out)?;
-            } else if self.pe {
-                if self.pos < 4 {
-                    out.push(ArgLoc::Reg { reg: ArgReg { xmm: false, size, index: self.pos }, off });
-                } else {
-                    let at = self.stack(8);
-                    out.push(ArgLoc::Stack { at, off, size });
-                }
-                self.pos += 1;
-            } else if size == 16 {
+                self.int(8, off, out);
+                self.int(8, off + 8, out);
+            } else if !self.pe && size == 16 {
+                // SysV: two registers at once, or the stack (the rest staying free).
                 if self.gpr <= 4 {
                     for k in 0..2 {
                         out.push(ArgLoc::Reg { reg: ArgReg { xmm: false, size: 8, index: self.gpr }, off: off + 8 * k });
@@ -313,54 +329,28 @@ fn arg_plan<'tcx>(tcx: TyCtxt<'tcx>, fn_abi: &FnAbi<'tcx, Ty<'tcx>>, sret: bool)
                     let at = self.stack(16);
                     out.push(ArgLoc::Stack { at, off, size: 16 });
                 }
-            } else if self.gpr < 6 {
-                out.push(ArgLoc::Reg { reg: ArgReg { xmm: false, size, index: self.gpr }, off });
-                self.gpr += 1;
             } else {
-                let at = self.stack(8);
-                out.push(ArgLoc::Stack { at, off, size });
+                self.reg_or_stack(false, size, off, out);
             }
-            Ok(())
         }
         /// A float of `size` bytes at `off`.
-        fn float(&mut self, size: u32, off: u32, out: &mut Vec<ArgLoc>) -> Result<(), NeedsNative> {
-            if self.pe {
-                // An `f16` goes in the low 2 bytes of its `xmm` or its 8-byte stack slot; the
-                // caller passes an `f128` by reference (`Direct` ones only: see `arg_plan`).
-                if size == 16 {
-                    self.ptr(out);
-                    return Ok(());
-                }
-                if self.pos < 4 {
-                    out.push(ArgLoc::Reg { reg: ArgReg { xmm: true, size, index: self.pos }, off });
-                } else {
-                    let at = self.stack(8);
-                    out.push(ArgLoc::Stack { at, off, size });
-                }
-                self.pos += 1;
-            } else if self.xmm < 8 {
-                out.push(ArgLoc::Reg { reg: ArgReg { xmm: true, size, index: self.xmm }, off });
-                self.xmm += 1;
+        fn float(&mut self, size: u32, off: u32, out: &mut Vec<ArgLoc>) {
+            // PE: an `f16` goes in the low 2 bytes of its `xmm` or its 8-byte stack slot; the
+            // caller passes an `f128` by reference (`Direct` ones only: see `arg_plan`).
+            if self.pe && size == 16 {
+                self.ptr(out);
             } else {
-                let at = self.stack(size.max(8));
-                out.push(ArgLoc::Stack { at, off, size });
+                self.reg_or_stack(true, size, off, out);
             }
-            Ok(())
         }
         /// An `Indirect` input's pointer.
         fn ptr(&mut self, out: &mut Vec<ArgLoc>) {
-            let reg = if self.pe { (self.pos < 4).then_some(self.pos) } else { (self.gpr < 6).then_some(self.gpr) };
-            match reg {
+            match self.next_reg(false) {
                 Some(i) => out.push(ArgLoc::PtrReg(i)),
                 None => {
                     let at = self.stack(8);
                     out.push(ArgLoc::PtrStack(at));
                 }
-            }
-            if self.pe {
-                self.pos += 1;
-            } else if reg.is_some() {
-                self.gpr += 1;
             }
         }
     }
@@ -384,7 +374,7 @@ fn arg_plan<'tcx>(tcx: TyCtxt<'tcx>, fn_abi: &FnAbi<'tcx, Ty<'tcx>>, sret: bool)
                     return native("f128 in a pair argument on Win64");
                 }
                 for Piece { float, size, off } in pieces {
-                    if float { st.float(size, off, &mut out)? } else { st.int(size, off, &mut out)? }
+                    if float { st.float(size, off, &mut out) } else { st.int(size, off, &mut out) }
                 }
             }
         }
