@@ -172,31 +172,25 @@ pub fn run(target: &str) -> Result<(), String> {
     }
     for program in CORPUS {
         let res = (|| {
-            let (reference, _) = link.build(&cmd("rustc"), program, &out.join(program.name).join("rustc"), &[])?;
-            let mut unwind = 0;
-            let builds = [("ryo", &[][..])];
-            for (name, final_flags) in builds {
-                let dir = out.join(program.name).join(name);
-                let (ryo, vm_fns) = link.build(&cmd(&rustc_ryo), program, &dir, final_flags)?;
-                program.check_vm(&vm_fns, true).map_err(|e| format!("{name}: {e}"))?;
-                if !macho {
-                    unwind += pe_unwind(&info, &dir).map_err(|e| format!("{name}: {e}"))?;
-                }
-                // The image refers to a DLL function both through its `__imp_` slot and directly
-                // (design/platforms.md); with the real import library the direct reference
-                // resolves to the import thunk, so it is fine wherever the import itself is.
-                let extra: Vec<&String> = ryo
-                    .difference(&reference)
-                    .filter(|s| !rt_imports.contains(&s.as_str()) && !jit_imports.contains(*s))
-                    .filter(|s| !reference.contains(&format!("__declspec(dllimport) {s}")))
-                    // The other way round: the image loads a foreign function's address through
-                    // `__imp_` where plain rustc calls it directly (`abs` from the CRT). An
-                    // import library defines both; for a static one the linker synthesizes it.
-                    .filter(|s| s.strip_prefix("__declspec(dllimport) ").is_none_or(|plain| !reference.contains(plain)))
-                    .collect();
-                if !extra.is_empty() {
-                    return Err(format!("unresolved only in the {name} build: {extra:?}"));
-                }
+            let (reference, _) = link.build(&cmd("rustc"), program, &out.join(program.name).join("rustc"))?;
+            let dir = out.join(program.name).join("ryo");
+            let (ryo, vm_fns) = link.build(&cmd(&rustc_ryo), program, &dir)?;
+            program.check_vm(&vm_fns, true)?;
+            let unwind = if macho { 0 } else { pe_unwind(&info, &dir)? };
+            // The image refers to a DLL function both through its `__imp_` slot and directly
+            // (design/platforms.md); with the real import library the direct reference
+            // resolves to the import thunk, so it is fine wherever the import itself is.
+            let extra: Vec<&String> = ryo
+                .difference(&reference)
+                .filter(|s| !rt_imports.contains(&s.as_str()) && !jit_imports.contains(*s))
+                .filter(|s| !reference.contains(&format!("__declspec(dllimport) {s}")))
+                // The other way round: the image loads a foreign function's address through
+                // `__imp_` where plain rustc calls it directly (`abs` from the CRT). An
+                // import library defines both; for a static one the linker synthesizes it.
+                .filter(|s| s.strip_prefix("__declspec(dllimport) ").is_none_or(|plain| !reference.contains(plain)))
+                .collect();
+            if !extra.is_empty() {
+                return Err(format!("unresolved only in the ryo build: {extra:?}"));
             }
             Ok(unwind)
         })();
@@ -309,13 +303,7 @@ struct Link<'a> {
 impl Link<'_> {
     /// Builds and links every crate of `program` with `compiler` into `dir`, and returns the
     /// symbols the links left unresolved and the functions compiled to bytecode (`RYO_STATS`).
-    fn build(
-        &self,
-        compiler: &std::process::Command,
-        program: &Program,
-        dir: &Path,
-        final_flags: &[&str],
-    ) -> Result<(BTreeSet<String>, Vec<String>), String> {
+    fn build(&self, compiler: &std::process::Command, program: &Program, dir: &Path) -> Result<(BTreeSet<String>, Vec<String>), String> {
         crate::utils::create_dir(dir)?;
         let tests = root().join("tests");
         let mut undefined = BTreeSet::new();
@@ -352,7 +340,7 @@ impl Link<'_> {
                 c.arg(format!("-Clink-arg=/lldmap:{}", dir.join(format!("{}.{ext}.map", krate.name)).display()));
             }
         };
-        for (_, stderr) in program.compile(&tests, dir, || cmd(compiler.get_program()), extra, final_flags)? {
+        for (_, stderr) in program.compile(&tests, dir, || cmd(compiler.get_program()), extra)? {
             undefined.extend(undefined_symbols(&stderr));
             vm_fns.extend(crate::test::vm_functions(&stderr));
         }

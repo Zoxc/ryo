@@ -31,7 +31,7 @@ pub(crate) struct Program {
 }
 
 impl Program {
-    /// Whether the binary links a Rust dylib (LTO doesn't support that). A crate that is both
+    /// Whether the binary links a Rust dylib (the abort variants skip those). A crate that is both
     /// an rlib and a dylib is linked as the rlib.
     pub(crate) fn has_dylib(&self) -> bool {
         self.flags.contains(&"-Cprefer-dynamic") || self.crates.iter().any(|c| c.kind == CrateKind::Dylib)
@@ -54,7 +54,7 @@ impl Program {
     }
 
     /// Compiles each crate, in order, from `tests` into `dir` with `compiler()`: the common
-    /// flags, then `extra(krate, cmd)`'s, then `final_flags` on the last crate. Every library
+    /// flags, then `extra(krate, cmd)`'s. Every library
     /// crate is an `--extern` of the crates after it. Returns each crate's stderr.
     pub(crate) fn compile(
         &self,
@@ -62,7 +62,6 @@ impl Program {
         dir: &Path,
         compiler: impl Fn() -> Command,
         extra: impl Fn(&Crate, &mut Command),
-        final_flags: &[&str],
     ) -> Result<Vec<(&'static Crate, String)>, String> {
         let mut stderrs = Vec::new();
         for (i, krate) in self.crates.iter().enumerate() {
@@ -77,9 +76,6 @@ impl Program {
                 .arg(dir)
                 .args(self.flags);
             extra(krate, &mut c);
-            if i + 1 == self.crates.len() {
-                c.args(final_flags);
-            }
             for dep in &self.crates[..i] {
                 if !matches!(dep.kind, CrateKind::Bin | CrateKind::Staticlib | CrateKind::Cdylib) {
                     c.args(["--extern", dep.name]);

@@ -35,9 +35,6 @@ struct Variant {
     compiler: Compiler,
     /// Extra flags for every crate.
     flags: &'static [&'static str],
-    /// Extra flags for the last crate only (as cargo passes `-Clto`, which ryo rejects; none
-    /// now). Programs with a Rust dylib are skipped when this is set.
-    final_flags: &'static [&'static str],
     /// Only for programs that list VM functions. Their `vm` lists aren't checked (MIR inlining
     /// at `-O` removes some functions).
     vm_only: bool,
@@ -55,18 +52,8 @@ struct Variant {
     jit: bool,
 }
 
-const VARIANT: Variant = Variant {
-    name: "",
-    compiler: Compiler::Ryo,
-    flags: &[],
-    final_flags: &[],
-    vm_only: false,
-    ryo_std: false,
-    abort: false,
-    no_vm: false,
-    env: &[],
-    jit: false,
-};
+const VARIANT: Variant =
+    Variant { name: "", compiler: Compiler::Ryo, flags: &[], vm_only: false, ryo_std: false, abort: false, no_vm: false, env: &[], jit: false };
 
 const REFERENCE: Variant = Variant { name: "rustc", compiler: Compiler::Rustc, ..VARIANT };
 
@@ -878,12 +865,11 @@ fn cargo_run(run: &CargoRun, sel: &Sel, root: &Path) -> Result<(), String> {
 impl Variant {
     /// Whether this variant can build `p` at all.
     fn applies_to(&self, p: &Program) -> bool {
-        let lto_or_abort = !self.final_flags.is_empty() || self.abort;
         !(self.vm_only && p.vm.is_empty())
-            && !(lto_or_abort && p.has_dylib())
+            && !(self.abort && p.has_dylib())
             && !(self.abort && p.foreign_unwind)
-            // Two LTO'd (or abort) staticlibs each carry all of std: one C link can't take both.
-            && !(lto_or_abort && p.crates.iter().filter(|c| c.kind == CrateKind::Staticlib).count() > 1)
+            // Two abort staticlibs each carry all of std: one C link can't take both.
+            && !(self.abort && p.crates.iter().filter(|c| c.kind == CrateKind::Staticlib).count() > 1)
     }
 }
 
@@ -1034,7 +1020,6 @@ impl Ctx<'_> {
             |_, c| {
                 c.args(variant.flags);
             },
-            variant.final_flags,
         )?;
         for (krate, stderr) in stderrs {
             if variant.compiler == Compiler::Ryo {
