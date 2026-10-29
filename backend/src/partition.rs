@@ -457,6 +457,22 @@ fn image_settings(tcx: TyCtxt<'_>, rt: RtItems, mode: asm::Mode, switches: &Swit
     format!("{:?} {} {} {} {} {upstream}", mode, local_stable_crate_id(tcx), switches.asm_align, env!("RYO_BACKEND_ID"), tcx.crate_hash(rt.krate))
 }
 
+/// The session-wide context of building images, the same for every CGU.
+#[derive(Clone, Copy)]
+pub(super) struct ImageCx<'a, 'tcx> {
+    pub tcx: TyCtxt<'tcx>,
+    pub rt: RtItems,
+    /// How the images' machine code is generated ([`asm_mode`]).
+    pub mode: asm::Mode,
+    pub switches: &'a Switches,
+    /// The entry fn, if the crate has one.
+    pub entry: Option<Instance<'tcx>>,
+    /// The reuse fingerprint's session part ([`image_settings`]).
+    pub settings: &'a str,
+    /// Whether a previous session's images may be reused (and new ones saved for that).
+    pub reuse: bool,
+}
+
 struct Partitioner<'a, 'tcx> {
     tcx: TyCtxt<'tcx>,
     rt: RtItems,
@@ -632,11 +648,12 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
     fn lower(&mut self, entry: Option<Instance<'tcx>>) -> (Vec<CguImage>, Vec<Fresh<'tcx>>) {
         let tcx = self.tcx;
         let settings = image_settings(tcx, self.rt, self.mode, self.switches);
+        let reuse = tcx.dep_graph.is_fully_enabled() && !tcx.sess.opts.unstable_opts.disable_incr_comp_backend_caching && !self.switches.dumps_any();
+        let cx = ImageCx { tcx, rt: self.rt, mode: self.mode, switches: self.switches, entry, settings: &settings, reuse };
         let parts: Vec<ImagePart<'tcx>> = {
             let _t = tcx.prof.generic_activity("ryo_lower");
             let cgus: Vec<&CodegenUnit<'tcx>> = self.units.iter().map(|u| u.cgu).collect();
-            let (rt, mode, switches) = (self.rt, self.mode, self.switches);
-            rustc_data_structures::sync::par_map(cgus, |cgu| image_part(tcx, rt, mode, switches, &settings, entry, cgu))
+            rustc_data_structures::sync::par_map(cgus, |cgu| image_part(cx, cgu))
         };
         let mut images = Vec::new();
         let mut fresh = Vec::new();
@@ -712,7 +729,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
     fn write_dumps(&self, fresh: &[Fresh<'tcx>], failed: &[(Instance<'tcx>, NeedsNative)]) -> Option<LeanCerts> {
         let tcx = self.tcx;
         let lean = self.switches.dump_lean.is_some().then(|| {
-            // `RYO_DUMP_LEAN` turns reuse off, so every image is fresh.
+            // Dumps turn reuse off (`Switches::dumps_any`), so every image is fresh.
             let images = fresh
                 .iter()
                 .filter(|f| !f.vm.is_empty())
@@ -1050,15 +1067,8 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
 /// CGU `cgu`'s image phase: its VM functions lowered and its image built, inside the image's
 /// own dep node under incremental compilation, or the previous session's image reused when
 /// that node is green (design/backend.md#incremental).
-fn image_part<'tcx>(
-    tcx: TyCtxt<'tcx>,
-    rt: RtItems,
-    mode: asm::Mode,
-    switches: &Switches,
-    settings: &str,
-    entry: Option<Instance<'tcx>>,
-    cgu: &CodegenUnit<'tcx>,
-) -> ImagePart<'tcx> {
+fn image_part<'tcx>(cx: ImageCx<'_, 'tcx>, cgu: &CodegenUnit<'tcx>) -> ImagePart<'tcx> {
+    let ImageCx { tcx, rt, settings, .. } = cx;
     // `ryo_rt` instances are always native (design/vm.md).
     let mut cands: Vec<(Instance<'tcx>, MonoItemData)> = Vec::new();
     for (item, data) in cgu.items() {
@@ -1074,15 +1084,9 @@ fn image_part<'tcx>(
     // A stable image order: by symbol name.
     cands.sort_by_cached_key(|(i, _)| tcx.symbol_name(*i).name);
     // Only the entry's own CGU depends on it.
-    let entry = entry.filter(|e| cands.iter().any(|(i, _)| i == e));
-    let build = || build_cgu(tcx, rt, mode, switches, entry, cgu, &cands);
-    let incremental = tcx.dep_graph.is_fully_enabled()
-        && !tcx.sess.opts.unstable_opts.disable_incr_comp_backend_caching
-        && switches.dump_lean.is_none()
-        && switches.dump.is_none()
-        && switches.dump_code.is_none()
-        && switches.dump_native.is_none();
-    if !incremental {
+    let entry = cx.entry.filter(|e| cands.iter().any(|(i, _)| i == e));
+    let build = || build_cgu(cx, entry, cgu, &cands);
+    if !cx.reuse {
         return build();
     }
     // The image's dep node: named after the CGU, its candidates with their linkage and
@@ -1128,17 +1132,15 @@ pub const WP_SIDE: &str = "ryo";
 pub const WP_OBJECT: &str = "o";
 
 /// Classifies, lowers and builds CGU `cgu`'s image from its candidates `cands` (in image
-/// order).
+/// order); `entry` is the entry fn if it is one of them.
 fn build_cgu<'tcx>(
-    tcx: TyCtxt<'tcx>,
-    rt: RtItems,
-    mode: asm::Mode,
-    switches: &Switches,
+    cx: ImageCx<'_, 'tcx>,
     entry: Option<Instance<'tcx>>,
     cgu: &CodegenUnit<'tcx>,
     cands: &[(Instance<'tcx>, MonoItemData)],
 ) -> ImagePart<'tcx> {
-    let (mut ok, failed) = lower_cgu(tcx, rt, cands, mode, switches);
+    let ImageCx { tcx, rt, .. } = cx;
+    let (mut ok, failed) = lower_cgu(cx, cands);
     let mut vm: Vec<VmFn<'tcx>> = Vec::new();
     for &(instance, data) in cands {
         if let Some(lowered) = ok.remove(&instance) {
@@ -1179,16 +1181,14 @@ fn build_cgu<'tcx>(
     let mut seen = FxHashSet::default();
     refs.retain(|i| seen.insert(*i));
     let main = entry.filter(|m| vm.iter().any(|v| v.instance == *m)).map(|m| tcx.symbol_name(m).name.to_owned());
-    let mut dump = String::new();
-    let mut code_dump = String::new();
-    let image = build_image(tcx, rt, mode, switches, cgu.name(), &mut vm, &mut dump, &mut code_dump);
+    let (image, dumps) = build_image(cx, cgu.name(), &mut vm);
     let pool = image.consts_len as usize;
     let cgu_vm = CguVm { vm: vm.iter().map(|v| (v.instance, v.global)).collect(), islands, refs, main };
     let side = cgu_vm.save(tcx);
     ImagePart {
         vm: cgu_vm,
         image: Some(ImageSrc::Fresh { image: Some(image), side }),
-        fresh: Some(Fresh { cgu: cgu.name(), vm, pool, failed, dump, code_dump }),
+        fresh: Some(Fresh { cgu: cgu.name(), vm, pool, failed, dump: dumps.vm, code_dump: dumps.code }),
     }
 }
 
@@ -1212,12 +1212,10 @@ fn neighbors<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> impl Iterator
 /// own items alone. Returns the lowered functions and the reasons the others stay native.
 #[allow(clippy::type_complexity)]
 fn lower_cgu<'tcx>(
-    tcx: TyCtxt<'tcx>,
-    rt: RtItems,
+    cx: ImageCx<'_, 'tcx>,
     cands: &[(Instance<'tcx>, MonoItemData)],
-    mode: asm::Mode,
-    switches: &Switches,
 ) -> (FxHashMap<Instance<'tcx>, LoweredFn<'tcx>>, Vec<(Instance<'tcx>, NeedsNative)>) {
+    let ImageCx { tcx, rt, mode, switches, .. } = cx;
     let mut vm: FxHashSet<Instance<'tcx>> = cands.iter().map(|c| c.0).collect();
     let mut ok: FxHashMap<Instance<'tcx>, LoweredFn<'tcx>> = FxHashMap::default();
     let mut failed = Vec::new();

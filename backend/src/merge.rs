@@ -7,14 +7,13 @@ use rustc_middle::mir::interpret::{AllocId, GlobalAlloc};
 use rustc_middle::mono::{MonoItem, Visibility};
 use rustc_middle::ty::{self, Instance, TyCtxt};
 use rustc_span::Symbol;
-use ryo_bytecode::asm::{self, Ref};
+use ryo_bytecode::asm::Ref;
 use ryo_bytecode::full::{Const, Data, Func, Sym};
 use ryo_bytecode::image::{AllocFixup, AllocReloc, AllocTarget, FuncSymbol, FunctionDef, ImageObject, ImageWriter, SYM_INDIRECT, SymVisibility};
 
 use super::dump;
 use super::lower::{self, CodeReloc};
-use super::partition::{Fresh, RtItems, VmFn};
-use super::switches::Switches;
+use super::partition::{Fresh, ImageCx, RtItems, VmFn};
 use super::symbols::{self, local_stable_crate_id, static_symbol};
 
 /// Each island instance the fresh images call: its symbol and its template's name.
@@ -32,19 +31,18 @@ pub(super) fn island_names<'tcx>(tcx: TyCtxt<'tcx>, rt: RtItems, fresh: &[Fresh<
     out
 }
 
+/// A CGU image's parts of the `RYO_DUMP` and `RYO_DUMP_CODE` texts (empty if those are off).
+#[derive(Default)]
+pub(super) struct ImageDumps {
+    pub vm: String,
+    pub code: String,
+}
+
 /// The merge pass of a CGU's image: resolves every function's relocations, then lays out the
-/// image. Appends to the `RYO_DUMP` and `RYO_DUMP_CODE` texts if those are on.
-#[allow(clippy::too_many_arguments)]
-pub(super) fn build_image<'tcx>(
-    tcx: TyCtxt<'tcx>,
-    rt: RtItems,
-    mode: asm::Mode,
-    switches: &Switches,
-    cgu_name: Symbol,
-    vm: &mut [VmFn<'tcx>],
-    dump_text: &mut String,
-    code_text: &mut String,
-) -> ImageObject {
+/// image.
+pub(super) fn build_image<'tcx>(cx: ImageCx<'_, 'tcx>, cgu_name: Symbol, vm: &mut [VmFn<'tcx>]) -> (ImageObject, ImageDumps) {
+    let ImageCx { tcx, rt, mode, switches, .. } = cx;
+    let mut dumps = ImageDumps::default();
     let mut w = ImageWriter::new(local_stable_crate_id(tcx));
     w.set_cgu_hash(ryo_bytecode::image::cgu_hash(cgu_name.as_str().as_bytes()));
     let mut pool = Pool::default();
@@ -55,7 +53,7 @@ pub(super) fn build_image<'tcx>(
     }
     let mut encoded = Vec::with_capacity(vm.len());
     if switches.dump.is_some() {
-        dump_text.push_str(&dump::vm_text(tcx, vm, mode));
+        dumps.vm = dump::vm_text(tcx, vm, mode);
     }
     let mut code_dump = switches.dump_code.as_ref().map(|_| dump::code_text(tcx, vm));
     let merge_t = tcx.prof.generic_activity("ryo_merge");
@@ -128,11 +126,11 @@ pub(super) fn build_image<'tcx>(
     }
     drop(merge_t);
     if let Some(text) = code_dump {
-        code_text.push_str(&text);
+        dumps.code = text;
     }
     let _t = tcx.prof.generic_activity("ryo_finish_image");
     match w.finish_encoded(encoded) {
-        Ok(image) => image,
+        Ok(image) => (image, dumps),
         Err(e) => tcx.dcx().fatal(format!("ryo: invalid image: {e:?}")),
     }
 }

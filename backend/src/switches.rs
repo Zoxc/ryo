@@ -28,6 +28,12 @@ pub struct Switches {
 }
 
 impl Switches {
+    /// Whether any `RYO_DUMP*` file is asked for. Dumps describe fresh images, so they turn
+    /// incremental image reuse off.
+    pub fn dumps_any(&self) -> bool {
+        self.dump.is_some() || self.dump_code.is_some() || self.dump_native.is_some() || self.dump_lean.is_some()
+    }
+
     pub fn from_env() -> Switches {
         let var = std::env::var_os;
         Switches {
