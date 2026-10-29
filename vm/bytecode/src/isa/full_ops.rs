@@ -468,72 +468,77 @@ const fn find(parts: &[&str]) -> Option<Opcode> {
     None
 }
 
-static INT_OPS: [[[Option<Opcode>; 5]; 4]; IntOp::ALL.len()] = {
-    let mut t = [[[None; 5]; 4]; IntOp::ALL.len()];
+/// Each integer family's [`Family`] per [`IntForm`], found by the stem of the family's
+/// mnemonic: `add.imm` is `IntOp::Add`'s `Imm` form, `br.eq` `IntOp::Eq`'s `Br` form.
+static INT_FAMS: [[Option<Family>; 4]; IntOp::ALL.len()] = {
+    let mut t = [[None; 4]; IntOp::ALL.len()];
     let mut i = 0;
-    while i < ALL_OPCODES.len() {
-        let op = ALL_OPCODES[i];
+    while i < Family::ALL.len() {
+        let fam = Family::ALL[i];
         i += 1;
-        let m = op.mnemonic().as_bytes();
-        let mut w = 0;
-        while w < 5 {
-            if let Some(m) = strip_last(m, Width::ALL[w].mnemonic().as_bytes()) {
-                let (m, imm) = match strip_last(m, b"imm") {
-                    Some(m) => (m, true),
-                    None => (m, false),
-                };
-                let (m, br) = if m.len() > 3 && bytes_eq(m.split_at(3).0, b"br.") { (m.split_at(3).1, true) } else { (m, false) };
-                let form = match (br, imm) {
-                    (false, false) => IntForm::Reg,
-                    (false, true) => IntForm::Imm,
-                    (true, false) => IntForm::Br,
-                    (true, true) => IntForm::BrImm,
-                };
-                let mut f = 0;
-                while f < IntOp::ALL.len() {
-                    if bytes_eq(m, IntOp::ALL[f].stem().as_bytes()) {
-                        t[f][form as usize][w] = Some(op);
-                    }
-                    f += 1;
-                }
+        let fi = FAMILY_INFO[fam as usize];
+        let m = match Opcode::from_u16(fi.base) {
+            Some(op) => op.mnemonic().as_bytes(),
+            None => panic!("a family without opcodes"),
+        };
+        // The first member's width component.
+        let Some(m) = strip_last(m, OpWidth::ALL[fi.mask.trailing_zeros() as usize].mnemonic().as_bytes()) else {
+            continue;
+        };
+        let (m, imm) = match strip_last(m, b"imm") {
+            Some(m) => (m, true),
+            None => (m, false),
+        };
+        let (m, br) = if m.len() > 3 && bytes_eq(m.split_at(3).0, b"br.") { (m.split_at(3).1, true) } else { (m, false) };
+        let form = match (br, imm) {
+            (false, false) => IntForm::Reg,
+            (false, true) => IntForm::Imm,
+            (true, false) => IntForm::Br,
+            (true, true) => IntForm::BrImm,
+        };
+        let mut f = 0;
+        while f < IntOp::ALL.len() {
+            if bytes_eq(m, IntOp::ALL[f].stem().as_bytes()) {
+                t[f][form as usize] = Some(fam);
             }
-            w += 1;
+            f += 1;
         }
     }
     // Every family exists in some form.
     let mut f = 0;
     while f < IntOp::ALL.len() {
-        let mut any = false;
-        let mut k = 0;
-        while k < 20 {
-            any |= t[f][k / 5][k % 5].is_some();
-            k += 1;
-        }
-        assert!(any, "an IntOp family without opcodes");
+        assert!(
+            t[f][0].is_some() || t[f][1].is_some() || t[f][2].is_some() || t[f][3].is_some(),
+            "an IntOp family without opcodes"
+        );
         f += 1;
     }
     t
 };
 
 impl IntOp {
+    fn form_at(self, form: IntForm, w: Width) -> Option<Opcode> {
+        INT_FAMS[self as usize][form as usize]?.at(OpWidth::ALL[w as usize])
+    }
+
     /// `self` at width `w`: `add.w32`.
     pub fn at(self, w: Width) -> Option<Opcode> {
-        INT_OPS[self as usize][IntForm::Reg as usize][w as usize]
+        self.form_at(IntForm::Reg, w)
     }
 
     /// The immediate form: `add.imm.w32`.
     pub fn imm_at(self, w: Width) -> Option<Opcode> {
-        INT_OPS[self as usize][IntForm::Imm as usize][w as usize]
+        self.form_at(IntForm::Imm, w)
     }
 
     /// The compare-and-branch form: `br.eq.w32`.
     pub fn br_at(self, w: Width) -> Option<Opcode> {
-        INT_OPS[self as usize][IntForm::Br as usize][w as usize]
+        self.form_at(IntForm::Br, w)
     }
 
     /// The compare-with-immediate-and-branch form: `br.eq.imm.w32`.
     pub fn br_imm_at(self, w: Width) -> Option<Opcode> {
-        INT_OPS[self as usize][IntForm::BrImm as usize][w as usize]
+        self.form_at(IntForm::BrImm, w)
     }
 }
 
