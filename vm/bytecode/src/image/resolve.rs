@@ -3,7 +3,7 @@
 
 use alloc::vec::Vec;
 
-use super::Image;
+use super::{Image, PoolRead};
 
 /// Classifies the addresses an image's linked code refers to ([`crate::asm::Resolver`]), by
 /// the image's header ranges, for decoding its functions at run time
@@ -51,9 +51,6 @@ impl ImageResolver<'_> {
             addr.checked_sub(base).filter(|&o| o < len.saturating_add(end as u64)).and_then(|o| u32::try_from(o).ok())
         };
         let ro = self.image.bytes().as_ptr() as u64;
-        let consts = (ro.wrapping_add(h.consts.off as u64), h.consts.count as u64);
-        // The fixup area ends where the JIT records start.
-        let data = (h.data, if h.jit_records.count != 0 { h.jit_records.off } else { h.data_size } as u64);
         if let Some(o) = within(h.text, h.text_size as u64, false) {
             return Ok(self.image.func_at_entry(o).map(|g| Ref::Func(Func(g))));
         }
@@ -63,21 +60,11 @@ impl ImageResolver<'_> {
         if let Some(o) = within(ro.wrapping_add(h.code_consts.off as u64), h.code_consts.count as u64, false) {
             return Ok(Some(Ref::Ro(o)));
         }
-        if let Some(o) = within(consts.0, consts.1, false) {
-            return Ok(Some(Ref::Const(Const(o))));
+        match self.image.classify_intra(addr) {
+            Some(PoolRead::Const(o)) => Ok(Some(Ref::Const(Const(o)))),
+            Some(PoolRead::Data(o)) => Ok(Some(Ref::Data(Data(o)))),
+            Some(PoolRead::Bits(_)) | None => Err(()),
         }
-        if let Some(o) = within(data.0, data.1, false) {
-            return Ok(Some(Ref::Data(Data(o))));
-        }
-        // One past the end of the constants or the data, only once no range holds `addr`
-        // (sections may be adjacent).
-        if let Some(o) = within(consts.0, consts.1, true) {
-            return Ok(Some(Ref::Const(Const(o))));
-        }
-        if let Some(o) = within(data.0, data.1, true) {
-            return Ok(Some(Ref::Data(Data(o))));
-        }
-        Err(())
     }
 
     /// Where the PLT stub or import thunk at `addr` jumps, if it is one, `addr` being outside

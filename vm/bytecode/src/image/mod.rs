@@ -873,21 +873,25 @@ impl<'a> Image<'a> {
         if !self.const_reloc_at(off as u32, w as u32)? {
             return Some(PoolRead::Bits(v));
         }
+        Some(self.classify_intra(v).unwrap_or(PoolRead::Bits(v)))
+    }
+
+    /// The length of the fixup area, the data area [`PoolRead::Data`] offsets index: it ends
+    /// where the JIT records start.
+    pub fn fixup_area_len(&self) -> u32 {
         let h = self.header;
-        let pool = (self.consts().as_ptr() as u64, h.consts.count as u64);
-        let data = (h.data, if h.jit_records.count != 0 { h.jit_records.off } else { h.data_size } as u64);
-        let within = |r: (u64, u64), end: bool| v.checked_sub(r.0).filter(|&o| o < r.1 + end as u64).map(|o| o as u32);
-        Some(if let Some(o) = within(pool, false) {
-            PoolRead::Const(o)
-        } else if let Some(o) = within(data, false) {
-            PoolRead::Data(o)
-        } else if let Some(o) = within(pool, true) {
-            PoolRead::Const(o)
-        } else if let Some(o) = within(data, true) {
-            PoolRead::Data(o)
-        } else {
-            PoolRead::Bits(v)
-        })
+        if h.jit_records.count != 0 { h.jit_records.off } else { h.data_size }
+    }
+
+    /// The linked address `addr` as a pointer into this image's pool ([`PoolRead::Const`]) or
+    /// data area ([`PoolRead::Data`]), `None` if neither holds it. One past the end of either
+    /// counts only once no range holds `addr` (sections may be adjacent).
+    pub fn classify_intra(&self, addr: u64) -> Option<PoolRead> {
+        let pool = (self.consts().as_ptr() as u64, self.header.consts.count as u64);
+        let data = (self.header.data, self.fixup_area_len() as u64);
+        let within =
+            |r: (u64, u64), end: bool| addr.checked_sub(r.0).filter(|&o| o < r.1.saturating_add(end as u64)).and_then(|o| u32::try_from(o).ok());
+        [false, true].into_iter().find_map(|end| within(pool, end).map(PoolRead::Const).or_else(|| within(data, end).map(PoolRead::Data)))
     }
 
     /// The writable section (from the relocated header field; null before linking). It starts
