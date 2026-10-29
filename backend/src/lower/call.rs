@@ -574,8 +574,6 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         if !spread && args.len() != n {
             return native("argument count mismatch");
         }
-        let indirect =
-            |i: usize| sig.plan.as_ref().is_some_and(|p| matches!(p.locs.get(i).map(|l| &l[..]), Some([ArgLoc::PtrReg(_) | ArgLoc::PtrStack(_)])));
         // The slot of input `i` whose value is at `s`.
         let home = |fx: &mut Self, i: usize, s: u32| -> u32 {
             let f = sig.fields[i];
@@ -583,7 +581,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 let at = Self::out(fx.island_block() + f.offset);
                 fx.mov(at, s, f.size);
                 at
-            } else if indirect(i) {
+            } else if sig.indirect(i) {
                 let t = fx.frame.temp(u64::from(f.size), u64::from(f.align));
                 fx.mov(t, s, f.size);
                 t

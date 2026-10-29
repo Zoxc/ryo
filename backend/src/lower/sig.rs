@@ -73,10 +73,24 @@ pub struct ArgPlan {
     pub stack_size: u32,
 }
 
+impl ArgPlan {
+    /// Whether input `i` is passed indirectly, as a pointer to its value (in a register or
+    /// on the stack).
+    pub fn is_indirect(&self, i: usize) -> bool {
+        self.locs.get(i).is_some_and(|l| matches!(l[..], [ArgLoc::PtrReg(_) | ArgLoc::PtrStack(_)]))
+    }
+}
+
 impl<'tcx> AbiSig<'tcx> {
     /// The tuple of the inputs: the portal's and the call templates' `Args`.
     pub fn args_tuple(&self, tcx: TyCtxt<'tcx>) -> Ty<'tcx> {
         Ty::new_tup(tcx, &self.inputs)
+    }
+
+    /// Whether input `i` is passed indirectly ([`ArgPlan::is_indirect`]; never without a
+    /// calling convention).
+    pub fn indirect(&self, i: usize) -> bool {
+        self.plan.as_ref().is_some_and(|p| p.is_indirect(i))
     }
 }
 

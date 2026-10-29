@@ -164,9 +164,7 @@ impl<'tcx> Frame<'tcx> {
         }
         let mut arg_ptrs = Vec::with_capacity(sig.inputs.len());
         for i in 0..sig.inputs.len() {
-            let indirect =
-                sig.plan.as_ref().is_some_and(|p| p.locs.get(i).is_some_and(|l| matches!(l[..], [ArgLoc::PtrReg(_) | ArgLoc::PtrStack(_)])));
-            arg_ptrs.push(if indirect { Some(alloc_below(&mut end, 8, 8)?) } else { None });
+            arg_ptrs.push(if sig.indirect(i) { Some(alloc_below(&mut end, 8, 8)?) } else { None });
         }
         if end >= OUT_END {
             return native("frame too large");
