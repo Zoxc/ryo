@@ -13,13 +13,11 @@ use ryo_bytecode::image::Image;
 use super::sys::{fatal, lock};
 
 struct Snapshot {
-    /// The registered images, sorted by crate hash (then CGU hash). Immutable once published.
-    by_hash: *const Image<'static>,
-    n: usize,
+    /// The registered images, sorted by crate hash (then CGU hash).
+    images: &'static [Image<'static>],
     /// The images' non-empty text and read-only sections, sorted by start address: for
     /// [`image_at`].
-    by_addr: *const Section,
-    n_addr: usize,
+    sections: &'static [Section],
 }
 
 /// A section of a registered image: `[start, start + len)`, in the image with header `header`.
@@ -28,18 +26,6 @@ struct Section {
     start: usize,
     len: usize,
     header: *const u8,
-}
-
-impl Snapshot {
-    fn images(&self) -> &'static [Image<'static>] {
-        // SAFETY: `by_hash` holds `n` initialized images, published and never freed.
-        unsafe { core::slice::from_raw_parts(self.by_hash, self.n) }
-    }
-
-    fn sections(&self) -> &'static [Section] {
-        // SAFETY: `by_addr` holds `n_addr` initialized sections, published and never freed.
-        unsafe { core::slice::from_raw_parts(self.by_addr, self.n_addr) }
-    }
 }
 
 static SNAPSHOT: AtomicPtr<Snapshot> = AtomicPtr::new(ptr::null_mut());
@@ -63,7 +49,7 @@ pub unsafe fn register(start: *const *const u8, end: *const *const u8, anchor: *
     }
     let n = (end as usize).saturating_sub(start as usize) / size_of::<*const u8>();
     let mut g = lock();
-    let old = snapshot().map_or(&[][..], Snapshot::images);
+    let old = snapshot().map_or(&[][..], |s| s.images);
     let cap = old.len() + n;
     let by_hash = g.alloc_forever(cap * size_of::<Image<'static>>(), align_of::<Image<'static>>()).cast::<Image<'static>>();
     // SAFETY: fresh, suitably sized and aligned allocation. Elements are written before
@@ -101,10 +87,12 @@ pub unsafe fn register(start: *const *const u8, end: *const *const u8, anchor: *
         }
     }
     // SAFETY: the first `n_addr` entries are initialized, and nothing else views them.
-    sort_by_key(unsafe { core::slice::from_raw_parts_mut(by_addr, n_addr) }, |s| s.start);
+    let sections = unsafe { core::slice::from_raw_parts_mut(by_addr, n_addr) };
+    sort_by_key(sections, |s| s.start);
     let snap = g.alloc_forever(size_of::<Snapshot>(), align_of::<Snapshot>()).cast::<Snapshot>();
-    // SAFETY: fresh allocation; fully written before it is published.
-    unsafe { snap.write(Snapshot { by_hash, n: len, by_addr, n_addr }) };
+    // SAFETY: fresh allocation; fully written before it is published. Both lists are
+    // allocated forever and not mutated after this point, so they are `&'static`.
+    unsafe { snap.write(Snapshot { images: list, sections }) };
     SNAPSHOT.store(snap, Ordering::Release);
 }
 
@@ -120,7 +108,7 @@ pub unsafe fn register(start: *const *const u8, end: *const *const u8, anchor: *
 /// As for `ryo_vm_register`, for `h` (a JIT record's `header`).
 #[cfg_attr(not(feature = "jit"), allow(dead_code))]
 pub unsafe fn ensure(h: *const u8) {
-    if snapshot().is_some_and(|s| s.images().iter().any(|im| ptr::eq(im.header(), h.cast()))) {
+    if snapshot().is_some_and(|s| s.images.iter().any(|im| ptr::eq(im.header(), h.cast()))) {
         return;
     }
     let entry = [h];
@@ -195,7 +183,7 @@ unsafe fn admit(h: *const u8, anchor: *const u8, existing: &[Image<'static>]) ->
 #[cfg_attr(not(feature = "jit"), allow(dead_code))]
 pub fn image_at(addr: usize) -> *const u8 {
     let Some(s) = snapshot() else { return ptr::null() };
-    let secs = s.sections();
+    let secs = s.sections;
     // Binary search for the number of sections starting at or below `addr`; sections don't
     // overlap, so only the last of them can hold it.
     let (mut lo, mut hi) = (0, secs.len());
