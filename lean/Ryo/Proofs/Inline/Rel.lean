@@ -8,7 +8,8 @@ Ryo.Proofs.Inline.Rel — the R ↔ L2 relation on a frame (reduced.md §C0.7: p
 - `Rel st x`: `opSem`'s state `st` and the x86 state `x`, with `fp` in `rbp`: every frame byte
   at an offset `o` in `[-2^63, 2^63)` (one offset per address) that `st` reads without failing
   (`byteAt`: private, or its escaped object's allocation byte) relates to the byte at
-  `rbp + o`; and each escaped object's allocation is at `rbp + off` (`φ_AOT`, §C0.2).
+  `rbp + o`; each escaped object's allocation is at `rbp + off` (`φ_AOT`, §C0.2); and each
+  zero-sized frame object is at its frame address (`zeroSized`).
 - `readFrame_rel`, `asNat_rel`: a frame read of `n` bytes at `o` relates to the `n` x86 bytes
   at `rbp + o`, and decodes to their little-endian value.
 - `rel_writeFrame`: a write of frame bytes at `d` (private, or in escaped objects:
