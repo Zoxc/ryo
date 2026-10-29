@@ -109,7 +109,7 @@ fn native(op: full::Opcode, w: &[u32], at: usize, f: &mut InsnFrame) -> Result<(
     // The word of the operand `name`, which the shape gives.
     let named = |name: &str| -> Result<usize, &'static str> {
         let k = info.operand_index(name).ok_or("operand name")?;
-        Ok(1 + info.operands[..k].iter().map(|o| o.kind.words().ok_or("operand after a list")).sum::<Result<usize, _>>()?)
+        info.operand_offset(k).ok_or("operand after a list")
     };
     let mut push = |word: usize, access| f.opnds.push(FrameOpnd { word: at + word, access });
     match info.shape {
@@ -162,14 +162,15 @@ fn native(op: full::Opcode, w: &[u32], at: usize, f: &mut InsnFrame) -> Result<(
         _ => {
             // Inline instructions (and `jmp`, `unreachable`, which have no slots).
             let mut accesses = super::inline::frame_access(op).unwrap_or_default().into_iter();
-            let mut pos = 1;
-            for o in info.operands {
+            for (k, o) in info.operands.iter().enumerate() {
                 match o.kind {
-                    OperandKind::Slot | OperandKind::Mem => push(pos, accesses.next().ok_or("operand accesses")?),
+                    OperandKind::Slot | OperandKind::Mem => {
+                        // No list before it: the arm below returns at the first one.
+                        push(info.operand_offset(k).expect("fixed"), accesses.next().ok_or("operand accesses")?)
+                    }
                     OperandKind::List(_) => return Err("a list operand"),
                     _ => {}
                 }
-                pos += o.kind.words().expect("fixed");
             }
             if accesses.next().is_some() {
                 return Err("operand accesses");
