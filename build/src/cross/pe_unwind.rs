@@ -35,20 +35,18 @@ fn pe_unwind_file(info: &RustcInfo, file: &Path, map: &str) -> Result<usize, Str
         .and_then(|v| u64::from_str_radix(v.trim_start_matches("0x"), 16).ok())
         .ok_or("no ImageBase")?;
     let units = pe_units(map, base);
-    if !units.iter().any(|u| u.2) {
+    if !units.iter().any(|u| u.image) {
         return Err("no VM image code in the map".to_owned());
     }
     let funcs = pe_runtime_functions(&crate::utils::output(cmd(info.tool("llvm-readobj")).arg("--unwind").arg(file))?)?;
     let dis = crate::utils::output(cmd(info.tool("llvm-objdump")).args(["-d", "--no-show-raw-insn", "--x86-asm-syntax=att"]).arg(file))?;
     let insns = pe_instructions(&dis);
-    let in_units = |a: u64| units.iter().any(|&(b, e, _)| (b..e).contains(&a));
+    let in_units = |a: u64| units.iter().any(|u| u.contains(a));
     let mut bad = Vec::new();
     // Every `rsp` move in the units is covered.
     for insn in &insns {
         if in_units(insn.addr) && moves_rsp(insn) {
-            // `funcs` is sorted by start.
-            let k = funcs.partition_point(|f| f.begin <= insn.addr);
-            if k == 0 || funcs[k - 1].end <= insn.addr {
+            if covering(&funcs, insn.addr).is_none() {
                 bad.push(format!("{:#x}: `{} {}` moves rsp outside any RUNTIME_FUNCTION", insn.addr, insn.op, insn.args));
             }
         }
@@ -56,19 +54,15 @@ fn pe_unwind_file(info: &RustcInfo, file: &Path, map: &str) -> Result<usize, Str
     // The epilogues of VM code (`add rsp, F; pop rbp`) free what the prologue allocated: Win64
     // takes `add rsp` as undoing the prologue's `ALLOC`, and the code relies on `rsp == rbp -
     // F` there (design/vm.md#frames).
-    let covering = |a: u64| {
-        let k = funcs.partition_point(|f| f.begin <= a);
-        (k > 0 && a < funcs[k - 1].end).then(|| &funcs[k - 1])
-    };
     for w in insns.windows(2) {
         if w[1].op == "popq"
             && w[1].args == "%rbp"
             && w[0].op == "addq"
             && w[0].args.ends_with(", %rsp")
-            && units.iter().any(|&(b, e, image)| image && (b..e).contains(&w[0].addr))
+            && units.iter().any(|u| u.image && u.contains(w[0].addr))
         {
             let alloc: u64 =
-                covering(w[0].addr).map_or(0, |f| f.codes.iter().filter_map(|(_, c)| c.strip_prefix("alloc ")?.parse::<u64>().ok()).sum());
+                covering(&funcs, w[0].addr).map_or(0, |f| f.codes.iter().filter_map(|(_, c)| c.strip_prefix("alloc ")?.parse::<u64>().ok()).sum());
             if parse_imm(w[0].args.split(',').next().unwrap()) != Some(alloc) {
                 bad.push(format!("{:#x}: epilogue `addq {}` doesn't free the prologue's {alloc} bytes", w[0].addr, w[0].args));
             }
@@ -107,10 +101,31 @@ fn pe_unwind_file(info: &RustcInfo, file: &Path, map: &str) -> Result<usize, Str
     Ok(n)
 }
 
+/// The `RUNTIME_FUNCTION` of `funcs` (sorted by start) that contains `a`.
+fn covering(funcs: &[RuntimeFunction], a: u64) -> Option<&RuntimeFunction> {
+    let k = funcs.partition_point(|f| f.begin <= a);
+    (k > 0 && a < funcs[k - 1].end).then(|| &funcs[k - 1])
+}
+
+/// A code range [`pe_unwind`] checks, as virtual addresses.
+#[derive(Debug, PartialEq)]
+struct CodeRange {
+    start: u64,
+    end: u64,
+    /// A VM image's code (else `ryo_rt`'s).
+    image: bool,
+}
+
+impl CodeRange {
+    fn contains(&self, a: u64) -> bool {
+        (self.start..self.end).contains(&a)
+    }
+}
+
 /// The code ranges [`pe_unwind`] checks, as virtual addresses, from lld's map (`/lldmap`:
 /// `<rva> <size> <align>` and the output section, then its input sections, `<file>:(<name>)`,
 /// then their symbols), with whether each is a VM image's.
-fn pe_units(map: &str, base: u64) -> Vec<(u64, u64, bool)> {
+fn pe_units(map: &str, base: u64) -> Vec<CodeRange> {
     let mut units = Vec::new();
     for l in map.lines().skip(1) {
         let mut it = l.split_whitespace();
@@ -121,7 +136,7 @@ fn pe_units(map: &str, base: u64) -> Vec<(u64, u64, bool)> {
         let name = path.rsplit(['/', '\\']).next().unwrap_or(path);
         let image = section == ".text$ryo_image";
         if size > 0 && (image || (section.starts_with(".text") && name.starts_with("ryo_rt-"))) {
-            units.push((base + addr, base + addr + size, image));
+            units.push(CodeRange { start: base + addr, end: base + addr + size, image });
         }
     }
     units
@@ -261,7 +276,13 @@ mod tests {
                    00001040 00000040    16         /x/a.ryo_image.rcgu.o:(.text$ryo_image)\n\
                    00001080 00000040    16         /x/std.o:(.text)\n";
         let units = pe_units(map, 0x1_4000_0000);
-        assert_eq!(units, [(0x1_4000_1000, 0x1_4000_1020, false), (0x1_4000_1040, 0x1_4000_1080, true)]);
+        assert_eq!(
+            units,
+            [
+                CodeRange { start: 0x1_4000_1000, end: 0x1_4000_1020, image: false },
+                CodeRange { start: 0x1_4000_1040, end: 0x1_4000_1080, image: true },
+            ]
+        );
         let dis = "0000000140001000 <.text>:\n\
                    140001000:     \tpushq\t%rax\n\
                    140001001:     \ttestq\t%r11, (%r11)\n\
