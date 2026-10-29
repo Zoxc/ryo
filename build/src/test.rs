@@ -1123,9 +1123,30 @@ impl Ctx<'_> {
         Ok(RunResult {
             code: res.status.code(),
             stdout: String::from_utf8_lossy(&res.stdout).into_owned(),
-            stderr: normalize_thread_ids(&String::from_utf8_lossy(&res.stderr)),
+            stderr: strip_std_prefix(&normalize_thread_ids(&String::from_utf8_lossy(&res.stderr))),
         })
     }
+}
+
+/// Panics in rustup's std name `/rustc/<commit>/library/core/src/…` (with `\` after `library` on
+/// Windows), those in the ryo sysroot's std `core/src/…`, relative to its `library/`.
+fn strip_std_prefix(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(i) = rest.find("/rustc/") {
+        out.push_str(&rest[..i]);
+        let after = &rest[i + "/rustc/".len()..];
+        let hash = after.bytes().take_while(u8::is_ascii_hexdigit).count();
+        match after[hash..].strip_prefix("/library") {
+            Some(tail) if hash > 0 && (tail.starts_with('/') || tail.starts_with('\\')) => rest = &tail[1..],
+            _ => {
+                out.push_str("/rustc/");
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 /// Panic messages say `thread 'main' (<os thread id>) panicked`; the id differs between runs.
@@ -1263,5 +1284,12 @@ mod tests {
         let s = "x\nthread 'main' (1234) panicked at a.rs:1:2:\nthread 'a' (b) c\n";
         let want = "x\nthread 'main' (N) panicked at a.rs:1:2:\nthread 'a' (b) c\n";
         assert_eq!(super::normalize_thread_ids(s), want);
+    }
+
+    #[test]
+    fn strips_std_prefix() {
+        let s = "panicked at /rustc/58cf8f9c/library\\core\\src\\a.rs:1:2:\n/rustc/x/library/b /rustc/ab/library/c\n";
+        let want = "panicked at core\\src\\a.rs:1:2:\n/rustc/x/library/b c\n";
+        assert_eq!(super::strip_std_prefix(s), want);
     }
 }
