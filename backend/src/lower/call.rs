@@ -184,7 +184,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         self.emit_call(target, &sig, &homes, cont)
     }
 
-    /// A call through a fn pointer: `call.ind` (Rust ABI) or a `call_cN` island.
+    /// A call through a fn pointer: `call.ptr` (Rust ABI) or a `call_cN` island.
     fn indirect_call(
         &mut self,
         func: &Operand<'tcx>,
