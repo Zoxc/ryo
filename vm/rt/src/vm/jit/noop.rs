@@ -20,10 +20,11 @@ pub unsafe extern "sysv64" fn trip_entry() {
     core::arch::naked_asm!(
         ".cfi_startproc",
         "mov rax, {failed}",
-        "mov qword ptr [r11], rax",
+        "mov qword ptr [r11 + {ctr_e}], rax",
         "ret",
         ".cfi_endproc",
         failed = const -ryo_bytecode::image::JIT_BIAS,
+        ctr_e = const core::mem::offset_of!(ryo_bytecode::image::JitRecord, ctr_e),
     );
 }
 
@@ -39,7 +40,7 @@ pub unsafe extern "sysv64" fn trip_osr() {
         "ret",
         ".cfi_endproc",
         failed = const -ryo_bytecode::image::JIT_BIAS,
-        ctr_l = const ryo_bytecode::image::JIT_LOOP_CTR,
+        ctr_l = const core::mem::offset_of!(ryo_bytecode::image::JitRecord, ctr_l),
     );
 }
 
@@ -47,6 +48,6 @@ pub unsafe extern "sysv64" fn trip_osr() {
 pub(crate) fn registered(_: &ryo_bytecode::image::Image<'_>) {}
 
 /// Without the JIT, copies never merge (`jit/merge.rs`): there is nothing to share.
-pub(crate) fn forward() -> Option<unsafe extern "C" fn(*const *const u8, *const *const u8, *const u8)> {
+pub(crate) fn forward() -> Option<super::RegisterFn> {
     None
 }

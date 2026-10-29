@@ -30,6 +30,11 @@ pub use interp::{PE_MODE, pe_handler, pe_reg_handler};
 pub use jit::{JIT_ENTRY_PREFIX, configure_jit, jit_shuffle_image};
 pub use jit::{trip_entry, trip_osr};
 
+/// A registration function: [`ryo_vm_register`] (`C-unwind`, but it never unwinds), called as
+/// `C`: a call through a `C-unwind` pointer would make `ryo_rt` require `panic=unwind`. Both
+/// JIT modules' `forward` return one.
+pub(crate) type RegisterFn = unsafe extern "C" fn(*const *const u8, *const *const u8, *const u8);
+
 /// Registers the images whose header addresses are the non-null entries of `[start, end)` and
 /// that were linked against `anchor` (`Header::anchor`; a null `anchor` takes all). Called by
 /// each link unit's registry stub constructor with the bounds of the link unit's

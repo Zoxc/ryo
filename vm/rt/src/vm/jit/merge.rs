@@ -26,9 +26,7 @@ use core::sync::atomic::Ordering::{Acquire, Release};
 use core::sync::atomic::{AtomicU32, AtomicUsize};
 use ryo_bytecode::vmem::PAGE;
 
-/// A registration function: `ryo_vm_register` (`C-unwind`, but it never unwinds), called as
-/// `C`: a call through a `C-unwind` pointer would make `ryo_rt` require `panic=unwind`.
-pub(crate) type RegisterFn = unsafe extern "C" fn(*const *const u8, *const *const u8, *const u8);
+use super::super::RegisterFn;
 
 #[repr(C)]
 struct Page {
