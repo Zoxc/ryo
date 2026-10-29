@@ -4,7 +4,7 @@ events (`runCode`), a program of R functions whose calls between them are answer
 the callee's R code (`Program.invoke`), and an image object as such a program
 (`imageProgram`, `ryo-lean rrun`).
 
-- `runCode c env fuel s`: `step` until the function ends, each `Query` answered by `env`.
+- `runCode c env ch fuel s`: `step` until the function ends, each `Query` answered by `env`.
 - `Program.invoke`: a `Callee.func g` is run as `g`'s R code, its frame below the caller's
   (`fp_callee = sp - 16`, `sp` the caller's `fp - F`), its `Final` the call's answer (the
   return registers, the incoming area's bytes as the outgoing area's, the world; or unwinding),
