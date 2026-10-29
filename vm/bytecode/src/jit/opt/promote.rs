@@ -338,20 +338,23 @@ fn split_accesses(f: &mut Func, live: &[Block], split: &[bool], fields: &[Field]
                     emit(f, Op::AStore(a, po, pw), alloc::vec![piece], &[]);
                 }
             } else {
+                // Built at a width the encoder takes (8 for a 3/5/6/7-byte load); the pieces
+                // lie within `w`, so the bits above it stay zero.
+                let vw = if w.is_power_of_two() { w } else { 8 };
                 let mut acc: Option<Value> = None;
                 for (po, pw) in mine {
                     let x = emit(f, Op::ALoad(a, po, pw), Vec::new(), &[pw]).unwrap();
-                    let mut x = emit(f, Op::Ext { from: pw, to: w, sx: false }, alloc::vec![x], &[w]).unwrap();
+                    let mut x = emit(f, Op::Ext { from: pw, to: vw, sx: false }, alloc::vec![x], &[vw]).unwrap();
                     if let ValueDef::Inst(e, _) = f.def(x) {
                         exts.push((e, pw));
                     }
                     if po != o {
-                        let sh = f.konst(8 * (po - o) as u64, w);
-                        x = emit(f, Op::Bin(BinOp::Shl, w), alloc::vec![x, sh], &[w]).unwrap();
+                        let sh = f.konst(8 * (po - o) as u64, vw);
+                        x = emit(f, Op::Bin(BinOp::Shl, vw), alloc::vec![x, sh], &[vw]).unwrap();
                     }
                     acc = Some(match acc {
                         None => x,
-                        Some(y) => emit(f, Op::Bin(BinOp::Or, w), alloc::vec![y, x], &[w]).unwrap(),
+                        Some(y) => emit(f, Op::Bin(BinOp::Or, vw), alloc::vec![y, x], &[vw]).unwrap(),
                     });
                 }
                 let r = f.result(i);
