@@ -2,8 +2,7 @@
 Ryo.Proofs.Island — the shape `island isl, ops` (aot.md §C2 "Shapes", toward M3
 `decode_sound`): R's step (`Ryo.Vm.R.Sem`: the scopes, then a `Query`
 `.island isl template fp ops lends`, continued by `answer`, which writes the answer's bytes over
-the `Lend` extents) against the items `DecodeReduced.islandCall` accepts. **Specification
-only**: the main theorems are stated, their proofs are to come.
+the `Lend` extents) against the items `DecodeReduced.islandCall` accepts.
 
 **Items** (`islandPre`): `fp` into the first argument register (`fpItem`: `mov rdi,
 rbp`, or `lea` of `[rbp + 0]` without a frame pointer; PE `rcx`), `lea rsi, [rip + ops]` (PE
