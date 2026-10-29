@@ -231,6 +231,11 @@ impl<'tcx> Dumper<'tcx> {
             // A vtable reached first as a plain constant allocation.
             if kind == GKind::Vtable && self.global_kinds[id].0 == GKind::Const {
                 self.global_kinds[id] = (GKind::Vtable, name);
+                // Already emitted as a constant: emit it again, which also upgrades the
+                // vtables it points to.
+                if self.globals[id].take().is_some() {
+                    self.global_queue.push_back((id, key));
+                }
             }
             return id;
         }
