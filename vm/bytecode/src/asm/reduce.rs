@@ -440,7 +440,7 @@ pub fn encode_reduced_at(
                 full.clear();
                 full.extend_from_slice(&code[at as usize..starts.get(i + 1).map_or(code.len(), |&e| e as usize)]);
                 full[0] = f as u32;
-                if !super::return_ok(&full) {
+                if !super::return_ok(&full) || (mode.pe && !super::pe_regs_ok(&full)) {
                     return Err(EncodeError::BadReturn(at));
                 }
                 if f == Opcode::Arg && insns[..i].iter().any(|a| a.full_opcode() != Opcode::Arg) {

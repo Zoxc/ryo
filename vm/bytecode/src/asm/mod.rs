@@ -475,6 +475,21 @@ pub fn return_ok(words: &[u32]) -> bool {
     }
 }
 
+/// Whether the instruction `words` (opcode first, passing [`return_ok`]) names only argument
+/// registers PE has: the first four of each class ([`ArgReg`]).
+pub fn pe_regs_ok(words: &[u32]) -> bool {
+    use crate::full::operand_word;
+    let Some(op) = Opcode::from_u16(words[0] as u16) else { return true };
+    match op {
+        Opcode::Arg => ArgReg::of(words[operand_word(op, "r")], true).is_some_and(|r| r.index < 4),
+        Opcode::Call | Opcode::CallSym | Opcode::CallSymInd | Opcode::CallPtr | Opcode::TailCall | Opcode::TailCallPtr => {
+            let a = operand_word(op, "a");
+            words[a + 1..][..words[a] as usize].chunks(2).all(|p| param_reg(p[1]).is_some_and(|r| r.index < 4))
+        }
+        _ => true,
+    }
+}
+
 /// A call's argument list `a`: (slot, register) pairs, the register an [`ArgReg`] word with
 /// load sizes, or [`ARG_ADDR`] for the slot's address in an integer register. No register
 /// twice. A call of an sret function passes the destination's address as an argument (the

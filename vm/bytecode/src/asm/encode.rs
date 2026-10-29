@@ -166,7 +166,8 @@ pub enum EncodeError {
     /// `lpad`.
     BadCleanup(u32),
     /// A call or `ret` whose return value the machine code can't pass, or an `arg` with an
-    /// invalid register ([`super::return_ok`]) (word offset of the instruction).
+    /// invalid register ([`super::return_ok`]; PE: [`super::pe_regs_ok`]) (word offset of
+    /// the instruction).
     BadReturn(u32),
     /// An `arg` after an instruction that isn't one (word offset).
     ArgNotFirst(u32),
@@ -721,7 +722,7 @@ pub fn encode(code: &[u32], frame_size: u32, cleanup: &[CleanupEntry], scopes: &
         let (insn, len) = crate::full::Insn::decode(&code[at..]).map_err(EncodeError::Decode)?;
         let op = insn.opcode();
         starts.push((at, op));
-        if !super::return_ok(&code[at..]) {
+        if !super::return_ok(&code[at..]) || (mode.pe && !super::pe_regs_ok(&code[at..])) {
             return Err(EncodeError::BadReturn(at as u32));
         }
         if op != Opcode::Arg {
