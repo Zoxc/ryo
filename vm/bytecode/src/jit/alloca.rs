@@ -81,6 +81,22 @@ fn anchor(a: &Acc) -> i32 {
     if a.how == How::Addr && a.off == 0 { -1 } else { a.off }
 }
 
+/// Whether `a` accesses any bytes: a zero-sized block (an island operand) accesses nothing.
+fn touches(a: &Acc) -> bool {
+    a.size != 0 || a.how != How::Block
+}
+
+/// The bytes `[lo, end)` `a` accesses, from its [`anchor`] (an address at least one).
+fn extent(a: &Acc) -> (i64, i64) {
+    let lo = anchor(a) as i64;
+    (lo, lo + a.size.max(1) as i64)
+}
+
+/// Whether `n` is a scalar access width.
+fn scalar(n: u32) -> bool {
+    matches!(n, 1 | 2 | 4 | 8)
+}
+
 const NONE: u16 = u16::MAX;
 const CONFLICT: u16 = u16::MAX - 1;
 
@@ -131,8 +147,8 @@ fn bytes(code: &Code, frame_size: u32) -> Result<FrameBytes, Unsupported> {
     // The bytes: `[-F, hi)`, `hi` past the incoming arguments accessed.
     let mut hi = RET_AREA;
     for i in &code.insns {
-        for a in i.accs.iter().filter(|a| a.size != 0 || a.how != How::Block) {
-            let (lo, end) = (anchor(a) as i64, anchor(a) as i64 + a.size.max(1) as i64);
+        for a in i.accs.iter().filter(|a| touches(a)) {
+            let (lo, end) = extent(a);
             if lo < -f {
                 return Err(Unsupported("a frame access below the frame"));
             }
@@ -192,11 +208,10 @@ fn bytes(code: &Code, frame_size: u32) -> Result<FrameBytes, Unsupported> {
                 span(&mut uf, a.off as i64 - 1, 2);
             }
         }
-        // A zero-sized island operand accesses nothing.
-        for a in i.accs.iter().filter(|a| a.size != 0 || a.how != How::Block) {
-            let off = anchor(a) as i64;
+        for a in i.accs.iter().filter(|a| touches(a)) {
+            let (off, end) = extent(a);
             span(&mut uf, off, a.size.max(1));
-            let r = at(off)..at(off + a.size.max(1) as i64).min(n);
+            let r = at(off)..at(end).min(n);
             for b in r.clone() {
                 accessed[b] = true;
                 match a.how {
@@ -213,7 +228,7 @@ fn bytes(code: &Code, frame_size: u32) -> Result<FrameBytes, Unsupported> {
                     How::Write => {}
                 }
                 // Vectors are whole 16-byte reads and writes (never updates).
-                if !matches!(a.size, 1 | 2 | 4 | 8) && !(a.size == 16 && matches!(a.how, How::Read | How::Write)) {
+                if !scalar(a.size) && !(a.size == 16 && matches!(a.how, How::Read | How::Write)) {
                     odd[b] = true;
                 }
             }
@@ -494,14 +509,14 @@ fn resolve(code: &Code, lay: &Of, allocas: &[Alloca], var_of: &[u32], vars: &mut
     let mut ro_in = alloc::vec![true; allocas.len()];
     let mut fields: Vec<Vec<(i32, u32)>> = alloc::vec![Vec::new(); allocas.len()];
     for ri in &code.insns {
-        for a in ri.accs.iter().filter(|a| a.size != 0 || a.how != How::Block) {
+        for a in ri.accs.iter().filter(|a| touches(a)) {
             let Some(al) = alloca_at(a.off) else { continue };
             let x = &allocas[al.idx()];
             if x.kind != AllocaKind::Incoming {
                 continue;
             }
             let fs = &mut fields[al.idx()];
-            if a.how != How::Read || !matches!(a.size, 1 | 2 | 4 | 8) || x.escaped {
+            if a.how != How::Read || !scalar(a.size) || x.escaped {
                 ro_in[al.idx()] = false;
             } else if !fs.contains(&(a.off, a.size)) {
                 if fs.iter().any(|&(o, n)| (o as i64) < a.off as i64 + a.size as i64 && (a.off as i64) < o as i64 + n as i64) {
@@ -527,7 +542,7 @@ fn resolve(code: &Code, lay: &Of, allocas: &[Alloca], var_of: &[u32], vars: &mut
     }
     for (i, ri) in code.insns.iter().enumerate() {
         for (k, a) in ri.accs.iter().enumerate() {
-            if a.size == 0 && a.how == How::Block {
+            if !touches(a) {
                 res[i][k] = Res::Undef;
                 continue;
             }
