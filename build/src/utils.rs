@@ -166,7 +166,8 @@ pub fn capture_ok(cmd: &mut Command) -> Result<Captured, String> {
 
 /// Runs `cmd` with stdin closed and its stdout and stderr captured, killing it if it runs
 /// longer than `limit`: then fails with what it printed so far, so a hang (a deadlock, a
-/// read of stdin) fails the test instead of the CI job's timeout.
+/// read of stdin) fails the test instead of the CI job's timeout. The first line of an error
+/// says what happened, the rest is the output.
 pub fn output_timeout(cmd: &mut Command, limit: std::time::Duration) -> Result<std::process::Output, String> {
     use std::io::Read;
     let mut child = cmd
@@ -210,6 +211,11 @@ pub fn output_timeout(cmd: &mut Command, limit: std::time::Duration) -> Result<s
             Ok(Some(status)) => break status,
             Ok(None) if start.elapsed() < limit => std::thread::sleep(std::time::Duration::from_millis(10)),
             Ok(None) => {
+                // If `cmd` made the child a process group leader (`process_group(0)`), kill
+                // the group, so the processes it started go too. Otherwise there is no such
+                // group: the unreaped child's pid can't name another one.
+                #[cfg(unix)]
+                let _ = Command::new("kill").args(["-9", "--", &format!("-{}", child.id())]).stderr(Stdio::null()).status();
                 let _ = child.kill();
                 let _ = child.wait();
                 // The pipes close with the process, unless it left descendants holding them.

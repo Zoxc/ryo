@@ -8,7 +8,6 @@ pub mod timing;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use crate::utils::{RustcInfo, cmd, exe_name, output, root};
@@ -818,36 +817,15 @@ fn run_raw(c: &mut Command, timeout: u64) -> Result<(f64, std::process::Output),
     for v in CLEARED_ENV {
         c.env_remove(v);
     }
-    c.env("RUST_TEST_THREADS", "1").stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    c.env("RUST_TEST_THREADS", "1");
     // Its own process group, so a timeout also kills the processes it starts (which would keep
     // the pipes open).
     #[cfg(unix)]
     std::os::unix::process::CommandExt::process_group(c, 0);
     let start = Instant::now();
-    let child = c.spawn().map_err(|e| format!("running {}: {e}", c.get_program().to_string_lossy()))?;
-    let pid = child.id();
-    let (done, wait) = mpsc::channel::<()>();
-    let watchdog = std::thread::spawn(move || {
-        if wait.recv_timeout(Duration::from_secs(timeout)) == Err(mpsc::RecvTimeoutError::Timeout) {
-            // The group outlives the child's reaping while any member lives, and with none
-            // left the kill is a no-op (barring pid reuse within the window).
-            let _ = Command::new("kill").args(["-9", "--", &format!("-{pid}")]).status();
-            return true;
-        }
-        false
-    });
-    let out = child.wait_with_output().map_err(|e| e.to_string());
-    let t = start.elapsed().as_secs_f64();
-    let _ = done.send(());
-    // A kill that came after the child exited on its own isn't a timeout.
-    #[cfg(unix)]
-    let killed = |o: &std::process::Output| std::os::unix::process::ExitStatusExt::signal(&o.status) == Some(9);
-    #[cfg(not(unix))]
-    let killed = |o: &std::process::Output| !o.status.success();
-    if watchdog.join().unwrap_or(false) && out.as_ref().map_or(true, killed) {
-        return Err(format!("timed out after {timeout}s"));
-    }
-    Ok((t, out?))
+    // Only the error's first line: the report shows it inline.
+    let out = crate::utils::output_timeout(c, Duration::from_secs(timeout)).map_err(|e| e.lines().next().unwrap_or_default().to_owned())?;
+    Ok((start.elapsed().as_secs_f64(), out))
 }
 
 /// Runs every test binary once, single-threaded, from the package directory (like `cargo
