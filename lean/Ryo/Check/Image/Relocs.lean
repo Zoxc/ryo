@@ -192,7 +192,8 @@ def checkRoRelocs (o : ImageObject) : Array String := Id.run do
         out := out.push s!"symbol slot {k}: {t} inside the slot"
       else
         slotCount := slotCount.modify k (· + 1)
-        if isSection || r.addend != 0 then out := out.push s!"symbol slot {k}: {t}, not against a symbol + 0"
+        if sym.isNone then out := out.push s!"symbol slot {k}: {t}: symbol {r.sym} out of range"
+        else if isSection || r.addend != 0 then out := out.push s!"symbol slot {k}: {t}, not against a symbol + 0"
     else if h.consts.off ≤ off && off + 8 ≤ h.consts.off + h.consts.count then
       if off % 8 != 0 then out := out.push s!"pool: {t} at a pool offset that isn't 8-aligned"
       if let some e := allocTarget o names r then out := out.push s!"pool: {t}: {e}"
