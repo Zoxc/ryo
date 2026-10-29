@@ -26,9 +26,10 @@
 //!   its normal edges also when the head is entered by OSR, so the copy computes the same
 //!   value, and a load nothing in the loop writes reads the same bytes at the head on every
 //!   iteration.
-//! - **Loads** (`Load`, `ALoad`) move when nothing in the loop may write their bytes (what
-//!   [`super::lvn`] forgets them for: a pointer store but one through the same pointer to
-//!   other bytes, a handler touching memory or naming the alloca, a call, an island). A load
+//! - **Loads** (`Load`, `ALoad`) move when nothing in the loop may write their bytes
+//!   ([`super::mem`], what [`super::lvn`] forgets them for too: a pointer store but one
+//!   through the same pointer to other bytes, a handler touching memory or naming the alloca,
+//!   a call, an island). A load
 //!   through a pointer, a division (it traps on 0) and an effect-free handler call (dce's
 //!   `removable`) may fault, so they move only if they run whenever the head does: on every
 //!   path from the head before any exit or latch, without a cycle or a call on the way.
@@ -45,6 +46,7 @@
 
 use alloc::vec::Vec;
 
+use super::mem::{Loc, may_write};
 use super::osr::{invariant, normal_idoms, normal_preds, osr_edge};
 use crate::jit::ir::*;
 
@@ -137,81 +139,24 @@ fn expensive(op: &Op) -> bool {
     matches!(op, Op::Bin(BinOp::DivS | BinOp::DivU | BinOp::RemS | BinOp::RemU, _) | Op::V(VOp::Splat) | Op::HCall(_) | Op::RefAddr(_, true))
 }
 
-/// What the instructions of a loop may write.
-#[derive(Default)]
-struct Writes {
-    /// Anything (an island, an instruction of unknown effect).
-    all: bool,
-    /// Any memory through a pointer.
-    ptr: bool,
-    /// The escaped and pinned allocas.
-    aliasable: bool,
-    /// A call: also the allocas that aren't memory or incoming.
-    call: bool,
-    stores: Vec<(Value, i64, i64)>,
-    astores: Vec<(AllocaId, i64, i64)>,
-    named: Vec<AllocaId>,
-}
+/// The instructions of a loop that may write memory ([`super::mem::may_write`]).
+struct Writes(Vec<Inst>);
 
 impl Writes {
     fn of(f: &Func, l: &Loop) -> Writes {
-        let mut w = Writes::default();
-        let aliasable = |a: AllocaId| f.allocas[a.idx()].escaped || f.allocas[a.idx()].pinned;
-        for (b, _) in l.body.iter().enumerate().filter(|x| *x.1) {
-            for &i in &f.blocks[b].insts {
-                let id = &f.insts[i.idx()];
-                match id.op {
-                    Op::Load(..) | Op::ALoad(..) => {}
-                    ref op if op.pure() => {}
-                    Op::Store(n, k) => {
-                        w.stores.push((id.args[0], k as i64, k as i64 + n as i64));
-                        w.aliasable = true;
-                    }
-                    Op::AStore(a, k, n) => {
-                        w.astores.push((a, k as i64, k as i64 + n as i64));
-                        w.ptr |= aliasable(a);
-                    }
-                    Op::HCall(ref h) => {
-                        w.named.extend(
-                            h.regs.iter().flat_map(|r| r.1).flatten().filter_map(|s| if let SlotRef::Alloca(a, _) = s { Some(a) } else { None }),
-                        );
-                        if crate::jit::effects::effects(h.h).is_none_or(|e| e.memory) {
-                            w.ptr = true;
-                            w.aliasable = true;
-                        }
-                    }
-                    Op::Call(_) => {
-                        w.ptr = true;
-                        w.aliasable = true;
-                        w.call = true;
-                    }
-                    _ => w.all = true,
-                }
-            }
-        }
-        w
+        let body = l.body.iter().enumerate().filter(|x| *x.1).flat_map(|(b, _)| &f.blocks[b].insts);
+        Writes(body.copied().filter(|&i| !matches!(f.insts[i.idx()].op, Op::Load(..) | Op::ALoad(..)) && !f.insts[i.idx()].op.pure()).collect())
     }
 
     /// Whether the loop may write what `i` (a load) reads.
     fn clobbers(&self, f: &Func, i: Inst) -> bool {
         let id = &f.insts[i.idx()];
-        let over = |lo: i64, hi: i64, a: i64, b: i64| lo < b && a < hi;
-        self.all
-            || match id.op {
-                Op::Load(n, k) => {
-                    let (p, lo, hi) = (id.args[0], k as i64, k as i64 + n as i64);
-                    self.ptr || self.stores.iter().any(|&(q, a, b)| q != p || over(lo, hi, a, b))
-                }
-                Op::ALoad(a, k, n) => {
-                    let (lo, hi) = (k as i64, k as i64 + n as i64);
-                    let al = &f.allocas[a.idx()];
-                    self.astores.iter().any(|&(x, s, e)| x == a && over(lo, hi, s, e))
-                        || ((al.escaped || al.pinned) && self.aliasable)
-                        || self.named.contains(&a)
-                        || (self.call && !matches!(al.kind, AllocaKind::Memory | AllocaKind::Incoming))
-                }
-                _ => true,
-            }
+        let (l, w) = match id.op {
+            Op::Load(n, k) => (Loc::P(id.args[0], k), n),
+            Op::ALoad(a, k, n) => (Loc::A(a, k), n),
+            _ => return true,
+        };
+        self.0.iter().any(|&j| may_write(f, j, l, w))
     }
 }
 

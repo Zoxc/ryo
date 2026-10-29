@@ -8,7 +8,7 @@ use crate::jit::ir::*;
 /// its frame operands are values then, and it only computes.
 pub(super) fn removable(op: &Op) -> bool {
     match op {
-        Op::HCall(h) => h.reg && h.site == Site::None && h.h != Opcode::Lpad && crate::jit::effects::effects(h.h).is_some_and(|e| !e.memory),
+        Op::HCall(h) => h.reg && h.site == Site::None && h.h != Opcode::Lpad && !super::mem::touches_memory(h),
         op => op.pure(),
     }
 }

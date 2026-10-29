@@ -817,6 +817,13 @@ pub struct Alloca {
     pub inlined: bool,
 }
 
+impl Alloca {
+    /// Whether a pointer may reach its bytes: it escaped or is pinned ([`super::opt::mem`]).
+    pub fn aliasable(&self) -> bool {
+        self.escaped || self.pinned
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Func {
     pub values: Vec<ValueData>,

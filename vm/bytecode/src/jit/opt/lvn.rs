@@ -28,17 +28,10 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
+use super::mem::{Loc, may_write};
 use super::{ConstAt, ConstMem, PoolRead};
 use crate::asm::Ref;
 use crate::jit::ir::*;
-
-/// What a block's memory is known to hold: the bytes at an alloca offset, or at a pointer
-/// value plus an offset, with their width, and the value they hold.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Loc {
-    A(AllocaId, i32),
-    P(Value, i32),
-}
 
 /// At most this many remembered memory values per block, to keep the pass linear.
 const MAX_MEM: usize = 32;
@@ -587,8 +580,7 @@ fn pair_load(f: &mut Func, kept: &mut Vec<Inst>, i: Inst) -> bool {
     }
     let (Some(ax), Some(ay)) = (kept.iter().position(|&k| k == lx), kept.iter().position(|&k| k == ly)) else { return false };
     let (lo, hi) = (ax.min(ay), ax.max(ay));
-    let writes =
-        kept[lo..hi].iter().any(|&k| matches!(f.insts[k.idx()].op, Op::Store(..) | Op::AStore(..) | Op::HCall(_) | Op::Call(_) | Op::Island(_)));
+    let writes = kept[lo..hi].iter().any(|&k| may_write(f, k, Loc::P(px, kx), 8) || may_write(f, k, Loc::P(px, ky), 8));
     if writes {
         return false;
     }
@@ -615,7 +607,6 @@ fn pair_load(f: &mut Func, kept: &mut Vec<Inst>, i: Inst) -> bool {
 /// Runs value numbering on every reachable block of `f`, walking the dominator tree, with
 /// the loads from `mem` folded.
 pub fn lvn(f: &mut Func, pools: Option<&dyn ConstMem>) {
-    let aliasable: Vec<bool> = f.allocas.iter().map(|a| a.escaped || a.pinned).collect();
     let rpo = f.rpo();
     let idom = f.idoms(&rpo);
     // The pure operations of the dominating blocks, with their block, and an undo log.
@@ -715,40 +706,14 @@ pub fn lvn(f: &mut Func, pools: Option<&dyn ConstMem>) {
                     }
                     remember(&mut mem, Loc::P(args[0], off), w, Value(res));
                 }
-                Op::AStore(a, off, n) => {
-                    let (lo, hi) = (off as i64, off as i64 + n as i64);
-                    let esc = aliasable[a.idx()];
-                    mem.retain(|&(l, w, _)| match l {
-                        Loc::A(b, o) => b != a || o as i64 + w as i64 <= lo || o as i64 >= hi,
-                        Loc::P(..) => !esc,
-                    });
-                    if n.is_power_of_two() && f.w(args[0]) >= n {
-                        remember(&mut mem, Loc::A(a, off), n, args[0]);
+                _ => {
+                    mem.retain(|&(l, w, _)| !may_write(f, i, l, w));
+                    match f.insts[i.idx()].op {
+                        Op::AStore(a, off, n) if n.is_power_of_two() && f.w(args[0]) >= n => remember(&mut mem, Loc::A(a, off), n, args[0]),
+                        Op::Store(w, off) => remember(&mut mem, Loc::P(args[0], off), w, args[1]),
+                        _ => {}
                     }
                 }
-                Op::Store(w, off) => {
-                    let (p, lo, hi) = (args[0], off as i64, off as i64 + w as i64);
-                    mem.retain(|&(l, lw, _)| match l {
-                        Loc::A(b, _) => !aliasable[b.idx()],
-                        Loc::P(q, o) => q == p && (o as i64 + lw as i64 <= lo || o as i64 >= hi),
-                    });
-                    remember(&mut mem, Loc::P(p, off), w, args[1]);
-                }
-                Op::HCall(ref h) => {
-                    let memory = crate::jit::effects::effects(h.h).is_none_or(|e| e.memory);
-                    mem.retain(|&(l, _, _)| match l {
-                        Loc::A(b, _) => !h.allocas().any(|a| a == b) && !(memory && aliasable[b.idx()]),
-                        Loc::P(..) => !memory,
-                    });
-                }
-                Op::Call(_) => {
-                    let allocas = &f.allocas;
-                    mem.retain(|&(l, _, _)| match l {
-                        Loc::A(b, _) => !aliasable[b.idx()] && matches!(allocas[b.idx()].kind, AllocaKind::Memory | AllocaKind::Incoming),
-                        Loc::P(..) => false,
-                    });
-                }
-                _ => mem.clear(),
             }
             kept.push(i);
         }

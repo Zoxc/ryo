@@ -10,7 +10,7 @@ use alloc::vec::Vec;
 use crate::jit::ir::*;
 
 pub fn dse(f: &mut Func) {
-    let mut ok: Vec<bool> = f.allocas.iter().map(|a| a.kind == AllocaKind::Memory && !a.escaped && !a.pinned).collect();
+    let mut ok: Vec<bool> = f.allocas.iter().map(|a| a.kind == AllocaKind::Memory && !a.aliasable()).collect();
     for id in &f.insts {
         if let Op::AllocaAddr(a, _) = id.op {
             ok[a.idx()] = false;

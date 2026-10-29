@@ -3,6 +3,7 @@
 //!
 //! - `lvn`: value numbering: constant folding, common subexpressions over the dominator
 //!   tree, redundant loads and store-to-load forwarding over extended basic blocks.
+//! - `mem`: the memory-effect model: which bytes an instruction may write.
 //! - `dse`: dead stores to allocas no pointer reaches, per block.
 //! - `simplify`: global simplification: constant propagation over block parameters, branch
 //!   folding, parameter aliasing and block merging.
@@ -28,6 +29,7 @@ pub mod fold;
 pub mod hoist;
 pub mod layout;
 pub mod lvn;
+pub mod mem;
 pub mod osr;
 pub mod promote;
 pub mod rotate;
