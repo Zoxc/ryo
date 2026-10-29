@@ -82,6 +82,19 @@ pub enum RyoMode {
     Jit,
 }
 
+impl RyoMode {
+    fn name(self) -> &'static str {
+        match self {
+            RyoMode::Aot => "aot",
+            RyoMode::Jit => "jit",
+        }
+    }
+
+    fn parse(s: &str) -> Option<RyoMode> {
+        [RyoMode::Aot, RyoMode::Jit].into_iter().find(|m| m.name() == s)
+    }
+}
+
 /// `y bench [--runs N] [--llvm LEVELS] [--clif [LEVELS]] [--ryo MODES] [--metric time|cachegrind]`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Options {
@@ -126,11 +139,7 @@ pub fn parse_options(args: &[&str]) -> Result<Options, String> {
             },
             "--ryo" => {
                 for m in list(args.value()?) {
-                    o.ryo.push(match m.as_str() {
-                        "aot" => RyoMode::Aot,
-                        "jit" => RyoMode::Jit,
-                        _ => return Err(format!("bad ryo mode `{m}` (expected aot or jit)")),
-                    });
+                    o.ryo.push(RyoMode::parse(&m).ok_or(format!("bad ryo mode `{m}` (expected aot or jit)"))?);
                 }
             }
             "--metric" => {
@@ -156,23 +165,23 @@ fn columns(o: &Options) -> Vec<Column> {
     let rustc = |level| with(Compiler::Llvm, "llvm", level);
     let clif = |level| with(Compiler::Clif, "clif", level);
     if o.llvm.is_empty() && o.clif.is_empty() && o.ryo.is_empty() {
-        // Under cachegrind the counts depend on when a background JIT thread finishes.
-        let env = if o.metric == Metric::Cachegrind { vec![("RYO_JIT_OPT", "ssa"), ("RYO_JIT_SYNC", "1")] } else { Vec::new() };
-        let ryo = Column { name: "ryo".to_owned(), compiler: Compiler::Ryo, flags: Vec::new(), env };
         let level = |opt| OptLevel { opt, debug_assertions: true };
-        return vec![rustc(level(0)), rustc(level(1)), ryo];
+        return vec![rustc(level(0)), rustc(level(1)), ryo_column(RyoMode::Jit, o.metric, "ryo".to_owned())];
     }
-    let mut v: Vec<Column> = o.llvm.iter().map(|&l| rustc(l)).chain(o.clif.iter().map(|&l| clif(l))).collect();
-    for &m in &o.ryo {
-        let (name, env) = match m {
-            RyoMode::Aot => ("aot", vec![("RYO_JIT", "off")]),
-            // Under cachegrind the counts depend on when a background JIT thread finishes.
-            RyoMode::Jit if o.metric == Metric::Cachegrind => ("jit", vec![("RYO_JIT_OPT", "ssa"), ("RYO_JIT_SYNC", "1")]),
-            RyoMode::Jit => ("jit", vec![("RYO_JIT_OPT", "ssa")]),
-        };
-        v.push(Column { name: format!("ryo {name}"), compiler: Compiler::Ryo, flags: Vec::new(), env });
-    }
-    v
+    let ryo = o.ryo.iter().map(|&m| ryo_column(m, o.metric, format!("ryo {}", m.name())));
+    o.llvm.iter().map(|&l| rustc(l)).chain(o.clif.iter().map(|&l| clif(l))).chain(ryo).collect()
+}
+
+/// The column `name` running ryo in `mode`. The default `ryo` column is `jit`: the JIT's
+/// settings there are the runtime's defaults.
+fn ryo_column(mode: RyoMode, metric: Metric, name: String) -> Column {
+    let env = match (mode, metric) {
+        (RyoMode::Aot, _) => vec![("RYO_JIT", "off")],
+        // Under cachegrind the counts depend on when a background JIT thread finishes.
+        (RyoMode::Jit, Metric::Cachegrind) => vec![("RYO_JIT_OPT", "ssa"), ("RYO_JIT_SYNC", "1")],
+        (RyoMode::Jit, Metric::Time) => vec![("RYO_JIT_OPT", "ssa")],
+    };
+    Column { name, compiler: Compiler::Ryo, flags: Vec::new(), env }
 }
 
 /// Mean and standard deviation, in seconds.
