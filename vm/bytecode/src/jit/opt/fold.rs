@@ -119,11 +119,12 @@ pub fn fold_addr(f: &mut Func, i: Inst) {
                 id.args.remove(0);
             }
         }
-        Op::PtrAdd(c) if i32::try_from(off as i64 + c).is_ok() => {
+        Op::PtrAdd(c) if (off as i64).checked_add(c).is_some_and(|k| i32::try_from(k).is_ok()) => {
             let pa = f.insts[d.idx()].args[0];
             let id = &mut f.insts[i.idx()];
             id.args[0] = pa;
-            id.op = if load { Op::Load(w, off + c as i32) } else { Op::Store(w, off + c as i32) };
+            let k = (off as i64 + c) as i32;
+            id.op = if load { Op::Load(w, k) } else { Op::Store(w, k) };
         }
         _ => {}
     }

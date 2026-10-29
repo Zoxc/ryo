@@ -162,6 +162,10 @@ impl Walk {
             }
             BinOp::Add | BinOp::Sub | BinOp::Mul => {
                 let (x, y) = (self.range(f, a, w, depth), self.range(f, b, w, depth));
+                // Empty under contradictory facts (a dead block): nothing to tell.
+                if x.empty() || y.empty() {
+                    return None;
+                }
                 let (lo, hi) = match o {
                     BinOp::Add => (x.ulo as u128 + y.ulo as u128, x.uhi as u128 + y.uhi as u128),
                     BinOp::Sub if x.ulo >= y.uhi => ((x.ulo - y.uhi) as u128, (x.uhi - y.ulo) as u128),
