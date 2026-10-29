@@ -1128,17 +1128,33 @@ impl Asm {
         n
     }
 
+    /// Starts an instruction: its id and unwind entry. `Err` when it is complete already: a
+    /// `resume` in the pad region, which returns from the region.
+    fn begin_insn(&mut self, op: Opcode) -> Result<InsnId, InsnId> {
+        let id = InsnId(self.unwind.len() as u32);
+        self.unwind.push(None);
+        if op == Opcode::Resume && self.in_region() {
+            self.region_ret();
+            return Err(id);
+        }
+        Ok(id)
+    }
+
+    /// The branch to `to` on a handler's `al` result: taken if it is nonzero, or zero if `neg`.
+    fn cond_branch(&mut self, neg: bool, to: Label) {
+        self.fixed(Item::TestAl);
+        self.pieces.push(Piece::Branch { cond: if neg { Cond::Z } else { Cond::Nz }, to });
+    }
+
     /// Emits a reduced `handler` ([`crate::reduced`]): a call of `op`'s handler with the
     /// argument registers `args` from `rdi` on, then `then`. An [`Arg::Ro`] argument is the
     /// address of a new code constant of `case_values` (a sparse switch's values, aligned as
     /// [`super::encode`] aligns them); its offset is ignored.
     pub(super) fn handler(&mut self, op: Opcode, args: &[Arg], case_values: &[u8], then: Then<Label>) -> InsnId {
-        let id = InsnId(self.unwind.len() as u32);
-        self.unwind.push(None);
-        if op == Opcode::Resume && self.in_region() {
-            self.region_ret();
-            return id;
-        }
+        let id = match self.begin_insn(op) {
+            Ok(id) => id,
+            Err(id) => return id,
+        };
         // As `insn` records `t` and a switch's `default`, the operands of their own.
         match &then {
             Then::Branch { target, .. } => self.targets.push((*target, self.pieces.len())),
@@ -1148,7 +1164,7 @@ impl Asm {
         // A dense switch's index computation in place of the call, which takes the arguments
         // `s`, `base` and the case count.
         let dense = (|| {
-            let l = layout(op, self.mode);
+            let l = layouts(self.mode)[op as usize];
             let arg = |name: &str| l.imm(op, name, args);
             super::inline::dense_index(op, arg("s")? as u32 as i32, arg("base")?, arg("table")?)
         })();
@@ -1172,10 +1188,7 @@ impl Asm {
         }
         match then {
             Then::Next => {}
-            Then::Branch { neg, target } => {
-                self.fixed(Item::TestAl);
-                self.pieces.push(Piece::Branch { cond: if neg { Cond::Z } else { Cond::Nz }, to: target });
-            }
+            Then::Branch { neg, target } => self.cond_branch(neg, target),
             Then::Table(ts) => self.table(ts),
             Then::Trap => self.fixed(Item::Ud2),
         }
@@ -1184,12 +1197,10 @@ impl Asm {
 
     /// Emits instruction `op` with operands `ops` (in the opcode's operand order).
     pub fn insn(&mut self, op: Opcode, ops: &[Opnd<Label>]) -> InsnId {
-        let id = InsnId(self.unwind.len() as u32);
-        self.unwind.push(None);
-        if op == Opcode::Resume && self.in_region() {
-            self.region_ret();
-            return id;
-        }
+        let id = match self.begin_insn(op) {
+            Ok(id) => id,
+            Err(id) => return id,
+        };
         let site = Some(id);
         let info = op.info();
         for o in ops {
@@ -1227,10 +1238,8 @@ impl Asm {
             Shape::Op | Shape::Lpad => self.handler_call(op, ops, None),
             Shape::Br => {
                 self.handler_call(op, ops, None);
-                self.fixed(Item::TestAl);
                 let Opnd::Neg(neg) = named("neg") else { unreachable!() };
-                let cond = if *neg { Cond::Z } else { Cond::Nz };
-                self.pieces.push(Piece::Branch { cond, to: target("t") });
+                self.cond_branch(*neg, target("t"));
             }
             Shape::Switch => {
                 let opnd = |name: &str| info.operand_index(name).map(|i| &ops[i]);
