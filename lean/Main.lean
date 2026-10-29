@@ -124,14 +124,14 @@ def runFile (path : String) (fuel : Nat) (stdout : Bool := false) : IO UInt32 :=
   if stdout then
     pure (match r.result with
       | .ok (.returned _) => 0
-      | .error (.exit c) => UInt32.ofNat c.toNat
+      | .error (.exit c) => UInt32.ofNat (c % 256).toNat
       | .error .abort => 134
       | .error (.ub _) => 3
       | _ => 4)
   else
     pure (match r.result with
       | .ok (.returned _) => 0
-      | .error (.exit c) => UInt32.ofNat c.toNat
+      | .error (.exit c) => UInt32.ofNat (c % 256).toNat
       | _ => 1)
 
 def decodeFile (path : String) : IO UInt32 := do
