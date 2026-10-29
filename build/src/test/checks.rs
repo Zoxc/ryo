@@ -393,11 +393,10 @@ pub(super) fn same_exports(info: &crate::utils::RustcInfo, rustc_ryo: &Path, src
             }
             // The runtime's own symbols: in a Rust dylib everything of `ryo_rt` and
             // `ryo_bytecode`, the handlers included. A cdylib and an executable export none.
-            let runtime = |s: &str| s.contains("6ryo_rt") || s.contains("12ryo_bytecode") || is_rt_internal(s);
             // Mach-O has no dynamic symbol table: its exports are the external symbols.
             let table = if cfg!(target_vendor = "apple") { "--extern-only" } else { "-D" };
             let mut syms = crate::utils::nm_symbols(info, &[table, "--defined-only"], &o, &info.host)?;
-            syms.retain(|s| !runtime(s));
+            syms.retain(|s| !is_runtime_symbol(s));
             syms.sort();
             lists.push(syms);
         }
@@ -406,6 +405,19 @@ pub(super) fn same_exports(info: &crate::utils::RustcInfo, rustc_ryo: &Path, src
         }
     }
     Ok(())
+}
+
+/// Whether `s` is the runtime's own: a path in `ryo_rt` or `ryo_bytecode`, or one of
+/// [`is_rt_internal`]'s symbols.
+pub(super) fn is_runtime_symbol(s: &str) -> bool {
+    ["6ryo_rt", "12ryo_bytecode"].iter().any(|c| in_crate(s, c)) || is_rt_internal(s)
+}
+
+/// Whether the mangled `sym` is a path in the crate `krate` (its length-prefixed name): at the
+/// root of a legacy path, or after a v0 crate root's `C` (and disambiguator). A user module
+/// of that name (`da::ryo_rt`) isn't.
+fn in_crate(sym: &str, krate: &str) -> bool {
+    sym.starts_with(&format!("_ZN{krate}")) || sym.contains(&format!("C{krate}")) || sym.contains(&format!("_{krate}"))
 }
 
 /// Whether `s` is one of `ryo_rt`'s own `#[rustc_std_internal_symbol]`s (mangled under the

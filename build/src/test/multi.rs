@@ -134,15 +134,8 @@ pub(super) fn multi_staticlib(info: &RustcInfo, rustc_ryo: &Path, src: &Path, ou
 /// `ryo_bytecode`, its tagged entry points) must stay private to every module.
 fn exported_runtime(info: &RustcInfo, so: &Path) -> Result<Vec<String>, String> {
     let mut syms = crate::utils::nm_symbols(info, &["-D", "--defined-only"], so, &info.host)?;
-    syms.retain(|s| s.contains("ryo_vm_register") || ["6ryo_rt", "12ryo_bytecode"].iter().any(|c| in_crate(s, c)) || super::is_rt_internal(s));
+    syms.retain(|s| s.contains("ryo_vm_register") || super::is_runtime_symbol(s));
     Ok(syms)
-}
-
-/// Whether the mangled `sym` is a path in the crate `krate` (its length-prefixed name): at the
-/// root of a legacy path, or after a v0 crate root's `C` (and disambiguator). A user module
-/// of that name (`da::ryo_rt`) isn't.
-fn in_crate(sym: &str, krate: &str) -> bool {
-    sym.starts_with(&format!("_ZN{krate}")) || sym.contains(&format!("C{krate}")) || sym.contains(&format!("_{krate}"))
 }
 
 /// The `jit threads: <n>` line of `tests/multi_ryo`'s programs.
