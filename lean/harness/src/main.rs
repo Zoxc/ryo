@@ -6,7 +6,7 @@
 //! state (`cpu.rs`) and compares all GPRs, the flags Lean defines, `xmm0`–`xmm15`, the data
 //! region and where control went.
 //!
-//!   cargo run --release -- [--cases N] [--seed S] [--lean path/to/ryo-lean] [--show K] [-v]
+//!   cargo run --release -- [--cases N] [--seed S] [--lean path/to/ryo-lean] [--show K] [--batch B] [-v]
 
 mod cases;
 mod cpu;
@@ -46,7 +46,10 @@ fn opts() -> Opts {
             "--seed" => o.seed = val(i).parse().expect("--seed"),
             "--lean" => o.lean = val(i),
             "--show" => o.show = val(i).parse().expect("--show"),
-            "--batch" => o.batch = val(i).parse().expect("--batch"),
+            "--batch" => {
+                o.batch = val(i).parse().expect("--batch");
+                assert!(o.batch > 0, "--batch must be at least 1");
+            }
             "-v" | "--verbose" => {
                 o.verbose = true;
                 i += 1;
@@ -101,6 +104,9 @@ struct Stats {
 fn compare(state: &Json, out: &cpu::Outcome) -> Result<Vec<String>, String> {
     let mut d = Vec::new();
     let regs = state.get("regs").and_then(Json::arr).ok_or("no regs")?;
+    if regs.len() != out.regs.len() {
+        return Err(format!("lean has {} regs, cpu {}", regs.len(), out.regs.len()));
+    }
     for (i, r) in regs.iter().enumerate() {
         let want = r.u64().ok_or("bad reg")?;
         if want != out.regs[i] {
@@ -121,6 +127,9 @@ fn compare(state: &Json, out: &cpu::Outcome) -> Result<Vec<String>, String> {
         }
     }
     let xmm = state.get("xmm").and_then(Json::arr).ok_or("no xmm")?;
+    if xmm.len() != out.xmm.len() {
+        return Err(format!("lean has {} xmm registers, cpu {}", xmm.len(), out.xmm.len()));
+    }
     for (i, x) in xmm.iter().enumerate() {
         let want = x.u128().ok_or("bad xmm")?;
         if want != out.xmm[i] {
@@ -128,7 +137,14 @@ fn compare(state: &Json, out: &cpu::Outcome) -> Result<Vec<String>, String> {
         }
     }
     let mem = state.get("mem").and_then(Json::arr).and_then(|m| m.first()).and_then(Json::arr).ok_or("no mem")?;
-    let want = unhex(mem.get(1).and_then(Json::str).ok_or("bad mem")?);
+    let want = mem.get(1).and_then(Json::str).ok_or("bad mem")?;
+    if want.len() % 2 != 0 {
+        return Err("odd-length mem hex".into());
+    }
+    let want = unhex(want);
+    if want.len() != out.mem.len() {
+        d.push(format!("data length: lean {}, cpu {}", want.len(), out.mem.len()));
+    }
     for (i, (w, g)) in want.iter().zip(&out.mem).enumerate() {
         if w != g {
             d.push(format!("data+{i:#x}: lean {w:#04x}, cpu {g:#04x}"));
