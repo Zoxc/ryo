@@ -227,8 +227,8 @@ def localCheck (c : Ctx) (n : Node) : Except String (Array Node) := do
 
 structure St where
   local_ : HashMap Node (Except String (Array Node)) := {}
-  /-- Placements known valid (their whole demand closure holds locally). -/
-  valid : HashSet Node := {}
+  /-- Placements known valid (their whole demand closure holds locally), with that closure. -/
+  valid : HashMap Node (Array Node) := {}
   /-- Placements known invalid, with why. -/
   invalid : HashMap Node String := {}
 
@@ -245,6 +245,7 @@ locally. On success, the reachable placements. -/
 def validate (c : Ctx) (root : Node) (fuel : Nat := 100000) :
     M (Except String (Array Node)) := do
   if let some e := (← get).invalid[root]? then return .error e
+  if let some ns := (← get).valid[root]? then return .ok ns
   let mut seen : HashSet Node := {}
   let mut work : Array (Node × List Node) := #[(root, [])]
   let mut nodes : Array Node := #[]
@@ -259,7 +260,13 @@ def validate (c : Ctx) (root : Node) (fuel : Nat := 100000) :
       modify fun s => { s with invalid := s.invalid.insert root "too many placements" }
       return .error "too many placements"
     fuel := fuel - 1
-    if (← get).valid.contains n then continue
+    -- A placement validated before: its closure holds, and is part of this one.
+    if let some ns := (← get).valid[n]? then
+      for m in ns do
+        if !seen.contains m then
+          seen := seen.insert m
+          nodes := nodes.push m
+      continue
     match ← localOf c n with
     | .error e =>
       let via := path.reverse.map (fun (g, b) => s!"g{g} at {b}")
@@ -268,7 +275,7 @@ def validate (c : Ctx) (root : Node) (fuel : Nat := 100000) :
       return .error msg
     | .ok ds =>
       for d in ds do work := work.push (d, n :: path)
-  modify fun s => { s with valid := nodes.foldl (·.insert ·) s.valid }
+  modify fun s => { s with valid := s.valid.insert root nodes }
   return .ok nodes
 
 /-! ## References -/
