@@ -366,10 +366,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 self.fused = None;
                 self.cert_block(bb.as_usize(), false);
                 self.cert_dead();
-                self.reset_temps();
-                let start = self.insns;
-                self.op(Opcode::Unreachable, &[]);
-                self.cert_term(start);
+                self.unit(|fx| fx.op(Opcode::Unreachable, &[]), Self::cert_term);
                 continue;
             }
             self.fused = self.fusable(data, &uses);
@@ -379,10 +376,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             let block_dead = &dead[dead.partition_point(|d| d.0.block < bb)..dead.partition_point(|d| d.0.block <= bb)];
             let mut block_dead = block_dead.iter().peekable();
             for (i, stmt) in stmts.iter().enumerate() {
-                self.reset_temps();
-                let start = self.insns;
-                self.statement(stmt)?;
-                self.cert_stmt(start);
+                self.unit(|fx| fx.statement(stmt), Self::cert_stmt)?;
                 let here = rustc_middle::mir::Location { block: bb, statement_index: i };
                 while let Some(&&(at, local)) = block_dead.peek()
                     && at <= here
@@ -393,13 +387,21 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     block_dead.next();
                 }
             }
-            self.reset_temps();
-            let start = self.insns;
-            self.terminator(data.terminator())?;
-            self.cert_term(start);
+            self.unit(|fx| fx.terminator(data.terminator()), Self::cert_term)?;
         }
         let entries = std::mem::take(&mut self.cleanup);
         self.unwind_targets(entries)
+    }
+
+    /// Lowers one unit the certificate records (a statement, a terminator, a terminate stub)
+    /// with `lower`, on fresh temporaries, then records the instructions it emitted, from
+    /// `start`, with `record(self, start)`.
+    fn unit<R>(&mut self, lower: impl FnOnce(&mut Self) -> R, record: impl FnOnce(&mut Self, u32)) -> R {
+        self.reset_temps();
+        let start = self.insns;
+        let r = lower(self);
+        record(self, start);
+        r
     }
 
     /// Emits the unwind targets of the cleanup entries `entries`, and points each at its pad.
@@ -419,11 +421,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             {
                 let at = self.asm.label();
                 self.bind(at);
-                self.reset_temps();
                 self.next_block = None;
-                let start = self.insns;
-                self.terminate_call(reason, *self.body.source_info(rustc_middle::mir::Location::START))?;
-                self.cert_stub(reason, start);
+                let source_info = *self.body.source_info(rustc_middle::mir::Location::START);
+                self.unit(|fx| fx.terminate_call(reason, source_info), |fx, start| fx.cert_stub(reason, start))?;
                 stubs.push((reason, at));
             }
         }
