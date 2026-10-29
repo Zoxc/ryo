@@ -21,7 +21,7 @@ use ryo_bytecode::image::{
 use ryo_bytecode::jit;
 use ryo_bytecode::jit::inline::VmFunc;
 use ryo_bytecode::jit::ir::CallTarget;
-use ryo_bytecode::jit_abi::{JIT_ENTRY_PREFIX, JitOpt, RtApi};
+use ryo_bytecode::jit_abi::{JIT_ENTRY_PREFIX, JIT_ENTRY_PREFIX_BYTES, JitOpt, RtApi};
 use ryo_bytecode::{Opcode, reduced, vmem};
 
 use crate::stats::{self, Fail, STATS};
@@ -756,12 +756,8 @@ impl PeEh {
 /// the OSR code at its offset past the body, and the code constants `rodata` at `ro_at`.
 fn assemble(body: &[u8], osr: Option<(usize, &[u8])>, rodata: &[u8], size: usize, ro_at: usize) -> Vec<u8> {
     let mut code = std::vec![0xccu8; size];
-    // `lea r11, [rip + code]; mov [rsp], r11; ret` (JIT_ENTRY_PREFIX).
-    let lea = (JIT_ENTRY_PREFIX - 7) as i32;
-    let l = lea.to_le_bytes();
-    let prefix = [0x4c, 0x8d, 0x1d, l[0], l[1], l[2], l[3], 0x4c, 0x89, 0x1c, 0x24, 0xc3];
     code[CODE_LEN_AT..][..4].copy_from_slice(&(body.len() as u32).to_le_bytes());
-    code[CODE_AT - JIT_ENTRY_PREFIX..CODE_AT].copy_from_slice(&prefix);
+    code[CODE_AT - JIT_ENTRY_PREFIX..CODE_AT].copy_from_slice(&JIT_ENTRY_PREFIX_BYTES);
     code[CODE_AT..][..body.len()].copy_from_slice(body);
     if let Some((at, o)) = osr {
         code[CODE_AT + at..][..o.len()].copy_from_slice(o);

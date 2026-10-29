@@ -23,7 +23,11 @@ use crate::image::JitRecord;
 /// starts with its caller's return address on top, as if called directly. Returning rather
 /// than dropping the address (`pop`) keeps the return stack buffer balanced: the `ret`
 /// mispredicts once, but the function's own `ret` and its callers' don't.
-pub const JIT_ENTRY_PREFIX: usize = 12;
+pub const JIT_ENTRY_PREFIX: usize = JIT_ENTRY_PREFIX_BYTES.len();
+
+/// The entry prefix's bytes ([`JIT_ENTRY_PREFIX`]): `lea r11, [rip + 5]` (5: the length of
+/// the two instructions after the `lea`), `mov [rsp], r11`, `ret`.
+pub const JIT_ENTRY_PREFIX_BYTES: [u8; 12] = [0x4c, 0x8d, 0x1d, 5, 0, 0, 0, 0x4c, 0x89, 0x1c, 0x24, 0xc3];
 
 /// How the JIT compiles (`RYO_JIT_OPT`, design/jit.md, "The SSA tier").
 #[repr(u8)]
