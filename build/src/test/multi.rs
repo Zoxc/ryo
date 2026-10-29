@@ -193,13 +193,15 @@ pub(super) fn multi_dylib(info: &RustcInfo, root: &Path, rustc_ryo: &Path, src: 
     let ext = |n: &str| format!("{n}={}", dir.join(format!("lib{n}.so")).display());
     rustc(&["-Cprefer-dynamic", "--extern", &ext("da"), "--extern", &ext("db"), "-L", dir.to_str().ok_or("non-UTF-8 path")?], "dexe.rs", &exe)?;
     let std_dir = root.join("dist").join("lib").join("rustlib").join(&info.host).join("lib");
-    let path = std::env::join_paths([dir.clone(), std_dir]).map_err(|e| e.to_string())?;
-    let path = path.to_str().ok_or("non-UTF-8 path")?;
-    let lib_path = ("LD_LIBRARY_PATH", path);
-    let plain = run_out(&exe, &[], &[lib_path, ("RYO_JIT", "off")])?;
+    let lib_path = crate::utils::prepend_paths("LD_LIBRARY_PATH", [dir.clone(), std_dir])?;
+    // `run_out` with the libraries' directories on the search path.
+    let run_libs = |exe: &Path, args: &[&str], env: &[(&str, &str)]| -> Result<String, String> {
+        Ok(capture_ok(Command::new(exe).args(args).env("LD_LIBRARY_PATH", &lib_path).envs(env.iter().copied()))?.stdout)
+    };
+    let plain = run_libs(&exe, &[], &[("RYO_JIT", "off")])?;
     let first = |s: &str| s.lines().next().unwrap_or("").to_owned();
     for (merge, threads) in [("1", 1), ("0", 3)] {
-        let jit = run_out(&exe, &[], &[lib_path, JIT_NOW[0], JIT_NOW[1], ("RYO_JIT_MERGE", merge)])?;
+        let jit = run_libs(&exe, &[], &[JIT_NOW[0], JIT_NOW[1], ("RYO_JIT_MERGE", merge)])?;
         if first(&jit) != first(&plain) || jit_threads(&jit) != Some(threads) {
             return Err(format!("sibling dylibs, RYO_JIT_MERGE={merge}: with the JIT {jit:?}, without {plain:?} (expected {threads} JIT threads)"));
         }
@@ -210,7 +212,7 @@ pub(super) fn multi_dylib(info: &RustcInfo, root: &Path, rustc_ryo: &Path, src: 
     run(cc(info, false).arg(src.join("dlhost.c")).arg("-o").arg(&host).arg("-ldl"))?;
     let (da, db) = (dir.join("libda.so"), dir.join("libdb.so"));
     let args = [da.to_str().ok_or("non-UTF-8 path")?, db.to_str().ok_or("non-UTF-8 path")?];
-    let out = run_out(&host, &args, &[lib_path, JIT_NOW[0], JIT_NOW[1]])?;
+    let out = run_libs(&host, &args, &JIT_NOW)?;
     if out != "990000\nloaded after dlclose: 1 1\n" {
         return Err(format!("dlclose of merged dylibs: {out:?}, expected both pinned"));
     }

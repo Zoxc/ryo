@@ -1110,16 +1110,8 @@ impl Ctx<'_> {
         run.env_remove("RUST_BACKTRACE").env_remove("RUST_LIB_BACKTRACE").current_dir(dir);
         run.envs(variant.env.iter().copied());
         // Dylibs are found next to the binary, and std's in the sysroot that built it.
-        let lib_path_var = if cfg!(windows) {
-            "PATH"
-        } else if cfg!(target_vendor = "apple") {
-            "DYLD_LIBRARY_PATH"
-        } else {
-            "LD_LIBRARY_PATH"
-        };
-        let mut paths = vec![dir.to_path_buf(), self.target_libdir(variant)?];
-        paths.extend(std::env::split_paths(&std::env::var_os(lib_path_var).unwrap_or_default()));
-        run.env(lib_path_var, std::env::join_paths(paths).map_err(|e| e.to_string())?);
+        let lib_path_var = crate::utils::LIB_PATH_VAR;
+        run.env(lib_path_var, crate::utils::prepend_paths(lib_path_var, [dir.to_path_buf(), self.target_libdir(variant)?])?);
         // Far above any program's run time, even with the JIT checkers on.
         let res = crate::utils::output_timeout(&mut run, std::time::Duration::from_secs(300))?;
         // Panic messages name the source path, which is the same for every variant. Thread ids

@@ -36,9 +36,7 @@ pub(super) fn cargo_smoke(info: &crate::utils::RustcInfo, root: &Path, out: &Pat
     }
     // As a cargo subcommand, cargo runs `cargo-ryo ryo build`, which must not recurse.
     let bin = cargo_ryo.parent().ok_or("dist/bin")?.to_path_buf();
-    let mut paths = vec![bin];
-    paths.extend(std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()));
-    let path = std::env::join_paths(paths).map_err(|e| e.to_string())?;
+    let path = crate::utils::prepend_paths("PATH", [bin])?;
     let target_sub = pkg.join("target-sub");
     let toolchain = &info.toolchain;
     // Plain cargo (LLVM) and `cargo ryo` in one target directory: `rustc-ryo -vV` names the

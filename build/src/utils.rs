@@ -49,6 +49,22 @@ pub fn remove_dir_if_exists(dir: impl AsRef<Path>) -> Result<(), String> {
     Ok(())
 }
 
+/// The variable the dynamic loader searches for shared libraries.
+pub const LIB_PATH_VAR: &str = if cfg!(windows) {
+    "PATH"
+} else if cfg!(target_vendor = "apple") {
+    "DYLD_LIBRARY_PATH"
+} else {
+    "LD_LIBRARY_PATH"
+};
+
+/// The PATH-like variable `var` with `dirs` prepended.
+pub fn prepend_paths(var: &str, dirs: impl IntoIterator<Item = PathBuf>) -> Result<std::ffi::OsString, String> {
+    let mut paths: Vec<PathBuf> = dirs.into_iter().collect();
+    paths.extend(std::env::split_paths(&std::env::var_os(var).unwrap_or_default()));
+    std::env::join_paths(paths).map_err(|e| format!("{var}: {e}"))
+}
+
 /// Removes `dir` if it exists and creates it empty.
 pub fn fresh_dir(dir: impl AsRef<Path>) -> Result<(), String> {
     remove_dir_if_exists(&dir)?;
