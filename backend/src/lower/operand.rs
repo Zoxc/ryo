@@ -349,6 +349,10 @@ fn field_cuts<'tcx>(cx: &LayoutCx<'tcx>, layout: TyAndLayout<'tcx>, base: u32, l
         return;
     }
     out.push(base);
+    // Its leaves are all at `base`, and a ZST array can have any number of elements.
+    if layout.is_zst() {
+        return;
+    }
     if let rustc_abi::BackendRepr::ScalarPair { b_offset, .. } = layout.backend_repr {
         out.push(base + b_offset.bytes() as u32);
         return;

@@ -182,6 +182,8 @@ pub fn arg_block<'tcx>(tcx: TyCtxt<'tcx>, inputs: &[Ty<'tcx>]) -> Result<(Vec<Ar
     }
     let tuple = Ty::new_tup(tcx, inputs);
     let layout = tcx.layout_of(typing_env.as_query_input(tuple)).map_err(layout_error)?;
+    // Field offsets and sizes are within the tuple, so they fit once its size does.
+    let Ok(size) = u32::try_from(layout.size.bytes()) else { return native("argument block over 4 GiB") };
     let cx = LayoutCx(tcx);
     let fields: Vec<ArgField> = (0..inputs.len())
         .map(|i| {
@@ -189,7 +191,6 @@ pub fn arg_block<'tcx>(tcx: TyCtxt<'tcx>, inputs: &[Ty<'tcx>]) -> Result<(Vec<Ar
             ArgField { offset: layout.fields.offset(i).bytes() as u32, size: f.size.bytes() as u32, align: f.align.abi.bytes() as u32 }
         })
         .collect();
-    let size = layout.size.bytes() as u32;
     abi::check_arg_block(&fields, size, layout.align.abi.bytes() as u32).map_err(|e| NeedsNative(format!("argument block: {e:?}")))?;
     Ok((fields, size))
 }
