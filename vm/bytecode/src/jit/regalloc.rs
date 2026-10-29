@@ -113,7 +113,7 @@ type BitSet = super::bits::BitSet<Value>;
 /// Whether liveness tracks `v`: an instruction result or a block parameter (constants and
 /// undefined values need no location).
 fn tracked(f: &Func, v: Value) -> bool {
-    matches!(f.values[v.idx()].def, ValueDef::Inst(..) | ValueDef::Param(..))
+    matches!(f.def(v), ValueDef::Inst(..) | ValueDef::Param(..))
 }
 
 /// Block `b`'s live-out set given each block's live-in set: its successors' live-ins (minus
@@ -210,7 +210,7 @@ pub fn clobbers(f: &Func, id: &super::ir::InstData) -> u32 {
 /// Whether `id` is a shift or rotate by a variable amount (which must be in `cl`).
 fn shift_by_var(f: &Func, id: &super::ir::InstData) -> bool {
     use super::ir::BinOp as B;
-    matches!(id.op, Op::Bin(B::Shl | B::ShrS | B::ShrU | B::Rotl | B::Rotr, _)) && !matches!(f.values[id.args[1].idx()].def, ValueDef::Const(_))
+    matches!(id.op, Op::Bin(B::Shl | B::ShrS | B::ShrU | B::Rotl | B::Rotr, _)) && f.const_of(id.args[1]).is_none()
 }
 
 /// The registers each value is live across a clobber of ([`clobbers`]): live after it (but for
@@ -244,7 +244,7 @@ pub fn remat(f: &mut Func) {
     let cross = crossing(f, &live);
     let cand = |f: &Func, v: Value| {
         cross.get(v.idx()).is_some_and(|c| c & CALL != 0)
-            && matches!(f.values[v.idx()].def, ValueDef::Inst(i, _) if matches!(f.insts[i.idx()].op, Op::AllocaAddr(..) | Op::RefAddr(_, false)))
+            && matches!(f.def(v), ValueDef::Inst(i, _) if matches!(f.insts[i.idx()].op, Op::AllocaAddr(..) | Op::RefAddr(_, false)))
     };
     if !(0..f.values.len()).any(|v| cand(f, Value(v as u32))) {
         return;
@@ -253,7 +253,7 @@ pub fn remat(f: &mut Func) {
     let mut cur: Vec<(Value, Value)> = Vec::new();
     let (mut us, mut subst): (Vec<Value>, Vec<(Value, Value)>) = (Vec::new(), Vec::new());
     let clone = |f: &mut Func, b: Block, at: usize, v: Value| -> Value {
-        let ValueDef::Inst(i, _) = f.values[v.idx()].def else { unreachable!() };
+        let ValueDef::Inst(i, _) = f.def(v) else { unreachable!() };
         let op = f.insts[i.idx()].op.clone();
         let w = f.w(v);
         let n = f.inst(b, op, Vec::new(), &[w]);

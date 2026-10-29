@@ -397,6 +397,13 @@ struct Frame {
     frameless: bool,
 }
 
+impl Frame {
+    /// Spill slot `n`'s offset from `fp`.
+    fn spill_disp(&self, n: u32) -> i32 {
+        self.spill0 + 8 * n as i32
+    }
+}
+
 /// Options of the back end.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Opts {
@@ -592,7 +599,7 @@ impl<'a> E<'a> {
 
     /// Spill slot `n`.
     fn spill_mem(&self, n: u32) -> Mem {
-        self.fp_mem(self.fr.spill0 + 8 * n as i32)
+        self.fp_mem(self.fr.spill_disp(n))
     }
 
     fn src(&self, v: Value) -> Src {
@@ -2290,7 +2297,7 @@ fn osr_code(f: &Func, al: &Alloc, mode: Mode, fr: &Frame, lab: &[u32], post_at: 
         // The head's parameters: memory ones first, then registers (`rdx`, the base, last).
         let params = &f.blocks[head.idx()].params;
         let slot_of = |v: Value| loads.iter().find(|l| l.0 == v).map(|l| l.3);
-        let jit_mem = |n: u32| mem_of(base, fr.spill0 + 8 * n as i32);
+        let jit_mem = |n: u32| mem_of(base, fr.spill_disp(n));
         let mut regs = Vec::new();
         for (&a, &p) in edge.args.iter().zip(params) {
             let src = match f.def(a) {
@@ -2308,7 +2315,7 @@ fn osr_code(f: &Func, al: &Alloc, mode: Mode, fr: &Frame, lab: &[u32], post_at: 
                 },
                 Loc::Spill(s) if f.w(p) == 16 => match src {
                     Src::Imm(c) => w.store_xconst64(jit_mem(s), c),
-                    Src::M(Mem::Base { base: b, disp, .. }) => copy(w, (b, disp), (base, fr.spill0 + 8 * s as i32), 16),
+                    Src::M(Mem::Base { base: b, disp, .. }) => copy(w, (b, disp), (base, fr.spill_disp(s)), 16),
                     _ => unreachable!(),
                 },
                 Loc::Spill(s) => w.store_src(jit_mem(s), src),

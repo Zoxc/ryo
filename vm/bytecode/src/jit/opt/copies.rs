@@ -85,6 +85,6 @@ fn small(f: &Func, i: Inst) -> Option<(bool, u32)> {
     if h.allocas().next().is_some() {
         return None;
     }
-    let ValueDef::Const(n) = f.def(f.resolve(id.args[2])) else { return None };
+    let n = f.const_of(f.resolve(id.args[2]))?;
     (n >= 1 && n <= MAX_COPY as u64).then_some((set, n as u32))
 }

@@ -924,10 +924,7 @@ fn trial(
             let v = pf.insts[site.idx()].args[ai];
             // The call zero-extends past its register's size and the value's width.
             let w = pf.w(v).min(call.arg_width(ai));
-            match pf.def(v) {
-                ValueDef::Const(bits) => Some((mask(bits, w), w)),
-                _ => None,
-            }
+            pf.const_at(v, w).map(|c| (c, w))
         })
         .collect();
     if k_cost <= p.trial_cost && consts.iter().any(|x| x.is_some()) {
