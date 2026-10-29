@@ -640,8 +640,8 @@ pub fn write_image(
     for f in &image.functions {
         let name = fmt.mangle(&f.name);
         match f.symbol {
-            Some(sym) => fmt.global_function(&mut obj, &name, text, f.start as u64, f.len as u64, sym),
-            None => fmt.local_function(&mut obj, &name, text, f.start as u64, f.len as u64),
+            Some(sym) => fmt.global_function(&mut obj, &name, text, f.start as u64, f.eh.len as u64, sym),
+            None => fmt.local_function(&mut obj, &name, text, f.start as u64, f.eh.len as u64),
         }
     }
     let mut unwind = Vec::new();
@@ -1071,7 +1071,7 @@ mod tests {
             let pc_field = at + 8;
             let pc_begin = (eh.address() + pc_field) as i64 + le64(data, pc_field);
             assert_eq!(pc_begin as u64, text + f.start as u64, "FDE {i}");
-            assert_eq!(le64(data, at + 16) as u32, f.len, "FDE {i}");
+            assert_eq!(le64(data, at + 16) as u32, f.eh.len, "FDE {i}");
             assert_eq!(data[at as usize + 24], 8, "FDE {i}");
             let lsda_field = at + 25;
             let target = (eh.address() + lsda_field) as i64 + le64(data, lsda_field);

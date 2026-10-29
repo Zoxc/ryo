@@ -177,15 +177,13 @@ pub struct FuncCode {
     pub name: String,
     pub symbol: Option<FuncSymbol>,
     pub start: u32,
-    pub len: u32,
-    pub frame_size: u32,
+    /// Its length, frame size, and where its prologue and its entry's counter stub start,
+    /// relative to `start`.
+    pub eh: EhFunc,
     /// Positions relative to `start`.
     pub call_sites: Vec<CallSite>,
-    /// Where the prologue starts, where the entry's counter stub does and where the PE pad
-    /// region does (`len` if none), relative to `start` ([`Encoded::prologue`],
-    /// [`Encoded::entry_stub`], [`Encoded::region`]).
-    pub prologue: u32,
-    pub entry_stub: u32,
+    /// Where the PE pad region starts (`eh.len` if there is none), relative to `start`
+    /// ([`Encoded::region`]).
     pub region: u32,
 }
 
@@ -603,11 +601,8 @@ impl ImageWriter {
                 name: core::mem::take(&mut f.name),
                 symbol: f.symbol,
                 start,
-                len: e.code.len() as u32,
-                frame_size: f.frame_size,
+                eh: EhFunc::new(&e, f.frame_size),
                 call_sites: e.call_sites.clone(),
-                prologue: e.prologue,
-                entry_stub: e.entry_stub,
                 region: e.region,
             });
         }

@@ -127,8 +127,7 @@ pub(super) fn unwind_elf(
     for f in funcs {
         let l = lsda.len() as u64;
         lsda.extend_from_slice(&asm::lsda::write(&f.call_sites));
-        let ef = EhFunc { len: f.len, frame_size: f.frame_size, prologue: f.prologue, entry_stub: f.entry_stub };
-        let fields = eh_fde_rows_with(&mut eh, 0, f.len, &eh_fde_rules(&ef, mode), ptrs);
+        let fields = eh_fde_rows_with(&mut eh, 0, f.eh.len, &eh_fde_rules(&f.eh, mode), ptrs);
         relocs.push(pc(fields.pc_begin as u64, Section::Text, f.start as i64, kind));
         relocs.push(pc(fields.lsda as u64, Section::Lsda, l as i64, kind));
     }
@@ -183,12 +182,19 @@ fn eh_cie_with(eh: &mut Vec<u8>, ptrs: EhPointers) -> usize {
 /// What an FDE of [`eh_fde`] describes: a function's code length, frame size, and where its
 /// prologue and its entry's counter stub start ([`Encoded::prologue`],
 /// [`Encoded::entry_stub`]).
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EhFunc {
     pub len: u32,
     pub frame_size: u32,
     pub prologue: u32,
     pub entry_stub: u32,
+}
+
+impl EhFunc {
+    /// The unwind facts of the encoded function `e` with frame size `frame_size`.
+    pub fn new(e: &asm::Encoded, frame_size: u32) -> EhFunc {
+        EhFunc { len: e.code.len() as u32, frame_size, prologue: e.prologue, entry_stub: e.entry_stub }
+    }
 }
 
 /// The positions in `.eh_frame` of an FDE's PC-relative fields ([`eh_fde`]): its first
@@ -319,16 +325,15 @@ pub(super) fn unwind_pe(funcs: &[FuncCode], mode: Mode, relocs: &mut Vec<Reloc>)
     };
     for f in funcs {
         let lsda = asm::lsda::write(&f.call_sites);
-        let region = if f.region < f.len { f.region } else { 0 };
-        entry(&mut pdata, relocs, f.start, f.start + f.entry_stub, xdata.len() as i64);
-        let ef = EhFunc { len: f.len, frame_size: f.frame_size, prologue: f.prologue, entry_stub: f.entry_stub };
-        with_handler(&mut xdata, relocs, &pe_unwind_info(&ef, mode), &pe_handler_data(0, region, &lsda));
-        if f.entry_stub < f.region {
-            entry(&mut pdata, relocs, f.start + f.entry_stub, f.start + f.region, xdata.len() as i64);
+        let region = if f.region < f.eh.len { f.region } else { 0 };
+        entry(&mut pdata, relocs, f.start, f.start + f.eh.entry_stub, xdata.len() as i64);
+        with_handler(&mut xdata, relocs, &pe_unwind_info(&f.eh, mode), &pe_handler_data(0, region, &lsda));
+        if f.eh.entry_stub < f.region {
+            entry(&mut pdata, relocs, f.start + f.eh.entry_stub, f.start + f.region, xdata.len() as i64);
             xdata.extend_from_slice(&PE_LEAF_UNWIND);
         }
         if region != 0 {
-            entry(&mut pdata, relocs, f.start + region, f.start + f.len, xdata.len() as i64);
+            entry(&mut pdata, relocs, f.start + region, f.start + f.eh.len, xdata.len() as i64);
             with_handler(&mut xdata, relocs, &pe_region_unwind_info(), &pe_handler_data(region, region, &lsda));
         }
     }

@@ -74,7 +74,7 @@ fn in_jit(img: &Linked, f: Func, addr: u64) -> bool {
 /// Whether `addr` is in the AOT code of function `f`.
 fn in_aot(img: &Linked, f: Func, addr: u64) -> bool {
     let start = img.code(f) as u64;
-    (start..start + img.functions[f.0 as usize].len as u64).contains(&addr)
+    (start..start + img.functions[f.0 as usize].eh.len as u64).contains(&addr)
 }
 
 fn state(img: &Linked, f: Func) -> u32 {
@@ -1512,7 +1512,7 @@ fn pe_pad_region() {
     let f = w.add_function(fd);
     let mut obj = w.finish(PE).unwrap();
     let fc = &obj.functions[f.0 as usize];
-    assert!(fc.region < fc.len, "a pad region");
+    assert!(fc.region < fc.eh.len, "a pad region");
     obj.relocs.retain(|r| r.kind != RelocKind::Rva32);
     obj.unwind.clear();
     let img = link(obj, &[("note_pe", note_pe as *const () as usize)]);

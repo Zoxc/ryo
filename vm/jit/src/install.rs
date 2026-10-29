@@ -859,7 +859,7 @@ fn compile_reencode(d: &asm::Decoded, words: &[u32], map: &SlotMap, img: &Image<
     }
     let osr_at = enc.code.len().next_multiple_of(16);
     let osr = (!entries.is_empty()).then(|| asm::osr::osr_code(&entries, d.frame_size, map.frame_size, mode, osr_at as u32));
-    let ef = EhFunc { len: enc.code.len() as u32, frame_size: map.frame_size, prologue: enc.prologue, entry_stub: enc.entry_stub };
+    let ef = EhFunc::new(&enc, map.frame_size);
     Ok(Gen {
         code: enc.code,
         relocs: enc.relocs,

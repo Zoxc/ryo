@@ -160,7 +160,7 @@ fn state(img: &Linked, f: Func) -> u32 {
 /// Whether `addr` is in the AOT code of function `f`.
 fn in_aot(img: &Linked, f: Func, addr: u64) -> bool {
     let start = img.code(f) as u64;
-    (start..start + img.functions[f.0 as usize].len as u64).contains(&addr)
+    (start..start + img.functions[f.0 as usize].eh.len as u64).contains(&addr)
 }
 
 /// `ret_addr()` into `tmp`, stored at `out[k]` (`out` the pointer at slot `out`).

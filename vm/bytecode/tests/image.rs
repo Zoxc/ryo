@@ -271,7 +271,7 @@ fn image_round_trip() {
     assert_eq!(img.func_flags(), &[FUNC_INLINE_ALWAYS | FUNC_COLD, 0, FUNC_INLINE_NEVER]);
     assert_eq!(obj.functions[1].symbol, Some(FuncSymbol { visibility: SymVisibility::Default, weak: false }));
     assert_eq!(obj.functions.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(), ["f0", "f1", ""]);
-    assert_eq!(obj.functions[0].frame_size, 48);
+    assert_eq!(obj.functions[0].eh.frame_size, 48);
 
     // f0's code: the prologue, then `call f1` resolved within the text, then the result's
     // store.
@@ -370,7 +370,7 @@ fn pe_unwind_info() {
     )
     .0;
     assert_eq!(&x[infos[1]..][..region.len()], region);
-    assert!(f0.entry_stub == f0.region && f0.region < f0.len);
+    assert!(f0.eh.entry_stub == f0.region && f0.region < f0.eh.len);
     // The region starts with its entry, `sub rsp, 40; jmp r11`, then the landing pad.
     assert_eq!(obj.text[(f0.start + f0.region) as usize..][..7], [0x48, 0x83, 0xec, 40, 0x41, 0xff, 0xe3]);
     assert_eq!(f0.call_sites[0].pad, Some(f0.region + 7));
@@ -1084,9 +1084,9 @@ fn jit_records() {
             assert_eq!(t[at as usize..][..3], [0x48, 0xff, 0x05]);
             assert_eq!((l.text.addr() + at + 7).wrapping_add(i32_at(&l.text, at + 3) as i64 as u64), rec);
             assert_eq!(t[at as usize + 7], 0x79); // `jns rel8`
-            assert_eq!(at as i64 + 9 + t[at as usize + 8] as i8 as i64, (f.start + f.entry_stub) as i64);
-            assert_eq!(f.prologue, 9);
-            let stub = (f.start + f.entry_stub) as u64;
+            assert_eq!(at as i64 + 9 + t[at as usize + 8] as i8 as i64, (f.start + f.eh.entry_stub) as i64);
+            assert_eq!(f.eh.prologue, 9);
+            let stub = (f.start + f.eh.entry_stub) as u64;
             assert_eq!(t[stub as usize..][..3], [0x4c, 0x8d, 0x1d]);
             assert_eq!((l.text.addr() + stub + 7).wrapping_add(i32_at(&l.text, stub + 3) as i64 as u64), rec);
             assert_eq!(t[stub as usize + 7..][..4], [0x41, 0xff, 0x53, JIT_ENTRY_SLOT]);
@@ -1102,7 +1102,7 @@ fn jit_records() {
         } else {
             assert!(eh.windows(3).any(|w| w == [0x40 | 13, 0x0e, 64]), "{eh:02x?}");
         }
-        assert!(f0.entry_stub > f0.prologue);
+        assert!(f0.eh.entry_stub > f0.eh.prologue);
     }
     // PE: the check is part of the prologue, and the entry's stub has an entry of its own,
     // before f0's pad region's.
