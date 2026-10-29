@@ -372,6 +372,8 @@ def decodeOsr (code : List UInt8) (n at_ : Nat) (probes : List Nat) : Option (Li
   let table ← match d with
     | [.leaR11 t, .movsxdR11, .addRaxR11, .item .jmpRax] => some t.toNat
     | _ => none
+  -- The table follows the dispatcher (`p ≥ at_`, so also `table ≥ at_`).
+  if table < p then none
   let pad := table - p
   if pad ≥ 4 || (table - at_) % 4 != 0 || (List.range pad).any (fun j => arr[p + j]? != some 0xcc) then none
   let entries ← (List.range n).mapM fun k => do
