@@ -46,7 +46,7 @@ namespace Uniq
 
 /-! ### The decoder
 
-Bytes as `Nat`s. Fields: `rd8` (sign-extended), `rd16`, `rd32`, `rd64`, little-endian. -/
+Bytes as `Nat`s. Fields: `rd8`, `rd16` (both sign-extended to 32 bits), `rd32`, `rd64`, little-endian. -/
 
 def rd8 : List Nat → Option (BitVec 32 × List Nat)
   | a :: r => some ((BitVec.ofNat 8 a).signExtend 32, r)
