@@ -105,8 +105,8 @@ theorem readNat_leBytes4 (m : Mem) (a : BitVec 64) (v : BitVec 32)
   have := v.isLt
   omega
 
-/-- The decoder's entry, `t + i32`, is the item `tableEntry t e` there: four bytes that are the
-little-endian `e - t`. -/
+/-- Four bytes read little-endian and written back as four little-endian bytes are the same
+bytes. -/
 theorem leBytes_ofLeBytes4 (L : List UInt8) (hL : L.length = 4) :
     leBytes (BitVec.ofNat 32 (ofLeBytes L)) 4 = L := by
   match L, hL with
