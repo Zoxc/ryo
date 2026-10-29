@@ -247,6 +247,7 @@ where
 /-- `Item::ends_inline`. -/
 def endsInline : Item → Bool
   | .st _ .rcx m => m.base != .rbp
+  | .aluImm op _ (.mem _) _ => op != .cmp
   | .st .. | .stImm .. | .setcc .. => true
   | _ => false
 
@@ -289,6 +290,9 @@ def frameRead : Item → Option (M × Nat)
 def frameWrite : Item → Option (M × Nat)
   | .st w _ m | .stImm w m _ => if m.base == .rbp then some (m, w.bits / 8) else none
   | .setcc _ m => if m.base == .rbp then some (m, 1) else none
+  -- Read-modify-write: also a read (`frameRead`).
+  | .aluImm op w (.mem m) _ =>
+    if op != .cmp && m.base == .rbp then some (m, w.bits / 8) else none
   | _ => none
 
 /-! ### Inline sequences (`asm/inline.rs`) -/

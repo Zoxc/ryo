@@ -666,6 +666,7 @@ impl Item {
         match self {
             // `mov.w128`'s high half, before its last store.
             Item::St { src: Reg::Rcx, m, .. } => m.base != Reg::Rbp,
+            Item::AluImm { op, rm: Rm::Mem(_), .. } => *op != Alu::Cmp,
             _ => matches!(self, Item::St { .. } | Item::StImm { .. } | Item::Setcc { .. }),
         }
     }
@@ -801,6 +802,8 @@ impl Item {
         let (m, w) = match *self {
             Item::St { w, m, .. } | Item::StImm { w, m, .. } => (m, w),
             Item::Setcc { m, .. } => (m, W::B),
+            // Read-modify-write: also a read ([`Item::frame_read`]).
+            Item::AluImm { op, w, rm: Rm::Mem(m), .. } if op != Alu::Cmp => (m, w),
             _ => return None,
         };
         (m.base == Reg::Rbp).then_some((m, w.bytes()))
