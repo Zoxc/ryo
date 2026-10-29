@@ -353,7 +353,7 @@ impl Width {
 
     /// The mnemonic component: `w32`.
     pub const fn mnemonic(self) -> &'static str {
-        ["w8", "w16", "w32", "w64", "w128"][self as usize]
+        OpWidth::of(self).mnemonic()
     }
 }
 
@@ -518,7 +518,7 @@ static INT_FAMS: [[Option<Family>; 4]; IntOp::ALL.len()] = {
 
 impl IntOp {
     fn form_at(self, form: IntForm, w: Width) -> Option<Opcode> {
-        INT_FAMS[self as usize][form as usize]?.at(OpWidth::ALL[w as usize])
+        INT_FAMS[self as usize][form as usize]?.at(OpWidth::of(w))
     }
 
     /// `self` at width `w`: `add.w32`.

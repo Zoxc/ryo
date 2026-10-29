@@ -741,7 +741,19 @@ impl OpWidth {
 
     /// The mnemonic component: `w32`, `ptr`.
     pub const fn mnemonic(self) -> &'static str {
-        ["w8", "w16", "w32", "w64", "w128", "ptr"][self as usize]
+        match self {
+            OpWidth::W8 => width_mn!(W8),
+            OpWidth::W16 => width_mn!(W16),
+            OpWidth::W32 => width_mn!(W32),
+            OpWidth::W64 => width_mn!(W64),
+            OpWidth::W128 => width_mn!(W128),
+            OpWidth::Ptr => width_mn!(Ptr),
+        }
+    }
+
+    /// The operand width of integer width `w`.
+    pub const fn of(w: Width) -> OpWidth {
+        OpWidth::ALL[w as usize]
     }
 
     /// The integer width, `None` for `ptr`.
@@ -752,6 +764,22 @@ impl OpWidth {
         }
     }
 }
+
+impl From<Width> for OpWidth {
+    fn from(w: Width) -> OpWidth {
+        OpWidth::of(w)
+    }
+}
+
+// `OpWidth` is `Width` plus `Ptr`: the shared widths have the same values.
+const _: () = {
+    let mut i = 0;
+    while i < Width::ALL.len() {
+        let w = OpWidth::ALL[i];
+        assert!(matches!(w.int(), Some(x) if x as usize == i) && w.bytes() as u32 == Width::ALL[i].bytes());
+        i += 1;
+    }
+};
 
 /// A family's opcodes: the first one's value and the bit set of its [`OpWidth`]s.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
