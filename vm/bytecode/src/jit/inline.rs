@@ -310,7 +310,7 @@ pub const PARAMS: Params = Params {
 };
 
 /// `c` with its entry parameters given constants (`None`: unknown) replaced by them, after
-/// [`super::opt::run`]: the trial of §5. The parameters stay, unused.
+/// [`super::opt::run`]: the trial (`design/jit.md` "Inlining"). The parameters stay, unused.
 pub fn specialize(c: &Func, consts: &[Option<(u64, u8)>], mem: Option<&dyn super::opt::ConstMem>) -> Func {
     let mut g = c.clone();
     let Some(entry) = g.entry() else { return g };
@@ -389,7 +389,7 @@ pub fn shape(f: &Func) -> Shape {
     Shape { weight, cold }
 }
 
-/// What an instruction costs in the unit (§6): a handler call through the scratch area 4,
+/// What an instruction costs in the unit: a handler call through the scratch area 4,
 /// through its register entry 2, a call or an island 4, anything else 1.
 fn inst_cost(op: &Op) -> f64 {
     match op {
@@ -419,7 +419,7 @@ pub fn cost(f: &Func, sh: &Shape) -> f64 {
 }
 
 /// What a call costs beyond the callee's body: argument moves, the call and the return, the
-/// prologue and the epilogue, and the AOT callee's counter check (jit-inlining.md §1).
+/// prologue and the epilogue, and the AOT callee's counter check.
 fn protocol(c: &Call) -> f64 {
     2.0 * c.regs.len() as f64 + 8.0 + if c.parts.is_empty() { 0.0 } else { 1.0 }
 }
@@ -653,7 +653,7 @@ fn blocker(c: &Func, call: &Call, unwind: Site) -> Option<&'static str> {
 
 /// Whether stores to `f`'s outgoing area may still wait for their call at the call `site`.
 ///
-/// A callee's outgoing area is merged into its caller's (§7). That is safe only because the
+/// A callee's outgoing area is merged into its caller's. That is safe only because the
 /// backend stores a call's stack arguments right before it (lower/call.rs `pass_args`), so no
 /// other call runs between them: an inlined callee can't clobber stack arguments still waiting
 /// for their call. This checks that `f` keeps to that, so that a backend or pass that moved
@@ -956,7 +956,7 @@ fn trial(
     }
 }
 
-/// The profile raises weights (§2): a callee's share of the root's calls, split over
+/// The profile raises weights: a callee's share of the root's calls, split over
 /// the unit's sites of it by their static weights (there are no samples of call sites).
 /// Returns the unit's cost cap.
 fn apply_profile(nodes: &mut [Node], env: &mut dyn Env, p: &Params) -> f64 {
@@ -1107,7 +1107,7 @@ fn live(f: &Func, site: Inst) -> bool {
     f.blocks[f.insts[site.idx()].block.idx()].insts.contains(&site)
 }
 
-/// Replaces the call `call` in `f` by the body of `c`, the callee's IR (§7).
+/// Replaces the call `call` in `f` by the body of `c`, the callee's IR.
 pub fn splice(f: &mut Func, call: Inst, c: &Func) {
     let b = f.insts[call.idx()].block;
     let pos = f.blocks[b.idx()].insts.iter().position(|&i| i == call).expect("the call in its block");
