@@ -315,15 +315,42 @@ fn toolchain_in_use(toolchain: &str) -> Result<Option<String>, String> {
     Ok(None)
 }
 
-/// cargo's install root: `$CARGO_INSTALL_ROOT`, else `$CARGO_HOME`, else `~/.cargo`.
+/// cargo's install root: `$CARGO_INSTALL_ROOT`, else cargo's `install.root` config, else
+/// `$CARGO_HOME`, else `~/.cargo`.
 fn cargo_root() -> Result<PathBuf, String> {
-    for var in ["CARGO_INSTALL_ROOT", "CARGO_HOME"] {
-        if let Some(v) = std::env::var_os(var).filter(|v| !v.is_empty()) {
-            return Ok(PathBuf::from(v));
-        }
+    if let Some(v) = std::env::var_os("CARGO_INSTALL_ROOT").filter(|v| !v.is_empty()) {
+        return Ok(PathBuf::from(v));
+    }
+    if let Some(root) = config_install_root() {
+        return Ok(root);
+    }
+    if let Some(v) = std::env::var_os("CARGO_HOME").filter(|v| !v.is_empty()) {
+        return Ok(PathBuf::from(v));
     }
     let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).ok_or("no home directory to find ~/.cargo in")?;
     Ok(Path::new(&home).join(".cargo"))
+}
+
+/// cargo's `install.root` config as seen from the checkout (`install.root = "<path>" #
+/// <file>`); a relative path is relative to the directory holding the file's `.cargo/`.
+fn config_install_root() -> Option<PathBuf> {
+    let out = capture(
+        cmd("cargo")
+            .args(["-Zunstable-options", "config", "get", "--show-origin", "install.root"])
+            .current_dir(root())
+            .env("RUSTC_BOOTSTRAP", "1"),
+    )
+    .ok()
+    .filter(|o| o.status.success())?;
+    let rest = out.stdout.trim().strip_prefix("install.root = ")?;
+    let (value, origin) = rest.rsplit_once(" # ").unwrap_or((rest, ""));
+    let path = PathBuf::from(unquote(value.trim())?);
+    if path.is_relative()
+        && let Some(base) = Path::new(origin.trim()).parent().and_then(Path::parent)
+    {
+        return Some(base.join(path));
+    }
+    Some(path)
 }
 
 /// Who installed the `cargo-ryo` package in a cargo root.

@@ -73,7 +73,8 @@ y install [--target T]... [--sysroot llvm|ryo] [--no-toolchain-install] [--yes] 
 1. **Plan** (read-only): rustup's host (x86_64 only; on Apple silicon it says to rerun under
    Rosetta), which of the toolchain `1.99.1-<host>`, the components `rustc-dev`, `rust-src`,
    `llvm-tools` and the targets are missing, the previous manifest, the cargo root
-   (`$CARGO_INSTALL_ROOT`, else `$CARGO_HOME`, else `~/.cargo`) and who installed `cargo-ryo`
+   (`$CARGO_INSTALL_ROOT`, else cargo's `install.root` config, else `$CARGO_HOME`, else
+   `~/.cargo`) and who installed `cargo-ryo`
    there. Printed, then confirmed (below). `--no-toolchain-install` fails here, printing the
    rustup commands to run, if anything is missing.
 2. **Toolchain**: `rustup toolchain install 1.99.1 --profile minimal`, `rustup component
