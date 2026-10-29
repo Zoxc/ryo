@@ -180,12 +180,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         if matches!(layout.ty.kind(), ty::Slice(..) | ty::Str) || off == 0 {
             return Ok(PlaceVal { loc: pv.loc.offset(off)?, layout, ..pv });
         }
-        let (_, mut align) = self.size_and_align_of_dst(layout, pv.meta)?;
-        if let ty::Adt(def, _) = pv.layout.ty.kind()
-            && let Some(pack) = def.repr().pack
-        {
-            align = self.dyn_umin(align, DynVal::Const(pack.bytes()));
-        }
+        let (_, align) = self.size_and_align_of_dst(layout, pv.meta)?;
+        let align = self.clamp_to_pack(pv.layout, align);
         let off = self.dyn_align_up(DynVal::Const(off), align);
         let loc = match off {
             DynVal::Const(c) => pv.loc.offset(c)?,
@@ -234,12 +230,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 let unsized_off = layout.fields.offset(i).bytes();
                 let sized_align = layout.align.abi.bytes();
                 let field = layout.field(&self.lcx(), i);
-                let (size, mut align) = self.size_and_align_of_dst(field, Some(meta))?;
-                if let ty::Adt(def, _) = layout.ty.kind()
-                    && let Some(pack) = def.repr().pack
-                {
-                    align = self.dyn_umin(align, DynVal::Const(pack.bytes()));
-                }
+                let (size, align) = self.size_and_align_of_dst(field, Some(meta))?;
+                let align = self.clamp_to_pack(layout, align);
                 let full_align = self.dyn_umax(DynVal::Const(sized_align), align);
                 // `unsized_size` is a multiple of its alignment, so one rounding at the end
                 // suffices (as in cg_ssa).
@@ -256,6 +248,16 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             }
             _ => native("size of an extern type or other unsized type"),
         }
+    }
+
+    /// A field's alignment `align` within `outer`, capped by `outer`'s `repr(packed)`.
+    fn clamp_to_pack(&mut self, outer: TyAndLayout<'tcx>, align: DynVal) -> DynVal {
+        if let ty::Adt(def, _) = outer.ty.kind()
+            && let Some(pack) = def.repr().pack
+        {
+            return self.dyn_umin(align, DynVal::Const(pack.bytes()));
+        }
+        align
     }
 
     /// A [`DynVal`] in a slot.
@@ -287,7 +289,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             (v, DynVal::Slot(a)) => {
                 let s = self.dyn_slot(v);
                 let (t, n) = (self.temp8(), self.temp8());
-                self.op(IntOp::Sub.imm_at(Width::W64).unwrap(), &[t, a, 1, 0]);
+                self.op_imm(IntOp::Sub, Width::W64, t, a, 1);
                 self.op(opw(IntOp::Add, Width::W64), &[t, t, s]);
                 self.op(opw(IntOp::Neg, Width::W64), &[n, a]);
                 self.op(opw(IntOp::And, Width::W64), &[t, t, n]);
