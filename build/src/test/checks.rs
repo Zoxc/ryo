@@ -615,7 +615,11 @@ pub(super) fn panic_path(objdump: &Path, rt: &Path, bytecode: &Path, triple: &st
                 (&cur, line.find("R_X86_64_").or_else(|| line.find("X86_64_RELOC_")).or_else(|| line.find("IMAGE_REL_AMD64_")))
             {
                 let target = line[i..].split_whitespace().nth(1).unwrap_or("");
-                let target = crate::target::unprefixed(triple, target.split(['+', '-']).next().unwrap_or("")).to_owned();
+                let target = target.split(['+', '-']).next().unwrap_or("");
+                // A relocation against a function's own section (`-ffunction-sections`, one
+                // function per section) names the section: map it to the function.
+                let target = [".text.unlikely.", ".text.hot.", ".text."].iter().find_map(|p| target.strip_prefix(p)).unwrap_or(target);
+                let target = crate::target::unprefixed(triple, target).to_owned();
                 edges.entry(f.clone()).or_default().push(target);
             }
         }
