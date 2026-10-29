@@ -130,7 +130,6 @@ fn join(page: &Page, personality: usize, own: usize, spins: u32) -> usize {
 
 /// The probe addresses of the rendezvous page: in a high range (64 KiB aligned, Windows'
 /// allocation granularity), by the tag.
-#[cfg(any(target_os = "linux", target_vendor = "apple", windows))]
 fn probe(i: usize) -> usize {
     const BASE: usize = 0x7e00_0000_0000;
     const SLOTS: usize = 1 << 12;
@@ -140,10 +139,33 @@ fn probe(i: usize) -> usize {
 /// Maps or finds the rendezvous page: `(page, true)` if this copy mapped it (the winner),
 /// `(page, false)` for another copy's with this build's magic and tag (possibly still being
 /// initialized), `None` if no probe worked.
-#[cfg(target_os = "linux")]
 fn rendezvous() -> Option<(*mut Page, bool)> {
-    use core::ffi::{c_int, c_long, c_void};
     use ryo_bytecode::vmem;
+    for i in 0..8 {
+        let at = probe(i);
+        // An exclusive mapping at `at`: `MAP_FIXED_NOREPLACE` on Linux, `VirtualAlloc` at an
+        // address on Windows, both failing on a taken range.
+        if let Some(p) = vmem::reserve(at, PAGE) {
+            if p as usize == at {
+                return Some((p.cast(), true));
+            }
+            // The address was taken as a hint (Apple, or Linux before 4.17), so it is taken:
+            // not ours to use, but maybe another copy's.
+            // SAFETY: the mapping just made.
+            unsafe { vmem::release(p, PAGE) };
+        }
+        if read_head(at).is_some_and(is_ours) {
+            return Some((at as *mut Page, false));
+        }
+    }
+    None
+}
+
+/// The first 16 bytes at `at` in this process, read without faulting; `None` where
+/// unreadable.
+#[cfg(target_os = "linux")]
+fn read_head(at: usize) -> Option<[u64; 2]> {
+    use core::ffi::{c_int, c_long, c_void};
     #[repr(C)]
     struct IoVec {
         base: *mut c_void,
@@ -152,95 +174,52 @@ fn rendezvous() -> Option<(*mut Page, bool)> {
     unsafe extern "C" {
         fn process_vm_readv(pid: c_int, local: *const IoVec, ln: c_long, remote: *const IoVec, rn: c_long, flags: c_long) -> isize;
     }
-    for i in 0..8 {
-        let at = probe(i);
-        if let Some(p) = vmem::reserve(at, PAGE) {
-            if p as usize == at {
-                return Some((p.cast(), true));
-            }
-            // A kernel before 4.17 took the address as a hint: not ours to use.
-            // SAFETY: the mapping just made.
-            unsafe { vmem::release(p, PAGE) };
-            continue;
-        }
-        let mut head = [0u64; 2];
-        let local = IoVec { base: head.as_mut_ptr().cast(), len: 16 };
-        let remote = IoVec { base: at as *mut c_void, len: 16 };
-        // SAFETY: reads 16 bytes of this process, failing (not faulting) where unreadable.
-        let n = unsafe { process_vm_readv(super::super::sys::pid() as c_int, &local, 1, &remote, 1, 0) };
-        if n == 16 && is_ours(head) {
-            return Some((at as *mut Page, false));
-        }
-    }
-    None
+    let mut head = [0u64; 2];
+    let local = IoVec { base: head.as_mut_ptr().cast(), len: 16 };
+    let remote = IoVec { base: at as *mut c_void, len: 16 };
+    // SAFETY: reads 16 bytes of this process, failing (not faulting) where unreadable.
+    let n = unsafe { process_vm_readv(super::super::sys::pid() as c_int, &local, 1, &remote, 1, 0) };
+    (n == 16).then_some(head)
 }
 
 #[cfg(target_vendor = "apple")]
-fn rendezvous() -> Option<(*mut Page, bool)> {
+fn read_head(at: usize) -> Option<[u64; 2]> {
     unsafe extern "C" {
         static mach_task_self_: u32;
-        fn mach_vm_allocate(task: u32, addr: *mut u64, size: u64, flags: i32) -> i32;
         fn mach_vm_read_overwrite(task: u32, addr: u64, size: u64, data: u64, out: *mut u64) -> i32;
     }
-    for i in 0..8 {
-        let at = probe(i) as u64;
-        let mut addr = at;
-        // SAFETY: plain Mach calls on this task; `VM_FLAGS_FIXED` (0) fails on a taken range.
-        unsafe {
-            let task = mach_task_self_;
-            if mach_vm_allocate(task, &mut addr, PAGE as u64, 0) == 0 {
-                return Some((at as *mut Page, true));
-            }
-            let mut head = [0u64; 2];
-            let mut n = 0u64;
-            if mach_vm_read_overwrite(task, at, 16, head.as_mut_ptr() as u64, &mut n) == 0 && n == 16 && is_ours(head) {
-                return Some((at as *mut Page, false));
-            }
-        }
-    }
-    None
+    let mut head = [0u64; 2];
+    let mut n = 0u64;
+    // SAFETY: a plain Mach call on this task, failing (not faulting) where unreadable.
+    let ok = unsafe { mach_vm_read_overwrite(mach_task_self_, at as u64, 16, head.as_mut_ptr() as u64, &mut n) } == 0;
+    (ok && n == 16).then_some(head)
 }
 
 #[cfg(windows)]
-fn rendezvous() -> Option<(*mut Page, bool)> {
+fn read_head(at: usize) -> Option<[u64; 2]> {
     use core::ffi::c_void;
     #[link(name = "kernel32")]
     unsafe extern "system" {
-        fn VirtualAlloc(addr: *mut c_void, size: usize, kind: u32, protect: u32) -> *mut c_void;
+        fn GetCurrentProcess() -> *mut c_void;
         fn ReadProcessMemory(process: *mut c_void, base: *const c_void, buf: *mut c_void, size: usize, read: *mut usize) -> i32;
     }
-    const MEM_COMMIT_RESERVE: u32 = 0x1000 | 0x2000;
-    const PAGE_READWRITE: u32 = 0x04;
-    let this = -1isize as *mut c_void; // GetCurrentProcess()
-    for i in 0..8 {
-        let at = probe(i);
-        // SAFETY: plain kernel32 calls on this process. `VirtualAlloc` at a given address fails
-        // on a taken range; `ReadProcessMemory` fails (not faults) on an unreadable one.
-        unsafe {
-            let p = VirtualAlloc(at as *mut c_void, PAGE, MEM_COMMIT_RESERVE, PAGE_READWRITE);
-            if p as usize == at {
-                return Some((p.cast(), true));
-            }
-            let mut head = [0u64; 2];
-            let mut n = 0usize;
-            if ReadProcessMemory(this, at as *const c_void, head.as_mut_ptr().cast(), 16, &mut n) != 0 && n == 16 && is_ours(head) {
-                return Some((at as *mut Page, false));
-            }
-        }
-    }
-    None
+    let mut head = [0u64; 2];
+    let mut n = 0usize;
+    // SAFETY: a plain kernel32 call on this process, failing (not faulting) where unreadable.
+    let ok = unsafe { ReadProcessMemory(GetCurrentProcess(), at as *const c_void, head.as_mut_ptr().cast(), 16, &mut n) } != 0;
+    (ok && n == 16).then_some(head)
 }
 
+/// Elsewhere `vmem::reserve` fails, and so does this: no rendezvous.
 #[cfg(not(any(target_os = "linux", target_vendor = "apple", windows)))]
-fn rendezvous() -> Option<(*mut Page, bool)> {
+fn read_head(_: usize) -> Option<[u64; 2]> {
     None
 }
 
 /// Whether a page's first 16 bytes are this build's: our magic and tag, or zero (a winner
 /// still writing them, which publishes `magic` last). Only a filter: [`join`] checks again.
-#[cfg(any(target_os = "linux", target_vendor = "apple", windows))]
 fn is_ours(head: [u64; 2]) -> bool {
-    (head[0] == MAGIC && head[1] == ryo_bytecode::ABI) || head == [0, 0] || (head[0] == 0 && head[1] == ryo_bytecode::ABI)
+    head == [MAGIC, ryo_bytecode::ABI] || (head[0] == 0 && (head[1] == 0 || head[1] == ryo_bytecode::ABI))
 }
 
 #[cfg(test)]
