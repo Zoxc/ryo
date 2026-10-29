@@ -326,19 +326,8 @@ fn test_targets(rel: &str) -> Option<(Vec<&'static str>, Vec<Check>)> {
         .filter(|p| p.crates.iter().any(|c| hit(c.src)) || p.c_main.is_some_and(hit) || p.native_lib.as_ref().is_some_and(|l| hit(l.src)))
         .map(|p| p.name)
         .collect();
-    let checks = match rel {
-        "hello.rs" => vec![Check::CargoRyo],
-        "vm_backtrace.rs" => vec![Check::Backtrace],
-        "vm_exports.rs" => vec![Check::Exports],
-        "vm_statics.rs" => vec![Check::Dump],
-        "pe_imports/up.rs" | "pe_imports/dy.rs" | "pe_imports/pe_imports.rs" => vec![Check::PeImports],
-        "vm_cgu_owner.rs" => vec![Check::CguOwnership],
-        "vm_jit_private.rs" => vec![Check::JitPrivateStd],
-        "vm_jit_atomics.rs" => vec![Check::JitAtomics],
-        "incremental/edits.rs" | "incremental/pm.rs" | "incremental/pm_user.rs" => vec![Check::Incremental],
-        _ if rel.starts_with("multi_ryo/") => vec![Check::MultiStaticlib, Check::MultiDylib, Check::MultiVersion],
-        _ => vec![],
-    };
+    let checks: Vec<Check> =
+        Check::ALL.into_iter().filter(|c| c.src().is_some_and(|s| rel == s || (s.ends_with('/') && rel.starts_with(s)))).collect();
     (!programs.is_empty() || !checks.is_empty()).then_some((programs, checks))
 }
 
@@ -586,6 +575,24 @@ impl Check {
         }
     }
 
+    /// The file or directory (ending in `/`) under `tests/` it builds, if any.
+    fn src(self) -> Option<&'static str> {
+        match self {
+            Check::RtCoreOnly | Check::JitSealed => None,
+            Check::JitPrivateStd => Some("vm_jit_private.rs"),
+            Check::JitAtomics => Some("vm_jit_atomics.rs"),
+            Check::RejectUnsupported | Check::MetadataOnly | Check::CargoRyo => Some("hello.rs"),
+            Check::CguDeterministic => Some("vm_cgu.rs"),
+            Check::CguOwnership => Some("vm_cgu_owner.rs"),
+            Check::Incremental => Some("incremental/"),
+            Check::Dump => Some("vm_statics.rs"),
+            Check::Exports => Some("vm_exports.rs"),
+            Check::Backtrace => Some("vm_backtrace.rs"),
+            Check::MultiStaticlib | Check::MultiDylib | Check::MultiVersion => Some("multi_ryo/"),
+            Check::PeImports => Some("pe_imports/"),
+        }
+    }
+
     /// Whether `sel`'s groups run it; `--full`, `--only backend` and a change to its test
     /// run every check.
     fn selected(self, sel: &Sel) -> bool {
@@ -605,25 +612,24 @@ impl Check {
     }
 
     fn run(self, info: &crate::utils::RustcInfo, root: &Path, rustc_ryo: &Path, out: &Path) -> Result<(), String> {
-        let tests = root.join("tests");
-        let hello = tests.join("hello.rs");
+        let src = || root.join("tests").join(self.src().unwrap().trim_end_matches('/'));
         match self {
             Check::RtCoreOnly => rt_core_only(info, root, &info.host),
             Check::JitSealed => jit_sealed(info, root, out),
-            Check::JitPrivateStd => jit_private_std(info, rustc_ryo, &tests.join("vm_jit_private.rs"), out),
-            Check::JitAtomics => jit_atomics(info, rustc_ryo, &tests.join("vm_jit_atomics.rs"), out),
-            Check::RejectUnsupported => reject_unsupported(rustc_ryo, &hello, out),
-            Check::CguDeterministic => cgu_deterministic(rustc_ryo, &tests.join("vm_cgu.rs"), out),
-            Check::CguOwnership => cgu_ownership(info, rustc_ryo, &tests.join("vm_cgu_owner.rs"), out),
-            Check::Incremental => incremental(rustc_ryo, &tests.join("incremental"), out),
-            Check::MetadataOnly => metadata_only(rustc_ryo, &hello, out),
-            Check::Dump => dump(rustc_ryo, &tests.join("vm_statics.rs"), out),
-            Check::Exports => same_exports(info, rustc_ryo, &tests.join("vm_exports.rs"), out),
-            Check::Backtrace => backtrace(rustc_ryo, &tests.join("vm_backtrace.rs"), out),
-            Check::MultiStaticlib => multi::multi_staticlib(info, rustc_ryo, &tests.join("multi_ryo"), out),
-            Check::MultiDylib => multi::multi_dylib(info, root, rustc_ryo, &tests.join("multi_ryo"), out),
-            Check::MultiVersion => multi::multi_version(info, root, rustc_ryo, &tests.join("multi_ryo"), out),
-            Check::PeImports => pe_imports(info, root, rustc_ryo, &tests.join("pe_imports"), out),
+            Check::JitPrivateStd => jit_private_std(info, rustc_ryo, &src(), out),
+            Check::JitAtomics => jit_atomics(info, rustc_ryo, &src(), out),
+            Check::RejectUnsupported => reject_unsupported(rustc_ryo, &src(), out),
+            Check::CguDeterministic => cgu_deterministic(rustc_ryo, &src(), out),
+            Check::CguOwnership => cgu_ownership(info, rustc_ryo, &src(), out),
+            Check::Incremental => incremental(rustc_ryo, &src(), out),
+            Check::MetadataOnly => metadata_only(rustc_ryo, &src(), out),
+            Check::Dump => dump(rustc_ryo, &src(), out),
+            Check::Exports => same_exports(info, rustc_ryo, &src(), out),
+            Check::Backtrace => backtrace(rustc_ryo, &src(), out),
+            Check::MultiStaticlib => multi::multi_staticlib(info, rustc_ryo, &src(), out),
+            Check::MultiDylib => multi::multi_dylib(info, root, rustc_ryo, &src(), out),
+            Check::MultiVersion => multi::multi_version(info, root, rustc_ryo, &src(), out),
+            Check::PeImports => pe_imports(info, root, rustc_ryo, &src(), out),
             Check::CargoRyo => cargo_smoke(info, root, out),
         }
     }
@@ -1263,6 +1269,11 @@ mod tests {
         assert!(sel.add_path("tests/nothing.rs").is_err());
         assert_eq!(sel.programs, ["vm_cross", "vm_staticlib", "vm_cdylib"]);
         assert_eq!(sel.checks, [super::Check::JitPrivateStd]);
+        let mut sel = super::Sel::fast();
+        assert!(sel.add_path("tests/hello.rs").is_ok());
+        assert!(sel.add_path("tests/incremental/new.rs").is_ok());
+        use super::Check::*;
+        assert_eq!(sel.checks, [RejectUnsupported, MetadataOnly, CargoRyo, Incremental]);
     }
 
     #[test]
