@@ -7,8 +7,8 @@ Ryo.Proofs.Inline.LaterDiv — the inline `div`/`rem` (class `div`) and `cttz`/`
   (`divF` is `some`: `divF_u`, `divF_s`). At 8 and 16 bits the operands are extended to 32 bits
   and divided there (`udiv_zext`, `sdiv_sext`, …). The sequence also changes `rdx` (`cdq` or
   `xor edx, edx`, and the remainder), so the result is `SoundX [0, 1, 2]`: `SoundC` with `rdx`
-  among the changed registers (`clobbers` in `Ovf.lean` doesn't list `div` yet; `SoundX.toC`
-  gives `SoundC` once it does).
+  among the changed registers (`clobbers` in `Ovf.lean` lists them; `SoundX.toC` gives
+  `SoundC`).
 - `count lz w`: `bsf`/`bsr` of zero leave the register's old value (`Ctx.bsZero`: at 32 bits
   maybe with its upper half cleared), which the `cmovz` overwrites, all 64 bits as its operand
   size is 32 bits (`cttz` at 32 and 64 bits, every `ctlz`); for `cttz` at 8 and 16 bits the guard bit
@@ -55,7 +55,7 @@ def SoundX (cl : List (Fin 16)) (c : Class) : Prop :=
     opSem op vals st ch = .ok (ctl, st') → Rel st x →
     ∃ x', execItems ctx items x = .ok x' ∧ PostX cl op ops vals items br st st' ctl x x'
 
-/-- `SoundX` at `clobbers c` is `SoundC c` (for `div` once `clobbers` lists it). -/
+/-- `SoundX` at `clobbers c` is `SoundC c`. -/
 theorem SoundX.toC {c : Class} (h : SoundX (clobbers c) c) : SoundC c := by
   intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr
   obtain ⟨x', hx, p⟩ := h ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr
