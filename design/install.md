@@ -86,7 +86,8 @@ y install [--target T]... [--sysroot llvm|ryo] [--no-toolchain-install] [--yes] 
 5. **Launchers**: `cargo +1.99.1-<host> install --locked --force --path <checkout>/scripts
    --root <cargo root>` (the pinned toolchain, which is certainly there).
 6. **Previous version**: its `install/<old version>/` is deleted, and targets it added that
-   this install doesn't need are removed from rustup (both shown in the plan).
+   this install doesn't need are removed from rustup, and so is what earlier installs added to
+   other toolchains (an older pinned version, another host; all shown in the plan).
 7. **Report**, including a hint if cargo's bin dir isn't on `PATH` (shell files are never
    edited).
 
@@ -122,7 +123,9 @@ targets_added = ["x86_64-pc-windows-msvc"]
 ```
 
 Only what is recorded is ever removed: what the user already had is never recorded (the plan
-says "yours"), and what an earlier install recorded stays recorded.
+says "yours"), and what an earlier install recorded stays recorded. When the toolchain changes
+(a pin bump, another host), the earlier record moves to an `[[old_toolchain]]` table (same
+keys) until the install's last step removes what it lists; `y uninstall` removes those too.
 
 ## Plan and confirmation
 

@@ -75,6 +75,16 @@ pub struct Manifest {
     /// Where `cargo install` put the launchers.
     pub cargo_root: String,
     pub toolchain: ToolchainRecord,
+    /// What earlier installs added to other toolchains (an older pinned version, another
+    /// host): removed at the end of the next install, or by `y uninstall`.
+    pub old_toolchains: Vec<ToolchainRecord>,
+}
+
+impl ToolchainRecord {
+    /// Whether ryo added nothing to the toolchain.
+    fn is_empty(&self) -> bool {
+        !self.installed_by_ryo && self.components_added.is_empty() && self.targets_added.is_empty()
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -98,7 +108,7 @@ impl Manifest {
     pub fn to_toml(&self) -> String {
         let list = |l: &[String]| format!("[{}]", l.iter().map(|s| quote(s)).collect::<Vec<_>>().join(", "));
         let t = &self.toolchain;
-        format!(
+        let mut s = format!(
             "# Written by `y install`; `y uninstall` removes what it records.\n\
              format = 1\nversion = {}\nbuild_id = {}\nhost = {}\ntargets = {}\nsysroots = {}\ncargo_root = {}\n\n\
              [toolchain]\nname = {}\ninstalled_by_ryo = {}\ncomponents_added = {}\ntargets_added = {}\n",
@@ -112,11 +122,21 @@ impl Manifest {
             t.installed_by_ryo,
             list(&t.components_added),
             list(&t.targets_added),
-        )
+        );
+        for t in &self.old_toolchains {
+            s.push_str(&format!(
+                "\n[[old_toolchain]]\nname = {}\ninstalled_by_ryo = {}\ncomponents_added = {}\ntargets_added = {}\n",
+                quote(&t.name),
+                t.installed_by_ryo,
+                list(&t.components_added),
+                list(&t.targets_added),
+            ));
+        }
+        s
     }
 
     /// Parses what [`Manifest::to_toml`] writes (a TOML subset: strings, string arrays,
-    /// booleans, one `[toolchain]` table).
+    /// booleans, one `[toolchain]` table, `[[old_toolchain]]` tables).
     pub fn parse(text: &str) -> Result<Manifest, String> {
         let mut m = Manifest::default();
         let mut table = "";
@@ -126,7 +146,15 @@ impl Manifest {
             if line.is_empty() || line.starts_with('#') {
                 continue;
             }
+            if line == "[[old_toolchain]]" {
+                table = "toolchain";
+                m.old_toolchains.push(ToolchainRecord::default());
+                continue;
+            }
             if let Some(t) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
+                if !m.old_toolchains.is_empty() {
+                    return Err(format!("line {}: `[{t}]` after `[[old_toolchain]]`", n + 1));
+                }
                 table = if t == "toolchain" { "toolchain" } else { return Err(format!("line {}: unknown table `{t}`", n + 1)) };
                 continue;
             }
@@ -135,7 +163,7 @@ impl Manifest {
             let (key, value) = (key.trim(), value.trim());
             let s = || unquote(value).ok_or_else(|| err("expected a string"));
             let l = || parse_list(value).ok_or_else(|| err("expected a list of strings"));
-            let t = &mut m.toolchain;
+            let t = m.old_toolchains.last_mut().unwrap_or(&mut m.toolchain);
             match (table, key) {
                 ("", "format") => format = Some(value.to_owned()),
                 ("", "version") => m.version = s()?,
@@ -505,6 +533,8 @@ struct InstallPlan {
     remove_targets: Vec<String>,
     /// The record after this install.
     record: ToolchainRecord,
+    /// What earlier installs added to other toolchains: removed at the end.
+    old_toolchains: Vec<ToolchainRecord>,
 }
 
 impl InstallPlan {
@@ -523,6 +553,16 @@ impl InstallPlan {
             for t in &self.remove_targets {
                 p(&mut s, format!("     - remove target {t} from toolchain {} (added by ryo, no longer needed)", self.toolchain));
             }
+            s.push('\n');
+        }
+        for r in &self.old_toolchains {
+            let mut all: Vec<String> = r.components_added.iter().chain(&r.targets_added).cloned().collect();
+            if r.installed_by_ryo {
+                all = vec!["the toolchain".to_owned()];
+            }
+            p(&mut s, format!("  0. At the end, remove from toolchain {} what ryo added earlier: {}", r.name, list(&all)));
+        }
+        if !self.old_toolchains.is_empty() {
             s.push('\n');
         }
         p(&mut s, "  1. Rust toolchain (via rustup)".to_owned());
@@ -599,7 +639,10 @@ fn plan_install(o: &InstallOptions) -> Result<InstallPlan, String> {
     let toolchain = format!("{PINNED_VERSION}-{host}");
     let install = install_dir();
     let previous = read_manifest(&install)?;
-    let prev_record = previous.as_ref().map(|m| m.toolchain.clone()).filter(|r| r.name == toolchain).unwrap_or_default();
+    // The earlier record of this toolchain, and what earlier installs added to others.
+    let mut old_toolchains: Vec<ToolchainRecord> =
+        previous.iter().flat_map(|m| std::iter::once(&m.toolchain).chain(&m.old_toolchains)).filter(|r| !r.is_empty()).cloned().collect();
+    let prev_record = old_toolchains.iter().position(|r| r.name == toolchain).map(|i| old_toolchains.remove(i)).unwrap_or_default();
     let mut targets = vec![host.clone()];
     for t in &o.build.targets {
         if !targets.contains(t) {
@@ -677,6 +720,7 @@ fn plan_install(o: &InstallOptions) -> Result<InstallPlan, String> {
         previous,
         remove_targets,
         record,
+        old_toolchains,
     })
 }
 
@@ -705,6 +749,8 @@ fn do_install(plan: &InstallPlan) -> Result<(), String> {
     let mut record = plan.record.clone();
     // Targets still to be removed (step 7) stay recorded until they are.
     record.targets_added.extend(plan.remove_targets.iter().cloned());
+    // Other toolchains' records too (step 7).
+    manifest.old_toolchains = plan.old_toolchains.clone();
     let mut done = record.clone();
     done.installed_by_ryo &= plan.toolchain_present;
     done.components_added.retain(|c| !plan.add_components.contains(c));
@@ -772,6 +818,20 @@ fn do_install(plan: &InstallPlan) -> Result<(), String> {
     if !plan.remove_targets.is_empty() {
         run(cmd("rustup").args(["target", "remove", "--toolchain", t]).args(&plan.remove_targets))?;
         manifest.toolchain.targets_added.retain(|x| !plan.remove_targets.contains(x));
+        manifest.save(install)?;
+    }
+    if !plan.old_toolchains.is_empty() {
+        for r in &plan.old_toolchains {
+            let mut steps = Vec::new();
+            toolchain_steps(r, &plan.host, &mut steps)?;
+            for s in &steps {
+                if let Some(mut c) = s.command() {
+                    run(&mut c)?;
+                }
+                println!("[y]   {}", s.describe());
+            }
+        }
+        manifest.old_toolchains.clear();
         manifest.save(install)?;
     }
 
@@ -881,36 +941,42 @@ fn plan_uninstall(o: &UninstallOptions, manifest: Option<&Manifest>) -> Result<V
         steps.push(Step::Keep("rustup as it is: there is no manifest, so what ryo added to it is unknown".to_owned()));
         return Ok(steps);
     };
-    let r = &m.toolchain;
-    let nothing = !r.installed_by_ryo && r.components_added.is_empty() && r.targets_added.is_empty();
-    if o.keep_toolchain {
-        steps.push(Step::Keep(format!("toolchain {} and what ryo added to it (--keep-toolchain)", r.name)));
-    } else if nothing {
-        steps.push(Step::Keep(format!("toolchain {}: yours, ryo added nothing", r.name)));
-    } else if let Some(source) = other_owner {
-        steps.push(Step::Keep(format!("what ryo added to toolchain {}: the launchers from {source} may still use it", r.name)));
-    } else {
-        match toolchain_state(&r.name)? {
-            None => steps.push(Step::Keep(format!("toolchain {}: already removed", r.name))),
-            Some(_) if r.installed_by_ryo => match toolchain_in_use(&r.name)? {
-                Some(why) => steps.push(Step::Keep(format!("toolchain {} (installed by ryo, but {why})", r.name))),
-                None => steps.push(Step::RemoveToolchain(r.name.clone())),
-            },
-            Some((components, targets)) => {
-                let c: Vec<String> = r.components_added.iter().filter(|c| has_component(&components, c, &m.host)).cloned().collect();
-                let t: Vec<String> = r.targets_added.iter().filter(|t| targets.contains(t)).cloned().collect();
-                if !c.is_empty() {
-                    steps.push(Step::RemoveComponents(r.name.clone(), c));
-                }
-                if !t.is_empty() {
-                    steps.push(Step::RemoveTargets(r.name.clone(), t));
-                }
-                steps.push(Step::Keep(format!("toolchain {}: yours", r.name)));
-            }
+    for r in std::iter::once(&m.toolchain).chain(&m.old_toolchains) {
+        if o.keep_toolchain {
+            steps.push(Step::Keep(format!("toolchain {} and what ryo added to it (--keep-toolchain)", r.name)));
+        } else if r.is_empty() {
+            steps.push(Step::Keep(format!("toolchain {}: yours, ryo added nothing", r.name)));
+        } else if let Some(source) = &other_owner {
+            steps.push(Step::Keep(format!("what ryo added to toolchain {}: the launchers from {source} may still use it", r.name)));
+        } else {
+            toolchain_steps(r, &m.host, &mut steps)?;
         }
     }
     steps.push(Step::RemoveInstall(install));
     Ok(steps)
+}
+
+/// The steps removing what `r` records ryo added to its toolchain.
+fn toolchain_steps(r: &ToolchainRecord, host: &str, steps: &mut Vec<Step>) -> Result<(), String> {
+    match toolchain_state(&r.name)? {
+        None => steps.push(Step::Keep(format!("toolchain {}: already removed", r.name))),
+        Some(_) if r.installed_by_ryo => match toolchain_in_use(&r.name)? {
+            Some(why) => steps.push(Step::Keep(format!("toolchain {} (installed by ryo, but {why})", r.name))),
+            None => steps.push(Step::RemoveToolchain(r.name.clone())),
+        },
+        Some((components, targets)) => {
+            let c: Vec<String> = r.components_added.iter().filter(|c| has_component(&components, c, host)).cloned().collect();
+            let t: Vec<String> = r.targets_added.iter().filter(|t| targets.contains(t)).cloned().collect();
+            if !c.is_empty() {
+                steps.push(Step::RemoveComponents(r.name.clone(), c));
+            }
+            if !t.is_empty() {
+                steps.push(Step::RemoveTargets(r.name.clone(), t));
+            }
+            steps.push(Step::Keep(format!("toolchain {}: yours", r.name)));
+        }
+    }
+    Ok(())
 }
 
 /// `y uninstall`; `Some` is the exit code of a dry run or an unconfirmed plan.
@@ -972,6 +1038,12 @@ mod tests {
                 components_added: vec!["rustc-dev".into(), "rust-src".into()],
                 targets_added: vec![],
             },
+            old_toolchains: vec![ToolchainRecord {
+                name: "1.99.0-x86_64-unknown-linux-gnu".into(),
+                installed_by_ryo: false,
+                components_added: vec![],
+                targets_added: vec!["x86_64-pc-windows-msvc".into()],
+            }],
         };
         assert_eq!(Manifest::parse(&m.to_toml()), Ok(m));
         assert!(Manifest::parse("format = 2\n").is_err());
@@ -1037,6 +1109,7 @@ mod tests {
             previous_version: None,
             remove_targets: vec![],
             record: ToolchainRecord { installed_by_ryo: true, ..Default::default() },
+            old_toolchains: vec![],
         };
         let text = plan.render();
         assert!(text.contains("install toolchain 1.99.1-x86_64-unknown-linux-gnu (--profile minimal)"), "{text}");
