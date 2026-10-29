@@ -184,6 +184,8 @@ def Image.parse (bytes : ByteArray) (aligned : Bool := true) : Except ImageError
   if h.size > bytes.size then throw .truncated
   let bytes := bytes.extract 0 h.size
   let n := bytes.size
+  let all := MODE_FP_ARG ||| MODE_FRAME_POINTER ||| MODE_ALIGN_LOOPS ||| MODE_PE ||| MODE_COUNTERS
+  if h.mode &&& (2 ^ 32 - 1 - all) != 0 || !(Mode.ofBits h.mode).valid then throw .badMode
   checkPart n h.functions 36 4 "functions"
   checkPart n h.codeConsts 1 1 "code constants"
   checkPart n h.fixups 16 8 "fixups"
@@ -194,8 +196,6 @@ def Image.parse (bytes : ByteArray) (aligned : Bool := true) : Except ImageError
   checkPart n h.lists 1 1 "instruction lists"
   checkPart n h.callSites 12 4 "call sites"
   checkPart n h.constRelocs 4 4 "constant relocations"
-  let all := MODE_FP_ARG ||| MODE_FRAME_POINTER ||| MODE_ALIGN_LOOPS ||| MODE_PE ||| MODE_COUNTERS
-  if h.mode &&& (2 ^ 32 - 1 - all) != 0 || !(Mode.ofBits h.mode).valid then throw .badMode
   if h.symFlags.count != h.symbols.count then throw (.outOfBounds "symbol flags")
   if h.funcFlags.count != h.functions.count then throw (.outOfBounds "function flags")
   if h.pad != 0 then throw .badData
