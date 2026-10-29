@@ -220,9 +220,10 @@ fn licm(f: &mut Func, an: &Analysis, l: &Loop) -> bool {
     };
     let writes = Writes::of(f, l);
     // The blocks another head's OSR entry reaches without passing this head: the values
-    // there may come from that entry instead (the head doesn't dominate them).
+    // there may come from that entry instead (the head doesn't dominate them). Even a single
+    // entry may be another head's: only enterable heads have one. This head's own stops here.
     let mut other_osr = Vec::new();
-    if f.osr.iter().flatten().count() > 1 {
+    if f.osr.iter().flatten().next().is_some() {
         other_osr = alloc::vec![false; f.blocks.len()];
         let mut stack: Vec<Block> = f.osr.iter().flatten().copied().collect();
         while let Some(b) = stack.pop() {
