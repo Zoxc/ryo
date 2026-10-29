@@ -266,6 +266,15 @@ impl OperandKind {
             OperandKind::List(_) => return None,
         })
     }
+
+    /// Number of words of an operand of this kind whose words start at `w[0]`: a list's
+    /// count word and elements. `None` if `w` is too short to hold the count.
+    pub fn size(self, w: &[u32]) -> Option<usize> {
+        match self {
+            OperandKind::List(e) => (*w.first()? as usize).checked_mul(e.words())?.checked_add(1),
+            k => k.words(),
+        }
+    }
 }
 
 /// Decoding failure.
@@ -853,13 +862,11 @@ pub struct OpInfo<O: 'static = Opcode> {
 
 impl<O: 'static> OpInfo<O> {
     /// Each operand with its words, given the instruction's words after the opcode word (a
-    /// list's include its count word). The single place that knows the operand layout.
+    /// list's include its count word). Panics if the words are truncated: use it on decoded
+    /// instructions, [`operand_start`](Self::operand_start) on unchecked ones.
     pub fn operand_words<'a>(&self, mut words: &'a [u32]) -> impl Iterator<Item = (&'static OperandInfo, &'a [u32])> + use<'a, O> {
         self.operands.iter().map(move |o| {
-            let n = match o.kind {
-                OperandKind::List(e) => 1 + words[0] as usize * e.words(),
-                k => k.words().unwrap(),
-            };
+            let n = o.kind.size(words).expect("truncated instruction");
             let (w, rest) = words.split_at(n);
             words = rest;
             (o, w)
@@ -915,13 +922,7 @@ impl<O: 'static> OpInfo<O> {
     pub fn operand_start(&self, w: &[u32], i: usize) -> Result<usize, DecodeError> {
         let mut pos = 1usize;
         for o in &self.operands[..i] {
-            pos += match o.kind {
-                OperandKind::List(e) => {
-                    let n = *w.get(pos).ok_or(DecodeError::Truncated)? as usize;
-                    1 + n.checked_mul(e.words()).ok_or(DecodeError::Truncated)?
-                }
-                k => k.words().unwrap(),
-            };
+            pos += o.kind.size(w.get(pos..).unwrap_or(&[])).ok_or(DecodeError::Truncated)?;
         }
         if pos > w.len() {
             return Err(DecodeError::Truncated);
@@ -945,6 +946,8 @@ pub(crate) const fn str_eq(a: &str, b: &str) -> bool {
     true
 }
 
+/// [`OpInfo::operand_offset`] past the last operand, over the kinds alone: `OP_INFO` is
+/// being built when it runs.
 pub(crate) const fn fixed_len(kinds: &[OperandKind]) -> Option<usize> {
     let mut n = 1;
     let mut i = 0;
