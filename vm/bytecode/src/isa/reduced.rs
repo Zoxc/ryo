@@ -124,7 +124,7 @@ include!("reduced_ops.rs");
 /// with `half` 1 its high one.
 pub const fn handler_arg_value_word(k: usize, half: u8) -> usize {
     // The count word, then three words per argument: the tag, then the value.
-    off::Handler::args + 1 + k * ElemKind::Arg.words() + 1 + half as usize
+    Opcode::Handler.info().operand_word("args") + 1 + k * ElemKind::Arg.words() + 1 + half as usize
 }
 
 impl Insn<'_> {

@@ -945,6 +945,23 @@ impl<O: 'static> OpInfo<O> {
         None
     }
 
+    /// Index of the operand called `name`, for `const` contexts. Panics if there is none.
+    pub const fn operand_index_const(&self, name: &str) -> usize {
+        match self.operand_index(name) {
+            Some(i) => i,
+            None => panic!("no such operand"),
+        }
+    }
+
+    /// Word index (from the instruction start) of the operand called `name`, or `usize::MAX`
+    /// if it follows a list operand. Panics if there is none.
+    pub const fn operand_word(&self, name: &str) -> usize {
+        match self.operand_offset(self.operand_index_const(name)) {
+            Some(o) => o,
+            None => usize::MAX,
+        }
+    }
+
     /// Word index of operand `i` (`operands.len()`: the instruction's length) in the
     /// instruction `w`, reading the count words of the list operands before it.
     pub fn operand_start(&self, w: &[u32], i: usize) -> Result<usize, DecodeError> {
@@ -957,6 +974,16 @@ impl<O: 'static> OpInfo<O> {
         }
         Ok(pos)
     }
+}
+
+/// [`OpInfo::operand_index_const`] of `op`.
+pub const fn operand_index_const(op: Opcode, name: &str) -> usize {
+    op.info().operand_index_const(name)
+}
+
+/// [`OpInfo::operand_word`] of `op`.
+pub const fn operand_word(op: Opcode, name: &str) -> usize {
+    op.info().operand_word(name)
 }
 
 pub(crate) const fn str_eq(a: &str, b: &str) -> bool {
@@ -1023,19 +1050,6 @@ macro_rules! define_ops {
             $(
                 #[doc = concat!("`", $mn, $(" ", stringify!($field), ":", stringify!($kind),)* "`")]
                 $name,
-            )*
-        }
-
-        /// Word offsets of each opcode's operands, from the instruction start: `off::AddW32::b`
-        /// is 3. Operands after a list operand have no fixed position and are `usize::MAX`.
-        #[allow(non_snake_case, non_upper_case_globals)]
-        pub mod off {
-            $(
-                #[doc = concat!("Operand word offsets of `", $mn, "`.")]
-                pub mod $name {
-                    $(pub const $field: usize = super::super::operand_word(
-                        super::super::Opcode::$name, stringify!($field));)*
-                }
             )*
         }
 
@@ -1158,23 +1172,6 @@ macro_rules! define_ops {
                         $(Operand::write($field, out);)*
                     })*
                 }
-            }
-        }
-
-        /// Index of the operand called `name` of `op`, for `const` contexts. Panics if there is none.
-        pub const fn operand_index_const(op: Opcode, name: &str) -> usize {
-            match op.info().operand_index(name) {
-                Some(i) => i,
-                None => panic!("no such operand"),
-            }
-        }
-
-        /// Word offset of the operand called `name` of `op`, or `usize::MAX` if it follows a list
-        /// operand. Used for the [`off`] constants.
-        pub const fn operand_word(op: Opcode, name: &str) -> usize {
-            match op.info().operand_offset(operand_index_const(op, name)) {
-                Some(o) => o,
-                None => usize::MAX,
             }
         }
 

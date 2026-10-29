@@ -286,7 +286,7 @@ fn sparse_switch() {
             a.ret(Slot(-8), 8);
             let mut code = a.done();
             let ew = cw.len() / vals.len();
-            let base = sw as usize + ryo_bytecode::full::off::$v::cases + 1;
+            let base = sw as usize + ryo_bytecode::full::operand_word(ryo_bytecode::full::Opcode::$v, "cases") + 1;
             for (i, t) in targets.iter().enumerate() {
                 code[base + i * ew + ew - 1] = t.wrapping_sub(sw);
             }
@@ -1509,7 +1509,7 @@ fn inline_sparse_switch_across_images() {
     a.ret(Slot(-16), 8);
     let mut code = a.done();
     let ew = cw.len() / vals.len();
-    let base = sw as usize + ryo_bytecode::full::off::SwitchSparseW64::cases + 1;
+    let base = sw as usize + ryo_bytecode::full::operand_word(ryo_bytecode::full::Opcode::SwitchSparseW64, "cases") + 1;
     for (i, t) in targets.iter().enumerate() {
         code[base + i * ew + ew - 1] = t.wrapping_sub(sw);
     }

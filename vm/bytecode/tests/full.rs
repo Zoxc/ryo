@@ -348,15 +348,15 @@ fn decoder_on_random_words() {
 
 #[test]
 fn named_operand_offsets() {
-    assert_eq!(off::AddW32::d, 1);
-    assert_eq!(off::AddW32::b, 3);
-    assert_eq!(off::LoadW32::m, 2);
-    assert_eq!(off::StoreW64::s, 3);
-    assert_eq!(off::CallSym::k, 3);
-    assert_eq!(off::SwitchDenseW64::default, 4);
-    assert_eq!(off::SwitchDenseW64::table, 5);
-    assert_eq!(off::Island::isl, 1);
-    assert_eq!(off::Island::ops, 2);
+    assert_eq!(operand_word(Opcode::AddW32, "d"), 1);
+    assert_eq!(operand_word(Opcode::AddW32, "b"), 3);
+    assert_eq!(operand_word(Opcode::LoadW32, "m"), 2);
+    assert_eq!(operand_word(Opcode::StoreW64, "s"), 3);
+    assert_eq!(operand_word(Opcode::CallSym, "k"), 3);
+    assert_eq!(operand_word(Opcode::SwitchDenseW64, "default"), 4);
+    assert_eq!(operand_word(Opcode::SwitchDenseW64, "table"), 5);
+    assert_eq!(operand_word(Opcode::Island, "isl"), 1);
+    assert_eq!(operand_word(Opcode::Island, "ops"), 2);
     for op in [Opcode::Call, Opcode::CallSym, Opcode::CallSymInd, Opcode::CallPtr] {
         assert_eq!(operand_word(op, "d"), 1);
     }
