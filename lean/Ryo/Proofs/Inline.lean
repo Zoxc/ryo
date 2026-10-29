@@ -26,11 +26,13 @@ offsets never write the same allocation byte, `esc_inj`). Only `load` still assu
 destination private (`Private`), for `MemRel` (see `Inline/Mem.lean`).
 
 Classes: `mov`, `mov128`, `imm`, `addr`, `ptrAdd`, `ptrIndex`, `bin`, `binImm`, `mul`, `mulImm`,
-`shiftImm`, `cmp`, `cmpImm`, `br`, `brCmp`, `brCmpImm`, `ext` (`inline_sound`), and the rip-relative
+`shiftImm` (shifts only: no inline opcode is an immediate rotate), `cmp`, `cmpImm`, `br`, `brCmp`,
+`brCmpImm`, `ext` (`inline_sound`), and the rip-relative
 addresses `addrConst`, `addrSym`, `addrSymInd` (`inline_sound_rip`, `SoundG`: `Sound` given
 `Globals`, where the constants, data and symbol slots are linked and that out-of-frame loads
 read the x86 bytes; `Ryo/Proofs/Inline/Rip.lean`). Not yet: `load`, `store` (memory through a
-pointer; see aot.md §C2).
+pointer; see aot.md §C2), and the classes inlined later (`laterClass`: the variable shifts and
+rotates, `div`/`rem`, `cttz`/`ctlz`, `cmp3`, `bswap`).
 
 The overflow ops `ovf` (`add.ovf`/`sub.ovf`) and `mulOvf` are `inline_sound_ovf`
 (`Ryo/Proofs/Inline/Ovf.lean`): the sequences store the result `d`, then the flag byte `o`, as
@@ -52,7 +54,7 @@ open Ryo.Vm.Asm
 /-- The inline classes the theorems cover: all but `load` and `store`, whose memory operand
 goes through a pointer, the overflow ops (`inline_sound_ovf`, in their own module), and the
 rip-relative addresses (`inline_sound_rip`: they
-need `Globals`). -/
+need `Globals`), the immediate rotates, and the classes of `laterClass`. -/
 def frameOnly : Class → Bool
   | .load _ | .store _ | .ovf .. | .mulOvf .. | .addrConst | .addrSym | .addrSymInd => false
   -- No inline opcode is an immediate rotate (`classOfParts`).
@@ -115,7 +117,8 @@ theorem inline_sound_rip (c : Class) (hc : ripAddr c = true) : SoundG c := by
   · exact sound_addrSym
   · exact sound_addrSymInd
 
-/-- Both together: every class but `load`, `store`, `ovf` and `mulOvf`, given `Globals`. -/
+/-- Both together: every class but `load`, `store`, `ovf`, `mulOvf`, the immediate rotates and
+`laterClass`'s, given `Globals`. -/
 theorem inline_soundG (c : Class) (hc : frameOnly c = true ∨ ripAddr c = true) : SoundG c :=
   hc.elim (fun h => (inline_sound c h).soundG) (inline_sound_rip c)
 
@@ -148,7 +151,8 @@ theorem inline_sound_ovf (c : Class) (hc : ovfClass c = true) (hq : c ≠ .mulOv
 /-- Unsigned 64-bit `mul.ovf`, which also changes `rdx`. -/
 theorem inline_sound_umulq : SoundC (.mulOvf false .q) := sound_mulOvf false .q
 
-/-- `SoundC` for every class but `load`, `store` and the rip-relative addresses. -/
+/-- `SoundC` for every class but `load`, `store`, the rip-relative addresses, the immediate
+rotates and `laterClass`'s. -/
 theorem inline_soundC (c : Class) (hc : frameOnly c = true ∨ ovfClass c = true) : SoundC c :=
   hc.elim (fun h => (inline_sound c h).soundC) (inline_soundC_ovf c)
 
