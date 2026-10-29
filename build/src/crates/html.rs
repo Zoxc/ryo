@@ -273,7 +273,7 @@ fn ratio_chart(r: &Report, m: &Metric, data: &[Vec<Option<Summary>>]) -> String 
     let nb = r.backends.len() as f64;
     let group_h = nb * row_h + band;
     let height = 30.0 + data.len() as f64 * group_h;
-    let x = |v: f64| left + (v.ln() - lo.ln()) / (hi.ln() - lo.ln()) * (width - left - 20.0);
+    let x = |v: f64| left + (v.max(lo).ln() - lo.ln()) / (hi.ln() - lo.ln()) * (width - left - 20.0);
     let mut s = format!(r#"<svg viewBox="0 0 {width} {height}" width="100%" role="img" aria-label="{} relative to LLVM">"#, esc(m.title));
     for t in &ticks {
         let tx = x(*t);
@@ -314,7 +314,11 @@ fn ratio_chart(r: &Report, m: &Metric, data: &[Vec<Option<Summary>>]) -> String 
                     );
                 }
                 _ => {
-                    let what = if cell.is_some() { "no LLVM baseline" } else { "failed / no data" };
+                    let what = match (cell, &row[llvm]) {
+                        (None, _) => "failed / no data",
+                        (Some(_), Some(_)) => "LLVM median is 0",
+                        (Some(_), None) => "no LLVM baseline",
+                    };
                     let _ = write!(s, r#"<text class="axis" x="{left}" y="{:.1}" fill="var(--bad)">{} {what}</text>"#, cy + 4.0, backend.name());
                 }
             }

@@ -380,22 +380,24 @@ const CLEARED_ENV: &[&str] = &[
     "CARGO_BUILD_RUSTFLAGS",
     "RUSTC_WRAPPER",
     "RUSTC_WORKSPACE_WRAPPER",
+    "CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER",
     "CARGO_BUILD_TARGET",
     "CARGO_BUILD_RUSTC_WRAPPER",
     "CARGO_BUILD_JOBS",
     "CARGO_INCREMENTAL",
+    "CARGO_BUILD_INCREMENTAL",
     "RUST_TEST_THREADS",
     "RUST_BACKTRACE",
 ];
 
 /// Whether the inherited variable `k` is cleared: [`CLEARED_ENV`], the backend's and the
 /// runtime's switches (`RYO_*`, but not `y`'s own `RYO_Y_*`), cargo profile settings and
-/// per-target `RUSTFLAGS`.
+/// per-target `RUSTFLAGS` and runners.
 fn cleared(k: &str) -> bool {
     CLEARED_ENV.contains(&k)
         || (k.starts_with("RYO_") && !k.starts_with("RYO_Y_"))
         || k.starts_with("CARGO_PROFILE_")
-        || (k.starts_with("CARGO_TARGET_") && k.ends_with("_RUSTFLAGS"))
+        || (k.starts_with("CARGO_TARGET_") && (k.ends_with("_RUSTFLAGS") || k.ends_with("_RUNNER")))
 }
 
 /// Removes the inherited variables [`cleared`] matches from `c`.
