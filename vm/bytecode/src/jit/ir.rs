@@ -532,6 +532,32 @@ impl Op {
             _ => Site::None,
         }
     }
+
+    /// [`Op::site`], mutably; `None` for an operation that doesn't call.
+    pub fn site_mut(&mut self) -> Option<&mut Site> {
+        match self {
+            Op::HCall(h) => Some(&mut h.site),
+            Op::Call(c) => Some(&mut c.site),
+            Op::Island(i) => Some(&mut i.site),
+            _ => None,
+        }
+    }
+
+    /// Applies `g` to every alloca it names: an alloca access's, an address's, and
+    /// [`Op::named_allocas`].
+    pub fn allocas_mut(&mut self, mut g: impl FnMut(&mut AllocaId)) {
+        let slot = |s: &mut SlotRef, g: &mut dyn FnMut(&mut AllocaId)| {
+            if let SlotRef::Alloca(a, _) = s {
+                g(a)
+            }
+        };
+        match self {
+            Op::AllocaAddr(a, _) | Op::ALoad(a, ..) | Op::AStore(a, ..) => g(a),
+            Op::HCall(h) => h.regs.iter_mut().flat_map(|r| r.1.iter_mut().flatten()).for_each(|s| slot(s, &mut g)),
+            Op::Island(x) => x.ops.iter_mut().for_each(|s| slot(s, &mut g)),
+            _ => {}
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

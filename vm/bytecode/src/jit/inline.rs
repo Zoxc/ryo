@@ -1144,10 +1144,6 @@ pub fn splice(f: &mut Func, call: Inst, c: &Func) {
         })
         .collect();
     f.scratch = f.scratch.max(c.scratch);
-    let slot = |r: SlotRef| match r {
-        SlotRef::Alloca(a, o) => SlotRef::Alloca(amap[a.idx()], o),
-        s => s,
-    };
 
     // The continuation: the instructions after the call, with the results as its
     // parameters.
@@ -1215,36 +1211,14 @@ pub fn splice(f: &mut Func, call: Inst, c: &Func) {
         let n = cbd.insts.len();
         for (j, &ci) in cbd.insts.iter().enumerate() {
             let cid = &c.insts[ci.idx()];
-            let mut op = match &cid.op {
-                Op::AllocaAddr(a, o) => Op::AllocaAddr(amap[a.idx()], *o),
-                Op::ALoad(a, o, w) => Op::ALoad(amap[a.idx()], *o, *w),
-                Op::AStore(a, o, w) => Op::AStore(amap[a.idx()], *o, *w),
-                Op::HCall(h) => {
-                    let mut h = h.clone();
-                    for r in h.regs.iter_mut() {
-                        r.1 = [r.1[0].map(slot), r.1[1].map(slot)];
-                    }
-                    Op::HCall(h)
-                }
-                Op::Island(isl) => {
-                    let mut isl = isl.clone();
-                    isl.ops = isl.ops.iter().map(|&r| slot(r)).collect();
-                    Op::Island(isl)
-                }
-                op => op.clone(),
-            };
+            let mut op = cid.op.clone();
+            op.allocas_mut(|a| *a = amap[a.idx()]);
             // Action substitution: a call that unwinds to the callee's caller unwinds as the
             // site does.
             let unwinds_out = op.site() == Site::Continue;
-            if unwinds_out {
-                let s = site;
-                assert!(!matches!(s, Site::Pad { .. }) || root_pad.is_some(), "a site with a pad that doesn't invoke");
-                match &mut op {
-                    Op::HCall(h) => h.site = s,
-                    Op::Call(x) => x.site = s,
-                    Op::Island(x) => x.site = s,
-                    _ => {}
-                }
+            if let Some(s) = op.site_mut().filter(|s| **s == Site::Continue) {
+                assert!(!matches!(site, Site::Pad { .. }) || root_pad.is_some(), "a site with a pad that doesn't invoke");
+                *s = site;
             }
             let ws: Vec<u8> = cid.results().map(|r| c.w(r)).collect();
             let ni = f.inst(cur, op, Vec::new(), &ws);
@@ -1290,25 +1264,9 @@ pub fn splice(f: &mut Func, call: Inst, c: &Func) {
     // Terminators.
     for &cb in &c.layout {
         let Some(cur) = tail[cb.idx()] else { continue };
-        let edge = |vmap: &mut Vec<Option<Value>>, f: &mut Func, e: &Edge| -> Edge {
-            Edge { to: bmap[e.to.idx()].expect("an edge to a live block"), args: e.args.iter().map(|&a| map(vmap, f, a)).collect() }
-        };
         let t = match &c.blocks[cb.idx()].term {
             Term::None => panic!("an unterminated callee block"),
-            Term::Jmp(e) => Term::Jmp(edge(&mut vmap, f, e)),
-            Term::Br { cond, t, f: e } => {
-                let cond = map(&mut vmap, f, *cond);
-                Term::Br { cond, t: edge(&mut vmap, f, t), f: edge(&mut vmap, f, e) }
-            }
-            Term::BrOvf { t, f: e } => Term::BrOvf { t: edge(&mut vmap, f, t), f: edge(&mut vmap, f, e) },
-            Term::BrCmp { cc, w, a, b: bb, t, f: e } => {
-                let (a, bb) = (map(&mut vmap, f, *a), map(&mut vmap, f, *bb));
-                Term::BrCmp { cc: *cc, w: *w, a, b: bb, t: edge(&mut vmap, f, t), f: edge(&mut vmap, f, e) }
-            }
-            Term::Switch { idx, targets } => {
-                let idx = map(&mut vmap, f, *idx);
-                Term::Switch { idx, targets: targets.iter().map(|e| edge(&mut vmap, f, e)).collect() }
-            }
+            Term::TailCall { .. } => panic!("a tail call in an inlined callee"),
             Term::Ret { parts, .. } => {
                 let mut args = Vec::with_capacity(results.len());
                 for (n, &v) in parts.iter().take(results.len()).enumerate() {
@@ -1323,11 +1281,13 @@ pub fn splice(f: &mut Func, call: Inst, c: &Func) {
                 }
                 Term::Jmp(Edge { to: k, args })
             }
-            Term::TailCall { .. } => panic!("a tail call in an inlined callee"),
-            Term::Trap => Term::Trap,
-            Term::Invoke { normal, pad } => {
-                let normal = normal.as_ref().map(|e| edge(&mut vmap, f, e));
-                Term::Invoke { normal, pad: edge(&mut vmap, f, pad) }
+            t => {
+                let mut t = t.clone();
+                t.operands_mut(|v| *v = map(&mut vmap, f, *v));
+                for e in t.edges_mut() {
+                    e.to = bmap[e.to.idx()].expect("an edge to a live block");
+                }
+                t
             }
         };
         f.blocks[cur.idx()].term = t;
