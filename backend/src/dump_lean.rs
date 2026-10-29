@@ -564,14 +564,34 @@ impl<'tcx> Dumper<'tcx> {
     }
 
     fn opaque(l: TyAndLayout<'tcx>) -> J {
-        ctor("opaqueBytes", vec![("size", num(l.size.bytes())), ("align", num(l.align.abi.bytes()))])
+        Self::size_align("opaqueBytes", l.size.bytes(), l.align.abi.bytes())
+    }
+
+    /// `name { size, align }` (`opaqueBytes` or a `sized` layout strategy).
+    fn size_align(name: &'static str, size: u64, align: u64) -> J {
+        ctor(name, vec![("size", num(size)), ("align", num(align))])
+    }
+
+    /// Fields `range` of `l` at their offsets.
+    fn fields(&mut self, l: TyAndLayout<'tcx>, range: std::ops::Range<usize>) -> Vec<J> {
+        range.map(|i| pair(num(l.fields.offset(i).bytes()), self.ty(l.field(&self.cx, i).ty))).collect()
+    }
+
+    /// A sized tuple of `fields`, with the size and alignment of `l`.
+    fn sized_tuple(fields: Vec<J>, l: TyAndLayout<'tcx>) -> J {
+        ctor("tuple", vec![("fields", J::Arr(fields)), ("head", Self::head(l.size.bytes(), l.align.abi.bytes(), None)), ("tail", J::Null)])
+    }
+
+    /// A pointer of kind `p` with the valid range of `l` (or `over`).
+    fn ptr_ty(&self, p: J, l: TyAndLayout<'tcx>, over: Option<WrappingRange>) -> J {
+        ctor("ptr", vec![("p", p), ("valid", Self::range(self.leaf_range(l, over)))])
     }
 
     fn ty_uncached(&mut self, t: Ty<'tcx>, over: Option<WrappingRange>) -> J {
         let tcx = self.tcx;
         let Some(l) = self.layout(t) else {
             eprintln!("ryo: RYO_DUMP_LEAN: no layout for {}", self.name_of(t));
-            return ctor("opaqueBytes", vec![("size", num(0)), ("align", num(1))]);
+            return Self::size_align("opaqueBytes", 0, 1);
         };
         match *t.kind() {
             ty::Bool => tag("bool"),
@@ -589,15 +609,12 @@ impl<'tcx> Dumper<'tcx> {
                 };
                 ctor("float", vec![("f", tag(name))])
             }
-            ty::RawPtr(p, m) => {
-                let pt = ctor("raw", vec![("mutbl", J::Bool(m.is_mut())), ("pointee", self.pointee(p))]);
-                ctor("ptr", vec![("p", pt), ("valid", Self::range(self.leaf_range(l, over)))])
+            ty::RawPtr(p, m) | ty::Ref(_, p, m) => {
+                let kind = if t.is_ref() { "ref" } else { "raw" };
+                let pt = ctor(kind, vec![("mutbl", J::Bool(m.is_mut())), ("pointee", self.pointee(p))]);
+                self.ptr_ty(pt, l, over)
             }
-            ty::Ref(_, p, m) => {
-                let pt = ctor("ref", vec![("mutbl", J::Bool(m.is_mut())), ("pointee", self.pointee(p))]);
-                ctor("ptr", vec![("p", pt), ("valid", Self::range(self.leaf_range(l, over)))])
-            }
-            ty::FnPtr(..) => ctor("ptr", vec![("p", tag("fnPtr")), ("valid", Self::range(self.leaf_range(l, over)))]),
+            ty::FnPtr(..) => self.ptr_ty(tag("fnPtr"), l, over),
             ty::FnDef(def_id, args) => {
                 let args = args.no_bound_vars().expect("monomorphic fn item");
                 let i = Instance::expect_resolve(tcx, self.typing_env(), def_id, args, rustc_span::DUMMY_SP);
@@ -620,11 +637,11 @@ impl<'tcx> Dumper<'tcx> {
             ty::Adt(adt, args) if tcx.is_lang_item(adt.did(), LangItem::DynMetadata) => {
                 // `DynMetadata<dyn Trait>`: the vtable pointer (`PtrMetadata` of a `dyn` pointer).
                 let name = self.name_of(args.type_at(0));
-                ctor("ptr", vec![("p", ctor("vtablePtr", vec![("t", J::Str(name))])), ("valid", Self::range(self.leaf_range(l, over)))])
+                self.ptr_ty(ctor("vtablePtr", vec![("t", J::Str(name))]), l, over)
             }
             ty::Adt(adt, _) if adt.repr().simd() => Self::opaque(l),
             ty::Adt(adt, _) if adt.is_union() => {
-                let fields: Vec<J> = (0..l.fields.count()).map(|i| pair(num(l.fields.offset(i).bytes()), self.ty(l.field(&self.cx, i).ty))).collect();
+                let fields = self.fields(l, 0..l.fields.count());
                 let chunks = if l.size.bytes() > 0 { vec![pair(num(0), num(l.size.bytes()))] } else { vec![] };
                 ctor(
                     "union",
@@ -636,11 +653,9 @@ impl<'tcx> Dumper<'tcx> {
                 // `intrinsic_ty_arg`: field 0 (`Unique<T>`) as a box pointer with its range
                 let f0 = l.field(&self.cx, 0);
                 let ptr = ctor("box", vec![("pointee", self.pointee(args.type_at(0)))]);
-                let mut fields = vec![pair(num(0), ctor("ptr", vec![("p", ptr), ("valid", Self::range(self.leaf_range(f0, None)))]))];
-                for i in 1..l.fields.count() {
-                    fields.push(pair(num(l.fields.offset(i).bytes()), self.ty(l.field(&self.cx, i).ty)));
-                }
-                ctor("tuple", vec![("fields", J::Arr(fields)), ("head", Self::head(l.size.bytes(), l.align.abi.bytes(), None)), ("tail", J::Null)])
+                let mut fields = vec![pair(num(0), self.ptr_ty(ptr, f0, None))];
+                fields.extend(self.fields(l, 1..l.fields.count()));
+                Self::sized_tuple(fields, l)
             }
             ty::Adt(adt, _) => self.tuple_ty(l, adt.repr().pack.map(|a| a.bytes())),
             ty::Tuple(_) | ty::Closure(..) => self.tuple_ty(l, None),
@@ -671,7 +686,7 @@ impl<'tcx> Dumper<'tcx> {
         let n = l.fields.count();
         let unsized_tail = l.is_unsized() && n > 0;
         let sized_n = if unsized_tail { n - 1 } else { n };
-        let fields: Vec<J> = (0..sized_n).map(|i| pair(num(l.fields.offset(i).bytes()), self.ty(l.field(&self.cx, i).ty))).collect();
+        let fields = self.fields(l, 0..sized_n);
         let (end, tail) =
             if unsized_tail { (l.fields.offset(n - 1).bytes(), Some(self.ty(l.field(&self.cx, n - 1).ty))) } else { (l.size.bytes(), None) };
         ctor("tuple", vec![("fields", J::Arr(fields)), ("head", Self::head(end, l.align.abi.bytes(), pack)), ("tail", opt(tail))])
@@ -692,12 +707,8 @@ impl<'tcx> Dumper<'tcx> {
             .indices()
             .map(|v| {
                 let vl = l.for_variant(&self.cx, v);
-                let fields: Vec<J> =
-                    (0..vl.fields.count()).map(|i| pair(num(vl.fields.offset(i).bytes()), self.ty(vl.field(&self.cx, i).ty))).collect();
-                let fields = ctor(
-                    "tuple",
-                    vec![("fields", J::Arr(fields)), ("head", Self::head(l.size.bytes(), l.align.abi.bytes(), None)), ("tail", J::Null)],
-                );
+                let fields = self.fields(vl, 0..vl.fields.count());
+                let fields = Self::sized_tuple(fields, l);
                 let d = t.discriminant_for_variant(tcx, v).expect("enum discriminant");
                 let bits = self.layout(d.ty).map_or(128, |dl| dl.size.bits());
                 let val = if dsigned { sign_extend(d.val, bits).to_string() } else { d.val.to_string() };
@@ -758,7 +769,7 @@ impl<'tcx> Dumper<'tcx> {
         }
         let (layout, inhabited) = match self.layout(p) {
             Some(l) => (self.strategy(p, l), !l.is_uninhabited()),
-            None => (ctor("sized", vec![("size", num(0)), ("align", num(1))]), true),
+            None => (Self::size_align("sized", 0, 1), true),
         };
         let j = obj(vec![("layout", layout), ("inhabited", J::Bool(inhabited))]).to_raw();
         self.pointees.insert(p, j.clone());
@@ -768,7 +779,7 @@ impl<'tcx> Dumper<'tcx> {
     /// `LayoutStrategy` of `t`.
     fn strategy(&mut self, t: Ty<'tcx>, l: TyAndLayout<'tcx>) -> J {
         if l.is_sized() {
-            return ctor("sized", vec![("size", num(l.size.bytes())), ("align", num(l.align.abi.bytes()))]);
+            return Self::size_align("sized", l.size.bytes(), l.align.abi.bytes());
         }
         match *t.kind() {
             ty::Slice(e) => {
