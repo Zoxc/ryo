@@ -668,7 +668,11 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
                         _ => None,
                     }
                 }
-                Op::Call(_) => R::RETS.get(n as usize).copied(),
+                // `rax`, `rdx` in order for the integer parts (emit's `ret_regs`).
+                Op::Call(c) => match c.parts.get(n as usize) {
+                    Some(p) if !p.xmm => R::RETS.get(c.parts[..n as usize].iter().filter(|q| !q.xmm).count()).copied(),
+                    _ => None,
+                },
                 Op::LandingPad => Some(R::Rax),
                 Op::HCall(h) if h.reg => R::RETS.get(n as usize).copied(),
                 Op::HCall(h) if h.ret && n == h.nout => Some(R::Rax),
