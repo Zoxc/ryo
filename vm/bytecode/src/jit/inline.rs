@@ -471,7 +471,7 @@ fn promotable_accesses(g: &Func, sh: Option<&Shape>, d: &[bool]) -> Option<f64> 
                         return None;
                     }
                 }
-                Op::Call(_) => {}
+                Op::Call(c) if matches!(c.target, CallTarget::Func(_)) => {}
                 _ if id.args.iter().any(|&v| is(v)) => return None,
                 _ => {}
             }
@@ -864,14 +864,17 @@ fn explore<'a>(
                 continue;
             }
         };
+        let n_trials = trials.len();
         let (c, sh, k_cost, folded) = trial(&mut trials, mem, p, g, &call, pf, site, c, sh);
-        let promoted = tree.promotion(&mut promo_memo, parent, site, &call, &c, &sh);
         if expanded + k_cost > p.expand {
+            // Its trial slot goes to a later site that fits.
+            trials.truncate(n_trials);
             if let Some(d) = dump.as_deref_mut() {
                 let _ = writeln!(d, ";   {} at {site} (depth {depth}): over the exploration budget", name(g, root));
             }
             continue;
         }
+        let promoted = tree.promotion(&mut promo_memo, parent, site, &call, &c, &sh);
         expanded += k_cost;
         let frame = c.allocas.iter().filter(|a| matches!(a.kind, AllocaKind::Memory | AllocaKind::Outgoing)).map(|a| a.size).sum();
         let k = tree.nodes.len();
