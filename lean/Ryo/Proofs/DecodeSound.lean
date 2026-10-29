@@ -52,7 +52,8 @@ relocation boundary (`boundary_start`), R's scopes never stop with `noBehavior` 
 facts of the decoder: the prologue read item by item (`read_instructions_prologue`), landing
 pads are `lpad`s (`pad_lpad`, so not leading `arg`s, `pad_not_leadArg`), protos lie within the
 code (`posOf_le_size`, so `posOf_lt_32`). `bodySim_inline` is `DSWork/Inline.lean`'s
-`bodySim_inline'` (whose helpers still have `sorry`s there).
+`bodySim_inline'` (its open steps are `Hyps` fields: `inlineBelowLink`, `cacheRegsOk`,
+`inlinePrivate`, `inlineMemKept`, `inlineClsOk`).
 
 **Files.** `DecodeSound/Basic.lean`: §1–§3 and §4's helpers, `bodySim_unreachable`,
 `bodySim_jmp`, `reach_padding`, `boundary_start`. `DSWork/Boundary.lean`: the decoder facts.
@@ -71,7 +72,7 @@ environment's `ret` (`HandlerContract`, `ResumeContract`: `resume`'s handler is 
 `opSem`, and comes back only at a landing pad; `CallContract`, `IslandContract`,
 `TripContract`; on PE every return keeps `rsi`/`rdi`, `peSaved`), the link map (`Linked`,
 `Globals`). Proved elsewhere, outside the default build: `OpFacts` of every opcode
-(`RyoProofs/OpFacts.lean`) and `InlineOk` of every inline class (`RyoProofs/InlineOk.lean`). Restrictions: the frame-pointer mode (`fp`), the items without a
+(`RyoProofs/OpFacts.lean`) and `InlineOk` of every inline class (`inlineClsOk`, `RyoProofs/InlineOk.lean`). Restrictions: the frame-pointer mode (`fp`), the items without a
 frame pointer have no step lemmas yet; handler calls with their arguments in registers
 (`regArgs`: PE's stack argument, the `atomic.cxchg` handlers', writes the frame's bottom, its
 step is open); no PE pad region (`Decodes.noRegion`: PE's cleanup code after the body, which the
@@ -87,7 +88,8 @@ discharged later:
   `emit` never computes in `rsi`/`rdi`, a decoder fact);
 - privacy after the scopes (checkable with the scopes, as an invariant): `loadPrivate` (a
   `load`'s destination, `LoadPrivate`), `argPrivate` (an `arg`'s, `ArgPrivate`),
-  `resultPrivate` (a call's result slots, `ResultPrivate`), `linkPrivate` (the frame's link
+  `resultPrivate` (a call's result slots, `ResultPrivate`), `inlinePrivate` (an inline
+  instruction's frame writes, `InlinePrivate`), `linkPrivate` (the frame's link
   slots, in no escaped object or `Lend` extent, `LinkPrivate`), `peShadow` (on PE the island
   templates' 32-byte shadow space at the frame's bottom holds no private byte);
 - the environment and the layout (not checkable from the function): `sepAcross` (the frame
@@ -99,7 +101,8 @@ discharged later:
   rodata), `envOutside` (`EnvOutside`: the environment's entries are `Env.out` states, outside
   the function's body);
 - facts of the decoder and linker not yet exposed: `deadStore` (`DeadStoreSim`: the steps of
-  dropped stores), `cacheCleared` (`CacheCleared`: the cache is empty at branch targets and
+  dropped stores), `inlineMemKept` (`InlineMemKept`: an inline instruction other than `store`
+  with private writes keeps the rest of memory), `cacheCleared` (`CacheCleared`: the cache is empty at branch targets and
   landing pads), `padsLinked` (`PadsLinked`: the LSDA as linked against `cleanupAt`),
   `stubsLinked` (`StubsLinked`: the counter stubs in memory as `read` checked them).
 
@@ -145,11 +148,13 @@ variable {S : Setup} {code : ByteArray} {relocs : Array Reloc} {rodata : ByteArr
 
 Proved in `DSWork/*.lean`: `bodySim_arg` (Arg), `bodySim_ret` (Ret), `bodySim_island` (Island),
 `reach_counter` (Counter), `bodySim_call'` (Call), `bodySim_handler'` (Handler),
-`bodySim_inline'` (Inline, under `Hyps`' `inlineBelowLink`, `cacheRegsOk`);
+`bodySim_inline'` (Inline, under `Hyps`' `inlineBelowLink`, `cacheRegsOk`, `inlinePrivate`,
+`inlineMemKept`, `inlineClsOk`);
 `bodySim_unreachable`, `bodySim_jmp` in `DecodeSound/Basic.lean`. -/
 
 /-- An inline sequence without a dropped store: `DSWork/Inline.lean`'s `bodySim_inline'`, its
-extra hypotheses from `Hyps` (`inlineBelowLink`, `cacheRegsOk`). -/
+extra hypotheses from `Hyps` (`inlineBelowLink`, `cacheRegsOk`, `inlinePrivate`,
+`inlineMemKept`, `inlineClsOk`). -/
 theorem bodySim_inline (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (H : Hyps S) {k p : Nat} {a : Bool} {q : Proto} {cur cur' c' : Cursor}
     {cache' : Cache} {dr' : List DroppedStore}
