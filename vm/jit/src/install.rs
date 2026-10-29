@@ -218,12 +218,25 @@ impl Jit {
             let v = Vec::<u8>::with_capacity(std::hint::black_box(usize::MAX / 2));
             std::hint::black_box(&v);
         }
+        // The SSA tier (`RYO_JIT_OPT`), else, or where it doesn't compile the function, the
+        // re-encoding pipeline. `RYO_JIT_SSA_LIMIT=n` (debugging: bisects a miscompile): only
+        // the first `n` functions go through the SSA tier. Decided once, so that a retry
+        // neither counts the function again nor switches its tier.
+        let settings = self.rt.settings;
+        let ssa = settings.opt != JitOpt::Reencode && self.ssa_tried < settings.ssa_limit;
+        if ssa {
+            self.ssa_tried += 1;
+        } else if settings.opt == JitOpt::Reencode {
+            stats::add(&STATS.opt_reencode, 1);
+        } else {
+            stats::add(&STATS.ssa_limit, 1);
+        }
         // Again in a new region if the one it was compiled for filled up (once is enough: the
         // new one is empty, and the function fits half of one).
-        let r = match self.compile_once(rec) {
+        let r = match self.compile_once(rec, ssa, false) {
             Err(CompileError::Retry) => {
                 stats::add(&STATS.region_retries, 1);
-                self.compile_once(rec)
+                self.compile_once(rec, ssa, true)
             }
             r => r,
         };
@@ -233,7 +246,10 @@ impl Jit {
         })
     }
 
-    fn compile_once(&mut self, rec: *mut JitRecord) -> Result<(), CompileError> {
+    /// Compiles `rec`'s function with the SSA tier if `ssa`, else (or where that doesn't
+    /// compile it) by re-encoding; `retry` if this is the second attempt, whose stats the
+    /// first one already counted.
+    fn compile_once(&mut self, rec: *mut JitRecord, ssa: bool, retry: bool) -> Result<(), CompileError> {
         // SAFETY: a record of a linked image, whose header it points at.
         let (func, img) = unsafe { ((*rec).func, Image::from_header((*rec).header.cast()).map_err(|_| "invalid image")?) };
         let h = img.header();
@@ -245,25 +261,14 @@ impl Jit {
         let d = callees::decode(img, &self.handlers, self.rt.probe as usize, func).ok_or("no such function")?.map_err(|e| e.what)?;
         let mode = jit_mode(&img, place.far_rt);
         let shuffled = (self.rt.shuffled)(h as *const _ as *const u8);
-        let job = Job { rec, func, img: &img, d: &d, mode, shuffled, place, personality };
+        let job = Job { rec, func, img: &img, d: &d, mode, shuffled, place, personality, retry };
 
-        // The SSA tier (`RYO_JIT_OPT`), else, or where it doesn't compile the function, the
-        // re-encoding pipeline.
-        let settings = self.rt.settings;
-        // `RYO_JIT_SSA_LIMIT=n` (debugging: bisects a miscompile): only the first `n`
-        // functions go through the SSA tier.
-        let within_limit = self.ssa_tried < settings.ssa_limit;
-        if settings.opt != JitOpt::Reencode && within_limit {
-            self.ssa_tried += 1;
+        if ssa {
             // The AOT layout's words (the SSA tier lays out its own frame); the calls are
             // retargeted after inlining, by the rules `reencode` uses.
             if let Some((out, ssa_ext)) = self.compile_ssa(&job)? {
                 return self.install(&job, &ssa_ext, Tier::Ssa, out);
             }
-        } else if settings.opt == JitOpt::Reencode {
-            stats::add(&STATS.opt_reencode, 1);
-        } else {
-            stats::add(&STATS.ssa_limit, 1);
         }
         let (out, ext) = self.reencode(&job)?;
         self.install(&job, &ext, Tier::Reencode, out)
@@ -348,12 +353,16 @@ impl Jit {
                     osr_at: o.osr_at as usize,
                     region: len,
                 };
-                stats::add(&STATS.devirt, o.devirt as u64);
-                stats::add(&STATS.inlined, o.inlined as u64);
+                if !job.retry {
+                    stats::add(&STATS.devirt, o.devirt as u64);
+                    stats::add(&STATS.inlined, o.inlined as u64);
+                }
                 Ok(Some((out, ssa_ext)))
             }
             Err(jit::Error::Unsupported(u)) => {
-                stats::add(&STATS.ssa_unsupported, 1);
+                if !job.retry {
+                    stats::add(&STATS.ssa_unsupported, 1);
+                }
                 if let Some(dir) = &self.dump {
                     let text = std::format!("; unsupported: {}\n{}", u.0, reduced::Disasm(&d.words));
                     let _ = std::fs::write(dump::dump_path(dir, func, h as *const _ as usize, "txt"), text);
@@ -532,6 +541,8 @@ struct Job<'a> {
     shuffled: bool,
     place: Place,
     personality: usize,
+    /// The second attempt, after [`CompileError::Retry`]: the first counted the stats.
+    retry: bool,
 }
 
 /// A function's unwind information, before its PC-relative fields are patched
