@@ -71,7 +71,8 @@ pub(super) fn multi_staticlib(info: &RustcInfo, rustc_ryo: &Path, src: &Path, ou
         }
         Ok((exe, capture(l.args(NATIVE_LIBS))?))
     };
-    let mut want = None;
+    // The first output of each `main`, which the other links of it must match.
+    let mut wants: Vec<(&str, String)> = Vec::new();
     for lld in [false, true] {
         let ld = if lld { "lld" } else { "bfd" };
         for (main, libs) in [("main2.c", vec![&a, &b]), ("main2.c", vec![&b, &a]), ("main3.c", vec![&a, &b, &c]), ("main3.c", vec![&c, &b, &a])] {
@@ -83,9 +84,10 @@ pub(super) fn multi_staticlib(info: &RustcInfo, rustc_ryo: &Path, src: &Path, ou
                 return Err(format!("{name}: the link failed:\n{}", res.stderr));
             }
             let plain = run_out(&exe, &[], &[("RYO_JIT", "off")])?;
-            let want = want.get_or_insert_with(|| (main.to_owned(), plain.clone()));
-            if want.0 == main && plain != want.1 {
-                return Err(format!("{name}: {plain:?}, expected {:?}", want.1));
+            match wants.iter().find(|w| w.0 == main) {
+                Some((_, want)) if plain != *want => return Err(format!("{name}: {plain:?}, expected {want:?}")),
+                Some(_) => {}
+                None => wants.push((main, plain.clone())),
             }
             let jit = run_out(&exe, &[], &JIT_NOW)?;
             if jit != plain {
@@ -121,7 +123,7 @@ pub(super) fn multi_staticlib(info: &RustcInfo, rustc_ryo: &Path, src: &Path, ou
     }
     let plain = run_out(&exe, &[], &[("RYO_JIT", "off")])?;
     let jit = run_out(&exe, &[], &JIT_NOW)?;
-    let want = want.map(|w| w.1).unwrap_or_default();
+    let want = wants.into_iter().find(|w| w.0 == "main2.c").map(|w| w.1).unwrap_or_default();
     if plain != want || jit != want {
         return Err(format!("hidden std: {plain:?} / with the JIT {jit:?}, expected {want:?}"));
     }

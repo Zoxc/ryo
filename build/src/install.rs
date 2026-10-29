@@ -335,10 +335,7 @@ fn cargo_root() -> Result<PathBuf, String> {
 /// <file>`); a relative path is relative to the directory holding the file's `.cargo/`.
 fn config_install_root() -> Option<PathBuf> {
     let out = capture(
-        cmd("cargo")
-            .args(["-Zunstable-options", "config", "get", "--show-origin", "install.root"])
-            .current_dir(root())
-            .env("RUSTC_BOOTSTRAP", "1"),
+        cmd("cargo").args(["-Zunstable-options", "config", "get", "--show-origin", "install.root"]).current_dir(root()).env("RUSTC_BOOTSTRAP", "1"),
     )
     .ok()
     .filter(|o| o.status.success())?;
