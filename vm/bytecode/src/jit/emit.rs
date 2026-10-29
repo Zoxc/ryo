@@ -1204,8 +1204,9 @@ impl<'a> E<'a> {
                 self.xput(x, rd);
             }
             Op::Store(16, k) => {
-                let rp = self.reg(args[0], S1);
+                // The vector first: a constant one goes through `S1` (`xconst64`).
                 let rv = self.xreg(args[1], self.xs()[0]);
+                let rp = self.reg(args[0], S1);
                 self.a.x().movdqu_store(Mem::base(rp, k), rv);
             }
             Op::AStore(a, k, 16) => {
