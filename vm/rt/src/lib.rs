@@ -2,8 +2,8 @@
 //! design/vm.md and design/stubs.md.
 
 #![feature(rustc_attrs, unboxed_closures, fn_traits, tuple_trait, core_intrinsics, f16, f128, macro_metavar_expr_concat)]
-// `handlers.rs`'s `fam` entries expand one member per step.
-#![recursion_limit = "2048"]
+// `handlers.rs`'s `fam` entries expand one member (and one ordering) per step.
+#![recursion_limit = "4096"]
 #![allow(internal_features)]
 // Only `core`: with `--sysroot ryo`, std and alloc are ryo-built and depend on `ryo_rt`
 // (design/build.md), and the runtime must not enter the VM through them (design/vm.md).

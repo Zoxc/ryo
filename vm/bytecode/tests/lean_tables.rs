@@ -5,7 +5,7 @@
 //! gen`) it rewrites them.
 
 #![feature(macro_metavar_expr_concat)]
-#![recursion_limit = "2048"]
+#![recursion_limit = "4096"]
 
 use std::fmt::Write;
 use std::path::{Path, PathBuf};
