@@ -474,7 +474,8 @@ pub(super) fn const_loads(f: &Func) -> bool {
 /// Folds the load `i` from constant memory (design/provenance.md, rule 5): into the constant
 /// it reads, or for a relocated field read whole into the image's pool or data area, the
 /// `RefAddr` of its target (which keeps its provenance). `Some(c)` if it became the
-/// constant `c`; it may also have become a `RefAddr` (pure).
+/// constant `c`; it may also have become a `RefAddr` (pure), or for a 16-byte load wider
+/// than a `u64`, a `VConst`.
 fn fold_const_load(f: &mut Func, i: Inst, mem: &dyn ConstMem) -> Option<u64> {
     let Op::Load(w, off) = f.insts[i.idx()].op else { return None };
     if w == 16 {

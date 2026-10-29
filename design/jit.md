@@ -544,15 +544,15 @@ innermost first, so a value invariant in several levels leaves each in turn.
 ### Loop rotation
 
 `opt::rotate`, once after the other passes (before `regalloc::remat`), only with
-`RYO_JIT_ROTATE=1`. A loop whose head is only a test (no instructions, a compare branch out
-of the loop or into it) and whose one latch jumps back to it gets the test copied to the end
-of the latch, branching back into the body, so an iteration runs no jump of its own. The
+`RYO_JIT_ROTATE=1`. A loop whose head is only a test (no instructions, a branch, compare or
+plain, out of the loop or into it) and whose one latch jumps back to it gets the test copied
+to the end of the latch, branching back into the body, so an iteration runs no jump of its own. The
 head stays for the preheader and its OSR entry, which still lands there.
 - **Shape**: the head's in-loop successor `b` has no other predecessor and starts no AOT loop
   head; no call runs in the loop but on cold paths (the added parameters would cross it).
-  The exit gets a new block on the head's edge unless it has the head as its only
-  predecessor.
-- **SSA repair**: the head's parameters (and results) used outside it become parameters of
+  The exit gets a new block on the head's edge unless it is a plain body block, starts no
+  AOT loop head and has the head as its only predecessor.
+- **SSA repair**: the head's parameters used outside it become parameters of
   `b` and of the exit block, passed the originals by the head and the copies by the latch;
   a use neither dominates cancels the rotation.
 - **Why off**: it pays only when the register allocator gives the latch's new values their

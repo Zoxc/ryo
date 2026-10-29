@@ -1041,13 +1041,13 @@ impl Func {
         self.blocks[b.idx()].term = t;
     }
 
-    /// Replaces the terminator of `b` by `t`, keeping its successors' predecessor lists right.
     /// Makes `b`'s branch a jump along its edge `k`.
     pub fn fold_branch(&mut self, b: Block, k: usize) {
         let e = self.blocks[b.idx()].term.edge(k).clone();
         self.set_term(b, Term::Jmp(e));
     }
 
+    /// Replaces the terminator of `b` by `t`, keeping its successors' predecessor lists right.
     pub fn set_term(&mut self, b: Block, t: Term) {
         let old = core::mem::replace(&mut self.blocks[b.idx()].term, Term::None);
         for e in old.edges() {

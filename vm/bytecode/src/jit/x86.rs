@@ -188,8 +188,10 @@ impl Cc {
 pub struct X86 {
     pub code: Vec<u8>,
     /// Fields of [`Mem::Rip`] and of the call/jmp forms that take a [`Ref`]: `at` is the
-    /// 4-byte field's offset in `code`; the field holds 0 until linked (the linker writes
-    /// `target - (field + 4)`). Every such field ends its instruction: forms with an
+    /// field's offset in `code`; the field holds 0 until linked. Most are 4-byte `rel32`
+    /// fields (the linker writes `target - (field + 4)`); those of the far forms (`call_abs`,
+    /// `jmp_abs`, for far handlers, the probe and far functions) are 8-byte absolute ones
+    /// (the linker writes `target`). Every such field ends its instruction: forms with an
     /// immediate after the displacement reject rip-relative operands.
     pub relocs: Vec<Reloc>,
     /// Fields of [`Mem::RipLabel`], as (field offset, label): the caller writes

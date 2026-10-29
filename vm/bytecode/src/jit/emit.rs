@@ -2327,7 +2327,8 @@ fn osr_code(f: &Func, al: &Alloc, mode: Mode, fr: &Frame, lab: &[u32], post_at: 
         for (r, s) in regs {
             w.load_src(r, s);
         }
-        // `rsp = fp - F_jit`: from `rbp`, or from `rdx` unless it was just loaded.
+        // `rsp = fp - F_jit`: from `rbp`, or from `rsp` itself (no register the loads above
+        // may have written).
         if fp {
             w.lea(R::Rsp, mem_of(R::Rbp, -(f_jit as i32)));
         } else {

@@ -1015,7 +1015,7 @@ fn clusters(nodes: &[Node]) -> Vec<Cluster> {
 }
 
 /// Selection: which nodes to inline, clusters taken best first while the unit stays within
-/// `cap`.
+/// `cap`; a small cluster (at most [`Params::always`]) is taken even past it.
 fn select(nodes: &[Node], clusters: &[Cluster], cap: f64, p: &Params, root: VmFunc, mut dump: Option<&mut String>) -> Vec<bool> {
     let mut accepted = alloc::vec![false; nodes.len()];
     let mut queue: Vec<usize> = nodes[0].children.clone();

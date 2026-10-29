@@ -806,12 +806,12 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
     Ok(s.f)
 }
 
-/// The instruction index after `i`.
 /// The width of the value in a register of `size` bytes: the size, or 8 for an odd one.
 fn reg_width(size: u32) -> u8 {
     if matches!(size, 1 | 2 | 4 | 8) { size as u8 } else { 8 }
 }
 
+/// The instruction index after `i`; an error for the last instruction.
 fn s_next(code: &Code, i: usize) -> Result<u32, Unsupported> {
     if i + 1 < code.insns.len() { Ok(i as u32 + 1) } else { Err(Unsupported("falls off the end")) }
 }

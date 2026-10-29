@@ -584,7 +584,8 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
     let (lo, hi) = intervals(f, &pos, &live);
     let cross = crossing(f, &live);
     let weight = weights(f);
-    // Weight per position from `a` on: what spilling saves for the register it frees.
+    // Weight per position over the interval from its start to `end`: what spilling saves for
+    // the register it frees.
     let density = |w: usize, end: u32| weight[w] * 256 / (end.saturating_sub(lo[w]) as u64 + 2);
     // The spill order: by density, then the one ending last first.
     let key = |w: usize, end: u32| (density(w, end), u32::MAX - end);
