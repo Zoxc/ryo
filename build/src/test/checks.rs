@@ -233,6 +233,11 @@ pub(super) fn incremental(rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result
     // link.exe stamps the time into the executable (and a random PDB GUID): `/Brepro` derives
     // both from the contents, so identical builds give identical files.
     let repro: &[&str] = if cfg!(target_env = "msvc") { &["-Clink-arg=/Brepro"] } else { &[] };
+    // link.exe updates a PDB that is already there, and bumps its age, which the executable
+    // records: a link into the chain's directory starts without the previous one's.
+    let fresh = |exe: &Path| {
+        let _ = fs::remove_file(exe.with_extension("pdb"));
+    };
     // Name, flags, flags for the incremental chain only, environment.
     // `O0` gets incremental's default of 256 codegen units, so one image per CGU.
     let configs: [(&str, &[&str], &[&str], &[(&str, &str)]); 4] = [
@@ -252,6 +257,7 @@ pub(super) fn incremental(rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result
                 let d = if sub == "incr" { dir.join(config).join("chain") } else { dir.join(config).join(&cfg).join(sub) };
                 crate::utils::create_dir(&d)?;
                 let exe = d.join(exe_name("edits"));
+                fresh(&exe);
                 let mut c = cmd(rustc);
                 c.arg("--edition=2024").arg(&src).args(["--cfg", &cfg]).arg("-o").arg(&exe).args(repro);
                 if let Some(incr) = incr {
@@ -283,6 +289,7 @@ pub(super) fn incremental(rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result
             if env.is_empty() {
                 let read = |p: &Path| fs::read(p).map_err(|e| format!("reading {}: {e}", p.display()));
                 let first = read(&exe)?;
+                fresh(&exe);
                 let mut c = cmd(rustc_ryo);
                 c.arg("--edition=2024").arg(&src).args(["--cfg", &cfg]).arg("-o").arg(&exe).args(repro).args(flags).args(chain_flags);
                 c.arg(format!("-Cincremental={}", incr.display())).arg("-Zincremental-verify-ich").env("RYO_STATS", "1");
