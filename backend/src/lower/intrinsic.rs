@@ -10,6 +10,7 @@
 use rustc_middle::mir::SourceInfo;
 use rustc_middle::ty::layout::TyAndLayout;
 use rustc_middle::ty::{self, GenericArg, Instance, Ty};
+use rustc_span::{Symbol, sym};
 use ryo_bytecode::full::Opcode;
 
 use super::call::{ArgSrc, CallCont};
@@ -31,6 +32,23 @@ fn atomic_ord(o: ty::AtomicOrdering) -> AtomicOrd {
     }
 }
 
+/// What [`FnCx::lower_intrinsic`] did with an intrinsic call.
+enum Lowered {
+    /// Lowered; the caller continues at the call's target.
+    Done,
+    /// Lowered, and it doesn't return (`abort`).
+    Diverges,
+    /// Not lowered: the `call` template or the fallback body.
+    Fallback,
+}
+
+impl From<bool> for Lowered {
+    /// The `Ok(bool)` of the helpers: whether they lowered the call.
+    fn from(done: bool) -> Self {
+        if done { Lowered::Done } else { Lowered::Fallback }
+    }
+}
+
 impl<'a, 'tcx> FnCx<'a, 'tcx> {
     pub fn intrinsic_call(
         &mut self,
@@ -40,28 +58,62 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         cont: CallCont<'tcx>,
         source_info: SourceInfo,
     ) -> Result<(), NeedsNative> {
+        match self.lower_intrinsic(callee, args, &cont, source_info)? {
+            Lowered::Done => self.continue_at(&cont),
+            Lowered::Diverges => Ok(()),
+            Lowered::Fallback => {
+                let tcx = self.tcx;
+                // Intrinsics that implement `FnOnce` (safe, no `#[track_caller]`): natively,
+                // through the `call` template.
+                if !self.fn_once_able(fty, callee)
+                    && let Some(i) = tcx.intrinsic(callee.def_id())
+                    && !i.must_be_overridden
+                    // The collector skips the fallback bodies of intrinsics the backend replaces
+                    // (`rustc_monomorphize/src/collector.rs:1016`), so such a body has no symbol
+                    // unless it is one of our VM functions anyway.
+                    && let fallback = Instance::new_raw(callee.def_id(), callee.args)
+                    && (!tcx.sess.replaced_intrinsics.contains(&i.name) || self.cx.vm.contains(&fallback))
+                {
+                    // The fallback body, as cg_ssa's `IntrinsicResult::Fallback`: an ordinary
+                    // instance, a VM function if the collector found it.
+                    let fty = Ty::new_fn_def(tcx, callee.def_id(), ty::Binder::dummy(callee.args));
+                    return self.direct_call(fty, fallback, args, cont, source_info);
+                }
+                self.direct_call(fty, callee, args, cont, source_info)
+            }
+        }
+    }
+
+    /// The intrinsic call as VM instructions or a wrapper island, if it has either.
+    fn lower_intrinsic(
+        &mut self,
+        callee: Instance<'tcx>,
+        args: &[ArgSrc<'_, 'tcx>],
+        cont: &CallCont<'tcx>,
+        source_info: SourceInfo,
+    ) -> Result<Lowered, NeedsNative> {
         let name = self.tcx.item_name(callee.def_id());
-        let done = match name.as_str() {
-            "caller_location" => self.into_dest(&cont, |fx, d| fx.caller_location_into(source_info, d))?,
-            "catch_unwind" => {
+        let ty0 = || callee.args.type_at(0);
+        let done = match name {
+            sym::caller_location => self.into_dest(cont, |fx, d| fx.caller_location_into(source_info, d))?,
+            sym::catch_unwind => {
                 // `rustc_nounwind`: a plain island (design/lowering.md#unwinding).
                 let [try_fn, data, catch_fn] = self.arg_slots::<3>(args)?;
-                let data_ty = callee.args.type_at(0);
-                let dn = cont.dest.map_or(0, |d| d.layout.size.bytes() as u32);
-                self.into_dest(&cont, |fx, d| {
-                    fx.island(super::island::templates::CATCH_UNWIND, &[data_ty.into()], &[(try_fn, 8), (data, 8), (catch_fn, 8), (d, dn)], None);
+                let dn = cont.dest_size();
+                self.into_dest(cont, |fx, d| {
+                    fx.island(templates::CATCH_UNWIND, &[ty0().into()], &[(try_fn, 8), (data, 8), (catch_fn, 8), (d, dn)], None);
                     Ok(())
                 })?
             }
-            "abort" => {
+            sym::abort => {
                 self.op(Opcode::Abort, &[]);
-                return Ok(());
+                return Ok(Lowered::Diverges);
             }
-            "ptr_offset_from" | "ptr_offset_from_unsigned" => {
-                let size = self.layout_of(callee.args.type_at(0))?.size.bytes();
+            sym::ptr_offset_from | sym::ptr_offset_from_unsigned => {
+                let size = self.layout_of(ty0())?.size.bytes();
                 let [a, b] = self.arg_slots::<2>(args)?;
-                let signed = name.as_str() == "ptr_offset_from";
-                self.into_dest(&cont, |fx, d| {
+                let signed = name == sym::ptr_offset_from;
+                self.into_dest(cont, |fx, d| {
                     fx.op(opw(IntOp::Sub, Width::W64), &[d, a, b]);
                     if size > 1 {
                         // The distance is a multiple of `size` (UB otherwise).
@@ -70,18 +122,15 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     Ok(())
                 })?
             }
-            "arith_offset" => {
-                let size = self.layout_of(callee.args.type_at(0))?.size.bytes();
+            sym::arith_offset => {
+                let size = self.layout_of(ty0())?.size.bytes();
                 let stride = u32::try_from(size).map_err(|_| NeedsNative("stride above 4 GiB".into()))?;
                 let [p, n] = self.arg_slots::<2>(args)?;
-                self.into_dest(&cont, |fx, d| {
-                    fx.op(Opcode::PtrIndex, &[d, p, n, stride]);
-                    Ok(())
-                })?
+                self.op_to_dest(cont, Opcode::PtrIndex, &[p, n, stride])?
             }
-            "copy" | "write_bytes" => {
-                let el = self.layout_of(callee.args.type_at(0))?;
-                let copy = name.as_str() == "copy";
+            sym::copy | sym::write_bytes => {
+                let el = self.layout_of(ty0())?;
+                let copy = name == sym::copy;
                 // A constant count: inline pieces.
                 if let [x, y, count] = args
                     && let Some(n) = Self::small_block(el, self.arg_const(count)?)
@@ -110,8 +159,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 }
                 true
             }
-            "typed_swap_nonoverlapping" => {
-                let el = self.layout_of(callee.args.type_at(0))?;
+            sym::typed_swap_nonoverlapping => {
+                let el = self.layout_of(ty0())?;
                 let size = el.size.bytes();
                 let [x, y] = self.arg_slots::<2>(args)?;
                 let t = self.frame.temp(size, 16);
@@ -132,48 +181,46 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 }
                 true
             }
-            "size_of_val" | "align_of_val" => {
-                let t = callee.args.type_at(0);
+            sym::size_of_val | sym::align_of_val => {
                 let [p] = self.arg_slots::<1>(args)?;
-                let size = name.as_str() == "size_of_val";
-                self.size_or_align_of_val(t, p, size, &cont)?
+                self.size_or_align_of_val(ty0(), p, name == sym::size_of_val, cont)?
             }
-            "ctpop" | "ctlz" | "cttz" | "ctlz_nonzero" | "cttz_nonzero" => {
-                let family = match name.as_str() {
-                    "ctpop" => IntOp::Ctpop,
-                    "ctlz" | "ctlz_nonzero" => IntOp::Ctlz,
+            sym::ctpop | sym::ctlz | sym::cttz | sym::ctlz_nonzero | sym::cttz_nonzero => {
+                let family = match name {
+                    sym::ctpop => IntOp::Ctpop,
+                    sym::ctlz | sym::ctlz_nonzero => IntOp::Ctlz,
                     _ => IntOp::Cttz,
                 };
-                let l = self.layout_of(callee.args.type_at(0))?;
+                let l = self.layout_of(ty0())?;
                 let ScalarKind::Int { w, .. } = self.scalar_kind(l)? else { return native("count of a float") };
                 let [x] = self.arg_slots::<1>(args)?;
                 let r = self.frame.temp(4, 4);
                 self.op(opw(family, w), &[r, x]);
-                let dw = self.dest_width(&cont)?;
-                self.into_dest(&cont, |fx, d| {
+                let dw = self.dest_width(cont)?;
+                self.into_dest(cont, |fx, d| {
                     fx.int_cast(d, r, Width::W32, dw, false);
                     Ok(())
                 })?
             }
-            "bswap" | "bitreverse" => {
-                let l = self.layout_of(callee.args.type_at(0))?;
+            sym::bswap | sym::bitreverse => {
+                let l = self.layout_of(ty0())?;
                 let ScalarKind::Int { w, .. } = self.scalar_kind(l)? else { return native("bswap of a float") };
                 let [x] = self.arg_slots::<1>(args)?;
-                let family = if name.as_str() == "bswap" { IntOp::Bswap } else { IntOp::Bitreverse };
-                self.into_dest(&cont, |fx, d| {
-                    if family == IntOp::Bswap && w == Width::W8 {
-                        // One byte: the identity (there is no `bswap.w8`).
+                if name == sym::bswap && w == Width::W8 {
+                    // One byte: the identity (there is no `bswap.w8`).
+                    self.into_dest(cont, |fx, d| {
                         fx.mov(d, x, 1);
-                    } else {
-                        fx.op(opw(family, w), &[d, x]);
-                    }
-                    Ok(())
-                })?
+                        Ok(())
+                    })?
+                } else {
+                    let family = if name == sym::bswap { IntOp::Bswap } else { IntOp::Bitreverse };
+                    self.op_to_dest(cont, opw(family, w), &[x])?
+                }
             }
-            "rotate_left" | "rotate_right" => {
-                let l = self.layout_of(callee.args.type_at(0))?;
+            sym::rotate_left | sym::rotate_right => {
+                let l = self.layout_of(ty0())?;
                 let ScalarKind::Int { w, .. } = self.scalar_kind(l)? else { return native("rotate of a float") };
-                let left = name.as_str() == "rotate_left";
+                let left = name == sym::rotate_left;
                 // By a constant (taken mod N): `shl.imm`, `shr.u.imm`, `or`.
                 if w != Width::W128
                     && let [x, n] = args
@@ -184,7 +231,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     let c = (n as u32 % bits) as u128;
                     let c = if left { c } else { (u128::from(bits) - c) % u128::from(bits) };
                     let size = w.bytes();
-                    self.into_dest(&cont, |fx, d| {
+                    self.into_dest(cont, |fx, d| {
                         if c == 0 {
                             fx.mov(d, x, size);
                         } else {
@@ -199,35 +246,150 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 } else {
                     let [x, n] = self.arg_slots::<2>(args)?;
                     let family = if left { IntOp::Rotl } else { IntOp::Rotr };
-                    self.into_dest(&cont, |fx, d| {
-                        fx.op(opw(family, w), &[d, x, n]);
-                        Ok(())
-                    })?
+                    self.op_to_dest(cont, opw(family, w), &[x, n])?
                 }
             }
-            n => self.more_intrinsics(n, callee, args, &cont)?,
-        };
-        if !done {
-            let tcx = self.tcx;
-            // Intrinsics that implement `FnOnce` (safe, no `#[track_caller]`): natively,
-            // through the `call` template.
-            if !self.fn_once_able(fty, callee)
-                && let Some(i) = tcx.intrinsic(callee.def_id())
-                && !i.must_be_overridden
-                // The collector skips the fallback bodies of intrinsics the backend replaces
-                // (`rustc_monomorphize/src/collector.rs:1016`), so such a body has no symbol
-                // unless it is one of our VM functions anyway.
-                && let fallback = Instance::new_raw(callee.def_id(), callee.args)
-                && (!tcx.sess.replaced_intrinsics.contains(&i.name) || self.cx.vm.contains(&fallback))
-            {
-                // The fallback body, as cg_ssa's `IntrinsicResult::Fallback`: an ordinary
-                // instance, a VM function if the collector found it.
-                let fty = Ty::new_fn_def(tcx, callee.def_id(), ty::Binder::dummy(callee.args));
-                return self.direct_call(fty, fallback, args, cont, source_info);
+            sym::cold_path => true,
+            // `likely` has no pre-interned symbol.
+            _ if matches!(name, sym::black_box | sym::unlikely) || name.as_str() == "likely" => {
+                let [x] = self.arg_slots::<1>(args)?;
+                let size = cont.dest_size();
+                self.into_dest(cont, |fx, d| {
+                    fx.mov(d, x, size);
+                    Ok(())
+                })?
             }
-            return self.direct_call(fty, callee, args, cont, source_info);
+            // Islands, which the JIT doesn't see into (it would merge, forward or hoist VM
+            // loads and stores); a nontemporal store is a plain store.
+            sym::volatile_load
+            | sym::unaligned_volatile_load
+            | sym::volatile_store
+            | sym::unaligned_volatile_store
+            | sym::volatile_copy_memory
+            | sym::volatile_copy_nonoverlapping_memory
+            | sym::volatile_set_memory => {
+                let ins = self.island_args(args)?;
+                self.wrapper(&format!("ryo_island_{name}"), &[ty0().into()], &ins, cont)?
+            }
+            sym::nontemporal_store => {
+                let size = self.layout_of(ty0())?.size.bytes() as u32;
+                let [p, v] = self.arg_slots::<2>(args)?;
+                self.store(Loc::Mem { p, k: 0 }, v, size);
+                true
+            }
+            sym::exact_div => {
+                let l = self.layout_of(ty0())?;
+                let ScalarKind::Int { w, signed } = self.scalar_kind(l)? else { return native("float exact_div") };
+                if w == Width::W128 {
+                    return native("128-bit mul/div/rem (island)");
+                }
+                if let [a, b] = args
+                    && let Some(v) = self.arg_const(b)?
+                    && w.truncate(v) != 0
+                {
+                    let a = self.arg_slot(a)?;
+                    self.into_dest(cont, |fx, d| {
+                        fx.exact_div_const(w, signed, d, a, v);
+                        Ok(())
+                    })?
+                } else {
+                    let [a, b] = self.arg_slots::<2>(args)?;
+                    self.op_to_dest(cont, opw(if signed { IntOp::DivS } else { IntOp::DivU }, w), &[a, b])?
+                }
+            }
+            sym::disjoint_bitor => {
+                let l = self.layout_of(ty0())?;
+                let ScalarKind::Int { w, .. } = self.scalar_kind(l)? else { return native("float exact_div") };
+                let [a, b] = self.arg_slots::<2>(args)?;
+                self.op_to_dest(cont, opw(IntOp::Or, w), &[a, b])?
+            }
+            sym::ptr_guaranteed_cmp => {
+                // At run time the addresses are known: 1 if equal, 0 if not (never 2,
+                // "unknown").
+                let [a, b] = self.arg_slots::<2>(args)?;
+                self.op_to_dest(cont, opw(IntOp::Eq, Width::W64), &[a, b])?
+            }
+            sym::vtable_size | sym::vtable_align => {
+                let [p] = self.arg_slots::<1>(args)?;
+                let idx = if name == sym::vtable_size { ty::COMMON_VTABLE_ENTRIES_SIZE } else { ty::COMMON_VTABLE_ENTRIES_ALIGN };
+                self.op_to_dest(cont, Opcode::LoadW64, &[p, idx as u32 * 8])?
+            }
+            sym::unchecked_funnel_shl | sym::unchecked_funnel_shr => {
+                let l = self.layout_of(ty0())?;
+                let ScalarKind::Int { w, .. } = self.scalar_kind(l)? else { return native("funnel shift of a float") };
+                let [a, b, s] = self.arg_slots::<3>(args)?;
+                self.funnel_shift(name == sym::unchecked_funnel_shl, w, a, b, s, cont)?
+            }
+            sym::fabs
+            | sym::copysignf32
+            | sym::copysignf64
+            | sym::minimum_number_nsz_f32
+            | sym::minimum_number_nsz_f64
+            | sym::maximum_number_nsz_f32
+            | sym::maximum_number_nsz_f64 => {
+                let Some(dest) = cont.dest else { return native("intrinsic without a destination") };
+                // f16/f128 go through the `call` template.
+                let fw = match dest.layout.ty.kind() {
+                    ty::Float(ty::FloatTy::F32) => FloatWidth::F32,
+                    ty::Float(ty::FloatTy::F64) => FloatWidth::F64,
+                    _ => return Ok(Lowered::Fallback),
+                };
+                if name == sym::fabs {
+                    let [x] = self.arg_slots::<1>(args)?;
+                    self.op_to_dest(cont, opf(FloatOp::Fabs, fw), &[x])?
+                } else {
+                    let family = match name {
+                        sym::copysignf32 | sym::copysignf64 => FloatOp::Copysign,
+                        sym::minimum_number_nsz_f32 | sym::minimum_number_nsz_f64 => FloatOp::Fmin,
+                        _ => FloatOp::Fmax,
+                    };
+                    let [x, y] = self.arg_slots::<2>(args)?;
+                    self.op_to_dest(cont, opf(family, fw), &[x, y])?
+                }
+            }
+            _ if name.as_str().starts_with("atomic_") => self.atomic(name.as_str(), callee, args, cont)?,
+            sym::compare_bytes => {
+                if args.len() != 3 {
+                    return native("intrinsic argument count");
+                }
+                let ins = self.island_args(args)?;
+                self.wrapper(templates::COMPARE_BYTES, &[], &ins, cont)?
+            }
+            sym::raw_eq => {
+                if args.len() != 2 {
+                    return native("intrinsic argument count");
+                }
+                let ins = self.island_args(args)?;
+                self.wrapper(templates::RAW_EQ, &[ty0().into()], &ins, cont)?
+            }
+            _ if name.as_str().starts_with("simd_") => self.simd_intrinsic(name, callee, args, cont)?,
+            _ => false,
+        };
+        Ok(done.into())
+    }
+
+    /// A `simd_*` intrinsic: its instruction, else its wrapper island.
+    fn simd_intrinsic(
+        &mut self,
+        name: Symbol,
+        callee: Instance<'tcx>,
+        args: &[ArgSrc<'_, 'tcx>],
+        cont: &CallCont<'tcx>,
+    ) -> Result<bool, NeedsNative> {
+        let n = name.as_str();
+        if self.simd_op(n, callee, args, cont)? {
+            return Ok(true);
         }
-        self.continue_at(&cont)
+        if self.strict_simd {
+            return native("simd_* without an opcode in a #[target_feature] fn");
+        }
+        let Some(template) = templates::simd(self.tcx, self.cx.rt, n) else { return Ok(false) };
+        let ins = self.island_args(args)?;
+        let generics: Vec<GenericArg<'tcx>> = callee.args.iter().collect();
+        if generics.iter().any(|g| g.as_type().is_none()) {
+            return Ok(false);
+        }
+        self.wrapper(&template, &generics, &ins, cont)
     }
 
     /// `size_of_val` / `align_of_val` of the `T` behind the pointer in slot `p` (wide for
@@ -237,11 +399,10 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let layout = self.layout_of(t)?;
         if layout.is_sized() {
             let v = if size { layout.size.bytes() } else { layout.align.abi.bytes() };
-            self.into_dest(cont, |fx, d| {
+            return self.into_dest(cont, |fx, d| {
                 fx.imm(Width::W64, d, u128::from(v));
                 Ok(())
-            })?;
-            return Ok(true);
+            });
         }
         match t.kind() {
             ty::Slice(e) | ty::Array(e, _) => {
@@ -255,11 +416,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             ty::Dynamic(..) => {
                 // vtable entries 1 and 2: size, align.
                 let idx: u32 = if size { 1 } else { 2 };
-                self.into_dest(cont, |fx, d| {
-                    fx.op(Opcode::LoadW64, &[d, p + 8, idx * 8]);
-                    Ok(())
-                })?;
-                Ok(true)
+                self.op_to_dest(cont, Opcode::LoadW64, &[p + 8, idx * 8])
             }
             _ => {
                 // A struct with an unsized tail (place.rs).
@@ -282,160 +439,6 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 fx.imm(Width::W64, d, u128::from(a));
             }
             Ok(())
-        })?;
-        Ok(true)
-    }
-
-    /// Intrinsics beyond the first set: VM instructions where they exist, otherwise wrapper
-    /// islands. Returns whether `name` was lowered (then the caller continues at the call's
-    /// target), as every arm of [`Self::intrinsic_call`] but `abort` does.
-    fn more_intrinsics(&mut self, name: &str, callee: Instance<'tcx>, args: &[ArgSrc<'_, 'tcx>], cont: &CallCont<'tcx>) -> Result<bool, NeedsNative> {
-        let ty0 = || callee.args.type_at(0);
-        Ok(match name {
-            "cold_path" => true,
-            "black_box" | "likely" | "unlikely" => {
-                let [x] = self.arg_slots::<1>(args)?;
-                let size = cont.dest.map_or(0, |d| d.layout.size.bytes() as u32);
-                self.into_dest(cont, |fx, d| {
-                    fx.mov(d, x, size);
-                    Ok(())
-                })?
-            }
-            // Islands, which the JIT doesn't see into (it would merge, forward or hoist VM
-            // loads and stores); a nontemporal store is a plain store.
-            "volatile_load"
-            | "unaligned_volatile_load"
-            | "volatile_store"
-            | "unaligned_volatile_store"
-            | "volatile_copy_memory"
-            | "volatile_copy_nonoverlapping_memory"
-            | "volatile_set_memory" => {
-                let ins = self.island_args(args)?;
-                self.wrapper(&format!("ryo_island_{name}"), &[ty0().into()], &ins, cont)?
-            }
-            "nontemporal_store" => {
-                let size = self.layout_of(ty0())?.size.bytes() as u32;
-                let [p, v] = self.arg_slots::<2>(args)?;
-                self.store(Loc::Mem { p, k: 0 }, v, size);
-                true
-            }
-            "exact_div" | "disjoint_bitor" => {
-                let l = self.layout_of(ty0())?;
-                let ScalarKind::Int { w, signed } = self.scalar_kind(l)? else { return native("float exact_div") };
-                if name == "exact_div" && w == Width::W128 {
-                    return native("128-bit mul/div/rem (island)");
-                }
-                if name == "exact_div"
-                    && let [a, b] = args
-                    && let Some(v) = self.arg_const(b)?
-                    && w.truncate(v) != 0
-                {
-                    let a = self.arg_slot(a)?;
-                    return self.into_dest(cont, |fx, d| {
-                        fx.exact_div_const(w, signed, d, a, v);
-                        Ok(())
-                    });
-                }
-                let [a, b] = self.arg_slots::<2>(args)?;
-                let family = match (name, signed) {
-                    ("exact_div", true) => IntOp::DivS,
-                    ("exact_div", false) => IntOp::DivU,
-                    _ => IntOp::Or,
-                };
-                self.into_dest(cont, |fx, d| {
-                    fx.op(opw(family, w), &[d, a, b]);
-                    Ok(())
-                })?
-            }
-            "ptr_guaranteed_cmp" => {
-                // At run time the addresses are known: 1 if equal, 0 if not (never 2,
-                // "unknown").
-                let [a, b] = self.arg_slots::<2>(args)?;
-                self.into_dest(cont, |fx, d| {
-                    fx.op(opw(IntOp::Eq, Width::W64), &[d, a, b]);
-                    Ok(())
-                })?
-            }
-            "vtable_size" | "vtable_align" => {
-                let [p] = self.arg_slots::<1>(args)?;
-                let idx = if name == "vtable_size" { ty::COMMON_VTABLE_ENTRIES_SIZE } else { ty::COMMON_VTABLE_ENTRIES_ALIGN };
-                self.into_dest(cont, |fx, d| {
-                    fx.op(Opcode::LoadW64, &[d, p, idx as u32 * 8]);
-                    Ok(())
-                })?
-            }
-            "unchecked_funnel_shl" | "unchecked_funnel_shr" => {
-                let l = self.layout_of(ty0())?;
-                let ScalarKind::Int { w, .. } = self.scalar_kind(l)? else { return native("funnel shift of a float") };
-                let [a, b, s] = self.arg_slots::<3>(args)?;
-                self.funnel_shift(name == "unchecked_funnel_shl", w, a, b, s, cont)?
-            }
-            "fabs"
-            | "copysignf32"
-            | "copysignf64"
-            | "minimum_number_nsz_f32"
-            | "minimum_number_nsz_f64"
-            | "maximum_number_nsz_f32"
-            | "maximum_number_nsz_f64" => {
-                let Some(dest) = cont.dest else { return native("intrinsic without a destination") };
-                // f16/f128 go through the `call` template.
-                let fw = match dest.layout.ty.kind() {
-                    ty::Float(ty::FloatTy::F32) => FloatWidth::F32,
-                    ty::Float(ty::FloatTy::F64) => FloatWidth::F64,
-                    _ => return Ok(false),
-                };
-                let family = match name {
-                    "fabs" => FloatOp::Fabs,
-                    "copysignf32" | "copysignf64" => FloatOp::Copysign,
-                    n if n.starts_with("minimum") => FloatOp::Fmin,
-                    _ => FloatOp::Fmax,
-                };
-                let op = opf(family, fw);
-                if name == "fabs" {
-                    let [x] = self.arg_slots::<1>(args)?;
-                    self.into_dest(cont, |fx, d| {
-                        fx.op(op, &[d, x]);
-                        Ok(())
-                    })?
-                } else {
-                    let [x, y] = self.arg_slots::<2>(args)?;
-                    self.into_dest(cont, |fx, d| {
-                        fx.op(op, &[d, x, y]);
-                        Ok(())
-                    })?
-                }
-            }
-            n if n.starts_with("atomic_") => self.atomic(n, callee, args, cont)?,
-            "compare_bytes" => {
-                if args.len() != 3 {
-                    return native("intrinsic argument count");
-                }
-                let ins = self.island_args(args)?;
-                self.wrapper(templates::COMPARE_BYTES, &[], &ins, cont)?
-            }
-            "raw_eq" => {
-                if args.len() != 2 {
-                    return native("intrinsic argument count");
-                }
-                let ins = self.island_args(args)?;
-                self.wrapper(templates::RAW_EQ, &[ty0().into()], &ins, cont)?
-            }
-            n if n.starts_with("simd_") => {
-                if self.simd_op(n, callee, args, cont)? {
-                    return Ok(true);
-                }
-                if self.strict_simd {
-                    return native("simd_* without an opcode in a #[target_feature] fn");
-                }
-                let Some(template) = templates::simd(self.tcx, self.cx.rt, n) else { return Ok(false) };
-                let ins = self.island_args(args)?;
-                let generics: Vec<GenericArg<'tcx>> = callee.args.iter().collect();
-                if generics.iter().any(|g| g.as_type().is_none()) {
-                    return Ok(false);
-                }
-                self.wrapper(&template, &generics, &ins, cont)?
-            }
-            _ => false,
         })
     }
 
@@ -444,7 +447,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     fn wrapper(&mut self, template: &str, generics: &[GenericArg<'tcx>], ins: &[(u32, u32)], cont: &CallCont<'tcx>) -> Result<bool, NeedsNative> {
         let mut ops = Vec::with_capacity(ins.len() + 1);
         ops.extend_from_slice(ins);
-        let dn = cont.dest.map_or(0, |d| d.layout.size.bytes() as u32);
+        let dn = cont.dest_size();
         self.into_dest(cont, |fx, d| {
             let mut ops = ops;
             ops.push((d, dn));
@@ -596,6 +599,17 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         } else {
             self.mov(d, src, w.bytes());
         }
+    }
+
+    /// `op d, srcs…` into the call's destination `d`. Returns `true` (handled).
+    fn op_to_dest(&mut self, cont: &CallCont<'tcx>, op: Opcode, srcs: &[u32]) -> Result<bool, NeedsNative> {
+        self.into_dest(cont, |fx, d| {
+            let mut ops = Vec::with_capacity(srcs.len() + 1);
+            ops.push(d);
+            ops.extend_from_slice(srcs);
+            fx.op(op, &ops);
+            Ok(())
+        })
     }
 
     fn dest_width(&self, cont: &CallCont<'tcx>) -> Result<Width, NeedsNative> {

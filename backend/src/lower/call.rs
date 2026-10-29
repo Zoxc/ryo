@@ -128,6 +128,13 @@ pub struct CallCont<'tcx> {
     pub unwind: UnwindAction,
 }
 
+impl CallCont<'_> {
+    /// The destination's size, 0 without one.
+    pub fn dest_size(&self) -> u32 {
+        self.dest.map_or(0, |d| d.layout.size.bytes() as u32)
+    }
+}
+
 impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// `TerminatorKind::Call`.
     pub fn call_terminator(
