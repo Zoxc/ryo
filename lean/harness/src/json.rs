@@ -158,6 +158,13 @@ impl Parser<'_> {
         }
     }
 
+    fn hex4(&mut self) -> Result<u32, String> {
+        let h = std::str::from_utf8(self.s.get(self.i..self.i + 4).ok_or("bad \\u")?).map_err(|e| e.to_string())?;
+        let v = u32::from_str_radix(h, 16).map_err(|e| e.to_string())?;
+        self.i += 4;
+        Ok(v)
+    }
+
     fn string(&mut self) -> Result<String, String> {
         self.expect(b'"')?;
         let mut out = String::new();
@@ -173,11 +180,22 @@ impl Parser<'_> {
                         b'n' => out.push('\n'),
                         b't' => out.push('\t'),
                         b'r' => out.push('\r'),
+                        b'b' => out.push('\u{8}'),
+                        b'f' => out.push('\u{c}'),
                         b'u' => {
-                            let h = std::str::from_utf8(self.s.get(self.i..self.i + 4).ok_or("bad \\u")?).map_err(|e| e.to_string())?;
-                            let v = u32::from_str_radix(h, 16).map_err(|e| e.to_string())?;
+                            let mut v = self.hex4()?;
+                            // A high surrogate followed by `\uDC00`-`\uDFFF`: one code point.
+                            if (0xd800..0xdc00).contains(&v) && self.s.get(self.i..self.i + 2) == Some(&b"\\u"[..]) {
+                                let save = self.i;
+                                self.i += 2;
+                                let lo = self.hex4()?;
+                                if (0xdc00..0xe000).contains(&lo) {
+                                    v = 0x10000 + ((v - 0xd800) << 10) + (lo - 0xdc00);
+                                } else {
+                                    self.i = save;
+                                }
+                            }
                             out.push(char::from_u32(v).unwrap_or('?'));
-                            self.i += 4;
                         }
                         c => out.push(c as char),
                     }
