@@ -86,7 +86,8 @@ pub fn local_uses(body: &Body<'_>) -> IndexVec<Local, u32> {
 /// A niche switch with at most this many tested arms branches on the tag with `br.eq.imm`.
 const NICHE_TESTS_MAX: usize = 4;
 
-/// A switch over at most this many values per case uses a jump table (`switch.dense`).
+/// A switch whose values span (`hi - lo + 1`) at most this many, and at most
+/// `2 * cases + 4`, uses a jump table (`switch.dense`).
 const DENSE_MAX_SPAN: u128 = 1024;
 
 impl<'a, 'tcx> FnCx<'a, 'tcx> {
