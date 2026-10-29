@@ -194,7 +194,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 let l = self.layout_of(ty0())?;
                 let ScalarKind::Int { w, .. } = self.scalar_kind(l)? else { return native("count of a float") };
                 let [x] = self.arg_slots::<1>(args)?;
-                let r = self.frame.temp(4, 4);
+                let r = self.temp_w(Width::W32);
                 self.op(opw(family, w), &[r, x]);
                 let dw = self.dest_width(cont)?;
                 self.into_dest(cont, |fx, d| {
@@ -235,8 +235,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                         if c == 0 {
                             fx.mov(d, x, size);
                         } else {
-                            let t = fx.frame.temp(u64::from(size), u64::from(size));
-                            let u = fx.frame.temp(u64::from(size), u64::from(size));
+                            let (t, u) = (fx.temp_w(w), fx.temp_w(w));
                             fx.op_imm(IntOp::Shl, w, t, x, c);
                             fx.op_imm(IntOp::ShrU, w, u, x, u128::from(bits) - c);
                             fx.op(opw(IntOp::Or, w), &[d, t, u]);

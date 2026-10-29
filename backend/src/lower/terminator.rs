@@ -308,7 +308,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         }
         // `r = tag - niche_start`; `r >u relative_max` is the untagged variant, otherwise `r`
         // is the niche variant `start + r`.
-        let r = self.frame.temp(u64::from(tw.bytes()), u64::from(tw.bytes()));
+        let r = self.temp_w(tw);
         self.op_imm(IntOp::Sub, tw, r, n.slot, n.niche_start);
         self.br_imm(IntOp::GtU, tw, r, u128::from(n.end - n.start), false, untagged_bb);
         let labels = (n.start..=n.end).map(|i| self.block_label(target(i))).collect();

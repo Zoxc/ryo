@@ -660,7 +660,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let (d, base, store) = match cont.dest {
             Some(PlaceVal { loc: Loc::Slot(d), meta: None, base, .. }) => (d, base, false),
             Some(PlaceVal { loc: Loc::Mem { .. }, meta: None, .. }) | None => {
-                let t = self.frame.temp(sig.output.size.bytes(), sig.output.align.abi.bytes());
+                let t = self.temp_for(sig.output);
                 (t, None, cont.dest.is_some())
             }
             Some(PlaceVal { meta: Some(_), .. }) => return native("unsized call destination"),
