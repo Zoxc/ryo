@@ -81,10 +81,26 @@ pub struct Recorder {
     cur: usize,
     /// Terminate stubs: the reason, the range.
     stubs: Vec<(UnwindTerminateReason, Range)>,
-    /// Landing pads: the range, the MIR block they continue at (`None`: a terminate stub).
-    pads: Vec<(Range, Option<u32>)>,
-    /// Call instructions: id, kind, the callee's plan, its return kind and return value size.
-    calls: Vec<(u32, CallKind, Option<ArgPlan>, u32, u64)>,
+    pads: Vec<PadCert>,
+    calls: Vec<CallCert>,
+}
+
+/// A landing pad.
+struct PadCert {
+    insns: Range,
+    /// The MIR block it continues at (`None`: a terminate stub).
+    block: Option<u32>,
+}
+
+/// A call instruction.
+struct CallCert {
+    insn: u32,
+    kind: CallKind,
+    /// The callee's argument plan.
+    plan: Option<ArgPlan>,
+    ret_kind: u32,
+    /// The return value's size.
+    ret_size: u64,
 }
 
 impl<'a, 'tcx> FnCx<'a, 'tcx> {
@@ -151,7 +167,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     pub fn cert_pad(&mut self, start: u32, block: Option<u32>) {
         let n = self.next_insn();
         if let Some(c) = &mut self.cert {
-            c.pads.push(((start, n), block));
+            c.pads.push(PadCert { insns: (start, n), block });
         }
     }
 
@@ -159,7 +175,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// and returning a value of `ret_size` bytes as `ret_kind` says.
     pub fn cert_call(&mut self, at: InsnId, kind: CallKind, plan: Option<&ArgPlan>, ret_kind: u32, ret_size: u64) {
         if let Some(c) = &mut self.cert {
-            c.calls.push((at.0, kind, plan.cloned(), ret_kind, ret_size));
+            c.calls.push(CallCert { insn: at.0, kind, plan: plan.cloned(), ret_kind, ret_size });
         }
     }
 
@@ -180,9 +196,15 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             ])
         });
         let stubs = c.stubs.iter().map(|&(reason, r)| obj(vec![("reason", tag(terminate_reason(reason))), ("insns", range(r))]));
-        let pads = c.pads.iter().map(|&(r, bb)| obj(vec![("insns", range(r)), ("block", opt(bb.map(num)))]));
-        let calls = c.calls.iter().map(|(at, kind, plan, k, size)| {
-            obj(vec![("insn", num(at)), ("kind", tag(kind.name())), ("retKind", num(k)), ("retSize", num(size)), ("plan", plan_json(plan.as_ref()))])
+        let pads = c.pads.iter().map(|p| obj(vec![("insns", range(p.insns)), ("block", opt(p.block.map(num)))]));
+        let calls = c.calls.iter().map(|c| {
+            obj(vec![
+                ("insn", num(c.insn)),
+                ("kind", tag(c.kind.name())),
+                ("retKind", num(c.ret_kind)),
+                ("retSize", num(c.ret_size)),
+                ("plan", plan_json(c.plan.as_ref())),
+            ])
         });
         let j = obj(vec![
             ("frameSize", num(frame_size)),
