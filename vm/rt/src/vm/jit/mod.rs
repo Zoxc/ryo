@@ -93,44 +93,71 @@ fn flag(cfg: &mut Config, offset: usize) -> &mut bool {
     unsafe { &mut *(cfg as *mut Config).cast::<u8>().add(offset).cast::<bool>() }
 }
 
-/// A static written once, before [`READY`] is published.
-struct Once<T>(UnsafeCell<MaybeUninit<T>>);
+/// A static written once: [`UNINIT`], then [`BUSY`] while one thread writes it, then
+/// [`READY`].
+struct Once<T> {
+    state: AtomicU8,
+    val: UnsafeCell<MaybeUninit<T>>,
+}
 
-// SAFETY: written by one thread before a release store that every reader acquires.
+// SAFETY: written only by the thread that moved `state` to `BUSY`, before the release store
+// of `READY`; read only after acquiring `READY`.
 unsafe impl<T> Sync for Once<T> {}
 
 const UNINIT: u8 = 0;
 const BUSY: u8 = 1;
 const READY: u8 = 2;
 
-/// [`CONFIG`]'s state: [`UNINIT`], then [`BUSY`] while one thread writes it, then [`READY`].
-static CONFIG_STATE: AtomicU8 = AtomicU8::new(UNINIT);
-static CONFIG: Once<Config> = Once(UnsafeCell::new(MaybeUninit::uninit()));
+impl<T> Once<T> {
+    const fn new() -> Self {
+        Once { state: AtomicU8::new(UNINIT), val: UnsafeCell::new(MaybeUninit::uninit()) }
+    }
 
-fn config() -> &'static Config {
-    loop {
-        match CONFIG_STATE.load(Acquire) {
-            // SAFETY: written before `READY` was published, never again.
-            READY => return unsafe { (*CONFIG.0.get()).assume_init_ref() },
-            UNINIT => {
-                set_config(from_env);
+    /// The value, if it is set.
+    fn get(&self) -> Option<&T> {
+        // SAFETY: written before `READY` was published, never again.
+        (self.state.load(Acquire) == READY).then(|| unsafe { (*self.val.get()).assume_init_ref() })
+    }
+
+    /// Sets the value to `make()` unless something else set it (or is setting it) first.
+    /// `None` if it did.
+    fn set_with(&self, make: impl FnOnce() -> T) -> Option<&T> {
+        if self.state.compare_exchange(UNINIT, BUSY, Acquire, Relaxed).is_err() {
+            return None;
+        }
+        // SAFETY: only the thread that moved the state to `BUSY` writes, and nothing reads
+        // until `READY`.
+        let v = unsafe { (*self.val.get()).write(make()) };
+        self.state.store(READY, Release);
+        Some(v)
+    }
+
+    /// The value, set to `make()` first if nothing set it yet; waits while another thread
+    /// sets it.
+    fn get_or_init(&self, make: impl Fn() -> T) -> &T {
+        loop {
+            if let Some(v) = self.get() {
+                return v;
             }
-            // Another thread reads the environment: a few `getenv`s.
-            _ => core::hint::spin_loop(),
+            if self.state.load(Relaxed) == UNINIT {
+                self.set_with(&make);
+            } else {
+                core::hint::spin_loop();
+            }
         }
     }
 }
 
+static CONFIG: Once<Config> = Once::new();
+
+fn config() -> &'static Config {
+    // Another thread may be reading the environment: a few `getenv`s.
+    CONFIG.get_or_init(from_env)
+}
+
 /// Sets the settings to `make()` unless something else set them first. False if it did.
 fn set_config(make: impl FnOnce() -> Config) -> bool {
-    if CONFIG_STATE.compare_exchange(UNINIT, BUSY, Acquire, Relaxed).is_err() {
-        return false;
-    }
-    // SAFETY: only the thread that moved the state to `BUSY` writes, and nothing reads until
-    // `READY`.
-    unsafe { (*CONFIG.0.get()).write(make()) };
-    CONFIG_STATE.store(READY, Release);
-    true
+    CONFIG.set_with(make).is_some()
 }
 
 unsafe extern "C" {
@@ -579,7 +606,7 @@ fn push(rec: *mut JitRecord) {
 }
 
 /// What the JIT gets: built by the first push, before the JIT starts.
-static RT_API: Once<RtApi> = Once(UnsafeCell::new(MaybeUninit::uninit()));
+static RT_API: Once<RtApi> = Once::new();
 
 unsafe extern "C" {
     /// The program's personality routine, which VM code's CIEs name through a symbol slot.
@@ -597,10 +624,10 @@ fn start() -> bool {
     let reg_handlers = table(super::interp::reg_handler);
     #[cfg(all(feature = "pe-test", not(windows)))]
     let (pe_handlers, pe_reg_handlers) = {
-        static PE: Once<[[*const (); ryo_bytecode::Opcode::COUNT]; 2]> = Once(UnsafeCell::new(MaybeUninit::uninit()));
-        let t = [table(super::interp::pe_handler), table(super::interp::pe_reg_handler)];
-        // SAFETY: only the first push gets here, once, as for `RT_API`.
-        let t = unsafe { (*PE.0.get()).write(t) };
+        static PE: Once<[[*const (); ryo_bytecode::Opcode::COUNT]; 2]> = Once::new();
+        let Some(t) = PE.set_with(|| [table(super::interp::pe_handler), table(super::interp::pe_reg_handler)]) else {
+            super::sys::fatal("ryo: the JIT started twice");
+        };
         (&raw const t[0], &raw const t[1])
     };
     #[cfg(not(all(feature = "pe-test", not(windows))))]
@@ -626,8 +653,9 @@ fn start() -> bool {
     // The JIT thread runs this module's code (the sealed JIT) and reads its images for the
     // rest of the process: pin the module first.
     super::sys::pin_module(start as *const ());
-    // SAFETY: only the first push gets here, once; the JIT reads it only after the start.
-    let report = unsafe { ryo_jit_start((*RT_API.0.get()).write(api)) };
+    let Some(api) = RT_API.set_with(|| api) else { super::sys::fatal("ryo: the JIT started twice") };
+    // SAFETY: the JIT reads `api` only after the start, and it lives forever.
+    let report = unsafe { ryo_jit_start(api) };
     if let Some(r) = report {
         REPORT.store(r as *mut (), Release);
     }
