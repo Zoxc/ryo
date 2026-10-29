@@ -1690,6 +1690,9 @@ impl<'a> E<'a> {
             return match id.op {
                 // `sar` of a narrow value is at 64 bits.
                 Op::Bin(BinOp::ShrS, w) if w < 4 => 8,
+                // Rotates run at their exact width, and a constant one by 0 emits nothing,
+                // so the input's upper bits can survive.
+                Op::Bin(BinOp::Rotl | BinOp::Rotr, _) => 8,
                 Op::Bin(_, w) if w <= 4 => 4,
                 // `pmovmskb` writes a 32-bit register.
                 Op::V(VOp::Msb) => 2,
