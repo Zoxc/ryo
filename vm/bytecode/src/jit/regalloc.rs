@@ -50,17 +50,26 @@ pub fn naive(f: &Func, uses: &[u32]) -> Alloc {
     let mut loc = alloc::vec![Loc::None; f.values.len()];
     let mut spills = 0;
     for (v, d) in f.values.iter().enumerate() {
-        let needs = match d.def {
-            ValueDef::Inst(i, _) => !matches!(f.insts[i.idx()].op, Op::OsrLoad(..)) && (uses[v] > 0 || !f.insts[i.idx()].op.pure()),
-            ValueDef::Param(..) => true,
-            _ => false,
-        };
-        if needs {
+        if needs_loc(f, v, uses, true) {
             loc[v] = Loc::Spill(spills);
             spills += slots(d.w);
         }
     }
     Alloc { loc, spills, saved: Vec::new() }
+}
+
+/// Whether value `v` needs a location: an instruction's result (but an OSR load's, which the
+/// OSR entry stores) or a parameter, that is used; with `unused`, also an unused parameter or
+/// impure instruction's result.
+fn needs_loc(f: &Func, v: usize, uses: &[u32], unused: bool) -> bool {
+    match f.values[v].def {
+        ValueDef::Inst(i, _) => {
+            let op = &f.insts[i.idx()].op;
+            !matches!(op, Op::OsrLoad(..)) && (uses[v] > 0 || (unused && !op.pure()))
+        }
+        ValueDef::Param(..) => unused || uses[v] > 0,
+        _ => false,
+    }
 }
 
 /// The allocatable registers: caller-saved first, then callee-saved (`rbp` too without a
@@ -193,9 +202,15 @@ pub fn clobbers(f: &Func, id: &super::ir::InstData) -> u32 {
     match id.op {
         _ if id.op.is_call() => CALL | caller_saved(f.pe).iter().fold(0, |m, &r| m | bit(r)),
         Op::Bin(B::DivS | B::DivU | B::RemS | B::RemU, _) | Op::Ovf(B::Mul, false, 8) => bit(R::Rax) | bit(R::Rdx),
-        Op::Bin(B::Shl | B::ShrS | B::ShrU | B::Rotl | B::Rotr, _) if !matches!(f.values[id.args[1].idx()].def, ValueDef::Const(_)) => bit(R::Rcx),
+        _ if shift_by_var(f, id) => bit(R::Rcx),
         _ => 0,
     }
+}
+
+/// Whether `id` is a shift or rotate by a variable amount (which must be in `cl`).
+fn shift_by_var(f: &Func, id: &super::ir::InstData) -> bool {
+    use super::ir::BinOp as B;
+    matches!(id.op, Op::Bin(B::Shl | B::ShrS | B::ShrU | B::Rotl | B::Rotr, _)) && !matches!(f.values[id.args[1].idx()].def, ValueDef::Const(_))
 }
 
 /// The registers each value is live across a clobber of ([`clobbers`]): live after it (but for
@@ -440,7 +455,7 @@ fn use_hints(f: &Func) -> (Vec<Option<R>>, bool) {
         let bd = &f.blocks[b.idx()];
         for &i in &bd.insts {
             let id = &f.insts[i.idx()];
-            if clobbers(f, id) == 1 << R::Rcx.num() {
+            if shift_by_var(f, id) {
                 want[id.args[1].idx()].get_or_insert(R::Rcx);
                 var_shift = true;
             }
@@ -492,6 +507,69 @@ fn pred_args(f: &Func, blk: Block, n: u16) -> impl Iterator<Item = Value> + '_ {
     f.blocks[blk.idx()].preds.iter().filter_map(move |&(p, k)| f.blocks[p.idx()].term.edges().nth(k as usize)?.args.get(n as usize).copied())
 }
 
+/// A register's index in [`Bank::free`].
+trait RegIdx: Copy {
+    fn idx(self) -> usize;
+}
+
+impl RegIdx for R {
+    fn idx(self) -> usize {
+        self.num() as usize
+    }
+}
+
+impl RegIdx for u8 {
+    fn idx(self) -> usize {
+        self as usize
+    }
+}
+
+/// One register file's state in [`linear_scan`]: general-purpose or `xmm`.
+struct Bank<Reg> {
+    /// Active intervals: (end, value, register).
+    active: Vec<(u32, usize, Reg)>,
+    free: [bool; 16],
+}
+
+impl<Reg> Default for Bank<Reg> {
+    fn default() -> Self {
+        Bank { active: Vec::new(), free: [true; 16] }
+    }
+}
+
+impl<Reg: RegIdx> Bank<Reg> {
+    /// Frees the registers of the intervals ending by `at`.
+    fn expire(&mut self, at: u32) {
+        let free = &mut self.free;
+        self.active.retain(|&(end, _, r)| {
+            if end <= at {
+                free[r.idx()] = true;
+                false
+            } else {
+                true
+            }
+        });
+    }
+
+    /// Gives the free register `r` to value `v`, live until `end`.
+    fn take(&mut self, r: Reg, end: u32, v: usize) {
+        self.free[r.idx()] = false;
+        self.active.push((end, v, r));
+    }
+
+    /// The active interval in a register `ok` accepts that is first to spill by `key` (the
+    /// first of equal ones): its index in `active` and itself.
+    fn cheapest<K: Ord>(&self, ok: impl Fn(Reg) -> bool, key: impl Fn(usize, u32) -> K) -> Option<(usize, (u32, usize, Reg))> {
+        self.active.iter().enumerate().filter(|(_, x)| ok(x.2)).min_by_key(|(_, x)| key(x.1, x.0)).map(|(k, &x)| (k, x))
+    }
+
+    /// Gives active interval `k`'s register to value `v`, live until `end` (`k` is spilled).
+    fn replace(&mut self, k: usize, end: u32, v: usize) {
+        let (_, _, r) = self.active.remove(k);
+        self.active.push((end, v, r));
+    }
+}
+
 /// Linear scan on SSA without splitting (design/jit.md, "The SSA tier"): each value's
 /// interval runs from its definition to its last use in the linear block order (holes
 /// ignored), and lives in one register or one stack slot throughout. Values live across a call
@@ -508,18 +586,10 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
     let weight = weights(f);
     // Weight per position from `a` on: what spilling saves for the register it frees.
     let density = |w: usize, end: u32| weight[w] * 256 / (end.saturating_sub(lo[w]) as u64 + 2);
-    let mut order: Vec<usize> = (0..nv)
-        .filter(|&v| {
-            // Unused values need no location (their definitions write nowhere).
-            lo[v] != u32::MAX
-                && uses[v] > 0
-                && match f.values[v].def {
-                    ValueDef::Inst(i, _) => !matches!(f.insts[i.idx()].op, Op::OsrLoad(..)),
-                    ValueDef::Param(..) => true,
-                    _ => false,
-                }
-        })
-        .collect();
+    // The spill order: by density, then the one ending last first.
+    let key = |w: usize, end: u32| (density(w, end), u32::MAX - end);
+    // Unused values need no location (their definitions write nowhere).
+    let mut order: Vec<usize> = (0..nv).filter(|&v| lo[v] != u32::MAX && needs_loc(f, v, uses, false)).collect();
     order.sort_by_key(|&v| (lo[v], v));
     let (want, var_shift) = use_hints(f);
     let (mut caller, callee) = registers(frame_pointer, f.pe);
@@ -535,32 +605,15 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
     };
     let mut loc = alloc::vec![Loc::None; nv];
     let mut spills = 0u32;
-    // Active intervals: (end, value, register).
-    let mut active: Vec<(u32, usize, R)> = Vec::new();
-    let mut free = [true; 16];
+    let mut gp = Bank::<R>::default();
     let mut saved = Vec::new();
-    // The same for the vectors' `xmm` registers.
+    // The vectors' `xmm` registers.
     let (xregs, _) = xmm_registers();
-    let mut xactive: Vec<(u32, usize, u8)> = Vec::new();
-    let mut xfree = [true; 16];
+    let mut xb = Bank::<u8>::default();
     for v in order {
         let (a, b) = (lo[v], hi[v]);
-        active.retain(|&(end, _, r)| {
-            if end <= a {
-                free[r.num() as usize] = true;
-                false
-            } else {
-                true
-            }
-        });
-        xactive.retain(|&(end, _, r)| {
-            if end <= a {
-                xfree[r as usize] = true;
-                false
-            } else {
-                true
-            }
-        });
+        gp.expire(a);
+        xb.expire(a);
         let clob = cross[v];
         let cross = clob & CALL != 0;
         if f.values[v].w == 16 {
@@ -581,29 +634,24 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
                 ValueDef::Param(blk, n) => pred_args(f, blk, n).find_map(xmm_of),
                 _ => None,
             };
-            let pick = hint.filter(|&r| xfree[r as usize] && xregs.contains(&r)).or_else(|| xregs.clone().find(|&r| xfree[r as usize]));
+            let pick = hint.filter(|&r| xb.free[r as usize] && xregs.contains(&r)).or_else(|| xregs.clone().find(|&r| xb.free[r as usize]));
             match pick {
                 Some(r) => {
-                    xfree[r as usize] = false;
-                    xactive.push((b, v, r));
+                    xb.take(r, b, v);
                     loc[v] = Loc::Xmm(r);
                 }
-                None => {
-                    let cand = xactive.iter().enumerate().min_by_key(|(_, (end, w, _))| (density(*w, *end), u32::MAX - end)).map(|(k, &x)| (k, x));
-                    match cand {
-                        Some((k, (end, w, r))) if (density(w, end), u32::MAX - end) < (density(v, b), u32::MAX - b) => {
-                            loc[w] = Loc::Spill(spills);
-                            spills += 2;
-                            xactive.remove(k);
-                            xactive.push((b, v, r));
-                            loc[v] = Loc::Xmm(r);
-                        }
-                        _ => {
-                            loc[v] = Loc::Spill(spills);
-                            spills += 2;
-                        }
+                None => match xb.cheapest(|_| true, key) {
+                    Some((k, (end, w, r))) if key(w, end) < key(v, b) => {
+                        loc[w] = Loc::Spill(spills);
+                        spills += 2;
+                        xb.replace(k, b, v);
+                        loc[v] = Loc::Xmm(r);
                     }
-                }
+                    _ => {
+                        loc[v] = Loc::Spill(spills);
+                        spills += 2;
+                    }
+                },
             }
             continue;
         }
@@ -639,9 +687,9 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
             }
             _ => None,
         };
-        let shifts_by_var = |v: usize| matches!(f.values[v].def, ValueDef::Inst(i, _) if clobbers(f, &f.insts[i.idx()]) == 1 << R::Rcx.num());
+        let shifts_by_var = |v: usize| matches!(f.values[v].def, ValueDef::Inst(i, _) if shift_by_var(f, &f.insts[i.idx()]));
         let ok =
-            |r: &R| free[r.num() as usize] && clob >> r.num() & 1 == 0 && (!cross || (callee.contains(r) && (!def_cold(v) || saved.contains(r))));
+            |r: &R| gp.free[r.num() as usize] && clob >> r.num() & 1 == 0 && (!cross || (callee.contains(r) && (!def_cold(v) || saved.contains(r))));
         // A use's hint before an operand's, not before a register the value comes in.
         let soft = match f.values[v].def {
             ValueDef::Inst(i, _) => {
@@ -657,14 +705,13 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
             Some(h) => Some(caller.iter().chain(&callee).find(|&&r| r == h).unwrap()),
             // A value of cold code crossing a call takes a callee-saved register only if the
             // prologue saves it anyway: otherwise a spill slot, off the hot path.
-            None if cross && def_cold(v) => callee.iter().find(|r| free[r.num() as usize] && saved.contains(*r)),
-            None if cross => callee.iter().find(|r| free[r.num() as usize]),
+            None if cross && def_cold(v) => callee.iter().find(|r| gp.free[r.num() as usize] && saved.contains(*r)),
+            None if cross => callee.iter().find(|r| gp.free[r.num() as usize]),
             None => caller.iter().chain(&callee).find(|r| ok(r) && !(**r == R::Rcx && shifts_by_var(v))).or_else(|| caller.iter().find(|r| ok(r))),
         };
         match pick {
             Some(&r) => {
-                free[r.num() as usize] = false;
-                active.push((b, v, r));
+                gp.take(r, b, v);
                 loc[v] = Loc::Reg(r);
                 if callee.contains(&r) && !saved.contains(&r) {
                     saved.push(r);
@@ -673,20 +720,11 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
             None => {
                 // Spill the active interval (that this one may use) with the lowest spill
                 // density (ending last on ties), if that is lower than this one's.
-                let cand = active
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, (_, _, r))| (!cross || callee.contains(r)) && clob >> r.num() & 1 == 0)
-                    .min_by_key(|(_, (end, w, _))| (density(*w, *end), u32::MAX - end))
-                    .map(|(k, &x)| (k, x));
-                match cand {
-                    Some((k, (end, w, r)))
-                        if (density(w, end), u32::MAX - end) < (density(v, b), u32::MAX - b) && !(cross && def_cold(v) && !saved.contains(&r)) =>
-                    {
+                match gp.cheapest(|r| (!cross || callee.contains(&r)) && clob >> r.num() & 1 == 0, key) {
+                    Some((k, (end, w, r))) if key(w, end) < key(v, b) && !(cross && def_cold(v) && !saved.contains(&r)) => {
                         loc[w] = Loc::Spill(spills);
                         spills += 1;
-                        active.remove(k);
-                        active.push((b, v, r));
+                        gp.replace(k, b, v);
                         loc[v] = Loc::Reg(r);
                     }
                     _ => {
