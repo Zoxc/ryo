@@ -372,7 +372,8 @@ const PROFILE_ENV: &[(&str, &str)] = &[
     ("INCREMENTAL", "false"),
 ];
 
-/// Variables that would change what is measured if inherited.
+/// Variables that would change what is measured if inherited, besides those [`cleared`]
+/// matches by prefix.
 const CLEARED_ENV: &[&str] = &[
     "RUSTFLAGS",
     "CARGO_ENCODED_RUSTFLAGS",
@@ -381,11 +382,30 @@ const CLEARED_ENV: &[&str] = &[
     "RUSTC_WORKSPACE_WRAPPER",
     "CARGO_BUILD_TARGET",
     "CARGO_BUILD_RUSTC_WRAPPER",
-    "RYO_STATS",
-    "RYO_NO_VM",
+    "CARGO_BUILD_JOBS",
+    "CARGO_INCREMENTAL",
     "RUST_TEST_THREADS",
     "RUST_BACKTRACE",
 ];
+
+/// Whether the inherited variable `k` is cleared: [`CLEARED_ENV`], the backend's and the
+/// runtime's switches (`RYO_*`, but not `y`'s own `RYO_Y_*`), cargo profile settings and
+/// per-target `RUSTFLAGS`.
+fn cleared(k: &str) -> bool {
+    CLEARED_ENV.contains(&k)
+        || (k.starts_with("RYO_") && !k.starts_with("RYO_Y_"))
+        || k.starts_with("CARGO_PROFILE_")
+        || (k.starts_with("CARGO_TARGET_") && k.ends_with("_RUSTFLAGS"))
+}
+
+/// Removes the inherited variables [`cleared`] matches from `c`.
+fn clear_env(c: &mut Command) {
+    for (k, _) in std::env::vars_os() {
+        if k.to_str().is_some_and(cleared) {
+            c.env_remove(k);
+        }
+    }
+}
 
 pub fn run(opts: Options) -> Result<(), String> {
     let started = Instant::now();
@@ -669,9 +689,7 @@ impl<'a> Env<'a> {
         for o in override_configs(&self.sources.overrides).iter().filter(|_| !stock) {
             c.args(["--config", o]);
         }
-        for v in CLEARED_ENV {
-            c.env_remove(v);
-        }
+        clear_env(&mut c);
         for (k, v) in PROFILE_ENV.iter().filter(|_| !stock) {
             for p in ["DEV", "TEST", "DEV_BUILD_OVERRIDE", "TEST_BUILD_OVERRIDE"] {
                 // Build overrides can't set `lto`, `panic` or `incremental`.
@@ -787,9 +805,7 @@ fn run_timed(c: &mut Command, timeout: u64) -> Result<(f64, String), String> {
 }
 
 fn run_raw(c: &mut Command, timeout: u64) -> Result<(f64, std::process::Output), String> {
-    for v in CLEARED_ENV {
-        c.env_remove(v);
-    }
+    clear_env(c);
     c.env("RUST_TEST_THREADS", "1");
     // Its own process group, so a timeout also kills the processes it starts (which would keep
     // the pipes open).
