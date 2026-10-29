@@ -10,7 +10,7 @@ use alloc::vec::Vec;
 
 use super::encode::{
     ArgVal, CallSite, DroppedStore, Encoded, F16_TMP, Opnd, Ref, Scope, arg_store, counter_stub, epilogue, fp_item, int_arg, pe_region_entry,
-    prologue, push_words, result_stores, ret_loads, word_len,
+    prologue, result_stores, ret_loads,
 };
 use super::inline::Cache;
 use super::list::{Hint, InsnList};
@@ -18,7 +18,7 @@ use super::reduce::{self, Then, addr_arg};
 use super::x86::{BadItem, Cond, Cursor, Fields, Item, M, Reg, STACK_ARG, W, handler_reg, island_args};
 use super::{ARG_ADDR, ArgReg, Mode, RetPart, has_handler, layout, ret_kind};
 use crate::full::{ElemKind, Opcode, OperandKind, Shape, Sym};
-use crate::image::{Cleanup, CleanupEntry};
+use crate::image::CleanupEntry;
 use crate::reduced::Arg;
 
 /// A function decoded from machine code.
@@ -131,45 +131,14 @@ impl<'a> Side<'a> {
 /// Decodes one function's machine code, with its relocations (sorted), rodata, call sites,
 /// dropped stores and scopes ([`Encoded`]; not its targets and hints), to the full set.
 pub fn decode(enc: &Encoded, mode: Mode) -> Result<Decoded, AsmError> {
-    let Read { protos, frame_size, actions, scopes, heads, ipos } =
-        read(&enc.code, Fields::Relocs(&enc.relocs), &enc.rodata, Side::unindexed(enc), mode, false)?;
-    let mut wpos = Vec::with_capacity(protos.len());
-    let mut w = 0u32;
-    for p in &protos {
-        wpos.push(w);
-        w += word_len(p.op, &p.ops) as u32;
-    }
-    let cleanup = actions
-        .iter()
-        .enumerate()
-        .filter_map(|(i, a)| {
-            let (pad, catch) = (*a)?;
-            let target = Cleanup::new(pad.map(|j| wpos[j]), catch).to_word();
-            Some(CleanupEntry { offset: wpos[i], target })
-        })
-        .collect();
-    let dropped = protos.iter().zip(&wpos).filter(|(p, _)| p.dropped).map(|(_, &w)| w).collect();
-    let mut words = Vec::with_capacity(w as usize);
-    for (i, p) in protos.into_iter().enumerate() {
-        let (op, at) = (p.op, p.pos);
-        let ops = p
-            .ops
-            .into_iter()
-            .map(|o| o.map_targets(|b| Ok::<_, AsmError>(wpos[insn_index(&ipos, at, b)?].wrapping_sub(wpos[i]))))
-            .collect::<Result<Vec<_>, _>>()?;
-        push_words(op, &ops, &mut words);
-    }
-    wpos.push(w);
-    let scopes = scopes.into_iter().map(|(i, sc)| Scope { code_offset: wpos[i], ..sc }).collect();
-    let heads = heads.iter().map(|&i| wpos[i]).collect();
-    Ok(Decoded { words, frame_size, cleanup, scopes, dropped, heads })
+    words_of(read(&enc.code, Fields::Relocs(&enc.relocs), &enc.rodata, Side::unindexed(enc), mode, false)?, true)
 }
 
 /// Decodes one function's machine code, as [`decode`], to the reduced set
 /// ([`crate::reduced`]): handler calls are read from their argument registers, without their
 /// operand lists, so it doesn't check that they are of operands that aren't inlined.
 pub fn decode_reduced(enc: &Encoded, mode: Mode) -> Result<Decoded, AsmError> {
-    reduced_of(read(&enc.code, Fields::Relocs(&enc.relocs), &enc.rodata, Side::unindexed(enc), mode, true)?, mode.pe)
+    words_of(read(&enc.code, Fields::Relocs(&enc.relocs), &enc.rodata, Side::unindexed(enc), mode, true)?, false)
 }
 
 /// [`decode_reduced`] with all of the instruction list's side data ([`InsnList`]: also
@@ -177,7 +146,7 @@ pub fn decode_reduced(enc: &Encoded, mode: Mode) -> Result<Decoded, AsmError> {
 /// instruction entries as an index that it checks against the code.
 pub fn decode_reduced_indexed(enc: &Encoded, mode: Mode) -> Result<Decoded, AsmError> {
     let side = Side { index: Some((&enc.targets, &enc.hints)), ..Side::unindexed(enc) };
-    reduced_of(read(&enc.code, Fields::Relocs(&enc.relocs), &enc.rodata, side, mode, true)?, mode.pe)
+    words_of(read(&enc.code, Fields::Relocs(&enc.relocs), &enc.rodata, side, mode, true)?, false)
 }
 
 /// What the `rel32` fields of linked code point at, for [`decode_linked`].
@@ -217,11 +186,12 @@ pub fn decode_linked(
     mode: Mode,
 ) -> Result<Decoded, AsmError> {
     let fields = Fields::Linked { addr: code_addr, record, resolver, hints: &list.hints };
-    reduced_of(read(code, fields, resolver.code_consts(), Side::of_list(call_sites, list), mode, true)?, mode.pe)
+    words_of(read(code, fields, resolver.code_consts(), Side::of_list(call_sites, list), mode, true)?, false)
 }
 
-/// The reduced instruction words of a function read with handler calls in the reduced form.
-fn reduced_of(r: Read, pe: bool) -> Result<Decoded, AsmError> {
+/// The instruction words of a function read: the full ones with `full` (read without
+/// handler calls in the reduced form), else the reduced ones.
+fn words_of(r: Read, full: bool) -> Result<Decoded, AsmError> {
     let Read { protos, frame_size, actions, scopes, heads, ipos } = r;
     let index = |at: u32, b: u32| insn_index(&ipos, at, b).map(|i| i as u32);
     let cleanup: Vec<_> = actions.iter().enumerate().filter_map(|(i, a)| a.map(|(pad, catch)| (i, pad, catch))).collect();
@@ -245,9 +215,7 @@ fn reduced_of(r: Read, pe: bool) -> Result<Decoded, AsmError> {
             }
         });
     }
-    let d = reduce::words(&insns, &cleanup, &scopes, &dropped, frame_size, pe);
-    debug_assert_eq!(d.heads.len(), heads.len());
-    Ok(d)
+    Ok(reduce::words(&insns, &cleanup, &scopes, &dropped, &heads, frame_size, full))
 }
 
 /// Reads one function's machine code ([`decode`]), handler calls in the reduced form with
@@ -411,15 +379,9 @@ fn loop_heads(protos: &[Proto], padded: &[bool], ipos: &[u32], rs: usize, mode: 
                 return Err(err(p.pos, "a branch across the pad region's start"));
             }
         }
-        let single = p.ops.iter().filter_map(|o| match o {
-            Opnd::Target(t) => Some(*t),
-            _ => None,
-        });
-        // A handler call's branch, or its table's default (an operand of its own).
-        let br = p.handler.as_ref().and_then(|(_, then)| then.loop_target());
-        for t in single.chain(br) {
+        for t in reduce::single_targets(&p.ops, p.handler.as_ref().map(|(_, then)| then)) {
             let j = index(p.pos, t)?;
-            if j <= i && j < rs {
+            if reduce::makes_head(i, j, rs) {
                 head[j] = true;
             }
         }

@@ -12,7 +12,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use super::list::Hint;
-use super::reduce::Then;
+use super::reduce::{Then, makes_head};
 use super::x86::{Cond, Item, M, Reg, STACK_ARG, Sh, W, handler_reg, island_args, padding};
 use super::{ArgReg, Layout, Loc, Mode, RetPart, layout, ret_parts};
 use crate::full::{Const, Data, DecodeError, ElemKind, Func, Opcode, OperandKind, Shape, Sym};
@@ -1633,7 +1633,7 @@ fn loop_heads(targets: &[(Label, usize)], labels: &[usize], region: Option<usize
     for &(to, k) in targets {
         let at = labels[to.0 as usize];
         debug_assert_ne!(at, usize::MAX, "unbound label");
-        if at <= k && region.is_none_or(|r| at < r) {
+        if makes_head(k, at, region.unwrap_or(usize::MAX)) {
             head[at] = true;
         }
     }

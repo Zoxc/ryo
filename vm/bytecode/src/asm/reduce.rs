@@ -130,19 +130,33 @@ impl ArgVal {
     }
 }
 
-/// The reduced instruction words of `insns`, with cleanup entries (instruction, landing pad
-/// instruction or `None` to continue, catch), scopes by instruction index (the count for
-/// the end) and the instructions whose store was dropped. With `pe`, from the first cleanup
-/// landing pad on is the pad region, which has no loop heads.
+/// The single branch targets of an instruction with operands `ops` and, for a handler call,
+/// control flow `then`, which can make loop heads: its `Target` operands, a handler call's
+/// branch or its table's default (not a jump table's cases).
+pub(super) fn single_targets<'a, T: Copy>(ops: &'a [Opnd<T>], then: Option<&'a Then<T>>) -> impl Iterator<Item = T> + 'a {
+    let ops = ops.iter().filter_map(|o| if let Opnd::Target(t) = o { Some(*t) } else { None });
+    ops.chain(then.and_then(Then::loop_target))
+}
+
+/// Whether a single branch at instruction `k` to instruction `t` makes `t` a loop head: it
+/// is at or before the branch, and before the pad region's start `region`.
+pub(super) fn makes_head(k: usize, t: usize, region: usize) -> bool {
+    t <= k && t < region
+}
+
+/// The reduced instruction words of `insns` (or the full words, with `full`: then they are
+/// all [`Insn::Native`]), with cleanup entries (instruction, landing pad instruction or
+/// `None` to continue, catch), scopes by instruction index (the count for the end), the
+/// instructions whose store was dropped and the loop heads' instructions, in order.
 pub(super) fn words(
     insns: &[Insn],
     cleanup: &[(usize, Option<usize>, bool)],
     scopes: &[(usize, Scope)],
     dropped: &[usize],
+    heads: &[usize],
     frame_size: u32,
-    pe: bool,
+    full: bool,
 ) -> Decoded {
-    let region = if pe { cleanup.iter().filter(|c| !c.2).filter_map(|c| c.1).min().unwrap_or(usize::MAX) } else { usize::MAX };
     let len = |i: &Insn| match i {
         Insn::Native(op, ops) => word_len(*op, ops),
         Insn::Handler(_, args, then) => handler_words(args.len(), then.targets().len()),
@@ -162,7 +176,9 @@ pub(super) fn words(
                 let at = out.len();
                 let ops: Vec<Opnd> = ops.iter().map(|o| o.clone().map_targets(|t| Ok::<_, ()>(rel(t))).unwrap()).collect();
                 push_words(*op, &ops, &mut out);
-                out[at] = reduced::Opcode::of_full(*op).expect("in the reduced set") as u32;
+                if !full {
+                    out[at] = reduced::Opcode::of_full(*op).expect("in the reduced set") as u32;
+                }
             }
             Insn::Handler(op, args, then) => {
                 let neg = matches!(then, Then::Branch { neg: true, .. });
@@ -177,22 +193,27 @@ pub(super) fn words(
         .collect();
     let scopes = scopes.iter().map(|&(i, sc)| Scope { code_offset: wpos[i], ..sc }).collect();
     let dropped = dropped.iter().map(|&i| wpos[i]).collect();
-    // Loop heads: the targets of branches at or after them (single targets: a switch's
-    // default, not its cases).
+    let heads = heads.iter().map(|&i| wpos[i]).collect();
+    Decoded { words: out, frame_size, cleanup, scopes, dropped, heads }
+}
+
+/// The loop heads of `insns` with cleanup entries `cleanup` (as [`words`] takes them), in
+/// order. With `pe`, from the first cleanup landing pad on is the pad region, which has none.
+fn loop_heads(insns: &[Insn], cleanup: &[(usize, Option<usize>, bool)], pe: bool) -> Vec<usize> {
+    let region = if pe { cleanup.iter().filter(|c| !c.2).filter_map(|c| c.1).min().unwrap_or(usize::MAX) } else { usize::MAX };
     let mut head = alloc::vec![false; insns.len()];
     for (k, i) in insns.iter().enumerate() {
         let single: Vec<u32> = match i {
-            Insn::Native(_, ops) => ops.iter().filter_map(|o| if let Opnd::Target(t) = o { Some(*t) } else { None }).collect(),
-            Insn::Handler(_, _, then) => then.loop_target().into_iter().collect(),
+            Insn::Native(_, ops) => single_targets(ops, None).collect(),
+            Insn::Handler(_, _, then) => single_targets(&[], Some(then)).collect(),
         };
         for t in single {
-            if t as usize <= k && (t as usize) < region {
+            if makes_head(k, t as usize, region) {
                 head[t as usize] = true;
             }
         }
     }
-    let heads = (0..insns.len()).filter(|&i| head[i]).map(|i| wpos[i]).collect();
-    Decoded { words: out, frame_size, cleanup, scopes, dropped, heads }
+    (0..insns.len()).filter(|&i| head[i]).collect()
 }
 
 /// The reduced form of a function given as full instruction words (slots already frame
@@ -264,7 +285,8 @@ pub fn reduce(
         })
         .collect::<Result<Vec<_>, EncodeError>>()?;
     let dropped = dropped.iter().map(|&w| idx(w).map(|i| i as usize)).collect::<Result<Vec<_>, _>>()?;
-    Ok(words(&insns, &out, &scopes, &dropped, frame_size, mode.pe))
+    let heads = loop_heads(&insns, &out, mode.pe);
+    Ok(words(&insns, &out, &scopes, &dropped, &heads, frame_size, false))
 }
 
 /// Encodes one function given in the reduced set (slots frame offsets), as
