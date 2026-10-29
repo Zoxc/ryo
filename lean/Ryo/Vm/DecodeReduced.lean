@@ -316,7 +316,8 @@ def params (mode : Mode) : DM (List (BitVec 32)) := do
         match intIndex dst mode with
         | some i => if m.base == .rbp then return some (m.disp, (ArgReg.mk false 8 i).word ||| argAddr) else return none
         | none => return none
-      | some (.sse false size x m) => return some (m.disp, (ArgReg.mk true size x).word)
+      | some (.sse false size x m) =>
+        if m.base == .rbp then return some (m.disp, (ArgReg.mk true size x).word) else return none
       | _ => return none)
     match next with
     | some (s, w) => out := out.push s |>.push (BitVec.ofNat 32 w)

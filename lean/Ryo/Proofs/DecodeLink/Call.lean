@@ -225,10 +225,14 @@ theorem params_read {mode : Mode} {c c' : Cursor} {ws : List (BitVec 32)}
         · -- sse
           rename_i size x mm heq
           cases heq
-          obtain ⟨rfl, rfl⟩ := pure_ok h6
-          refine .inr ⟨_, _, [.sse false size x mm], rfl, Dec.single hn, by rw [hc], fun hx => ?_⟩
-          obtain ⟨hs, hx8, hb⟩ := hx (.sse false size x mm) (by simp)
-          rw [paramItem_sse _ _ _ hs hx8, hframe mm (by simpa using hb)]
+          split at h6
+          · rename_i hb
+            obtain ⟨rfl, rfl⟩ := pure_ok h6
+            refine .inr ⟨_, _, [.sse false size x mm], rfl, Dec.single hn, by rw [hc], fun hx => ?_⟩
+            obtain ⟨hs, hx8, -⟩ := hx (.sse false size x mm) (by simp)
+            rw [paramItem_sse _ _ _ hs hx8, hframe mm hb]
+          · obtain ⟨rfl, rfl⟩ := pure_ok h6
+            exact .inl ⟨rfl, by rw [hc]⟩
         · obtain ⟨rfl, rfl⟩ := pure_ok h6
           exact .inl ⟨rfl, by rw [hc]⟩
     rcases inner with ⟨rfl, hc4⟩ | ⟨s, w, L, rfl, hdL, hc4, hL⟩
