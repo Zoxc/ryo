@@ -540,18 +540,6 @@ theorem call_argReg_of_spec {r : Nat} {e : Bool} {a : ArgReg} (h : ArgReg.of? r 
       decide_eq_true_eq] at hc
     omega
   · simp [hc] at h
-  /- Proof idea: unfold ArgReg.of?; split on the 'ok' condition (by cases on a.xmm, not split, which fails on the Bool.rec motive); omega.
-  The earlier attempt (broke against the current library):
-  unfold ArgReg.of? at h
-  simp only at h
-  split at h
-  · rename_i hc
-    cases h
-    intro hx
-    simp only [hx, ↓reduceIte, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq,
-      decide_eq_true_eq] at hc
-    omega
-  · cases h -/
 
 theorem call_paramItem_canon {pe : Bool} {s w : BitVec 32} {L : List Item}
     (h : Call.paramItem pe s w = some L) : ∀ i ∈ L, ∀ pos, i.Canonical pos := by
