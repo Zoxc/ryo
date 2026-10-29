@@ -336,7 +336,7 @@ pub fn run(opts: &Options) -> Result<(), String> {
     for &program in PROGRAMS {
         let src = root.join("bench").join(format!("{program}.rs"));
         let mut cells = Vec::new();
-        let mut reference: Option<String> = None;
+        let mut reference: Option<(String, &str)> = None;
         for backend in &backends {
             eprintln!("[y] bench {program} [{}]", backend.name);
             let dir = out.join(program).join(backend.name.replace([' ', '-'], ""));
@@ -355,8 +355,8 @@ pub fn run(opts: &Options) -> Result<(), String> {
             let output = if built { run_once(&exe, &backend.env).map_err(|e| failed("run", e)).ok() } else { None };
             if let Some(output) = output {
                 match &reference {
-                    None => reference = Some(output),
-                    Some(r) if *r != output => failures.push(format!("{name} printed {output:?}, {} printed {r:?}", backends[0].name)),
+                    None => reference = Some((output, &backend.name)),
+                    Some((r, by)) if *r != output => failures.push(format!("{name} printed {output:?}, {by} printed {r:?}")),
                     Some(_) => {}
                 }
                 let job = Job { program: exe, args: Vec::new(), env: backend.env.clone() };
