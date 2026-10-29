@@ -328,7 +328,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// whether `b` is the result (`a < b` for max, `b < a` for min).
     fn dyn_minmax(&mut self, a: DynVal, b: DynVal, max: bool) -> DynVal {
         let (a, b) = (self.dyn_slot(a), self.dyn_slot(b));
-        let (c, m, t) = (self.frame.temp(1, 1), self.temp8(), self.temp8());
+        let (c, m, t) = (self.temp_w(Width::W8), self.temp8(), self.temp8());
         let (x, y) = if max { (a, b) } else { (b, a) };
         self.op(opw(IntOp::LtU, Width::W64), &[c, x, y]);
         self.int_cast(m, c, Width::W8, Width::W64, false);

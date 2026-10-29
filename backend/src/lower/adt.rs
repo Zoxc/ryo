@@ -142,7 +142,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     fn niche_discr(&mut self, d: u32, dw: Width, n: NicheTag) {
         let NicheTag { slot: t, tw, untagged, start, end, niche_start } = n;
         let (u, s) = (u128::from(untagged), u128::from(start));
-        let b = self.frame.temp(1, 1);
+        let b = self.temp_w(Width::W8);
         if start == end {
             // One niche variant: `is_niche = tag == niche_start`, the value `start`.
             let (cmp, lo) = if u == s + 1 { (IntOp::Ne, s) } else { (IntOp::Eq, u) };
@@ -163,14 +163,14 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         }
         // `r = tag - niche_start`, `b = r <=u relative_max`, `d = start + r` blended with
         // `untagged` by `b`.
-        let r = self.frame.temp(u64::from(tw.bytes()), u64::from(tw.bytes()));
+        let r = self.temp_w(tw);
         self.op_imm(IntOp::Sub, tw, r, t, niche_start);
         self.op_imm(IntOp::LeU, tw, b, r, u128::from(end - start));
         self.int_cast(d, r, tw, dw, false);
         if s != 0 {
             self.op_imm(IntOp::Add, dw, d, d, s);
         }
-        let m = self.frame.temp(u64::from(dw.bytes()), u64::from(dw.bytes()));
+        let m = self.temp_w(dw);
         self.int_cast(m, b, Width::W8, dw, false);
         self.op(opw(IntOp::Neg, dw), &[m, m]);
         self.op_imm(IntOp::Xor, dw, d, d, u);

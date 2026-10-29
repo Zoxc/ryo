@@ -119,7 +119,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                         self.mem_set_pieces(dp, Ok(bytes[0]), total as u32);
                         return Ok(());
                     }
-                    let (b, len) = (self.frame.temp(1, 1), self.temp8());
+                    let (b, len) = (self.temp_w(Width::W8), self.temp8());
                     self.imm(Width::W8, b, u128::from(bytes[0]));
                     self.imm(Width::W64, len, u128::from(total));
                     self.op(Opcode::Memset, &[dp, b, len]);

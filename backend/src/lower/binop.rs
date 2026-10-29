@@ -172,7 +172,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     fx.int_cast(d, t, Width::W64, w, false);
                 });
             }
-            let q = self.frame.temp(u64::from(w.bytes()), u64::from(w.bytes()));
+            let q = self.temp_w(w);
             self.int_cast(q, t, Width::W64, w, false);
             self.op_imm(IntOp::Mul, w, q, q, v);
             return self.op_to(dst, opw(IntOp::Sub, w), &[sa, q]);
@@ -189,7 +189,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         if shift && lb.size != la.size {
             // The VM's shift amount has the value's width; masking keeps the low bits.
             let ScalarKind::Int { w: wb, .. } = self.scalar_kind(lb)? else { return native("float shift amount") };
-            let t = self.frame.temp(u64::from(w.bytes()), u64::from(w.bytes()));
+            let t = self.temp_w(w);
             self.int_cast(t, sb, wb, w, false);
             sb = t;
         }

@@ -25,6 +25,7 @@ use rustc_middle::ty::layout::TyAndLayout;
 use ryo_bytecode::abi::{self, HEADER_SIZE};
 use ryo_bytecode::full::Opcode;
 
+use super::emit::Width;
 use super::sig::{AbiSig, ArgLoc};
 use super::{FnCx, NeedsNative, native};
 use ryo_bytecode::asm::ArgReg;
@@ -288,7 +289,13 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
 
     /// An 8-byte temporary (pointers, `usize`).
     pub fn temp8(&mut self) -> u32 {
-        self.frame.temp(8, 8)
+        self.temp_w(Width::W64)
+    }
+
+    /// A temporary for an integer of width `w`, aligned to its size.
+    pub fn temp_w(&mut self, w: Width) -> u32 {
+        let n = u64::from(w.bytes());
+        self.frame.temp(n, n)
     }
 
     /// The prologue: stores the argument registers (`arg`s come first: the first handler
