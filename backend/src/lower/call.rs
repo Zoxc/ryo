@@ -128,6 +128,8 @@ impl<'tcx> Target<'tcx> {
 enum Callee<'tcx> {
     /// A VM function of this image: `call fn` / `tail_call fn`.
     Vm(Instance<'tcx>),
+    /// The drop glue of a type, a VM function: as `Vm`, with a drop's certificate kind.
+    DropGlue(Instance<'tcx>),
     /// An instance with a symbol, native or from another crate: `call.sym sym`.
     Sym(Instance<'tcx>),
     /// The fn pointer in this slot: fn-pointer calls and virtual calls (the pointer loaded
@@ -363,7 +365,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// The address of `callee` in a slot.
     fn callee_addr(&mut self, callee: Callee<'tcx>) -> u32 {
         match callee {
-            Callee::Vm(i) | Callee::Sym(i) => self.sym_addr(i),
+            Callee::Vm(i) | Callee::DropGlue(i) | Callee::Sym(i) => self.sym_addr(i),
             Callee::Ptr(p) => p,
         }
     }
@@ -373,7 +375,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     fn call_op(&mut self, callee: Callee<'tcx>, tail: bool) -> (Opcode, u32, CallKind) {
         match (callee, tail) {
             (Callee::Vm(callee), false) => (Opcode::Call, self.reloc(CodeReloc::Call { callee }), CallKind::Vm),
-            (Callee::Vm(callee), true) => (Opcode::TailCall, self.reloc(CodeReloc::Call { callee }), CallKind::TailVm),
+            (Callee::DropGlue(callee), false) => (Opcode::Call, self.reloc(CodeReloc::Call { callee }), CallKind::DropVm),
+            (Callee::Vm(callee) | Callee::DropGlue(callee), true) => (Opcode::TailCall, self.reloc(CodeReloc::Call { callee }), CallKind::TailVm),
             (Callee::Sym(callee), false) => {
                 let r = CodeReloc::Symbol { target: callee };
                 let op = if self.sym_indirect(&r) { Opcode::CallSymInd } else { Opcode::CallSym };
@@ -705,7 +708,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         if let ty::Dynamic(..) = ty.kind() {
             return self.virtual_drop(pv, target, unwind);
         }
-        let ptr = self.frame.temp(if pv.meta.is_some() { 16 } else { 8 }, 8);
+        let ptr_size = if pv.meta.is_some() { 16 } else { 8 };
+        let ptr = self.frame.temp(u64::from(ptr_size), 8);
         self.addr_into(ptr, pv.loc, pv.base)?;
         if let Some(m) = pv.meta {
             self.mov(ptr + 8, m, 8);
@@ -714,13 +718,10 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             // The glue of an unsized type takes the wide pointer.
             let sig = self.abi_sig(glue)?;
             let homes = self.write_args(&sig, &[ArgSrc::Slot(ptr)], *self.body.source_info(rustc_middle::mir::Location::START), false)?;
-            let a = self.pass_args(&sig, &homes, None, false)?;
-            let f = self.reloc(CodeReloc::Call { callee: glue });
-            let at = self.call_insn(Opcode::Call, &[0, f, 0], &a, CallKind::DropVm, &sig);
-            self.unwind_entry(at, unwind);
-        } else {
-            self.island(templates::DROP_IN_PLACE, &[ty.into()], &[(ptr, if pv.meta.is_some() { 16 } else { 8 })], Some(unwind));
+            // The glue returns `()`: `call 0, f, 0`, then the jump to `target`.
+            return self.emit_call(Target::Direct(Callee::DropGlue(glue)), &sig, &homes, CallCont { dest: None, target: Some(target), unwind });
         }
+        self.island(templates::DROP_IN_PLACE, &[ty.into()], &[(ptr, ptr_size)], Some(unwind));
         self.jump(target);
         Ok(())
     }
