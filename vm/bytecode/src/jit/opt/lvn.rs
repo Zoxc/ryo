@@ -274,8 +274,8 @@ pub(super) fn simplify(f: &mut Func, i: Inst) -> Simp {
                 }
                 Some(&Op::AllocaAddr(al, o)) => {
                     let size = f.allocas[al.idx()].size as i64;
-                    let n = o as i64 + k;
-                    if (0..=size).contains(&n) {
+                    let n = (o as i64).checked_add(k);
+                    if let Some(n) = n.filter(|n| (0..=size).contains(n)) {
                         f.insts[i.idx()].op = Op::AllocaAddr(al, n as i32);
                         f.insts[i.idx()].args.clear();
                     }
