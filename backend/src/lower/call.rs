@@ -200,8 +200,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
 
     /// How to reach the resolved `callee` (fn item type `fty`), its signature, and the
     /// arguments as the signature takes them (a virtual call passes the receiver's data
-    /// pointer). With `tail`, a callee with a symbol is never called through the `call`
-    /// template, which can't be a tail call.
+    /// pointer). Only callees without a symbol (intrinsics) go through the `call` template,
+    /// which can't be a tail call: with `tail` they stay native, as do virtual calls with an
+    /// unsized by-value receiver.
     fn direct_target<'b>(
         &mut self,
         fty: Ty<'tcx>,
