@@ -329,7 +329,9 @@ fn breakdown_chart(r: &Report) -> String {
     let med = |steps: &[Step], f: &dyn Fn(&Totals) -> f64| {
         Summary::of(&steps.iter().map(|s| f(&sum(s, None))).collect::<Vec<_>>()).map_or(0.0, |s| s.median)
     };
-    let mut rows: Vec<(String, usize, [f64; 4])> = Vec::new();
+    // The label, the medians, and what to print instead of / after the total: "failed" if no
+    // sample built, else the cell's problem if any.
+    let mut rows: Vec<(String, [f64; 4], Option<String>, bool)> = Vec::new();
     for c in &r.crates {
         for (bi, cell) in c.cells.iter().enumerate() {
             let all: Vec<Step> = cell
@@ -339,17 +341,18 @@ fn breakdown_chart(r: &Report) -> String {
                 .map(|(a, b)| Step { wall: a.wall + b.wall, units: a.units.iter().chain(&b.units).cloned().collect() })
                 .collect();
             let parts = [med(&all, &|t| t.frontend), med(&all, &|t| t.backend), med(&all, &|t| t.link), med(&all, &|t| t.other)];
-            rows.push((format!("{} · {}", c.krate.name(), r.backends[bi].name()), bi, parts));
+            let state = cell_state(cell, Phase::Build);
+            rows.push((format!("{} · {}", c.krate.name(), r.backends[bi].name()), parts, state, all.is_empty()));
         }
     }
-    let max = rows.iter().map(|r| r.2.iter().sum::<f64>()).fold(0.0, f64::max).max(1e-9);
+    let max = rows.iter().map(|r| r.1.iter().sum::<f64>()).fold(0.0, f64::max).max(1e-9);
     let (left, width, bar, gap) = (200.0, 820.0, 12.0, 4.0);
     let nb = r.backends.len().max(1);
     let height = 10.0 + rows.len() as f64 * (bar + gap) + (rows.len() / nb) as f64 * 8.0;
     let scale = (width - left - 70.0) / max;
     let mut s = format!(r#"<svg viewBox="0 0 {width} {height}" width="100%" role="img" aria-label="compile time breakdown">"#);
     let mut y = 6.0;
-    for (i, (label, _bi, parts)) in rows.iter().enumerate() {
+    for (i, (label, parts, state, none)) in rows.iter().enumerate() {
         if i > 0 && i % nb == 0 {
             y += 8.0;
         }
@@ -376,7 +379,12 @@ fn breakdown_chart(r: &Report) -> String {
             }
             x += w;
         }
-        let _ = write!(s, r#"<text class="axis" x="{:.1}" y="{:.1}">{}</text></g>"#, x + 6.0, y + bar - 2.0, fmt_value(total, Measure::Secs));
+        let total = match (none, state) {
+            (true, _) => "failed / no data".to_owned(),
+            (false, Some(st)) => format!("{} ({st})", fmt_value(total, Measure::Secs)),
+            (false, None) => fmt_value(total, Measure::Secs),
+        };
+        let _ = write!(s, r#"<text class="axis" x="{:.1}" y="{:.1}">{}</text></g>"#, x + 6.0, y + bar - 2.0, esc(&total));
         y += bar + gap;
     }
     s.push_str("</svg><div class=\"legend\">");
