@@ -1029,12 +1029,19 @@ impl Func {
         }
     }
 
-    /// The blocks in reverse postorder from the entry and the OSR entries.
+    /// Whether `b` is a root: the entry, an OSR entry, or a landing pad stub without
+    /// predecessors (which the unwinder enters). A body block without them is dead.
+    fn is_root(&self, b: Block) -> bool {
+        let bd = &self.blocks[b.idx()];
+        bd.preds.is_empty() && bd.kind != BlockKind::Body
+    }
+
+    /// The blocks in reverse postorder from the roots ([`Func::is_root`]).
     pub fn rpo(&self) -> Vec<Block> {
         let n = self.blocks.len();
         let mut seen = alloc::vec![false; n];
         let mut post = Vec::with_capacity(n);
-        let roots = (0..n).filter(|&b| self.blocks[b].preds.is_empty());
+        let roots = (0..n).filter(|&b| self.is_root(Block(b as u32)));
         for r in roots {
             if seen[r] {
                 continue;
@@ -1060,7 +1067,7 @@ impl Func {
     }
 
     /// The immediate dominators (Cooper, Harvey, Kennedy), with a virtual root above the
-    /// entry and the OSR entries: `None` for those and for unreachable blocks.
+    /// roots ([`Func::is_root`]): `None` for those and for unreachable blocks.
     pub fn idoms(&self, rpo: &[Block]) -> Idoms {
         self.idoms_by(rpo, |_| true)
     }
@@ -1075,7 +1082,7 @@ impl Func {
         }
         let mut idom: Vec<u32> = alloc::vec![u32::MAX - 1; n];
         for &b in rpo {
-            if self.blocks[b.idx()].preds.is_empty() {
+            if self.is_root(b) {
                 idom[b.idx()] = ROOT;
             }
         }
