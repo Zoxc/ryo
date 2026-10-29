@@ -42,6 +42,9 @@ positions of those instructions.
 - `DecodeLink.Bounds`: code the bounds check accepts (`decodeBounded`, `Decoded.boundsOk`)
   satisfies `FrameBounds c frameTop` (`decode_frameBounds`, `frameBounds_of_boundsOk`), and so
   for any larger end up to `2 ^ 31` (`FrameBounds.mono`).
+- `DecodeLink.Tables`: `HdlTables` from the Lean-only check `tablesCheck` that
+  `decodeChecked` runs (`hdlTables_of_check`). Not imported here: it builds on
+  `DecodeSound.Basic`, which imports this module.
 
 **Not here.** The step lemmas for the frame form without a frame pointer (the links give its
 items, `Item.spFrame`; `RRel` and the shape lemmas assume `rbp = fp`); the dead-store step
