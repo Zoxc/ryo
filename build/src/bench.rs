@@ -12,7 +12,7 @@ use std::time::Instant;
 
 use crate::crates::Backend as Compiler;
 use crate::crates::stats::Summary;
-use crate::utils::{cmd, describe, exe_name, root};
+use crate::utils::{capture_ok, cmd, exe_name, root, succeeds};
 
 mod codegen;
 pub use codegen::codegen;
@@ -238,12 +238,8 @@ impl Timer {
                 for i in 0..=runs {
                     let mut c = job.command();
                     let start = Instant::now();
-                    let status =
-                        c.stdout(Stdio::null()).stderr(Stdio::null()).status().map_err(|e| format!("failed to run `{}`: {e}", describe(&c)))?;
+                    crate::utils::run(c.stdout(Stdio::null()).stderr(Stdio::null()))?;
                     let elapsed = start.elapsed().as_secs_f64();
-                    if !status.success() {
-                        return Err(format!("`{}` failed with {status}", describe(&c)));
-                    }
                     // The first run is a warmup.
                     if i > 0 {
                         times.push(elapsed);
@@ -264,10 +260,7 @@ impl Timer {
                     .arg(json)
                     .arg(line.join(" "))
                     .stdout(Stdio::null());
-                let status = c.status().map_err(|e| format!("failed to run hyperfine: {e}"))?;
-                if !status.success() {
-                    return Err(format!("`{}` failed with {status}", describe(&c)));
-                }
+                crate::utils::run(&mut c)?;
                 let text = crate::utils::read(json)?;
                 parse_hyperfine(&text).ok_or_else(|| format!("can't parse {}", json.display()))
             }
@@ -319,7 +312,7 @@ pub fn run(opts: &Options) -> Result<(), String> {
     let timer = if opts.metric == Metric::Cachegrind {
         eprintln!("[y] bench: counting instructions and est. cycles of one run with cachegrind (cache and branch simulation)");
         Timer::Cachegrind
-    } else if Command::new("hyperfine").arg("--version").output().is_ok_and(|o| o.status.success()) {
+    } else if succeeds(cmd("hyperfine").arg("--version")) {
         eprintln!("[y] bench: timing with hyperfine, {runs} runs after 1 warmup");
         Timer::Hyperfine { json: out.join("hyperfine.json") }
     } else {
@@ -448,11 +441,7 @@ fn cachegrind(job: &Job) -> Result<Counts, String> {
         .args(&job.args)
         .envs(job.env.iter().copied())
         .stdout(Stdio::null());
-    let res = c.output().map_err(|e| format!("failed to run valgrind: {e}"))?;
-    let stderr = String::from_utf8_lossy(&res.stderr);
-    if !res.status.success() {
-        return Err(format!("`{}` failed with {}:\n{stderr}", describe(&c), res.status));
-    }
+    let stderr = capture_ok(&mut c)?.stderr;
     parse_cachegrind(&stderr).ok_or_else(|| format!("no cachegrind summary in:\n{stderr}"))
 }
 
@@ -483,11 +472,7 @@ fn parse_cachegrind(stderr: &str) -> Option<Counts> {
 
 /// Runs a benchmark binary once and returns its stdout.
 fn run_once(exe: &Path, env: &[(&str, &str)]) -> Result<String, String> {
-    let res = Command::new(exe).envs(env.iter().copied()).output().map_err(|e| format!("failed to run {}: {e}", exe.display()))?;
-    if !res.status.success() {
-        return Err(format!("{} failed with {}", exe.display(), res.status));
-    }
-    Ok(String::from_utf8_lossy(&res.stdout).into_owned())
+    Ok(capture_ok(cmd(exe).envs(env.iter().copied()))?.stdout)
 }
 
 fn path_str(p: &Path) -> Result<String, String> {

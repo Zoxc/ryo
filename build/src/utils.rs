@@ -34,6 +34,12 @@ pub fn run(cmd: &mut Command) -> Result<(), String> {
     Ok(())
 }
 
+/// Whether `cmd` runs and exits successfully (with its output discarded): a probe for whether
+/// a tool is usable.
+pub fn succeeds(cmd: &mut Command) -> bool {
+    cmd.output().is_ok_and(|o| o.status.success())
+}
+
 /// `fs::create_dir_all`, with the path in the error.
 pub fn create_dir(dir: impl AsRef<Path>) -> Result<(), String> {
     let dir = dir.as_ref();
@@ -243,6 +249,8 @@ pub fn output_timeout(cmd: &mut Command, limit: std::time::Duration) -> Result<s
 }
 
 /// Runs `cmd` and returns its stdout, failing if it doesn't exit successfully.
+/// Unlike [`capture_ok`], its stderr goes to y's, and its stdout must be UTF-8: for tool output
+/// to parse, where diagnostics should reach the user as they come.
 pub fn output(cmd: &mut Command) -> Result<String, String> {
     let out = cmd.stderr(Stdio::inherit()).output().map_err(|e| format!("failed to run `{}`: {e}", describe(cmd)))?;
     if !out.status.success() {

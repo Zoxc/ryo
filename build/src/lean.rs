@@ -46,7 +46,7 @@ fn lake() -> PathBuf {
 
 /// Whether `lake` is installed.
 pub fn have_lake() -> bool {
-    cmd(lake()).arg("--version").output().is_ok_and(|o| o.status.success())
+    crate::utils::succeeds(cmd(lake()).arg("--version"))
 }
 
 /// The generated JIT effect table, and what `ryo-lean effects` (built) gives.
