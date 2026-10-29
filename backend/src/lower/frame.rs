@@ -181,13 +181,15 @@ impl<'tcx> Frame<'tcx> {
         self.exception.expect("a landing pad in a function without cleanup")
     }
 
-    /// A temporary slot, live until [`Frame::reset_temps`].
+    /// A temporary slot, live until [`Frame::reset_temps`]. Sizes past [`OUT_END`] saturate
+    /// there, so [`Frame::frame_size`] rejects the frame instead of slots wrapping around.
     pub fn temp(&mut self, size: u64, align: u64) -> u32 {
         let align = align.clamp(1, 16) as u32;
-        self.temp_top = (self.temp_top + size as u32).next_multiple_of(align);
+        let size = size.min(OUT_END as u64) as u32;
+        self.temp_top = (self.temp_top + size).next_multiple_of(align).min(OUT_END);
         self.high = self.high.max(self.temp_top);
         let s = slot(-(self.temp_top as i32));
-        self.temps.push((s, size as u32, align));
+        self.temps.push((s, size, align));
         s
     }
 
