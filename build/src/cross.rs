@@ -19,7 +19,7 @@ use std::process::Command;
 mod pe_unwind;
 
 use crate::test::{CORPUS, Crate, CrateKind, Program};
-use crate::utils::{RustcInfo, cmd, dist_bin, exe_name, root, ryo_rt_rlib};
+use crate::utils::{RustcInfo, cmd, dist_bin, root, ryo_rt_rlib};
 use pe_unwind::pe_unwind;
 
 /// Import libraries std, `ryo_rt` and the corpus name on windows-msvc, replaced by empty
@@ -117,7 +117,7 @@ pub fn run(target: &str) -> Result<(), String> {
     if !rlib.exists() {
         return Err(format!("dist/ has no ryo_rt for {target}; run `./y.sh build --target {target}` first"));
     }
-    let lld = dist.join("lib").join("rustlib").join(&info.host).join("bin").join(exe_name("rust-lld"));
+    let lld = crate::utils::host_tool(&dist, &info.host, "rust-lld");
     if !lld.exists() {
         return Err(format!("test --cross {target}: no rust-lld at {} (`./y.sh build` copies it)", lld.display()));
     }
@@ -141,7 +141,7 @@ pub fn run(target: &str) -> Result<(), String> {
         }
     }
     let rt_imports = if macho { RT_IMPORTS_MACHO } else { RT_IMPORTS };
-    let std_dir = dist.join("lib").join("rustlib").join(target).join("lib");
+    let std_dir = crate::utils::rustlib(&dist, target).join("lib");
     let link = Link { info: &info, target, lld, stubs, macho, std_dir };
 
     let mut failed = Vec::new();

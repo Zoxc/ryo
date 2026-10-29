@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::utils::{RustcInfo, build_wrapper, cmd, copy, copy_dir, dll_name, output, root, run};
+use crate::utils::{RustcInfo, build_wrapper, cmd, copy, dll_name, output, root, run};
 
 /// Unstable features the backend may use, even though `RUSTC_BOOTSTRAP` allows all
 /// (`macro_metavar_expr_concat`: `ryo_bytecode`'s opcode families).
@@ -102,7 +102,7 @@ pub fn build_in(dist: &Path, target: &Path, o: &BuildOptions) -> Result<String, 
     let mut host_jit = None;
     let rb = RuntimeBuild { root: &root, target: &target, info: &info, tag: &tag };
     for triple in &all {
-        let target_lib = dist_lib.join("rustlib").join(triple).join("lib");
+        let target_lib = crate::utils::rustlib(&dist, triple).join("lib");
         crate::utils::create_dir(&target_lib)?;
         install_llvm_sysroot(&info, &dist, triple)?;
         let cross = rb.cross(triple);
@@ -170,12 +170,11 @@ fn build_backend(root: &Path, target: &Path, info: &RustcInfo) -> Result<PathBuf
 /// Copies the toolchain's prebuilt std for `triple` into `dist/`, skipping the rustc-dev and
 /// LLVM libraries, as cg_clif does. Also copies the target's `bin/` (the self-contained linker).
 fn install_llvm_sysroot(info: &RustcInfo, dist: &Path, triple: &str) -> Result<(), String> {
-    let rel = Path::new("lib").join("rustlib").join(triple);
-    let src_lib = info.sysroot.join(&rel).join("lib");
+    let src_lib = crate::utils::rustlib(&info.sysroot, triple).join("lib");
     if !src_lib.is_dir() {
         return Err(format!("no std for {triple} in the toolchain; run `rustup target add {triple}`"));
     }
-    let dst_lib = dist.join(&rel).join("lib");
+    let dst_lib = crate::utils::rustlib(dist, triple).join("lib");
     for entry in fs::read_dir(&src_lib).map_err(|e| format!("{}: {e}", src_lib.display()))? {
         let entry = entry.map_err(|e| e.to_string())?;
         if entry.file_type().map_err(|e| e.to_string())?.is_dir() {
@@ -186,11 +185,7 @@ fn install_llvm_sysroot(info: &RustcInfo, dist: &Path, triple: &str) -> Result<(
             copy(&entry.path(), &dst_lib.join(&name))?;
         }
     }
-    let src_bin = info.sysroot.join(&rel).join("bin");
-    if src_bin.is_dir() {
-        copy_dir(&src_bin, &dist.join(&rel).join("bin"))?;
-    }
-    Ok(())
+    crate::utils::copy_target_bin(&info.sysroot, dist, triple)
 }
 
 /// Whether to copy a file from the toolchain's `lib/rustlib/<target>/lib`. This is the same

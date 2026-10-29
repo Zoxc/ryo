@@ -307,13 +307,33 @@ impl RustcInfo {
 
     /// The toolchain's host tool `name`, e.g. from `llvm-tools`.
     pub fn tool(&self, name: &str) -> PathBuf {
-        self.sysroot.join("lib").join("rustlib").join(&self.host).join("bin").join(exe_name(name))
+        host_tool(&self.sysroot, &self.host, name)
     }
 
     /// `rust-src`'s `library/`.
     pub fn rust_src_library(&self) -> PathBuf {
         self.sysroot.join("lib").join("rustlib").join("src").join("rust").join("library")
     }
+}
+
+/// `<sysroot>/lib/rustlib/<triple>`, a target's directory in a rustc sysroot.
+pub fn rustlib(sysroot: &Path, triple: &str) -> PathBuf {
+    sysroot.join("lib").join("rustlib").join(triple)
+}
+
+/// The host tool `name` in `<sysroot>/lib/rustlib/<host>/bin`.
+pub fn host_tool(sysroot: &Path, host: &str, name: &str) -> PathBuf {
+    rustlib(sysroot, host).join("bin").join(exe_name(name))
+}
+
+/// Copies `<from>/lib/rustlib/<triple>/bin` (the self-contained linker) to the same place
+/// under `to`, if the toolchain has one.
+pub fn copy_target_bin(from: &Path, to: &Path, triple: &str) -> Result<(), String> {
+    let src = rustlib(from, triple).join("bin");
+    if src.is_dir() {
+        copy_dir(&src, &rustlib(to, triple).join("bin"))?;
+    }
+    Ok(())
 }
 
 /// `dist/bin/<name>` (an executable).
@@ -332,7 +352,7 @@ pub fn require_dist(root: &Path) -> Result<PathBuf, String> {
 
 /// `dist/`'s `ryo_rt` rlib for `triple`.
 pub fn ryo_rt_rlib(root: &Path, triple: &str) -> PathBuf {
-    root.join("dist").join("lib").join("rustlib").join(triple).join("lib").join("libryo_rt.rlib")
+    rustlib(&root.join("dist"), triple).join("lib").join("libryo_rt.rlib")
 }
 
 /// The toolchain's `librustc_driver-<hash>` dylib (in `lib/`, or `bin/` on Windows).

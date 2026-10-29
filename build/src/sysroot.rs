@@ -214,8 +214,7 @@ pub fn build(info: &RustcInfo, dist: &Path, target: &Path, jit: Option<(&Path, &
     // changes during it leave the result stale.
     let _ = fs::remove_file(dist.join(STAMP_FILE));
     crate::utils::remove_dir_if_exists(&sysroot)?;
-    let rel = Path::new("lib").join("rustlib").join(&info.host);
-    let dst_lib = sysroot.join(&rel).join("lib");
+    let dst_lib = crate::utils::rustlib(&sysroot, &info.host).join("lib");
     crate::utils::create_dir(&dst_lib)?;
     let mut n = 0;
     for entry in fs::read_dir(&deps).map_err(|e| format!("{}: {e}", deps.display()))? {
@@ -234,10 +233,7 @@ pub fn build(info: &RustcInfo, dist: &Path, target: &Path, jit: Option<(&Path, &
             n += 1;
         }
     }
-    let src_bin = info.sysroot.join(&rel).join("bin");
-    if src_bin.is_dir() {
-        copy_dir(&src_bin, &sysroot.join(&rel).join("bin"))?;
-    }
+    crate::utils::copy_target_bin(&info.sysroot, &sysroot, &info.host)?;
     crate::utils::write(dist.join(STAMP_FILE), &inputs)?;
     eprintln!("[y] sysroot: {n} files in {}", sysroot.display());
     print_coverage(&stats_dir)
