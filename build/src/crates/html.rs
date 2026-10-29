@@ -3,9 +3,10 @@
 
 use std::fmt::Write;
 
-use super::stats::{NOISY, Summary};
-use super::timing::{Coverage, Totals, Unit, coverage, totals};
-use super::{Backend, Cell, Phase, Report, Step};
+use super::ryo_stats::{Coverage, coverage};
+use super::timing::{Totals, Unit, totals};
+use super::{Cell, Compiler, Phase, Report, Step};
+use crate::bench::stats::{NOISY, Summary};
 
 #[derive(Clone, Copy, PartialEq)]
 enum Measure {
@@ -228,7 +229,7 @@ fn backend_color(i: usize) -> String {
     format!("var(--b{})", i.min(2))
 }
 
-fn tip_text(crate_name: &str, backend: Backend, s: &Summary, unit: Measure, llvm: Option<&Summary>) -> String {
+fn tip_text(crate_name: &str, backend: Compiler, s: &Summary, unit: Measure, llvm: Option<&Summary>) -> String {
     let mut t = format!(
         "{crate_name} · {}\nmedian {}\nmin {}  max {}\nstddev {} ({:.1}%)  n={}",
         backend.name(),
@@ -252,7 +253,7 @@ fn tip_text(crate_name: &str, backend: Backend, s: &Summary, unit: Measure, llvm
 /// whiskers at ± one standard deviation, the lower one clamped at half the median (the axis
 /// is logarithmic). Absolute values and the stddev are in the tooltips and the table.
 fn ratio_chart(r: &Report, m: &Metric, data: &[Vec<Option<Summary>>]) -> String {
-    let Some(llvm) = r.backends.iter().position(|&b| b == Backend::Llvm) else { return String::new() };
+    let Some(llvm) = r.backends.iter().position(|&b| b == Compiler::Llvm) else { return String::new() };
     let mut ratios: Vec<f64> = vec![1.0];
     for row in data {
         let Some(base) = row[llvm].as_ref().filter(|s| s.median > 0.0) else { continue };
@@ -401,7 +402,7 @@ fn metric_data(r: &Report, m: &Metric) -> Vec<Vec<Option<Summary>>> {
 }
 
 fn metric_table(r: &Report, m: &Metric, data: &[Vec<Option<Summary>>]) -> String {
-    let llvm = r.backends.iter().position(|&b| b == Backend::Llvm);
+    let llvm = r.backends.iter().position(|&b| b == Compiler::Llvm);
     let mut s = String::from("<table><tr><th>crate</th>");
     for b in &r.backends {
         let _ = write!(s, "<th>{}</th>", b.name());
@@ -465,7 +466,7 @@ fn coverage_row(name: &str, units: usize, c: &Coverage) -> String {
 /// Coverage from ryo's warm-up builds (`RYO_STATS=1`): the crate's library, its dependencies,
 /// and the test targets.
 fn coverage_section(r: &Report) -> String {
-    let Some(ryo) = r.backends.iter().position(|&b| b == Backend::Ryo) else { return String::new() };
+    let Some(ryo) = r.backends.iter().position(|&b| b == Compiler::Ryo) else { return String::new() };
     let mut s = String::from(
         "<h2 id=\"coverage\">ryo coverage (-Zryo-stats)</h2><p class=\"muted\">From ryo's warm-up build \
          (RYO_STATS=1, not timed). VM and native functions are mono items ryo compiled; native items \
@@ -659,7 +660,7 @@ pub fn text_summary(r: &Report) -> String {
         }
         let _ = write!(out, "\n{} (median; * noisy, ! failures)\n{}", m.title, crate::utils::text_table(&lines, false));
     }
-    if let Some(ryo) = r.backends.iter().position(|&b| b == Backend::Ryo) {
+    if let Some(ryo) = r.backends.iter().position(|&b| b == Compiler::Ryo) {
         let all: Vec<&Unit> =
             r.crates.iter().flat_map(|c| c.cells[ryo].warmup.iter()).flat_map(|w| [&w.lib, &w.tests]).flat_map(|s| &s.units).collect();
         let cov = coverage(all.iter().copied());
@@ -718,7 +719,7 @@ mod tests {
             ..Cell::default()
         };
         let r = Report {
-            backends: vec![Backend::Llvm, Backend::Clif, Backend::Ryo],
+            backends: vec![Compiler::Llvm, Compiler::Clif, Compiler::Ryo],
             crates: vec![CrateResult { krate: Target::Registry(&CRATES[0]), cells: vec![cell(1.0, false), cell(0.5, false), cell(3.0, true)] }],
             header: vec![("date".into(), "today <now>".into())],
             total_time: 60.0,

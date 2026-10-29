@@ -1,5 +1,5 @@
 //! `y bench` (design/build.md#test-and-bench): each program under `bench/` is compiled
-//! and run with every [`Backend`], timing both, and the results are printed as tables.
+//! and run with every [`Column`], timing both, and the results are printed as tables.
 //!
 //! Timing uses hyperfine if it is on `PATH`, and otherwise a built-in timer (one warmup run,
 //! then `runs` timed runs, mean and standard deviation of the wall time).
@@ -10,11 +10,13 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Instant;
 
-use crate::crates::Backend as Compiler;
-use crate::crates::stats::Summary;
 use crate::utils::{capture_ok, cmd, exe_name, root, succeeds};
+use compiler::Compiler;
+use stats::Summary;
 
 mod codegen;
+pub mod compiler;
+pub mod stats;
 pub use codegen::codegen;
 
 pub const DEFAULT_RUNS: u32 = 5;
@@ -24,7 +26,7 @@ pub const DEFAULT_RUNS: u32 = 5;
 const PROGRAMS: &[&str] = &["fib", "sieve", "sort", "hashmap"];
 
 /// A column of the tables.
-struct Backend {
+struct Column {
     name: String,
     compiler: Compiler,
     flags: Vec<String>,
@@ -146,21 +148,21 @@ pub fn parse_options(args: &[&str]) -> Result<Options, String> {
 
 /// The columns `o` selects; the first is the reference whose output the others must match.
 /// Without `--llvm`, `--clif` or `--ryo`, the default columns.
-fn backends(o: &Options) -> Vec<Backend> {
+fn columns(o: &Options) -> Vec<Column> {
     let with = |compiler: Compiler, name: &str, level: OptLevel| {
         let flags = vec![format!("-Copt-level={}", level.opt), format!("-Cdebug-assertions={}", if level.debug_assertions { "on" } else { "off" })];
-        Backend { name: format!("{name} -{level}"), compiler, flags, env: Vec::new() }
+        Column { name: format!("{name} -{level}"), compiler, flags, env: Vec::new() }
     };
     let rustc = |level| with(Compiler::Llvm, "llvm", level);
     let clif = |level| with(Compiler::Clif, "clif", level);
     if o.llvm.is_empty() && o.clif.is_empty() && o.ryo.is_empty() {
         // Under cachegrind the counts depend on when a background JIT thread finishes.
         let env = if o.metric == Metric::Cachegrind { vec![("RYO_JIT_OPT", "ssa"), ("RYO_JIT_SYNC", "1")] } else { Vec::new() };
-        let ryo = Backend { name: "ryo".to_owned(), compiler: Compiler::Ryo, flags: Vec::new(), env };
+        let ryo = Column { name: "ryo".to_owned(), compiler: Compiler::Ryo, flags: Vec::new(), env };
         let level = |opt| OptLevel { opt, debug_assertions: true };
         return vec![rustc(level(0)), rustc(level(1)), ryo];
     }
-    let mut v: Vec<Backend> = o.llvm.iter().map(|&l| rustc(l)).chain(o.clif.iter().map(|&l| clif(l))).collect();
+    let mut v: Vec<Column> = o.llvm.iter().map(|&l| rustc(l)).chain(o.clif.iter().map(|&l| clif(l))).collect();
     for &m in &o.ryo {
         let (name, env) = match m {
             RyoMode::Aot => ("aot", vec![("RYO_JIT", "off")]),
@@ -168,7 +170,7 @@ fn backends(o: &Options) -> Vec<Backend> {
             RyoMode::Jit if o.metric == Metric::Cachegrind => ("jit", vec![("RYO_JIT_OPT", "ssa"), ("RYO_JIT_SYNC", "1")]),
             RyoMode::Jit => ("jit", vec![("RYO_JIT_OPT", "ssa")]),
         };
-        v.push(Backend { name: format!("ryo {name}"), compiler: Compiler::Ryo, flags: Vec::new(), env });
+        v.push(Column { name: format!("ryo {name}"), compiler: Compiler::Ryo, flags: Vec::new(), env });
     }
     v
 }
@@ -303,8 +305,8 @@ struct Cell {
 
 pub fn run(opts: &Options) -> Result<(), String> {
     let root = root();
-    let backends = backends(opts);
-    crate::crates::ensure_tools(&root, "bench", backends.iter().map(|b| b.compiler))?;
+    let columns = columns(opts);
+    compiler::ensure_tools(&root, "bench", columns.iter().map(|b| b.compiler))?;
     let runs = opts.runs;
 
     let out = root.join("target").join("bench");
@@ -330,29 +332,29 @@ pub fn run(opts: &Options) -> Result<(), String> {
         let src = root.join("bench").join(format!("{program}.rs"));
         let mut cells = Vec::new();
         let mut reference: Option<(String, &str)> = None;
-        for backend in &backends {
-            eprintln!("[y] bench {program} [{}]", backend.name);
-            let dir = out.join(program).join(backend.name.replace([' ', '-'], ""));
+        for column in &columns {
+            eprintln!("[y] bench {program} [{}]", column.name);
+            let dir = out.join(program).join(column.name.replace([' ', '-'], ""));
             crate::utils::create_dir(&dir)?;
             let exe = dir.join(exe_name(program));
-            let compiler = backend.compiler.rustc(&root);
+            let compiler = column.compiler.rustc(&root);
             let mut args = vec!["--edition=2024".to_owned(), path_str(&src)?];
-            args.extend(DEV_FLAGS.iter().map(|f| f.to_string()).chain(backend.flags.iter().cloned()));
+            args.extend(DEV_FLAGS.iter().map(|f| f.to_string()).chain(column.flags.iter().cloned()));
             args.extend(["-o".to_owned(), path_str(&exe)?]);
             let _ = fs::remove_file(&exe);
-            let name = format!("{program} [{}]", backend.name);
+            let name = format!("{program} [{}]", column.name);
             let mut failed = |what: &str, e: String| failures.push(format!("{name}: {what}: {e}"));
             let compile_job = Job { program: compiler, args, env: Vec::new() };
             let mut cell = Cell::default();
             let built = timer.compile(&compile_job, runs, &mut cell).map_err(|e| failed("compile", e)).is_ok();
-            let output = if built { run_once(&exe, &backend.env).map_err(|e| failed("run", e)).ok() } else { None };
+            let output = if built { run_once(&exe, &column.env).map_err(|e| failed("run", e)).ok() } else { None };
             if let Some(output) = output {
                 match &reference {
-                    None => reference = Some((output, &backend.name)),
+                    None => reference = Some((output, &column.name)),
                     Some((r, by)) if *r != output => failures.push(format!("{name} printed {output:?}, {by} printed {r:?}")),
                     Some(_) => {}
                 }
-                let job = Job { program: exe, args: Vec::new(), env: backend.env.clone() };
+                let job = Job { program: exe, args: Vec::new(), env: column.env.clone() };
                 if let Err(e) = timer.run(&job, runs, &mut cell) {
                     failures.push(format!("{name}: {e}"));
                 }
@@ -362,7 +364,7 @@ pub fn run(opts: &Options) -> Result<(), String> {
         rows.push((program, cells));
     }
 
-    let header: Vec<&str> = backends.iter().map(|b| b.name.as_str()).collect();
+    let header: Vec<&str> = columns.iter().map(|b| b.name.as_str()).collect();
     println!();
     println!(
         "built with cargo's dev profile (debug assertions and overflow checks; `n`: without them), except one CGU, no incremental and no debuginfo"
@@ -523,22 +525,22 @@ mod tests {
     #[test]
     fn options() {
         let o = parse_options(&[]).unwrap();
-        assert_eq!(backends(&o).iter().map(|b| b.name.as_str()).collect::<Vec<_>>(), ["llvm -O0", "llvm -O1", "ryo"]);
+        assert_eq!(columns(&o).iter().map(|b| b.name.as_str()).collect::<Vec<_>>(), ["llvm -O0", "llvm -O1", "ryo"]);
         let o = parse_options(&["--llvm", "O2n,O0", "--clif", "--ryo=aot,jit", "--metric", "cachegrind", "--runs=2"]).unwrap();
         assert_eq!((o.runs, o.metric), (2, Metric::Cachegrind));
-        let b = backends(&o);
+        let b = columns(&o);
         assert_eq!(b.iter().map(|b| b.name.as_str()).collect::<Vec<_>>(), ["llvm -O2n", "llvm -O0", "clif -O0", "ryo aot", "ryo jit"]);
         assert_eq!(b[0].flags, ["-Copt-level=2", "-Cdebug-assertions=off"]);
         assert_eq!(b[1].flags, ["-Copt-level=0", "-Cdebug-assertions=on"]);
         assert_eq!(b[3].env, [("RYO_JIT", "off")]);
         let o = parse_options(&["--clif", "O0,O3n", "--clif=O1", "--clif", "--runs", "1"]).unwrap();
-        let b = backends(&o);
+        let b = columns(&o);
         assert_eq!(b.iter().map(|b| b.name.as_str()).collect::<Vec<_>>(), ["clif -O0", "clif -O3n", "clif -O1", "clif -O0"]);
         assert_eq!(b[1].flags, ["-Copt-level=3", "-Cdebug-assertions=off"]);
         assert!(parse_options(&["--clif", "O4"]).is_err());
         assert!(parse_options(&["--llvm", "O4"]).is_err());
         let o = parse_options(&["--metric", "cachegrind"]).unwrap();
-        assert_eq!(backends(&o)[2].env, [("RYO_JIT_OPT", "ssa"), ("RYO_JIT_SYNC", "1")]);
+        assert_eq!(columns(&o)[2].env, [("RYO_JIT_OPT", "ssa"), ("RYO_JIT_SYNC", "1")]);
         assert!(parse_options(&["--ryo", "x"]).is_err());
         assert!(parse_options(&["--runs", "0"]).is_err());
     }

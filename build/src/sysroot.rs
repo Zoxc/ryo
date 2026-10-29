@@ -247,7 +247,7 @@ pub fn build(info: &RustcInfo, dist: &Path, target: &Path, jit: Option<(&Path, &
 /// and native functions and islands per crate, then the island templates and native reasons
 /// over all of them.
 fn print_coverage(stats_dir: &Path) -> Result<(), String> {
-    use crate::crates::timing::{Coverage, coverage_of_lines};
+    use crate::crates::ryo_stats::{Coverage, coverage_of_lines};
     let Ok(entries) = fs::read_dir(stats_dir) else {
         eprintln!("[y] sysroot: no coverage statistics (every crate was up to date)");
         return Ok(());

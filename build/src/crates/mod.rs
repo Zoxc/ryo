@@ -2,7 +2,7 @@
 //! crates with LLVM, Cranelift and ryo in cargo's `dev` profile, and writes an HTML report.
 
 mod html;
-pub mod stats;
+pub mod ryo_stats;
 pub mod timing;
 
 use std::fs;
@@ -10,6 +10,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+use crate::bench::compiler::{Compiler, ensure_tools};
+use crate::bench::stats;
 use crate::utils::{RustcInfo, cmd, exe_name, output, root};
 use timing::{Unit, WRAPPER_VAR};
 
@@ -139,49 +141,6 @@ pub const CRATES: &[Crate] = &[
     },
 ];
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Backend {
-    Llvm,
-    Clif,
-    Ryo,
-}
-
-pub const BACKENDS: &[Backend] = &[Backend::Llvm, Backend::Clif, Backend::Ryo];
-
-impl Backend {
-    pub fn name(self) -> &'static str {
-        match self {
-            Backend::Llvm => "llvm",
-            Backend::Clif => "clif",
-            Backend::Ryo => "ryo",
-        }
-    }
-
-    pub fn parse(s: &str) -> Option<Backend> {
-        BACKENDS.iter().copied().find(|b| b.name() == s)
-    }
-
-    pub fn rustc(self, root: &Path) -> PathBuf {
-        match self {
-            Backend::Llvm => "rustc".into(),
-            Backend::Clif => crate::utils::dist_bin(root, "rustc-clif"),
-            Backend::Ryo => crate::utils::dist_bin(root, "rustc-ryo"),
-        }
-    }
-}
-
-/// Builds `dist/` if it is missing, and rustc-clif if a backend needs it.
-pub fn ensure_tools(root: &Path, cmd: &str, mut backends: impl Iterator<Item = Backend>) -> Result<(), String> {
-    if !Backend::Ryo.rustc(root).exists() {
-        eprintln!("[y] {cmd}: dist/ is missing, building it");
-        crate::dist::build(&Default::default())?;
-    }
-    if backends.any(|b| b == Backend::Clif) {
-        crate::clif::ensure()?;
-    }
-    Ok(())
-}
-
 #[derive(Debug, PartialEq)]
 pub struct Options {
     /// Builds from a clean target directory: the dependencies and the crate.
@@ -191,7 +150,7 @@ pub struct Options {
     /// 0 skips the tests and the workload.
     pub run_samples: u32,
     pub crates: Vec<String>,
-    pub backends: Vec<Backend>,
+    pub backends: Vec<Compiler>,
     /// Per test binary or workload run, in seconds.
     pub timeout: u64,
     pub out: Option<PathBuf>,
@@ -224,7 +183,7 @@ pub fn parse_options(args: &[&str]) -> Result<Options, String> {
         run_samples: DEFAULT_RUN_SAMPLES,
         crates: DEFAULT_CRATES.iter().map(|c| c.to_string()).collect(),
         // cg_clif only when asked for (`--backends`), so the default needs no `build-clif`.
-        backends: vec![Backend::Llvm, Backend::Ryo],
+        backends: vec![Compiler::Llvm, Compiler::Ryo],
         timeout: DEFAULT_TIMEOUT,
         out: None,
         path: None,
@@ -261,7 +220,7 @@ pub fn parse_options(args: &[&str]) -> Result<Options, String> {
             "--backends" => {
                 o.backends.clear();
                 for b in args.value()?.split(',') {
-                    o.backends.push(Backend::parse(b).ok_or(format!("unknown backend `{b}`"))?);
+                    o.backends.push(Compiler::parse(b).ok_or(format!("unknown backend `{b}`"))?);
                 }
             }
             _ => return Err(args.unexpected()),
@@ -366,7 +325,7 @@ pub struct CrateResult {
 }
 
 pub struct Report {
-    pub backends: Vec<Backend>,
+    pub backends: Vec<Compiler>,
     pub crates: Vec<CrateResult>,
     /// `(key, value)` lines for the header: toolchain, flags, machine, date.
     pub header: Vec<(String, String)>,
@@ -503,7 +462,7 @@ fn build_phase(ctx: &Ctx, krate: &Target, sources: &Sources, cells: &mut [Cell])
                 overrides: &sources.overrides,
             };
             let t = Instant::now();
-            match build_sample(&env, sources, &ctx.base.join("logs"), clean, i == 0 && backend == Backend::Ryo) {
+            match build_sample(&env, sources, &ctx.base.join("logs"), clean, i == 0 && backend == Compiler::Ryo) {
                 Ok(sample) => {
                     eprintln!("[y] {} build {label} [{}]: {:.1}s", krate.name(), backend.name(), t.elapsed().as_secs_f64());
                     artifacts[bi] = sample.artifacts;
@@ -574,7 +533,7 @@ fn run_phase(ctx: &Ctx, krate: &Target, sources: &Sources, artifacts: &[Artifact
 
 /// The workload prints a checksum that must not depend on the backend: records an error in
 /// each cell whose output differs from the first backend's that has one.
-fn check_workload_outputs(cells: &mut [Cell], backends: &[Backend]) {
+fn check_workload_outputs(cells: &mut [Cell], backends: &[Compiler]) {
     let reference = cells.iter().zip(backends).find_map(|(c, b)| Some((c.workload_output.clone()?, *b)));
     for cell in cells {
         if let (Some((r, rb)), Some(o)) = (&reference, &cell.workload_output)
@@ -682,7 +641,7 @@ struct Env<'a> {
     info: &'a RustcInfo,
     root: &'a Path,
     y: &'a Path,
-    backend: Backend,
+    backend: Compiler,
     target: &'a Path,
     src: &'a Path,
     stock: bool,
@@ -934,14 +893,14 @@ mod tests {
         let o = parse_options(&[]).unwrap();
         assert_eq!(
             (o.dep_samples, o.leaf_samples, o.run_samples, o.backends.as_slice()),
-            (DEFAULT_DEP_SAMPLES, DEFAULT_LEAF_SAMPLES, DEFAULT_RUN_SAMPLES, [Backend::Llvm, Backend::Ryo].as_slice())
+            (DEFAULT_DEP_SAMPLES, DEFAULT_LEAF_SAMPLES, DEFAULT_RUN_SAMPLES, [Compiler::Llvm, Compiler::Ryo].as_slice())
         );
         let o = parse_options(&["--quick", "--crates", "semver,memchr", "--backends=ryo"]).unwrap();
         assert_eq!((o.dep_samples, o.leaf_samples, o.run_samples), (1, 1, 1));
         assert_eq!(o.crates, ["semver", "memchr"]);
         assert_eq!(parse_options(&[]).unwrap().crates, DEFAULT_CRATES);
         assert_eq!(parse_options(&["--crates", "all"]).unwrap().crates.len(), CRATES.len());
-        assert_eq!(o.backends, [Backend::Ryo]);
+        assert_eq!(o.backends, [Compiler::Ryo]);
         let o = parse_options(&["--build-samples", "3", "--run-samples=7", "--timeout", "60"]).unwrap();
         assert_eq!((o.dep_samples, o.leaf_samples, o.run_samples, o.timeout), (3, 3, 7, 60));
         let o = parse_options(&["--dep-samples", "0", "--leaf-samples=16", "--run-samples", "0"]).unwrap();
