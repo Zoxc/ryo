@@ -51,9 +51,10 @@ fn rt_item(tcx: TyCtxt<'_>, krate: CrateNum, name: Symbol) -> Option<DefId> {
 /// The diagnostic item name of `ryo_rt::entry::c_main`.
 pub const C_MAIN_ITEM: &str = "ryo_c_main";
 
-/// A value computed once per session and kept in a static. Only [`Results`] needs one: the
-/// partition provider hands it to the exported-symbols providers, and query providers are plain
-/// fns with no per-session slot to reach (rustc_codegen_cranelift overrides no queries, so it
+/// A value computed once per session and kept in a static: [`Results`], which the partition
+/// provider hands to the exported-symbols providers, and the upstream statics defined here,
+/// which `is_defined_upstream_static` answers from. Query providers are plain fns with no
+/// per-session slot to reach (rustc_codegen_cranelift overrides no queries, so it
 /// keeps all its state in the backend struct and `OngoingCodegen`). It is keyed on the
 /// session's `GlobalCtxt` address, so a second session in the same process is a fatal error
 /// instead of reading stale values.
@@ -75,9 +76,11 @@ impl<T> SessionCell<T> {
         v
     }
 
-    /// Fails if a value was already set.
+    /// Fails if a value was already set in this session; a value of another session is fatal.
     fn set(&self, tcx: TyCtxt<'_>, v: T) -> Result<(), ()> {
-        self.0.set((Self::key(tcx), v)).map_err(|_| ())
+        self.0.set((Self::key(tcx), v)).map_err(|_| {
+            Self::check(tcx, self.0.get().unwrap());
+        })
     }
 
     fn get(&self, tcx: TyCtxt<'_>) -> Option<&T> {
