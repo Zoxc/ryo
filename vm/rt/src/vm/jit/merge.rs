@@ -14,8 +14,8 @@
 //! find no free page, or a page that isn't this build's, stay private instances, as does every copy under `RYO_JIT_MERGE=0`.
 //!
 //! The rendezvous: a page at a fixed address derived from the tag, mapped exclusively
-//! (Linux `MAP_FIXED_NOREPLACE`, macOS `mach_vm_allocate` without `VM_FLAGS_ANYWHERE`, Windows
-//! `VirtualAlloc` at an address), so it is private to the process: no named object another
+//! (Linux `MAP_FIXED_NOREPLACE`, Windows `VirtualAlloc` at an address; macOS an `mmap` with
+//! the address as a hint, a mapping elsewhere meaning the address is taken), so it is private to the process: no named object another
 //! user could create first. A taken address is read only through a call that fails on an
 //! unreadable one (`process_vm_readv`, `mach_vm_read_overwrite`, `ReadProcessMemory`), never
 //! dereferenced, and used only once READY with this build's magic and tag ([`join`]), after a
@@ -79,7 +79,8 @@ fn decide() -> usize {
     for i in 0..8 {
         let at = probe(i);
         // An exclusive mapping at `at`: `MAP_FIXED_NOREPLACE` on Linux, `VirtualAlloc` at an
-        // address on Windows, both failing on a taken range.
+        // address on Windows, both failing on a taken range; on macOS a hinted `mmap`, which
+        // maps elsewhere instead (below).
         if let Some(p) = vmem::reserve(at, PAGE) {
             if p as usize == at {
                 // The page names this module's registration function for the rest of the
