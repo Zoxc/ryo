@@ -31,11 +31,17 @@ use ryo_bytecode::jit_abi::RtApi;
 
 /// Starts the JIT thread, which compiles what `rt` queues, and returns its exit report
 /// (`RYO_JIT_STATS`'s summary), which the runtime calls at exit. `None` if the thread didn't
-/// start; the runtime then acts as the no-op JIT. Called once per runtime.
-#[cfg(target_arch = "x86_64")]
+/// start (always without a JIT for this target); the runtime then acts as the no-op JIT.
+/// Called once per runtime.
 #[unsafe(export_name = concat!("ryo_jit_start_", env!("RYO_ABI")))]
 pub extern "C" fn ryo_jit_start(rt: &'static RtApi) -> Option<extern "C" fn()> {
-    (sys::SUPPORTED && thread::start(rt)).then_some(stats::report as extern "C" fn())
+    #[cfg(target_arch = "x86_64")]
+    return (sys::SUPPORTED && thread::start(rt)).then_some(stats::report as extern "C" fn());
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        let _ = rt;
+        None
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -54,12 +60,4 @@ pub fn stats() -> Snapshot {
 #[doc(hidden)]
 pub fn code_len(rec: *const ryo_bytecode::image::JitRecord) -> usize {
     install::installed_len(rec)
-}
-
-/// Without a JIT for this target: fails, so the runtime acts as the no-op JIT.
-#[cfg(not(target_arch = "x86_64"))]
-#[unsafe(export_name = concat!("ryo_jit_start_", env!("RYO_ABI")))]
-pub extern "C" fn ryo_jit_start(rt: &'static RtApi) -> Option<extern "C" fn()> {
-    let _ = rt;
-    None
 }
