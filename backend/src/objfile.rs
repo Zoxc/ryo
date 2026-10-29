@@ -699,6 +699,15 @@ pub fn write_image(
                 }
                 // The FDEs' first address and LSDA: the linker finds them by address.
                 RelocTarget::Section(t) if matches!(r.kind, RelocKind::Pc32 | RelocKind::Pc64) => {
+                    if t == Section::Lsda {
+                        // A local symbol at each LSDA, as LLVM's `GCC_except_tableN`: ld-prime
+                        // splits `__gcc_except_tab` into atoms only at symbols and points an
+                        // FDE's LSDA at the start of the atom holding it, so without them every
+                        // FDE got the first function's LSDA ("failed to initiate panic").
+                        let n = implicit.iter().filter(|f: &&(u64, Section, i64, u64)| f.1 == Section::Lsda).count();
+                        let name = format!("GCC_except_table{n}");
+                        obj.add_symbol(defined(&name, section(t), r.addend as u64, 0, SymbolKind::Data, SymbolScope::Compilation));
+                    }
                     implicit.push((r.offset, t, r.addend, if r.kind == RelocKind::Pc64 { 8 } else { 4 }))
                 }
                 _ => return Err(format!("unexpected .eh_frame relocation {r:?}")),
@@ -908,10 +917,11 @@ mod tests {
         let (_, r) = section(&file, "__const").relocations().find(|(o, _)| *o == at).expect("anchor relocation");
         let RelocationTarget::Symbol(si) = r.target() else { panic!() };
         assert_eq!(file.symbol_by_index(si).unwrap().name(), Ok(&*format!("_{}", anchor_symbol())));
-        // Every symbol name carries the `_` prefix, the linker-private section starts `l`.
+        // Every symbol name carries the `_` prefix, but the linker-private section starts
+        // (`l`) and the LSDAs' locals (`GCC_except_table`, as LLVM's).
         for s in file.symbols() {
             let n = s.name().unwrap();
-            assert!(n.starts_with('_') || n.starts_with("l__"), "{n}");
+            assert!(n.starts_with('_') || n.starts_with("l__") || n.starts_with("GCC_except_table"), "{n}");
         }
         let flags = file.macho_header().flags.get(Endianness::Little);
         assert_eq!(flags & macho::MH_SUBSECTIONS_VIA_SYMBOLS, 0);
@@ -1052,6 +1062,10 @@ mod tests {
             let lsda_field = at + 25;
             let target = (eh.address() + lsda_field) as i64 + le64(data, lsda_field);
             assert_eq!(target as u64, lsda + lsda_offsets[i] as u64, "FDE {i}");
+            // A symbol at each LSDA (and each function), where ld-prime splits atoms.
+            let at_lsda = file.symbols().find(|s| s.address() == target as u64 && s.name().is_ok_and(|n| n.starts_with("GCC_except_table")));
+            assert!(at_lsda.is_some_and(|s| s.is_local()), "FDE {i}: no local symbol at its LSDA");
+            assert!(file.symbols().any(|s| s.address() == pc_begin as u64 && s.kind() == object::SymbolKind::Text), "FDE {i}");
             at += len + 4;
         }
         assert_eq!(at, data.len() as u64);
