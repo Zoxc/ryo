@@ -105,8 +105,10 @@ pub fn shim(rustc_ryo: OsString) -> std::process::ExitCode {
         c.args(&args);
         // The runtime crates' identity carries the ABI tag, as in `dist/`
         // (design/build.md#the-abi-tag).
-        if let (Some("ryo_rt" | "ryo_bytecode"), Ok(tag)) = (name, std::env::var(crate::dist::ABI_VAR)) {
-            c.arg(format!("-Cmetadata={tag}"));
+        if let (Some(n), Ok(tag)) = (name, std::env::var(crate::dist::ABI_VAR))
+            && crate::dist::RUNTIME_CRATES.contains(&n)
+        {
+            c.arg(crate::dist::runtime_metadata_flag(&tag));
         }
         return match c.status() {
             Ok(s) => exit(s),
@@ -181,7 +183,7 @@ pub fn build(info: &RustcInfo, dist: &Path, target: &Path, jits: Option<&crate::
     let rustflags = [crate_path.as_str(), "-Zforce-unstable-if-unmarked", "--sysroot=/dev/null"];
     let mut cargo = cmd("cargo");
     if let Some(dir) = jit {
-        cargo.env("RYO_JIT_LIB_DIR", dir);
+        cargo.env(crate::dist::JIT_LIB_DIR_VAR, dir);
     }
     run(cargo
         .current_dir(&lib_src)

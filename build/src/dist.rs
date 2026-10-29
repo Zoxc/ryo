@@ -237,9 +237,7 @@ fn build_runtime(rb: &RuntimeBuild, dist: &Path, triple: &str, jit: Option<&Path
     eprintln!("[y] runtime: ryo_rt{}", cross.map(|t| format!(" for {t}")).unwrap_or_default());
     let mut sysroot_flag = String::from("--sysroot=");
     sysroot_flag.push_str(dist.to_str().ok_or("dist/ path is not UTF-8")?);
-    // The tag in the runtime crates' identity: their symbols differ between tags, and their
-    // crate hashes, which every ryo-built crate records (design/build.md#the-abi-tag).
-    let metadata = format!("-Cmetadata={tag}");
+    let metadata = runtime_metadata_flag(tag);
     let mut rustflags = vec![sysroot_flag.as_str(), "-Ccodegen-units=1", "-Cpanic=unwind", metadata.as_str()];
     // Windows: no red zone in the `sysv64` handlers either (design/platforms.md).
     if cross.map_or(cfg!(windows), crate::target::is_windows) {
@@ -249,7 +247,7 @@ fn build_runtime(rb: &RuntimeBuild, dist: &Path, triple: &str, jit: Option<&Path
     // The JIT (design/jit.md), and what `RYO_RT_FEATURES` adds.
     let mut features = rt_features();
     if let Some(dir) = jit {
-        cargo.env("RYO_JIT_LIB_DIR", dir);
+        cargo.env(JIT_LIB_DIR_VAR, dir);
         features.insert(0, "jit".to_owned());
     }
     let features = features.join(",");
@@ -272,7 +270,7 @@ fn build_runtime(rb: &RuntimeBuild, dist: &Path, triple: &str, jit: Option<&Path
             .env("CARGO_ENCODED_RUSTFLAGS", rustflags.join("\x1f")),
     )?;
     let rlibs = artifact_rlibs(&out);
-    ["ryo_rt", "ryo_bytecode"]
+    RUNTIME_CRATES
         .into_iter()
         .map(|krate| match rlibs.iter().find(|p| rlib_crate(p) == Some(krate)) {
             Some(rlib) => Ok((krate, rlib.clone())),
@@ -304,6 +302,20 @@ fn artifact_rlibs(json: &str) -> Vec<PathBuf> {
 fn rlib_crate(path: &Path) -> Option<&str> {
     let stem = path.file_stem()?.to_str()?.strip_prefix("lib")?;
     Some(stem.split_once('-').map_or(stem, |(name, _)| name))
+}
+
+/// The environment variable `ryo_rt`'s build script takes the sealed JIT's directory from.
+pub const JIT_LIB_DIR_VAR: &str = "RYO_JIT_LIB_DIR";
+
+/// The runtime crates [`build_runtime`] builds, whose identity carries the ABI tag
+/// ([`runtime_metadata_flag`]).
+pub const RUNTIME_CRATES: [&str; 2] = ["ryo_rt", "ryo_bytecode"];
+
+/// The `-Cmetadata` flag that puts the ABI tag `tag` in the runtime crates' identity: their
+/// symbols differ between tags, and their crate hashes, which every ryo-built crate records
+/// (design/build.md#the-abi-tag).
+pub fn runtime_metadata_flag(tag: &str) -> String {
+    format!("-Cmetadata={tag}")
 }
 
 /// The environment variable the ABI tag reaches the cargo builds in (`ryo_bytecode::ABI_TAG`,
