@@ -2,8 +2,6 @@
 //! `pe_imports`): upstream Rust functions (an rlib's, a shared generic instance, a Rust dylib's)
 //! and statics, an upstream EII static implemented here, and foreign statics and functions per
 //! `#[link]` kind.
-#![feature(extern_item_impls)]
-#![allow(incomplete_features)]
 
 unsafe extern "C" {
     static S_NONE: i32;
