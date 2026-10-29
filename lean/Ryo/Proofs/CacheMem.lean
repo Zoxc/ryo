@@ -4,7 +4,7 @@ Ryo.Proofs.CacheMem — one R step of a `load`, `store` or rip-relative address 
 cache emits it (aot.md §C2 "Inline sequences", "Register cache"): the classes
 `inline_step_cached` (`Ryo/Proofs/CacheStep.lean`) leaves out, as they have `Sound` only with
 more hypotheses (`sound_load`, `sound_store`: `Inline/Mem.lean`; `inline_sound_rip`:
-`Inline/Rip.lean`).
+`Inline.lean`, from `Inline/Rip.lean`).
 
 - `step_of`: `inline_step`'s argument with the class's soundness replaced by `hrun`, what the
   sequence gives after the scopes and `opSem` (`RRel` with the new state, a predicate `P`,
