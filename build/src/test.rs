@@ -234,7 +234,7 @@ pub struct Options {
 #[derive(Default)]
 struct Sel {
     full: bool,
-    /// The fast set: two cargo runs, [`FAST`] and the cheap checks.
+    /// The fast set: three cargo runs (`vm`, `vm jit`, `vm rt jit`), [`FAST`] and the cheap checks.
     fast: bool,
     lean: bool,
     /// All six `ryo_jit` runs, the corpus under the [`Variant::jit`] variants, jit-private-std.
