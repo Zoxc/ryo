@@ -1018,7 +1018,7 @@ impl<'a> E<'a> {
         }
         let n = if self.fr.pushed { self.fr.saves.len() as u32 } else { 0 };
         if fp && n == 0 {
-            self.a.x().bytes(&[0xc9]);
+            self.a.x().leave();
             return;
         }
         // The frame below the pushed saves: from `rbp`, or popped by an `add`.
@@ -1566,7 +1566,10 @@ impl<'a> E<'a> {
         if pe && e.nout as usize + e.ret as usize == 2 {
             // Win64 entries return two values in `xmm0` (`ryo_rt`'s `RegRetOf`):
             // `movq rax, xmm0; punpckhqdq xmm0, xmm0; movq rdx, xmm0`.
-            self.a.x().bytes(&[0x66, 0x48, 0x0f, 0x7e, 0xc0, 0x66, 0x0f, 0x6d, 0xc0, 0x66, 0x48, 0x0f, 0x7e, 0xc2]);
+            let x = self.a.x();
+            x.movq_from_xmm(Rm::R(R::Rax), 0, 8);
+            x.packed(Packed::Punpckhqdq, 0, 0);
+            x.movq_from_xmm(Rm::R(R::Rdx), 0, 8);
         }
         let ms = res.iter().enumerate().filter_map(|(k, &v)| Some((self.dst(v)?, Src::R(R::RETS[k])))).collect();
         self.moves(ms);
@@ -2191,8 +2194,6 @@ fn osr_code(f: &Func, al: &Alloc, mode: Mode, fr: &Frame, lab: &[u32], post_at: 
     let (code, mut cfi, table) = osr::dispatcher(f.osr.len(), fp, f_aot);
     let mut x = X86 { code, ..X86::default() };
     let mut post = X86::default();
-    // The pre parts' jumps to their post parts: (end of the `rel32` field, post offset).
-    let mut fixups: Vec<(u32, u32)> = Vec::new();
     let mem_of = |base: R, off: i32| Mem::base(base, off);
     for (n, o) in f.osr.iter().enumerate() {
         osr::entry_start(&mut x.code, &mut cfi, table, n, fp, f_aot);
@@ -2266,9 +2267,9 @@ fn osr_code(f: &Func, al: &Alloc, mode: Mode, fr: &Frame, lab: &[u32], post_at: 
         // `UNWIND_INFO` describes from here: the caller's registers are in their slots.
         let w = if mode.pe {
             // `lea r11, [rip + post]; jmp r11`, neither an epilogue's end for the unwinder.
-            x.code.extend_from_slice(&[0x4c, 0x8d, 0x1d, 0, 0, 0, 0]);
-            fixups.push((x.code.len() as u32, post.code.len() as u32));
-            x.code.extend_from_slice(&[0x41, 0xff, 0xe3]);
+            // The label is the post part's offset in `post`.
+            x.lea(S1, Mem::RipLabel(post.code.len() as u32));
+            x.jmp_r(S1);
             &mut post
         } else {
             &mut x
@@ -2340,9 +2341,10 @@ fn osr_code(f: &Func, al: &Alloc, mode: Mode, fr: &Frame, lab: &[u32], post_at: 
         osr::jmp_landing(&mut w.code, if mode.pe { post_at } else { post_at.next_multiple_of(16) }, lab[head.idx()]);
     }
     let osr_at = if mode.pe { (post_at + post.code.len() as u32).next_multiple_of(16) } else { post_at.next_multiple_of(16) };
-    for (field, to) in fixups {
-        let d = (post_at + to) as i64 - (osr_at + field) as i64;
-        x.code[field as usize - 4..field as usize].copy_from_slice(&(d as i32).to_le_bytes());
+    // The pre parts' jumps to their post parts.
+    for &(field, to) in &x.label_fixups {
+        let d = (post_at + to) as i64 - (osr_at + field + 4) as i64;
+        x.code[field as usize..][..4].copy_from_slice(&(d as i32).to_le_bytes());
     }
     Ok((OsrCode { code: x.code, probes, cfi }, post.code, osr_at))
 }

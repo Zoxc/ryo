@@ -98,6 +98,7 @@ pub enum X {
 pub enum Packed {
     Pcmpgtb = 0x64,
     Punpcklqdq = 0x6c,
+    Punpckhqdq = 0x6d,
     Pcmpeqb = 0x74,
     Pand = 0xdb,
     Por = 0xeb,
@@ -594,6 +595,11 @@ impl X86 {
 
     pub fn jmp_mem(&mut self, m: Mem) {
         self.insn(false, false, false, &[0xff], 4, Rm::M(m), &[]);
+    }
+
+    /// `leave`: `mov rsp, rbp; pop rbp`.
+    pub fn leave(&mut self) {
+        self.code.push(0xc9);
     }
 
     pub fn ret(&mut self) {
