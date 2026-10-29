@@ -518,8 +518,7 @@ fn halves(f: &mut Func, kept: &mut Vec<Inst>, b: Block, mem: &[(Loc, u8, Value)]
     let find =
         |l: Loc, n: u8, vector: bool| mem.iter().rev().find(|e| e.0 == l && e.1 >= n && (f.w(e.2) == 16) == vector && f.w(e.2) >= n).map(|e| e.2);
     let new = |f: &mut Func, kept: &mut Vec<Inst>, op: Op, args: Vec<Value>, rw: u8| -> Value {
-        let k = f.inst(b, op, args, &[rw]);
-        f.blocks[b.idx()].insts.pop();
+        let k = f.new_inst(b, op, args, &[rw]);
         match simplify(f, k) {
             Simp::Value(v) => v,
             Simp::Const(c) => f.konst(mask(c, rw), rw),
@@ -564,15 +563,10 @@ fn pair_load(f: &mut Func, kept: &mut Vec<Inst>, i: Inst) -> bool {
         return false;
     }
     let b = f.insts[i.idx()].block;
-    let mk = |f: &mut Func, op: Op, args: Vec<Value>, w: u8| {
-        let k = f.inst(b, op, args, &[w]);
-        f.blocks[b.idx()].insts.pop();
-        k
-    };
-    let l = mk(f, Op::Load(16, kx), alloc::vec![px], 16);
+    let l = f.new_inst(b, Op::Load(16, kx), alloc::vec![px], &[16]);
     let lv = f.result(l);
-    let h0 = mk(f, Op::V(VOp::Half(0)), alloc::vec![lv], 8);
-    let h1 = mk(f, Op::V(VOp::Half(1)), alloc::vec![lv], 8);
+    let h0 = f.new_inst(b, Op::V(VOp::Half(0)), alloc::vec![lv], &[8]);
+    let h1 = f.new_inst(b, Op::V(VOp::Half(1)), alloc::vec![lv], &[8]);
     kept.retain(|&k| k != lx && k != ly);
     kept.splice(lo..lo, [l, h0, h1]);
     let (r0, r1) = (f.result(h0), f.result(h1));

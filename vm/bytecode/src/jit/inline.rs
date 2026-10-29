@@ -226,10 +226,8 @@ pub fn rebase(c: &Func, img: ImageId, env: &mut dyn Env) -> Result<Func, &'stati
                         CallTarget::SymInd(s) => {
                             let v = env.sym_value(img, s).ok_or("a symbol")?;
                             let kv = g.konst(v, 8);
-                            let ld = g.inst(b, Op::Load(8, 0), alloc::vec![kv], &[8]);
-                            let insts = &mut g.blocks[b.idx()].insts;
-                            insts.pop();
-                            insts.insert(k - 1, ld);
+                            let ld = g.new_inst(b, Op::Load(8, 0), alloc::vec![kv], &[8]);
+                            g.blocks[b.idx()].insts.insert(k - 1, ld);
                             k += 1;
                             let p = g.result(ld);
                             g.insts[i.idx()].args.insert(0, p);

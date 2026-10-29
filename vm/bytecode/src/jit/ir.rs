@@ -973,13 +973,20 @@ impl Func {
 
     /// Appends an instruction with results of widths `ws` to `b`.
     pub fn inst(&mut self, b: Block, op: Op, args: Vec<Value>, ws: &[u8]) -> Inst {
+        let i = self.new_inst(b, op, args, ws);
+        self.blocks[b.idx()].insts.push(i);
+        i
+    }
+
+    /// [`Func::inst`] without placing it in `b`'s list: for passes rebuilding the list or
+    /// inserting it elsewhere.
+    pub fn new_inst(&mut self, b: Block, op: Op, args: Vec<Value>, ws: &[u8]) -> Inst {
         let i = Inst(self.insts.len() as u32);
         let res = self.values.len() as u32;
         for (n, &w) in ws.iter().enumerate() {
             self.value(ValueDef::Inst(i, n as u8), w);
         }
         self.insts.push(InstData { op, args, res, nres: ws.len() as u8, block: b });
-        self.blocks[b.idx()].insts.push(i);
         i
     }
 

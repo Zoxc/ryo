@@ -303,8 +303,7 @@ fn split_accesses(f: &mut Func, live: &[Block], split: &[bool], fields: &[Field]
                 continue;
             }
             let mut emit = |f: &mut Func, op: Op, args: Vec<Value>, ws: &[u8]| -> Option<Value> {
-                let k = f.inst(b, op, args, ws);
-                f.blocks[b.idx()].insts.pop();
+                let k = f.new_inst(b, op, args, ws);
                 out.push(k);
                 (!ws.is_empty()).then(|| f.result(k))
             };
