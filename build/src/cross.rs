@@ -401,8 +401,10 @@ fn no_red_zone(info: &RustcInfo, rlib: &Path, dir: &Path) -> Result<usize, Strin
                 func = l;
             }
             // A negative displacement off `rsp` (AT&T: `-0x40(%rsp)`), with or without an index.
+            // The mnemonic is followed by a tab; `lea` computes an address without accessing it.
             if let Some(k) = l.find("(%rsp") {
-                if l[..k].rsplit([' ', ',', '*']).next().is_some_and(|d| d.starts_with('-')) {
+                let lea = l.split_whitespace().nth(1).is_some_and(|w| w.starts_with("lea"));
+                if !lea && l[..k].rsplit([' ', '\t', ',', '*']).next().is_some_and(|d| d.starts_with('-')) {
                     bad.push(format!("{}: {func} {}", p.file_name().unwrap().to_string_lossy(), l.trim()));
                 }
             }
