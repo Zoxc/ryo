@@ -425,7 +425,7 @@ the scopes. Here they come from facts before them: `FrameSep wl wh` over a frame
 overlapping them (`afterScopes_private`). The `_sep` steps also give `FrameSep` after, when the
 instruction's frame writes lie in the window (`WrIn`, a frame-offset fact of the decoded code). -/
 
-/-- The frame bytes `opSem f vals` writes lie in the window `[lo, hi)`. -/
+/-- The frame bytes `opSem f vals` writes lie in the window `[wl, wh)`. -/
 def WrIn (wl wh : Int) (f : Full.Opcode) (vals : Operands) : Prop :=
   ∀ r ∈ wranges f vals, wl ≤ r.1 ∧ r.1 + r.2 ≤ wh
 
