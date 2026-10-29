@@ -77,7 +77,7 @@ y install [--target T]... [--sysroot llvm|ryo] [--no-toolchain-install] [--yes] 
    there. Printed, then confirmed (below). `--no-toolchain-install` fails here, printing the
    rustup commands to run, if anything is missing.
 2. **Toolchain**: `rustup toolchain install 1.99.1 --profile minimal`, `rustup component
-   add`, `rustup target add` for what is missing. The manifest is written right after, so a
+   add`, `rustup target add` for what is missing. The manifest is written after each, so a
    later failure leaves the additions recorded. Checks `rustc +<toolchain> -vV` reports
    1.99.1.
 3. **Build** into `install/build/` and `install/target/` (`dist::build_in`).

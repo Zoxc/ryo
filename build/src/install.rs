@@ -697,23 +697,33 @@ fn do_install(plan: &InstallPlan) -> Result<(), String> {
     remove_leftovers(install);
     let t = &plan.toolchain;
 
-    // 2. Toolchain.
-    if !plan.toolchain_present {
-        run(cmd("rustup").args(["toolchain", "install", PINNED_VERSION, "--profile", "minimal"]))?;
-    }
-    if !plan.add_components.is_empty() {
-        run(cmd("rustup").args(["component", "add", "--toolchain", t]).args(&plan.add_components))?;
-    }
-    if !plan.add_targets.is_empty() {
-        run(cmd("rustup").args(["target", "add", "--toolchain", t]).args(&plan.add_targets))?;
-    }
-    // From here on a failure leaves the additions recorded, so `y uninstall` removes them.
+    // 2. Toolchain. The manifest is saved after each addition, so a failure leaves what was
+    // added recorded and `y uninstall` removes it.
     let mut manifest = plan.previous.clone().unwrap_or_default();
     manifest.host = plan.host.clone();
     manifest.cargo_root = plan.cargo_root.display().to_string();
     let mut record = plan.record.clone();
     // Targets still to be removed (step 7) stay recorded until they are.
     record.targets_added.extend(plan.remove_targets.iter().cloned());
+    let mut done = record.clone();
+    done.installed_by_ryo &= plan.toolchain_present;
+    done.components_added.retain(|c| !plan.add_components.contains(c));
+    done.targets_added.retain(|x| !plan.add_targets.contains(x));
+    if !plan.toolchain_present {
+        run(cmd("rustup").args(["toolchain", "install", PINNED_VERSION, "--profile", "minimal"]))?;
+        done.installed_by_ryo = true;
+        manifest.toolchain = done.clone();
+        manifest.save(install)?;
+    }
+    if !plan.add_components.is_empty() {
+        run(cmd("rustup").args(["component", "add", "--toolchain", t]).args(&plan.add_components))?;
+        done.components_added = record.components_added.clone();
+        manifest.toolchain = done.clone();
+        manifest.save(install)?;
+    }
+    if !plan.add_targets.is_empty() {
+        run(cmd("rustup").args(["target", "add", "--toolchain", t]).args(&plan.add_targets))?;
+    }
     manifest.toolchain = record;
     manifest.save(install)?;
     let vv = crate::utils::output(cmd("rustc").arg(format!("+{t}")).arg("-vV"))?;
