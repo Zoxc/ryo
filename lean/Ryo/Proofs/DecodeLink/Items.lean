@@ -1,7 +1,7 @@
 /-
 Ryo.Proofs.DecodeLink.Items — what the candidate parsers return (aot.md §C2, toward M3
 `decode_sound`), for the links that need more of `decodeItem`'s output than that it is in
-memory: the `xmm` fields of `Call.XmmOk`, and the frame form without a frame pointer.
+memory: the `xmm` fields of `DecodeLink.XmmOk`, and the frame form without a frame pointer.
 
 - `baseCandidate_ok`, `sseCandidate_ok`, `nativeCandidate_noXmm`: `Cursor::base_item`'s items
   have no memory operand and a `movd` register below 8 (`BaseOk`); an SSE item has the size of
@@ -207,7 +207,7 @@ theorem fromSpFrame_sse {c : Cursor} {s : Bool} {z x : Nat} {m : M} {j : Item}
     · exact absurd hb this.1
   · simp [Item.isStackArg] at hs
 
-/-- Every item `decodeItem` returns is `XmmOk` (`Call.XmmOk`), in either frame form. -/
+/-- Every item `decodeItem` returns is `XmmOk` (`DecodeLink.XmmOk`), in either frame form. -/
 theorem decodeItem_xmmOk {c : Cursor} {i : Item} {n : Nat} (h : decodeItem c = some (i, n)) :
     XmmOk i := by
   have hacc : ∀ (post : Item → Option Item) (k : Item), c.accept post k = some (i, n) →
