@@ -436,16 +436,15 @@ pub(super) fn sequence<T>(op: Opcode, ops: &[Opnd<T>]) -> Option<(Vec<Item>, Opt
             // masked to the width; rotates run at the width, which divides `cl`'s 5-bit mask.
             let narrow = matches!(w, W::B | W::W);
             v.push(Item::Ld { w, sx: sh == Sh::Sar && narrow, dst: R, m: slot(1) });
-            if rot {
-                v.extend([Item::Ld { w: W::D, sx: false, dst: C, m: slot(2) }, Item::ShiftCl { op: sh, w, reg: R }]);
-            } else if narrow {
+            if narrow && !rot {
                 v.extend([
                     Item::Ld { w, sx: false, dst: C, m: slot(2) },
                     Item::AluImm { op: Alu::And, w: W::D, rm: Rm::Reg(C), imm: w.bits() as i32 - 1 },
                     Item::ShiftCl { op: sh, w: W::D, reg: R },
                 ]);
             } else {
-                // `cl`'s mask at 32 and 64 bits is the width's.
+                // `cl`'s mask at 32 and 64 bits is the width's; rotates at 8 and 16 bits
+                // need none.
                 v.extend([Item::Ld { w: W::D, sx: false, dst: C, m: slot(2) }, Item::ShiftCl { op: sh, w, reg: R }]);
             }
             v.push(st(w, slot(0)));
@@ -735,49 +734,47 @@ fn decode_as(op: Opcode, items: &[Item], branch: Option<(Cond, u32)>) -> Option<
         Item::Lea(_, to) | Item::LoadRip(_, to) => Some(to),
         _ => None,
     });
-    {
-        let info = op.info();
-        let ovf = info.operand_index("o").is_some();
-        let mut f = frame.iter().copied();
-        let mut ops = Vec::with_capacity(info.operands.len());
-        for o in info.operands {
-            ops.push(match o.kind {
-                // An overflow op's result, stored before its flag.
-                OperandKind::Slot if o.name == "d" && ovf => Opnd::Slot(*frame.get(frame.len().checked_sub(2)?)?),
-                OperandKind::Slot if o.name == "d" => Opnd::Slot(*frame.last()?),
-                OperandKind::Slot if o.name == "o" => Opnd::Slot(*frame.last()?),
-                OperandKind::Slot => Opnd::Slot(f.next()?),
-                OperandKind::Mem => Opnd::Mem(f.next()?, rax?),
-                OperandKind::U8 => Opnd::Imm(imm as u8 as u64),
-                OperandKind::U16 => Opnd::Imm(imm as u16 as u64),
-                OperandKind::U32 => Opnd::Imm(imm as u32 as u64),
-                OperandKind::U64 | OperandKind::I64 => Opnd::Imm(imm),
-                OperandKind::Neg => Opnd::Neg(false),
-                OperandKind::Target => Opnd::Target(branch?.1),
-                OperandKind::Abs => match rip? {
-                    Ref::Const(k) => Opnd::Const(k),
-                    Ref::Data(d) => Opnd::Data(d),
-                    _ => return None,
-                },
-                OperandKind::Sym => match rip? {
-                    Ref::Sym(s) => Opnd::Sym(s),
-                    _ => return None,
-                },
-                _ => unreachable!("not an inline operand"),
-            });
+    let info = op.info();
+    let ovf = info.operand_index("o").is_some();
+    let mut f = frame.iter().copied();
+    let mut ops = Vec::with_capacity(info.operands.len());
+    for o in info.operands {
+        ops.push(match o.kind {
+            // An overflow op's result, stored before its flag.
+            OperandKind::Slot if o.name == "d" && ovf => Opnd::Slot(*frame.get(frame.len().checked_sub(2)?)?),
+            OperandKind::Slot if o.name == "d" => Opnd::Slot(*frame.last()?),
+            OperandKind::Slot if o.name == "o" => Opnd::Slot(*frame.last()?),
+            OperandKind::Slot => Opnd::Slot(f.next()?),
+            OperandKind::Mem => Opnd::Mem(f.next()?, rax?),
+            OperandKind::U8 => Opnd::Imm(imm as u8 as u64),
+            OperandKind::U16 => Opnd::Imm(imm as u16 as u64),
+            OperandKind::U32 => Opnd::Imm(imm as u32 as u64),
+            OperandKind::U64 | OperandKind::I64 => Opnd::Imm(imm),
+            OperandKind::Neg => Opnd::Neg(false),
+            OperandKind::Target => Opnd::Target(branch?.1),
+            OperandKind::Abs => match rip? {
+                Ref::Const(k) => Opnd::Const(k),
+                Ref::Data(d) => Opnd::Data(d),
+                _ => return None,
+            },
+            OperandKind::Sym => match rip? {
+                Ref::Sym(s) => Opnd::Sym(s),
+                _ => return None,
+            },
+            _ => unreachable!("not an inline operand"),
+        });
+    }
+    for neg in [false, true] {
+        if let Some(i) = info.operand_index("neg") {
+            ops[i] = Opnd::Neg(neg);
+        } else if neg {
+            break;
         }
-        for neg in [false, true] {
-            if let Some(i) = info.operand_index("neg") {
-                ops[i] = Opnd::Neg(neg);
-            } else if neg {
-                break;
-            }
-            if let Some((v, b)) = sequence(op, &ops)
-                && v == items
-                && b == branch.map(|b| b.0)
-            {
-                return Some((op, ops));
-            }
+        if let Some((v, b)) = sequence(op, &ops)
+            && v == items
+            && b == branch.map(|b| b.0)
+        {
+            return Some((op, ops));
         }
     }
     None

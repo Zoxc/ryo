@@ -1316,16 +1316,7 @@ impl<'a> Cursor<'a> {
             (W::D | W::Q, 0x99) => Item::Cdq(w),
             _ => return Err(bad),
         };
-        if let Item::Alu { rm: Rm::Reg(r), .. }
-        | Item::AluImm { rm: Rm::Reg(r), .. }
-        | Item::Imul { rm: Rm::Reg(r), .. }
-        | Item::ImulImm { rm: Rm::Reg(r), .. }
-        | Item::MulQ(Rm::Reg(r))
-        | Item::Div { rm: Rm::Reg(r), .. }
-        | Item::Bsf { rm: Rm::Reg(r), .. }
-        | Item::Bsr { rm: Rm::Reg(r), .. }
-        | Item::Cmov { rm: Rm::Reg(r), .. } = item
-        {
+        if let Some(Rm::Reg(r)) = item.rm() {
             reg(r as u8)?;
         }
         self.accept_native(item)
