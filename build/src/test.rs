@@ -831,6 +831,7 @@ fn gate_variants(opts: &Options, sel: &Sel, info: &crate::utils::RustcInfo, root
             return Err(format!("unknown program `{p}`"));
         }
     }
+    variants.retain(|v| opts.variants.is_empty() || opts.variants.iter().any(|n| n == v.name));
     // Whether any ryo-std variant is selected (also through `--only jit`, the JIT variants, or
     // a changed test program, which runs under every variant).
     let wants_std = variants.iter().any(|v| v.ryo_std && CORPUS.iter().any(|p| sel.corpus(p, v)));
@@ -843,7 +844,6 @@ fn gate_variants(opts: &Options, sel: &Sel, info: &crate::utils::RustcInfo, root
         eprintln!("[y] WARNING: the ryo-std variants are SKIPPED: {why}");
         variants.retain(|v| !v.ryo_std);
     }
-    variants.retain(|v| opts.variants.is_empty() || opts.variants.iter().any(|n| n == v.name));
     Ok(variants)
 }
 
