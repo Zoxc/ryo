@@ -9,7 +9,7 @@ Ryo.Proofs.OpFacts — `Shapes.OpFacts` from `opSem` and the opcode tables (aot.
   of allocations, so `opSem` does (`opSem_escWF`: it keeps `EscWF`).
 - `kindFits`, `ctlTableOk`, `opFacts_of`: an opcode whose handler kind fits its shape (no
   branch or switch kind for `op`/`lpad`, a branch kind for `br`) has `OpFacts`;
-  `RyoProofs/OpFacts.lean` checks the table (`all_ctlTableOk`) and gives `opFacts`.
+  `RyoProofs/OpFacts.lean` checks the table (`ctlTableOk_all`) and gives `opFacts`.
 -/
 import Ryo.Proofs.Shapes
 import Ryo.Spec.Theorems.Memory
@@ -153,7 +153,7 @@ def kindFits (sh : Shape) (k : HandlerKind) : Bool :=
   | .br => isBranch k
   | _ => true
 
-/-- The table fact: every opcode's handler kind fits its shape (`all_ctlTableOk`). -/
+/-- The table fact: every opcode's handler kind fits its shape (`ctlTableOk_all`). -/
 def ctlTableOk (f : Full.Opcode) : Bool :=
   match f.handler? with
   | some hi => kindFits f.info.shape hi.kind
