@@ -2,9 +2,9 @@
 Ryo.Proofs.Inline.Arith — the integer inline sequences against `opSem`: `bin` (add, sub, and,
 or, xor), `binImm`, `mul`, `mulImm`, `shiftImm`, at each width.
 
-The class files import each other in a chain (`Move`, `Arith`, `Cmp`): `bv_decide` declares
-helpers (`W.enumToBitVec`, …) in the first module that needs them, and two modules that
-both declare one can't be imported together.
+The class files import each other in a chain (`Move`, `Arith`, `Cmp`, `Ext`, `Ovf`,
+`LaterDiv`): `bv_decide` declares helpers (`W.enumToBitVec`, …) in the first module that needs
+them, and two modules that both declare one can't be imported together.
 -/
 import Ryo.Proofs.Inline.Move
 
