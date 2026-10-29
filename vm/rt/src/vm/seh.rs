@@ -166,9 +166,23 @@ mod win {
     }
 
     /// `CONTEXT` (x64): only its size and alignment matter here; [`ryo_seh_call_pad`] reads
-    /// the nonvolatile registers at their offsets.
+    /// the nonvolatile registers at their offsets (`CTX_*`).
     #[repr(C, align(16))]
-    pub struct Context([u8; 0x4d0]);
+    pub struct Context([u8; CONTEXT_SIZE]);
+
+    /// `sizeof(CONTEXT)` (x64).
+    const CONTEXT_SIZE: usize = 0x4d0;
+    /// Offsets of `CONTEXT`'s `Rbx`, `Rbp`, `Rsi`, `Rdi`, `R12`–`R15` (winnt.h, x64).
+    pub const CTX_RBX: usize = 0x90;
+    pub const CTX_RBP: usize = 0xa0;
+    pub const CTX_RSI: usize = 0xa8;
+    pub const CTX_RDI: usize = 0xb0;
+    pub const CTX_R12: usize = 0xd8;
+    pub const CTX_R13: usize = 0xe0;
+    pub const CTX_R14: usize = 0xe8;
+    pub const CTX_R15: usize = 0xf0;
+    /// Offset of `CONTEXT`'s `Xmm6` (in `FltSave`); `Xmm7`–`Xmm15` follow, 16 bytes each.
+    pub const CTX_XMM6: usize = 0x200;
 
     const EXCEPTION_CONTINUE_SEARCH: u32 = 1;
 
@@ -216,7 +230,7 @@ mod win {
                     ryo_seh_call_pad(dc.context, (func + data.region as u64) as usize, (func + pad as u64) as usize, rec);
                 }
                 Action::UnwindTo(pad) => {
-                    let mut scratch = Context([0; 0x4d0]);
+                    let mut scratch = Context([0; CONTEXT_SIZE]);
                     RtlUnwindEx(establisher, (func + pad as u64) as *mut c_void, rec, rec.cast(), &mut scratch, dc.history_table);
                     fatal("RtlUnwindEx returned");
                 }
@@ -268,24 +282,24 @@ unsafe extern "system-unwind" fn ryo_seh_call_pad(ctx: *const win::Context, regi
     ".seh_endprologue",
     "mov rax, r9",
     "mov r11, r8",
-    "mov rbx, [rcx + 0x90]",
-    "mov rbp, [rcx + 0xa0]",
-    "mov rsi, [rcx + 0xa8]",
-    "mov rdi, [rcx + 0xb0]",
-    "mov r12, [rcx + 0xd8]",
-    "mov r13, [rcx + 0xe0]",
-    "mov r14, [rcx + 0xe8]",
-    "mov r15, [rcx + 0xf0]",
-    "movaps xmm6, [rcx + 0x200]",
-    "movaps xmm7, [rcx + 0x210]",
-    "movaps xmm8, [rcx + 0x220]",
-    "movaps xmm9, [rcx + 0x230]",
-    "movaps xmm10, [rcx + 0x240]",
-    "movaps xmm11, [rcx + 0x250]",
-    "movaps xmm12, [rcx + 0x260]",
-    "movaps xmm13, [rcx + 0x270]",
-    "movaps xmm14, [rcx + 0x280]",
-    "movaps xmm15, [rcx + 0x290]",
+    "mov rbx, [rcx + {rbx}]",
+    "mov rbp, [rcx + {rbp}]",
+    "mov rsi, [rcx + {rsi}]",
+    "mov rdi, [rcx + {rdi}]",
+    "mov r12, [rcx + {r12}]",
+    "mov r13, [rcx + {r13}]",
+    "mov r14, [rcx + {r14}]",
+    "mov r15, [rcx + {r15}]",
+    "movaps xmm6, [rcx + {xmm6}]",
+    "movaps xmm7, [rcx + {xmm6} + 16]",
+    "movaps xmm8, [rcx + {xmm6} + 32]",
+    "movaps xmm9, [rcx + {xmm6} + 48]",
+    "movaps xmm10, [rcx + {xmm6} + 64]",
+    "movaps xmm11, [rcx + {xmm6} + 80]",
+    "movaps xmm12, [rcx + {xmm6} + 96]",
+    "movaps xmm13, [rcx + {xmm6} + 112]",
+    "movaps xmm14, [rcx + {xmm6} + 128]",
+    "movaps xmm15, [rcx + {xmm6} + 144]",
     "call rdx",
     xmm6_15!(restore_xmm),
     "add rsp, 168",
@@ -300,6 +314,15 @@ unsafe extern "system-unwind" fn ryo_seh_call_pad(ctx: *const win::Context, regi
     "ret",
     ".seh_endproc",
     this = sym ryo_seh_call_pad,
+    rbx = const win::CTX_RBX,
+    rbp = const win::CTX_RBP,
+    rsi = const win::CTX_RSI,
+    rdi = const win::CTX_RDI,
+    r12 = const win::CTX_R12,
+    r13 = const win::CTX_R13,
+    r14 = const win::CTX_R14,
+    r15 = const win::CTX_R15,
+    xmm6 = const win::CTX_XMM6,
     );
 }
 
