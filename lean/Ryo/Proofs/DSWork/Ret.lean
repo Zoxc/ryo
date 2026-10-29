@@ -140,8 +140,8 @@ theorem ret_step_noNB {c : R.Code} {s : R.RState} {op : Reduced.Opcode} {src : B
 
 set_option maxRecDepth 100000 in
 /-- `bodySim_ret`. Proof idea: `noArg_insn`; `InsnRead.ret` and `link_ret` give
-`retLoads k src ++ epilogue F mode ++ [ret]` in memory at `p` (canonical: `call_epilogue_canon`
-as in `DSWork/Call.lean`), fetched as `Steps`; `ArgRet.ret_step` (`FrameBounds.ret_step_fb_disp`,
+`retLoads k src ++ epilogue F mode ++ [ret]` in memory at `p` (canonical: `ret_canon_list` of
+`ret_loads_ok` and `ret_epilogue_canon`), fetched as `Steps`; `ArgRet.ret_step` (`FrameBounds.ret_step_fb_disp`,
 `FrameInv.rsp` and `H.fp`, on PE `H.peFrame`) gives `.done (exit s1 (.ret regs incoming))` with `RetRel`; `ExitRel`: `WorldRel` from
 `MemRel`, `rip` the return address and `rsp = x0.rsp + 8` and the callee-saved registers from
 `FrameFacts` (`retAddr`, `rbp`, `savedRbp`, and `saved`: `ret_step` keeps every register but
