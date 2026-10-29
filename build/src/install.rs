@@ -756,16 +756,32 @@ fn do_install(plan: &InstallPlan) -> Result<(), String> {
     let _lock = Lock::take(install)?;
     remove_leftovers(install);
     let t = &plan.toolchain;
+    let mut manifest = install_toolchain(plan)?;
+    // Build, with the pinned toolchain for everything `y` spawns.
+    // SAFETY: `y` is single-threaded here.
+    unsafe { std::env::set_var("RUSTUP_TOOLCHAIN", t) };
+    let build = install.join("build");
+    let build_id = crate::dist::build_in(&build, &install.join("target"), &plan.build)?;
+    install_version(plan, &build, build_id, &mut manifest)?;
+    install_launchers(plan)?;
+    remove_superseded(plan, &mut manifest)?;
+    print_install_report(plan, &manifest);
+    Ok(())
+}
 
-    // 2. Toolchain. The manifest is saved after each addition, so a failure leaves what was
-    // added recorded and `y uninstall` removes it.
+/// Installs the pinned toolchain and the components and targets the plan adds, and returns
+/// the manifest recording them. The manifest is saved after each addition, so a failure
+/// leaves what was added recorded and `y uninstall` removes it.
+fn install_toolchain(plan: &InstallPlan) -> Result<Manifest, String> {
+    let install = &plan.install;
+    let t = &plan.toolchain;
     let mut manifest = plan.previous.clone().unwrap_or_default();
     manifest.host = plan.host.clone();
     manifest.cargo_root = plan.cargo_root.display().to_string();
     let mut record = plan.record.clone();
-    // Targets still to be removed (step 7) stay recorded until they are.
+    // Targets still to be removed (`remove_superseded`) stay recorded until they are.
     record.targets_added.extend(plan.remove_targets.iter().cloned());
-    // Other toolchains' records too (step 7).
+    // Other toolchains' records too (`remove_superseded`).
     manifest.old_toolchains = plan.old_toolchains.clone();
     let mut done = record.clone();
     done.installed_by_ryo &= plan.toolchain_present;
@@ -793,18 +809,17 @@ fn do_install(plan: &InstallPlan) -> Result<(), String> {
     if release != PINNED_VERSION {
         return Err(format!("toolchain {t} reports release {release}"));
     }
+    Ok(manifest)
+}
 
-    // 3. Build, with the pinned toolchain for everything `y` spawns.
-    // SAFETY: `y` is single-threaded here.
-    unsafe { std::env::set_var("RUSTUP_TOOLCHAIN", t) };
-    let build = install.join("build");
-    let build_id = crate::dist::build_in(&build, &install.join("target"), &plan.build)?;
-
-    // 4. Copy to `install/<version>/` (fresh mtimes, a new wrapper path), switch `current`.
+/// Copies the build to `install/<version>/` (fresh mtimes, a new wrapper path), switches
+/// `current` and records the version in the manifest.
+fn install_version(plan: &InstallPlan, build: &Path, build_id: String, manifest: &mut Manifest) -> Result<(), String> {
+    let install = &plan.install;
     let partial = install.join(format!("{}.partial", plan.version));
     crate::utils::remove_dir_if_exists(&partial)?;
     eprintln!("[y] install: copying to {}", install.join(&plan.version).display());
-    copy_dir(&build, &partial)?;
+    copy_dir(build, &partial)?;
     let dest = install.join(&plan.version);
     remove_or_rename(&dest)?;
     fs::rename(&partial, &dest).map_err(|e| format!("renaming {} to {}: {e}", partial.display(), dest.display()))?;
@@ -813,19 +828,26 @@ fn do_install(plan: &InstallPlan) -> Result<(), String> {
     manifest.build_id = build_id;
     manifest.targets = plan.targets.clone();
     manifest.sysroots = if plan.build.sysroot == Sysroot::Ryo { vec!["llvm".into(), "ryo".into()] } else { vec!["llvm".into()] };
-    manifest.save(install)?;
+    manifest.save(install)
+}
 
-    // 5. Launchers.
+/// Installs the `cargo-ryo`/`rustc-ryo` launchers with `cargo install`.
+fn install_launchers(plan: &InstallPlan) -> Result<(), String> {
     run(cmd("cargo")
-        .arg(format!("+{t}"))
+        .arg(format!("+{}", plan.toolchain))
         .args(["install", "--locked", "--force", "--path"])
         .arg(&plan.scripts)
         .arg("--root")
         .arg(&plan.cargo_root)
         .env_remove("RUSTC_BOOTSTRAP"))
     .map_err(|e| format!("{e}\nryo {} is installed, but its launchers weren't updated; rerun ./y.sh install", plan.version))?;
+    Ok(())
+}
 
-    // 7. The previous version and what only it needed.
+/// Removes the previous version and what only it needed: targets and other toolchains.
+fn remove_superseded(plan: &InstallPlan, manifest: &mut Manifest) -> Result<(), String> {
+    let install = &plan.install;
+    let t = &plan.toolchain;
     if let Some(prev) = &plan.previous_version
         && *prev != plan.version
     {
@@ -850,8 +872,12 @@ fn do_install(plan: &InstallPlan) -> Result<(), String> {
         manifest.old_toolchains.clear();
         manifest.save(install)?;
     }
+    Ok(())
+}
 
-    // 8. Report.
+/// Prints what was installed, and a note if the launchers aren't on `PATH`.
+fn print_install_report(plan: &InstallPlan, manifest: &Manifest) {
+    let install = &plan.install;
     let bin = plan.cargo_root.join("bin");
     println!("[y] installed ryo {} in {}", plan.version, install.display());
     println!("[y]   cargo-ryo, rustc-ryo: {} (cargo install)", bin.display());
@@ -873,7 +899,6 @@ fn do_install(plan: &InstallPlan) -> Result<(), String> {
         }
     }
     println!("[y] try: cargo ryo build   (in any Cargo project)");
-    Ok(())
 }
 
 // ---------------------------------------------------------------------------------------------
