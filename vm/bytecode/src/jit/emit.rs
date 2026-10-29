@@ -143,6 +143,60 @@ impl MoveSrc for XSrc {
     }
 }
 
+/// Moves that need no emitter state (`S1` is their scratch), shared by [`E`] and
+/// [`osr_code`].
+impl X86 {
+    /// Loads `w` bytes at `m`, zero-extended, into `r`.
+    fn load_w(&mut self, r: R, w: u8, m: Mem) {
+        match w {
+            1 | 2 => self.movzx(r, w, Rm::M(m)),
+            4 => self.mov(4, Rm::R(r), Rm::M(m)),
+            _ => self.mov(8, Rm::R(r), Rm::M(m)),
+        }
+    }
+
+    /// Loads `s` (8 bytes) into `r`.
+    fn load_src(&mut self, r: R, s: Src) {
+        match s {
+            Src::R(x) if x == r => {}
+            Src::R(x) => self.mov(8, Rm::R(r), Rm::R(x)),
+            Src::M(m) => self.mov(8, Rm::R(r), Rm::M(m)),
+            Src::Imm(c) => self.mov_imm(8, Rm::R(r), c),
+            Src::Undef => {}
+        }
+    }
+
+    /// Stores `s` (8 bytes) at `m`.
+    fn store_src(&mut self, m: Mem, s: Src) {
+        match s {
+            Src::Undef => {}
+            Src::R(r) => self.mov(8, Rm::M(m), Rm::R(r)),
+            Src::M(n) => {
+                self.mov(8, Rm::R(S1), Rm::M(n));
+                self.mov(8, Rm::M(m), Rm::R(S1));
+            }
+            Src::Imm(c) if fits32(c as i64) => self.mov_imm(8, Rm::M(m), c),
+            Src::Imm(c) => {
+                self.mov_imm(8, Rm::R(S1), c);
+                self.mov(8, Rm::M(m), Rm::R(S1));
+            }
+        }
+    }
+
+    /// The 64-bit constant `c`, zero-extended, into `xmm` register `x`.
+    fn xconst64(&mut self, x: u8, c: u64) {
+        self.mov_imm(8, Rm::R(S1), c);
+        self.movq_to_xmm(x, Rm::R(S1), 8);
+    }
+
+    /// Stores the 64-bit constant `c`, zero-extended to 16 bytes, at the frame slot `m`.
+    fn store_xconst64(&mut self, m: Mem, c: u64) {
+        let Mem::Base { base, disp, .. } = m else { unreachable!("a frame slot") };
+        self.store_src(m, Src::Imm(c));
+        self.mov_imm(8, Rm::M(Mem::base(base, disp + 8)), 0);
+    }
+}
+
 /// An ABI register holding a value of `size` bytes: a general-purpose one or `xmm<n>`.
 #[derive(Clone, Copy)]
 enum AbiReg {
@@ -611,10 +665,7 @@ impl<'a> E<'a> {
         match c {
             0 => self.a.x().packed(Packed::Pxor, x, x),
             u128::MAX => self.a.x().packed(Packed::Pcmpeqb, x, x),
-            _ if c <= u64::MAX as u128 => {
-                self.a.x().mov_imm(8, Rm::R(S1), c as u64);
-                self.a.x().movq_to_xmm(x, Rm::R(S1), 8);
-            }
+            _ if c <= u64::MAX as u128 => self.a.x().xconst64(x, c as u64),
             _ => {
                 let o = self.ro(&c.to_le_bytes(), 16);
                 self.a.x().movdqu_load(x, x86::X::M(Mem::Rip(Ref::Ro(o))));
@@ -661,11 +712,7 @@ impl<'a> E<'a> {
                 self.a.x().movdqu_load(t, x86::X::M(n));
                 self.a.x().movdqu_store(m, t);
             }
-            (x86::X::M(m), XSrc::Imm(c)) => {
-                let Mem::Base { base, disp, .. } = m else { unreachable!("a frame slot") };
-                self.mov(Rm::M(m), Src::Imm(c));
-                self.a.x().mov_imm(8, Rm::M(Mem::base(base, disp + 8)), 0);
-            }
+            (x86::X::M(m), XSrc::Imm(c)) => self.a.x().store_xconst64(m, c),
         }
     }
 
@@ -697,13 +744,7 @@ impl<'a> E<'a> {
     }
 
     fn load_src(&mut self, r: R, s: Src) {
-        match s {
-            Src::R(x) if x == r => {}
-            Src::R(x) => self.a.x().mov(8, Rm::R(r), Rm::R(x)),
-            Src::M(m) => self.a.x().mov(8, Rm::R(r), Rm::M(m)),
-            Src::Imm(c) => self.a.x().mov_imm(8, Rm::R(r), c),
-            Src::Undef => {}
-        }
+        self.a.x().load_src(r, s);
     }
 
     /// `v` in a register: its own, or loaded into `scratch`.
@@ -778,19 +819,9 @@ impl<'a> E<'a> {
     }
 
     fn mov(&mut self, d: Rm, s: Src) {
-        match (d, s) {
-            (_, Src::Undef) => {}
-            (Rm::R(r), s) => self.load_src(r, s),
-            (Rm::M(m), Src::R(r)) => self.a.x().mov(8, Rm::M(m), Rm::R(r)),
-            (Rm::M(m), Src::M(n)) => {
-                self.a.x().mov(8, Rm::R(S1), Rm::M(n));
-                self.a.x().mov(8, Rm::M(m), Rm::R(S1));
-            }
-            (Rm::M(m), Src::Imm(c)) if fits32(c as i64) => self.a.x().mov_imm(8, Rm::M(m), c),
-            (Rm::M(m), Src::Imm(c)) => {
-                self.a.x().mov_imm(8, Rm::R(S1), c);
-                self.a.x().mov(8, Rm::M(m), Rm::R(S1));
-            }
+        match d {
+            Rm::R(r) => self.load_src(r, s),
+            Rm::M(m) => self.a.x().store_src(m, s),
         }
     }
 
@@ -1812,11 +1843,7 @@ impl<'a> E<'a> {
 
     /// Loads `w` bytes at `m` into `r`.
     fn load_mem(&mut self, r: R, w: u8, m: Mem) {
-        match w {
-            1 | 2 => self.a.x().movzx(r, w, Rm::M(m)),
-            4 => self.a.x().mov(4, Rm::R(r), Rm::M(m)),
-            _ => self.a.x().mov(8, Rm::R(r), Rm::M(m)),
-        }
+        self.a.x().load_w(r, w, m);
     }
 
     /// Stores the low `w` bytes of `v` at `m` (`S1` may hold the address).
@@ -2231,11 +2258,7 @@ fn osr_code(f: &Func, al: &Alloc, mode: Mode, fr: &Frame, lab: &[u32], post_at: 
                 copy(&mut x, (base, off), (R::Rsp, k), 16);
                 continue;
             }
-            match w {
-                1 | 2 => x.movzx(S1, w, Rm::M(mem_of(base, off))),
-                4 => x.mov(4, Rm::R(S1), Rm::M(mem_of(base, off))),
-                _ => x.mov(8, Rm::R(S1), Rm::M(mem_of(base, off))),
-            }
+            x.load_w(S1, w, mem_of(base, off));
             x.mov(8, Rm::M(mem_of(R::Rsp, k)), Rm::R(S1));
         }
         for &(from, _, size, k) in &copies {
@@ -2277,44 +2300,22 @@ fn osr_code(f: &Func, al: &Alloc, mode: Mode, fr: &Frame, lab: &[u32], post_at: 
                 Loc::None => {}
                 // A vector: from the scratch copy, or a zero-extended constant.
                 Loc::Xmm(r) => match src {
-                    Src::Imm(c) => {
-                        w.mov_imm(8, Rm::R(S1), c);
-                        w.movq_to_xmm(r, Rm::R(S1), 8);
-                    }
+                    Src::Imm(c) => w.xconst64(r, c),
                     Src::M(m) => w.movdqu_load(r, x86::X::M(m)),
                     _ => unreachable!(),
                 },
                 Loc::Spill(s) if f.w(p) == 16 => match src {
-                    Src::Imm(c) => {
-                        w.mov_imm(8, Rm::R(S1), c);
-                        w.mov(8, Rm::M(jit_mem(s)), Rm::R(S1));
-                        w.mov_imm(8, Rm::M(jit_mem(s + 1)), 0);
-                    }
+                    Src::Imm(c) => w.store_xconst64(jit_mem(s), c),
                     Src::M(Mem::Base { base: b, disp, .. }) => copy(w, (b, disp), (base, fr.spill0 + 8 * s as i32), 16),
                     _ => unreachable!(),
                 },
-                Loc::Spill(s) => match src {
-                    Src::Imm(c) if fits32(c as i64) => w.mov_imm(8, Rm::M(jit_mem(s)), c),
-                    Src::Imm(c) => {
-                        w.mov_imm(8, Rm::R(S1), c);
-                        w.mov(8, Rm::M(jit_mem(s)), Rm::R(S1));
-                    }
-                    Src::M(m) => {
-                        w.mov(8, Rm::R(S1), Rm::M(m));
-                        w.mov(8, Rm::M(jit_mem(s)), Rm::R(S1));
-                    }
-                    _ => unreachable!(),
-                },
+                Loc::Spill(s) => w.store_src(jit_mem(s), src),
                 Loc::Reg(r) => regs.push((r, src)),
             }
         }
         regs.sort_by_key(|&(r, _)| r == R::Rdx);
         for (r, s) in regs {
-            match s {
-                Src::Imm(c) => w.mov_imm(8, Rm::R(r), c),
-                Src::M(m) => w.mov(8, Rm::R(r), Rm::M(m)),
-                _ => unreachable!(),
-            }
+            w.load_src(r, s);
         }
         // `rsp = fp - F_jit`: from `rbp`, or from `rdx` unless it was just loaded.
         if fp {
