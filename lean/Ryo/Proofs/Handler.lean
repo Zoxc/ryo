@@ -26,11 +26,11 @@ shape's control flow) implements R's step of that instruction (`Ryo.Vm.R.Sem.ste
 - `StackApart` (no initialized private frame byte and no live allocation byte on the stack
   below `rsp`, where the call pushes): `StackApart.rel` keeps `Rel` and `MemRel` across a
   change confined to that stack; `FrameSep.stackApart` derives it from the frame separation;
-  `stackApart_all_false`: over every private byte, as first stated, it is unsatisfiable.
-- `handler_op_sound`, `handler_br_sound`: from `HRel st x`, the setup, the call and the
-  shape's tail (nothing for `op`; `test al, al; jz/jnz t` for `br`) reach the state
-  after the instruction, related to `opSem`'s, with the branch taken exactly when `Then.succ`
-  takes it.
+  `stackApart_all_false`: over every private byte, as first stated, it is unsatisfiable once
+  the stack below `rsp` is non-empty and the byte at `rsp - 1` is private.
+- `handler_op_sound`: from `HRel st x`, the setup and the call reach the state after the
+  instruction, related to `opSem`'s. `br_tail`: a `br` handler's tail (`test al, al; jz/jnz t`)
+  branches exactly when `Then.succ` takes it (not yet composed with the setup and the call).
 
 The x86 side is item lists run in order (`execItems`, with the call's return through `Ret`),
 not fetched from memory: the composition into `decode_sound` places them at their positions.
