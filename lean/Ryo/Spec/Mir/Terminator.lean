@@ -135,9 +135,12 @@ def callInstance (i : InstanceId) (args : List ArgVal) (retPlace : Option (Place
         contReturn cont
     | "catch_unwind", [tryFn, data, catchFn] => do
       let some (dest, destTy) := retPlace | throwIllFormed "catch_unwind without a destination"
-      let (target, unwind) ← match cont with
-        | .caller t u _ => pure (t, u)
+      let (target, unwind, deinit) ← match cont with
+        | .caller t u d => pure (t, u, d)
         | _ => throwIllFormed "catch_unwind outside a call terminator"
+      -- the in-place argument places stay unobservable after the call (D12); `try` and
+      -- `catch` only see the copied values, so de-initialize them now
+      deinitPlaces deinit
       let .ptr tp := tryFn.val | throwIllFormed "catch_unwind: try is not a pointer"
       let ti ← instOfFnPtr tp
       let some tb := p.body? ti | throwIllFormed "catch_unwind: try function has no body"
