@@ -481,7 +481,7 @@ fn fold_const_load(f: &mut Func, i: Inst, mem: &dyn ConstMem) -> Option<u64> {
     if w == 16 {
         // A vector: two plain 8-byte halves.
         let a = const_at(f, f.insts[i.idx()].args[0], off)?;
-        let b = const_at(f, f.insts[i.idx()].args[0], off + 8)?;
+        let b = const_at(f, f.insts[i.idx()].args[0], off.checked_add(8)?)?;
         let (PoolRead::Bits(lo), PoolRead::Bits(hi)) = (mem.read(a, 8)?, mem.read(b, 8)?) else { return None };
         let c = lo as u128 | (hi as u128) << 64;
         if let Ok(c) = u64::try_from(c) {
