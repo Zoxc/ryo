@@ -15,6 +15,8 @@
 //!   relocates against `__imp_<name>` instead (design/platforms.md).
 //! - pointers inside constant and fixup-area allocations → a symbol, or the read-only or
 //!   writable section (intra-image)
+//! - each JIT record's `entry` and `osr` slots → `ryo_jit_trip_entry` / `ryo_jit_trip_osr`,
+//!   and its `header` → the read-only section (with [`crate::asm::Mode::counters`])
 //!
 //! The code's are 32-bit PC-relative fields ([`RelocKind::Pc32`], [`RelocKind::Call32`]):
 //! RIP-relative addresses of symbol slots, constants, the data area and code

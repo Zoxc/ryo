@@ -359,7 +359,9 @@ pub const fn fnv1a(bytes: &[u8]) -> u64 {
     h
 }
 
-/// A byte range within the read-only section: offset and element count.
+/// A range of elements: offset and element count. Usually a byte offset into the read-only
+/// section; the fields' docs say where not (`Header::jit_records` is into the writable
+/// section, `FuncEntry`'s lists index other tables).
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Span {

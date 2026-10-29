@@ -540,7 +540,8 @@ fn drop_dead_stores(pieces: &mut [Piece], target: &[bool]) {
                         pending.iter_mut().for_each(|p| p.ptr = true);
                     }
                 }
-                // Frame reads (and addresses) keep the stores they overlap.
+                // Frame reads keep the stores they overlap. (An address, `LeaM`, isn't a read:
+                // the `ptr` flag and the `addrs` scan keep the stores it may reach.)
                 if let Some((m, n)) = it.frame_read() {
                     pending.retain(|p| !overlaps(p.lo, p.len, m.disp, n));
                 }
@@ -1361,8 +1362,10 @@ impl Asm {
         // too, as they take effect before the next instruction.
         let mut empty = Vec::new();
         let mut scopes = Vec::new();
-        // A loop head's counter check comes before the instruction, after its padding and
-        // before the scopes there take effect, so every branch to the head passes it.
+        // A loop head's counter check comes before the instruction, after its padding, so
+        // every branch to the head passes it. The scopes there are laid before the check and
+        // so get its offset; they still take effect at the instruction, as the decoder maps a
+        // scope to the first instruction at or after its offset.
         let mut head_check = false;
         // The elements where loop heads' counter checks start.
         let mut head_checks = Vec::new();

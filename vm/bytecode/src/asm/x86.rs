@@ -1056,10 +1056,11 @@ pub enum Fields<'a> {
     /// branch within the function.
     Relocs(&'a [Reloc]),
     /// Linked code at address `addr`, its fields resolved: a field whose target lies inside
-    /// the function, past its first byte, is a branch within it; any other target is
-    /// classified by the resolver. (A function's first byte is its prologue, never a branch
+    /// the function, past its first byte, is a branch within it; any other target but
+    /// the JIT record's (below) is classified by the resolver. (A function's first byte is its prologue, never a branch
     /// target, so a field to it is a call or tail call of the function itself.) A field to
-    /// `record` (with [`super::Mode::counters`]) is the function's JIT record ([`Ref::Rec`]).
+    /// `record` (with [`super::Mode::counters`]) is the function's JIT record ([`Ref::Rec`]),
+    /// and one to `record + JIT_LOOP_CTR` its loop counter ([`Ref::RecLoopCtr`]).
     ///
     /// A target among the handlers ([`Resolver::handlers`]) is the handler of the opcode the
     /// instruction list's handler entry at the item names ([`super::list::HANDLER_SEL`], in

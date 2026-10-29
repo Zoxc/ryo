@@ -15,6 +15,8 @@
 //! - [`jit`]: the JIT's SSA tier: the handlers' frame effects, and (`alloc`) the SSA IR, its
 //!   construction from decoded code and its code generation.
 //! - [`jit_abi`]: the interface between the runtime and the JIT ([`jit_abi::RtApi`]).
+//! - [`os`]: the other OS calls of the runtime and the JIT (a stderr write, `atexit`).
+//! - [`rt_symbols`]: the names of `ryo_rt`'s entry points and of the symbols around images.
 //! - [`vmem`]: virtual memory and code memory for the VM and the JIT, per OS.
 //!
 //! The decoder and the image reader use `core` only. The encoder and the image writer need
