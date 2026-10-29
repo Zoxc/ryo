@@ -67,16 +67,17 @@ structure InsnList where
   scopes : Array Scope := #[]
   deriving Repr, Inhabited
 
-/-- The LEB128 number at byte `i` (at most 10 bytes, `u64` wrapping as Rust's shifts drop the
-high bits), and the index after it. -/
+/-- The LEB128 number at byte `i` (`leb::Reader::u64`: at most 10 bytes, the 10th holding only
+bit 63), and the index after it. -/
 def readVarint (b : ByteArray) (i : Nat) : Option (Nat × Nat) := Id.run do
   let mut v := 0
   let mut j := i
   for k in [0:10] do
     let some x := b[j]? | return none
     j := j + 1
+    if k == 9 && x.toNat &&& 0x7e != 0 then return none
     v := v ||| ((x.toNat &&& 0x7f) <<< (7 * k))
-    if x.toNat &&& 0x80 == 0 then return some (v % 2 ^ 64, j)
+    if x.toNat &&& 0x80 == 0 then return some (v, j)
   return none
 
 /-- `list::walk`: the entries of the stream `bytes` of a function of `codeLen` bytes, with
