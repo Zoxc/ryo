@@ -315,6 +315,8 @@ fn disassemble_function(out: &mut String, code: &[u8], relocs: &[(u32, String)],
         if table == Some(at) {
             // `i32` offsets from the table to its targets. The table ends at the first
             // target after it, or (all targets before it) at an offset out of the function.
+            // In that case, code after the table whose 4-byte groups land in the function
+            // would be read as entries; no dump has such a table today.
             let mut end = code.len();
             let mut pos = at;
             while pos + 4 <= end {

@@ -471,7 +471,7 @@ fn coverage_row(name: &str, units: usize, c: &Coverage) -> String {
 }
 
 /// Coverage from ryo's warm-up builds (`RYO_STATS=1`): the crate's library, its dependencies,
-/// and the test targets.
+/// the test targets, and what the test build compiles besides them (dev-dependencies).
 fn coverage_section(r: &Report) -> String {
     let Some(ryo) = r.column(Compiler::Ryo) else { return String::new() };
     let mut s = String::from(
@@ -489,7 +489,8 @@ fn coverage_section(r: &Report) -> String {
         let leaf: Vec<&Unit> = build.units.iter().filter(|u| u.primary).collect();
         let deps: Vec<&Unit> = build.units.iter().filter(|u| !u.primary).collect();
         let test: Vec<&Unit> = tests.units.iter().filter(|u| u.primary).collect();
-        for (what, units) in [("library", &leaf), ("dependencies", &deps), ("test targets", &test)] {
+        let test_deps: Vec<&Unit> = tests.units.iter().filter(|u| !u.primary).collect();
+        for (what, units) in [("library", &leaf), ("dependencies", &deps), ("test targets", &test), ("test dependencies", &test_deps)] {
             let cov = coverage(units.iter().copied());
             s.push_str(&coverage_row(&format!("{} {what}", c.krate.name()), units.len(), &cov));
         }
