@@ -45,7 +45,8 @@ fn def_cfa(reg: u8, off: u32) -> Vec<u8> {
 }
 
 /// The base register of the entries' frame addressing: `rbp` with a frame pointer, else
-/// `rdx`, which the entry sets to `fp` (the probe preserves it).
+/// `rdx`, which the entry sets to `fp` (the probe preserves it); `rsp` for the scratch area
+/// and for computing `fp` into `rdx`.
 #[derive(Clone, Copy)]
 enum Base {
     Rdx,
