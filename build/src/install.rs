@@ -80,19 +80,40 @@ pub struct Manifest {
     pub old_toolchains: Vec<ToolchainRecord>,
 }
 
-impl ToolchainRecord {
-    /// Whether ryo added nothing to the toolchain.
-    fn is_empty(&self) -> bool {
-        !self.installed_by_ryo && self.components_added.is_empty() && self.targets_added.is_empty()
-    }
-}
-
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ToolchainRecord {
     pub name: String,
     pub installed_by_ryo: bool,
     pub components_added: Vec<String>,
     pub targets_added: Vec<String>,
+}
+
+impl ToolchainRecord {
+    /// Whether ryo added nothing to the toolchain.
+    fn is_empty(&self) -> bool {
+        !self.installed_by_ryo && self.components_added.is_empty() && self.targets_added.is_empty()
+    }
+
+    /// The components, then the targets, ryo added.
+    fn added(&self) -> Vec<String> {
+        self.components_added.iter().chain(&self.targets_added).cloned().collect()
+    }
+
+    /// The record's `key = value` lines in the manifest.
+    fn toml_fields(&self) -> String {
+        format!(
+            "name = {}\ninstalled_by_ryo = {}\ncomponents_added = {}\ntargets_added = {}\n",
+            quote(&self.name),
+            self.installed_by_ryo,
+            toml_list(&self.components_added),
+            toml_list(&self.targets_added),
+        )
+    }
+}
+
+/// A TOML array of strings.
+fn toml_list(l: &[String]) -> String {
+    format!("[{}]", l.iter().map(|s| quote(s)).collect::<Vec<_>>().join(", "))
 }
 
 impl Manifest {
@@ -106,31 +127,20 @@ impl Manifest {
     }
 
     pub fn to_toml(&self) -> String {
-        let list = |l: &[String]| format!("[{}]", l.iter().map(|s| quote(s)).collect::<Vec<_>>().join(", "));
-        let t = &self.toolchain;
         let mut s = format!(
             "# Written by `y install`; `y uninstall` removes what it records.\n\
              format = 1\nversion = {}\nbuild_id = {}\nhost = {}\ntargets = {}\nsysroots = {}\ncargo_root = {}\n\n\
-             [toolchain]\nname = {}\ninstalled_by_ryo = {}\ncomponents_added = {}\ntargets_added = {}\n",
+             [toolchain]\n{}",
             quote(&self.version),
             quote(&self.build_id),
             quote(&self.host),
-            list(&self.targets),
-            list(&self.sysroots),
+            toml_list(&self.targets),
+            toml_list(&self.sysroots),
             quote(&self.cargo_root),
-            quote(&t.name),
-            t.installed_by_ryo,
-            list(&t.components_added),
-            list(&t.targets_added),
+            self.toolchain.toml_fields(),
         );
         for t in &self.old_toolchains {
-            s.push_str(&format!(
-                "\n[[old_toolchain]]\nname = {}\ninstalled_by_ryo = {}\ncomponents_added = {}\ntargets_added = {}\n",
-                quote(&t.name),
-                t.installed_by_ryo,
-                list(&t.components_added),
-                list(&t.targets_added),
-            ));
+            s.push_str(&format!("\n[[old_toolchain]]\n{}", t.toml_fields()));
         }
         s
     }
@@ -572,10 +582,7 @@ impl InstallPlan {
             s.push('\n');
         }
         for r in &self.old_toolchains {
-            let mut all: Vec<String> = r.components_added.iter().chain(&r.targets_added).cloned().collect();
-            if r.installed_by_ryo {
-                all = vec!["the toolchain".to_owned()];
-            }
+            let all = if r.installed_by_ryo { vec!["the toolchain".to_owned()] } else { r.added() };
             p(&mut s, format!("  0. At the end, remove from toolchain {} what ryo added earlier: {}", r.name, list(&all)));
         }
         if !self.old_toolchains.is_empty() {
@@ -625,11 +632,10 @@ impl InstallPlan {
         let r = &self.record;
         if r.installed_by_ryo {
             undo.push_str(&format!(" (here: the {PINNED_VERSION} toolchain)"));
-        } else if r.components_added.is_empty() && r.targets_added.is_empty() {
+        } else if r.is_empty() {
             undo.push_str(" (here: nothing)");
         } else {
-            let all: Vec<String> = r.components_added.iter().chain(&r.targets_added).cloned().collect();
-            undo.push_str(&format!(" (here: {})", list(&all)));
+            undo.push_str(&format!(" (here: {})", list(&r.added())));
         }
         undo.push_str(", and deletes install/.");
         p(&mut s, format!("     {undo}"));
@@ -884,9 +890,8 @@ fn print_install_report(plan: &InstallPlan, manifest: &Manifest) {
     let r = &manifest.toolchain;
     if r.installed_by_ryo {
         println!("[y]   toolchain {PINNED_VERSION}: installed by ryo (removed again by ./y.sh uninstall)");
-    } else if !r.components_added.is_empty() || !r.targets_added.is_empty() {
-        let all: Vec<String> = r.components_added.iter().chain(&r.targets_added).cloned().collect();
-        println!("[y]   toolchain {PINNED_VERSION}: yours; ryo added {} (removed again by ./y.sh uninstall)", list(&all));
+    } else if !r.is_empty() {
+        println!("[y]   toolchain {PINNED_VERSION}: yours; ryo added {} (removed again by ./y.sh uninstall)", list(&r.added()));
     } else {
         println!("[y]   toolchain {PINNED_VERSION}: yours, nothing added");
     }
