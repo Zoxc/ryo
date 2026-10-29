@@ -4,6 +4,8 @@
 //! No compiler types here. The format-specific parts sit behind [`ObjectFormat`]
 //! (design/platforms.md): ELF ([`Elf`]), PE/COFF ([`Coff`]) and Mach-O ([`MachO`]).
 
+use std::collections::HashMap;
+
 use object::write::{Mangling, Object, Relocation, StandardSegment, Symbol, SymbolId, SymbolSection};
 use object::{
     Architecture, BinaryFormat, Endianness, RelocationFlags, SectionFlags, SectionKind, SymbolFlags, SymbolKind, SymbolScope, elf, macho, pe,
@@ -578,7 +580,8 @@ fn defined(name: &str, section: object::write::SectionId, offset: u64, size: u64
     }
 }
 
-/// An undefined (external) symbol reference, added once per name.
+/// An undefined (external) symbol reference, added once per name if `kind` is one that
+/// `Object` indexes by name (Text, Data, Tls; not Unknown).
 fn undefined(obj: &mut Object<'static>, name: &str, kind: SymbolKind) -> SymbolId {
     if let Some(id) = obj.symbol_id(name.as_bytes()) {
         return id;
@@ -668,6 +671,8 @@ pub fn write_image(
     // Indirect slots relocate against the import slot (design/platforms.md). The writer only
     // relocates against indirect symbols from their slots (constants pointing at them are
     // fixups), so every relocation against them is a slot's.
+    // Unknown-kind symbols aren't indexed by `Object`, so they are deduplicated here.
+    let mut unknown: HashMap<String, SymbolId> = HashMap::new();
     let syms = image
         .symbols
         .iter()
@@ -684,7 +689,7 @@ pub fn write_image(
             } else {
                 fmt.mangle(name)
             };
-            Ok(undefined(&mut obj, &name, SymbolKind::Unknown))
+            Ok(*unknown.entry(name).or_insert_with_key(|name| undefined(&mut obj, name, SymbolKind::Unknown)))
         })
         .collect::<Result<Vec<SymbolId>, String>>()?;
     let rt = |name: &str| fmt.mangle(&rt_symbol(name));
@@ -760,7 +765,8 @@ pub fn write_image(
         let slot = fmt.relro_section(&mut obj, "ryo_main");
         obj.append_section_data(slot, &[0; 8], 8);
         fmt.hidden_global(&mut obj, &fmt.mangle(MAIN_SLOT_SYMBOL), slot, 0, 8, SymbolKind::Data);
-        let target = undefined(&mut obj, &fmt.mangle(main), SymbolKind::Text);
+        let main = fmt.mangle(main);
+        let target = unknown.get(&main).copied().unwrap_or_else(|| undefined(&mut obj, &main, SymbolKind::Text));
         obj.add_relocation(slot, Relocation { offset: 0, symbol: target, addend: 0, flags: fmt.abs64() })
             .map_err(|e| format!("__ryo_main relocation: {e}"))?;
     }
