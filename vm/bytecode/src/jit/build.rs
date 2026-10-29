@@ -254,6 +254,21 @@ impl<'a> B<'a> {
         Edge::to(self.ir[rb].expect("not an lpad"))
     }
 
+    /// A branch's edges, to `t` when it holds and else to `f`, swapped with `neg`.
+    fn br_edges(&self, t: u32, f: u32, neg: bool) -> (Edge, Edge) {
+        let (tt, ff) = (self.edge(t), self.edge(f));
+        if neg { (ff, tt) } else { (tt, ff) }
+    }
+
+    /// The second operand of instruction `i` at `w` bytes: the immediate `imm` (masked to
+    /// the width), else access 1.
+    fn rhs(&mut self, cur: Block, i: usize, w: u8, imm: Option<u64>) -> Value {
+        match imm {
+            Some(v) => self.f.konst(mask(v, w), w),
+            None => self.read(cur, i, 1, w),
+        }
+    }
+
     /// The arguments of call instruction `i` in `cur`: the callee pointer (for `Ptr`), then
     /// each register's value (an address for one passed by address); and the index of the
     /// accesses after them (the results').
@@ -535,21 +550,14 @@ impl<'a> B<'a> {
             Kind::Bin(op, w, imm) => {
                 let a = self.read(cur, i, 0, *w);
                 let shift = matches!(*op, BinOp::Shl | BinOp::ShrS | BinOp::ShrU);
-                let b = match imm {
-                    Some(v) if shift => self.f.konst(v & (8 * *w as u64 - 1), *w),
-                    Some(v) => self.f.konst(mask(*v, *w), *w),
-                    None => self.read(cur, i, 1, *w),
-                };
+                let b = self.rhs(cur, i, *w, imm.map(|v| if shift { v & (8 * *w as u64 - 1) } else { v }));
                 let l = self.f.inst(cur, Op::Bin(*op, *w), alloc::vec![a, b], &[*w]);
                 let v = self.f.result(l);
                 self.write(cur, i, ri.accs.len() - 1, v);
             }
             Kind::Cmp(cc, w, imm) => {
                 let a = self.read(cur, i, 0, *w);
-                let b = match imm {
-                    Some(v) => self.f.konst(mask(*v, *w), *w),
-                    None => self.read(cur, i, 1, *w),
-                };
+                let b = self.rhs(cur, i, *w, *imm);
                 let l = self.f.inst(cur, Op::Cmp(*cc, *w), alloc::vec![a, b], &[1]);
                 let v = self.f.result(l);
                 self.write(cur, i, ri.accs.len() - 1, v);
@@ -576,23 +584,19 @@ impl<'a> B<'a> {
             }
             Kind::Jmp(t) => return Ok(Flow::End(Term::Jmp(self.edge(*t)))),
             Kind::Br { cmp, neg, t } => {
-                let (tt, ff) = (self.edge(*t), self.edge(next()?));
-                let (tt, ff) = if *neg { (ff, tt) } else { (tt, ff) };
+                let (tt, ff) = self.br_edges(*t, next()?, *neg);
                 return Ok(Flow::End(match cmp {
                     None => Term::Br { cond: self.read(cur, i, 0, 1), t: tt, f: ff },
                     Some((cc, w, imm)) => {
                         let a = self.read(cur, i, 0, *w);
-                        let b = match imm {
-                            Some(v) => self.f.konst(mask(*v, *w), *w),
-                            None => self.read(cur, i, 1, *w),
-                        };
+                        let b = self.rhs(cur, i, *w, *imm);
                         Term::BrCmp { cc: *cc, w: *w, a, b, t: tt, f: ff }
                     }
                 }));
             }
             Kind::Call { target, regs, parts, .. } => {
                 let (args, k) = self.call_args(cur, i, *target, regs)?;
-                let ws: Vec<u8> = parts.iter().map(|p| if matches!(p.size, 1 | 2 | 4 | 8) { p.size as u8 } else { 8 }).collect();
+                let ws: Vec<u8> = parts.iter().map(|p| reg_width(p.size)).collect();
                 let call = Call { target: *target, regs: regs.clone(), parts: parts.clone(), site };
                 let ci = self.f.inst(cur, Op::Call(Box::new(call)), args, &ws);
                 let results = self.f.insts[ci.idx()].results();
@@ -619,7 +623,7 @@ impl<'a> B<'a> {
                 if cur != self.entry {
                     return Err(Unsupported("an arg outside the entry"));
                 }
-                let w = if matches!(r.size, 1 | 2 | 4 | 8) { r.size as u8 } else { 8 };
+                let w = reg_width(r.size);
                 let v = self.f.param(self.entry, w);
                 self.f.entry_regs.push(*r);
                 self.write(cur, i, 0, v);
@@ -731,8 +735,7 @@ impl<'a> B<'a> {
                 match then {
                     Then::Next => {}
                     Then::Branch { neg, t } => {
-                        let (tt, ff) = (self.edge(*t), self.edge(next()?));
-                        let (tt, ff) = if *neg { (ff, tt) } else { (tt, ff) };
+                        let (tt, ff) = self.br_edges(*t, next()?, *neg);
                         return Ok(Flow::End(Term::Br { cond: *results.last().unwrap(), t: tt, f: ff }));
                     }
                     Then::Table(ts) => {
@@ -802,6 +805,11 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
 }
 
 /// The instruction index after `i`.
+/// The width of the value in a register of `size` bytes: the size, or 8 for an odd one.
+fn reg_width(size: u32) -> u8 {
+    if matches!(size, 1 | 2 | 4 | 8) { size as u8 } else { 8 }
+}
+
 fn s_next(code: &Code, i: usize) -> Result<u32, Unsupported> {
     if i + 1 < code.insns.len() { Ok(i as u32 + 1) } else { Err(Unsupported("falls off the end")) }
 }

@@ -455,6 +455,17 @@ fn pure(accs: &mut Vec<Acc>, ins: &[i32], ws: &[u8], d: i32, out: u8) {
     accs.push(Acc { off: d, size: out as u32, how: How::Write });
 }
 
+/// The reads of a binary operation's operands at `wd` bytes: `a`, then `b` unless it is the
+/// immediate (`has_imm`), which is returned.
+fn rhs(accs: &mut Vec<Acc>, s: impl Fn(&str) -> i32, im: impl Fn(&str) -> u64, has_imm: bool, wd: u8) -> Option<u64> {
+    accs.push(Acc { off: s("a"), size: wd as u32, how: How::Read });
+    if has_imm {
+        return Some(im("imm"));
+    }
+    accs.push(Acc { off: s("b"), size: wd as u32, how: How::Read });
+    None
+}
+
 /// Classifies the instruction at word `at` of `d`.
 fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Result<RInsn, Unsupported> {
     let words = &d.words[at..];
@@ -699,20 +710,12 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Re
                     succ.push(t);
                     let neg = im("neg") != 0;
                     let cc = f.cc().ok_or(Unsupported("branch"))?;
-                    accs.push(acc(s("a"), wd as u32, How::Read));
-                    let b = if has_imm { Some(im("imm")) } else { None };
-                    if b.is_none() {
-                        accs.push(acc(s("b"), wd as u32, How::Read));
-                    }
+                    let b = rhs(&mut accs, s, im, has_imm, wd);
                     Kind::Br { cmp: Some((cc, wd, b)), neg, t }
                 }
                 _ => {
                     let f = fam.ok_or(Unsupported("a native instruction"))?;
-                    accs.push(acc(s("a"), wd as u32, How::Read));
-                    let b = if has_imm { Some(im("imm")) } else { None };
-                    if b.is_none() {
-                        accs.push(acc(s("b"), wd as u32, How::Read));
-                    }
+                    let b = rhs(&mut accs, s, im, has_imm, wd);
                     if let Some(cc) = f.cc() {
                         accs.push(acc(s("d"), 1, How::Write));
                         Kind::Cmp(cc, wd, b)
