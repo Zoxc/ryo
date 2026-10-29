@@ -96,24 +96,47 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     }
 }
 
-/// How a call reaches its callee.
+/// How a call is made.
 #[derive(Clone, Copy)]
 enum Target<'tcx> {
-    /// `call fn` / `tail_call fn`: a VM function of this image.
-    Vm(Instance<'tcx>),
-    /// `call.sym sym`: a Rust-ABI instance with a symbol, native or from another crate.
-    Ext(Instance<'tcx>),
+    /// A VM call instruction (Rust ABI): `call` / `call.sym[.ind]` / `call.ptr`, or
+    /// `tail_call` / `tail_call.ptr`.
+    Direct(Callee<'tcx>),
     /// `island call<F, Args, R>`: a safe Rust fn item `F` without a symbol, through `FnOnce`.
     Template(Ty<'tcx>),
-    /// `addr.sym` of a local native instance with another ABI, then a `call_cN` island.
-    Sym(Instance<'tcx>, CallConv),
-    /// The fn pointer in this slot: `call.ptr` (Rust ABI) or a `call_cN` island. Fn-pointer
-    /// calls and virtual calls (the pointer loaded from the vtable).
-    Ptr(u32, CallConv),
+    /// A `call_cN` island on the callee's address (another ABI).
+    CIsland(Callee<'tcx>),
+}
+
+impl<'tcx> Target<'tcx> {
+    /// A call of `callee`, whose calling convention is `conv`.
+    fn of(conv: CallConv, callee: Callee<'tcx>) -> Self {
+        match conv {
+            CallConv::Rust => Target::Direct(callee),
+            CallConv::C => Target::CIsland(callee),
+        }
+    }
+
+    /// Whether the call goes through an island, which takes its arguments as a block.
+    fn is_island(self) -> bool {
+        matches!(self, Target::Template(_) | Target::CIsland(_))
+    }
+}
+
+/// Where a call's callee is.
+#[derive(Clone, Copy)]
+enum Callee<'tcx> {
+    /// A VM function of this image: `call fn` / `tail_call fn`.
+    Vm(Instance<'tcx>),
+    /// An instance with a symbol, native or from another crate: `call.sym sym`.
+    Sym(Instance<'tcx>),
+    /// The fn pointer in this slot: fn-pointer calls and virtual calls (the pointer loaded
+    /// from the vtable).
+    Ptr(u32),
 }
 
 /// What a call's operand resolves to.
-enum Callee<'tcx> {
+enum Resolved<'tcx> {
     Intrinsic(Instance<'tcx>),
     /// A fn item: a body, a virtual call or a shim.
     Direct(Instance<'tcx>),
@@ -151,14 +174,14 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let cont = CallCont { dest: Some(dest), target, unwind };
         let srcs = arg_srcs(args);
         match callee {
-            Callee::Intrinsic(callee) => self.intrinsic_call(callee, fty, &srcs, cont, source_info),
-            Callee::Direct(callee) => self.direct_call(fty, callee, &srcs, cont, source_info),
-            Callee::Ptr => self.indirect_call(func, fty, &srcs, cont, source_info),
+            Resolved::Intrinsic(callee) => self.intrinsic_call(callee, fty, &srcs, cont, source_info),
+            Resolved::Direct(callee) => self.direct_call(fty, callee, &srcs, cont, source_info),
+            Resolved::Ptr => self.indirect_call(func, fty, &srcs, cont, source_info),
         }
     }
 
     /// The monomorphic type of the called operand `func` and what it resolves to.
-    fn resolve_callee(&self, func: &Operand<'tcx>, source_info: SourceInfo) -> Result<(Ty<'tcx>, Callee<'tcx>), NeedsNative> {
+    fn resolve_callee(&self, func: &Operand<'tcx>, source_info: SourceInfo) -> Result<(Ty<'tcx>, Resolved<'tcx>), NeedsNative> {
         let tcx = self.tcx;
         let fty = self.mono(func.ty(self.body, tcx));
         let callee = match *fty.kind() {
@@ -166,12 +189,12 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 let fn_args = fn_args.no_bound_vars().expect("monomorphic callee");
                 let callee = Instance::expect_resolve(tcx, TypingEnv::fully_monomorphized(), def_id, fn_args, source_info.span);
                 match callee.def {
-                    InstanceKind::Intrinsic(_) => Callee::Intrinsic(callee),
+                    InstanceKind::Intrinsic(_) => Resolved::Intrinsic(callee),
                     InstanceKind::LlvmIntrinsic(_) => return native("call of an LLVM intrinsic"),
-                    InstanceKind::Item(_) | InstanceKind::Virtual(..) | InstanceKind::Shim(_) => Callee::Direct(callee),
+                    InstanceKind::Item(_) | InstanceKind::Virtual(..) | InstanceKind::Shim(_) => Resolved::Direct(callee),
                 }
             }
-            ty::FnPtr(..) => Callee::Ptr,
+            ty::FnPtr(..) => Resolved::Ptr,
             _ => return native("call of a non-fn type"),
         };
         Ok((fty, callee))
@@ -187,7 +210,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         source_info: SourceInfo,
     ) -> Result<(), NeedsNative> {
         let (target, sig, args) = self.direct_target(fty, callee, args, false)?;
-        let homes = self.write_args(&sig, &args, source_info, island_target(target))?;
+        let homes = self.write_args(&sig, &args, source_info, target.is_island())?;
         self.emit_call(target, &sig, &homes, cont)
     }
 
@@ -201,7 +224,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         source_info: SourceInfo,
     ) -> Result<(), NeedsNative> {
         let (target, sig) = self.ptr_target(func, fty)?;
-        let homes = self.write_args(&sig, args, source_info, island_target(target))?;
+        let homes = self.write_args(&sig, args, source_info, target.is_island())?;
         self.emit_call(target, &sig, &homes, cont)
     }
 
@@ -220,48 +243,45 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let tcx = self.tcx;
         let rust_call = fty.fn_sig(tcx).abi() == ExternAbi::RustCall;
         let mut args = args.to_vec();
-        if let InstanceKind::Virtual(_, idx) = callee.def {
+        let (target, sig) = if let InstanceKind::Virtual(_, idx) = callee.def {
             let Some(&recv) = args.first() else { return native("virtual call without a receiver") };
             let (data, vtable, recv_ty) = self.receiver(recv, tail)?;
-            let sig = AbiSig { rust_call, ..virtual_sig(tcx, callee, recv_ty)? };
+            let sig = virtual_sig(tcx, callee, recv_ty)?;
             // The method's entry in the vtable (`VirtualIndex::get_fn`).
             let f = self.temp8();
             let k = u32::try_from(idx * 8).map_err(|_| NeedsNative("vtable index".into()))?;
             self.op(Opcode::LoadW64, &[f, vtable, k]);
             args[0] = ArgSrc::Slot(data);
-            return Ok((Target::Ptr(f, sig.conv), sig, args));
-        }
-        let has_symbol = !matches!(callee.def, InstanceKind::Intrinsic(_));
-        let vm = self.cx.vm.contains(&callee);
-        let callee_sig = (has_symbol || vm).then(|| self.abi_sig(callee));
-        let (target, sig) = match callee_sig {
-            // VM functions are Rust-ABI; a candidate with another ABI stays native.
-            Some(Ok(sig)) if vm && sig.conv == CallConv::Rust => (Target::Vm(callee), AbiSig { rust_call, ..sig }),
-            _ if !has_symbol => {
-                if tail || !self.fn_once_able(fty, callee) {
-                    return native(no_trim(|| format!("call of {callee} (needs an intrinsic wrapper)")));
+            (Target::of(sig.conv, Callee::Ptr(f)), sig)
+        } else {
+            let has_symbol = !matches!(callee.def, InstanceKind::Intrinsic(_));
+            let vm = self.cx.vm.contains(&callee);
+            let callee_sig = (has_symbol || vm).then(|| self.abi_sig(callee));
+            match callee_sig {
+                // VM functions are Rust-ABI; a candidate with another ABI stays native.
+                Some(Ok(sig)) if vm && sig.conv == CallConv::Rust => (Target::Direct(Callee::Vm(callee)), sig),
+                _ if !has_symbol => {
+                    if tail || !self.fn_once_able(fty, callee) {
+                        return native(no_trim(|| format!("call of {callee} (needs an intrinsic wrapper)")));
+                    }
+                    let s = tcx.normalize_erasing_late_bound_regions(TypingEnv::fully_monomorphized(), fty.fn_sig(tcx));
+                    return Ok((Target::Template(fty), tys_sig(tcx, s.inputs().to_vec(), s.output())?, args));
                 }
-                let s = tcx.normalize_erasing_late_bound_regions(TypingEnv::fully_monomorphized(), fty.fn_sig(tcx));
-                (Target::Template(fty), tys_sig(tcx, s.inputs().to_vec(), s.output())?)
+                Some(sig) => {
+                    let sig = sig?;
+                    (Target::of(sig.conv, Callee::Sym(callee)), sig)
+                }
+                None => unreachable!("a callee without a symbol is a template call"),
             }
-            Some(sig) => {
-                let sig = sig?;
-                let target = match sig.conv {
-                    CallConv::Rust => Target::Ext(callee),
-                    conv => Target::Sym(callee, conv),
-                };
-                (target, AbiSig { rust_call, ..sig })
-            }
-            None => unreachable!("a callee without a symbol is a template call"),
         };
-        Ok((target, sig, args))
+        Ok((target, AbiSig { rust_call, ..sig }, args))
     }
 
     /// The target and signature of a call through the fn pointer `func` of type `fty`.
     fn ptr_target(&mut self, func: &Operand<'tcx>, fty: Ty<'tcx>) -> Result<(Target<'tcx>, AbiSig<'tcx>), NeedsNative> {
         let sig = fn_ptr_sig(self.tcx, fty.fn_sig(self.tcx))?;
         let (p, _) = self.operand_slot(func)?;
-        Ok((Target::Ptr(p, sig.conv), sig))
+        Ok((Target::of(sig.conv, Callee::Ptr(p)), sig))
     }
 
     /// The receiver of a virtual call: the slots holding its data pointer and its vtable, and
@@ -325,32 +345,43 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 let args = [fty.into(), sig.args_tuple(tcx).into(), sig.output.ty.into()];
                 self.island(templates::CALL, &args, &[(block, bn), (d, dn)], Some(cont.unwind));
             }
-            Target::Sym(_, conv) | Target::Ptr(_, conv @ CallConv::C) => {
-                let p = match target {
-                    Target::Sym(callee, _) => self.sym_addr(callee),
-                    Target::Ptr(p, _) => p,
-                    _ => unreachable!(),
-                };
-                let (name, args) = self.ptr_island(sig, conv)?;
+            Target::CIsland(callee) => {
+                let p = self.callee_addr(callee);
+                let (name, args) = self.ptr_island(sig)?;
                 self.island(&name, &args, &[(block, bn), (d, dn), (p, 8)], Some(cont.unwind));
             }
-            Target::Vm(_) | Target::Ext(_) | Target::Ptr(_, CallConv::Rust) => {
+            Target::Direct(callee) => {
                 let a = self.pass_args(sig, homes, Some(d), false)?;
-                let (op, f, kind) = match target {
-                    Target::Vm(callee) => (Opcode::Call, self.reloc(CodeReloc::Call { callee }), CallKind::Vm),
-                    Target::Ext(callee) => {
-                        let r = CodeReloc::Symbol { target: callee };
-                        let op = if self.sym_indirect(&r) { Opcode::CallSymInd } else { Opcode::CallSym };
-                        (op, self.reloc(r), CallKind::Sym)
-                    }
-                    Target::Ptr(p, _) => (Opcode::CallPtr, p, CallKind::Ptr),
-                    _ => unreachable!(),
-                };
+                let (op, f, kind) = self.call_op(callee, false);
                 let at = self.call_insn(op, &[rd, f, k], &a, kind, sig);
                 self.unwind_entry(at, cont.unwind);
             }
         }
         self.finish_call(cont, d, after)
+    }
+
+    /// The address of `callee` in a slot.
+    fn callee_addr(&mut self, callee: Callee<'tcx>) -> u32 {
+        match callee {
+            Callee::Vm(i) | Callee::Sym(i) => self.sym_addr(i),
+            Callee::Ptr(p) => p,
+        }
+    }
+
+    /// The call instruction for `callee` (a tail call with `tail`), its callee operand and
+    /// its certificate kind.
+    fn call_op(&mut self, callee: Callee<'tcx>, tail: bool) -> (Opcode, u32, CallKind) {
+        match (callee, tail) {
+            (Callee::Vm(callee), false) => (Opcode::Call, self.reloc(CodeReloc::Call { callee }), CallKind::Vm),
+            (Callee::Vm(callee), true) => (Opcode::TailCall, self.reloc(CodeReloc::Call { callee }), CallKind::TailVm),
+            (Callee::Sym(callee), false) => {
+                let r = CodeReloc::Symbol { target: callee };
+                let op = if self.sym_indirect(&r) { Opcode::CallSymInd } else { Opcode::CallSym };
+                (op, self.reloc(r), CallKind::Sym)
+            }
+            (Callee::Ptr(p), false) => (Opcode::CallPtr, p, CallKind::Ptr),
+            (Callee::Sym(_) | Callee::Ptr(_), true) => (Opcode::TailCallPtr, self.callee_addr(callee), CallKind::TailPtr),
+        }
     }
 
     /// The call instruction `op` with the operands `head` then the register arguments `a`,
@@ -463,42 +494,35 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let (fty, callee) = self.resolve_callee(func, source_info)?;
         let srcs = arg_srcs(args);
         let (target, sig, srcs) = match callee {
-            Callee::Intrinsic(_) => return native("tail call of an intrinsic"),
-            Callee::Direct(callee) => self.direct_target(fty, callee, &srcs, true)?,
-            Callee::Ptr => {
+            Resolved::Intrinsic(_) => return native("tail call of an intrinsic"),
+            Resolved::Direct(callee) => self.direct_target(fty, callee, &srcs, true)?,
+            Resolved::Ptr => {
                 let (t, sig) = self.ptr_target(func, fty)?;
                 (t, sig, srcs)
             }
         };
-        if sig.conv != CallConv::Rust {
-            return native("tail call of a non-Rust ABI");
-        }
+        let Target::Direct(callee) = target else { return native("tail call of a non-Rust ABI") };
         // `become` requires matching signatures.
         let ret = self.frame.locals[rustc_middle::mir::RETURN_PLACE].layout;
         if ret.size != sig.output.size || sig.ret_kind != self.ret_kind {
             return native("tail call with a different return");
         }
         let homes = self.write_args(&sig, &srcs, source_info, false)?;
-        let p = match target {
-            Target::Vm(_) => None,
-            Target::Ext(callee) | Target::Sym(callee, _) => Some(self.sym_addr(callee)),
-            Target::Ptr(p, _) => Some(p),
-            Target::Template(_) => unreachable!("tail calls don't use the call template"),
+        // A symbol's address is taken before the arguments are passed.
+        let callee = match callee {
+            Callee::Sym(_) => Callee::Ptr(self.callee_addr(callee)),
+            c => c,
         };
         let a = self.pass_args(&sig, &homes, None, true)?;
-        let (op, f, kind) = match (target, p) {
-            (_, Some(p)) => (Opcode::TailCallPtr, p, CallKind::TailPtr),
-            (Target::Vm(callee), None) => (Opcode::TailCall, self.reloc(CodeReloc::Call { callee }), CallKind::TailVm),
-            _ => unreachable!(),
-        };
+        let (op, f, kind) = self.call_op(callee, true);
         self.call_insn(op, &[f], &a, kind, &sig);
         Ok(())
     }
 
     /// The template and generic args of a `call_cN` island for `sig`.
-    fn ptr_island(&self, sig: &AbiSig<'tcx>, conv: CallConv) -> Result<(String, Vec<GenericArg<'tcx>>), NeedsNative> {
+    fn ptr_island(&self, sig: &AbiSig<'tcx>) -> Result<(String, Vec<GenericArg<'tcx>>), NeedsNative> {
         let n = sig.inputs.len();
-        let name = match conv {
+        let name = match sig.conv {
             CallConv::C => templates::call_c(n),
             CallConv::Rust => unreachable!("Rust-ABI calls are direct"),
         };
@@ -741,11 +765,6 @@ pub fn load_kind(k: u32) -> u32 {
         .map(|p| if p.xmm { p } else { RetPart { size: p.size.next_power_of_two(), ..p } })
         .collect();
     ret_kind(&parts)
-}
-
-/// Whether a call of `target` goes through an island, which takes its arguments as a block.
-fn island_target(target: Target<'_>) -> bool {
-    matches!(target, Target::Template(_) | Target::Sym(..) | Target::Ptr(_, CallConv::C))
 }
 
 /// A call's MIR arguments as argument sources.
