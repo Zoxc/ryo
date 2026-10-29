@@ -28,14 +28,8 @@ pub fn run(name: &str) -> ! {
     common::exec(cmd, &exe.display().to_string())
 }
 
-/// `<checkout>/install/<current>`, or `Err(<checkout>/install)` if there is none. The same
-/// reading of `install/current` as y's `current_version` (build/src/install.rs).
+/// `<checkout>/install/<current>`, or `Err(<checkout>/install)` if there is none.
 fn installed() -> Result<PathBuf, PathBuf> {
     let install = PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().expect("scripts/ has a parent").join("install");
-    let version = std::fs::read_to_string(install.join("current")).map_err(|_| install.clone())?;
-    let dir = install.join(version.trim());
-    if version.trim().is_empty() || !dir.is_dir() {
-        return Err(install);
-    }
-    Ok(dir)
+    common::current_version(&install).map(|v| install.join(v)).ok_or(install)
 }

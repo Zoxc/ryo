@@ -244,14 +244,6 @@ fn read_manifest(install: &Path) -> Result<Option<Manifest>, String> {
     }
 }
 
-/// The installed `<version>` (`install/current`). The launchers read it the same way
-/// (`installed` in scripts/launcher.rs).
-fn current_version(install: &Path) -> Option<String> {
-    let v = fs::read_to_string(install.join("current")).ok()?;
-    let v = v.trim();
-    (!v.is_empty() && install.join(v).is_dir()).then(|| v.to_owned())
-}
-
 /// Stdout of a successful `rustup <args>`.
 fn rustup(args: &[&str]) -> Result<String, String> {
     let out = capture(cmd("rustup").args(args))?;
@@ -737,7 +729,7 @@ fn plan_install(o: &InstallOptions) -> Result<InstallPlan, String> {
         have_components,
         have_targets,
         build: o.build.clone(),
-        previous_version: current_version(&install),
+        previous_version: crate::wrapper_common::current_version(&install),
         install,
         scripts: root().join("scripts"),
         cargo_root,

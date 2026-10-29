@@ -21,6 +21,14 @@ pub const JIT_CHECKED_VAR: &str = "RYO_JIT_CHECKED";
 /// which `y build` installs and `rustc-ryo` links under [`JIT_CHECKED_VAR`].
 pub const JIT_CHECKED_DIR: &str = "jit-checked";
 
+/// The installed ryo `<version>` in a checkout's `install/` (`y install`, design/install.md): the
+/// contents of `install/current`, if it names a directory there.
+pub fn current_version(install: &Path) -> Option<String> {
+    let v = std::fs::read_to_string(install.join("current")).ok()?;
+    let v = v.trim();
+    (!v.is_empty() && install.join(v).is_dir()).then(|| v.to_owned())
+}
+
 /// Whether a value of [`JIT_CHECKED_VAR`] asks for the checked JIT: set, non-empty, not `0`.
 pub fn jit_checked_value(v: &std::ffi::OsStr) -> bool {
     !v.is_empty() && v != "0"
