@@ -280,7 +280,7 @@ fn print_coverage(stats_dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Copies `rust-src`'s `library/` to `dst` (once per toolchain, so cargo's fingerprints
+/// Copies `rust-src`'s `library/` to `dst` (once per toolchain and version, so cargo's fingerprints
 /// survive rebuilds), and adds `ryo_rt` to it, with its `jit` feature if `jit`.
 fn prepare_sources(info: &RustcInfo, root: &Path, dst: &Path, jit: bool) -> Result<(), String> {
     let src = info.rust_src_library();
@@ -288,7 +288,8 @@ fn prepare_sources(info: &RustcInfo, root: &Path, dst: &Path, jit: bool) -> Resu
         return Err("no `rust-src` in the toolchain; run `rustup component add rust-src`".to_owned());
     }
     let stamp = dst.join(".ryo-source");
-    let want = src.to_string_lossy().into_owned();
+    // The rustc version too: updating a channel toolchain in place keeps the path.
+    let want = format!("{}\n{}", src.to_string_lossy(), info.version);
     if fs::read_to_string(&stamp).ok().as_deref() != Some(want.as_str()) {
         crate::utils::remove_dir_if_exists(dst)?;
         copy_dir(&src, dst)?;
