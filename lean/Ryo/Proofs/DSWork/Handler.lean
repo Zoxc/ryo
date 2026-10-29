@@ -544,7 +544,8 @@ theorem hdl_window_apart (H : Hyps S) (HC : HdlApart S) {s : R.RState} {x : X86.
   simp only [fpAddr, BitVec.toNat_add, hrb, BitVec.toNat_ofInt] at hs
   omega
 
-/-- The trip's write set and the check's counter write keep memory outside it. -/
+/-- `m` agrees with `x`'s memory outside what the handler call may write (`S.Owned`, and the
+stack in `[S.lo, rsp)`). -/
 abbrev hdl_Keeps (S : Setup) (x : X86.State) (m : Mem) : Prop :=
   ∀ a, ¬ S.Owned a → ¬ InStack S.lo x.rsp a → m a = x.mem a
 
