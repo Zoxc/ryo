@@ -15,9 +15,11 @@
 //! `UnwindTerminate` lang items, `panic_nounwind` (called by `assert_inhabited` & co.) and
 //! function pointers in constants. A body when MIR is available, `intrinsic name tyArgs` for
 //! rustc intrinsics (the instance's generic args: types as `intrinsic_ty_arg`, other args as
-//! `null`), `ext` otherwise (foreign items, upstream functions without MIR). Drop glue of `dyn Trait` is `ext` too: rustc's shim body
-//! for it only drops `*self` again (codegen turns that into a call of the vtable's drop
-//! entry, skipped when it is null).
+//! `null`), `ext` otherwise (foreign items, upstream functions without MIR, LLVM intrinsics, virtual
+//! calls' instances). Drop glue of `dyn Trait` is `ext` too: rustc's shim body for it only
+//! drops `*self` again (codegen turns that into a call of the vtable's drop entry, skipped
+//! when it is null). So are thread-local shims, although rustc builds MIR for them: the
+//! interpreter rejects a program when it calls one.
 //!
 //! What the spec's AST can't express becomes a call of an `ext` instance named
 //! `ryo-dump: unsupported <what>`, which the interpreter rejects when it gets there.
@@ -1060,7 +1062,7 @@ impl<'a, 'tcx> FnDump<'a, 'tcx> {
     }
 
     /// The pointees whose metadata an `Unsize` from `a` to `b` changes (the pointer itself or
-    /// the field of a `CoerceUnsized` struct that differs).
+    /// the field of a `CoerceUnsized` struct that differs, skipping 1-ZSTs as cg_ssa does).
     fn unsize_pointees(d: &Dumper<'tcx>, a: Ty<'tcx>, b: Ty<'tcx>) -> Option<(Ty<'tcx>, Ty<'tcx>)> {
         let tcx = d.tcx;
         match (a.kind(), b.kind()) {
@@ -1070,7 +1072,8 @@ impl<'a, 'tcx> FnDump<'a, 'tcx> {
                 for f in da.non_enum_variant().fields.iter() {
                     let fa = tcx.normalize_erasing_regions(d.typing_env(), f.ty(tcx, sa));
                     let fb = tcx.normalize_erasing_regions(d.typing_env(), f.ty(tcx, sb));
-                    if fa != fb {
+                    let zst = d.layout(fa).is_some_and(|l| l.is_1zst());
+                    if fa != fb && !zst {
                         return Self::unsize_pointees(d, fa, fb);
                     }
                 }
