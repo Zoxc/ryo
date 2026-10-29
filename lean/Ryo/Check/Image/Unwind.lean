@@ -125,6 +125,13 @@ def checkCie (o : ImageObject) (eh : EhFrame) : Array String := Id.run do
   | _ => out := out.push ".eh_frame CIE: no personality pointer into the image"
   return out
 
+/-- The LSDAs of section `s` end at its end, `e`. -/
+def lsdaEndCheck (o : ImageObject) (s e : Nat) (out : Array String) : Array String :=
+  match o.elf.section? s with
+  | some sec =>
+    if e != sec.size then out.push s!"`{sec.name}`: the LSDAs end at {e} of {sec.size} bytes" else out
+  | none => out
+
 def unwindChecks (o : ImageObject) (ds : Array FuncDecoding) : Array String := Id.run do
   if o.image.mode.pe then return #[]
   let (_, eh) ← match readEhFrame o.elf with
@@ -149,6 +156,8 @@ def unwindChecks (o : ImageObject) (ds : Array FuncDecoding) : Array String := I
     let prev := match lsdaEnd with
       | some (s, e) => if s == u.lsdaSection.index then e else 0
       | none => 0
+    if let some (s, e) := lsdaEnd then
+      if s != u.lsdaSection.index then out := lsdaEndCheck o s e out
     if u.lsdaOff != prev then out := out.push s!"{l}: LSDA at {u.lsdaOff}, the previous one ends at {prev}"
     lsdaEnd := some (u.lsdaSection.index, u.lsdaOff + u.lsda.size)
     match u.sites with
@@ -178,9 +187,7 @@ def unwindChecks (o : ImageObject) (ds : Array FuncDecoding) : Array String := I
           out := out.push s!"{l}: call site [{c.start}, {c.start + c.len}) outside the body [{body}, {stub})"
         if let some p := c.pad then
           if p < body || p ≥ stub then out := out.push s!"{l}: landing pad {p} outside the body [{body}, {stub})"
-  if let some (s, e) := lsdaEnd then
-    if let some sec := o.elf.section? s then
-      if e != sec.size then out := out.push s!"`{sec.name}`: the LSDAs end at {e} of {sec.size} bytes"
+  if let some (s, e) := lsdaEnd then out := lsdaEndCheck o s e out
   return out
 
 end Ryo.Check.Image
