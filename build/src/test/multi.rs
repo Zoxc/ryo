@@ -25,7 +25,7 @@ fn run_out(exe: &Path, args: &[&str], env: &[(&str, &str)]) -> Result<String, St
 fn cc(info: &RustcInfo, lld: bool) -> Command {
     let mut c = cmd("cc");
     if lld {
-        c.arg("-fuse-ld=lld").arg("-B").arg(info.sysroot.join("lib").join("rustlib").join(&info.host).join("bin").join("gcc-ld"));
+        c.arg("-fuse-ld=lld").arg("-B").arg(crate::utils::rustlib(&info.sysroot, &info.host).join("bin").join("gcc-ld"));
     } else {
         c.arg("-fuse-ld=bfd");
     }
@@ -190,7 +190,7 @@ pub(super) fn multi_dylib(info: &RustcInfo, root: &Path, rustc_ryo: &Path, src: 
     let exe = dir.join("dexe");
     let ext = |n: &str| format!("{n}={}", dir.join(format!("lib{n}.so")).display());
     rustc(&["-Cprefer-dynamic", "--extern", &ext("da"), "--extern", &ext("db"), "-L", dir.to_str().ok_or("non-UTF-8 path")?], "dexe.rs", &exe)?;
-    let std_dir = root.join("dist").join("lib").join("rustlib").join(&info.host).join("lib");
+    let std_dir = crate::utils::rustlib(&root.join("dist"), &info.host).join("lib");
     let lib_path = crate::utils::prepend_paths("LD_LIBRARY_PATH", [dir.clone(), std_dir])?;
     // `run_out` with the libraries' directories on the search path.
     let run_libs = |exe: &Path, args: &[&str], env: &[(&str, &str)]| -> Result<String, String> {

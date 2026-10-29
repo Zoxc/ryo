@@ -445,7 +445,7 @@ impl Lock {
         // without its pid.
         let me = std::process::id();
         let tmp = install.join(format!(".lock.{me}"));
-        fs::write(&tmp, me.to_string()).map_err(|e| format!("writing {}: {e}", tmp.display()))?;
+        write(&tmp, me.to_string())?;
         let res = Self::link(&tmp, &path);
         let _ = fs::remove_file(&tmp);
         res.map(|()| Lock(path))

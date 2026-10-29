@@ -585,7 +585,7 @@ fn prepare(root: &Path, base: &Path, krate: &Crate) -> Result<Sources, String> {
     crate::utils::run(cmd("cargo").current_dir(&dir).args(["fetch", "--locked"]))?;
     let workload = root.join("tests").join("crates").join(format!("{}.rs", krate.name));
     crate::utils::create_dir(dir.join("examples"))?;
-    fs::copy(&workload, dir.join("examples").join("ryo_bench.rs")).map_err(|e| format!("copying {}: {e}", workload.display()))?;
+    crate::utils::copy(&workload, &dir.join("examples").join("ryo_bench.rs"))?;
     // Published manifests set `autoexamples = false`. `[workspace]` keeps cargo from looking
     // for one in the parent directories.
     let manifest = dir.join("Cargo.toml");

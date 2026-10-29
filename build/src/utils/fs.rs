@@ -121,6 +121,6 @@ pub fn hash_files(files: &[impl AsRef<Path>]) -> Result<u64, String> {
 /// Hashes the contents of `path`.
 pub fn hash_file(h: &mut std::hash::DefaultHasher, path: &Path) -> Result<(), String> {
     use std::hash::Hasher;
-    h.write(&std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?);
+    h.write(&read_bytes(path)?);
     Ok(())
 }

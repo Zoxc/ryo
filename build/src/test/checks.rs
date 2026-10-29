@@ -228,9 +228,9 @@ pub(super) fn incremental(rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result
     const REVISIONS: u32 = 11;
     let src = dir_in.join("edits.rs");
     let dir = out.join("incremental");
-    let _ = fs::remove_dir_all(&dir);
+    crate::utils::fresh_dir(&dir)?;
     let run = |exe: &Path, env: &[(&str, &str)]| -> Result<String, String> { Ok(capture_ok(Command::new(exe).envs(env.iter().copied()))?.stdout) };
-    let read = |p: &Path| fs::read(p).map_err(|e| format!("reading {}: {e}", p.display()));
+    let read = |p: &Path| crate::utils::read_bytes(p);
     let reuse = &["--cfg", "reuse", "-Zquery-dep-graph"][..];
     // link.exe stamps the time into the executable (and a random PDB GUID): `/Brepro` derives
     // both from the contents, so identical builds give identical files.
@@ -443,7 +443,7 @@ pub(crate) fn rt_core_only(info: &crate::utils::RustcInfo, root: &Path, triple: 
     let dist = root.join("dist");
     let mut libs = Vec::new();
     for sysroot in [dist.clone(), dist.join(crate::sysroot::SYSROOT_DIR)] {
-        let dir = sysroot.join("lib").join("rustlib").join(triple).join("lib");
+        let dir = crate::utils::rustlib(&sysroot, triple).join("lib");
         let Ok(entries) = fs::read_dir(&dir) else { continue };
         for e in entries.flatten() {
             let name = e.file_name().to_string_lossy().into_owned();
@@ -730,7 +730,7 @@ pub(super) fn dump(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), Strin
 /// target (`./y.sh build --target x86_64-pc-windows-msvc`).
 pub(super) fn pe_imports(info: &crate::utils::RustcInfo, root: &Path, rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result<(), String> {
     const TARGET: &str = "x86_64-pc-windows-msvc";
-    if !root.join("dist/lib/rustlib").join(TARGET).join("lib").exists() {
+    if !crate::utils::rustlib(&root.join("dist"), TARGET).join("lib").exists() {
         eprintln!("[y] pe-imports: skipped, dist/ has no {TARGET} (`./y.sh build --target {TARGET}`)");
         return Ok(());
     }
