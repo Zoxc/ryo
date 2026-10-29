@@ -230,23 +230,6 @@ pub struct Code {
     pub enterable: Vec<bool>,
 }
 
-/// The IR condition of a compare family's condition.
-fn ir_cc(cc: full::Cc) -> super::ir::Cc {
-    use super::ir::Cc;
-    match cc {
-        full::Cc::Eq => Cc::Eq,
-        full::Cc::Ne => Cc::Ne,
-        full::Cc::LtS => Cc::LtS,
-        full::Cc::LtU => Cc::LtU,
-        full::Cc::LeS => Cc::LeS,
-        full::Cc::LeU => Cc::LeU,
-        full::Cc::GtS => Cc::GtS,
-        full::Cc::GtU => Cc::GtU,
-        full::Cc::GeS => Cc::GeS,
-        full::Cc::GeU => Cc::GeU,
-    }
-}
-
 /// Reads the immediate operand `name` of the native instruction `w` (opcode `op`).
 fn imm(op: full::Opcode, w: &[u32], name: &str) -> u64 {
     let info = op.info();
@@ -715,7 +698,7 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Re
                     let t = rel(slot(fop, w, "t"));
                     succ.push(t);
                     let neg = im("neg") != 0;
-                    let cc = ir_cc(f.cc().ok_or(Unsupported("branch"))?);
+                    let cc = f.cc().ok_or(Unsupported("branch"))?;
                     accs.push(acc(s("a"), wd as u32, How::Read));
                     let b = if has_imm { Some(im("imm")) } else { None };
                     if b.is_none() {
@@ -732,7 +715,7 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Re
                     }
                     if let Some(cc) = f.cc() {
                         accs.push(acc(s("d"), 1, How::Write));
-                        Kind::Cmp(ir_cc(cc), wd, b)
+                        Kind::Cmp(cc, wd, b)
                     } else {
                         let bin = match f {
                             F::Add | F::AddImm => BinOp::Add,

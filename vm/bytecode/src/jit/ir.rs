@@ -147,20 +147,8 @@ impl BinOp {
     }
 }
 
-/// A comparison, signed (`S`) or unsigned (`U`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Cc {
-    Eq,
-    Ne,
-    LtS,
-    LtU,
-    LeS,
-    LeU,
-    GtS,
-    GtU,
-    GeS,
-    GeU,
-}
+/// A comparison, signed (`S`) or unsigned (`U`): the full ISA's condition.
+pub use crate::full::Cc;
 
 impl Cc {
     /// The comparison that is true when `self` is false.

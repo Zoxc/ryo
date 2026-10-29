@@ -627,7 +627,7 @@ static EXTS: [Option<Ext>; Opcode::COUNT] = {
 };
 
 /// The integer conditions of the compare and compare-and-branch families.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Cc {
     Eq,
     Ne,
