@@ -162,7 +162,7 @@ pub fn run(target: &str) -> Result<(), String> {
         let dir = out.join("jit-sealed");
         // As lld names them: ld64.lld with Mach-O's `_`, lld-link imports as dllimport. They
         // are C symbols (`check_sealed` rejects Rust ones), so need no demangling.
-        let res = crate::jit::check_sealed(&info, &rlib, &dir, target).map(|undefined| {
+        if let Some(undefined) = report(target, &mut failed, "jit-sealed", crate::jit::check_sealed(&info, &rlib, &dir, target), |_| None) {
             jit_imports = undefined
                 .iter()
                 .map(|s| match s.strip_prefix("__imp_") {
@@ -170,15 +170,13 @@ pub fn run(target: &str) -> Result<(), String> {
                     None => crate::target::symbol(target, s),
                 })
                 .collect();
-            String::new()
-        });
-        report(target, &mut failed, "jit-sealed", res);
+        }
     }
     // `ryo_rt` keeps to `core` (`y test` checks the host's).
-    report(target, &mut failed, "rt-core-only", crate::test::rt_core_only(&info, &root, target).map(|()| String::new()));
+    report(target, &mut failed, "rt-core-only", crate::test::rt_core_only(&info, &root, target), |_| None);
     if !macho {
-        report(target, &mut failed, "win64-i128", win64_i128(&info, target, &out.join("win64-i128")).map(|()| String::new()));
-        report(target, &mut failed, "red-zone", no_red_zone(&info, &rlib, &out.join("red-zone")).map(|n| format!("{n} objects")));
+        report(target, &mut failed, "win64-i128", win64_i128(&info, target, &out.join("win64-i128")), |_| None);
+        report(target, &mut failed, "red-zone", no_red_zone(&info, &rlib, &out.join("red-zone")), |n| Some(format!("{n} objects")));
     }
     for program in CORPUS {
         let res = (|| {
@@ -204,12 +202,12 @@ pub fn run(target: &str) -> Result<(), String> {
             }
             Ok(unwind)
         })();
-        report(target, &mut failed, program.name, res.map(|n| if n == 0 { String::new() } else { format!("{n} unwind entries checked") }));
+        report(target, &mut failed, program.name, res, |&n| (n != 0).then(|| format!("{n} unwind entries checked")));
     }
     // Mach-O has no constructor priorities: the registry's must come first in input order.
     if macho && !failed.contains(&"vm_sysroot") {
         let exe = out.join("vm_sysroot").join("ryo").join("vm_sysroot");
-        report(target, &mut failed, "registry-first", registry_first(&info, &exe).map(|()| String::new()));
+        report(target, &mut failed, "registry-first", registry_first(&info, &exe), |_| None);
     }
     if !failed.is_empty() {
         return Err(format!("failed cross tests: {}", failed.join(", ")));
@@ -217,15 +215,27 @@ pub fn run(target: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Prints the outcome of the check `name` (`Ok` holds a note such as "3 objects", or nothing)
-/// and records a failure in `failed`.
-fn report(target: &str, failed: &mut Vec<&'static str>, name: &'static str, res: Result<String, String>) {
+/// Prints the outcome of the check `name`, with `note`'s note on success (such as "3
+/// objects"), records a failure in `failed`, and returns the success value.
+fn report<T>(
+    target: &str,
+    failed: &mut Vec<&'static str>,
+    name: &'static str,
+    res: Result<T, String>,
+    note: impl FnOnce(&T) -> Option<String>,
+) -> Option<T> {
     match res {
-        Ok(note) if note.is_empty() => eprintln!("[y] test --cross {target} {name}: ok"),
-        Ok(note) => eprintln!("[y] test --cross {target} {name}: ok ({note})"),
+        Ok(v) => {
+            match note(&v) {
+                Some(note) => eprintln!("[y] test --cross {target} {name}: ok ({note})"),
+                None => eprintln!("[y] test --cross {target} {name}: ok"),
+            }
+            Some(v)
+        }
         Err(msg) => {
             eprintln!("[y] test --cross {target} {name}: FAILED: {msg}");
             failed.push(name);
+            None
         }
     }
 }
