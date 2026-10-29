@@ -811,7 +811,7 @@ fn image_ref_addr(img: &Image<'_>, r: Ref) -> Option<usize> {
     let h = img.header();
     let ro = img.bytes().as_ptr() as usize;
     Some(match r {
-        Ref::Sym(Sym(s)) if (s as usize) < img.symbols().len() => ro + h.symbols.off as usize + 8 * s as usize,
+        Ref::Sym(Sym(s)) if (s as usize) < img.symbols().len() => ro + h.sym_slot(s) as usize,
         Ref::Const(Const(k)) => ro + h.consts.off as usize + k as usize,
         Ref::Data(Data(k)) => h.data as usize + k as usize,
         _ => return None,

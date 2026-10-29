@@ -3,7 +3,7 @@
 
 use alloc::vec::Vec;
 
-use super::{Image, PoolRead};
+use super::{Image, PoolRead, SYM_SLOT};
 
 /// Classifies the addresses an image's linked code refers to ([`crate::asm::Resolver`]), by
 /// the image's header ranges, for decoding its functions at run time
@@ -54,8 +54,8 @@ impl ImageResolver<'_> {
         if let Some(o) = within(h.text, h.text_size as u64, false) {
             return Ok(self.image.func_at_entry(o).map(|g| Ref::Func(Func(g))));
         }
-        if let Some(o) = within(ro.wrapping_add(h.symbols.off as u64), h.symbols.count as u64 * 8, false) {
-            return Ok((o % 8 == 0).then_some(Ref::Sym(Sym(o / 8))));
+        if let Some(o) = within(ro.wrapping_add(h.symbols.off as u64), h.symbols.count as u64 * SYM_SLOT as u64, false) {
+            return Ok((o % SYM_SLOT == 0).then_some(Ref::Sym(Sym(o / SYM_SLOT))));
         }
         if let Some(o) = within(ro.wrapping_add(h.code_consts.off as u64), h.code_consts.count as u64, false) {
             return Ok(Some(Ref::Ro(o)));

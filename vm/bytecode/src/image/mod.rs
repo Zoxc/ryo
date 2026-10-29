@@ -328,7 +328,7 @@ pub fn jit_settle(c: &core::sync::atomic::AtomicI64, state: impl Fn() -> u32) {
 }
 
 const _: () = {
-    assert!(mem::size_of::<JitRecord>() == 64);
+    assert!(JIT_RECORD_SIZE == 64);
     assert!(mem::offset_of!(JitRecord, entry) == JIT_ENTRY_SLOT as usize);
     assert!(mem::offset_of!(JitRecord, osr) == JIT_OSR_SLOT as usize);
     assert!(mem::offset_of!(JitRecord, func) == 36);
@@ -424,6 +424,23 @@ pub struct Header {
     /// a runtime registers only the images linked against the anchor its stub passes
     /// (design/backend.md#pipeline).
     pub anchor: u64,
+}
+
+/// The size of a symbol slot (`[u64]` at [`Header::symbols`]).
+pub const SYM_SLOT: u32 = 8;
+/// The size of a [`JitRecord`], the stride of [`Header::jit_records`].
+pub const JIT_RECORD_SIZE: u32 = mem::size_of::<JitRecord>() as u32;
+
+impl Header {
+    /// The read-only section offset of symbol `s`'s slot.
+    pub const fn sym_slot(&self, s: u32) -> u64 {
+        self.symbols.off as u64 + SYM_SLOT as u64 * s as u64
+    }
+
+    /// The writable section offset of function `f`'s [`JitRecord`].
+    pub const fn jit_record(&self, f: u32) -> u64 {
+        self.jit_records.off as u64 + JIT_RECORD_SIZE as u64 * f as u64
+    }
 }
 
 /// A function table entry.
@@ -647,7 +664,7 @@ impl<'a> Image<'a> {
         }
         let r = header.jit_records;
         let records = if img.mode().counters { header.functions.count } else { 0 };
-        if r.count != records || r.off % 64 != 0 || r.off as u64 + 64 * r.count as u64 > header.data_size as u64 {
+        if r.count != records || r.off % 64 != 0 || header.jit_record(r.count) > header.data_size as u64 as u64 {
             return Err(ImageError::BadData);
         }
         Ok(img)

@@ -534,12 +534,12 @@ impl ImageWriter {
         let mut text = self.layout_text(&encoded)?;
         let data = self.layout_data(mode, text.funcs.len())?;
         let (ro, header) = self.layout_ro(mode, &text, &data)?;
-        let mut relocs = self.relocs(mode, &header, &mut text, &data)?;
+        let mut relocs = self.relocs(mode, &header, &mut text)?;
         let unwind = if mode.pe {
             assert!(mode.frame_pointer, "PE unwind info needs the frame pointer");
             unwind_pe(&text.func_code, mode, &mut relocs)
         } else {
-            let slot = header.symbols.off as u64 + 8 * self.personality.expect("prepare").0 as u64;
+            let slot = header.sym_slot(self.personality.expect("prepare").0);
             unwind_elf(&text.func_code, slot, mode, self.eh_pointers, &mut relocs)
         };
 
@@ -718,22 +718,22 @@ impl ImageWriter {
 
     /// The relocations of the header and symbol slots, the JIT records, the code (patching
     /// calls between functions into `t.text`) and the allocations.
-    fn relocs(&self, mode: Mode, h: &Header, t: &mut TextLayout, d: &DataLayout) -> Result<Vec<Reloc>, WriteError> {
+    fn relocs(&self, mode: Mode, h: &Header, t: &mut TextLayout) -> Result<Vec<Reloc>, WriteError> {
         let mut relocs = Vec::new();
         let abs = |section, offset, target| Reloc { section, offset, target, addend: 0, kind: RelocKind::Abs64 };
         relocs.push(abs(Section::ReadOnly, mem::offset_of!(Header, data) as u64, RelocTarget::Section(Section::Writable)));
         relocs.push(abs(Section::ReadOnly, mem::offset_of!(Header, text) as u64, RelocTarget::Section(Section::Text)));
         for i in 0..self.symbols.len() as u32 {
-            relocs.push(abs(Section::ReadOnly, h.symbols.off as u64 + i as u64 * 8, RelocTarget::Symbol(Sym(i))));
+            relocs.push(abs(Section::ReadOnly, h.sym_slot(i), RelocTarget::Symbol(Sym(i))));
         }
-        for i in 0..d.jit_records.count as u64 {
-            let rec = d.jit_records.off as u64 + 64 * i;
+        for i in 0..h.jit_records.count {
+            let rec = h.jit_record(i);
             for (field, target) in JIT_RECORD_RELOCS {
                 relocs.push(abs(Section::Writable, rec + field as u64, target));
             }
         }
         for r in &t.code_refs {
-            if let Some(reloc) = self.code_ref_reloc(mode, h, d, &t.funcs, &mut t.text, r)? {
+            if let Some(reloc) = self.code_ref_reloc(mode, h, &t.funcs, &mut t.text, r)? {
                 relocs.push(reloc);
             }
         }
@@ -748,15 +748,7 @@ impl ImageWriter {
 
     /// The relocation of a code field, or `None` for a call between functions, resolved here
     /// in `text`.
-    fn code_ref_reloc(
-        &self,
-        mode: Mode,
-        h: &Header,
-        d: &DataLayout,
-        funcs: &[FuncEntry],
-        text: &mut [u8],
-        r: &CodeRef,
-    ) -> Result<Option<Reloc>, WriteError> {
+    fn code_ref_reloc(&self, mode: Mode, h: &Header, funcs: &[FuncEntry], text: &mut [u8], r: &CodeRef) -> Result<Option<Reloc>, WriteError> {
         let &CodeRef { at, to, start, ro_base, func } = r;
         let pc = |target, off: u64| Reloc {
             section: Section::Text,
@@ -776,12 +768,12 @@ impl ImageWriter {
                 text[at as usize..at as usize + 4].copy_from_slice(&disp.to_le_bytes());
                 return Ok(None);
             }
-            Ref::Sym(Sym(s)) if (s as usize) < self.symbols.len() => pc(Section::ReadOnly, h.symbols.off as u64 + 8 * s as u64),
+            Ref::Sym(Sym(s)) if (s as usize) < self.symbols.len() => pc(Section::ReadOnly, h.sym_slot(s)),
             Ref::Const(Const(k)) if (k as usize) <= self.consts.len() => pc(Section::ReadOnly, h.consts.off as u64 + k as u64),
             Ref::Data(Data(x)) if (x as usize) <= self.data.len() => pc(Section::Writable, x as u64),
             Ref::Ro(o) => pc(Section::ReadOnly, (h.code_consts.off + ro_base + o) as u64),
             Ref::Rec | Ref::RecLoopCtr if mode.counters => {
-                let rec = d.jit_records.off as u64 + 64 * func as u64;
+                let rec = h.jit_record(func);
                 pc(Section::Writable, if to == Ref::RecLoopCtr { rec + JIT_LOOP_CTR as u64 } else { rec })
             }
             Ref::Rec | Ref::RecLoopCtr => return Err(bad(CodeError::NoJitRecord)),
