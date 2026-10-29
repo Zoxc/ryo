@@ -19,23 +19,28 @@ pub fn opf(family: FloatOp, f: FloatWidth) -> Opcode {
     family.at(f).unwrap_or_else(|| panic!("ryo lowering: no opcode {}.{}", family.stem(), f.mnemonic()))
 }
 
-/// Encodes the words of an immediate of width `w`.
-pub fn imm_words(w: Width, v: u128) -> Vec<u32> {
-    (0..w.imm_words()).map(|i| (v >> (32 * i)) as u32).collect()
+/// The operands `head` (at most 2) followed by the words of an immediate `v` of width `w`, in
+/// a stack buffer: `&buf[..len]`.
+pub fn imm_ops(head: &[u32], w: Width, v: u128) -> ([u32; 6], usize) {
+    let mut buf = [0; 6];
+    buf[..head.len()].copy_from_slice(head);
+    let n = w.imm_words();
+    for i in 0..n {
+        buf[head.len() + i] = (v >> (32 * i)) as u32;
+    }
+    (buf, head.len() + n)
 }
 
 impl FnCx<'_, '_> {
     /// Stores an immediate of width `w` into slot `d`.
     pub fn imm(&mut self, w: Width, d: u32, v: u128) {
-        let mut ops = vec![d];
-        ops.extend(imm_words(w, v));
-        self.op(opw(IntOp::Imm, w), &ops);
+        let (ops, n) = imm_ops(&[d], w, v);
+        self.op(opw(IntOp::Imm, w), &ops[..n]);
     }
 
     /// `family.imm.w d, a, v`, `v` truncated to the width.
     pub fn op_imm(&mut self, family: IntOp, w: Width, d: u32, a: u32, v: u128) {
-        let mut ops = vec![d, a];
-        ops.extend(imm_words(w, w.truncate(v)));
-        self.op(family.imm_at(w).unwrap_or_else(|| panic!("ryo lowering: no opcode {}.imm.{}", family.stem(), w.mnemonic())), &ops);
+        let (ops, n) = imm_ops(&[d, a], w, w.truncate(v));
+        self.op(family.imm_at(w).unwrap_or_else(|| panic!("ryo lowering: no opcode {}.imm.{}", family.stem(), w.mnemonic())), &ops[..n]);
     }
 }

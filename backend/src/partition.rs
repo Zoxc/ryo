@@ -4,6 +4,7 @@
 //! The results feed the `symbol_name` ([`super::symbols`]) and exported-symbols
 //! ([`super::exports`]) overrides.
 
+use std::fmt::Write as _;
 use std::sync::OnceLock;
 
 use rustc_data_structures::fx::{FxHashMap, FxHashSet, FxIndexMap};
@@ -666,10 +667,11 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             {
                 self.add_c_main(u, main, ty);
             }
-            let refs = self.units[u].vm.refs.clone();
-            for item in refs {
+            let refs = std::mem::take(&mut self.units[u].vm.refs);
+            for &item in &refs {
                 self.make_visible(u, item);
             }
+            self.units[u].vm.refs = refs;
         }
         for u in 0..self.units.len() {
             self.walk_stub_neighbors(u);
@@ -951,7 +953,8 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
     /// stats.
     fn add_islands(&mut self, u: usize, all: &mut FxHashSet<Instance<'tcx>>) {
         let tcx = self.tcx;
-        for island in self.units[u].vm.islands.clone() {
+        let islands = std::mem::take(&mut self.units[u].vm.islands);
+        for &island in &islands {
             all.insert(island);
             let item = MonoItem::Fn(island);
             let elsewhere = self.global_elsewhere(u, item);
@@ -975,6 +978,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             self.owners.insert(item, u);
             self.units[u].add_hidden(tcx, island, Linkage::External);
         }
+        self.units[u].vm.islands = islands;
     }
 
     /// Makes a native item CGU `u`'s image refers to by symbol linkable from the image's
@@ -1022,7 +1026,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         // A `LocalCopy` defined globally by another CGU: a native item there needs at most the
         // linkonce flip.
         if self.global_elsewhere(u, item) {
-            for h in self.homes.get(&item).cloned().unwrap_or_default() {
+            for &h in self.homes.get(&item).map_or(&[][..], |v| &v[..]) {
                 let unit = &mut self.units[h];
                 let flip = linkable(&unit.cgu.items()[&item], None);
                 unit.flip(item, flip);
@@ -1086,7 +1090,7 @@ fn image_part<'tcx>(
     let entry_symbol = entry.map(|e| tcx.symbol_name(e).name);
     let mut key = format!("{}\n{settings}\n{entry_symbol:?}\n", cgu.name());
     for (i, d) in &cands {
-        key.push_str(&format!("{} {:?} {:?}\n", tcx.symbol_name(*i).name, d.linkage, d.visibility));
+        let _ = writeln!(key, "{} {:?} {:?}", tcx.symbol_name(*i).name, d.linkage, d.visibility);
     }
     let fp = stable_fingerprint(&key).to_hex();
     let node = CodegenUnit::new(Symbol::intern(&format!("{}.ryo.{fp}", cgu.name()))).codegen_dep_node(tcx);
@@ -1192,9 +1196,9 @@ pub(super) fn path(instance: Instance<'_>) -> String {
 }
 
 /// The items `instance` uses (`items_of_instance`, used items).
-fn neighbors<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> Vec<MonoItem<'tcx>> {
+fn neighbors<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> impl Iterator<Item = MonoItem<'tcx>> + 'tcx {
     match tcx.items_of_instance((instance, CollectionMode::UsedItems)) {
-        Ok((used, _)) => used.iter().map(|s| s.node).collect(),
+        Ok((used, _)) => used.iter().map(|s| s.node),
         Err(e) => tcx.dcx().fatal(format!("collecting the items used by {instance}: {e:?}")),
     }
 }

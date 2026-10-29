@@ -684,6 +684,11 @@ pub fn write_image(
     let rt = |name: &str| fmt.mangle(&rt_symbol(name));
     // Mach-O's `.eh_frame` fields without relocations: (offset, target section, addend, size).
     let mut implicit = Vec::new();
+    // The number of `GCC_except_table` symbols so far.
+    let mut lsdas = 0usize;
+    // `ryo_rt` symbols by opcode, and Probe/TripEntry/TripOsr/SehHandler.
+    let mut handlers: Vec<Option<SymbolId>> = vec![None; Opcode::COUNT];
+    let mut fixed: [Option<SymbolId>; 4] = [None; 4];
     for r in &image.relocs {
         if fmt.implicit_eh_frame() && r.section == Section::EhFrame {
             let eh = section(Section::EhFrame);
@@ -704,8 +709,8 @@ pub fn write_image(
                         // splits `__gcc_except_tab` into atoms only at symbols and points an
                         // FDE's LSDA at the start of the atom holding it, so without them every
                         // FDE got the first function's LSDA ("failed to initiate panic").
-                        let n = implicit.iter().filter(|f: &&(u64, Section, i64, u64)| f.1 == Section::Lsda).count();
-                        let name = format!("GCC_except_table{n}");
+                        let name = format!("GCC_except_table{lsdas}");
+                        lsdas += 1;
                         obj.add_symbol(defined(&name, section(t), r.addend as u64, 0, SymbolKind::Data, SymbolScope::Compilation));
                     }
                     implicit.push((r.offset, t, r.addend, if r.kind == RelocKind::Pc64 { 8 } else { 4 }))
@@ -718,11 +723,12 @@ pub fn write_image(
             RelocTarget::Symbol(s) => syms[s.0 as usize],
             RelocTarget::Section(s) => fmt.section_target(&mut obj, section(s)),
             // `ryo_rt` symbols; `undefined` reuses the symbol on later references.
-            RelocTarget::Handler(op) => undefined(&mut obj, &rt(&handler_name(op)), SymbolKind::Text),
-            RelocTarget::Probe => undefined(&mut obj, &rt(PROBE_SYMBOL), SymbolKind::Text),
-            RelocTarget::TripEntry => undefined(&mut obj, &rt(TRIP_ENTRY_SYMBOL), SymbolKind::Text),
-            RelocTarget::TripOsr => undefined(&mut obj, &rt(TRIP_OSR_SYMBOL), SymbolKind::Text),
-            RelocTarget::SehHandler => undefined(&mut obj, &rt(SEH_HANDLER_SYMBOL), SymbolKind::Text),
+            // Cached: building and mangling the name per relocation is costly.
+            RelocTarget::Handler(op) => *handlers[op as usize].get_or_insert_with(|| undefined(&mut obj, &rt(&handler_name(op)), SymbolKind::Text)),
+            RelocTarget::Probe => *fixed[0].get_or_insert_with(|| undefined(&mut obj, &rt(PROBE_SYMBOL), SymbolKind::Text)),
+            RelocTarget::TripEntry => *fixed[1].get_or_insert_with(|| undefined(&mut obj, &rt(TRIP_ENTRY_SYMBOL), SymbolKind::Text)),
+            RelocTarget::TripOsr => *fixed[2].get_or_insert_with(|| undefined(&mut obj, &rt(TRIP_OSR_SYMBOL), SymbolKind::Text)),
+            RelocTarget::SehHandler => *fixed[3].get_or_insert_with(|| undefined(&mut obj, &rt(SEH_HANDLER_SYMBOL), SymbolKind::Text)),
         };
         obj.add_relocation(section(r.section), Relocation { offset: r.offset, symbol, addend: r.addend, flags: fmt.reloc(r.kind) })
             .map_err(|e| format!("image relocation: {e}"))?;

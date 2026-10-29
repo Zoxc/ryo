@@ -32,7 +32,7 @@ use super::emit::{IntOp, Width};
 use super::frame;
 use super::island::templates;
 use super::place::{Loc, PlaceVal};
-use super::sig::{AbiSig, ArgLoc, ArgPlan, CallConv, abi_sig, fn_ptr_sig, tys_sig, virtual_sig};
+use super::sig::{AbiSig, ArgLoc, ArgPlan, CallConv, fn_ptr_sig, tys_sig, virtual_sig};
 use super::{CodeReloc, FnCx, NeedsNative, native, no_trim};
 
 /// Where an argument comes from.
@@ -225,7 +225,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         }
         let has_symbol = !matches!(callee.def, InstanceKind::Intrinsic(_));
         let vm = self.cx.vm.contains(&callee);
-        let callee_sig = (has_symbol || vm).then(|| abi_sig(tcx, callee));
+        let callee_sig = (has_symbol || vm).then(|| self.abi_sig(callee));
         let (target, sig) = match callee_sig {
             // VM functions are Rust-ABI; a candidate with another ABI stays native.
             Some(Ok(sig)) if vm && sig.conv == CallConv::Rust => (Target::Vm(callee), AbiSig { rust_call, ..sig }),
@@ -364,7 +364,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// refuses to inline where it doesn't hold (vm/bytecode/src/jit/inline.rs
     /// `outgoing_pending`).
     fn pass_args(&mut self, sig: &AbiSig<'tcx>, homes: &[u32], d: Option<u32>, tail: bool) -> Result<Vec<u32>, NeedsNative> {
-        let Some(plan) = sig.plan.clone() else { return native("a call without a calling convention") };
+        let Some(plan) = &sig.plan else { return native("a call without a calling convention") };
         let mut a = Vec::new();
         let gpr = |index| ArgReg { xmm: false, size: 8, index }.word();
         if sig.ret_kind == RET_SRET {
@@ -680,8 +680,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         }
         if self.cx.vm.contains(&glue) {
             // The glue of an unsized type takes the wide pointer.
-            let sig = abi_sig(tcx, glue)?;
-            let homes = self.write_args(&sig, &[ArgSrc::Slot(ptr)], self.body.source_info(rustc_middle::mir::Location::START).clone(), false)?;
+            let sig = self.abi_sig(glue)?;
+            let homes = self.write_args(&sig, &[ArgSrc::Slot(ptr)], *self.body.source_info(rustc_middle::mir::Location::START), false)?;
             let a = self.pass_args(&sig, &homes, None, false)?;
             let f = self.reloc(CodeReloc::Call { callee: glue });
             let at = self.call_insn(Opcode::Call, &[0, f, 0], &a, CallKind::DropVm, &sig);

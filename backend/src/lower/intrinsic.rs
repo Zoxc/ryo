@@ -442,10 +442,11 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// An intrinsic wrapper island: `ops` = the inputs, then the destination (each a slot and
     /// its size).
     fn wrapper(&mut self, template: &str, generics: &[GenericArg<'tcx>], ins: &[(u32, u32)], cont: &CallCont<'tcx>) -> Result<bool, NeedsNative> {
-        let ins = ins.to_vec();
+        let mut ops = Vec::with_capacity(ins.len() + 1);
+        ops.extend_from_slice(ins);
         let dn = cont.dest.map_or(0, |d| d.layout.size.bytes() as u32);
         self.into_dest(cont, |fx, d| {
-            let mut ops = ins;
+            let mut ops = ops;
             ops.push((d, dn));
             fx.island(template, generics, &ops, None);
             Ok(())
@@ -494,8 +495,15 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         // By mnemonic (`atomic.cxchg.weak.w64.acquire.relaxed`): orderings are a third axis.
         let pick = |base: String, ords: &[&str]| -> Result<Opcode, NeedsNative> {
             let exact = format!("{base}.{}", ords.join("."));
-            let strong = format!("{base}.{}", vec!["seqcst"; ords.len()].join("."));
-            by_mnemonic(&exact).or_else(|| by_mnemonic(&strong)).ok_or_else(|| NeedsNative(format!("no opcode {exact}")))
+            by_mnemonic(&exact)
+                .or_else(|| {
+                    let mut strong = base;
+                    for _ in ords {
+                        strong.push_str(".seqcst");
+                    }
+                    by_mnemonic(&strong)
+                })
+                .ok_or_else(|| NeedsNative(format!("no opcode {exact}")))
         };
         if name == "atomic_singlethreadfence" {
             // Every ordering is the same barrier to the VM and the JIT; no machine code.

@@ -287,7 +287,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// pointers to their slots; then copies the inputs on the stack and the values behind the
     /// pointers to the homes.
     pub fn prologue(&mut self, sig: &AbiSig<'tcx>) -> Result<(), NeedsNative> {
-        let Some(plan) = sig.plan.clone() else { return native("a VM function without a calling convention") };
+        let Some(plan) = &sig.plan else { return native("a VM function without a calling convention") };
         let arg = |fx: &mut Self, d: u32, r: ArgReg| {
             fx.op(Opcode::Arg, &[d, r.word()]);
         };

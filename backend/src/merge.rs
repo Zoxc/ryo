@@ -152,7 +152,8 @@ pub(super) fn island_instance<'tcx>(tcx: TyCtxt<'tcx>, rt: RtItems, template: Sy
 #[derive(Default)]
 struct Pool {
     allocs: FxHashMap<AllocId, AllocTarget>,
-    bytes: FxHashMap<(Vec<u8>, u32), Const>,
+    /// By alignment, then bytes (so that a hit looks up by `&[u8]` without allocating).
+    bytes: FxHashMap<u32, FxHashMap<Vec<u8>, Const>>,
 }
 
 impl Pool {
@@ -229,7 +230,13 @@ impl Pool {
     }
 
     fn bytes(&mut self, w: &mut ImageWriter, bytes: &[u8], align: u32) -> Const {
-        *self.bytes.entry((bytes.to_vec(), align)).or_insert_with(|| w.add_const(bytes, align, &[]))
+        let by_bytes = self.bytes.entry(align).or_default();
+        if let Some(&k) = by_bytes.get(bytes) {
+            return k;
+        }
+        let k = w.add_const(bytes, align, &[]);
+        by_bytes.insert(bytes.to_vec(), k);
+        k
     }
 }
 

@@ -315,9 +315,14 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// `op d, srcs...` into the place `dst`.
     pub fn op_to(&mut self, dst: PlaceVal<'tcx>, op: Opcode, srcs: &[u32]) -> Result<(), NeedsNative> {
         self.into_place(dst, |fx, d| {
-            let mut ops = vec![d];
-            ops.extend_from_slice(srcs);
-            fx.op(op, &ops);
+            let mut buf = [0; 8];
+            if srcs.len() < buf.len() {
+                buf[0] = d;
+                buf[1..=srcs.len()].copy_from_slice(srcs);
+                fx.op(op, &buf[..=srcs.len()]);
+            } else {
+                fx.op(op, &[&[d], srcs].concat());
+            }
         })
     }
 }

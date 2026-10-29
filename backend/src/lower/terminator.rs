@@ -303,7 +303,17 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let pv = self.place(p)?;
         let Some(n) = self.niche_tag(pv)? else { unreachable!("fusable_discr checked the layout") };
         let tw = n.tw;
-        let target = |v: u32| targets.iter().find(|&(c, _)| c == u128::from(v)).map_or(targets.otherwise(), |(_, bb)| bb);
+        // Each variant's target, indexed from `n.start`: one pass over the cases.
+        let mut by_variant = vec![targets.otherwise(); (n.end - n.start) as usize + 1];
+        for (c, bb) in targets.iter() {
+            if c >= u128::from(n.start) && c <= u128::from(n.end) {
+                by_variant[(c - u128::from(n.start)) as usize] = bb;
+            }
+        }
+        let target = |v: u32| match v.checked_sub(n.start).and_then(|i| by_variant.get(i as usize)) {
+            Some(&bb) => bb,
+            None => targets.iter().find(|&(c, _)| c == u128::from(v)).map_or(targets.otherwise(), |(_, bb)| bb),
+        };
         let untagged_bb = target(n.untagged);
         // `otherwise` covers the variant indices the switch doesn't list; when it is
         // unreachable, those arms aren't tested.

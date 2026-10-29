@@ -47,7 +47,7 @@ mod sig;
 mod simd;
 mod terminator;
 
-use rustc_data_structures::fx::FxHashSet;
+use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use rustc_middle::mir::interpret::AllocId;
 use rustc_middle::mir::{BasicBlock, Body};
 use rustc_middle::ty::layout::TyAndLayout;
@@ -270,6 +270,8 @@ pub struct FnCx<'a, 'tcx> {
     pub strict_simd: bool,
     /// PE: lowering the pad region ([`Asm::begin_region`]), whose `rsp` isn't `fp - F`.
     pub in_region: bool,
+    /// [`abi_sig`] of the callees so far: call sites repeat callees.
+    sigs: FxHashMap<Instance<'tcx>, AbiSig<'tcx>>,
 }
 
 impl<'a, 'tcx> FnCx<'a, 'tcx> {
@@ -309,7 +311,18 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             caller_location,
             strict_simd: !tcx.codegen_instance_attrs(instance.def).target_features.is_empty(),
             in_region: false,
+            sigs: FxHashMap::default(),
         })
+    }
+
+    /// [`abi_sig`] of `instance`, memoized per function.
+    pub fn abi_sig(&mut self, instance: Instance<'tcx>) -> Result<AbiSig<'tcx>, NeedsNative> {
+        if let Some(sig) = self.sigs.get(&instance) {
+            return Ok(sig.clone());
+        }
+        let sig = abi_sig(self.tcx, instance)?;
+        self.sigs.insert(instance, sig.clone());
+        Ok(sig)
     }
 
     /// Lowers every block, in index order. A block that is unreachable after
@@ -408,7 +421,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 self.reset_temps();
                 self.next_block = None;
                 let start = self.insns;
-                self.terminate_call(reason, self.body.source_info(rustc_middle::mir::Location::START).clone())?;
+                self.terminate_call(reason, *self.body.source_info(rustc_middle::mir::Location::START))?;
                 self.cert_stub(reason, start);
                 stubs.push((reason, at));
             }
@@ -575,11 +588,10 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
 
     /// `br.family.imm.w s, v` (`v` truncated to the width), branching to `bb` per `neg`.
     pub fn br_imm(&mut self, family: IntOp, w: Width, s: u32, v: u128, neg: bool, bb: BasicBlock) {
-        let mut ops = vec![s];
-        ops.extend(emit::imm_words(w, w.truncate(v)));
+        let (ops, n) = emit::imm_ops(&[s], w, w.truncate(v));
         self.op_branch(
             family.br_imm_at(w).unwrap_or_else(|| panic!("ryo lowering: no opcode br.{}.imm.{}", family.stem(), w.mnemonic())),
-            &ops,
+            &ops[..n],
             neg,
             bb,
         );
