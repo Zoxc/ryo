@@ -49,6 +49,18 @@ pub fn remove_dir_if_exists(dir: impl AsRef<Path>) -> Result<(), String> {
     Ok(())
 }
 
+/// Removes `dir` if it exists and creates it empty.
+pub fn fresh_dir(dir: impl AsRef<Path>) -> Result<(), String> {
+    remove_dir_if_exists(&dir)?;
+    create_dir(dir)
+}
+
+/// `fs::remove_file`, with the path in the error.
+pub fn remove_file(path: impl AsRef<Path>) -> Result<(), String> {
+    let path = path.as_ref();
+    std::fs::remove_file(path).map_err(|e| format!("removing {}: {e}", path.display()))
+}
+
 /// `fs::read_to_string`, with the path in the error.
 pub fn read(path: impl AsRef<Path>) -> Result<String, String> {
     let path = path.as_ref();

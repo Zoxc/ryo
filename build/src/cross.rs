@@ -122,7 +122,7 @@ pub fn run(target: &str) -> Result<(), String> {
         return Err(format!("test --cross {target}: no rust-lld at {} (`./y.sh build` copies it)", lld.display()));
     }
     let out = root.join("target").join("tests-cross").join(target);
-    let _ = fs::remove_dir_all(&out);
+    crate::utils::remove_dir_if_exists(&out)?;
     let stubs = out.join("stub-libs");
     crate::utils::create_dir(&stubs)?;
     let macho = crate::target::is_macho(target);
@@ -382,8 +382,7 @@ mod tests {
 /// gives `sysv64` functions a red zone unless built with [`crate::jit::NO_REDZONE`]
 /// (design/platforms.md). Returns how many objects it checked.
 fn no_red_zone(info: &RustcInfo, rlib: &Path, dir: &Path) -> Result<usize, String> {
-    let _ = fs::remove_dir_all(dir);
-    crate::utils::create_dir(dir)?;
+    crate::utils::fresh_dir(dir)?;
     crate::utils::run(cmd(info.tool("llvm-ar")).arg("x").arg(rlib).arg("--output").arg(dir))?;
     let objdump = info.tool("llvm-objdump");
     let mut n = 0;

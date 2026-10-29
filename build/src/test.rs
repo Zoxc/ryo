@@ -2,7 +2,6 @@
 //! the smoke tests of `dist/`.
 
 use std::ffi::OsString;
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
@@ -1021,8 +1020,7 @@ impl Ctx<'_> {
     /// binary there.
     fn build_and_run(&self, program: &Program, variant: &Variant) -> Result<RunResult, String> {
         let dir = self.out.join(program.name).join(variant.name);
-        let _ = fs::remove_dir_all(&dir);
-        crate::utils::create_dir(&dir)?;
+        crate::utils::fresh_dir(&dir)?;
         if let Some(lib) = &program.native_lib {
             lib.build(self.info, &dir, None)?;
         }

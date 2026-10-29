@@ -765,8 +765,7 @@ pub(super) fn pe_imports(info: &crate::utils::RustcInfo, root: &Path, rustc_ryo:
     const ITEMS: [&str; 13] =
         ["5up_fn", "6up_gen", "5dy_fn", "9UP_STATIC", "5EII_S", "S_NONE", "S_STATIC", "S_DYLIB", "S_UNSP", "f_none", "f_static", "f_dylib", "f_unsp"];
     let dir = out.join("pe-imports");
-    let _ = fs::remove_dir_all(&dir);
-    crate::utils::create_dir(&dir)?;
+    crate::utils::fresh_dir(&dir)?;
     // The `kind = "static"` library must exist to build the rlib.
     crate::utils::run(cmd(info.tool("llvm-ar")).arg("rc").arg(dir.join("pe_static.lib")))?;
     let mut found = Vec::new();

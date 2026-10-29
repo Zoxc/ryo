@@ -2,7 +2,6 @@
 //! with its own std, reduced to one object whose only global symbol is `ryo_jit_start_<tag>`
 //! (the ABI tag, design/build.md#the-abi-tag), which `ryo_rt` bundles.
 
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::target::{is_coff, is_macho, is_windows, static_lib_name, symbol};
@@ -106,8 +105,7 @@ pub fn swap_into_rlib(info: &RustcInfo, rlib: &Path, sealed: &Path, dst_dir: &Pa
     if !members.lines().any(|m| m.trim() == OBJECT) {
         return Err(format!("{} has no {OBJECT} member", rlib.display()));
     }
-    crate::utils::remove_dir_if_exists(dst_dir)?;
-    crate::utils::create_dir(dst_dir)?;
+    crate::utils::fresh_dir(dst_dir)?;
     let dst = dst_dir.join(rlib.file_name().ok_or("rlib path without a name")?);
     crate::utils::copy(rlib, &dst)?;
     run(cmd(&ar).arg("r").arg(&dst).arg(sealed.join(OBJECT)))
@@ -117,8 +115,7 @@ pub fn swap_into_rlib(info: &RustcInfo, rlib: &Path, sealed: &Path, dst_dir: &Pa
 fn seal(info: &RustcInfo, staticlib: &Path, out: &Path, triple: &str, tag: &str) -> Result<(), String> {
     let ar = info.tool("llvm-ar");
     let objcopy = info.tool("llvm-objcopy");
-    crate::utils::remove_dir_if_exists(out)?;
-    crate::utils::create_dir(out)?;
+    crate::utils::fresh_dir(out)?;
     let members = output(cmd(&ar).arg("t").arg(staticlib))?;
     let lto = lto_member(&members)?;
     run(cmd(&ar).arg("x").arg(staticlib).arg(&lto).arg("--output").arg(out))?;
@@ -139,7 +136,7 @@ fn seal(info: &RustcInfo, staticlib: &Path, out: &Path, triple: &str, tag: &str)
         seal.arg(format!("--keep-global-symbol={}", symbol(triple, &format!("{START}{tag}"))));
     }
     run(seal.arg(out.join(&lto)).arg(&obj))?;
-    fs::remove_file(out.join(&lto)).map_err(|e| e.to_string())?;
+    crate::utils::remove_file(out.join(&lto))?;
     if is_coff(triple) {
         // The staticlib without its objects: its import members, then the sealed object.
         crate::utils::copy(staticlib, &lib)?;
@@ -183,8 +180,7 @@ fn lto_member(members: &str) -> Result<String, String> {
 /// counterpart of `.drectve`, which would add `-l` libraries to every link). Names are
 /// compared without Mach-O's `_` prefix. Returns the object's undefined symbols, so named.
 pub fn check_sealed(info: &RustcInfo, rlib: &Path, dir: &Path, triple: &str) -> Result<Vec<String>, String> {
-    let _ = fs::remove_dir_all(dir);
-    crate::utils::create_dir(dir)?;
+    crate::utils::fresh_dir(dir)?;
     let ar = info.tool("llvm-ar");
     run(cmd(&ar).arg("x").arg(rlib).arg(OBJECT).arg("--output").arg(dir)).map_err(|e| format!("no sealed JIT in {}: {e}", rlib.display()))?;
     let obj = dir.join(OBJECT);
