@@ -87,18 +87,21 @@ def set_form(v):
     return 2 if sx(v, 64) == sx(v & 0xFFFFFFFF, 32) else 3
 
 
-def render(item, pos, off, length, sp):
+def render(item, pos, off, sp):
     """The instructions objdump should print for `item` at blob offset `off` (its position in
-    the function is `pos`, its encoded length `length`)."""
+    the function is `pos`)."""
     if isinstance(item, str):
         name, f = item, {}
     else:
         (name, f), = item.items()
+    def rsp_rel(m):
+        # An `rbp`-relative operand as the `rsp`-relative one it is encoded as.
+        return {"base": "rsp", "disp": (m["disp"] + sp) & 0xFFFFFFFF}
+
     if sp is not None and "m" in f and f["m"]["base"] == "rbp":
-        f = dict(f, m={"base": "rsp", "disp": (f["m"]["disp"] + sp) & 0xFFFFFFFF})
+        f = dict(f, m=rsp_rel(f["m"]))
     if sp is not None and "rm" in f and "mem" in f["rm"] and f["rm"]["mem"]["m"]["base"] == "rbp":
-        m = f["rm"]["mem"]["m"]
-        f = dict(f, rm={"mem": {"m": {"base": "rsp", "disp": (m["disp"] + sp) & 0xFFFFFFFF}}})
+        f = dict(f, rm={"mem": {"m": rsp_rel(f["rm"]["mem"]["m"])}})
 
     def here(target):
         # A position in the function, at its blob address.
@@ -235,7 +238,7 @@ def main():
             at = min((a for a in lines if a > at), default=off + n)
         if at != off + n:
             got.append(f"<instruction boundary at {at:#x}, item ends at {off + n:#x}>")
-        want = [normalize(x) for x in render(v["item"], v["pos"], off, n, v["sp"])]
+        want = [normalize(x) for x in render(v["item"], v["pos"], off, v["sp"])]
         if got != want:
             bad += 1
             print(f"MISMATCH {json.dumps(v['item'])} sp={v['sp']} bytes={v['bytes']}\n"
