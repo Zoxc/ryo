@@ -19,7 +19,7 @@ calls `FnCx::island` with the operands in this order):
 - `ryo_island_drop_in_place` (`drop_in_place<T>`): `[ptr]`: reads the (thin or wide) pointer
   (`drop_terminator`). The pointee is memory through a pointer, not an operand.
 - `ryo_island_catch_unwind` (`catch_unwind<Data>`): `[try_fn, data, catch_fn, dest]`: reads
-  the three, writes the `i32` result (`lower/intrinsic.rs`, `"catch_unwind"`).
+  the three, writes the `bool` result (`lower/intrinsic.rs`, `"catch_unwind"`).
 - The intrinsic wrappers (`intrinsic_wrappers!`): the `n` inputs in order, read, then the
   destination, written (`FnCx::wrapper`: `ins` then `(d, dn)`; `binop.rs`: `[a, b, dest]`;
   `cast.rs`: `[src, dest]`): `sqrtf32/64` (1), `powif32/64` (2), `fmaf32/64` (3),
