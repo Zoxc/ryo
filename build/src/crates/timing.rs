@@ -6,8 +6,8 @@
 //! Their timestamps are microseconds since the session started, which is about when the
 //! process started. Cargo itself only keeps them rounded to 10 ms in its HTML report, so `y`
 //! is also the `RUSTC_WRAPPER` ([`wrapper`]): it runs rustc, forwards its stderr to cargo
-//! unchanged (cargo still sees every record), and writes the records, the wall time of the
-//! rustc process and the backend's `RYO_STATS` summary to a file per invocation.
+//! (every record included) except the backend's `RYO_STATS` lines, and writes the records, the
+//! wall time of the rustc process and the `RYO_STATS` summary to a file per invocation.
 
 use std::ffi::OsString;
 use std::fs;
@@ -18,6 +18,12 @@ use std::time::Instant;
 
 /// Set to a directory, it makes `y` act as a `RUSTC_WRAPPER` logging into that directory.
 pub const WRAPPER_VAR: &str = "RYO_Y_BENCH_WRAPPER";
+
+/// Whether a `ryo: ` line (without the prefix) is `RYO_STATS` output (`backend/src/stats.rs`,
+/// `partition.rs`): counts, or the `island`, `native` and `vm fn` lines.
+fn is_stats(rest: &str) -> bool {
+    rest.starts_with(|c: char| c.is_ascii_digit()) || ["island ", "native ", "vm fn "].iter().any(|p| rest.starts_with(p))
+}
 
 /// `y` as `RUSTC_WRAPPER`: `y <rustc> <args>...`.
 pub fn wrapper(log_dir: OsString) -> ExitCode {
@@ -55,8 +61,9 @@ pub fn wrapper(log_dir: OsString) -> ExitCode {
         let text = String::from_utf8_lossy(&line);
         if let Some(rec) = parse_section(&text) {
             log.push_str(&format!("section {} {} {}\n", rec.name, rec.event, rec.timestamp));
-        } else if let Some(rest) = text.strip_prefix("ryo: ") {
+        } else if let Some(rest) = text.strip_prefix("ryo: ").filter(|r| is_stats(r)) {
             // The backend's `RYO_STATS` output: keep the summary, not the per-function lines.
+            // Other `ryo: ` lines (panic messages, warnings) go to cargo.
             if !rest.starts_with("vm fn ") && !(rest.starts_with("native ") && !rest.starts_with("native reason: ")) {
                 log.push_str(&format!("ryo {rest}\n"));
             }
