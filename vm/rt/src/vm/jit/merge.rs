@@ -17,18 +17,22 @@
 //! (Linux `MAP_FIXED_NOREPLACE`, macOS `mach_vm_allocate` without `VM_FLAGS_ANYWHERE`, Windows
 //! `VirtualAlloc` at an address), so it is private to the process: no named object another
 //! user could create first. A taken address is read only through a call that fails on an
-//! unreadable one (`process_vm_readv`, `mach_vm_read_overwrite`, `ReadProcessMemory`), and
-//! used only once READY with this build's magic and tag ([`join`]), after a bounded wait.
+//! unreadable one (`process_vm_readv`, `mach_vm_read_overwrite`, `ReadProcessMemory`), never
+//! dereferenced, and used only once READY with this build's magic and tag ([`join`]), after a
+//! bounded wait; a page that stays foreign moves the copy on to the next probe address.
 //! Both sides pin their module when they merge: the winner's registration function and
 //! the joiners' images are used for the rest of the process.
 
 use core::sync::atomic::Ordering::{Acquire, Release};
+use core::sync::atomic::fence;
 use core::sync::atomic::{AtomicU32, AtomicUsize};
 use ryo_bytecode::vmem::PAGE;
 
 use super::super::RegisterFn;
 
+/// Other copies read it as words ([`WORDS`]), not through this type.
 #[repr(C)]
+#[cfg_attr(not(test), allow(dead_code))]
 struct Page {
     magic: u64,
     abi: u64,
@@ -71,27 +75,50 @@ fn decide() -> usize {
     }
     let personality = super::rust_eh_personality as *const () as usize;
     let own = super::super::ryo_vm_register as *const () as usize;
-    let Some((page, won)) = rendezvous() else { return PRIVATE };
-    if won {
-        // The page names this module's registration function for the rest of the process,
-        // and other copies' images end up in its registry: pin it.
-        super::super::sys::pin_module(own as *const ());
-        // SAFETY: a fresh page of ours, not yet READY, so no other copy reads the fields.
-        unsafe { publish(page, personality, own) };
-        return PRIVATE;
+    use ryo_bytecode::vmem;
+    for i in 0..8 {
+        let at = probe(i);
+        // An exclusive mapping at `at`: `MAP_FIXED_NOREPLACE` on Linux, `VirtualAlloc` at an
+        // address on Windows, both failing on a taken range.
+        if let Some(p) = vmem::reserve(at, PAGE) {
+            if p as usize == at {
+                // The page names this module's registration function for the rest of the
+                // process, and other copies' images end up in its registry: pin it.
+                super::super::sys::pin_module(own as *const ());
+                // SAFETY: a fresh page of ours, not yet READY, so no other copy reads the fields.
+                unsafe { publish(p.cast(), personality, own) };
+                return PRIVATE;
+            }
+            // The address was taken as a hint (Apple, or Linux before 4.17), so it is taken:
+            // not ours to use, but maybe another copy's.
+            // SAFETY: the mapping just made.
+            unsafe { vmem::release(p, PAGE) };
+        }
+        // Another copy's page, or a foreign one: read only through `read_words`, which fails
+        // instead of faulting, as its owner may unmap or rewrite it at any time.
+        let read = || super::super::sys::read_words::<WORDS>(at);
+        if !read().is_some_and(|w| is_ours([w[0], w[1]])) {
+            continue;
+        }
+        let Some(t) = join(read, personality, own, SPINS) else { continue };
+        if t != PRIVATE {
+            // This module's images (headers, slots) now live in the winner's registry: pin it.
+            super::super::sys::pin_module(own as *const ());
+        }
+        return t;
     }
-    // SAFETY: a mapped page whose head looked like this build's (checked by `rendezvous`).
-    let t = join(unsafe { &*page }, personality, own, SPINS);
-    if t != PRIVATE {
-        // This module's images (headers, slots) now live in the winner's registry: pin it.
-        super::super::sys::pin_module(own as *const ());
-    }
-    t
+    PRIVATE
 }
 
-/// How long a joiner waits for a winner to publish (it does so right after mapping the page);
-/// past that, or for a page that stays foreign, it stays private, which is always correct.
-const SPINS: u32 = 1 << 20;
+/// How many reads a joiner waits for a winner to publish (it does so right after mapping the
+/// page); past that it tries the next probe address, and past the last one it stays private,
+/// which is always correct.
+const SPINS: u32 = 1 << 14;
+
+/// [`Page`] as the words [`join`] reads: `magic`, `abi`, `personality`, `state` (low half),
+/// `register`.
+const WORDS: usize = 5;
+const _: () = assert!(size_of::<Page>() == WORDS * 8 && core::mem::offset_of!(Page, state) == 24);
 
 /// Fills in a winner's page and marks it [`READY`].
 ///
@@ -108,24 +135,33 @@ unsafe fn publish(page: *mut Page, personality: usize, own: usize) {
     }
 }
 
-/// A joiner's decision on a page another copy mapped: the winner's registration function, or
-/// [`PRIVATE`] unless the page becomes READY within `spins` with this build's magic and tag
-/// and the same personality. The page may be anything (a foreign zero page, another tag's
-/// winner caught mid-write): nothing in it is used before that check.
-fn join(page: &Page, personality: usize, own: usize, spins: u32) -> usize {
+/// A joiner's decision on a page another copy mapped, read through `read`: the winner's
+/// registration function, or [`PRIVATE`] for this build's READY page with another
+/// personality (or no usable function). `None` if the page doesn't become READY within
+/// `spins` reads with this build's magic and tag, or becomes unreadable: it may be anything
+/// (a foreign zero page, another tag's winner caught mid-write), so nothing in it is used
+/// before that check.
+fn join(read: impl Fn() -> Option<[u64; WORDS]>, personality: usize, own: usize, spins: u32) -> Option<usize> {
     let mut n = 0u32;
-    while page.state.load(Acquire) != READY {
+    while read()?[3] as u32 != READY {
         n += 1;
         if n > spins {
-            return PRIVATE;
+            return None;
         }
         core::hint::spin_loop();
     }
-    // The fields were written before the Release store of READY.
-    if page.magic != MAGIC || page.abi != ryo_bytecode::ABI || page.personality != personality || page.register == own || page.register == 0 {
-        return PRIVATE;
+    // The fields were written before the Release store of READY, which stays: read them
+    // again after the matching fence.
+    fence(Acquire);
+    let [magic, abi, page_personality, _, register] = read()?;
+    if magic != MAGIC || abi != ryo_bytecode::ABI {
+        return None;
     }
-    page.register
+    let register = register as usize;
+    if page_personality as usize != personality || register == own || register == 0 {
+        return Some(PRIVATE);
+    }
+    Some(register)
 }
 
 /// The probe addresses of the rendezvous page: in a high range (64 KiB aligned, Windows'
@@ -134,31 +170,6 @@ fn probe(i: usize) -> usize {
     const BASE: usize = 0x7e00_0000_0000;
     const SLOTS: usize = 1 << 12;
     BASE + ((ryo_bytecode::ABI as usize ^ i.wrapping_mul(0x9e37_79b9)) % SLOTS) * (1 << 16)
-}
-
-/// Maps or finds the rendezvous page: `(page, true)` if this copy mapped it (the winner),
-/// `(page, false)` for another copy's with this build's magic and tag (possibly still being
-/// initialized), `None` if no probe worked.
-fn rendezvous() -> Option<(*mut Page, bool)> {
-    use ryo_bytecode::vmem;
-    for i in 0..8 {
-        let at = probe(i);
-        // An exclusive mapping at `at`: `MAP_FIXED_NOREPLACE` on Linux, `VirtualAlloc` at an
-        // address on Windows, both failing on a taken range.
-        if let Some(p) = vmem::reserve(at, PAGE) {
-            if p as usize == at {
-                return Some((p.cast(), true));
-            }
-            // The address was taken as a hint (Apple, or Linux before 4.17), so it is taken:
-            // not ours to use, but maybe another copy's.
-            // SAFETY: the mapping just made.
-            unsafe { vmem::release(p, PAGE) };
-        }
-        if super::super::sys::read_head(at).is_some_and(is_ours) {
-            return Some((at as *mut Page, false));
-        }
-    }
-    None
 }
 
 /// Whether a page's first 16 bytes are this build's: our magic and tag, or zero (a winner
@@ -177,28 +188,39 @@ mod tests {
 
     const ABI: u64 = ryo_bytecode::ABI;
 
+    fn words(p: &Page) -> [u64; WORDS] {
+        let state = p.state.load(core::sync::atomic::Ordering::Relaxed);
+        [p.magic, p.abi, p.personality as u64, state as u64, p.register as u64]
+    }
+
+    fn join_page(p: &Page, personality: usize, own: usize, spins: u32) -> Option<usize> {
+        join(|| Some(words(p)), personality, own, spins)
+    }
+
     #[test]
     fn joins_a_published_page() {
         let mut p = page(0, 0, 0, 0, 0);
         // SAFETY: a local page.
         unsafe { publish(&mut p, 7, 0x1000) };
-        assert_eq!(join(&p, 7, 0x2000, 10), 0x1000);
-        assert_eq!(join(&page(MAGIC, ABI, 7, READY, 0x1000), 7, 0x2000, 10), 0x1000);
+        assert_eq!(join_page(&p, 7, 0x2000, 10), Some(0x1000));
+        assert_eq!(join_page(&page(MAGIC, ABI, 7, READY, 0x1000), 7, 0x2000, 10), Some(0x1000));
     }
 
     #[test]
     fn stays_private_on_foreign_pages() {
-        // A foreign zero page that never becomes READY: a bounded wait.
-        assert_eq!(join(&page(0, 0, 0, 0, 0), 7, 0x2000, 1000), PRIVATE);
+        // A foreign zero page that never becomes READY: a bounded wait, then the next probe.
+        assert_eq!(join_page(&page(0, 0, 0, 0, 0), 7, 0x2000, 1000), None);
         // READY but not this build's: no magic, another tag, or another tag's winner caught
         // while its head was still zero.
-        assert_eq!(join(&page(0, 0, 7, READY, 0x1000), 7, 0x2000, 10), PRIVATE);
-        assert_eq!(join(&page(MAGIC, ABI ^ 1, 7, READY, 0x1000), 7, 0x2000, 10), PRIVATE);
-        assert_eq!(join(&page(0, ABI, 7, READY, 0x1000), 7, 0x2000, 10), PRIVATE);
+        assert_eq!(join_page(&page(0, 0, 7, READY, 0x1000), 7, 0x2000, 10), None);
+        assert_eq!(join_page(&page(MAGIC, ABI ^ 1, 7, READY, 0x1000), 7, 0x2000, 10), None);
+        assert_eq!(join_page(&page(0, ABI, 7, READY, 0x1000), 7, 0x2000, 10), None);
+        // An unreadable page (unmapped meanwhile).
+        assert_eq!(join(|| None, 7, 0x2000, 10), None);
         // Another personality, this copy's own page, or no function.
-        assert_eq!(join(&page(MAGIC, ABI, 8, READY, 0x1000), 7, 0x2000, 10), PRIVATE);
-        assert_eq!(join(&page(MAGIC, ABI, 7, READY, 0x2000), 7, 0x2000, 10), PRIVATE);
-        assert_eq!(join(&page(MAGIC, ABI, 7, READY, 0), 7, 0x2000, 10), PRIVATE);
+        assert_eq!(join_page(&page(MAGIC, ABI, 8, READY, 0x1000), 7, 0x2000, 10), Some(PRIVATE));
+        assert_eq!(join_page(&page(MAGIC, ABI, 7, READY, 0x2000), 7, 0x2000, 10), Some(PRIVATE));
+        assert_eq!(join_page(&page(MAGIC, ABI, 7, READY, 0), 7, 0x2000, 10), Some(PRIVATE));
     }
 
     #[test]

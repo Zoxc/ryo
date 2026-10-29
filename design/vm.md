@@ -948,7 +948,9 @@ private copy of the runtime (`ryo_rt`, `ryo_bytecode` and the sealed JIT):
   could create first) and publishes its `ryo_vm_register` there; later copies with the same
   personality forward their registrations to it. A later copy reads a taken address only
   through a call that fails on an unmapped one, waits a bounded time for it to be READY,
-  and joins only if it then has this build's magic and tag; otherwise it stays private. The winner's
+  and joins only if it then has this build's magic and tag; a page that stays foreign moves it
+  on to the next probe address, and one that is this build's but can't be joined (or no
+  probe working) leaves it private. The winner's
   registration points the images' JIT record slots at its own trips, so its registry, queue,
   JIT thread and code allocator serve all of them, and JIT code calls and inlines across
   modules; handlers keep no state. Copies with another personality (cdylibs, localized
