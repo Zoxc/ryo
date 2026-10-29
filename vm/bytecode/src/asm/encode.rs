@@ -1095,9 +1095,9 @@ impl Asm {
     /// The jump-table sequence on the index in `rax`, with `targets`.
     fn table(&mut self, targets: Vec<Label>) {
         self.pieces.push(Piece::LeaTable);
-        self.fixed(Item::LoadTableEntry);
-        self.fixed(Item::AddRaxRcx);
-        self.fixed(Item::JmpRax);
+        for item in TABLE_SEQ {
+            self.fixed(item);
+        }
         self.pieces.push(Piece::Table(targets));
     }
 
@@ -1530,6 +1530,10 @@ impl Asm {
     }
 }
 
+/// A jump table's sequence after its `lea rcx, [rip + table]` ([`Piece::LeaTable`]), which
+/// the table directly follows: `movsxd rax, [rcx + 4 * rax]`, `add rax, rcx`, `jmp rax`.
+const TABLE_SEQ: [Item; 3] = [Item::LoadTableEntry, Item::AddRaxRcx, Item::JmpRax];
+
 /// The elements [`Asm::finish_labels`] lowers the pieces to, with the counter checks.
 struct Lowered {
     out: Vec<Laid>,
@@ -1785,7 +1789,7 @@ fn layout_code(mut pieces: Vec<Laid>, [prologue, entry_stub, region]: [usize; 3]
                 }
                 Item::Branch { cond: *cond, target: 0, long: *long }.len()
             }
-            Laid::LeaTable => 7,
+            Laid::LeaTable => Item::LeaTable(0).len(),
             Laid::Dropped(_) | Laid::Scope(_) => 0,
             Laid::Table(_) | Laid::Align => VAR,
         });
@@ -1834,8 +1838,9 @@ fn layout_code(mut pieces: Vec<Laid>, [prologue, entry_stub, region]: [usize; 3]
             }
             Laid::Branch { cond, to, long } => items.push(Item::Branch { cond: *cond, target: pos[*to], long: *long }),
             Laid::LeaTable => {
-                // The table follows the rest of the sequence: `movsxd`, `add`, `jmp rax`.
-                let t = (p + 7 + 4 + 3 + 2).next_multiple_of(4);
+                // The table follows the rest of the sequence, `TABLE_SEQ`.
+                let seq: u32 = TABLE_SEQ.iter().map(Item::len).sum();
+                let t = (p + Item::LeaTable(0).len() + seq).next_multiple_of(4);
                 items.push(Item::LeaTable(t));
             }
             Laid::Table(targets) => {
