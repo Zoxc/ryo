@@ -95,7 +95,7 @@ const VARIANTS: &[Variant] = &[
 ];
 
 /// The JIT's settings for [`Variant::env`]: compile every function at its first call, and
-/// wait for it.
+/// wait for it. The other presets start with it; checks add to it.
 const JIT_SYNC: &[(&str, &str)] = &[("RYO_JIT_THRESHOLD", "0"), ("RYO_JIT_SYNC", "1")];
 /// [`JIT_SYNC`], with shuffled JIT frames.
 const JIT_SHUFFLE: &[(&str, &str)] = &[("RYO_JIT_THRESHOLD", "0"), ("RYO_JIT_SYNC", "1"), ("RYO_JIT_SHUFFLE", "1")];

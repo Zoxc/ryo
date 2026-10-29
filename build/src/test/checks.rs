@@ -524,7 +524,6 @@ pub(super) fn jit_private_std(info: &crate::utils::RustcInfo, rustc_ryo: &Path, 
         return Ok(());
     }
     let want = "sum 499500 words w0,w97,w194,w291,w388,w485,w582,w679,w776,w873,w970\n";
-    let sync = [("RYO_JIT_THRESHOLD", "0"), ("RYO_JIT_SYNC", "1")];
     // Each case: the name, the flags, the environment, and what stderr must contain.
     let cases: [(&str, &[&str], &[(&str, &str)], &str); 3] = [
         ("jit_private", &[], &[], ""),
@@ -535,8 +534,11 @@ pub(super) fn jit_private_std(info: &crate::utils::RustcInfo, rustc_ryo: &Path, 
         let exe = out.join(exe_name(name));
         crate::utils::run(cmd(rustc_ryo).arg("--edition=2024").arg(src).args(flags).arg("-o").arg(&exe))?;
         // A deadlock shows as a hang.
-        let res = crate::utils::output_timeout(Command::new(&exe).envs(sync).envs(env.iter().copied()), std::time::Duration::from_secs(60))
-            .map_err(|e| format!("{name} (a deadlock?): {e}"))?;
+        let res = crate::utils::output_timeout(
+            Command::new(&exe).envs(super::JIT_SYNC.iter().copied()).envs(env.iter().copied()),
+            std::time::Duration::from_secs(60),
+        )
+        .map_err(|e| format!("{name} (a deadlock?): {e}"))?;
         let (status, stdout, stderr) = (res.status, String::from_utf8_lossy(&res.stdout), String::from_utf8_lossy(&res.stderr));
         // The compiles failed: the log says why and that the functions stayed on AOT code.
         let failed = want_err.is_empty() || (stderr.contains(want_err) && stderr.contains(": panicked\n"));
@@ -556,8 +558,7 @@ pub(super) fn jit_atomics(info: &crate::utils::RustcInfo, rustc_ryo: &Path, src:
     }
     let exe = out.join(exe_name("jit_atomics"));
     crate::utils::run(cmd(rustc_ryo).arg("--edition=2024").arg(src).arg("-o").arg(&exe))?;
-    let env = [("RYO_JIT_THRESHOLD", "0"), ("RYO_JIT_SYNC", "1"), ("RYO_JIT_STATS", "1"), ("RYO_JIT_LOG", "1")];
-    let r = capture(Command::new(&exe).envs(env))?;
+    let r = capture(Command::new(&exe).envs(super::JIT_SYNC.iter().copied()).envs([("RYO_JIT_STATS", "1"), ("RYO_JIT_LOG", "1")]))?;
     // The summary's `compiled` and `failed` counts.
     let count = |what: &str| {
         let line = r.stderr.lines().find(|l| l.starts_with("[ryo] jit stats:") && l.split_whitespace().nth(3) == Some(what))?;

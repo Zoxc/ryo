@@ -6,13 +6,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use super::JIT_SYNC;
 use crate::utils::{RustcInfo, capture, capture_ok, cmd, run};
 
 /// The C link's native libraries for a Rust staticlib on Linux (`--print=native-static-libs`).
 const NATIVE_LIBS: &[&str] = &["-lgcc_s", "-lutil", "-lrt", "-lpthread", "-lm", "-ldl", "-lc"];
-
-/// The JIT compiling every function at its first call, synchronously.
-const JIT_NOW: [(&str, &str); 2] = [("RYO_JIT_THRESHOLD", "0"), ("RYO_JIT_SYNC", "1")];
 
 fn applies(info: &RustcInfo) -> bool {
     cfg!(target_os = "linux") && crate::jit::supported(&info.host)
@@ -89,7 +87,7 @@ pub(super) fn multi_staticlib(info: &RustcInfo, rustc_ryo: &Path, src: &Path, ou
                 Some(_) => {}
                 None => wants.push((main, plain.clone())),
             }
-            let jit = run_out(&exe, &[], &JIT_NOW)?;
+            let jit = run_out(&exe, &[], JIT_SYNC)?;
             if jit != plain {
                 return Err(format!("{name}: with the JIT {jit:?}, without {plain:?}"));
             }
@@ -122,7 +120,7 @@ pub(super) fn multi_staticlib(info: &RustcInfo, rustc_ryo: &Path, src: &Path, ou
         return Err(format!("hidden std: the link failed:\n{}", res.stderr));
     }
     let plain = run_out(&exe, &[], &[("RYO_JIT", "off")])?;
-    let jit = run_out(&exe, &[], &JIT_NOW)?;
+    let jit = run_out(&exe, &[], JIT_SYNC)?;
     let want = wants.into_iter().find(|w| w.0 == "main2.c").map(|w| w.1).unwrap_or_default();
     if plain != want || jit != want {
         return Err(format!("hidden std: {plain:?} / with the JIT {jit:?}, expected {want:?}"));
@@ -173,7 +171,7 @@ pub(super) fn multi_dylib(info: &RustcInfo, root: &Path, rustc_ryo: &Path, src: 
         let plugin = plugin.to_str().ok_or("non-UTF-8 path")?;
         for mode in ["local", "global"] {
             let plain = run_out(&host, &[plugin, mode], &[("RYO_JIT", "off")])?;
-            let jit = run_out(&host, &[plugin, mode], &JIT_NOW)?;
+            let jit = run_out(&host, &[plugin, mode], JIT_SYNC)?;
             let first = |s: &str| s.lines().next().unwrap_or("").to_owned();
             if first(&jit) != first(&plain) || jit_threads(&jit) != Some(2) {
                 return Err(format!("{name} {mode}: with the JIT {jit:?}, without {plain:?} (expected two JIT threads)"));
@@ -201,7 +199,7 @@ pub(super) fn multi_dylib(info: &RustcInfo, root: &Path, rustc_ryo: &Path, src: 
     let plain = run_libs(&exe, &[], &[("RYO_JIT", "off")])?;
     let first = |s: &str| s.lines().next().unwrap_or("").to_owned();
     for (merge, threads) in [("1", 1), ("0", 3)] {
-        let jit = run_libs(&exe, &[], &[JIT_NOW[0], JIT_NOW[1], ("RYO_JIT_MERGE", merge)])?;
+        let jit = run_libs(&exe, &[], &[&[("RYO_JIT_MERGE", merge)], JIT_SYNC].concat())?;
         if first(&jit) != first(&plain) || jit_threads(&jit) != Some(threads) {
             return Err(format!("sibling dylibs, RYO_JIT_MERGE={merge}: with the JIT {jit:?}, without {plain:?} (expected {threads} JIT threads)"));
         }
@@ -212,7 +210,7 @@ pub(super) fn multi_dylib(info: &RustcInfo, root: &Path, rustc_ryo: &Path, src: 
     run(cc(info, false).arg(src.join("dlhost.c")).arg("-o").arg(&host).arg("-ldl"))?;
     let (da, db) = (dir.join("libda.so"), dir.join("libdb.so"));
     let args = [da.to_str().ok_or("non-UTF-8 path")?, db.to_str().ok_or("non-UTF-8 path")?];
-    let out = run_libs(&host, &args, &JIT_NOW)?;
+    let out = run_libs(&host, &args, JIT_SYNC)?;
     if out != "990000\nloaded after dlclose: 1 1\n" {
         return Err(format!("dlclose of merged dylibs: {out:?}, expected both pinned"));
     }
@@ -257,7 +255,7 @@ pub(super) fn multi_version(info: &RustcInfo, root: &Path, rustc_ryo: &Path, src
             return Err(format!("two ryo builds' staticlibs: the link failed:\n{}", res.stderr));
         }
         let plain = run_out(&exe, &[], &[("RYO_JIT", "off")])?;
-        let jit = run_out(&exe, &[], &JIT_NOW)?;
+        let jit = run_out(&exe, &[], JIT_SYNC)?;
         if plain != jit {
             return Err(format!("two ryo builds' staticlibs: with the JIT {jit:?}, without {plain:?}"));
         }
@@ -267,7 +265,7 @@ pub(super) fn multi_version(info: &RustcInfo, root: &Path, rustc_ryo: &Path, src
     let host = dir.join("host");
     build(rustc_ryo, &[], "host.rs", &host)?;
     let p = plugin.to_str().ok_or("non-UTF-8 path")?;
-    let (plain, jit) = (run_out(&host, &[p], &[("RYO_JIT", "off")])?, run_out(&host, &[p], &JIT_NOW)?);
+    let (plain, jit) = (run_out(&host, &[p], &[("RYO_JIT", "off")])?, run_out(&host, &[p], JIT_SYNC)?);
     if plain.lines().next() != jit.lines().next() || jit_threads(&jit) != Some(2) {
         return Err(format!("a cdylib of another ryo build: with the JIT {jit:?}, without {plain:?}"));
     }
