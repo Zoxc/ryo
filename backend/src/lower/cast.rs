@@ -129,13 +129,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// struct coerced field by field (`Rc<T>`, `Ref<'_, T>`, `Pin<Box<T>>`, …).
     fn unsize(&mut self, dst: PlaceVal<'tcx>, op: &Operand<'tcx>, src: TyAndLayout<'tcx>) -> Result<(), NeedsNative> {
         let src_loc = match op {
-            Operand::Copy(p) | Operand::Move(p) => {
-                let pv = self.place(*p)?;
-                if pv.meta.is_some() {
-                    return native("unsized operand");
-                }
-                pv.loc
-            }
+            Operand::Copy(p) | Operand::Move(p) => self.sized_place(*p)?.loc,
             Operand::Constant(_) | Operand::RuntimeChecks(_) => {
                 let t = self.temp_for(src);
                 self.operand_into(op, Loc::Slot(t))?;

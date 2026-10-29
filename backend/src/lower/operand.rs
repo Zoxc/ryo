@@ -235,10 +235,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     pub fn operand_into(&mut self, op: &Operand<'tcx>, dst: Loc) -> Result<(), NeedsNative> {
         match op {
             Operand::Copy(place) | Operand::Move(place) => {
-                let pv = self.place(*place)?;
-                if pv.meta.is_some() {
-                    return native("unsized operand");
-                }
+                let pv = self.sized_place(*place)?;
                 self.with_cuts(pv.layout, |fx| fx.copy_val(dst, pv.loc, pv.layout.size.bytes() as u32))
             }
             Operand::Constant(c) => self.const_into(c, dst),
@@ -258,10 +255,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     pub fn operand_slot(&mut self, op: &Operand<'tcx>) -> Result<(u32, TyAndLayout<'tcx>), NeedsNative> {
         if let Operand::Copy(place) | Operand::Move(place) = op {
             // The place's layout is the operand's (an operand never ends in a `Downcast`).
-            let pv = self.place(*place)?;
-            if pv.meta.is_some() {
-                return native("unsized operand");
-            }
+            let pv = self.sized_place(*place)?;
             return Ok((self.loc_slot(pv.loc, pv.layout)?, pv.layout));
         }
         let layout = self.operand_layout(op)?;

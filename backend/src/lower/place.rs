@@ -61,6 +61,15 @@ pub struct PlaceVal<'tcx> {
 }
 
 impl<'a, 'tcx> FnCx<'a, 'tcx> {
+    /// Lowers a place read as an operand, which must be sized.
+    pub fn sized_place(&mut self, place: Place<'tcx>) -> Result<PlaceVal<'tcx>, NeedsNative> {
+        let pv = self.place(place)?;
+        if pv.meta.is_some() {
+            return native("unsized operand");
+        }
+        Ok(pv)
+    }
+
     /// Lowers a place.
     pub fn place(&mut self, place: Place<'tcx>) -> Result<PlaceVal<'tcx>, NeedsNative> {
         let local = self.frame.locals[place.local];
