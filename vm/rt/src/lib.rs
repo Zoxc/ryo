@@ -1,7 +1,7 @@
 //! The ryo runtime: the VM, the registry, and the island templates. See
 //! design/vm.md and design/stubs.md.
 
-#![feature(rustc_attrs, unboxed_closures, fn_traits, tuple_trait, core_intrinsics, f16, f128, macro_metavar_expr_concat)]
+#![feature(rustc_attrs, unboxed_closures, fn_traits, tuple_trait, core_intrinsics, f16, f128, macro_metavar_expr, macro_metavar_expr_concat)]
 // `handlers.rs`'s `fam` entries expand one member (and one ordering) per step.
 #![recursion_limit = "4096"]
 #![allow(internal_features)]

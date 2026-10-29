@@ -110,7 +110,7 @@ pub unsafe fn catch_unwind<Data>(fp: *mut u8, ops: *const u32) -> u32 {
         let data = slot::<*mut Data>(fp, ops, 1).read();
         let catch_fn = slot::<unsafe fn(*mut Data, *mut u8)>(fp, ops, 2).read();
         let r = intrinsics::catch_unwind(try_fn, data, catch_fn);
-        core::ptr::write(slot(fp, ops, 3), r);
+        slot::<bool>(fp, ops, 3).write(r);
     }
     0
 }
@@ -123,11 +123,9 @@ macro_rules! intrinsic_wrappers {
         /// The operands must hold initialized inputs and room for the result, and the
         /// intrinsic's own preconditions must hold.
         #[rustc_diagnostic_item = concat!("ryo_island_", stringify!($name))]
-        #[allow(unused_assignments)]
         pub unsafe fn $name<$($g),*>(fp: *mut u8, ops: *const u32) -> u32 {
-            let mut i = 0;
-            let r: $R = unsafe { $f($({ let v = slot::<$T>(fp, ops, i).read(); i += 1; v }),*) };
-            unsafe { slot::<$R>(fp, ops, i).write(r) };
+            let r: $R = unsafe { $f($(slot::<$T>(fp, ops, ${index()}).read()),*) };
+            unsafe { slot::<$R>(fp, ops, ${count($T)}).write(r) };
             0
         }
     )*};
