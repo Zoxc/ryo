@@ -12,7 +12,6 @@ pub struct Summary {
     pub mean: f64,
     /// Sample standard deviation (n - 1); 0 for one sample.
     pub stddev: f64,
-    pub samples: Vec<f64>,
 }
 
 impl Summary {
@@ -27,7 +26,7 @@ impl Summary {
         let median = if n % 2 == 1 { sorted[n / 2] } else { (sorted[n / 2 - 1] + sorted[n / 2]) / 2.0 };
         let mean = sorted.iter().sum::<f64>() / n as f64;
         let var = if n > 1 { sorted.iter().map(|x| (x - mean) * (x - mean)).sum::<f64>() / (n - 1) as f64 } else { 0.0 };
-        Some(Summary { n, median, min: sorted[0], max: sorted[n - 1], mean, stddev: var.sqrt(), samples: samples.to_vec() })
+        Some(Summary { n, median, min: sorted[0], max: sorted[n - 1], mean, stddev: var.sqrt() })
     }
 
     pub fn noisy(&self) -> bool {
@@ -44,7 +43,6 @@ mod tests {
         assert_eq!(Summary::of(&[]), None);
         let s = Summary::of(&[3.0, 1.0, 2.0]).unwrap();
         assert_eq!((s.n, s.median, s.min, s.max, s.mean, s.stddev), (3, 2.0, 1.0, 3.0, 2.0, 1.0));
-        assert_eq!(s.samples, vec![3.0, 1.0, 2.0]);
         assert!(s.noisy());
         let s = Summary::of(&[4.0, 1.0, 2.0, 3.0]).unwrap();
         assert_eq!(s.median, 2.5);
