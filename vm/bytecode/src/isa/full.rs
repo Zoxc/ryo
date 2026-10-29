@@ -32,8 +32,9 @@
 //! | `Targets`, `Words`, `Cases*` | 1 + n·e | a [`List`]: count `n`, then `n` elements of `e` words |
 //!
 //! Instructions without a list operand have a fixed length ([`Opcode::fixed_len`]). The
-//! variable-length ones are `switch.dense`, `switch.sparse` and `island`; their lengths
-//! follow from their count words ([`insn_len`]).
+//! variable-length ones are `switch.dense`, `switch.sparse`, `island` and the calls (`call`,
+//! `call.sym`, `call.sym.ind`, `call.ptr`, `tail_call`, `tail_call.ptr`, with their argument
+//! lists); their lengths follow from their count words ([`insn_len`]).
 
 use core::fmt;
 use core::marker::PhantomData;
