@@ -66,6 +66,24 @@ fn fits32(v: i64) -> bool {
     v as i32 as i64 == v
 }
 
+/// A source of a parallel move ([`E::par_moves`]): [`Src`] or [`XSrc`], with its destination
+/// type.
+trait MoveSrc: Copy + PartialEq {
+    type Dst: Copy;
+    const UNDEF: Self;
+
+    /// Whether `d` already holds this source (a move from it to `d` is a no-op).
+    fn same(self, d: Self::Dst) -> bool;
+
+    /// The destination `d` read as a source.
+    fn of(d: Self::Dst) -> Self;
+
+    /// Whether a move of this source to `d` does something.
+    fn moves_to(self, d: Self::Dst) -> bool {
+        self != Self::UNDEF && !self.same(d)
+    }
+}
+
 /// An operand source.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Src {
@@ -75,8 +93,10 @@ enum Src {
     Undef,
 }
 
-impl Src {
-    /// Whether `d` already holds this source (a move from it to `d` is a no-op).
+impl MoveSrc for Src {
+    type Dst = Rm;
+    const UNDEF: Src = Src::Undef;
+
     fn same(self, d: Rm) -> bool {
         match (d, self) {
             (Rm::R(a), Src::R(b)) => a == b,
@@ -85,14 +105,7 @@ impl Src {
         }
     }
 
-    /// Whether a move of this source to `d` does something.
-    fn moves_to(self, d: Rm) -> bool {
-        self != Src::Undef && !self.same(d)
-    }
-}
-
-impl From<Rm> for Src {
-    fn from(d: Rm) -> Src {
+    fn of(d: Rm) -> Src {
         match d {
             Rm::R(r) => Src::R(r),
             Rm::M(m) => Src::M(m),
@@ -110,8 +123,10 @@ enum XSrc {
     Undef,
 }
 
-impl XSrc {
-    /// Whether `d` already holds this source (a move from it to `d` is a no-op).
+impl MoveSrc for XSrc {
+    type Dst = x86::X;
+    const UNDEF: XSrc = XSrc::Undef;
+
     fn same(self, d: x86::X) -> bool {
         match (d, self) {
             (x86::X::X(a), XSrc::X(b)) => a == b,
@@ -120,14 +135,7 @@ impl XSrc {
         }
     }
 
-    /// Whether a move of this source to `d` does something.
-    fn moves_to(self, d: x86::X) -> bool {
-        self != XSrc::Undef && !self.same(d)
-    }
-}
-
-impl From<x86::X> for XSrc {
-    fn from(d: x86::X) -> XSrc {
+    fn of(d: x86::X) -> XSrc {
         match d {
             x86::X::X(x) => XSrc::X(x),
             x86::X::M(m) => XSrc::M(m),
@@ -528,6 +536,11 @@ impl<'a> E<'a> {
         if self.fr.frameless { -8 } else { self.fr.size as i32 }
     }
 
+    /// Spill slot `n`.
+    fn spill_mem(&self, n: u32) -> Mem {
+        self.fp_mem(self.fr.spill0 + 8 * n as i32)
+    }
+
     fn src(&self, v: Value) -> Src {
         match self.f.def(v) {
             ValueDef::Const(c) => return Src::Imm(c),
@@ -536,7 +549,7 @@ impl<'a> E<'a> {
         }
         match self.al.loc[v.idx()] {
             Loc::Reg(r) => Src::R(r),
-            Loc::Spill(n) => Src::M(self.fp_mem(self.fr.spill0 + 8 * n as i32)),
+            Loc::Spill(n) => Src::M(self.spill_mem(n)),
             Loc::None => Src::Undef,
             Loc::Xmm(_) => unreachable!("{v}, a vector, as a scalar"),
         }
@@ -546,7 +559,7 @@ impl<'a> E<'a> {
     fn dst(&self, v: Value) -> Option<Rm> {
         match self.al.loc[v.idx()] {
             Loc::Reg(r) => Some(Rm::R(r)),
-            Loc::Spill(n) => Some(Rm::M(self.fp_mem(self.fr.spill0 + 8 * n as i32))),
+            Loc::Spill(n) => Some(Rm::M(self.spill_mem(n))),
             Loc::None => None,
             Loc::Xmm(_) => unreachable!("{v}, a vector, as a scalar"),
         }
@@ -566,7 +579,7 @@ impl<'a> E<'a> {
         }
         match self.al.loc[v.idx()] {
             Loc::Xmm(x) => XSrc::X(x),
-            Loc::Spill(n) => XSrc::M(self.fp_mem(self.fr.spill0 + 8 * n as i32)),
+            Loc::Spill(n) => XSrc::M(self.spill_mem(n)),
             Loc::None => XSrc::Undef,
             Loc::Reg(_) => unreachable!("{v}, a scalar, as a vector"),
         }
@@ -576,7 +589,7 @@ impl<'a> E<'a> {
     fn xdst(&self, v: Value) -> Option<x86::X> {
         match self.al.loc[v.idx()] {
             Loc::Xmm(x) => Some(x86::X::X(x)),
-            Loc::Spill(n) => Some(x86::X::M(self.fp_mem(self.fr.spill0 + 8 * n as i32))),
+            Loc::Spill(n) => Some(x86::X::M(self.spill_mem(n))),
             Loc::None => None,
             Loc::Reg(_) => unreachable!("{v}, a scalar, as a vector"),
         }
@@ -657,27 +670,9 @@ impl<'a> E<'a> {
     }
 
     /// A parallel move of vectors (the second scratch `xmm` register breaks cycles).
-    fn xmoves(&mut self, mut ms: Vec<(x86::X, XSrc)>) {
-        ms.retain(|(d, s)| s.moves_to(*d));
-        while !ms.is_empty() {
-            let free = (0..ms.len()).find(|&i| !ms.iter().enumerate().any(|(j, (_, s))| j != i && s.same(ms[i].0)));
-            match free {
-                Some(i) => {
-                    let (d, s) = ms.remove(i);
-                    self.xmov(d, s);
-                }
-                None => {
-                    let d = ms[0].0;
-                    let t = self.xs()[1];
-                    self.xmov(x86::X::X(t), d.into());
-                    for m in ms.iter_mut() {
-                        if m.1.same(d) {
-                            m.1 = XSrc::X(t);
-                        }
-                    }
-                }
-            }
-        }
+    fn xmoves(&mut self, ms: Vec<(x86::X, XSrc)>) {
+        let t = self.xs()[1];
+        self.par_moves(ms, x86::X::X(t), Self::xmov);
     }
 
     /// `x = a op b` for a packed operation (`a` copied to the result's register first; a
@@ -753,23 +748,28 @@ impl<'a> E<'a> {
         }
     }
 
-    /// A parallel move: every destination gets its source's old value.
-    fn moves(&mut self, mut ms: Vec<(Rm, Src)>) {
+    /// A parallel move: every destination gets its source's old value (`S2` breaks cycles).
+    fn moves(&mut self, ms: Vec<(Rm, Src)>) {
+        self.par_moves(ms, Rm::R(S2), Self::mov);
+    }
+
+    /// A parallel move with `mov` doing a single one: every destination gets its source's old
+    /// value. A cycle frees its first destination by saving its value in `scratch`.
+    fn par_moves<S: MoveSrc>(&mut self, mut ms: Vec<(S::Dst, S)>, scratch: S::Dst, mov: fn(&mut Self, S::Dst, S)) {
         ms.retain(|(d, s)| s.moves_to(*d));
         while !ms.is_empty() {
             let free = (0..ms.len()).find(|&i| !ms.iter().enumerate().any(|(j, (_, s))| j != i && s.same(ms[i].0)));
             match free {
                 Some(i) => {
                     let (d, s) = ms.remove(i);
-                    self.mov(d, s);
+                    mov(self, d, s);
                 }
                 None => {
-                    // A cycle: free the first destination by saving its value in `S2`.
                     let d = ms[0].0;
-                    self.mov(Rm::R(S2), d.into());
+                    mov(self, scratch, S::of(d));
                     for m in ms.iter_mut() {
                         if m.1.same(d) {
-                            m.1 = Src::R(S2);
+                            m.1 = S::of(scratch);
                         }
                     }
                 }
