@@ -1586,7 +1586,7 @@ impl<'a> E<'a> {
                 None => {
                     // PE's stack argument, a 32-bit operand past the shadow space.
                     self.hcall_arg(h, k, S1)?;
-                    self.a.x().mov(4, Rm::M(Mem::base(R::Rsp, 32)), Rm::R(S1));
+                    self.a.x().mov(4, Rm::M(asm::x86::STACK_ARG.into()), Rm::R(S1));
                 }
             }
         }
@@ -1640,9 +1640,9 @@ impl<'a> E<'a> {
         }
         let o = self.ro(&b, 4) + 4;
         // Win64 on PE (`rcx`, `rdx`), into the frame's shadow space ([`layout`]).
-        let (fp, ops) = if self.mode.pe { (R::Rcx, R::Rdx) } else { (R::Rdi, R::Rsi) };
-        self.fp_into(fp);
-        self.a.x().lea(ops, Mem::Rip(Ref::Ro(o)));
+        let [fp, ops] = asm::x86::island_args(self.mode.pe);
+        self.fp_into(fp.into());
+        self.a.x().lea(ops.into(), Mem::Rip(Ref::Ro(o)));
         match isl.isl {
             CallTarget::Sym(s) => self.call_with_site(isl.site, pad, |x| x.call_mem(Mem::Rip(Ref::Sym(s)))),
             CallTarget::Func(g) => self.call_with_site(isl.site, pad, |x| x.call_func(g)),
@@ -2067,13 +2067,13 @@ impl<'a> E<'a> {
 /// The integer argument register `i` of VM functions and natives: `rdi rsi rdx rcx r8 r9`,
 /// or on PE (Win64) `rcx rdx r8 r9` ([`check_pe`] rejects the others there).
 pub(super) fn int_arg(pe: bool, i: u32) -> R {
-    if pe { R::PE_ARGS[i as usize] } else { R::ARGS[i as usize] }
+    handler_arg_reg(pe, i as usize).expect("an argument register position")
 }
 
 /// The register of argument position `k` of a handler call ([`asm::handler_arg`]): SysV's
 /// `rdi rsi rdx rcx r8 r9`, or on PE Win64's `rcx rdx r8 r9`, `None` for PE's stack position.
 pub(super) fn handler_arg_reg(pe: bool, k: usize) -> Option<R> {
-    if pe { R::PE_ARGS.get(k).copied() } else { Some(R::ARGS[k]) }
+    asm::x86::handler_reg(pe, k as u8).map(R::from)
 }
 
 /// What the SSA tier doesn't do on PE: arguments past the four Win64 registers (the reduced

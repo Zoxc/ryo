@@ -33,10 +33,6 @@ pub enum R {
 }
 
 impl R {
-    /// The SysV integer argument registers, in order.
-    pub const ARGS: [R; 6] = [R::Rdi, R::Rsi, R::Rdx, R::Rcx, R::R8, R::R9];
-    /// The Win64 integer argument registers, in order.
-    pub const PE_ARGS: [R; 4] = [R::Rcx, R::Rdx, R::R8, R::R9];
     /// The integer return registers, in order.
     pub const RETS: [R; 2] = [R::Rax, R::Rdx];
 
@@ -49,6 +45,18 @@ impl R {
 
     pub fn num(self) -> u8 {
         self as u8
+    }
+}
+
+impl From<crate::asm::x86::Reg> for R {
+    fn from(r: crate::asm::x86::Reg) -> R {
+        R::from_num(r as u8)
+    }
+}
+
+impl From<crate::asm::x86::M> for Mem {
+    fn from(m: crate::asm::x86::M) -> Mem {
+        Mem::base(m.base.into(), m.disp)
     }
 }
 
