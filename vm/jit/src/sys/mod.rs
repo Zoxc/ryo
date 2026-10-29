@@ -1,6 +1,6 @@
-//! What the JIT needs of the OS beyond `vmem` and std: registering unwind information for
-//! installed code, a raw stderr write, the perf map's path. One module per OS (`linux`,
-//! `windows`, `macos`); [`SUPPORTED`] says whether the JIT runs there (else `ryo_jit_start`
+//! What the JIT needs of the OS beyond `vmem`, `ryo_bytecode::os` (the raw stderr write,
+//! `atexit`) and std: registering unwind information for installed code, and the perf map's
+//! path. One module per OS (`linux`, `windows`, `macos`); [`SUPPORTED`] says whether the JIT runs there (else `ryo_jit_start`
 //! fails, and the runtime acts as the no-op JIT).
 //!
 //! The exit-time rule is common: unwinders' registries may be torn down at exit (libgcc frees
@@ -24,7 +24,15 @@ mod imp;
 #[path = "macos.rs"]
 mod macos;
 
-pub(crate) use imp::{SUPPORTED, perfmap_path, write_stderr};
+pub(crate) use imp::SUPPORTED;
+pub(crate) use ryo_bytecode::os::write_stderr;
+
+/// Where `perf` looks for the process's JIT symbols: Linux only (there is no `perf` on macOS
+/// or Windows, so `RYO_JIT_PERFMAP` does nothing there; samply reads `/tmp/perf-<pid>.map`
+/// files too, untried on macOS).
+pub(crate) fn perfmap_path() -> Option<std::string::String> {
+    cfg!(target_os = "linux").then(|| std::format!("/tmp/perf-{}.map", std::process::id()))
+}
 
 /// The unwind information of one installed function, in the region's read-write memory,
 /// which lives forever. Each OS handles one variant and refuses the other.
@@ -42,20 +50,12 @@ pub(crate) enum Unwind<'a> {
 /// Whether unwind information may still be registered: false once the process is exiting.
 static FRAMES_OPEN: std::sync::Mutex<bool> = std::sync::Mutex::new(true);
 
-#[cfg(not(windows))]
-unsafe extern "C" {
-    fn atexit(f: extern "C" fn()) -> core::ffi::c_int;
-}
-
 /// Arranges for [`close_frame_registry`] to run at exit, before the unwinder's teardown:
 /// `atexit` handlers registered after startup run before the shared objects' destructors.
 /// Not on Windows (see above).
 pub(crate) fn close_frame_registry_at_exit() {
-    // SAFETY: a plain function with no arguments.
     #[cfg(not(windows))]
-    unsafe {
-        atexit(close_frame_registry)
-    };
+    ryo_bytecode::os::atexit(close_frame_registry);
 }
 
 /// Ends unwind registrations: waits for the one in progress, if any.

@@ -26,14 +26,11 @@
 //! destructor: nothing is torn down at exit, unlike libgcc's b-tree. The common
 //! `FRAMES_OPEN` lock is kept anyway; it costs nothing.
 
-use core::ffi::{c_int, c_void};
-
 use super::Unwind;
 
 pub(crate) const SUPPORTED: bool = true;
 
 unsafe extern "C" {
-    fn write(fd: c_int, buf: *const c_void, n: usize) -> isize;
     /// Registers one FDE (libunwind; libSystem's `libunwind.dylib`).
     fn __register_frame(fde: *const u8);
 }
@@ -56,18 +53,6 @@ pub(super) unsafe fn register(u: &Unwind<'_>) -> bool {
         unsafe { __register_frame(fde) };
     }
     true
-}
-
-/// Writes `b` to stderr, straight to the file descriptor.
-pub(crate) fn write_stderr(b: &[u8]) {
-    // SAFETY: a write of a live buffer.
-    unsafe { write(2, b.as_ptr().cast(), b.len()) };
-}
-
-/// None: there is no `perf` on macOS, so `RYO_JIT_PERFMAP` does nothing. (samply reads
-/// `/tmp/perf-<pid>.map` files too; untried, so left off.)
-pub(crate) fn perfmap_path() -> Option<std::string::String> {
-    None
 }
 
 #[cfg(test)]

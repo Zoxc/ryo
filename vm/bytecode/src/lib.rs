@@ -50,6 +50,7 @@ pub mod asm;
 pub mod image;
 pub mod jit;
 pub mod jit_abi;
+pub mod os;
 pub mod rt_symbols;
 pub mod vmem;
 

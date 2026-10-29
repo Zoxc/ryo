@@ -27,7 +27,7 @@
 //! would reach core's panic path (as for `ryo_vm_register`).
 
 use core::cell::UnsafeCell;
-use core::ffi::{CStr, c_char};
+use core::ffi::CStr;
 use core::mem::{MaybeUninit, offset_of};
 use core::ptr;
 use core::sync::atomic::Ordering::{AcqRel, Acquire, Relaxed, Release, SeqCst};
@@ -181,19 +181,7 @@ fn set_config(make: impl FnOnce() -> Config) -> bool {
     CONFIG.set_with(make).is_some()
 }
 
-unsafe extern "C" {
-    fn getenv(name: *const c_char) -> *const c_char;
-}
-
-/// The environment variable `name`'s value, if it is set.
-fn var(name: &CStr) -> Option<&'static [u8]> {
-    // SAFETY: a NUL-terminated name; the value stays valid unless the program changes the
-    // environment, which it may not while other threads read it (as for std's `env::var`).
-    unsafe {
-        let v = getenv(name.as_ptr());
-        (!v.is_null()).then(|| CStr::from_ptr(v).to_bytes())
-    }
-}
+use super::sys::var;
 
 /// A decimal `i64`, with an optional sign; `None` if it isn't one or doesn't fit.
 fn parse_i64(s: &[u8]) -> Option<i64> {
@@ -777,10 +765,6 @@ static ANNOUNCED: AtomicBool = AtomicBool::new(false);
 /// prints no summary.
 static ANNOUNCED_PID: AtomicU32 = AtomicU32::new(0);
 
-unsafe extern "C" {
-    fn atexit(f: extern "C" fn()) -> core::ffi::c_int;
-}
-
 /// `RYO_JIT_STATS`'s start: the malformed-value warning, the startup line, and the exit
 /// summary's `atexit` handler. Once, at the first registration.
 #[cold]
@@ -798,8 +782,7 @@ fn announce(cfg: &Config) {
     let mut l = Line::new();
     startup_line(cfg, pid, &mut l);
     l.flush();
-    // SAFETY: registers a function that lives for the whole process.
-    unsafe { atexit(at_exit) };
+    ryo_bytecode::os::atexit(at_exit);
 }
 
 /// The startup line: whether the JIT is on, its tier, thresholds and flags, and the pid.
@@ -915,90 +898,7 @@ impl Line {
     }
 }
 
-#[cfg(target_os = "linux")]
-mod futex {
-    use core::ffi::{c_long, c_void};
-    use core::ptr;
-    use core::sync::atomic::AtomicU32;
-
-    const SYS_FUTEX: c_long = 202;
-    const FUTEX_WAIT_PRIVATE: i32 = 128;
-    const FUTEX_WAKE_PRIVATE: i32 = 129;
-
-    unsafe extern "C" {
-        fn syscall(n: c_long, ...) -> c_long;
-    }
-
-    /// Sleeps while `a` holds `v` (or until a wake; spurious returns are fine).
-    pub fn wait(a: &AtomicU32, v: u32) {
-        // SAFETY: a futex wait on a live atomic, without a timeout.
-        unsafe { syscall(SYS_FUTEX, a.as_ptr(), FUTEX_WAIT_PRIVATE, v, ptr::null::<c_void>()) };
-    }
-
-    /// Wakes up to `n` threads waiting on `a`.
-    pub fn wake(a: &AtomicU32, n: i32) {
-        // SAFETY: a futex wake on a live atomic.
-        unsafe { syscall(SYS_FUTEX, a.as_ptr(), FUTEX_WAKE_PRIVATE, n) };
-    }
-}
-
-/// Apple: `__ulock_wait`/`__ulock_wake` (libSystem; what libc++'s and std's waits use
-/// before macOS 14.4's `os_sync_wait_on_address`).
-#[cfg(target_vendor = "apple")]
-mod futex {
-    use core::ffi::{c_int, c_void};
-    use core::sync::atomic::AtomicU32;
-
-    const UL_COMPARE_AND_WAIT: u32 = 1;
-    const ULF_WAKE_ALL: u32 = 0x100;
-    const ULF_NO_ERRNO: u32 = 0x0100_0000;
-
-    unsafe extern "C" {
-        fn __ulock_wait(op: u32, addr: *mut c_void, value: u64, timeout_us: u32) -> c_int;
-        fn __ulock_wake(op: u32, addr: *mut c_void, wake_value: u64) -> c_int;
-    }
-
-    /// Sleeps while `a` holds `v` (or until a wake; spurious returns are fine).
-    pub fn wait(a: &AtomicU32, v: u32) {
-        // SAFETY: a wait on a live atomic of 4 bytes, compared with `v`, without a timeout.
-        unsafe { __ulock_wait(UL_COMPARE_AND_WAIT | ULF_NO_ERRNO, a.as_ptr().cast(), v as u64, 0) };
-    }
-
-    /// Wakes one thread waiting on `a`, or all of them.
-    pub fn wake(a: &AtomicU32, n: i32) {
-        let all = if n == 1 { 0 } else { ULF_WAKE_ALL };
-        // SAFETY: a wake on a live atomic.
-        unsafe { __ulock_wake(UL_COMPARE_AND_WAIT | ULF_NO_ERRNO | all, a.as_ptr().cast(), 0) };
-    }
-}
-
-/// PE: `WaitOnAddress`, imported as std imports it (`raw-dylib`, no import library needed).
-#[cfg(windows)]
-mod futex {
-    use core::ffi::c_void;
-    use core::sync::atomic::AtomicU32;
-
-    #[link(name = "api-ms-win-core-synch-l1-2-0", kind = "raw-dylib")]
-    unsafe extern "system" {
-        fn WaitOnAddress(addr: *const c_void, compare: *const c_void, size: usize, ms: u32) -> i32;
-        fn WakeByAddressSingle(addr: *const c_void);
-        fn WakeByAddressAll(addr: *const c_void);
-    }
-
-    /// Sleeps while `a` holds `v` (or until a wake; spurious returns are fine).
-    pub fn wait(a: &AtomicU32, v: u32) {
-        // SAFETY: a wait on a live atomic of 4 bytes, compared with `v`, without a timeout.
-        unsafe { WaitOnAddress(a.as_ptr().cast(), (&raw const v).cast(), 4, u32::MAX) };
-    }
-
-    /// Wakes one thread waiting on `a`, or all of them.
-    pub fn wake(a: &AtomicU32, n: i32) {
-        // SAFETY: a wake on a live atomic.
-        unsafe { if n == 1 { WakeByAddressSingle(a.as_ptr().cast()) } else { WakeByAddressAll(a.as_ptr().cast()) } }
-    }
-}
-
-use futex::{wait as futex_wait, wake as futex_wake};
+use super::sys::{futex_wait, futex_wake};
 
 #[cfg(test)]
 mod tests {

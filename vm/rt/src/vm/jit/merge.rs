@@ -154,65 +154,10 @@ fn rendezvous() -> Option<(*mut Page, bool)> {
             // SAFETY: the mapping just made.
             unsafe { vmem::release(p, PAGE) };
         }
-        if read_head(at).is_some_and(is_ours) {
+        if super::super::sys::read_head(at).is_some_and(is_ours) {
             return Some((at as *mut Page, false));
         }
     }
-    None
-}
-
-/// The first 16 bytes at `at` in this process, read without faulting; `None` where
-/// unreadable.
-#[cfg(target_os = "linux")]
-fn read_head(at: usize) -> Option<[u64; 2]> {
-    use core::ffi::{c_int, c_long, c_void};
-    #[repr(C)]
-    struct IoVec {
-        base: *mut c_void,
-        len: usize,
-    }
-    unsafe extern "C" {
-        fn process_vm_readv(pid: c_int, local: *const IoVec, ln: c_long, remote: *const IoVec, rn: c_long, flags: c_long) -> isize;
-    }
-    let mut head = [0u64; 2];
-    let local = IoVec { base: head.as_mut_ptr().cast(), len: 16 };
-    let remote = IoVec { base: at as *mut c_void, len: 16 };
-    // SAFETY: reads 16 bytes of this process, failing (not faulting) where unreadable.
-    let n = unsafe { process_vm_readv(super::super::sys::pid() as c_int, &local, 1, &remote, 1, 0) };
-    (n == 16).then_some(head)
-}
-
-#[cfg(target_vendor = "apple")]
-fn read_head(at: usize) -> Option<[u64; 2]> {
-    unsafe extern "C" {
-        static mach_task_self_: u32;
-        fn mach_vm_read_overwrite(task: u32, addr: u64, size: u64, data: u64, out: *mut u64) -> i32;
-    }
-    let mut head = [0u64; 2];
-    let mut n = 0u64;
-    // SAFETY: a plain Mach call on this task, failing (not faulting) where unreadable.
-    let ok = unsafe { mach_vm_read_overwrite(mach_task_self_, at as u64, 16, head.as_mut_ptr() as u64, &mut n) } == 0;
-    (ok && n == 16).then_some(head)
-}
-
-#[cfg(windows)]
-fn read_head(at: usize) -> Option<[u64; 2]> {
-    use core::ffi::c_void;
-    #[link(name = "kernel32")]
-    unsafe extern "system" {
-        fn GetCurrentProcess() -> *mut c_void;
-        fn ReadProcessMemory(process: *mut c_void, base: *const c_void, buf: *mut c_void, size: usize, read: *mut usize) -> i32;
-    }
-    let mut head = [0u64; 2];
-    let mut n = 0usize;
-    // SAFETY: a plain kernel32 call on this process, failing (not faulting) where unreadable.
-    let ok = unsafe { ReadProcessMemory(GetCurrentProcess(), at as *const c_void, head.as_mut_ptr().cast(), 16, &mut n) } != 0;
-    (ok && n == 16).then_some(head)
-}
-
-/// Elsewhere `vmem::reserve` fails, and so does this: no rendezvous.
-#[cfg(not(any(target_os = "linux", target_vendor = "apple", windows)))]
-fn read_head(_: usize) -> Option<[u64; 2]> {
     None
 }
 

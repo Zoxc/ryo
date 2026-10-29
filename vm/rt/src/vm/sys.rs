@@ -1,5 +1,7 @@
 //! OS services for the VM: page mappings (through `ryo_bytecode::vmem`), fatal errors, the
-//! runtime lock, and a bump allocator.
+//! runtime lock, and a bump allocator; for the JIT, the environment, futexes and reads of
+//! possibly unmapped memory. Every OS call of the runtime is declared here or in
+//! `ryo_bytecode` (`vmem`, `os`).
 //!
 //! Everything here uses `core` and direct OS calls only (libc on ELF, kernel32 on PE). Under
 //! `--sysroot ryo`, std's allocator, `Mutex` and I/O may be VM functions, so the runtime must
@@ -7,6 +9,8 @@
 //! VM from the runtime").
 
 use core::cell::UnsafeCell;
+#[cfg(feature = "jit")]
+use core::ffi::CStr;
 use core::ops::{Deref, DerefMut};
 use core::ptr;
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -18,26 +22,17 @@ const PAGE: usize = vmem::PAGE;
 
 #[cfg(unix)]
 mod os {
-    use core::ffi::{c_int, c_void};
-
     unsafe extern "C" {
-        pub fn write(fd: c_int, buf: *const c_void, n: usize) -> isize;
         pub fn abort() -> !;
         #[cfg(feature = "jit")]
-        pub fn getpid() -> c_int;
+        pub fn getpid() -> core::ffi::c_int;
     }
 }
 
 #[cfg(windows)]
 mod os {
-    use core::ffi::c_void;
-
-    pub const STD_ERROR_HANDLE: u32 = -12i32 as u32;
-
     #[link(name = "kernel32")]
     unsafe extern "system" {
-        pub fn GetStdHandle(which: u32) -> *mut c_void;
-        pub fn WriteFile(h: *mut c_void, buf: *const u8, n: u32, written: *mut u32, ov: *mut c_void) -> i32;
         #[cfg(feature = "jit")]
         pub fn GetCurrentProcessId() -> u32;
     }
@@ -101,20 +96,7 @@ pub fn fatal(msg: &str) -> ! {
     abort()
 }
 
-/// Writes `s` to stderr with one `write`, ignoring errors.
-pub(crate) fn write_stderr(s: &[u8]) {
-    #[cfg(unix)]
-    // SAFETY: `s` is valid for `s.len()` bytes. Errors are ignored.
-    unsafe {
-        os::write(2, s.as_ptr().cast(), s.len());
-    }
-    #[cfg(windows)]
-    // SAFETY: as above; a null handle makes WriteFile fail harmlessly.
-    unsafe {
-        let mut n = 0;
-        os::WriteFile(os::GetStdHandle(os::STD_ERROR_HANDLE), s.as_ptr(), s.len() as u32, &mut n, ptr::null_mut());
-    }
-}
+pub(crate) use ryo_bytecode::os::write_stderr;
 
 /// The process's id.
 #[cfg(feature = "jit")]
@@ -129,6 +111,163 @@ pub(crate) fn pid() -> u32 {
     unsafe {
         os::GetCurrentProcessId()
     }
+}
+
+#[cfg(feature = "jit")]
+unsafe extern "C" {
+    fn getenv(name: *const core::ffi::c_char) -> *const core::ffi::c_char;
+}
+
+/// The environment variable `name`'s value, if it is set.
+#[cfg(feature = "jit")]
+pub(crate) fn var(name: &CStr) -> Option<&'static [u8]> {
+    // SAFETY: a NUL-terminated name; the value stays valid unless the program changes the
+    // environment, which it may not while other threads read it (as for std's `env::var`).
+    unsafe {
+        let v = getenv(name.as_ptr());
+        (!v.is_null()).then(|| CStr::from_ptr(v).to_bytes())
+    }
+}
+
+#[cfg(all(feature = "jit", target_os = "linux"))]
+mod futex {
+    use core::ffi::{c_long, c_void};
+    use core::ptr;
+    use core::sync::atomic::AtomicU32;
+
+    const SYS_FUTEX: c_long = 202;
+    const FUTEX_WAIT_PRIVATE: i32 = 128;
+    const FUTEX_WAKE_PRIVATE: i32 = 129;
+
+    unsafe extern "C" {
+        fn syscall(n: c_long, ...) -> c_long;
+    }
+
+    /// Sleeps while `a` holds `v` (or until a wake; spurious returns are fine).
+    pub fn wait(a: &AtomicU32, v: u32) {
+        // SAFETY: a futex wait on a live atomic, without a timeout.
+        unsafe { syscall(SYS_FUTEX, a.as_ptr(), FUTEX_WAIT_PRIVATE, v, ptr::null::<c_void>()) };
+    }
+
+    /// Wakes up to `n` threads waiting on `a`.
+    pub fn wake(a: &AtomicU32, n: i32) {
+        // SAFETY: a futex wake on a live atomic.
+        unsafe { syscall(SYS_FUTEX, a.as_ptr(), FUTEX_WAKE_PRIVATE, n) };
+    }
+}
+
+/// Apple: `__ulock_wait`/`__ulock_wake` (libSystem; what libc++'s and std's waits use
+/// before macOS 14.4's `os_sync_wait_on_address`).
+#[cfg(all(feature = "jit", target_vendor = "apple"))]
+mod futex {
+    use core::ffi::{c_int, c_void};
+    use core::sync::atomic::AtomicU32;
+
+    const UL_COMPARE_AND_WAIT: u32 = 1;
+    const ULF_WAKE_ALL: u32 = 0x100;
+    const ULF_NO_ERRNO: u32 = 0x0100_0000;
+
+    unsafe extern "C" {
+        fn __ulock_wait(op: u32, addr: *mut c_void, value: u64, timeout_us: u32) -> c_int;
+        fn __ulock_wake(op: u32, addr: *mut c_void, wake_value: u64) -> c_int;
+    }
+
+    /// Sleeps while `a` holds `v` (or until a wake; spurious returns are fine).
+    pub fn wait(a: &AtomicU32, v: u32) {
+        // SAFETY: a wait on a live atomic of 4 bytes, compared with `v`, without a timeout.
+        unsafe { __ulock_wait(UL_COMPARE_AND_WAIT | ULF_NO_ERRNO, a.as_ptr().cast(), v as u64, 0) };
+    }
+
+    /// Wakes one thread waiting on `a`, or all of them.
+    pub fn wake(a: &AtomicU32, n: i32) {
+        let all = if n == 1 { 0 } else { ULF_WAKE_ALL };
+        // SAFETY: a wake on a live atomic.
+        unsafe { __ulock_wake(UL_COMPARE_AND_WAIT | ULF_NO_ERRNO | all, a.as_ptr().cast(), 0) };
+    }
+}
+
+/// PE: `WaitOnAddress`, imported as std imports it (`raw-dylib`, no import library needed).
+#[cfg(all(feature = "jit", windows))]
+mod futex {
+    use core::ffi::c_void;
+    use core::sync::atomic::AtomicU32;
+
+    #[link(name = "api-ms-win-core-synch-l1-2-0", kind = "raw-dylib")]
+    unsafe extern "system" {
+        fn WaitOnAddress(addr: *const c_void, compare: *const c_void, size: usize, ms: u32) -> i32;
+        fn WakeByAddressSingle(addr: *const c_void);
+        fn WakeByAddressAll(addr: *const c_void);
+    }
+
+    /// Sleeps while `a` holds `v` (or until a wake; spurious returns are fine).
+    pub fn wait(a: &AtomicU32, v: u32) {
+        // SAFETY: a wait on a live atomic of 4 bytes, compared with `v`, without a timeout.
+        unsafe { WaitOnAddress(a.as_ptr().cast(), (&raw const v).cast(), 4, u32::MAX) };
+    }
+
+    /// Wakes one thread waiting on `a`, or all of them.
+    pub fn wake(a: &AtomicU32, n: i32) {
+        // SAFETY: a wake on a live atomic.
+        unsafe { if n == 1 { WakeByAddressSingle(a.as_ptr().cast()) } else { WakeByAddressAll(a.as_ptr().cast()) } }
+    }
+}
+
+#[cfg(feature = "jit")]
+pub(crate) use futex::{wait as futex_wait, wake as futex_wake};
+
+/// The first 16 bytes at `at` in this process, read without faulting; `None` where
+/// unreadable (the merge rendezvous, `jit/merge.rs`).
+#[cfg(all(feature = "jit", target_os = "linux"))]
+pub(crate) fn read_head(at: usize) -> Option<[u64; 2]> {
+    use core::ffi::{c_int, c_long, c_void};
+    #[repr(C)]
+    struct IoVec {
+        base: *mut c_void,
+        len: usize,
+    }
+    unsafe extern "C" {
+        fn process_vm_readv(pid: c_int, local: *const IoVec, ln: c_long, remote: *const IoVec, rn: c_long, flags: c_long) -> isize;
+    }
+    let mut head = [0u64; 2];
+    let local = IoVec { base: head.as_mut_ptr().cast(), len: 16 };
+    let remote = IoVec { base: at as *mut c_void, len: 16 };
+    // SAFETY: reads 16 bytes of this process, failing (not faulting) where unreadable.
+    let n = unsafe { process_vm_readv(pid() as c_int, &local, 1, &remote, 1, 0) };
+    (n == 16).then_some(head)
+}
+
+#[cfg(all(feature = "jit", target_vendor = "apple"))]
+pub(crate) fn read_head(at: usize) -> Option<[u64; 2]> {
+    unsafe extern "C" {
+        static mach_task_self_: u32;
+        fn mach_vm_read_overwrite(task: u32, addr: u64, size: u64, data: u64, out: *mut u64) -> i32;
+    }
+    let mut head = [0u64; 2];
+    let mut n = 0u64;
+    // SAFETY: a plain Mach call on this task, failing (not faulting) where unreadable.
+    let ok = unsafe { mach_vm_read_overwrite(mach_task_self_, at as u64, 16, head.as_mut_ptr() as u64, &mut n) } == 0;
+    (ok && n == 16).then_some(head)
+}
+
+#[cfg(all(feature = "jit", windows))]
+pub(crate) fn read_head(at: usize) -> Option<[u64; 2]> {
+    use core::ffi::c_void;
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetCurrentProcess() -> *mut c_void;
+        fn ReadProcessMemory(process: *mut c_void, base: *const c_void, buf: *mut c_void, size: usize, read: *mut usize) -> i32;
+    }
+    let mut head = [0u64; 2];
+    let mut n = 0usize;
+    // SAFETY: a plain kernel32 call on this process, failing (not faulting) where unreadable.
+    let ok = unsafe { ReadProcessMemory(GetCurrentProcess(), at as *const c_void, head.as_mut_ptr().cast(), 16, &mut n) } != 0;
+    (ok && n == 16).then_some(head)
+}
+
+/// Elsewhere `vmem::reserve` fails, and so does this: no merge rendezvous.
+#[cfg(all(feature = "jit", not(any(target_os = "linux", target_vendor = "apple", windows))))]
+pub(crate) fn read_head(_: usize) -> Option<[u64; 2]> {
+    None
 }
 
 /// Aborts the process without a message, as C++'s `terminate` does.
