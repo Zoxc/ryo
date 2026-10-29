@@ -1294,8 +1294,24 @@ impl Func {
             if matches!(bd.term, Term::None) {
                 return Err(format!("{b} has no terminator"));
             }
-            for u in bd.term.uses() {
-                check(u, b, end, 1)?;
+            // `BrCmp` and tail calls read at known widths, the rest at least a byte.
+            let tws: Vec<u8> = match &bd.term {
+                Term::BrCmp { w, .. } => alloc::vec![*w, *w],
+                Term::TailCall { call, .. } => {
+                    let mut v: Vec<u8> = Vec::new();
+                    if call.target == CallTarget::Ptr {
+                        v.push(8);
+                    }
+                    v.extend(call.regs.iter().map(|r| r.size.min(8) as u8));
+                    v
+                }
+                _ => Vec::new(),
+            };
+            if !tws.is_empty() && tws.len() != bd.term.uses().count() {
+                return Err(format!("{b}: {} terminator operands, wants {}", bd.term.uses().count(), tws.len()));
+            }
+            for (k, u) in bd.term.uses().enumerate() {
+                check(u, b, end, tws.get(k).copied().unwrap_or(1))?;
             }
             if let Term::BrOvf { .. } = bd.term
                 && !matches!(bd.insts.last().map(|i| &self.insts[i.idx()].op), Some(Op::Ovf(..)))

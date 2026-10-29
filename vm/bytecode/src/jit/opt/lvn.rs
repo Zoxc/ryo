@@ -268,7 +268,7 @@ pub(super) fn simplify(f: &mut Func, i: Inst) -> Simp {
             }
             Simp::Keep
         }
-        Op::Cmp3(..) if args[0] == args[1] => Simp::Const(0),
+        Op::Cmp3(..) if args[0] == args[1] && !matches!(f.def(args[0]), ValueDef::Undef) => Simp::Const(0),
         Op::PtrIndex(s) => {
             if let Some(x) = f.const_of(args[1]) {
                 f.insts[i.idx()].op = Op::PtrAdd(x.wrapping_mul(s as u64) as i64);
@@ -512,9 +512,10 @@ fn fold_const_load(f: &mut Func, i: Inst, mem: &dyn ConstMem) -> Option<u64> {
 /// 16-byte load of two known 8-byte halves is their pair, an 8-byte (or narrower) load of a
 /// known vector's half is that half. The new instructions go to `kept` (of block `b`).
 fn halves(f: &mut Func, kept: &mut Vec<Inst>, b: Block, mem: &[(Loc, u8, Value)], l: Loc, w: u8) -> Option<Value> {
+    // `None` past the i32 offsets (a wrapped offset is another address).
     let shift = |l: Loc, d: i32| match l {
-        Loc::A(a, o) => Loc::A(a, o + d),
-        Loc::P(p, o) => Loc::P(p, o + d),
+        Loc::A(a, o) => Some(Loc::A(a, o.checked_add(d)?)),
+        Loc::P(p, o) => Some(Loc::P(p, o.checked_add(d)?)),
     };
     let find =
         |l: Loc, n: u8, vector: bool| mem.iter().rev().find(|e| e.0 == l && e.1 >= n && (f.w(e.2) == 16) == vector && f.w(e.2) >= n).map(|e| e.2);
@@ -530,7 +531,7 @@ fn halves(f: &mut Func, kept: &mut Vec<Inst>, b: Block, mem: &[(Loc, u8, Value)]
         }
     };
     if w == 16 {
-        let (lo, hi) = (find(l, 8, false)?, find(shift(l, 8), 8, false)?);
+        let (lo, hi) = (find(l, 8, false)?, find(shift(l, 8)?, 8, false)?);
         return Some(new(f, kept, Op::V(VOp::Pair), alloc::vec![lo, hi], 16));
     }
     if w > 8 {
@@ -538,7 +539,7 @@ fn halves(f: &mut Func, kept: &mut Vec<Inst>, b: Block, mem: &[(Loc, u8, Value)]
     }
     let (v, h) = match find(l, 16, true) {
         Some(v) => (v, 0),
-        None => (find(shift(l, -8), 16, true)?, 1),
+        None => (find(shift(l, -8)?, 16, true)?, 1),
     };
     let x = new(f, kept, Op::V(VOp::Half(h)), alloc::vec![v], 8);
     Some(if w == 8 { x } else { new(f, kept, Op::Ext { from: 8, to: w, sx: false }, alloc::vec![x], w) })
@@ -554,7 +555,7 @@ fn pair_load(f: &mut Func, kept: &mut Vec<Inst>, i: Inst) -> bool {
         _ => None,
     };
     let (Some((lx, px, kx)), Some((ly, py, ky))) = (load(f, x), load(f, y)) else { return false };
-    if px != py || ky != kx.wrapping_add(8) {
+    if px != py || kx.checked_add(8) != Some(ky) {
         return false;
     }
     let (Some(ax), Some(ay)) = (kept.iter().position(|&k| k == lx), kept.iter().position(|&k| k == ly)) else { return false };

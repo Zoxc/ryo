@@ -1273,3 +1273,53 @@ fn two_volatile_reads_stay_two() {
     let f = opt(f);
     assert_eq!(block_ops(&f, b0).iter().filter(|o| matches!(o, Op::Island(_))).count(), 2, "{f}");
 }
+
+/// Two 8-byte loads whose offsets are 8 apart only after i32 wraparound aren't a pair: one
+/// 16-byte load would read the upper half at the wrong address.
+#[test]
+fn pair_load_wrapped_offsets() {
+    use ryo_bytecode::jit::ir::VOp;
+    let mut f = IrFunc::default();
+    let b = f.block(BlockKind::Entry);
+    f.layout.push(b);
+    let p = f.param(b, 8);
+    f.entry_regs.push(ArgReg { xmm: false, size: 8, index: 0 });
+    let x = f.inst(b, Op::Load(8, i32::MAX - 3), vec![p], &[8]);
+    let y = f.inst(b, Op::Load(8, i32::MIN + 4), vec![p], &[8]);
+    let (x, y) = (f.result(x), f.result(y));
+    let pr = f.inst(b, Op::V(VOp::Pair), vec![x, y], &[16]);
+    let pr = f.result(pr);
+    let mk = f.inst(b, Op::V(VOp::Msb), vec![pr], &[2]);
+    let mk = f.result(mk);
+    f.terminate(b, Term::Ret { k: 2, parts: vec![mk] });
+    ryo_bytecode::jit::opt::lvn::lvn(&mut f, None);
+    f.verify().unwrap_or_else(|e| panic!("{e}\n{f}"));
+    assert!(!ops(&f).iter().any(|o| matches!(o, Op::Load(16, _))), "{f}");
+}
+
+/// `Cmp3` of an undefined value with itself isn't folded, as the other reflexive folds.
+#[test]
+fn cmp3_of_undef_kept() {
+    let mut f = IrFunc::default();
+    let b = f.block(BlockKind::Entry);
+    f.layout.push(b);
+    let u = f.value(ValueDef::Undef, 8);
+    let c = f.inst(b, Op::Cmp3(true, 8), vec![u, u], &[1]);
+    let c = f.result(c);
+    f.terminate(b, Term::Ret { k: 1, parts: vec![c] });
+    ryo_bytecode::jit::opt::lvn::lvn(&mut f, None);
+    assert!(ops(&f).iter().any(|o| matches!(o, Op::Cmp3(..))), "{f}");
+}
+
+/// `verify` checks a `BrCmp`'s operands at its width.
+#[test]
+fn verify_brcmp_width() {
+    let mut f = IrFunc::default();
+    let (b0, b1) = (f.block(BlockKind::Entry), f.block(BlockKind::Body));
+    f.layout = vec![b0, b1];
+    let a = f.param(b0, 4);
+    let z = f.konst(0, 8);
+    f.terminate(b0, Term::BrCmp { cc: ryo_bytecode::jit::ir::Cc::Eq, w: 8, a, b: z, t: Edge::to(b1), f: Edge::to(b1) });
+    f.terminate(b1, Term::Ret { k: 0, parts: vec![] });
+    assert!(f.verify().is_err(), "{f}");
+}
