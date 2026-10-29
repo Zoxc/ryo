@@ -10,7 +10,7 @@ use core::sync::atomic::{AtomicPtr, Ordering};
 
 use ryo_bytecode::image::Image;
 
-use super::sys::{fatal, lock};
+use super::sys::{Bump, fatal, lock};
 
 struct Snapshot {
     /// The registered images, sorted by crate hash (then CGU hash).
@@ -52,16 +52,17 @@ pub unsafe fn register(start: *const *const u8, end: *const *const u8, anchor: *
     let old = snapshot().map_or(&[][..], |s| s.images);
     let cap = old.len() + n;
     let by_hash = g.alloc_forever(cap * size_of::<Image<'static>>(), align_of::<Image<'static>>()).cast::<Image<'static>>();
-    // SAFETY: fresh, suitably sized and aligned allocation. Elements are written before
-    // they are viewed: `done(len)` covers only the first `len`, which are initialized.
+    // SAFETY: fresh, suitably sized and aligned allocation.
     unsafe { ptr::copy_nonoverlapping(old.as_ptr(), by_hash, old.len()) };
-    let done = |len: usize| -> &[Image<'static>] { unsafe { core::slice::from_raw_parts(by_hash, len) } };
     let mut len = old.len();
     for i in 0..n {
         // SAFETY: the caller passes `n` readable header pointers.
         let h = unsafe { *start.add(i) };
+        // SAFETY: the first `len` entries are initialized, and nothing writes them while this
+        // view lives.
+        let existing = unsafe { core::slice::from_raw_parts(by_hash, len) };
         // SAFETY: per the caller.
-        let Some(view) = (unsafe { admit(h, anchor, done(len)) }) else { continue };
+        let Some(view) = (unsafe { admit(h, anchor, existing) }) else { continue };
         super::jit::registered(&view);
         // SAFETY: `by_hash` has room for `cap > len` entries.
         unsafe { by_hash.add(len).write(view) };
@@ -70,30 +71,44 @@ pub unsafe fn register(start: *const *const u8, end: *const *const u8, anchor: *
     if len == old.len() {
         return;
     }
-    // SAFETY: the first `len` entries are initialized, and nothing else views them.
-    let list = unsafe { core::slice::from_raw_parts_mut(by_hash, len) };
-    sort_by_key(list, |im| (im.crate_hash(), im.header().cgu_hash));
-    let by_addr = g.alloc_forever(2 * len * size_of::<Section>(), align_of::<Section>()).cast::<Section>();
-    let mut n_addr = 0;
-    for im in &*list {
+    // SAFETY: the first `len` entries are initialized, and nothing else views them. They are
+    // allocated forever and not mutated after sorting, so the list is `&'static`.
+    let images: &'static mut [Image<'static>] = unsafe { core::slice::from_raw_parts_mut(by_hash, len) };
+    sort_by_key(images, |im| (im.crate_hash(), im.header().cgu_hash));
+    let sections = build_sections(&mut g, images);
+    publish(&mut g, Snapshot { images, sections });
+}
+
+/// The by-address index of `images`' non-empty text and read-only sections, sorted by start
+/// address.
+fn build_sections(g: &mut Bump, images: &[Image<'static>]) -> &'static [Section] {
+    let by_addr = g.alloc_forever(2 * images.len() * size_of::<Section>(), align_of::<Section>()).cast::<Section>();
+    let mut n = 0;
+    for im in images {
         let header = (im.header() as *const ryo_bytecode::image::Header).cast::<u8>();
         let ro = im.bytes();
         for (start, len) in [(im.text_ptr() as usize, im.header().text_size as usize), (ro.as_ptr() as usize, ro.len())] {
             if len != 0 {
                 // SAFETY: `by_addr` has room for two entries per image.
-                unsafe { by_addr.add(n_addr).write(Section { start, len, header }) };
-                n_addr += 1;
+                unsafe { by_addr.add(n).write(Section { start, len, header }) };
+                n += 1;
             }
         }
     }
-    // SAFETY: the first `n_addr` entries are initialized, and nothing else views them.
-    let sections = unsafe { core::slice::from_raw_parts_mut(by_addr, n_addr) };
+    // SAFETY: the first `n` entries are initialized, and nothing else views them. They are
+    // allocated forever and not mutated after sorting.
+    let sections = unsafe { core::slice::from_raw_parts_mut(by_addr, n) };
     sort_by_key(sections, |s| s.start);
-    let snap = g.alloc_forever(size_of::<Snapshot>(), align_of::<Snapshot>()).cast::<Snapshot>();
-    // SAFETY: fresh allocation; fully written before it is published. Both lists are
-    // allocated forever and not mutated after this point, so they are `&'static`.
-    unsafe { snap.write(Snapshot { images: list, sections }) };
-    SNAPSHOT.store(snap, Ordering::Release);
+    sections
+}
+
+/// Publishes `snap` as the current snapshot, for lock-free readers.
+fn publish(g: &mut Bump, snap: Snapshot) {
+    let p = g.alloc_forever(size_of::<Snapshot>(), align_of::<Snapshot>()).cast::<Snapshot>();
+    // SAFETY: fresh, suitably sized and aligned allocation; fully written before it is
+    // published.
+    unsafe { p.write(snap) };
+    SNAPSHOT.store(p, Ordering::Release);
 }
 
 /// Registers the image with header `h` if it isn't yet: the lazy path of registration, for
