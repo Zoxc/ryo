@@ -245,8 +245,9 @@ fn dump_text(
     s
 }
 
-/// The SSA IR of the decoded function `d`, as register allocation gets it, with the loads
-/// from `mem` (its image's constant pool and the others) folded.
+/// The SSA IR of the decoded function `d` after construction and one [`opt::run`], with the
+/// loads from `mem` (its image's constant pool and the others) folded. Unlike [`compile`]'s,
+/// it is not inlined, devirtualized, promoted or rotated.
 #[cfg(feature = "alloc")]
 pub fn ir_of(d: &crate::asm::Decoded, mode: crate::asm::Mode, mem: Option<&dyn opt::ConstMem>) -> Result<ir::Func, Unsupported> {
     let mut f = built(d, mode, mem)?;
