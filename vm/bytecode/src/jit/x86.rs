@@ -443,12 +443,12 @@ impl X86 {
     }
 
     pub fn movq_to_xmm(&mut self, x: u8, src: Rm, w: u8) {
-        debug_assert!(matches!(w, 2 | 4 | 8) && x < 16);
+        debug_assert!(matches!(w, 4 | 8) && x < 16);
         self.insn(true, w == 8, false, &[0x0f, 0x6e], x, src, &[]);
     }
 
     pub fn movq_from_xmm(&mut self, dst: Rm, x: u8, w: u8) {
-        debug_assert!(matches!(w, 2 | 4 | 8) && x < 16);
+        debug_assert!(matches!(w, 4 | 8) && x < 16);
         self.insn(true, w == 8, false, &[0x0f, 0x7e], x, dst, &[]);
     }
 
