@@ -1348,22 +1348,13 @@ impl Asm {
 
         // The prologue, then the pieces with alignment padding, frame offsets and code
         // constants resolved. `remap[k]` is the element of piece `k` (after its padding).
-        let mut out: Vec<Laid> = Vec::with_capacity(pieces.len() + 8);
-        let fixed = |out: &mut Vec<Laid>, item| out.push(Laid::Fixed { item, site: None });
-        // The counter checks' `js`s (element indices), the entry's first, each continuing at
-        // the element after it; their stubs follow the code.
-        let mut checks = Vec::new();
-        let check = |out: &mut Vec<Laid>, checks: &mut Vec<usize>, lp: bool| {
-            fixed(out, Item::CtrInc(lp));
-            checks.push(out.len());
-            out.push(Laid::Branch { cond: Cond::Ns, to: usize::MAX, long: false });
-        };
+        let mut l = Lowered { out: Vec::with_capacity(pieces.len() + 8), checks: Vec::new() };
         if mode.counters {
-            check(&mut out, &mut checks, false);
+            l.check(false);
         }
-        let prologue_at = out.len();
+        let prologue_at = l.out.len();
         for item in prologue(frame_size, mode) {
-            fixed(&mut out, item);
+            l.fixed(item);
         }
         let epilogue = epilogue(frame_size, mode);
         // Frame slots: `[rbp + d]`, or `[rsp + F + d]`.
@@ -1386,46 +1377,20 @@ impl Asm {
         let mut head_check = false;
         // The elements where loop heads' counter checks start.
         let mut head_checks = Vec::new();
-        // The counter stubs: the loop heads' in order, then the entry's. Each loads the
-        // record into `r11` (and a head its index into `eax`), calls through the record's
-        // slot, and on return jumps back after its check. Returns where the entry's starts
-        // (the end without counters).
-        let stubs = |out: &mut Vec<Laid>, checks: &[usize]| -> usize {
-            let mut entry_stub = out.len();
-            if mode.counters {
-                let (entry, heads) = checks.split_first().expect("the entry's check");
-                for (n, &js) in heads.iter().chain([entry]).enumerate() {
-                    let stub = out.len();
-                    let Laid::Branch { to, .. } = &mut out[js] else { unreachable!() };
-                    *to = stub;
-                    let head = if js == *entry {
-                        entry_stub = stub;
-                        None
-                    } else {
-                        Some(n as u64)
-                    };
-                    for item in counter_stub(head) {
-                        fixed(out, item);
-                    }
-                    out.push(Laid::Branch { cond: Cond::Always, to: js + 1, long: false });
-                }
-            }
-            entry_stub
-        };
         // The stubs come before the pad region (whose loop heads have no checks), its entry
         // (`sub rsp, PE_REGION_ALLOC; jmp r11`) at `region_at`.
         let (mut entry_stub, mut region_at) = (None, None);
         for (k, p) in pieces.into_iter().enumerate() {
             if region == Some(k) {
-                entry_stub = Some(stubs(&mut out, &checks));
-                region_at = Some(out.len());
+                entry_stub = Some(l.stubs(mode.counters));
+                region_at = Some(l.out.len());
                 for item in pe_region_entry() {
-                    fixed(&mut out, item);
+                    l.fixed(item);
                 }
             }
             if head[k] {
                 if mode.align_loops {
-                    out.push(Laid::Align);
+                    l.out.push(Laid::Align);
                 }
                 head_check |= mode.counters;
             }
@@ -1440,23 +1405,24 @@ impl Asm {
                 scopes.push(Laid::Scope(Scope { code_offset: 0, frame_offset: fix(slot) as i32, size, kind }));
                 continue;
             }
-            out.append(&mut scopes);
-            remap.push(out.len());
+            l.out.append(&mut scopes);
+            remap.push(l.out.len());
             for e in empty.drain(..) {
-                remap[e] = out.len();
+                remap[e] = l.out.len();
             }
             if core::mem::take(&mut head_check) {
-                head_checks.push(out.len());
-                check(&mut out, &mut checks, true);
+                head_checks.push(l.out.len());
+                l.check(true);
             }
             // PE: the `nop` after a call with a landing pad that ends its instruction.
             let mut nop = false;
             // A multi-item epilogue (PE): all but its last item first.
             if matches!(p, Piece::Epilogue) {
                 for &it in &epilogue[..epilogue.len() - 1] {
-                    fixed(&mut out, it);
+                    l.fixed(it);
                 }
             }
+            let out = &mut l.out;
             out.push(match p {
                 Piece::Fixed { item, site } => {
                     let a = site.and_then(|id| unwind[id.0 as usize]);
@@ -1504,22 +1470,23 @@ impl Asm {
                 }
             });
             if nop {
-                fixed(&mut out, Item::Nop(1));
+                l.fixed(Item::Nop(1));
             }
         }
         if head.last() == Some(&true) && mode.align_loops {
-            out.push(Laid::Align);
+            l.out.push(Laid::Align);
         }
         debug_assert!(!head_check, "a loop head at the end");
-        out.append(&mut scopes);
-        remap.push(out.len());
+        l.out.append(&mut scopes);
+        remap.push(l.out.len());
         for e in empty {
-            remap[e] = out.len();
+            remap[e] = l.out.len();
         }
         let entry_stub = match entry_stub {
             Some(e) => e,
-            None => stubs(&mut out, &checks),
+            None => l.stubs(mode.counters),
         };
+        let mut out = l.out;
         let region_at = region_at.unwrap_or(out.len());
         remap_elems(&mut out, &remap, &branches, &tables, sites);
         let labels = labels.iter().map(|&at| if at == usize::MAX { usize::MAX } else { remap[at] }).collect();
@@ -1560,6 +1527,55 @@ impl Asm {
         e.targets.sort_unstable();
         e.targets.dedup();
         (e, marks.labels)
+    }
+}
+
+/// The elements [`Asm::finish_labels`] lowers the pieces to, with the counter checks.
+struct Lowered {
+    out: Vec<Laid>,
+    /// The counter checks' `js`s (element indices), the entry's first, each continuing at
+    /// the element after it; their stubs follow the code.
+    checks: Vec<usize>,
+}
+
+impl Lowered {
+    fn fixed(&mut self, item: Item) {
+        self.out.push(Laid::Fixed { item, site: None });
+    }
+
+    /// A counter check (`lp`: a loop head's), its `js` to a stub [`Lowered::stubs`] adds.
+    fn check(&mut self, lp: bool) {
+        self.fixed(Item::CtrInc(lp));
+        self.checks.push(self.out.len());
+        self.out.push(Laid::Branch { cond: Cond::Ns, to: usize::MAX, long: false });
+    }
+
+    /// The counter stubs: the loop heads' in order, then the entry's. Each loads the record
+    /// into `r11` (and a head its index into `eax`), calls through the record's slot, and on
+    /// return jumps back after its check. Returns where the entry's starts (the end without
+    /// `counters`).
+    fn stubs(&mut self, counters: bool) -> usize {
+        let mut entry_stub = self.out.len();
+        if counters {
+            let checks = core::mem::take(&mut self.checks);
+            let (entry, heads) = checks.split_first().expect("the entry's check");
+            for (n, &js) in heads.iter().chain([entry]).enumerate() {
+                let stub = self.out.len();
+                let Laid::Branch { to, .. } = &mut self.out[js] else { unreachable!() };
+                *to = stub;
+                let head = if js == *entry {
+                    entry_stub = stub;
+                    None
+                } else {
+                    Some(n as u64)
+                };
+                for item in counter_stub(head) {
+                    self.fixed(item);
+                }
+                self.out.push(Laid::Branch { cond: Cond::Always, to: js + 1, long: false });
+            }
+        }
+        entry_stub
     }
 }
 
