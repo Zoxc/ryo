@@ -582,7 +582,8 @@ static INT_CASTS: [[[Option<Opcode>; 5]; 5]; 2] = {
     t
 };
 
-/// `cvt.f2i.sat.{s,u}.F.W` and `cvt.i2f.{s,u}.W.F`: `[signed][float][int]`.
+/// `cvt.f2i.sat.{s,u}.F.W` and `cvt.i2f.{s,u}.W.F`: `[dir][signed][float][int]`, `dir` 0 for
+/// `cvt.f2i.sat`, 1 for `cvt.i2f`.
 static FLOAT_INT_CASTS: [[[[Option<Opcode>; 5]; 2]; 2]; 2] = {
     let mut t = [[[[None; 5]; 2]; 2]; 2];
     let mut k = 0;
