@@ -3,7 +3,7 @@ RyoProofs.OpFacts — `OpFacts` for every opcode (aot.md §C2, toward `decode_so
 
 - `tablesOk_true`: every handler kind fits its opcode's shape (`kindFits`,
   `Ryo/Proofs/OpFacts.lean`), checked over the handler and info tables zipped: a
-  `decide +kernel` over the 901 entries, hence here, outside the default build (like
+  `decide +kernel` over every entry, hence here, outside the default build (like
   `InlineOk.lean`).
 - `ctlTableOk_all`: `ctlTableOk` for every `Full.Opcode` (past the tables there is no handler).
 - `opFacts`: `Shapes.OpFacts h` for every opcode, the hypothesis of the shape steps.
