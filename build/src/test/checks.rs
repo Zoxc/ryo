@@ -81,7 +81,15 @@ pub(super) fn cargo_smoke(info: &crate::utils::RustcInfo, root: &Path, out: &Pat
         let marker = stderr.contains(BACKEND_MARKER);
         if want_fresh.is_some_and(|w| w != fresh) || (ryo && !fresh && !marker) || (!ryo && marker) {
             let what = if ryo { "cargo ryo build" } else { "cargo build" };
-            let want = if want_fresh == Some(true) { "fresh" } else { "a rebuild" };
+            let want = if !ryo && marker {
+                "the LLVM backend, but it printed the ryo backend marker"
+            } else if ryo && !fresh && !marker {
+                "the ryo backend marker in the rebuild"
+            } else if want_fresh == Some(true) {
+                "fresh"
+            } else {
+                "a rebuild"
+            };
             result = Err(format!("step {}: {what}: expected {want}\nstderr:\n{stderr}", i + 1));
             break;
         }
