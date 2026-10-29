@@ -46,9 +46,14 @@ pub struct AsmError {
     pub what: &'static str,
 }
 
+/// An [`AsmError`] at `at`.
+const fn err(at: u32, what: &'static str) -> AsmError {
+    AsmError { at, what }
+}
+
 impl From<BadItem> for AsmError {
     fn from(b: BadItem) -> Self {
-        AsmError { at: b.0, what: "not a canonical instruction" }
+        err(b.0, "not a canonical instruction")
     }
 }
 
@@ -78,6 +83,11 @@ impl Proto {
         Proto { op, ops, handler: None, pos, sites, dropped: false, counter: None, bare: false }
     }
 
+    /// A reduced handler call of `op`'s handler with arguments `args`, then `then`.
+    fn handler(op: Opcode, args: Vec<Arg>, then: Then, pos: u32, sites: Vec<(u32, u32)>) -> Proto {
+        Proto { handler: Some((args, then)), ..Proto::new(op, Vec::new(), pos, sites) }
+    }
+
     /// The branch targets (byte positions).
     fn targets(&self) -> impl Iterator<Item = u32> + '_ {
         let handler: &[u32] = self.handler.as_ref().map_or(&[], |(_, then)| then.targets());
@@ -103,7 +113,7 @@ struct Read {
 /// The index of the instruction at byte position `b` of `ipos` ([`Read::ipos`]), for a
 /// target of the instruction at `at`.
 fn insn_index(ipos: &[u32], at: u32, b: u32) -> Result<usize, AsmError> {
-    ipos.binary_search(&b).map_err(|_| AsmError { at, what: "target isn't an instruction" })
+    ipos.binary_search(&b).map_err(|_| err(at, "target isn't an instruction"))
 }
 
 /// The side data the decoder reads alongside a function's machine code: its call sites, and
@@ -223,7 +233,6 @@ fn words_of(r: Read, full: bool) -> Result<Decoded, AsmError> {
 fn read(code: &[u8], fields: Fields<'_>, rodata: &[u8], side: Side<'_>, mode: Mode, reduced: bool) -> Result<Read, AsmError> {
     let Side { call_sites, dropped, scopes, index } = side;
     let mut c = Cursor::new(code, fields);
-    let err = |at: u32, what: &'static str| AsmError { at, what };
     if !mode.valid() {
         return Err(err(0, "unsupported mode"));
     }
@@ -324,7 +333,6 @@ fn read(code: &[u8], fields: Fields<'_>, rodata: &[u8], side: Side<'_>, mode: Mo
 /// The entry's counter check (with counters: its stub's position and where the stub returns
 /// to) and the prologue at the cursor, which is left after it, and the frame size.
 fn prologue_frame(c: &mut Cursor<'_>, mode: Mode) -> Result<(Option<(u32, u32)>, u32), AsmError> {
-    let err = |at: u32, what: &'static str| AsmError { at, what };
     // With counters, the entry's check comes first: its stub's position, and where the stub
     // returns to.
     let entry = if mode.counters {
@@ -367,7 +375,6 @@ fn prologue_frame(c: &mut Cursor<'_>, mode: Mode) -> Result<(Option<(u32, u32)>,
 /// The loop heads' instruction indices, in order, checking that only they are padded and
 /// have counter checks, and that no branch crosses the pad region's start (instruction `rs`).
 fn loop_heads(protos: &[Proto], padded: &[bool], ipos: &[u32], rs: usize, mode: Mode) -> Result<Vec<usize>, AsmError> {
-    let err = |at: u32, what: &'static str| AsmError { at, what };
     let index = |at: u32, b: u32| insn_index(ipos, at, b);
     // When aligning, loop heads start at multiples of 16, and only they are padded. Only
     // single branch targets make loop heads, not jump tables. The pad region has none, and
@@ -400,7 +407,6 @@ fn loop_heads(protos: &[Proto], padded: &[bool], ipos: &[u32], rs: usize, mode: 
 /// Checks the counter stubs at the cursor, after the body: the loop heads' in order, then the
 /// entry's (`entry`: its position and where it returns to), ending at `limit`.
 fn check_counter_stubs(c: &mut Cursor<'_>, protos: &[Proto], heads: &[usize], entry: (u32, u32), limit: u32) -> Result<(), AsmError> {
-    let err = |at: u32, what: &'static str| AsmError { at, what };
     let (entry_stub, entry_back) = entry;
     let checks = heads.iter().map(|&i| protos[i].counter.unwrap());
     for (n, (stub, back)) in checks.chain([(entry_stub, entry_back)]).enumerate() {
@@ -435,7 +441,6 @@ fn site_at(call_sites: &[CallSite], s: u32) -> Option<&CallSite> {
 /// whether it catches), checking that every call site belongs to one instruction that may
 /// unwind and lands on an `lpad`. Instructions from `rs` on are the pad region's.
 fn unwind_actions(protos: &[Proto], ipos: &[u32], call_sites: &[CallSite], rs: usize) -> Result<Vec<Option<(Option<usize>, bool)>>, AsmError> {
-    let err = |at: u32, what: &'static str| AsmError { at, what };
     let index = |at: u32, b: u32| insn_index(ipos, at, b);
     let mut actions = vec![None; protos.len()];
     let mut used = 0;
@@ -572,7 +577,7 @@ fn instructions(
         }
         let pad = c.padding();
         if pad != 0 && (fr.region || !fr.mode.align_loops || pad >= 16 || c.pos % 16 != 0) {
-            return Err(AsmError { at: c.pos, what: "padding" });
+            return Err(err(c.pos, "padding"));
         }
         padded.push(pad != 0);
         if targets.is_some_and(|t| t.binary_search(&c.pos).is_ok()) {
@@ -616,16 +621,16 @@ fn instructions(
         // PE: the `nop` after a call with a landing pad that ends its instruction.
         if fr.mode.pe && p.bare && p.sites.iter().any(|&(at, _)| site_at(call_sites, at).is_some_and(|cs| cs.pad.is_some())) {
             if !c.nop1() {
-                return Err(AsmError { at: c.pos, what: "no nop after a call with a landing pad" });
+                return Err(err(c.pos, "no nop after a call with a landing pad"));
             }
         }
         protos.push(Proto { pos, counter, ..p });
     }
     if let Some(d) = dropped.first() {
-        return Err(AsmError { at: d.at, what: "dropped store not at the end of a sequence" });
+        return Err(err(d.at, "dropped store not at the end of a sequence"));
     }
     if let Some(h) = hints.first() {
-        return Err(AsmError { at: h.at, what: "instruction list entry not at its inline sequence" });
+        return Err(err(h.at, "instruction list entry not at its inline sequence"));
     }
     Ok((protos, padded))
 }
@@ -672,7 +677,6 @@ impl Frame {
 /// `hints`.
 fn insn(c: &mut Cursor<'_>, fr: &Frame, ro: &[u8], hints: &mut &[Hint]) -> Result<Proto, AsmError> {
     let pos = c.pos;
-    let err = |at: u32, what: &'static str| AsmError { at, what };
     if let Some(p) = dense_switch(c, fr)? {
         return Ok(p);
     }
@@ -714,7 +718,7 @@ fn insn(c: &mut Cursor<'_>, fr: &Frame, ro: &[u8], hints: &mut &[Hint]) -> Resul
                 Some(_) => return Err(err(pos, "case count")),
             };
             let then = then(c, op, n, hat, &mut sites)?;
-            Proto { op, ops: Vec::new(), handler: Some((args, then)), pos, sites, dropped: false, counter: None, bare: false }
+            Proto::handler(op, args, then, pos, sites)
         }
         Item::Call(Ref::Handler(op)) if has_handler(op) => {
             let mut ops = handler_operands(op, &setup, fr, ro, c.code.len(), pos)?;
@@ -843,7 +847,7 @@ fn parts_of(items: &[Item]) -> Option<(i32, Vec<RetPart>)> {
 /// epilogue and `ret`. Returns the slot and the kind (slot 0 for nothing returned).
 fn ret(c: &mut Cursor<'_>, fr: &Frame) -> Result<(i32, u32), AsmError> {
     let at = c.pos;
-    let bad = AsmError { at, what: "return value loads" };
+    let bad = err(at, "return value loads");
     let items = take(c, |it| matches!(it, Item::Ld { .. } | Item::Sse { st: false, .. } | Item::Movd { to_xmm: true, .. }));
     let (s, parts) = parts_of(&items).filter(|(_, p)| p.len() <= 2).ok_or(bad)?;
     let k = ret_kind(&parts);
@@ -853,7 +857,7 @@ fn ret(c: &mut Cursor<'_>, fr: &Frame) -> Result<(i32, u32), AsmError> {
     for want in fr.epilogue().into_iter().chain([Item::Ret]) {
         let a = c.pos;
         if c.item()? != want {
-            return Err(AsmError { at: a, what: "not the return sequence" });
+            return Err(err(a, "not the return sequence"));
         }
     }
     Ok((s, k))
@@ -1181,7 +1185,7 @@ fn dense_switch(c: &mut Cursor<'_>, fr: &Frame) -> Result<Option<Proto>, AsmErro
             };
             args[l.locs[k].reg as usize] = Arg::Imm(v);
         }
-        Proto { op, ops: Vec::new(), handler: Some((args, Then::Table(ts))), pos, sites: Vec::new(), dropped: false, counter: None, bare: false }
+        Proto::handler(op, args, Then::Table(ts), pos, Vec::new())
     } else {
         let default = ts.pop().expect("a default");
         Proto::new(op, vec![Opnd::Slot(m.disp), Opnd::Imm(base), Opnd::Target(default), Opnd::Targets(ts)], pos, Vec::new())
@@ -1191,7 +1195,7 @@ fn dense_switch(c: &mut Cursor<'_>, fr: &Frame) -> Result<Option<Proto>, AsmErro
 /// The jump table sequence and its `n` entries.
 fn table(c: &mut Cursor<'_>, n: usize) -> Result<Vec<u32>, AsmError> {
     let at = c.pos;
-    let bad = AsmError { at, what: "jump table" };
+    let bad = err(at, "jump table");
     let Item::LeaTable(t) = c.item()? else { return Err(bad) };
     if c.item()? != Item::LoadTableEntry || c.item()? != Item::AddRaxRcx || c.item()? != Item::JmpRax {
         return Err(bad);
@@ -1208,7 +1212,7 @@ fn table(c: &mut Cursor<'_>, n: usize) -> Result<Vec<u32>, AsmError> {
 fn island_call(c: &mut Cursor<'_>, fr: &Frame) -> Result<(crate::full::Sym, u32, (u32, u32)), AsmError> {
     let mode = fr.mode;
     let at = c.pos;
-    let bad = AsmError { at, what: "island call" };
+    let bad = err(at, "island call");
     let [fp, opsr] = island_args(mode.pe);
     if c.item()? != fr.fp(fp) {
         return Err(bad);
@@ -1226,7 +1230,6 @@ fn island_call(c: &mut Cursor<'_>, fr: &Frame) -> Result<(crate::full::Sym, u32,
 /// table of `n` cases and the default. `hat` is the call's position, a call site for
 /// `resume`.
 fn then(c: &mut Cursor<'_>, op: Opcode, n: usize, hat: u32, sites: &mut Vec<(u32, u32)>) -> Result<Then, AsmError> {
-    let err = |at: u32, what: &'static str| AsmError { at, what };
     let fixed = |c: &mut Cursor<'_>, want: Item| -> Result<(), AsmError> {
         let at = c.pos;
         if c.item()? != want { Err(err(at, "not the instruction's canonical sequence")) } else { Ok(()) }
@@ -1261,10 +1264,10 @@ fn handler_args(setup: &[(u32, Item)], fr: &Frame, pos: u32) -> Result<Vec<Arg>,
     let max = if fr.mode.pe { super::PE_ARG_REGS + 1 } else { super::ARG_REGS };
     for (i, &(at, it)) in setup.iter().enumerate() {
         if i >= max {
-            return Err(AsmError { at, what: "too many argument registers" });
+            return Err(err(at, "too many argument registers"));
         }
         let Some(r) = handler_reg(fr.mode.pe, i as u8) else {
-            let Item::StImm { w: W::D, m: STACK_ARG, imm } = it else { return Err(AsmError { at: pos, what: "operand registers out of order" }) };
+            let Item::StImm { w: W::D, m: STACK_ARG, imm } = it else { return Err(err(pos, "operand registers out of order")) };
             out.push(Arg::Imm(imm as u32 as u64));
             continue;
         };
@@ -1273,7 +1276,7 @@ fn handler_args(setup: &[(u32, Item)], fr: &Frame, pos: u32) -> Result<Vec<Arg>,
             Item::Mov(g, Reg::Rax) if g == r => Arg::Exception,
             Item::SetReg(g, v) if g == r => Arg::Imm(v),
             Item::Lea(g, to) if g == r && addr_arg(to).is_some() => addr_arg(to).unwrap(),
-            _ => return Err(AsmError { at: pos, what: "operand registers out of order" }),
+            _ => return Err(err(pos, "operand registers out of order")),
         });
     }
     Ok(out)
@@ -1284,7 +1287,7 @@ fn handler_args(setup: &[(u32, Item)], fr: &Frame, pos: u32) -> Result<Vec<Arg>,
 /// placeholders.
 fn handler_operands(op: Opcode, setup: &[(u32, Item)], fr: &Frame, ro: &[u8], code_len: usize, pos: u32) -> Result<Vec<Opnd>, AsmError> {
     let mode = fr.mode;
-    let err = |what: &'static str| AsmError { at: pos, what };
+    let err = |what: &'static str| err(pos, what);
     let l = layout(op, mode);
     let info = op.info();
     let mut it = setup.iter().map(|s| s.1);
@@ -1371,11 +1374,10 @@ fn handler_operands(op: Opcode, setup: &[(u32, Item)], fr: &Frame, ro: &[u8], co
             }
             OperandKind::List(e) if let Some(size) = e.case_bytes() => {
                 let Ref::Ro(at) = addr(loc.reg)? else { return Err(err("case values")) };
-                let n = usize::try_from(imm(loc.reg + 1)?).map_err(|_| err("case values"))?;
-                let len = n.checked_mul(size).ok_or(err("case values"))?;
-                let b = ro.get(at as usize..).and_then(|b| b.get(..len)).ok_or(err("case values"))?;
+                let n = imm(loc.reg + 1)?;
+                let b = reduce::case_values(ro, at, n, size).ok_or(err("case values"))?;
                 let vals = b.chunks(size).map(|c| c.iter().rev().fold(0u128, |v, &x| v << 8 | x as u128)).collect();
-                Opnd::Cases(vals, vec![0; n])
+                Opnd::Cases(vals, vec![0; n as usize])
             }
             OperandKind::Func | OperandKind::Target | OperandKind::Neg | OperandKind::List(_) | OperandKind::Handler => {
                 return Err(err("operand in a register"));

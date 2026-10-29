@@ -345,8 +345,7 @@ fn check_handler<'c>(h: Opcode, args: &[Arg], neg: bool, ts: Vec<Label>, code_co
                 // A sparse switch's case values: as many as its cases, of its
                 // value size.
                 let (Arg::Ro(off), Arg::Imm(n)) = (args[r], args[r + 1]) else { return Err(()) };
-                let len = usize::try_from(n).ok().and_then(|n| n.checked_mul(size)).ok_or(())?;
-                values = code_consts.get(off as usize..).and_then(|b| b.get(..len)).ok_or(())?;
+                values = case_values(code_consts, off, n, size).ok_or(())?;
                 cases += n;
                 ro_args += 1;
             }
@@ -357,6 +356,13 @@ fn check_handler<'c>(h: Opcode, args: &[Arg], neg: bool, ts: Vec<Label>, code_co
         return Err(());
     }
     Ok((then, values))
+}
+
+/// A sparse switch's `n` case values of `size` bytes each, at offset `off` of `code_consts`
+/// (an [`Arg::Ro`] argument), `None` if they aren't all in it.
+pub(super) fn case_values(code_consts: &[u8], off: u32, n: u64, size: usize) -> Option<&[u8]> {
+    let len = usize::try_from(n).ok()?.checked_mul(size)?;
+    code_consts.get(off as usize..)?.get(..len)
 }
 
 /// The unwind action of each instruction of `insns` (starting at the word offsets `starts`)
