@@ -402,7 +402,7 @@ pub struct RetPart {
 }
 
 impl RetPart {
-    /// The kind byte of the part, and its offset byte.
+    /// The kind byte of the part (its offset byte is [`ret_kind`]'s).
     const fn bits(self) -> u32 {
         self.size | (self.xmm as u32) << 5
     }
