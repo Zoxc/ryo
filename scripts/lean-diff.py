@@ -24,10 +24,9 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+from lean_corpus import ROOT, RUSTC_RYO, RYO_LEAN, finish, require, rustc_cmd, variants, work_dir
+
 TESTS = ROOT / "tests" / "lean"
 TIMEOUT = 600
 
@@ -38,6 +37,8 @@ def status(code):
 
 
 def run(cmd, env=None, timeout=TIMEOUT):
+    """(shell-style exit status or None on timeout, stdout, stderr), keeping the output a
+    timed-out run wrote."""
     try:
         p = subprocess.run(cmd, cwd=ROOT, env=env, capture_output=True, timeout=timeout)
     except subprocess.TimeoutExpired as e:
@@ -45,11 +46,10 @@ def run(cmd, env=None, timeout=TIMEOUT):
     return status(p.returncode), p.stdout, p.stderr
 
 
-def build(compiler, src, name, out_dir, flags, env=None):
+def build(compiler, src, out_dir, flags, env=None):
     out_dir.mkdir(parents=True, exist_ok=True)
-    exe = out_dir / name
-    cmd = [str(compiler), "--edition=2024", str(src), "--crate-type", "bin", "--crate-name", name, "-o", str(exe)] + flags
-    code, _, err = run(cmd, env=env)
+    exe = out_dir / src.stem
+    code, _, err = run(rustc_cmd(compiler, src, exe) + flags, env=env)
     if code != 0:
         return None, err.decode(errors="replace")
     return exe, None
@@ -69,21 +69,16 @@ def diff(a, b, na, nb):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("names", nargs="*", help="programs in tests/lean (file stems); default: all")
-    ap.add_argument("--ryo-lean", default=str(ROOT / "lean" / ".lake" / "build" / "bin" / "ryo-lean"))
+    ap.add_argument("--ryo-lean", default=str(RYO_LEAN))
     ap.add_argument("--opt", action="store_true", help="also build with -Copt-level=3")
     ap.add_argument("--keep", help="keep the builds and dumps in this directory")
     ap.add_argument("--fuel", help="ryo-lean's fuel (steps)")
     args = ap.parse_args()
 
-    rustc_ryo = ROOT / "dist" / "bin" / "rustc-ryo"
-    if not rustc_ryo.exists():
-        sys.exit(f"{rustc_ryo} not found; run ./y.sh build")
-    if not Path(args.ryo_lean).exists():
-        sys.exit(f"{args.ryo_lean} not found; build it with `lake build` in lean/, or pass --ryo-lean")
+    require(args.ryo_lean)
 
     names = args.names or sorted(p.stem for p in TESTS.glob("*.rs"))
-    variants = [("", [])] + ([("-O3", ["-Copt-level=3"])] if args.opt else [])
-    work = Path(args.keep) if args.keep else Path(tempfile.mkdtemp(prefix="lean-diff-"))
+    work = work_dir(args.keep, "lean-diff-")
 
     rows = []
     reports = []
@@ -91,7 +86,7 @@ def main():
         src = TESTS / f"{name}.rs"
         if not src.exists():
             sys.exit(f"no program {src}")
-        for suffix, flags in variants:
+        for suffix, flags in variants(args.opt):
             label = name + suffix
             d = work / label
             shutil.rmtree(d, ignore_errors=True)
@@ -99,8 +94,8 @@ def main():
             env = dict(os.environ, RYO_DUMP_LEAN=str(dump_dir))
             results = {}
             notes = []
-            for who, compiler, e in [("rustc", "rustc", None), ("ryo", rustc_ryo, env)]:
-                exe, err = build(compiler, src, name, d / who, flags, e)
+            for who, compiler, e in [("rustc", "rustc", None), ("ryo", RUSTC_RYO, env)]:
+                exe, err = build(compiler, src, d / who, flags, e)
                 if exe is None:
                     results[who] = (None, b"")
                     notes.append(f"{who} build failed:\n{err}")
@@ -145,11 +140,9 @@ def main():
     for rep in reports:
         print()
         print(rep)
-    if not args.keep:
-        shutil.rmtree(work, ignore_errors=True)
     bad = sum(1 for r in rows if r[4] != "yes")
     print(f"\n{len(rows) - bad}/{len(rows)} match")
-    sys.exit(1 if bad else 0)
+    finish(work, args.keep, bad)
 
 
 if __name__ == "__main__":

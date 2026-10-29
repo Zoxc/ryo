@@ -64,13 +64,17 @@ def variants(opt, frame_pointer=False, codegen_units=None):
     return vs
 
 
+def rustc_cmd(compiler, src, exe):
+    """The command line building the single-file program `src` with `compiler` into `exe`."""
+    return [str(compiler), "--edition=2024", str(src), "--crate-type", "bin", "--crate-name", src.stem, "-o", str(exe)]
+
+
 def compile_program(src, flags, out_dir, env=None):
     """Builds `src` with -Csave-temps in a fresh `out_dir`: (exit status, the reason it failed:
     stderr's last line)."""
     shutil.rmtree(out_dir, ignore_errors=True)
     out_dir.mkdir(parents=True)
-    name = src.stem
-    cmd = [str(RUSTC_RYO), "--edition=2024", str(src), "--crate-type", "bin", "--crate-name", name, "-o", str(out_dir / name), "-Csave-temps"]
+    cmd = rustc_cmd(RUSTC_RYO, src, out_dir / src.stem) + ["-Csave-temps"]
     code, _, err = run(cmd + flags, cwd=out_dir, env=env)
     return code, (err.decode(errors="replace").strip().splitlines()[-1:] or ["build failed"])[0]
 
