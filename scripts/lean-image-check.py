@@ -35,7 +35,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from lean_corpus import IMAGE_GLOB, add_common_args, build_all, compile_program, require, run, sysroot_images, variants, work_dir
+from lean_corpus import IMAGE_GLOB, add_common_args, build_all, compile_program, corpus_dirs, require, run, sysroot_images, variants, work_dir
 
 
 def group_objects(d):
@@ -84,15 +84,16 @@ def main():
     groups, skipped = [], []
     work = None
     if args.corpus:
-        for d in sorted(Path(args.corpus).iterdir()):
-            if not d.is_dir():
-                continue
-            subdirs = [d] + (sorted(x for x in d.iterdir() if x.is_dir()) if d.name == "sysroot" else [])
-            for g in subdirs:
-                images, reg = group_objects(g)
-                label = g.name if g == d else f"sysroot/{g.name}"
-                if images and (not args.names or g.name in args.names or label in args.names):
-                    groups.append((label, images, reg))
+        for label, d in corpus_dirs(args.corpus, args.names):
+            images, reg = group_objects(d)
+            if images:
+                groups.append((label, images, reg))
+        sysroot = Path(args.corpus) / "sysroot"
+        for g in sorted(x for x in sysroot.iterdir() if x.is_dir()) if sysroot.is_dir() else []:
+            images, reg = group_objects(g)
+            label = f"sysroot/{g.name}"
+            if images and (not args.names or g.name in args.names or label in args.names):
+                groups.append((label, images, reg))
     else:
         work = work_dir(args.keep, "lean-image-check-")
         built, skipped = build_all(args.names, variants(args.opt, args.frame_pointer, args.codegen_units), work, args.j, build)

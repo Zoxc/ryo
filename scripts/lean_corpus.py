@@ -27,17 +27,27 @@ def run(cmd, cwd=None, env=None, timeout=TIMEOUT):
     return p.returncode, p.stdout, p.stderr
 
 
+def picked(names, label):
+    """Whether `names` (all without names) picks the program `label` (`dir/stem`), by stem or
+    label."""
+    return not names or label in names or label.rsplit("/", 1)[-1] in names
+
+
 def programs(names):
     """The single-file programs (tests/lean, tests, bench) as `(dir/stem, path)`, those `names`
     picks by stem or label (all without names)."""
     srcs = sorted((ROOT / "tests" / "lean").glob("*.rs")) + sorted((ROOT / "tests").glob("*.rs")) + sorted((ROOT / "bench").glob("*.rs"))
-    out = []
-    for s in srcs:
-        label = f"{s.parent.relative_to(ROOT)}/{s.stem}"
-        if names and s.stem not in names and label not in names:
-            continue
-        out.append((label, s))
-    return out
+    labels = [(f"{s.parent.relative_to(ROOT)}/{s.stem}", s) for s in srcs]
+    return [(label, s) for label, s in labels if picked(names, label)]
+
+
+def label_dir(label):
+    """The directory name `build_all` gives the build of `label` (a program label plus variant
+    suffix)."""
+    return label.replace("/", "_")
+
+
+LABEL_FILE = "label"
 
 
 def variants(opt, frame_pointer=False, codegen_units=None):
@@ -66,21 +76,41 @@ def compile_program(src, flags, out_dir, env=None):
 
 def build_all(names, variants, work, jobs, build):
     """Runs `build(src, flags, out_dir)` (a result, or None and a skip reason) for every program
-    and variant, in `work/<label>`: ([(label, result)], [(label, skip reason)])."""
+    and variant, in `work/label_dir(<label>)` (with a `label` file naming the program and the
+    build, for `corpus_dirs`): ([(label, result)], [(label, skip reason)])."""
     built, skipped = [], []
     with concurrent.futures.ThreadPoolExecutor(jobs) as pool:
         futs = {}
         for label, src in programs(names):
             for suffix, flags in variants:
                 l = label + suffix
-                futs[pool.submit(build, src, flags, work / l.replace("/", "_"))] = l
+                futs[pool.submit(build, src, flags, work / label_dir(l))] = (label, l)
         for f in concurrent.futures.as_completed(futs):
             res, why = f.result()
+            program, l = futs[f]
+            d = work / label_dir(l)
+            if d.is_dir():
+                (d / LABEL_FILE).write_text(f"{program}\n{l}\n")
             if why:
-                skipped.append((futs[f], why))
+                skipped.append((l, why))
             else:
-                built.append((futs[f], res))
+                built.append((l, res))
     return built, skipped
+
+
+def corpus_dirs(corpus, names):
+    """The program builds `build_all` left in `corpus` (as --keep keeps them), as `(label, dir)`,
+    those `names` picks by the same rule as `programs`. Directories without a `label` file are
+    labeled and picked by their name."""
+    out = []
+    for d in sorted(Path(corpus).iterdir()):
+        if not d.is_dir():
+            continue
+        f = d / LABEL_FILE
+        program, label = f.read_text().split() if f.is_file() else (d.name, d.name)
+        if picked(names, program):
+            out.append((label, d))
+    return out
 
 
 def sysroot_images(names, out_dir):

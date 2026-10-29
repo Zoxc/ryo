@@ -43,7 +43,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from lean_corpus import IMAGE_GLOB, add_common_args, build_all, compile_program, require, run, variants, work_dir
+from lean_corpus import IMAGE_GLOB, add_common_args, build_all, compile_program, corpus_dirs, require, run, variants, work_dir
 LINE = re.compile(
     r"^cert-check (\S+): funcs (\d+) certs (\d+) in-dump (\d+) undecoded (\d+) sig-abi (\d+) blocks (\d+) truncated (\d+) "
     r"calls (\d+) by-entry (\d+) by-abi (\d+) unverified (\d+) islands (\d+) "
@@ -116,8 +116,7 @@ def main():
     rows, reports, skipped = [], [], []
     work = None
     if args.corpus:
-        dirs = [(d.name, d) for d in sorted(Path(args.corpus).iterdir())
-                if d.is_dir() and (not args.names or d.name in args.names or d.name.removesuffix("-O3").split("_", 1)[-1] in args.names)]
+        dirs = corpus_dirs(args.corpus, args.names)
     else:
         work = work_dir(args.keep, "lean-cert-check-")
         dirs, skipped = build_all(args.names, variants(args.opt, codegen_units=args.codegen_units), work, args.j, build)
