@@ -532,7 +532,8 @@ impl ImageWriter {
     }
 
     /// Validates every function's instruction words and cleanup entries (also done by
-    /// [`finish_encoded`](Self::finish_encoded)), so that only valid code gets encoded.
+    /// [`finish`](Self::finish), not by [`finish_encoded`](Self::finish_encoded)), so that
+    /// only valid code gets encoded.
     pub fn validate_functions(&mut self) -> Result<(), WriteError> {
         let lim = self.limits();
         for (i, f) in self.functions.iter_mut().enumerate() {
