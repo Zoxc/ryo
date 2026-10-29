@@ -536,7 +536,10 @@ impl Cleanup {
     /// The packed pad word of the action ([`Cleanup::from_word`]).
     pub const fn to_word(self) -> u32 {
         match self {
-            Cleanup::Pad(p, catch) => p | if catch { CATCH } else { 0 },
+            Cleanup::Pad(p, catch) => {
+                debug_assert!(p & CATCH == 0 && p | CATCH != CONTINUE, "pad offset too large");
+                p | if catch { CATCH } else { 0 }
+            }
             Cleanup::Continue => CONTINUE,
         }
     }
@@ -637,7 +640,7 @@ impl<'a> Image<'a> {
         if header.magic != MAGIC {
             return Err(ImageError::BadMagic);
         }
-        if (header.size as usize) > bytes.len() {
+        if (header.size as usize) > bytes.len() || (header.size as usize) < mem::size_of::<Header>() {
             return Err(ImageError::Truncated);
         }
         let bytes = &bytes[..header.size as usize];
@@ -722,7 +725,7 @@ impl<'a> Image<'a> {
             }
         }
         for (i, x) in self.fixups().iter().enumerate() {
-            if x.sym >= self.header.symbols.count || x.offset % 8 != 0 || x.offset as u64 + 8 > self.header.data_size as u64 {
+            if x.sym >= self.header.symbols.count || x.offset % 8 != 0 || x.offset as u64 + 8 > self.fixup_area_len() as u64 {
                 return Err(ImageError::BadFixup(i as u32));
             }
         }

@@ -37,3 +37,8 @@ remove it once a Lean session has handled it.
 - 9307c23 (Backend: Re-emit a dumped constant once it turns out to be a vtable): the
   `RYO_DUMP_LEAN` dump can now label a global `vtable` (including supertrait vtables) that it
   previously emitted as `const`. The Lean side reading the dump should expect that.
+
+- Image: Tighten parse and validate bounds: `Image::parse` now rejects a `Header::size`
+  smaller than the header (`Truncated`), and `validate` bounds fixups by `fixup_area_len()`
+  (the JIT records' offset when there are records) instead of `data_size`.
+  `Ryo/Obj/Image.lean`'s `parse`/`validate` should match.
