@@ -5,7 +5,7 @@ use super::Unwind;
 pub(crate) const SUPPORTED: bool = false;
 
 pub(super) unsafe fn register(u: &Unwind<'_>) -> bool {
-    let _ = (u.eh, u.fdes, u.code);
+    let _ = u;
     false
 }
 

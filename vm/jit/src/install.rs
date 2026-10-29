@@ -401,7 +401,7 @@ impl Jit {
         let thunk_at = (CODE_AT + osr_at + osr_len).next_multiple_of(16);
         let ro_at = if mode.pe { thunk_at + 16 } else { thunk_at };
         let size = (ro_at + rodata.len()).next_multiple_of(PAGE);
-        let eh_size = eh.bytes.len().next_multiple_of(16);
+        let eh_size = eh.bytes().len().next_multiple_of(16);
         if size + eh_size > REGION / 2 {
             return Err("too large".into());
         }
@@ -557,18 +557,29 @@ struct Job<'a> {
 /// past the prologue). The body's and the region's name `ryo_seh_handler` through a thunk
 /// after the code, with the LSDA as their handler data (design/jit.md, "Unwinding and
 /// profiling").
-struct Eh {
+enum Eh {
+    Elf(ElfEh),
+    Pe(PeEh),
+}
+
+/// ELF (and Mach-O) unwind information: an `.eh_frame` and the LSDA.
+struct ElfEh {
     bytes: Vec<u8>,
-    /// The FDEs' offsets (ELF).
+    /// The FDEs' offsets.
     fdes: Vec<usize>,
     pers_field: usize,
-    fields: Option<ryo_bytecode::image::EhFields>,
+    fields: ryo_bytecode::image::EhFields,
     osr_fields: Option<ryo_bytecode::image::EhFields>,
     lsda_at: usize,
-    /// PE: the entries' ranges in the code and their `UNWIND_INFO`s' offsets in `bytes`.
-    pe_rfs: Vec<(usize, usize, usize)>,
-    /// PE: the handler RVA fields.
-    pe_handlers: Vec<usize>,
+}
+
+/// PE unwind information: a function table and its `UNWIND_INFO`s.
+struct PeEh {
+    bytes: Vec<u8>,
+    /// The entries' ranges in the code and their `UNWIND_INFO`s' offsets in `bytes`.
+    rfs: Vec<(usize, usize, usize)>,
+    /// The handler RVA fields.
+    handlers: Vec<usize>,
 }
 
 impl Eh {
@@ -583,91 +594,23 @@ impl Eh {
         region: usize,
         mode: Mode,
     ) -> Result<Eh, CompileError> {
-        let mut eh = Eh {
-            bytes: Vec::new(),
-            fdes: Vec::new(),
-            pers_field: 0,
-            fields: None,
-            osr_fields: None,
-            lsda_at: 0,
-            pe_rfs: Vec::new(),
-            pe_handlers: Vec::new(),
-        };
-        let b = &mut eh.bytes;
-        if mode.pe {
-            let info = match body {
-                Body::Aot(ef) => {
-                    if ef.prologue != 0 || ef.entry_stub as usize != region {
-                        return Err("PE code with a counter check".into());
-                    }
-                    pe_unwind_info(ef, mode)
-                }
-                Body::Pe(info) => info.clone(),
-                Body::Rows(_) => return Err("DWARF rows on PE".into()),
-            };
-            let osr_len = osr.map_or(0, |o| o.code.len());
-            let lsda = asm::lsda::write(call_sites);
-            let has_region = region < code_len;
-            let r = if has_region { region as u32 } else { 0 };
-            b.resize(12 * (1 + usize::from(osr.is_some() && (has_region || matches!(body, Body::Pe(_)))) + usize::from(has_region)), 0);
-            let (rfs, handlers) = (&mut eh.pe_rfs, &mut eh.pe_handlers);
-            let mut add = |b: &mut Vec<u8>, range: (usize, usize), info: &[u8], data: Option<Vec<u8>>| {
-                let at = b.len();
-                match data {
-                    Some(d) => {
-                        let (bytes, field) = pe_with_handler(info, &d);
-                        handlers.push(at + field);
-                        b.extend_from_slice(&bytes);
-                    }
-                    None => b.extend_from_slice(info),
-                }
-                rfs.push((range.0, range.1, at));
-            };
-            // The SSA tier's OSR code: its own entry ([`pe_osr_unwind_info`]); the entries'
-            // post parts are in the body's code.
-            let ssa_osr = matches!(body, Body::Pe(_)) && osr.is_some();
-            let body_end = if has_region || ssa_osr {
-                if has_region { region } else { code_len }
-            } else if osr.is_some() {
-                osr_at + osr_len
-            } else {
-                code_len
-            };
-            add(b, (0, body_end), &info, Some(pe_handler_data(0, r, &lsda)));
-            if ssa_osr && !has_region {
-                add(b, (osr_at, osr_at + osr_len), &pe_osr_unwind_info(), None);
-            }
-            if has_region {
-                add(b, (region, code_len), &pe_region_unwind_info(), Some(pe_handler_data(r, r, &lsda)));
-                if osr.is_some() {
-                    // Never in its prologue: the codes apply from its first byte.
-                    let mut past = info.clone();
-                    past[1] = 0;
-                    add(b, (osr_at, osr_at + osr_len), &past, None);
-                }
-            }
+        Ok(if mode.pe {
+            Eh::Pe(PeEh::build(body, osr, osr_at, call_sites, code_len, region, mode)?)
         } else {
-            eh.pers_field = eh_cie(b);
-            eh.fdes.push(b.len());
-            eh.fields = Some(match body {
-                Body::Aot(ef) => eh_fde(b, 0, ef, mode),
-                Body::Rows(rows) => eh_fde_rows(b, 0, code_len as u32, rows),
-                Body::Pe(_) => return Err("PE unwind info off PE".into()),
-            });
-            if osr.is_some() {
-                eh.fdes.push(b.len());
-            }
-            eh.osr_fields = osr.map(|o| eh_fde_rows(b, 0, o.code.len() as u32, &o.cfi));
-            b.extend_from_slice(&[0; 4]);
-            eh.lsda_at = b.len();
-            b.extend_from_slice(&asm::lsda::write(call_sites));
+            Eh::Elf(ElfEh::build(body, osr, call_sites, code_len, mode)?)
+        })
+    }
+
+    fn bytes(&self) -> &[u8] {
+        match self {
+            Eh::Elf(e) => &e.bytes,
+            Eh::Pe(e) => &e.bytes,
         }
-        Ok(eh)
     }
 
     /// Patches the fields for the information at `eh_base` of code at `jit_f`, its OSR code
-    /// at `osr_at` past it, with `personality` the personality slot; on PE `base` is the
-    /// code's allocation and `thunk` the handler's thunk.
+    /// at `osr_at` past it, with `personality` the personality slot (ELF); on PE `base` is
+    /// the code's allocation and `thunk` the handler's thunk.
     fn patch(
         &mut self,
         eh_base: usize,
@@ -677,26 +620,132 @@ impl Eh {
         base: usize,
         thunk: usize,
     ) -> Result<(), &'static str> {
-        let eh = &mut self.bytes;
-        // `.eh_frame`'s PC-relative fields: relative to the field itself.
-        let mut pc = |at: usize, target: usize| patch_rel32(&mut eh[at..], eh_base + at, target);
-        if let Some(fields) = self.fields {
-            pc(self.pers_field, personality)?;
-            pc(fields.pc_begin, jit_f)?;
-            pc(fields.lsda, eh_base + self.lsda_at)?;
+        match self {
+            Eh::Elf(e) => e.patch(eh_base, personality, jit_f, osr_at),
+            Eh::Pe(e) => e.patch(eh_base, jit_f, base, thunk),
         }
+    }
+
+    /// What the unwinder is told of the information, at `eh_base`, for code at `base`.
+    fn unwind(&self, eh_base: usize, base: usize) -> crate::sys::Unwind<'_> {
+        match self {
+            Eh::Elf(e) => crate::sys::Unwind::Eh { eh: eh_base as *const u8, fdes: &e.fdes },
+            Eh::Pe(e) => crate::sys::Unwind::Pe { base, table: eh_base as *const u8, count: e.rfs.len() as u32 },
+        }
+    }
+}
+
+impl ElfEh {
+    fn build(body: &Body, osr: Option<&asm::osr::OsrCode>, call_sites: &[asm::CallSite], code_len: usize, mode: Mode) -> Result<ElfEh, CompileError> {
+        let mut b = Vec::new();
+        let pers_field = eh_cie(&mut b);
+        let mut fdes = std::vec![b.len()];
+        let fields = match body {
+            Body::Aot(ef) => eh_fde(&mut b, 0, ef, mode),
+            Body::Rows(rows) => eh_fde_rows(&mut b, 0, code_len as u32, rows),
+            Body::Pe(_) => return Err("PE unwind info off PE".into()),
+        };
+        if osr.is_some() {
+            fdes.push(b.len());
+        }
+        let osr_fields = osr.map(|o| eh_fde_rows(&mut b, 0, o.code.len() as u32, &o.cfi));
+        b.extend_from_slice(&[0; 4]);
+        let lsda_at = b.len();
+        b.extend_from_slice(&asm::lsda::write(call_sites));
+        Ok(ElfEh { bytes: b, fdes, pers_field, fields, osr_fields, lsda_at })
+    }
+
+    /// `.eh_frame`'s PC-relative fields: relative to the field itself.
+    fn patch(&mut self, eh_base: usize, personality: usize, jit_f: usize, osr_at: Option<usize>) -> Result<(), &'static str> {
+        let eh = &mut self.bytes;
+        let mut pc = |at: usize, target: usize| patch_rel32(&mut eh[at..], eh_base + at, target);
+        pc(self.pers_field, personality)?;
+        pc(self.fields.pc_begin, jit_f)?;
+        pc(self.fields.lsda, eh_base + self.lsda_at)?;
         if let (Some(f), Some(at)) = (self.osr_fields, osr_at) {
             pc(f.pc_begin, jit_f + at)?;
         }
-        // PE: the `RUNTIME_FUNCTION`s and the handler fields: offsets from `base`, below the
-        // region's read-write end.
+        Ok(())
+    }
+}
+
+impl PeEh {
+    fn build(
+        body: &Body,
+        osr: Option<&asm::osr::OsrCode>,
+        osr_at: usize,
+        call_sites: &[asm::CallSite],
+        code_len: usize,
+        region: usize,
+        mode: Mode,
+    ) -> Result<PeEh, CompileError> {
+        let info = match body {
+            Body::Aot(ef) => {
+                if ef.prologue != 0 || ef.entry_stub as usize != region {
+                    return Err("PE code with a counter check".into());
+                }
+                pe_unwind_info(ef, mode)
+            }
+            Body::Pe(info) => info.clone(),
+            Body::Rows(_) => return Err("DWARF rows on PE".into()),
+        };
+        let osr_len = osr.map_or(0, |o| o.code.len());
+        let lsda = asm::lsda::write(call_sites);
+        let has_region = region < code_len;
+        let r = if has_region { region as u32 } else { 0 };
+        // The entries: their ranges in the code, `UNWIND_INFO`s and handler data.
+        let mut entries: Vec<((usize, usize), Vec<u8>, Option<Vec<u8>>)> = Vec::new();
+        // The SSA tier's OSR code: its own entry ([`pe_osr_unwind_info`]); the entries' post
+        // parts are in the body's code.
+        let ssa_osr = matches!(body, Body::Pe(_)) && osr.is_some();
+        let body_end = if has_region || ssa_osr {
+            if has_region { region } else { code_len }
+        } else if osr.is_some() {
+            osr_at + osr_len
+        } else {
+            code_len
+        };
+        entries.push(((0, body_end), info.clone(), Some(pe_handler_data(0, r, &lsda))));
+        if ssa_osr && !has_region {
+            entries.push(((osr_at, osr_at + osr_len), pe_osr_unwind_info(), None));
+        }
+        if has_region {
+            entries.push(((region, code_len), pe_region_unwind_info(), Some(pe_handler_data(r, r, &lsda))));
+            if osr.is_some() {
+                // Never in its prologue: the codes apply from its first byte.
+                let mut past = info;
+                past[1] = 0;
+                entries.push(((osr_at, osr_at + osr_len), past, None));
+            }
+        }
+        // The `RUNTIME_FUNCTION`s (patched later), then the `UNWIND_INFO`s.
+        let mut eh = PeEh { bytes: std::vec![0; 12 * entries.len()], rfs: Vec::new(), handlers: Vec::new() };
+        for (range, info, data) in entries {
+            let at = eh.bytes.len();
+            match data {
+                Some(d) => {
+                    let (bytes, field) = pe_with_handler(&info, &d);
+                    eh.handlers.push(at + field);
+                    eh.bytes.extend_from_slice(&bytes);
+                }
+                None => eh.bytes.extend_from_slice(&info),
+            }
+            eh.rfs.push((range.0, range.1, at));
+        }
+        Ok(eh)
+    }
+
+    /// The `RUNTIME_FUNCTION`s and the handler fields: offsets from `base`, below the
+    /// region's read-write end.
+    fn patch(&mut self, eh_base: usize, jit_f: usize, base: usize, thunk: usize) -> Result<(), &'static str> {
+        let eh = &mut self.bytes;
         let rva = |a: usize| u32::try_from(a - base).map_err(|_| "out of reach");
-        for (k, &(begin, end, at)) in self.pe_rfs.iter().enumerate() {
+        for (k, &(begin, end, at)) in self.rfs.iter().enumerate() {
             for (j, v) in [rva(jit_f + begin)?, rva(jit_f + end)?, rva(eh_base + at)?].iter().enumerate() {
                 eh[12 * k + 4 * j..][..4].copy_from_slice(&v.to_le_bytes());
             }
         }
-        for &f in &self.pe_handlers {
+        for &f in &self.handlers {
             eh[f..f + 4].copy_from_slice(&rva(thunk)?.to_le_bytes());
         }
         Ok(())
@@ -730,17 +779,13 @@ fn map_and_register(code: &[u8], eh: &Eh, base: usize, eh_base: usize, mode: Mod
     // never written again.
     unsafe {
         ptr::copy_nonoverlapping(code.as_ptr(), base as *mut u8, size);
-        ptr::copy_nonoverlapping(eh.bytes.as_ptr(), eh_base as *mut u8, eh.bytes.len());
+        ptr::copy_nonoverlapping(eh.bytes().as_ptr(), eh_base as *mut u8, eh.bytes().len());
         if !vmem::make_executable(base as *mut u8, size) {
             return Err("make_executable".into());
         }
         // Unregistered, the code must not run: nothing could unwind through it. At exit
         // it isn't needed.
-        let unwind = if mode.pe {
-            crate::sys::Unwind { eh: ptr::null(), fdes: &[], code: (base, base + size), pdata: (eh_base as *const u8, eh.pe_rfs.len() as u32) }
-        } else {
-            crate::sys::Unwind { eh: eh_base as *const u8, fdes: &eh.fdes, code: (base, base + size), pdata: (ptr::null(), 0) }
-        };
+        let unwind = eh.unwind(eh_base, base);
         // PE code off Windows (tests, which run PE images' VM code on Linux): there is
         // no unwinder to tell, and nothing unwinds through it.
         if (cfg!(windows) || !mode.pe) && !crate::sys::register_unwind(&unwind) {
@@ -831,7 +876,7 @@ mod tests {
     fn no_frame_registration_once_exiting() {
         crate::sys::close_frame_registry();
         // Not a valid `.eh_frame`: once closed, it must not reach the unwinder.
-        let u = crate::sys::Unwind { eh: core::ptr::dangling(), fdes: &[0], code: (0, 0), pdata: (core::ptr::dangling(), 1) };
+        let u = crate::sys::Unwind::Eh { eh: core::ptr::dangling(), fdes: &[0] };
         assert!(!unsafe { crate::sys::register_unwind(&u) });
         crate::sys::reopen_frame_registry();
     }

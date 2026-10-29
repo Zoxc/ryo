@@ -27,18 +27,16 @@ mod macos;
 pub(crate) use imp::{SUPPORTED, perfmap_path, write_stderr};
 
 /// The unwind information of one installed function, in the region's read-write memory,
-/// which lives forever. Each OS reads the fields it needs.
+/// which lives forever. Each OS handles one variant and refuses the other.
+// Each OS reads only its own variant's fields.
 #[allow(dead_code)]
-pub(crate) struct Unwind<'a> {
-    /// The `.eh_frame`: a CIE, then the FDEs, terminated by a zero word. Null for PE code.
-    pub eh: *const u8,
-    /// The offsets in `eh` of its FDEs (the body's, the OSR code's).
-    pub fdes: &'a [usize],
-    /// The code it describes, `start..end`.
-    pub code: (usize, usize),
-    /// PE code: its function table, `RUNTIME_FUNCTION`s (`begin`, `end`, `UNWIND_INFO`, each
-    /// a `u32` offset from `code.0`), and their number; else null and 0.
-    pub pdata: (*const u8, u32),
+pub(crate) enum Unwind<'a> {
+    /// ELF and Mach-O code: its `.eh_frame` (a CIE, then the FDEs, terminated by a zero word)
+    /// and the offsets in it of its FDEs (the body's, the OSR code's).
+    Eh { eh: *const u8, fdes: &'a [usize] },
+    /// PE code at `base`: its function table, `count` `RUNTIME_FUNCTION`s (`begin`, `end`,
+    /// `UNWIND_INFO`, each a `u32` offset from `base`).
+    Pe { base: usize, table: *const u8, count: u32 },
 }
 
 /// Whether unwind information may still be registered: false once the process is exiting.

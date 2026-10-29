@@ -12,7 +12,7 @@
 //! covers `MAP_JIT` memory); without the hardened runtime nothing is needed. Under Rosetta
 //! the translator sees the `mprotect`s and retranslates rewritten pages.
 //!
-//! What libunwind makes of [`Unwind::eh`] (`UnwindLevel1-gcc-ext.c`, `DwarfParser.hpp`):
+//! What libunwind makes of [`Unwind::Eh`] (`UnwindLevel1-gcc-ext.c`, `DwarfParser.hpp`):
 //! `__register_frame(fde)` decodes the FDE, finds its CIE through the FDE's CIE pointer (the
 //! CIE sits before it in the same buffer), and adds `pc_begin..pc_begin + len` to
 //! `DwarfFDECache`, which the unwinder searches for code no loaded image covers. A CIE
@@ -38,11 +38,11 @@ unsafe extern "C" {
     fn __register_frame(fde: *const u8);
 }
 
-/// The FDEs of `u` to pass to `__register_frame`, one at a time.
-fn fdes<'a>(u: &'a Unwind<'_>) -> impl Iterator<Item = *const u8> + 'a {
-    u.fdes.iter().map(|&off| {
+/// The FDEs of `eh` at `fdes` to pass to `__register_frame`, one at a time.
+fn fdes<'a>(eh: *const u8, fdes: &'a [usize]) -> impl Iterator<Item = *const u8> + 'a {
+    fdes.iter().map(move |&off| {
         // SAFETY: `off` is within `eh`, as `Unwind` promises.
-        let p = unsafe { u.eh.add(off) };
+        let p = unsafe { eh.add(off) };
         // An FDE's second word is its CIE pointer, never 0 (a CIE's id).
         debug_assert!(unsafe { p.add(4).cast::<u32>().read_unaligned() } != 0, "not an FDE");
         p
@@ -50,7 +50,8 @@ fn fdes<'a>(u: &'a Unwind<'_>) -> impl Iterator<Item = *const u8> + 'a {
 }
 
 pub(super) unsafe fn register(u: &Unwind<'_>) -> bool {
-    for fde in fdes(u) {
+    let Unwind::Eh { eh, fdes: offs } = *u else { return false };
+    for fde in fdes(eh, offs) {
         // SAFETY: the caller's: an FDE of `eh`, whose CIE precedes it, living forever.
         unsafe { __register_frame(fde) };
     }
@@ -73,7 +74,7 @@ pub(crate) fn perfmap_path() -> Option<std::string::String> {
 mod tests {
     use ryo_bytecode::image::{eh_cie, eh_fde_rows};
 
-    use super::{Unwind, fdes};
+    use super::fdes;
 
     /// The layout `install` builds: the CIE, the body's FDE, the OSR code's, the terminator.
     #[test]
@@ -85,8 +86,7 @@ mod tests {
         offs.push(eh.len());
         eh_fde_rows(&mut eh, 0, 32, &[]);
         eh.extend_from_slice(&[0; 4]);
-        let u = Unwind { eh: eh.as_ptr(), fdes: &offs, code: (0, 96), pdata: (core::ptr::null(), 0) };
-        let got: Vec<usize> = fdes(&u).map(|p| p as usize - eh.as_ptr() as usize).collect();
+        let got: Vec<usize> = fdes(eh.as_ptr(), &offs).map(|p| p as usize - eh.as_ptr() as usize).collect();
         assert_eq!(got, offs);
         for &o in &offs {
             let w = |at: usize| u32::from_le_bytes(eh[at..at + 4].try_into().unwrap()) as usize;

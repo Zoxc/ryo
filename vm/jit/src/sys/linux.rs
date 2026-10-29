@@ -13,8 +13,9 @@ unsafe extern "C" {
 }
 
 pub(super) unsafe fn register(u: &Unwind<'_>) -> bool {
+    let Unwind::Eh { eh, .. } = *u else { return false };
     // SAFETY: the caller's.
-    unsafe { __register_frame(u.eh) };
+    unsafe { __register_frame(eh) };
     true
 }
 

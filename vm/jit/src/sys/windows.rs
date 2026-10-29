@@ -24,12 +24,12 @@ unsafe extern "system" {
 }
 
 pub(super) unsafe fn register(u: &Unwind<'_>) -> bool {
-    let (table, count) = u.pdata;
+    let Unwind::Pe { base, table, count } = *u else { return false };
     if table.is_null() || count == 0 {
         return false;
     }
-    // SAFETY: the caller's: the table and its unwind info live forever, above `code.0`.
-    unsafe { RtlAddFunctionTable(table.cast(), count, u.code.0 as u64) != 0 }
+    // SAFETY: the caller's: the table and its unwind info live forever, above `base`.
+    unsafe { RtlAddFunctionTable(table.cast(), count, base as u64) != 0 }
 }
 
 /// Writes `b` to stderr.
