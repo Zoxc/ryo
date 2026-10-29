@@ -171,7 +171,8 @@ theorem commit_nil {fp : Footprint} {val : String → Option Val} {st st' : OpSe
   simp [commit, pure, Except.pure] at h
   exact h.symm
 
-/-- The kind's view of the state, for `addr`: only escapes and memory matter. -/
+/-- The kind's view of the state, for `addr`: the frame bytes don't matter (only the escaped
+and zero-sized objects and memory, `addrOf`). -/
 theorem addrOf_erase (st : OpSem.State) (s : Int) :
     ({ st with frame := fun _ => .uninit } : OpSem.State).addrOf s = st.addrOf s := rfl
 
@@ -211,7 +212,8 @@ theorem opSem_imm {op : Full.Opcode} {r : Option String} {ty : String} {n : Nat}
   subst hk
   exact ⟨(commit_one (off := d) rfl (by simp [opndVal, ho]) hc).2, rfl⟩
 
-/-- `addr`: the pointer to the slot, which must be escaped. -/
+/-- `addr`: the pointer to the slot (`addrOf`: in or one past the end of an escaped object, or
+a zero-sized object). -/
 theorem opSem_addr {op : Full.Opcode} {r : Option String} {ps : List String}
     {d s : Int} {st st' : OpSem.State} {ch : OpSem.Choice} {c : Control}
     (hh : op.handler? = some ⟨.addr, ps, r⟩)
