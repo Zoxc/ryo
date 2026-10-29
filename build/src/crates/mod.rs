@@ -465,10 +465,20 @@ struct Ctx<'a> {
     opts: &'a Options,
 }
 
+/// A test binary and the package it tests.
+#[derive(Debug, PartialEq)]
+struct TestExe {
+    path: PathBuf,
+    /// The directory of the package's manifest, which `cargo test` runs it from.
+    dir: Option<PathBuf>,
+    /// The package's name and version, from its package ID.
+    package: Option<(String, String)>,
+}
+
 /// The executables a backend's last build sample produced.
 #[derive(Default)]
 struct Artifacts {
-    test_exes: Vec<PathBuf>,
+    test_exes: Vec<TestExe>,
     /// The workload, if the target has one.
     example: Option<PathBuf>,
 }
@@ -516,7 +526,7 @@ fn build_phase(ctx: &Ctx, krate: &Target, sources: &Sources, cells: &mut [Cell])
     }
     let size = |e: &PathBuf| fs::metadata(e).ok().map(|m| m.len());
     for (cell, a) in cells.iter_mut().zip(&artifacts) {
-        cell.tests_size = (!a.test_exes.is_empty()).then(|| a.test_exes.iter().filter_map(size).sum());
+        cell.tests_size = (!a.test_exes.is_empty()).then(|| a.test_exes.iter().map(|t| &t.path).filter_map(size).sum());
         cell.workload_size = a.example.as_ref().and_then(size);
     }
     artifacts
@@ -769,30 +779,57 @@ fn build_sample(env: &Env, clean: bool, stats: bool) -> Result<BuildSample, Stri
 }
 
 /// The test binaries in cargo's `--message-format=json` output: `compiler-artifact` messages
-/// with `"test":true` in their profile and an executable.
-fn test_executables(json: &str) -> Vec<PathBuf> {
-    let mut exes = Vec::new();
+/// with `"test":true` in their profile (the target object has a `test` flag of its own) and
+/// an executable.
+fn test_executables(json: &str) -> Vec<TestExe> {
+    let mut exes: Vec<TestExe> = Vec::new();
     for line in json.lines() {
-        if !line.contains(r#""reason":"compiler-artifact""#) || !line.contains(r#""test":true"#) {
+        if !line.contains(r#""reason":"compiler-artifact""#) {
             continue;
         }
-        let pat = r#""executable":""#;
-        let Some(at) = line.find(pat) else { continue };
-        let rest = &line[at + pat.len()..];
-        let mut path = String::new();
-        let mut chars = rest.chars();
-        while let Some(c) = chars.next() {
-            match c {
-                '"' => break,
-                '\\' => path.extend(chars.next()),
-                c => path.push(c),
-            }
+        // The profile object is flat: it ends at the first `}`.
+        let Some(profile) = line.split_once(r#""profile":{"#).and_then(|(_, p)| p.split_once('}')) else { continue };
+        if !profile.0.contains(r#""test":true"#) {
+            continue;
         }
-        if !exes.iter().any(|e: &PathBuf| e.as_os_str() == path.as_str()) {
-            exes.push(PathBuf::from(path));
+        let Some(path) = json_str(line, "executable") else { continue };
+        if exes.iter().any(|e| e.path.as_os_str() == path.as_str()) {
+            continue;
         }
+        let dir = json_str(line, "manifest_path").and_then(|m| Path::new(&m).parent().map(Path::to_path_buf));
+        let package = json_str(line, "package_id").and_then(|id| package_name_version(&id));
+        exes.push(TestExe { path: PathBuf::from(path), dir, package });
     }
     exes
+}
+
+/// The string value of the first `"key":"..."` in `line`, with `\x` read as `x`.
+fn json_str(line: &str, key: &str) -> Option<String> {
+    let pat = format!(r#""{key}":""#);
+    let at = line.find(&pat)?;
+    let mut chars = line[at + pat.len()..].chars();
+    let mut v = String::new();
+    while let Some(c) = chars.next() {
+        match c {
+            '"' => return Some(v),
+            '\\' => v.extend(chars.next()),
+            c => v.push(c),
+        }
+    }
+    None
+}
+
+/// The name and version in a cargo package ID: `<source>#<name>@<version>`, or
+/// `<source>/<name>#<version>` when the name is the source path's last component.
+fn package_name_version(id: &str) -> Option<(String, String)> {
+    let (source, frag) = id.rsplit_once('#')?;
+    match frag.split_once('@') {
+        Some((n, v)) => Some((n.to_owned(), v.to_owned())),
+        None => {
+            let source = source.split('?').next()?;
+            Some((source.rsplit('/').next()?.to_owned(), frag.to_owned()))
+        }
+    }
 }
 
 /// Runs `c` with a timeout, returning its wall time and stdout. Fails on a non-zero exit.
@@ -817,19 +854,18 @@ fn run_raw(c: &mut Command, timeout: u64) -> Result<(f64, std::process::Output),
     Ok((start.elapsed().as_secs_f64(), out))
 }
 
-/// Runs every test binary once, single-threaded, from the package directory (like `cargo
-/// test`). Returns the summed wall time and the results.
-fn run_tests(src: &Path, krate: &Target, exes: &[PathBuf], timeout: u64) -> (f64, TestOutcome) {
+/// Runs every test binary once, single-threaded, from its package directory with its
+/// package's `CARGO_*` variables (like `cargo test`; `src` and `krate` where cargo didn't
+/// say). Returns the summed wall time and the results.
+fn run_tests(src: &Path, krate: &Target, exes: &[TestExe], timeout: u64) -> (f64, TestOutcome) {
     let mut total = 0.0;
     let mut o = TestOutcome { binaries: exes.len(), ..TestOutcome::default() };
     for exe in exes {
-        let name = exe.file_name().map_or_else(String::new, |n| n.to_string_lossy().into_owned());
-        let mut c = Command::new(exe);
-        c.args(krate.test_args())
-            .current_dir(src)
-            .env("CARGO_MANIFEST_DIR", src)
-            .env("CARGO_PKG_NAME", krate.name())
-            .env("CARGO_PKG_VERSION", krate.version());
+        let name = exe.path.file_name().map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+        let dir = exe.dir.as_deref().unwrap_or(src);
+        let (pkg, version) = exe.package.as_ref().map_or((krate.name(), krate.version()), |(n, v)| (n.as_str(), v.as_str()));
+        let mut c = Command::new(&exe.path);
+        c.args(krate.test_args()).current_dir(dir).env("CARGO_MANIFEST_DIR", dir).env("CARGO_PKG_NAME", pkg).env("CARGO_PKG_VERSION", version);
         match run_raw(&mut c, timeout) {
             Ok((t, out)) => {
                 total += t;
@@ -956,9 +992,11 @@ mod tests {
     #[test]
     fn executables() {
         let json = concat!(
-            r#"{"reason":"compiler-artifact","target":{"name":"t"},"profile":{"opt_level":"0","test":true},"executable":"/a/deps/t-1"}"#,
+            r#"{"reason":"compiler-artifact","package_id":"path+file:///w/p#q@0.2.0","manifest_path":"/w/p/Cargo.toml","target":{"name":"t"},"profile":{"opt_level":"0","test":true},"executable":"/a/deps/t-1"}"#,
             "\n",
             r#"{"reason":"compiler-artifact","profile":{"test":false},"executable":"/a/deps/bin"}"#,
+            "\n",
+            r#"{"reason":"compiler-artifact","target":{"name":"b","test":true},"profile":{"test":false},"executable":"/a/deps/b"}"#,
             "\n",
             r#"{"reason":"compiler-artifact","profile":{"test":true},"executable":null}"#,
             "\n",
@@ -966,7 +1004,13 @@ mod tests {
             "\n",
             r#"{"reason":"build-finished","success":true}"#,
         );
-        assert_eq!(test_executables(json), [PathBuf::from("/a/deps/t-1"), PathBuf::from("/a/b\\\"c")]);
+        let exes = test_executables(json);
+        assert_eq!(exes.iter().map(|e| e.path.clone()).collect::<Vec<_>>(), [PathBuf::from("/a/deps/t-1"), PathBuf::from("/a/b\\\"c")]);
+        assert_eq!(exes[0].dir.as_deref(), Some(Path::new("/w/p")));
+        assert_eq!(exes[0].package, Some(("q".to_owned(), "0.2.0".to_owned())));
+        assert_eq!(exes[1].package, None);
+        assert_eq!(package_name_version("registry+https://github.com/rust-lang/crates.io-index#semver@1.0.28").unwrap().1, "1.0.28");
+        assert_eq!(package_name_version("path+file:///w/memchr#2.7.4"), Some(("memchr".to_owned(), "2.7.4".to_owned())));
     }
 
     #[test]
