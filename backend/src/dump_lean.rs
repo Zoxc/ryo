@@ -53,7 +53,8 @@ use rustc_middle::ty::layout::{HasTyCtxt, HasTypingEnv, TyAndLayout};
 use rustc_middle::ty::{self, Instance, InstanceKind, ShimKind, Ty, TyCtxt, TypingEnv};
 use rustc_target::callconv::{ArgAbi, FnAbi, PassMode};
 
-/// Writes the dump if `RYO_DUMP_LEAN` is set and the crate has an entry function.
+/// With `RYO_DUMP_LEAN` set, writes the certificate file and, if the crate has an entry
+/// function, the program dump.
 pub fn dump(tcx: TyCtxt<'_>, switches: &super::switches::Switches, results: &super::partition::Results) {
     let Some(dir) = &switches.dump_lean else { return };
     let dir = std::path::PathBuf::from(dir);
@@ -100,10 +101,10 @@ fn write_certs(tcx: TyCtxt<'_>, results: &super::partition::Results, dir: &std::
 fn write_json(tcx: TyCtxt<'_>, dir: &std::path::Path, ext: &str, j: &J) {
     let mut out = String::new();
     j.write(&mut out);
-    let path = dir.join(format!("{}.{ext}", tcx.crate_name(LOCAL_CRATE)));
-    if let Err(e) = std::fs::create_dir_all(dir).and_then(|()| std::fs::write(&path, out)) {
-        tcx.dcx().fatal(format!("RYO_DUMP_LEAN: writing {}: {e}", path.display()));
+    if let Err(e) = std::fs::create_dir_all(dir) {
+        tcx.dcx().fatal(format!("ryo: RYO_DUMP_LEAN: creating {}: {e}", dir.display()));
     }
+    super::dump::write(tcx, "RYO_DUMP_LEAN", dir.join(format!("{}.{ext}", tcx.crate_name(LOCAL_CRATE))), &out);
 }
 
 // ---------------------------------------------------------------------------------------------

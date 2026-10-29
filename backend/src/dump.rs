@@ -10,9 +10,10 @@ use super::lower::CodeReloc;
 use super::partition::{VmFn, path};
 use super::symbols;
 
-/// Writes dump `text` to `path`, fatal on failure.
-pub(super) fn write(tcx: TyCtxt<'_>, var: &str, path: &std::ffi::OsStr, text: &str) {
-    std::fs::write(path, text).unwrap_or_else(|e| tcx.dcx().fatal(format!("ryo: {var}: {e}")));
+/// Writes dump `text` to `path` for the switch `var`, fatal on failure.
+pub(super) fn write(tcx: TyCtxt<'_>, var: &str, path: impl AsRef<std::path::Path>, text: &str) {
+    let path = path.as_ref();
+    std::fs::write(path, text).unwrap_or_else(|e| tcx.dcx().fatal(format!("ryo: {var}: writing {}: {e}", path.display())));
 }
 
 /// `vm`'s functions with their paths, sorted by path.
@@ -188,7 +189,7 @@ fn dump_labeled(out: &mut String, words: &[u32], cleanup: &[ryo_bytecode::image:
 }
 
 /// The names of [`func_flags`]' bits, as the dumps print them (` [always, cold]`, or empty).
-pub(crate) fn func_flags_suffix(flags: u8) -> String {
+fn func_flags_suffix(flags: u8) -> String {
     use ryo_bytecode::image::*;
     let names = [(FUNC_INLINE_ALWAYS, "always"), (FUNC_INLINE_NEVER, "never"), (FUNC_COLD, "cold"), (FUNC_INLINE_HINT, "hint")];
     let set: Vec<&str> = names.iter().filter(|n| flags & n.0 != 0).map(|n| n.1).collect();
