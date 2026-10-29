@@ -168,9 +168,10 @@ pub fn build(info: &RustcInfo, dist: &Path, target: &Path, jits: Option<&crate::
     let stats_dir = work.join("stats");
     // Cargo doesn't fingerprint the backend: a new one rebuilds everything, from a clean
     // directory (old `ryo_rt`s next to the new one would make `--extern force:ryo_rt` ambiguous).
-    let stamp = backend_stamp(dist)?;
+    // So does a change of `ryo_rt`'s features, which `RYO_ABI_OVERRIDE` keeps out of the backend.
+    let stamp = format!("{} {:?} {}", backend_stamp(dist)?, crate::dist::rt_features(), jit.is_some());
     let stamp_file = work.join(".ryo-backend");
-    if fs::read_to_string(&stamp_file).ok() != Some(stamp.to_string()) {
+    if fs::read_to_string(&stamp_file).ok().as_deref() != Some(stamp.as_str()) {
         for dir in [&target_dir, &stats_dir] {
             crate::utils::remove_dir_if_exists(dir)?;
         }
@@ -207,7 +208,7 @@ pub fn build(info: &RustcInfo, dist: &Path, target: &Path, jits: Option<&crate::
         // Stable `-Cmetadata` hashes, distinct from the prebuilt std's (as cg_clif does).
         .env("__CARGO_DEFAULT_LIB_METADATA", "ryo")
         .env("RUSTUP_TOOLCHAIN", &info.toolchain))?;
-    crate::utils::write(&stamp_file, stamp.to_string())?;
+    crate::utils::write(&stamp_file, &stamp)?;
 
     let sysroot = dist.join(SYSROOT_DIR);
     // No stamp while the sysroot is replaced; `inputs` was taken before the build, so input
@@ -221,8 +222,10 @@ pub fn build(info: &RustcInfo, dist: &Path, target: &Path, jits: Option<&crate::
         let path = entry.map_err(|e| e.to_string())?.path();
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        // `libsysroot` is the build's dummy root crate.
-        if name.starts_with("lib") && !name.starts_with("libsysroot-") && matches!(ext, "rlib" | "rmeta" | "so" | "dll" | "lib") {
+        // `libsysroot` is the build's dummy root crate. Windows dylibs and their import
+        // libraries have no `lib` prefix (`std-<hash>.dll`, `std-<hash>.dll.lib`).
+        let windows = matches!(ext, "dll" | "lib") && !name.starts_with("sysroot-");
+        if (windows || name.starts_with("lib")) && !name.starts_with("libsysroot-") && matches!(ext, "rlib" | "rmeta" | "so" | "dll" | "lib") {
             copy(&path, &dst_lib.join(name))?;
             if let Some(sealed) = checked
                 && name.starts_with("libryo_rt-")
