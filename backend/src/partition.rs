@@ -69,7 +69,8 @@ impl<T> SessionCell<T> {
 /// What the partition provider hands to the other providers and to `codegen_crate`. Set once:
 /// the query is `eval_always` and computed once per session.
 pub struct Results {
-    /// One image per codegen unit with VM functions, in rustc's CGU order.
+    /// One entry per codegen unit with VM function candidates, in rustc's CGU order; one
+    /// whose candidates all stay native has no object (`has_object`).
     pub images: Vec<CguImage>,
     /// With `RYO_DUMP_LEAN`: the data of the certificate file (`dump_lean::write_certs`).
     pub lean: Option<LeanCerts>,
