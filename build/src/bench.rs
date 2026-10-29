@@ -206,45 +206,44 @@ impl Job {
     }
 }
 
-/// How a benchmark is measured: timed (hyperfine or the built-in timer), or one run's
-/// instructions and estimated cycles counted (`Metric::Cachegrind`, compilation untimed).
+/// How a benchmark is measured: timed, or one run's instructions and estimated cycles
+/// counted (`Metric::Cachegrind`, compilation untimed).
 enum Timer {
+    Wall(Clock),
+    Cachegrind,
+}
+
+/// How wall time is measured: hyperfine or the built-in timer.
+enum Clock {
     Hyperfine { json: PathBuf },
     Builtin,
-    Cachegrind,
 }
 
 impl Timer {
     /// Compiles with `job`, filling `cell.compile` if timed.
     fn compile(&self, job: &Job, runs: u32, cell: &mut Cell) -> Result<(), String> {
         match self {
-            Timer::Cachegrind => crate::utils::run(&mut job.command()),
-            _ => {
-                cell.compile = Some(self.measure(job, runs)?);
-                Ok(())
-            }
+            Timer::Wall(clock) => cell.compile = Some(clock.measure(job, runs)?),
+            Timer::Cachegrind => crate::utils::run(&mut job.command())?,
         }
+        Ok(())
     }
 
     /// Runs the program with `job`, filling `cell.run` or `cell.ir`. Errors are prefixed by
     /// what failed.
     fn run(&self, job: &Job, runs: u32, cell: &mut Cell) -> Result<(), String> {
         match self {
-            Timer::Cachegrind => {
-                cell.ir = Some(cachegrind(job).map_err(|e| format!("cachegrind: {e}"))?);
-                Ok(())
-            }
-            _ => {
-                cell.run = Some(self.measure(job, runs).map_err(|e| format!("run: {e}"))?);
-                Ok(())
-            }
+            Timer::Wall(clock) => cell.run = Some(clock.measure(job, runs).map_err(|e| format!("run: {e}"))?),
+            Timer::Cachegrind => cell.ir = Some(cachegrind(job).map_err(|e| format!("cachegrind: {e}"))?),
         }
+        Ok(())
     }
+}
 
+impl Clock {
     fn measure(&self, job: &Job, runs: u32) -> Result<Stats, String> {
         match self {
-            Timer::Cachegrind => unreachable!("cachegrind doesn't time"),
-            Timer::Builtin => {
+            Clock::Builtin => {
                 let mut times = Vec::new();
                 for i in 0..=runs {
                     let mut c = job.command();
@@ -260,7 +259,7 @@ impl Timer {
                 let s = Summary::of(&times).unwrap();
                 Ok(Stats { mean: s.mean, stddev: s.stddev })
             }
-            Timer::Hyperfine { json } => {
+            Clock::Hyperfine { json } => {
                 let line: Vec<String> =
                     std::iter::once(job.program.to_string_lossy().into_owned()).chain(job.args.iter().cloned()).map(|a| shell_quote(&a)).collect();
                 let mut c = cmd("hyperfine");
@@ -325,13 +324,13 @@ pub fn run(opts: &Options) -> Result<(), String> {
         Timer::Cachegrind
     } else if succeeds(cmd("hyperfine").arg("--version")) {
         eprintln!("[y] bench: timing with hyperfine, {runs} runs after 1 warmup");
-        Timer::Hyperfine { json: out.join("hyperfine.json") }
+        Timer::Wall(Clock::Hyperfine { json: out.join("hyperfine.json") })
     } else {
         eprintln!(
             "[y] bench: hyperfine is not installed; timing with the built-in timer \
              ({runs} runs after 1 warmup, mean and standard deviation of wall time)"
         );
-        Timer::Builtin
+        Timer::Wall(Clock::Builtin)
     };
 
     let mut rows = Vec::new();
@@ -380,7 +379,7 @@ pub fn run(opts: &Options) -> Result<(), String> {
     );
     println!();
     match timer {
-        Timer::Hyperfine { .. } | Timer::Builtin => {
+        Timer::Wall(_) => {
             print!("{}", table("compile time (ms, mean ± stddev)", &header, &rows, |c| c.compile.map(ms)));
             println!();
             print!("{}", table("run time (ms, mean ± stddev)", &header, &rows, |c| c.run.map(ms)));
