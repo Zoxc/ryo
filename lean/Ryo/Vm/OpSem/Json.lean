@@ -62,7 +62,9 @@ def parseByte (j : Json) : Except String AbstractByte :=
   match j with
   | .null => pure .uninit
   | .arr #[b, a, p] => do
-    pure (.init (UInt8.ofNat (← getNat b)) (some ⟨← getNat a, ← getNat p⟩))
+    let b ← getNat b
+    if b ≥ 256 then throw s!"byte out of range: {b}"
+    pure (.init (UInt8.ofNat b) (some ⟨← getNat a, ← getNat p⟩))
   | _ => do
     let b ← getNat j
     if b < 256 then pure (.ofByte (UInt8.ofNat b)) else throw s!"byte out of range: {b}"
@@ -107,9 +109,9 @@ def parseRequest (j : Json) : Except String Request := do
   let (base, fbytes) ← match optField j "frame" with
     | some f => do pure (← getInt (← field f "base"), ← parseBytes (← field f "bytes"))
     | none => pure (0, [])
-  let allocsJ := match optField j "allocs" with
-    | some a => (a.getArr?.toOption.getD #[]).toList
-    | none => []
+  let allocsJ ← match optField j "allocs" with
+    | some a => do pure (← a.getArr?).toList
+    | none => pure []
   let allocs ← allocsJ.mapM fun a => do
     let addr ← getNat (← field a "addr")
     let data ← parseBytes (← field a "bytes")
