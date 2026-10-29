@@ -329,34 +329,10 @@ pub unsafe extern "sysv64" fn trip_entry() {
         "movaps [rsp + 96], xmm3",
         "movaps [rsp + 112], xmm4",
         "movaps [rsp + 128], xmm5",
-        "movaps [rsp + 144], xmm6",
-        seh!(".seh_savexmm xmm6, 144"),
-        "movaps [rsp + 160], xmm7",
-        seh!(".seh_savexmm xmm7, 160"),
+        save_xmm!(6 144, 7 160),
         #[cfg(any(windows, feature = "pe-test"))]
-        "movaps [rsp + 176], xmm8",
-        seh!(".seh_savexmm xmm8, 176"),
-        #[cfg(any(windows, feature = "pe-test"))]
-        "movaps [rsp + 192], xmm9",
-        seh!(".seh_savexmm xmm9, 192"),
-        #[cfg(any(windows, feature = "pe-test"))]
-        "movaps [rsp + 208], xmm10",
-        seh!(".seh_savexmm xmm10, 208"),
-        #[cfg(any(windows, feature = "pe-test"))]
-        "movaps [rsp + 224], xmm11",
-        seh!(".seh_savexmm xmm11, 224"),
-        #[cfg(any(windows, feature = "pe-test"))]
-        "movaps [rsp + 240], xmm12",
-        seh!(".seh_savexmm xmm12, 240"),
-        #[cfg(any(windows, feature = "pe-test"))]
-        "movaps [rsp + 256], xmm13",
-        seh!(".seh_savexmm xmm13, 256"),
-        #[cfg(any(windows, feature = "pe-test"))]
-        "movaps [rsp + 272], xmm14",
-        seh!(".seh_savexmm xmm14, 272"),
-        #[cfg(any(windows, feature = "pe-test"))]
-        "movaps [rsp + 288], xmm15",
-        seh!(".seh_savexmm xmm15, 288", ".seh_endprologue"),
+        save_xmm!(8 176, 9 192, 10 208, 11 224, 12 240, 13 256, 14 272, 15 288),
+        seh!(".seh_endprologue"),
         "mov rdi, r11",
         "call {trip}",
         "mov r11, rax",
@@ -372,24 +348,9 @@ pub unsafe extern "sysv64" fn trip_entry() {
         "movaps xmm3, [rsp + 96]",
         "movaps xmm4, [rsp + 112]",
         "movaps xmm5, [rsp + 128]",
-        "movaps xmm6, [rsp + 144]",
-        "movaps xmm7, [rsp + 160]",
+        restore_xmm!(6 144, 7 160),
         #[cfg(any(windows, feature = "pe-test"))]
-        "movaps xmm8, [rsp + 176]",
-        #[cfg(any(windows, feature = "pe-test"))]
-        "movaps xmm9, [rsp + 192]",
-        #[cfg(any(windows, feature = "pe-test"))]
-        "movaps xmm10, [rsp + 208]",
-        #[cfg(any(windows, feature = "pe-test"))]
-        "movaps xmm11, [rsp + 224]",
-        #[cfg(any(windows, feature = "pe-test"))]
-        "movaps xmm12, [rsp + 240]",
-        #[cfg(any(windows, feature = "pe-test"))]
-        "movaps xmm13, [rsp + 256]",
-        #[cfg(any(windows, feature = "pe-test"))]
-        "movaps xmm14, [rsp + 272]",
-        #[cfg(any(windows, feature = "pe-test"))]
-        "movaps xmm15, [rsp + 288]",
+        restore_xmm!(8 176, 9 192, 10 208, 11 224, 12 240, 13 256, 14 272, 15 288),
         // Two epilogues, each of the form the Win64 unwinder recognizes: `add rsp`, then
         // `ret` or `rex.w jmp r11`.
         "test r11, r11",
@@ -446,39 +407,12 @@ pub unsafe extern "sysv64" fn trip_osr() {
         cfi!(".cfi_adjust_cfa_offset 168"),
         seh!(".seh_stackalloc 168"),
         "mov [rsp + 160], eax",
-        "movaps [rsp + 0], xmm6",
-        seh!(".seh_savexmm xmm6, 0"),
-        "movaps [rsp + 16], xmm7",
-        seh!(".seh_savexmm xmm7, 16"),
-        "movaps [rsp + 32], xmm8",
-        seh!(".seh_savexmm xmm8, 32"),
-        "movaps [rsp + 48], xmm9",
-        seh!(".seh_savexmm xmm9, 48"),
-        "movaps [rsp + 64], xmm10",
-        seh!(".seh_savexmm xmm10, 64"),
-        "movaps [rsp + 80], xmm11",
-        seh!(".seh_savexmm xmm11, 80"),
-        "movaps [rsp + 96], xmm12",
-        seh!(".seh_savexmm xmm12, 96"),
-        "movaps [rsp + 112], xmm13",
-        seh!(".seh_savexmm xmm13, 112"),
-        "movaps [rsp + 128], xmm14",
-        seh!(".seh_savexmm xmm14, 128"),
-        "movaps [rsp + 144], xmm15",
-        seh!(".seh_savexmm xmm15, 144", ".seh_endprologue"),
+        xmm6_15!(save_xmm),
+        seh!(".seh_endprologue"),
         "mov rdi, r11",
         "call {trip}",
         "mov r11, rax",
-        "movaps xmm6, [rsp + 0]",
-        "movaps xmm7, [rsp + 16]",
-        "movaps xmm8, [rsp + 32]",
-        "movaps xmm9, [rsp + 48]",
-        "movaps xmm10, [rsp + 64]",
-        "movaps xmm11, [rsp + 80]",
-        "movaps xmm12, [rsp + 96]",
-        "movaps xmm13, [rsp + 112]",
-        "movaps xmm14, [rsp + 128]",
-        "movaps xmm15, [rsp + 144]",
+        xmm6_15!(restore_xmm),
         "mov eax, [rsp + 160]",
         // Two epilogues, each of the form the Win64 unwinder recognizes: `add rsp`, the
         // pops, then `ret` or `rex.w jmp r11`.
