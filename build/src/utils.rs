@@ -141,17 +141,35 @@ pub fn output_timeout(cmd: &mut Command, limit: std::time::Duration) -> Result<s
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("failed to run `{}`: {e}", describe(cmd)))?;
+    // The readers append to shared buffers, so what was read is there even if a descendant
+    // that inherited the pipes keeps them open after the child exits.
+    type Buf = std::sync::Arc<std::sync::Mutex<Vec<u8>>>;
     let pipe = |r: Option<Box<dyn Read + Send>>| {
-        std::thread::spawn(move || {
-            let mut v = Vec::new();
+        let buf = Buf::default();
+        let b = buf.clone();
+        let t = std::thread::spawn(move || {
             if let Some(mut r) = r {
-                let _ = r.read_to_end(&mut v);
+                let mut chunk = [0u8; 8192];
+                while let Ok(n @ 1..) = r.read(&mut chunk) {
+                    b.lock().unwrap().extend_from_slice(&chunk[..n]);
+                }
             }
-            v
-        })
+        });
+        (t, buf)
     };
     let out = pipe(child.stdout.take().map(|r| Box::new(r) as Box<dyn Read + Send>));
     let err = pipe(child.stderr.take().map(|r| Box::new(r) as Box<dyn Read + Send>));
+    // Waits for both readers until `deadline`; false if a pipe is still held open then.
+    let drained = |deadline: std::time::Instant| loop {
+        if out.0.is_finished() && err.0.is_finished() {
+            return true;
+        }
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    };
+    let take = |b: &Buf| std::mem::take(&mut *b.lock().unwrap());
     let start = std::time::Instant::now();
     let status = loop {
         match child.try_wait() {
@@ -160,20 +178,28 @@ pub fn output_timeout(cmd: &mut Command, limit: std::time::Duration) -> Result<s
             Ok(None) => {
                 let _ = child.kill();
                 let _ = child.wait();
-                // The pipes close with the process (unless it left children holding them).
-                let (o, e) = (out.join().unwrap_or_default(), err.join().unwrap_or_default());
+                // The pipes close with the process, unless it left descendants holding them.
+                drained(std::time::Instant::now() + std::time::Duration::from_secs(1));
                 return Err(format!(
                     "`{}` timed out after {}s, killed\nstdout:\n{}stderr:\n{}",
                     describe(cmd),
                     limit.as_secs(),
-                    String::from_utf8_lossy(&o),
-                    String::from_utf8_lossy(&e)
+                    String::from_utf8_lossy(&take(&out.1)),
+                    String::from_utf8_lossy(&take(&err.1))
                 ));
             }
             Err(e) => return Err(format!("failed to wait for `{}`: {e}", describe(cmd))),
         }
     };
-    Ok(std::process::Output { status, stdout: out.join().unwrap_or_default(), stderr: err.join().unwrap_or_default() })
+    if !drained((start + limit).max(std::time::Instant::now() + std::time::Duration::from_secs(1))) {
+        return Err(format!(
+            "`{}` exited ({status}) but left a process holding its stdout or stderr open\nstdout:\n{}stderr:\n{}",
+            describe(cmd),
+            String::from_utf8_lossy(&take(&out.1)),
+            String::from_utf8_lossy(&take(&err.1))
+        ));
+    }
+    Ok(std::process::Output { status, stdout: take(&out.1), stderr: take(&err.1) })
 }
 
 /// Runs `cmd` and returns its stdout, failing if it doesn't exit successfully.
