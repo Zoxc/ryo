@@ -568,14 +568,14 @@ head stays for the preheader and its OSR entry, which still lands there.
   Below the pinned allocas: the callee-saved registers' save slots (8 bytes each, packed
   and 8-aligned: `DW_CFA_offset` counts in 8 bytes), the moved allocas, the spill slots,
   the handler scratch area, and the outgoing area at `rsp`. With nothing pinned the saves
-  are pushed, from `fp + 0` (the padding below the return address) or with `fp-rbp` from
+  are pushed, from `fp + 0` (the padding below the return address) or with a frame pointer from
   `fp - 8`, and the prologue is the pushes then `sub rsp` of the rest (`F + 8` or `F` less
-  8 per push), the epilogue `add rsp` (with `fp-rbp` `lea rsp, [rbp - 8n]`, or `leave`
+  8 per push), the epilogue `add rsp` (with a frame pointer `lea rsp, [rbp - 8n]`, or `leave`
   for no saves) and the pops; with pinned allocas the prologue is `sub rsp, F + 8` (or
-  `push rbp; mov rbp, rsp; sub rsp, F` with `fp-rbp`) then a `mov` per save. The probe from
+  `push rbp; mov rbp, rsp; sub rsp, F` with a frame pointer) then a `mov` per save. The probe from
   `PROBE_FROM` comes before the `sub`; handler and island operands are `fp` offsets either
   way; OSR entries store the saves at their slots, which the epilogue reads either way.
-  A leaf (no calls, no OSR entries) without `fp-rbp`, not on PE, has no handler scratch area and its
+  A leaf (no calls, no OSR entries) without a frame pointer, not on PE, has no handler scratch area and its
   frame is rounded to 8 bytes, not 16 (nothing it calls needs the alignment); with nothing
   in it and no saves, it has no frame at all (no prologue, epilogue or unwind rows; `fp`
   is `rsp - 8`).
@@ -1022,7 +1022,7 @@ the stderr it compares), each with one `write`:
 
 ## Testing
 
-- **`vm/jit/tests/jit.rs`** (`y test` runs it with and without `ryo_rt`'s `fp-rbp`; it links
+- **`vm/jit/tests/jit.rs`** (it links
   `ryo_jit` as an rlib, on the tests' std, so it tests the compiler and the trips, not the
   sealing): with threshold 0 and `RYO_JIT_SYNC`'s waiting, functions give the AOT code's
   results with arguments of every kind, in JIT code (checked by return addresses within
@@ -1069,7 +1069,7 @@ the stderr it compares), each with one `write`:
   that way (`ryo-std-jit`, `ryo-std-jit-shuffle`), std's own VM functions included
   ([build.md](build.md#test-and-bench)).
 - **The SSA pipeline**: `y test` runs `vm/jit/tests/` through the SSA pipeline with its checkers, then
-  with `RYO_JIT_OPT=ssa-naive` and with `reencode` (each with and without `fp-rbp`; through
+  with `RYO_JIT_OPT=ssa-naive` and with `reencode` (through
   the SSA pipeline `rsp` moves by a multiple of 16 instead of the frames' difference), whose SSA-specific tests cover an alloca escaped only
   after the head (moved at OSR), an acyclic head (the trip returns into the AOT code), a slot
   reused at two widths, handler results feeding branches, a value live into a landing pad

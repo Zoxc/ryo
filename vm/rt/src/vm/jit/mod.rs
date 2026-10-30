@@ -652,6 +652,16 @@ fn start() -> bool {
     };
     #[cfg(not(all(feature = "pe-test", not(windows))))]
     let (pe_handlers, pe_reg_handlers) = (ptr::null(), ptr::null());
+    #[cfg(not(any(windows, target_vendor = "apple")))]
+    let (fp_handlers, fp_reg_handlers) = {
+        static FP: Once<[[*const (); ryo_bytecode::Opcode::COUNT]; 2]> = Once::new();
+        let Some(t) = FP.set_with(|| [table(super::interp::fp_handler), table(super::interp::fp_reg_handler)]) else {
+            super::sys::fatal("ryo: the JIT started twice");
+        };
+        (&raw const t[0], &raw const t[1])
+    };
+    #[cfg(any(windows, target_vendor = "apple"))]
+    let (fp_handlers, fp_reg_handlers) = (ptr::null(), ptr::null());
     let api = RtApi {
         settings: cfg.jit,
         thresholds: cfg.thresholds(),
@@ -669,6 +679,8 @@ fn start() -> bool {
         reg_handlers,
         pe_handlers,
         pe_reg_handlers,
+        fp_handlers,
+        fp_reg_handlers,
     };
     // The JIT thread runs this module's code (the sealed JIT) and reads its images for the
     // rest of the process: pin the module first.

@@ -1,11 +1,12 @@
 //! Codegen check of the handlers (design/vm.md, "Handlers"): builds `ryo_rt` as `y build`
-//! does (release, `-Ccodegen-units=1`, `jit`, this test's `fp-rbp` feature) with `--emit=asm`, and
-//! checks that
-//! - every opcode with a handler has its `ryo_h_<Opcode>` function;
-//! - with `fp-rbp`, every handler written in Rust reads `rbp` (the VM function's fp) before
-//!   any instruction that writes `rbp`, so it sees the caller's (no frame pointer was set up;
-//!   a handler may save `rbp` and use it as a register afterwards);
-//! - the hot handlers have no prologue (no push, no stack adjustment) and make no call;
+//! does (release, `-Ccodegen-units=1`) with `--emit=asm`, and checks that
+//! - every opcode with a handler has its `ryo_h_<Opcode>` function, and off Apple its
+//!   frame-pointer set's `ryo_hf_<Opcode>`;
+//! - every handler of the frame-pointer set written in Rust reads `rbp` (the VM function's
+//!   fp) before any instruction that writes `rbp`, so it sees the caller's (no frame pointer
+//!   was set up; a handler may save `rbp` and use it as a register afterwards);
+//! - the hot handlers of both sets have no prologue (no push, no stack adjustment) and make
+//!   no call;
 //! - built for Windows (Win64 handlers), every handler reads `rbp` first, saves any of
 //!   `xmm6`–`xmm15` it writes, and the hot ones have no prologue (design/platforms.md).
 //!
@@ -57,7 +58,7 @@ fn asm_of<'a>(asm: &'a str, suffix: &str) -> Option<Vec<&'a str>> {
 
 /// `ryo_rt` built as `y build` does, as assembly, into `dir` under the test's target
 /// directory: for the host, or `target`.
-fn rt_asm(dir: &str, features: &[&str], target: Option<&str>) -> String {
+fn rt_asm(dir: &str, target: Option<&str>) -> String {
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(dir);
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
     let mut c = Command::new(env!("CARGO"));
@@ -68,9 +69,6 @@ fn rt_asm(dir: &str, features: &[&str], target: Option<&str>) -> String {
         .arg(&manifest)
         .arg("--target-dir")
         .arg(&dir);
-    for f in features {
-        c.args(["--features", f]);
-    }
     if let Some(t) = target {
         c.args(["--target", t]);
     }
@@ -106,7 +104,7 @@ fn win64_handlers() {
         eprintln!("skipped: no {TARGET} standard library");
         return;
     }
-    let asm = rt_asm("codegen-win64", &[], Some(TARGET));
+    let asm = rt_asm("codegen-win64", Some(TARGET));
     let pe = ryo_bytecode::asm::Mode { fp_arg: false, frame_pointer: true, align_loops: false, pe: true, counters: false, far_rt: false };
     // AT&T syntax: the destination is the last operand.
     let xmm_kept = |name: &str, a: &[&str]| {
@@ -135,9 +133,9 @@ fn win64_handlers() {
         xmm_kept(&name, &a);
         // A register entry identical to another may be merged into it, without a name.
         if ryo_bytecode::jit::effects::reg_entry(op, pe).is_some()
-            && let Some(a) = asm_of(&asm, &hr_name(op))
+            && let Some(a) = asm_of(&asm, &hr_name("hr", op))
         {
-            xmm_kept(&hr_name(op), &a);
+            xmm_kept(&hr_name("hr", op), &a);
         }
         checked += 1;
     }
@@ -147,19 +145,19 @@ fn win64_handlers() {
         let bad = a.iter().find(|i| i.starts_with("push") || (i.starts_with("sub") && i.ends_with("%rsp")) || i.starts_with("call"));
         assert!(bad.is_none(), "{op:?}: has a prologue or a call\n{}", a.join("\n"));
     }
-    short_reg_entries(&asm, |a| a, pe);
+    short_reg_entries(&asm, "hr", |a| a, pe);
     eprintln!("AddW32 (Win64):\n  {}", asm_of(&asm, "ryo_h_AddW32").unwrap().join("\n  "));
 }
 
 /// The hot register entries that return two values are short: on Win64 (`pe`) they come back
 /// in `xmm0` (`ryo_rt::vm::RegRet`'s PE form, three instructions instead of `mov rdx`).
 /// `strip` drops what the target adds to every function.
-fn short_reg_entries<'a>(asm: &'a str, strip: impl Fn(Vec<&'a str>) -> Vec<&'a str>, mode: ryo_bytecode::asm::Mode) {
+fn short_reg_entries<'a>(asm: &'a str, hr: &str, strip: impl Fn(Vec<&'a str>) -> Vec<&'a str>, mode: ryo_bytecode::asm::Mode) {
     for op in [Opcode::AddOvfUW64, Opcode::SubOvfUW32, Opcode::ZextW32W64, Opcode::AddImmW32, Opcode::LoadW64, Opcode::StoreW64, Opcode::BrLtSW64] {
         if ryo_bytecode::jit::effects::reg_entry(op, mode).is_none() {
             continue;
         }
-        let Some(a) = asm_of(asm, &hr_name(op)) else { continue };
+        let Some(a) = asm_of(asm, &hr_name(hr, op)) else { continue };
         let a = strip(a);
         let limit = if mode.pe { 7 } else { 5 };
         assert!(a.len() <= limit, "{op:?}: register entry of {} instructions\n{}", a.len(), a.join("\n"));
@@ -175,86 +173,94 @@ fn strip_apple_fp(a: Vec<&str>) -> Vec<&str> {
     a.into_iter().filter(|i| !matches!(*i, "pushq\t%rbp" | "movq\t%rsp, %rbp" | "popq\t%rbp")).collect()
 }
 
-#[test]
-fn handlers_read_rbp_first_and_hot_ones_have_no_prologue() {
-    let fp_rbp = !ryo_rt::vm::FP_ARG;
-    let asm = rt_asm(if fp_rbp { "codegen-fp-rbp" } else { "codegen" }, if fp_rbp { &["fp-rbp"] } else { &[] }, None);
-
-    // Written in assembly: they use `rbp` and the stack by design.
-    let naked = [Opcode::Resume];
-    let mut checked = 0;
-    for &op in ALL_OPCODES {
-        if !has_handler(op) {
-            continue;
-        }
-        let name = format!("ryo_h_{op:?}");
-        let a = strip_apple_fp(asm_of(&asm, &name).unwrap_or_else(|| panic!("{name}: not in the assembly")));
-        if naked.contains(&op) {
-            continue;
-        }
-        if !fp_rbp {
-            checked += 1;
-            continue;
-        }
-        let dump = || a.join("\n");
-        let read = a.iter().position(|i| i.starts_with("movq\t%rbp, %"));
-        // AT&T syntax: the destination is the last operand.
-        let writes = a.iter().position(|i| i.ends_with("%rbp") && !i.starts_with("push") && !i.starts_with("cmp") && !i.starts_with("test"));
-        // A handler that never returns (`abort`) needn't read it.
-        if let Some(r) = read {
-            assert!(writes.is_none_or(|w| w > r), "{name}: writes rbp before reading it\n{}", dump());
-        } else {
-            assert!(op == Opcode::Abort, "{name}: doesn't read rbp\n{}", dump());
-        }
-        checked += 1;
+/// `a` reads `rbp` before writing it: a handler that reads `fp` from there.
+fn reads_rbp_first(name: &str, op: Opcode, a: &[&str]) {
+    let read = a.iter().position(|i| i.starts_with("movq\t%rbp, %"));
+    // AT&T syntax: the destination is the last operand.
+    let writes = a.iter().position(|i| i.ends_with("%rbp") && !i.starts_with("push") && !i.starts_with("cmp") && !i.starts_with("test"));
+    // A handler that never returns (`abort`) needn't read it.
+    match read {
+        Some(r) => assert!(writes.is_none_or(|w| w > r), "{name}: writes rbp before reading it\n{}", a.join("\n")),
+        None => assert!(op == Opcode::Abort, "{name}: doesn't read rbp\n{}", a.join("\n")),
     }
-    assert!(checked > 800, "{checked}");
-    for op in [
-        Opcode::AddW32,
-        Opcode::AddImmW64,
-        Opcode::LoadW64,
-        Opcode::StoreW64,
-        Opcode::MovW64,
-        Opcode::ImmW64,
-        Opcode::BrLtSW64,
-        Opcode::BrLtUImmW64,
-        Opcode::Br,
-        Opcode::EqW32,
-        Opcode::PtrIndex,
-        Opcode::Addr,
-    ] {
-        let a = strip_apple_fp(asm_of(&asm, &format!("ryo_h_{op:?}")).unwrap());
-        let bad = a.iter().find(|i| i.starts_with("push") || (i.starts_with("sub") && i.ends_with("%rsp")) || i.starts_with("call"));
-        assert!(bad.is_none(), "{op:?}: has a prologue or a call\n{}", a.join("\n"));
-    }
-    eprintln!("AddW32:\n  {}", asm_of(&asm, "ryo_h_AddW32").unwrap().join("\n  "));
-
-    // The register entries: none touches the stack (their buffer of frame operands is kept
-    // in registers) but those that call or need a frame anyway. One identical to another may
-    // be merged into it, without a name of its own.
-    let mut checked = 0;
-    for &op in ALL_OPCODES {
-        if ryo_bytecode::jit::effects::reg_entry(op, ryo_rt::vm::MODE).is_none() {
-            continue;
-        }
-        let name = hr_name(op);
-        let Some(a) = asm_of(&asm, &name) else { continue };
-        let a = strip_apple_fp(a);
-        let frame = a.iter().any(|i| i.starts_with("push") || i.starts_with("call") || i.starts_with("jmp\t") && !i.contains(".LBB"));
-        if !frame {
-            // (`lock or [rsp - 64], 0` is a fence.)
-            let bad = a.iter().find(|i| (i.contains("(%rsp)") && !i.starts_with("lock")) || (i.starts_with("sub") && i.ends_with("%rsp")));
-            assert!(bad.is_none(), "{name}: keeps its operands on the stack\n{}", a.join("\n"));
-        }
-        checked += 1;
-    }
-    assert!(checked > 300, "{checked}");
-    short_reg_entries(&asm, strip_apple_fp, ryo_rt::vm::MODE);
 }
 
-/// The symbol suffix of `op`'s register entry, which has no symbol of its own: `hr::<Opcode>`
-/// mangled (v0).
-fn hr_name(op: Opcode) -> String {
+#[test]
+fn handlers_read_rbp_first_and_hot_ones_have_no_prologue() {
+    let asm = rt_asm("codegen", None);
+    // The sets: the target's (`fp` in `rdi`), and off Apple the frame-pointer set (`rbp`):
+    // symbol prefix, register entry module, mode.
+    let mut sets = vec![("ryo_h_", "hr", ryo_rt::vm::MODE)];
+    #[cfg(not(target_vendor = "apple"))]
+    sets.push(("ryo_hf_", "hrf", ryo_rt::vm::FP_MODE));
+    for (prefix, hr, mode) in sets {
+        // Written in assembly: they use `rbp` and the stack by design.
+        let naked = [Opcode::Resume];
+        let mut checked = 0;
+        for &op in ALL_OPCODES {
+            if !has_handler(op) {
+                continue;
+            }
+            let name = format!("{prefix}{op:?}");
+            let a = strip_apple_fp(asm_of(&asm, &name).unwrap_or_else(|| panic!("{name}: not in the assembly")));
+            if naked.contains(&op) {
+                continue;
+            }
+            if !mode.fp_arg {
+                reads_rbp_first(&name, op, &a);
+            }
+            checked += 1;
+        }
+        assert!(checked > 800, "{checked}");
+        for op in [
+            Opcode::AddW32,
+            Opcode::AddImmW64,
+            Opcode::LoadW64,
+            Opcode::StoreW64,
+            Opcode::MovW64,
+            Opcode::ImmW64,
+            Opcode::BrLtSW64,
+            Opcode::BrLtUImmW64,
+            Opcode::Br,
+            Opcode::EqW32,
+            Opcode::PtrIndex,
+            Opcode::Addr,
+        ] {
+            let a = strip_apple_fp(asm_of(&asm, &format!("{prefix}{op:?}")).unwrap());
+            let bad = a.iter().find(|i| i.starts_with("push") || (i.starts_with("sub") && i.ends_with("%rsp")) || i.starts_with("call"));
+            assert!(bad.is_none(), "{prefix}{op:?}: has a prologue or a call\n{}", a.join("\n"));
+        }
+        eprintln!("{prefix}AddW32:\n  {}", asm_of(&asm, &format!("{prefix}AddW32")).unwrap().join("\n  "));
+
+        // The register entries: none touches the stack (their buffer of frame operands is
+        // kept in registers) but those that call or need a frame anyway. One identical to
+        // another may be merged into it, without a name of its own.
+        let mut checked = 0;
+        for &op in ALL_OPCODES {
+            if ryo_bytecode::jit::effects::reg_entry(op, mode).is_none() {
+                continue;
+            }
+            let name = hr_name(hr, op);
+            let Some(a) = asm_of(&asm, &name) else { continue };
+            let a = strip_apple_fp(a);
+            let frame = a.iter().any(|i| i.starts_with("push") || i.starts_with("call") || i.starts_with("jmp\t") && !i.contains(".LBB"));
+            if !frame {
+                // (`lock or [rsp - 64], 0` is a fence.)
+                let bad = a.iter().find(|i| (i.contains("(%rsp)") && !i.starts_with("lock")) || (i.starts_with("sub") && i.ends_with("%rsp")));
+                assert!(bad.is_none(), "{name}: keeps its operands on the stack\n{}", a.join("\n"));
+            }
+            checked += 1;
+        }
+        // The frame-pointer set's register entries take no `fp`: LLVM merges each into the
+        // target set's twin.
+        assert!(checked > 300 || hr == "hrf", "{checked}");
+        short_reg_entries(&asm, hr, strip_apple_fp, mode);
+    }
+}
+
+/// The symbol suffix of `op`'s register entry in module `hr` (`hr`, `hrf`), which has no
+/// symbol of its own: `<hr>::<Opcode>` mangled (v0).
+fn hr_name(hr: &str, op: Opcode) -> String {
     let n = format!("{op:?}");
-    format!("2hr{}{n}", n.len())
+    format!("{}{hr}{}{n}", hr.len(), n.len())
 }

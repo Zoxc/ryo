@@ -8,8 +8,25 @@
 mod common;
 use common::*;
 
+use ryo_bytecode::asm::Mode;
 use ryo_bytecode::asm::{self as rasm, has_inline, layout};
-use ryo_rt::vm::{FP_ARG, MODE, handler};
+use ryo_rt::vm::{MODE, handler_for};
+
+thread_local!(static SET: std::cell::Cell<Mode> = const { std::cell::Cell::new(MODE) });
+
+/// The mode of the handler set under test ([`each_set`]).
+fn mode() -> Mode {
+    SET.get()
+}
+
+/// Runs `f` on each of `ryo_rt`'s handler sets: the target's, and (off PE and Apple) the
+/// frame-pointer set, whose handlers read `fp` from `rbp` (`ryo_rt::vm::HANDLER_MODES`).
+fn each_set(f: impl Fn()) {
+    for &m in ryo_rt::vm::HANDLER_MODES {
+        SET.set(m);
+        f();
+    }
+}
 
 /// Calls `f(a0..a5)` with `rbp = fp`, returning `rax`.
 #[cfg(not(windows))]
@@ -41,7 +58,7 @@ extern "win64" fn call_with_fp(a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: 
 /// Calls `op`'s handler with `vals` (one per operand, in operand order) on frame `fp`, as
 /// `full_ops.rs` does.
 fn call_handler(op: Opcode, vals: &[u128], fp: *mut u8) -> u64 {
-    let l = layout(op, MODE);
+    let l = layout(op, mode());
     // A memory operand's instruction words are slot | k << 32; its registers take k in the
     // high half.
     let vals: Vec<u128> = op
@@ -52,7 +69,7 @@ fn call_handler(op: Opcode, vals: &[u128], fp: *mut u8) -> u64 {
         .map(|(o, &v)| if o.kind == OperandKind::Mem { (v as u32 as u128) | ((v >> 32) as u32 as u128) << 64 } else { v })
         .collect();
     let mut r = [0u64; 6];
-    if FP_ARG {
+    if mode().fp_arg {
         r[0] = fp as u64;
     }
     for (loc, &v) in l.locs.iter().zip(&vals) {
@@ -64,7 +81,7 @@ fn call_handler(op: Opcode, vals: &[u128], fp: *mut u8) -> u64 {
             _ => r[i] = v as u64,
         }
     }
-    let f = handler(op).unwrap_or_else(|| panic!("{}: no handler", op.mnemonic()));
+    let f = handler_for(op, mode()).unwrap_or_else(|| panic!("{}: no handler", op.mnemonic()));
     call_with_fp(r[0], r[1], r[2], r[3], r[4], r[5], fp, f)
 }
 
@@ -311,6 +328,10 @@ fn function(op: Opcode, rng: &mut Rng, args: &[u64; 8], refs: &Refs) -> (Vec<u32
 
 #[test]
 fn inline_matches_handlers() {
+    each_set(inline_matches_handlers_in);
+}
+
+fn inline_matches_handlers_in() {
     let mut rng = Rng(0xfeed_beef);
     let buf: *mut [u8; 64] = Box::into_raw(Box::new([0u8; 64]));
     let mut fresh = [0u8; 64];
@@ -362,6 +383,10 @@ fn inline_matches_handlers() {
 /// drops values between them.
 #[test]
 fn inline_runs_match_handlers() {
+    each_set(inline_runs_match_handlers_in);
+}
+
+fn inline_runs_match_handlers_in() {
     let mut rng = Rng(0x5eed_cafe);
     let buf: *mut [u8; 64] = Box::into_raw(Box::new([0u8; 64]));
     // `addr`'s result is a frame address; branches would leave the run.
@@ -519,6 +544,10 @@ fn frame_effects(op: Opcode, vals: &[u128]) -> (Vec<i32>, Vec<i32>) {
 /// dead, so the encoder drops stores, against their handlers.
 #[test]
 fn dead_stores_match_handlers() {
+    each_set(dead_stores_match_handlers_in);
+}
+
+fn dead_stores_match_handlers_in() {
     let mut rng = Rng(0xdead_5107);
     let buf: *mut [u8; 64] = Box::into_raw(Box::new([0u8; 64]));
     let ops: Vec<Opcode> =

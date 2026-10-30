@@ -56,7 +56,7 @@ pub(super) fn build_image<'tcx>(cx: ImageCx<'_, 'tcx>, cgu_name: Symbol, vm: &mu
     if switches.dump.is_some() {
         dumps.vm = dump::vm_text(tcx, vm, mode);
     }
-    let mut code_dump = switches.dump_code.as_ref().map(|_| dump::code_text(tcx, vm));
+    let mut code_dump = switches.dump_code.as_ref().map(|_| dump::code_text(tcx, vm, mode));
     let merge_t = tcx.prof.generic_activity("ryo_merge");
     let index: FxHashMap<Instance<'tcx>, u32> = vm.iter().enumerate().map(|(i, v)| (v.instance, i as u32)).collect();
     for (i, v) in vm.iter_mut().enumerate() {

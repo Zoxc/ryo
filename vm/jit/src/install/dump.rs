@@ -38,8 +38,8 @@ impl Jit {
         }
         for r in relocs {
             let to = match r.to {
-                Ref::Handler(op) => ryo_bytecode::rt_symbols::handler(op).to_string(),
-                Ref::RegHandler(op) => ryo_bytecode::rt_symbols::reg_handler(op).to_string(),
+                Ref::Handler(op) => ryo_bytecode::rt_symbols::handler(op, job.img.mode()).to_string(),
+                Ref::RegHandler(op) => ryo_bytecode::rt_symbols::reg_handler(op, job.img.mode()).to_string(),
                 Ref::Probe => ryo_bytecode::rt_symbols::PROBE.into(),
                 Ref::Func(g) => g.to_string(),
                 Ref::Sym(x) => x.to_string(),

@@ -10,8 +10,6 @@ use rustc_span::Symbol;
 pub struct RtItems {
     pub krate: CrateNum,
     pub c_main: DefId,
-    /// `ryo_rt::vm::FP_ARG`: whether its handlers take `fp` in `rdi`.
-    pub fp_arg: DefId,
 }
 
 impl RtItems {
@@ -28,15 +26,12 @@ fn rt_item(tcx: TyCtxt<'_>, krate: CrateNum, name: Symbol) -> Option<DefId> {
 /// The diagnostic item name of `ryo_rt::entry::c_main`.
 pub const C_MAIN_ITEM: &str = "ryo_c_main";
 
-/// The diagnostic item name of `ryo_rt::vm::FP_ARG`.
-pub const FP_ARG_ITEM: &str = "ryo_rt_fp_arg";
-
 /// `ryo_rt`'s crate and template items, found through its diagnostic items. `None` if
 /// `ryo_rt` isn't loaded (rustc wasn't run through `rustc-ryo`).
 pub fn rt_items(tcx: TyCtxt<'_>) -> Option<RtItems> {
     let krate = *tcx.crates(()).iter().find(|&&c| is_rt_crate(tcx, c))?;
     let get = |name: &str| rt_item(tcx, krate, Symbol::intern(name));
-    Some(RtItems { krate, c_main: get(C_MAIN_ITEM)?, fp_arg: get(FP_ARG_ITEM)? })
+    Some(RtItems { krate, c_main: get(C_MAIN_ITEM)? })
 }
 
 /// The runtime crate's name.

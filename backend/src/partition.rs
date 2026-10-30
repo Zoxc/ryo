@@ -250,21 +250,21 @@ fn vm_enabled(tcx: TyCtxt<'_>, switches: &Switches) -> bool {
         && !matches!(tcx.crate_name(LOCAL_CRATE).as_str(), "core" | "rustc_std_workspace_core")
 }
 
-/// How the image's machine code is generated: as `ryo_rt`'s handlers expect `fp`, with a
-/// frame pointer where the session needs one, with loop-head alignment unless
-/// `RYO_ASM_ALIGN=0`, and for the target's object format.
-fn asm_mode(tcx: TyCtxt<'_>, rt: RtItems, switches: &Switches) -> asm::Mode {
-    let fp_arg = tcx.const_eval_poly(rt.fp_arg).ok().and_then(|v| v.try_to_scalar_int()).map(|i| i.to_u8() != 0);
-    let Some(fp_arg) = fp_arg else { tcx.dcx().fatal("ryo_rt's FP_ARG isn't a bool") };
+/// How the image's machine code is generated: with a frame pointer where the session needs
+/// one, with loop-head alignment unless `RYO_ASM_ALIGN=0`, and for the target's object
+/// format. Code that keeps a frame pointer anyway leaves `fp` in `rbp` for the handlers, so it
+/// needn't pass it in `rdi`: off PE it calls `ryo_rt`'s frame-pointer set
+/// (`asm::Mode::rbp_set`), on PE the (Win64) handlers always read `rbp`. Other code passes
+/// `fp` in `rdi`. Apple's targets always keep a frame pointer but use
+/// the `rdi` set: `ryo_rt` builds no frame-pointer set there (design/vm.md#handlers).
+fn asm_mode(tcx: TyCtxt<'_>, switches: &Switches) -> asm::Mode {
     let pe = super::symbols::is_pe(tcx);
-    if pe && fp_arg {
-        // PE's handlers are Win64 and read `fp` from `rbp` (`asm::Mode::pe`).
-        tcx.dcx().fatal("ryo_rt's handlers take fp in rdi, but on PE they must read rbp: a ryo_rt built for another target?");
-    }
+    let frame_pointer = pe || needs_frame_pointer(tcx.sess);
+    let apple = super::symbols::is_macho(tcx.sess);
     asm::Mode {
-        fp_arg,
-        // Handlers that read `rbp` and PE unwind info need it (`asm::Mode::frame_pointer`).
-        frame_pointer: !fp_arg || pe || needs_frame_pointer(tcx.sess),
+        fp_arg: !pe && (!frame_pointer || apple),
+        // PE unwind info needs it (`asm::Mode::frame_pointer`).
+        frame_pointer,
         align_loops: switches.asm_align,
         pe,
         // The JIT's trigger, in every build: one code shape (design/vm.md, "JIT records and
@@ -505,7 +505,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                 hidden_added: Vec::new(),
             })
             .collect();
-        Partitioner { tcx, rt, switches, mode: asm_mode(tcx, rt, switches), units, homes, owners: FxHashMap::default(), stats: Stats::default() }
+        Partitioner { tcx, rt, switches, mode: asm_mode(tcx, switches), units, homes, owners: FxHashMap::default(), stats: Stats::default() }
     }
 
     fn run(mut self) -> (Vec<CodegenUnit<'tcx>>, Results) {

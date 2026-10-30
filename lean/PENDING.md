@@ -3,6 +3,17 @@
 Rust-side changes that the Lean model or proofs don't reflect yet. Add an entry per change;
 remove it once a Lean session has handled it.
 
+- Frame-pointer handler set (Commit: "Rt: Build a frame-pointer handler set, drop fp-rbp"):
+  `ryo_rt` has no `fp-rbp` feature and no `FP_ARG` / `ryo_rt_fp_arg` item. Off PE and Apple
+  it builds both handler sets: `ryo_h_<Op>` (`fp` in `rdi`, `vm::MODE`) and `ryo_hf_<Op>`
+  (`fp` in `rbp`, `vm::FP_MODE`, with its own `ryo_hf_Resume`). The backend picks per crate:
+  a kept frame pointer (target default, `-Cforce-frame-pointers`) off Apple and PE gives an
+  image mode with `frame_pointer` and without `fp_arg` (`asm::Mode::rbp_set`), whose handler
+  relocations name `ryo_hf_<Op>`; otherwise `fp_arg`. Mode bits are unchanged. The image
+  relocation checker and the handler-by-symbol lookup (`Ryo/Obj/Image.lean` `ryo_h_` parsing,
+  `Ryo/Check/Image/Relocs.lean`) should accept `ryo_hf_<op>` for such modes (and only then);
+  `lean/docs/aot.md`'s mode list now says "no `fp_arg` with a frame pointer".
+
 - No-op JIT stubs gone (Commit: "Rt: Always build the JIT, drop the jit feature"): `ryo_rt`
   has no `jit` feature and no `vm/rt/src/vm/jit/noop.rs`; the trips are always the JIT's
   (Rust behind assembly), and "the no-op JIT" now means them with `RYO_JIT=off` or a JIT

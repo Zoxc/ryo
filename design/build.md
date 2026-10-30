@@ -124,8 +124,7 @@ modeled on cg_clif's `build_system/`.
      `-Copt-level=3 -Ccodegen-units=1 -Cpanic=unwind` regardless of the user's profile (no
      bitcode: ryo rejects `-Clto`, [backend.md](backend.md#unsupported-options)), and
      installed next to std. Its build script bundles the sealed JIT from `RYO_JIT_LIB_DIR` into
-     the rlib ([jit.md](jit.md#packaging)); its cargo features are those listed in `RYO_RT_FEATURES` (comma-separated, such as
-     `fp-rbp`, [vm.md](vm.md#handlers)). `ryo_bytecode` is installed without its `alloc`
+     the rlib ([jit.md](jit.md#packaging)); its cargo features are those listed in `RYO_RT_FEATURES` (comma-separated). `ryo_bytecode` is installed without its `alloc`
      feature.
 3. **Wrappers** (like cg_clif's `scripts/rustc-clif.rs`, `cargo-clif.rs`): tiny Rust programs
    compiled with plain rustc. They locate `dist/` from `current_exe()`, set
@@ -219,8 +218,9 @@ This gives a third backend, built from the same toolchain, to compare against.
   `ryo-jit-ssa-osr` run the corpus through the JIT's SSA pipeline with its checkers, every VM
   function from its first call or entered by OSR at its first loop head pass
   ([jit.md](jit.md#testing)); `test` runs the JIT's own tests through the SSA pipeline (`vm jit`),
-  its naive allocator (`vm jit ssa-naive`) and the re-encoding pipeline (`vm jit reencode`),
-  each also with `fp-rbp`. rustc's default merges the corpus's small crates into one codegen
+  its naive allocator (`vm jit ssa-naive`) and the re-encoding pipeline (`vm jit reencode`).
+  The `ryo-fp` variants build with `-Cforce-frame-pointers=yes`, so VM code calls `ryo_rt`'s
+  frame-pointer handler set ([vm.md](vm.md#handlers)), AOT and through the JIT. rustc's default merges the corpus's small crates into one codegen
   unit; the `ryo-cgu*` variants ask for 1, 16 and 256 (also with `-Zshare-generics`, `-O3`
   and the JIT), so calls, fn pointers, vtables and statics cross
   images (`tests/vm_cgu.rs` spreads over many).
@@ -337,9 +337,8 @@ This gives a third backend, built from the same toolchain, to compare against.
 - `y test` also runs `vm/`'s cargo tests (`cargo test --workspace` in `vm/`): the encoder
   against the decoder, the image writer and reader, every handler against a reference
   model, the handlers' codegen, and hand-assembled functions called as native functions
-  ([vm.md](vm.md#handlers)), then `ryo_rt`'s again with `--features fp-rbp`, which takes
-  the frame-pointer path, and `ryo_jit`'s tests (`-p ryo_jit`, with and without
-  `ryo_rt/fp-rbp`, [jit.md](jit.md#testing)), which link the JIT as an rlib, as `ryo_rt`'s tests do (a dev-dependency, for
+  ([vm.md](vm.md#handlers), both handler sets), then `ryo_jit`'s tests (`-p ryo_jit`,
+  [jit.md](jit.md#testing)), which link the JIT as an rlib, as `ryo_rt`'s tests do (a dev-dependency, for
   `ryo_jit_start`); those turn the JIT off (`vm::configure_jit_off`, as `RYO_JIT=off`), but
   for the runtime's unit tests of its JIT side.
 - The corpus runs with the environment `y test` gets, so `RYO_JIT_THRESHOLD=0
@@ -372,7 +371,7 @@ A plain `y test` runs the fast set plus the tests the changed paths select
   - `vm/bytecode/src/jit*`, `vm/jit/`: all six `ryo_jit` runs, the corpus under the JIT
     variants (`ryo-jit-ssa`, `-osr`, `-shuffle` and the `ryo-std-jit*` ones), `jit-private-std`.
   - `vm/rt/src/vm/handlers.rs`: as other `vm/rt/` paths, plus `y lean`.
-  - `vm/rt/src/`, `vm/rt/tests/`, `vm/rt/build.rs`: the `fp-rbp` runs, codegen.rs,
+  - `vm/rt/src/`, `vm/rt/tests/`, `vm/rt/build.rs`: the `vm` run, codegen.rs,
     `rt-core-only`, `jit-sealed`.
   - `backend/`: the whole corpus under every variant (the ryo-std ones need a current
     sysroot), every check, the slow vm tests and the JIT set.

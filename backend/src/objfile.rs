@@ -10,6 +10,7 @@ use object::write::{Mangling, Object, Relocation, StandardSegment, Symbol, Symbo
 use object::{
     Architecture, BinaryFormat, Endianness, RelocationFlags, SectionFlags, SectionKind, SymbolFlags, SymbolKind, SymbolScope, elf, macho, pe,
 };
+use ryo_bytecode::asm::Mode;
 use ryo_bytecode::full::Opcode;
 use ryo_bytecode::image::{FuncSymbol, ImageObject, RelocKind, RelocTarget, SYM_INDIRECT, Section, SymVisibility};
 use ryo_bytecode::rt_symbols;
@@ -43,14 +44,14 @@ pub const SEH_HANDLER_SYMBOL: &str = rt_symbols::SEH_HANDLER;
 pub const TRIP_ENTRY_SYMBOL: &str = rt_symbols::TRIP_ENTRY;
 pub const TRIP_OSR_SYMBOL: &str = rt_symbols::TRIP_OSR;
 
-/// The name of opcode `op`'s handler in `ryo_rt` (before mangling).
-pub fn handler_name(op: Opcode) -> String {
-    rt_symbols::handler(op).to_string()
+/// The name of opcode `op`'s handler in `ryo_rt` for code of `mode` (before mangling).
+pub fn handler_name(op: Opcode, mode: Mode) -> String {
+    rt_symbols::handler(op, mode).to_string()
 }
 
 /// The name of opcode `op`'s register entry in `ryo_rt` (JIT code only; before mangling).
-pub fn reg_handler_name(op: Opcode) -> String {
-    rt_symbols::reg_handler(op).to_string()
+pub fn reg_handler_name(op: Opcode, mode: Mode) -> String {
+    rt_symbols::reg_handler(op, mode).to_string()
 }
 
 /// The object-format-specific parts of the image and registry objects.
@@ -627,7 +628,8 @@ fn coff_entries(obj: &mut Object<'static>, suffix: &str) -> object::write::Secti
 /// registration entry (a pointer to the header), a reference to the registry anchor, and, for
 /// binaries with a VM `main`, the `__ryo_main` slot pointing at `main_symbol`. On Mach-O also
 /// the `.eh_frame` personality's GOT reference and a `GCC_except_table<n>` symbol per LSDA.
-/// `rt_symbol` names the `ryo_rt` symbols relocations target (the handlers `ryo_h_<op>`,
+/// `rt_symbol` names the `ryo_rt` symbols relocations target (the handlers `ryo_h_<op>` or
+/// `ryo_hf_<op>`,
 /// `ryo_probe_stack`, the JIT trip entries and the SEH handler), as rustc mangles them.
 pub fn write_image(
     fmt: &dyn ObjectFormat,
@@ -737,7 +739,9 @@ pub fn write_image(
             RelocTarget::Section(s) => fmt.section_target(&mut obj, section(s)),
             // `ryo_rt` symbols; `undefined` reuses the symbol on later references.
             // Cached: building and mangling the name per relocation is costly.
-            RelocTarget::Handler(op) => *handlers[op as usize].get_or_insert_with(|| undefined(&mut obj, &rt(&handler_name(op)), SymbolKind::Text)),
+            RelocTarget::Handler(op) => {
+                *handlers[op as usize].get_or_insert_with(|| undefined(&mut obj, &rt(&handler_name(op, image.mode)), SymbolKind::Text))
+            }
             RelocTarget::Probe => *fixed[0].get_or_insert_with(|| undefined(&mut obj, &rt(PROBE_SYMBOL), SymbolKind::Text)),
             RelocTarget::TripEntry => *fixed[1].get_or_insert_with(|| undefined(&mut obj, &rt(TRIP_ENTRY_SYMBOL), SymbolKind::Text)),
             RelocTarget::TripOsr => *fixed[2].get_or_insert_with(|| undefined(&mut obj, &rt(TRIP_OSR_SYMBOL), SymbolKind::Text)),
@@ -831,7 +835,6 @@ mod tests {
     use object::read::macho::MachOFile64;
     use object::read::{Object as _, ObjectSection as _, ObjectSymbol as _, RelocationTarget};
     use object::{Endianness, RelocationFlags, SymbolScope, macho};
-    use ryo_bytecode::asm::Mode;
     use ryo_bytecode::full::{CodeBuf, Insn, List, Slot};
     use ryo_bytecode::image::{FuncSymbol, FunctionDef, ImageObject, ImageWriter, RelocKind, RelocTarget, Section, SymVisibility};
 
@@ -995,7 +998,7 @@ mod tests {
                     assert_eq!(target.address(), section(&file, name(t)).address());
                 }
                 RelocTarget::Symbol(s) => assert_eq!(target_name, format!("_{}", img.symbols[s.0 as usize].name)),
-                RelocTarget::Handler(op) => assert_eq!(target_name, format!("_rt_{}", handler_name(op))),
+                RelocTarget::Handler(op) => assert_eq!(target_name, format!("_rt_{}", handler_name(op, img.mode))),
                 RelocTarget::Probe => assert_eq!(target_name, format!("_rt_{PROBE_SYMBOL}")),
                 RelocTarget::TripEntry => assert_eq!(target_name, format!("_rt_{TRIP_ENTRY_SYMBOL}")),
                 RelocTarget::TripOsr => assert_eq!(target_name, format!("_rt_{TRIP_OSR_SYMBOL}")),

@@ -5,11 +5,13 @@
 
 use core::fmt;
 
+use crate::asm::Mode;
 use crate::full::Opcode;
 
 /// The name literals, for attributes that need one (`ryo_rt`'s
 /// `export_name = tagged!(rt_sym!(probe))`): `handler` and `reg_handler` are the prefixes of
-/// [`handler`] and [`reg_handler`].
+/// [`handler`] and [`reg_handler`], `fp_handler` and `fp_reg_handler` those of the frame-pointer
+/// set ([`Mode::rbp_set`]).
 #[macro_export]
 macro_rules! rt_sym {
     (handler) => {
@@ -17,6 +19,12 @@ macro_rules! rt_sym {
     };
     (reg_handler) => {
         "ryo_hr_"
+    };
+    (fp_handler) => {
+        "ryo_hf_"
+    };
+    (fp_reg_handler) => {
+        "ryo_hrf_"
     };
     (probe) => {
         "ryo_probe_stack"
@@ -74,12 +82,14 @@ impl fmt::Display for OpSymbol {
     }
 }
 
-/// The name of opcode `op`'s handler.
-pub fn handler(op: Opcode) -> OpSymbol {
-    OpSymbol(rt_sym!(handler), op)
+/// The name of opcode `op`'s handler for code of `mode`: `ryo_h_<op>`, or of the frame-pointer
+/// set `ryo_hf_<op>` ([`Mode::rbp_set`]).
+pub fn handler(op: Opcode, mode: Mode) -> OpSymbol {
+    OpSymbol(if mode.rbp_set() { rt_sym!(fp_handler) } else { rt_sym!(handler) }, op)
 }
 
-/// The name of opcode `op`'s register entry (JIT code only).
-pub fn reg_handler(op: Opcode) -> OpSymbol {
-    OpSymbol(rt_sym!(reg_handler), op)
+/// The name of opcode `op`'s register entry for code of `mode` (JIT code only, which has no
+/// symbol: the dumps' name).
+pub fn reg_handler(op: Opcode, mode: Mode) -> OpSymbol {
+    OpSymbol(if mode.rbp_set() { rt_sym!(fp_reg_handler) } else { rt_sym!(reg_handler) }, op)
 }

@@ -4,9 +4,26 @@
 
 #![cfg(target_arch = "x86_64")]
 
+use ryo_bytecode::asm::Mode;
 use ryo_bytecode::asm::layout;
 use ryo_bytecode::{ALL_OPCODES, Opcode};
-use ryo_rt::vm::{FP_ARG, MODE, handler};
+use ryo_rt::vm::{MODE, handler_for};
+
+thread_local!(static SET: std::cell::Cell<Mode> = const { std::cell::Cell::new(MODE) });
+
+/// The mode of the handler set under test ([`each_set`]).
+fn mode() -> Mode {
+    SET.get()
+}
+
+/// Runs `f` on each of `ryo_rt`'s handler sets: the target's, and (off PE and Apple) the
+/// frame-pointer set, whose handlers read `fp` from `rbp` (`ryo_rt::vm::HANDLER_MODES`).
+fn each_set(f: impl Fn()) {
+    for &m in ryo_rt::vm::HANDLER_MODES {
+        SET.set(m);
+        f();
+    }
+}
 
 /// Calls `f(a0..a5)` with `rbp = fp`, returning `rax`.
 #[cfg(not(windows))]
@@ -80,9 +97,9 @@ fn get_bytes(fp: *mut u8, off: i32, n: usize) -> Vec<u8> {
 /// Calls `op`'s handler with `vals` (one per operand, in operand order) on frame `fp`.
 fn call(op: Opcode, vals: &[u128], fp: *mut u8) -> u64 {
     assert_eq!(vals.len(), op.info().operands.len(), "{}", op.mnemonic());
-    let l = layout(op, MODE);
+    let l = layout(op, mode());
     let mut r = [0u64; 6];
-    if FP_ARG {
+    if mode().fp_arg {
         r[0] = fp as u64;
     }
     for (loc, &v) in l.locs.iter().zip(vals) {
@@ -94,7 +111,7 @@ fn call(op: Opcode, vals: &[u128], fp: *mut u8) -> u64 {
             _ => r[i] = v as u64,
         }
     }
-    let f = handler(op).unwrap_or_else(|| panic!("{}: no handler", op.mnemonic()));
+    let f = handler_for(op, mode()).unwrap_or_else(|| panic!("{}: no handler", op.mnemonic()));
     call_with_fp(r[0], r[1], r[2], r[3], r[4], r[5], fp, f)
 }
 
@@ -268,6 +285,10 @@ fn int_ops(imm: bool) -> Vec<Opcode> {
 
 #[test]
 fn integer_ops_all_widths() {
+    each_set(integer_ops_all_widths_in);
+}
+
+fn integer_ops_all_widths_in() {
     let ops = int_ops(false);
     assert_eq!(ops.len(), 172);
     let mut f = Frame::new();
@@ -306,6 +327,10 @@ fn integer_ops_all_widths() {
 
 #[test]
 fn integer_imm_ops_all_widths() {
+    each_set(integer_imm_ops_all_widths_in);
+}
+
+fn integer_imm_ops_all_widths_in() {
     let ops = int_ops(true);
     assert_eq!(ops.len(), 94);
     let mut f = Frame::new();
@@ -427,6 +452,10 @@ fn dab(op: Opcode, fp: *mut u8, a: u128, b: u128) -> u128 {
 
 #[test]
 fn float_ops() {
+    each_set(float_ops_in);
+}
+
+fn float_ops_in() {
     const FOPS: &[&str] = &["fadd", "fsub", "fmul", "fdiv", "frem", "fneg", "fabs", "feq", "fne", "flt", "fle", "fmin", "fmax", "copysign"];
     let ops = ops_where(|op| FOPS.contains(&op.mnemonic().split('.').next().unwrap()));
     assert_eq!(ops.len(), FOPS.len() * 2);
@@ -454,6 +483,10 @@ fn float_ops() {
 /// the model above uses).
 #[test]
 fn float_special_values() {
+    each_set(float_special_values_in);
+}
+
+fn float_special_values_in() {
     let ops64 = [Opcode::FminF64, Opcode::FmaxF64, Opcode::FremF64];
     let ops32 = [Opcode::FminF32, Opcode::FmaxF32, Opcode::FremF32];
     let mut f = Frame::new();
@@ -548,6 +581,10 @@ fn cvt_types(mn: &str) -> Option<(String, String)> {
 
 #[test]
 fn conversions() {
+    each_set(conversions_in);
+}
+
+fn conversions_in() {
     let ops = ops_where(|op| cvt_types(op.mnemonic()).is_some());
     assert_eq!(ops.len(), 72);
     let mut inputs: Vec<u128> = SAMPLES.to_vec();
@@ -577,6 +614,10 @@ fn conversions() {
 
 #[test]
 fn atomics() {
+    each_set(atomics_in);
+}
+
+fn atomics_in() {
     let ops = ops_where(|op| op.mnemonic().starts_with("atomic."));
     // Four integer widths, and the pointer forms (no `nand`, `min`, `max`, `umin`, `umax`).
     assert_eq!(ops.len(), 4 * (3 + 3 + 11 * 5 + 2 * 15) + (3 + 3 + 6 * 5 + 2 * 15));
@@ -672,6 +713,10 @@ fn atomics() {
 
 #[test]
 fn branches() {
+    each_set(branches_in);
+}
+
+fn branches_in() {
     let mut f = Frame::new();
     let fp = f.fp();
     for b in [0u8, 1, 2, 0x80, 0xff] {
@@ -709,6 +754,10 @@ fn branches() {
 
 #[test]
 fn switches() {
+    each_set(switches_in);
+}
+
+fn switches_in() {
     let mut f = Frame::new();
     let fp = f.fp();
     let dense = ops_where(|op| op.mnemonic().starts_with("switch.dense."));
@@ -775,6 +824,10 @@ fn pattern(n: usize, seed: u8) -> Vec<u8> {
 
 #[test]
 fn data_movement() {
+    each_set(data_movement_in);
+}
+
+fn data_movement_in() {
     let mut f = Frame::new();
     let fp = f.fp();
     let width_ops = |prefix: &str| {
@@ -897,6 +950,10 @@ fn data_movement() {
 
 #[test]
 fn addresses() {
+    each_set(addresses_in);
+}
+
+fn addresses_in() {
     let mut f = Frame::new();
     let fp = f.fp();
     put(fp, D, 0);
@@ -933,6 +990,10 @@ fn addresses() {
 /// effects, lengths given by their operands, or no return are left out.
 #[test]
 fn handler_effects_are_exact() {
+    each_set(handler_effects_are_exact_in);
+}
+
+fn handler_effects_are_exact_in() {
     use ryo_bytecode::full::{OperandKind, Shape};
     use ryo_bytecode::jit::effects::{Effect, effects};
     let mut checked = 0;
@@ -1010,6 +1071,10 @@ fn handler_effects_are_exact() {
 /// every lane at each edge value, with `d` separate and aliasing `a` and `b`.
 #[test]
 fn simd_against_sse2() {
+    each_set(simd_against_sse2_in);
+}
+
+fn simd_against_sse2_in() {
     use core::arch::x86_64::*;
     let v = |x: __m128i| unsafe { core::mem::transmute::<__m128i, [u8; 16]>(x) };
     let m = |x: [u8; 16]| unsafe { core::mem::transmute::<[u8; 16], __m128i>(x) };

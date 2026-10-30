@@ -76,11 +76,13 @@ fn relocs(file: &ElfFile64<'_, LittleEndian>, section: SectionIndex) -> Result<V
     Ok(out)
 }
 
-/// The handler `ryo_h_<Name>` a (mangled) symbol name stands for: a v0 identifier
-/// `<len>ryo_h_<Name>` ending the name, or the bare name.
+/// The handler `ryo_h_<Name>` (or of the frame-pointer set, `ryo_hf_<Name>`) a (mangled)
+/// symbol name stands for: a v0 identifier `<len>ryo_h_<Name>` ending the name, or the bare
+/// name.
 fn handler_of(name: &str) -> Option<Opcode> {
-    let op = name.rsplit("ryo_h_").next().filter(|_| name.contains("ryo_h_"))?;
-    let ident = format!("ryo_h_{op}");
+    let prefix = ["ryo_h_", "ryo_hf_"].into_iter().find(|p| name.contains(p))?;
+    let op = name.rsplit(prefix).next()?;
+    let ident = format!("{prefix}{op}");
     if name != ident && !name.ends_with(&format!("{}{ident}", ident.len())) {
         return None;
     }

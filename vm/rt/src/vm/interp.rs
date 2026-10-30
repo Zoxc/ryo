@@ -13,11 +13,13 @@
 //! ([`ryo_bytecode::asm::layout`], a constant), so an unused argument costs nothing and every
 //! handler is one function body.
 //!
-//! The frame pointer `fp` comes in `rdi`, before the operands. With the `fp-rbp` feature, and
-//! always on PE, it is `rbp` instead, which the caller (VM code) then keeps at its frame: the
-//! handler reads it before anything else, and must not write `rbp` before that (`ryo_rt` is
-//! built without forced frame pointers, and `tests/codegen.rs` checks every handler)
-//! ([`MODE`]).
+//! The frame pointer `fp` comes in `rdi`, before the operands ([`MODE`]). On PE it is `rbp`
+//! instead, which the caller (VM code) then keeps at its frame: the handler reads it before
+//! anything else, and must not write `rbp` before that (`ryo_rt` is built without forced frame
+//! pointers, and `tests/codegen.rs` checks every handler). Off PE and Apple a second set, the
+//! frame-pointer set `ryo_hf_<Opcode>` ([`FP_MODE`]), reads `rbp` too: the backend calls it
+//! from code that keeps a frame pointer anyway, which then needn't pass `fp` in `rdi`
+//! ([`asm::Mode::rbp_set`]).
 //!
 //! With the `pe-test` feature (off Windows, for tests) a second set, the PE form's (Win64,
 //! [`PE_MODE`]), has no symbols: [`pe_handler`], [`pe_reg_handler`].
@@ -48,32 +50,33 @@ use ryo_bytecode::asm::{self, ARG_REGS, Loc};
 use ryo_bytecode::full::{Opcode, OperandKind};
 use ryo_bytecode::jit::effects::RegEntry;
 
-// Apple's targets keep a frame pointer in every function (`frame-pointer=all`, which
-// `-Cforce-frame-pointers` can't lower): a handler's prologue would overwrite the caller's
-// `rbp` before the handler reads it.
-#[cfg(all(feature = "fp-rbp", target_vendor = "apple"))]
-compile_error!("the `fp-rbp` feature is unsupported on Apple targets: their functions all set up a frame pointer");
+/// How the target's handlers (`ryo_h_<Opcode>`) take `fp`: in `rdi`, or on PE (Win64
+/// handlers) in `rbp`. They work with and without a frame pointer when they take it in `rdi`;
+/// tests encode without one then. The other fields but `pe` don't concern the handlers.
+pub const MODE: asm::Mode =
+    asm::Mode { fp_arg: !cfg!(windows), frame_pointer: cfg!(windows), align_loops: false, pe: cfg!(windows), counters: false, far_rt: false };
 
-/// How the machine code passes `fp`: the backend reads this (through `FP_ARG`) and encodes
-/// to match. The handlers work with and without a frame pointer when they take `fp` in
-/// `rdi`; tests encode without one then. On PE (Win64 handlers) `fp` is always `rbp`. The
-/// other fields but `pe` don't concern the handlers.
-pub const MODE: asm::Mode = asm::Mode {
-    fp_arg: !cfg!(feature = "fp-rbp") && !cfg!(windows),
-    frame_pointer: cfg!(feature = "fp-rbp") || cfg!(windows),
-    align_loops: false,
-    pe: cfg!(windows),
-    counters: false,
-    far_rt: false,
-};
+/// The mode of the frame-pointer set (`ryo_hf_<Opcode>`, off PE and Apple): `sysv64` handlers
+/// that read `fp` from `rbp`, for code with a frame pointer ([`asm::Mode::rbp_set`]). Apple's
+/// targets have none: they keep a frame pointer in every function (`frame-pointer=all`,
+/// which `-Cforce-frame-pointers` can't lower), so a handler's prologue would overwrite the
+/// caller's `rbp` before it reads it, and reading it back from the saved slot would cost what
+/// the `mov rdi, rbp` it saves does.
+#[cfg(not(any(windows, target_vendor = "apple")))]
+pub const FP_MODE: asm::Mode = asm::Mode { fp_arg: false, frame_pointer: true, ..MODE };
+
+/// The modes of the handler sets with symbols: the target's and the frame-pointer set's
+/// (tests run the handlers of each).
+#[doc(hidden)]
+pub const HANDLER_MODES: &[asm::Mode] = &[
+    MODE,
+    #[cfg(not(any(windows, target_vendor = "apple")))]
+    FP_MODE,
+];
 
 /// The mode of the PE handler set (`pe-test`): Win64 handlers that read `fp` from `rbp`.
 #[cfg(all(feature = "pe-test", not(windows)))]
 pub const PE_MODE: asm::Mode = asm::Mode { fp_arg: false, frame_pointer: true, pe: true, ..MODE };
-
-/// Whether handlers take `fp` in `rdi`; the backend checks it agrees with its encoding.
-#[rustc_diagnostic_item = "ryo_rt_fp_arg"]
-pub const FP_ARG: bool = MODE.fp_arg;
 
 /// The location of operand `name` of `op` in the argument registers of `mode`'s handlers.
 const fn loc(op: Opcode, name: &str, mode: asm::Mode) -> Loc {
@@ -89,7 +92,7 @@ fn read_fp(a: &[u64; ARG_REGS], mode: asm::Mode) -> *mut u8 {
         let fp: *mut u8;
         // Apple's targets give every function a frame pointer (`frame-pointer=all`), so by
         // now the handler's prologue has pushed the caller's `rbp` and pointed `rbp` at it:
-        // read it back from there. (`fp-rbp` is rejected there; this is for the PE handler
+        // read it back from there. (Apple has no frame-pointer set; this is for the PE handler
         // set of `pe-test`, whose Win64 handlers take `fp` in `rbp`.)
         #[cfg(target_vendor = "apple")]
         // SAFETY: `rbp` points at the saved `rbp` of this handler's frame.
@@ -688,10 +691,11 @@ macro_rules! reg_addr {
 /// One handler set: the handlers of the ABI `$abi` and mode `$mode` in `mod $h`, one per
 /// opcode, with `$h::handler(op)` their addresses; the register entries (`RegEntry`) in
 /// `mod $hr`, with `$hr::reg_handler(op)`. `$export` (`all()` or `any()`) says whether the
-/// handlers get their `ryo_h_<Opcode>` symbols; the register entries have none (the JIT, which
-/// finds them by address, calls them `ryo_hr_<Opcode>` in its dumps).
+/// handlers get their symbols, `$prefix<Opcode>` (`rt_sym!($prefix)`: `ryo_h_`, `ryo_hf_`);
+/// the register entries have none (the JIT, which finds them by address, calls them
+/// `ryo_hr_<Opcode>` or `ryo_hrf_<Opcode>` in its dumps). `$resume` is the set's `resume`.
 macro_rules! handler_set {
-    ($h:ident, $hr:ident, $abi:literal, $mode:ident, export($export:meta);
+    ($h:ident, $hr:ident, $abi:literal, $mode:ident, $prefix:ident, $resume:ident, export($export:meta);
      $($name:ident => $kind:ident ($($p:tt)*) $(-> $ret:tt)?;)*) => {
         mod $h {
             #[allow(unused_imports)]
@@ -699,7 +703,7 @@ macro_rules! handler_set {
             const M: asm::Mode = $mode;
             $(
                 #[cfg_attr($export, rustc_std_internal_symbol)]
-                #[cfg_attr($export, unsafe(export_name = tagged!(concat!(ryo_bytecode::rt_sym!(handler), stringify!($name)))))]
+                #[cfg_attr($export, unsafe(export_name = tagged!(concat!(ryo_bytecode::rt_sym!($prefix), stringify!($name)))))]
                 #[allow(non_snake_case, unused_variables, unused_unsafe, clippy::unused_unit)]
                 pub unsafe extern $abi fn $name(a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) $(-> $ret)? {
                     let a = [a0, a1, a2, a3, a4, a5];
@@ -713,7 +717,7 @@ macro_rules! handler_set {
             pub fn handler(op: Opcode) -> Option<*const ()> {
                 match op {
                     $(Opcode::$name => Some($name as *const ()),)*
-                    Opcode::Resume => Some(resume as *const ()),
+                    Opcode::Resume => Some($resume as *const ()),
                     _ => None,
                 }
             }
@@ -742,12 +746,16 @@ macro_rules! handlers {
     (() $($name:ident => $kind:ident $p:tt $(-> $ret:tt)?;)*) => {
         // The target's handlers: others reach them by their `ryo_h_<Opcode>` symbols or
         // through [`handler`].
-        handler_set!(h, hr, "C-unwind", MODE, export(all()); $($name => $kind $p $(-> $ret)?;)*);
+        handler_set!(h, hr, "C-unwind", MODE, handler, resume, export(all()); $($name => $kind $p $(-> $ret)?;)*);
+
+        // The frame-pointer set (off PE and Apple): `fp` in `rbp`, under `ryo_hf_<Opcode>`.
+        #[cfg(not(any(windows, target_vendor = "apple")))]
+        handler_set!(hf, hrf, "C-unwind", FP_MODE, fp_handler, resume_rbp, export(all()); $($name => $kind $p $(-> $ret)?;)*);
 
         // The PE form's handlers (`pe-test`; tests run PE code off Windows with them): Win64,
         // without symbols.
         #[cfg(all(feature = "pe-test", not(windows)))]
-        handler_set!(hpe, hrpe, "win64-unwind", PE_MODE, export(any()); $($name => $kind $p $(-> $ret)?;)*);
+        handler_set!(hpe, hrpe, "win64-unwind", PE_MODE, handler, resume, export(any()); $($name => $kind $p $(-> $ret)?;)*);
 
         /// Every opcode with a handler written in Rust, by value.
         const HANDLED: [bool; Opcode::COUNT] = {
@@ -762,6 +770,10 @@ macro_rules! handlers {
 /// handlers directly).
 #[doc(hidden)]
 pub use h::handler;
+/// The frame-pointer set's handler of `op` ([`FP_MODE`]).
+#[cfg(not(any(windows, target_vendor = "apple")))]
+#[doc(hidden)]
+pub use hf::handler as fp_handler;
 /// The PE form's handler of `op` (`pe-test`).
 #[cfg(all(feature = "pe-test", not(windows)))]
 #[doc(hidden)]
@@ -769,6 +781,10 @@ pub use hpe::handler as pe_handler;
 /// The address of opcode `op`'s register entry, if it has one (`RegEntry`).
 #[doc(hidden)]
 pub use hr::reg_handler;
+/// The frame-pointer set's register entry of `op`.
+#[cfg(not(any(windows, target_vendor = "apple")))]
+#[doc(hidden)]
+pub use hrf::reg_handler as fp_reg_handler;
 /// The PE form's register entry of `op` (`pe-test`).
 #[cfg(all(feature = "pe-test", not(windows)))]
 #[doc(hidden)]
@@ -777,16 +793,39 @@ pub use hrpe::reg_handler as pe_reg_handler;
 include!("handlers.rs");
 for_each_handler!(handlers!());
 
-/// The handler of `op` for code of the PE form (`pe`) or the target's: with `pe-test`, the PE
-/// set's off Windows (tests that link images by hand).
+/// The handler of `op` for code of `mode`: the frame-pointer set's for [`asm::Mode::rbp_set`],
+/// with `pe-test` the PE set's for PE code off Windows (tests that link images by hand), else
+/// the target's. `None` if the runtime has no such set.
 #[doc(hidden)]
-pub fn handler_for(op: Opcode, pe: bool) -> Option<*const ()> {
-    #[cfg(all(feature = "pe-test", not(windows)))]
-    if pe {
-        return pe_handler(op);
+pub fn handler_for(op: Opcode, mode: asm::Mode) -> Option<*const ()> {
+    set_for(mode).0(op)
+}
+
+/// The register entry of `op` for code of `mode` (as [`handler_for`]).
+#[doc(hidden)]
+pub fn reg_handler_for(op: Opcode, mode: asm::Mode) -> Option<*const ()> {
+    set_for(mode).1(op)
+}
+
+type SetFn = fn(Opcode) -> Option<*const ()>;
+
+/// The handler set of code of `mode`: its handlers and register entries.
+fn set_for(mode: asm::Mode) -> (SetFn, SetFn) {
+    const NONE: SetFn = |_| None;
+    if mode.rbp_set() {
+        #[cfg(not(any(windows, target_vendor = "apple")))]
+        return (hf::handler, hrf::reg_handler);
+        #[cfg(any(windows, target_vendor = "apple"))]
+        return (NONE, NONE);
     }
-    let _ = pe;
-    handler(op)
+    #[cfg(all(feature = "pe-test", not(windows)))]
+    if mode.pe {
+        return (hpe::handler, hrpe::reg_handler);
+    }
+    if mode.pe != MODE.pe {
+        return (NONE, NONE);
+    }
+    (h::handler, hr::reg_handler)
 }
 
 // The list has exactly the opcodes with handlers, other than the assembly ones.
@@ -807,20 +846,26 @@ const _: () = {
 #[rustc_std_internal_symbol]
 #[unsafe(export_name = tagged!(concat!(ryo_bytecode::rt_sym!(handler), "Resume")))]
 pub unsafe extern "sysv64-unwind" fn resume() -> ! {
-    #[cfg(feature = "fp-rbp")]
-    core::arch::naked_asm!(
-        ".cfi_startproc",
-        "movsxd rdi, edi",
-        "mov rdi, [rbp + rdi]",
-        "jmp {}",
-        ".cfi_endproc",
-        sym _Unwind_Resume,
-    );
-    #[cfg(not(feature = "fp-rbp"))]
     core::arch::naked_asm!(
         ".cfi_startproc",
         "movsxd rsi, esi",
         "mov rdi, [rdi + rsi]",
+        "jmp {}",
+        ".cfi_endproc",
+        sym _Unwind_Resume,
+    );
+}
+
+/// `resume x` of the frame-pointer set: `fp` in `rbp`, `x` in `rdi`.
+#[cfg(not(any(windows, target_vendor = "apple")))]
+#[unsafe(naked)]
+#[rustc_std_internal_symbol]
+#[unsafe(export_name = tagged!(concat!(ryo_bytecode::rt_sym!(fp_handler), "Resume")))]
+pub unsafe extern "sysv64-unwind" fn resume_rbp() -> ! {
+    core::arch::naked_asm!(
+        ".cfi_startproc",
+        "movsxd rdi, edi",
+        "mov rdi, [rbp + rdi]",
         "jmp {}",
         ".cfi_endproc",
         sym _Unwind_Resume,

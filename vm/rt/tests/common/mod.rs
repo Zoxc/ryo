@@ -215,9 +215,9 @@ pub fn link(obj: ImageObject, syms: &[(&str, usize)]) -> Linked {
             s => panic!("unexpected section {s:?}"),
         }
     };
-    // PE code calls the PE form's handlers (`ryo_rt`'s `pe-test` set, off Windows).
-    let at = core::mem::offset_of!(Header, mode);
-    let pe = u32::from_le_bytes(obj.rodata[at..at + 4].try_into().unwrap()) & MODE_PE != 0;
+    // The image's mode picks the handler set: the frame-pointer set, or PE's (`ryo_rt`'s
+    // `pe-test` set, off Windows).
+    let mode = obj.mode;
     for r in &obj.relocs {
         let target = match r.target {
             RelocTarget::Symbol(s) => {
@@ -233,7 +233,7 @@ pub fn link(obj: ImageObject, syms: &[(&str, usize)]) -> Linked {
                 }
             }
             RelocTarget::Section(s) => base(s),
-            RelocTarget::Handler(op) => ryo_rt::vm::handler_for(op, pe).unwrap_or_else(|| panic!("no handler for {op:?}")) as usize,
+            RelocTarget::Handler(op) => ryo_rt::vm::handler_for(op, mode).unwrap_or_else(|| panic!("no handler for {op:?}")) as usize,
             RelocTarget::Probe => ryo_rt::vm::probe_stack as *const () as usize,
             RelocTarget::TripEntry => ryo_rt::vm::trip_entry as *const () as usize,
             RelocTarget::TripOsr => ryo_rt::vm::trip_osr as *const () as usize,

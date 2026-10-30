@@ -211,6 +211,14 @@ impl Mode {
     pub const fn valid(self) -> bool {
         if self.pe { self.frame_pointer && !self.fp_arg } else { self.frame_pointer || self.fp_arg }
     }
+
+    /// Whether the code calls `ryo_rt`'s frame-pointer handler set (`ryo_hf_<Opcode>`): the
+    /// `sysv64` handlers that read `fp` from `rbp`, for code that keeps a frame pointer
+    /// anyway (no `fp_arg`, not PE, whose one set reads `rbp`). Otherwise the set of
+    /// `ryo_h_<Opcode>`: the target's own (`fp` in `rdi`, or PE's).
+    pub const fn rbp_set(self) -> bool {
+        !self.fp_arg && !self.pe
+    }
 }
 
 impl Layout {

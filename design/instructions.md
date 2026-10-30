@@ -40,8 +40,8 @@ The native ones are the *reduced* set (`vm/bytecode/src/isa/reduced_ops.rs`,
   whose operands don't fit its sequence keeps its handler call.
 
 - **Handler calls**: the operand registers (`rdi` = `fp`, then the operands from `rsi`, or
-  from `rdi` with `fp-rbp`; on PE from `rcx`, Win64's, and a fifth on the stack,
-  [vm.md](vm.md#machine-code)), then `call ryo_h_<Opcode>`, then
+  from `rdi` for the frame-pointer set `ryo_hf_<Opcode>` of code with a frame pointer; on PE from `rcx`, Win64's, and a fifth on the stack,
+  [vm.md](vm.md#machine-code)), then `call ryo_h_<Opcode>` (or `ryo_hf_<Opcode>`), then
   the shape's control flow. In the reduced set each is a `handler` instruction naming the
   full opcode.
 
@@ -851,7 +851,7 @@ The landing pad of a cleanup or terminate block, one `lpad x; jmp bb` stub per d
 unwind destination ([vm.md](vm.md#unwinding)).
 
 The personality enters it with the exception object in `rax`; `mov rsi, rax` (`rdi` with
-`fp-rbp`, `rcx` on PE), the operand register, then handler `ryo_h_Lpad` (`lpad`), which stores the
+a frame pointer off PE and Apple, `rcx` on PE), the operand register, then handler `ryo_h_Lpad` (`lpad`), which stores the
 object in the function's exception slot `x`:
 
 ```rust
@@ -871,7 +871,7 @@ handler aborts.
 
 ```
 movsxd rsi, esi
-mov rdi, [rdi + rsi]       ; fp-rbp: movsxd rdi, edi; mov rdi, [rbp + rdi]
+mov rdi, [rdi + rsi]       ; ryo_hf_Resume: movsxd rdi, edi; mov rdi, [rbp + rdi]
 jmp _Unwind_Resume
 ```
 

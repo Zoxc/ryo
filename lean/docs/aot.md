@@ -672,7 +672,7 @@ theorem; the program-level theorem is then conditional on their correctness.
 - The unwinder's and personality's interpretation of CFI and LSDA per DWARF (the tables
   themselves are checked).
 - The ELF/DWARF readers' fidelity to the specs (tested against `readelf`).
-- The mode: ELF; `fp_arg` with or without frame pointer; `fp-rbp`; counters on (AOT) or off;
+- The mode: ELF; `fp_arg` with or without frame pointer; no `fp_arg` with one (the frame-pointer handler set); counters on (AOT) or off;
   loop alignment on/off. PE: the decoder model and the step lemmas cover PE's code (Win64
   handlers and frames; the pad region decoded but not simulated), the object readers and image
   checks are ELF only.

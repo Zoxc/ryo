@@ -306,7 +306,7 @@ fn prepare_sources(info: &RustcInfo, root: &Path, dst: &Path) -> Result<(), Stri
             "[package]\nname = \"ryo_rt\"\nversion = \"0.1.0\"\nedition = \"2024\"\nbuild = {}\n\n\
              [lib]\npath = {}\ntest = false\nbench = false\ndoc = false\n\n\
              [dependencies]\ncore = {{ path = \"../core\" }}\ncompiler_builtins = {{ path = \"../compiler-builtins/compiler-builtins\", features = [\"compiler-builtins\"] }}\n\
-             ryo_bytecode = {{ path = \"../ryo_bytecode\" }}\n\n[features]\nfp-rbp = []\npe-test = []\n",
+             ryo_bytecode = {{ path = \"../ryo_bytecode\" }}\n\n[features]\npe-test = []\n",
             path(vm.join("rt").join("build.rs"))?,
             path(vm.join("rt").join("src").join("lib.rs"))?,
         ),

@@ -171,10 +171,11 @@ pub(crate) struct Jit {
 
 impl Jit {
     pub(crate) fn new(rt: &'static RtApi) -> Jit {
-        // The PE form's handlers too, if the runtime has a set of its own (tests off Windows).
-        // SAFETY: `pe_handlers` is null or points at the runtime's table.
-        let pe = unsafe { rt.pe_handlers.as_ref() };
-        let mut handlers: Vec<(usize, Opcode)> = [Some(&rt.handlers), pe]
+        // The frame-pointer set's, and the PE form's handlers too, if the runtime has a set of
+        // its own (tests off Windows).
+        // SAFETY: `fp_handlers` and `pe_handlers` are null or point at the runtime's tables.
+        let (fp, pe) = unsafe { (rt.fp_handlers.as_ref(), rt.pe_handlers.as_ref()) };
+        let mut handlers: Vec<(usize, Opcode)> = [Some(&rt.handlers), fp, pe]
             .into_iter()
             .flatten()
             .flat_map(|t| t.iter().zip(ryo_bytecode::ALL_OPCODES))
@@ -182,7 +183,7 @@ impl Jit {
             .map(|(&h, &op)| (h as usize, op))
             .collect();
         handlers.sort_unstable();
-        // The sets share `resume`. Other opcodes at one address (folded handlers) stay: a
+        // The target's and the PE sets share `resume`. Other opcodes at one address (folded handlers) stay: a
         // call's instruction list entry tells them apart.
         handlers.dedup();
         let probe = rt.probe as usize;
@@ -451,11 +452,20 @@ impl Jit {
     ) -> Result<(), CompileError> {
         let jit_f = base + CODE_AT;
         let rec = job.rec as usize;
-        // The handlers of the image's form: PE code's own set if the runtime has one.
-        let (hs, rhs) = match (job.img.mode().pe, self.rt.pe_handlers.is_null()) {
+        // The handlers of the image's form: the frame-pointer set for code that leaves `fp` in
+        // `rbp` off PE, PE code's own set if the runtime has one.
+        let mode = job.img.mode();
+        let (hs, rhs) = if mode.rbp_set() {
+            if self.rt.fp_handlers.is_null() {
+                return Err("no frame-pointer handler set".into());
+            }
             // SAFETY: the runtime's tables, non-null.
-            (true, false) => unsafe { (&*self.rt.pe_handlers, &*self.rt.pe_reg_handlers) },
-            _ => (&self.rt.handlers, &self.rt.reg_handlers),
+            unsafe { (&*self.rt.fp_handlers, &*self.rt.fp_reg_handlers) }
+        } else if mode.pe && !self.rt.pe_handlers.is_null() {
+            // SAFETY: as above.
+            unsafe { (&*self.rt.pe_handlers, &*self.rt.pe_reg_handlers) }
+        } else {
+            (&self.rt.handlers, &self.rt.reg_handlers)
         };
         for r in relocs {
             let field = jit_f + r.at as usize;

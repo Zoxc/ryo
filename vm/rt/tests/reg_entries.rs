@@ -7,11 +7,28 @@
 // the PE form's are run by `ryo_jit`'s tests through `pe-test`.
 #![cfg(all(target_arch = "x86_64", not(windows)))]
 
+use ryo_bytecode::ALL_OPCODES;
+use ryo_bytecode::asm::Mode;
 use ryo_bytecode::asm::layout;
 use ryo_bytecode::full::{OperandKind, Shape};
 use ryo_bytecode::jit::effects::{Effect, effects, reg_entry};
-use ryo_bytecode::{ALL_OPCODES, Opcode};
-use ryo_rt::vm::{FP_ARG, MODE, RegRet, handler, reg_handler};
+use ryo_rt::vm::{MODE, RegRet, handler_for, reg_handler_for};
+
+thread_local!(static SET: std::cell::Cell<Mode> = const { std::cell::Cell::new(MODE) });
+
+/// The mode of the handler set under test ([`each_set`]).
+fn mode() -> Mode {
+    SET.get()
+}
+
+/// Runs `f` on each of `ryo_rt`'s handler sets: the target's, and (off PE and Apple) the
+/// frame-pointer set, whose handlers read `fp` from `rbp` (`ryo_rt::vm::HANDLER_MODES`).
+fn each_set(f: impl Fn()) {
+    for &m in ryo_rt::vm::HANDLER_MODES {
+        SET.set(m);
+        f();
+    }
+}
 
 /// Calls `f(a0..a5)` with `rbp = fp`, returning `rax`.
 #[unsafe(naked)]
@@ -49,21 +66,25 @@ fn off(i: usize) -> i32 {
 
 #[test]
 fn register_entries_match_frame_entries() {
+    each_set(register_entries_match_frame_entries_in);
+}
+
+fn register_entries_match_frame_entries_in() {
     let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
     let mut checked = 0;
     for &op in ALL_OPCODES {
-        let Some(e) = reg_entry(op, MODE) else {
-            assert!(reg_handler(op).is_none(), "{}: a register entry without a description", op.mnemonic());
+        let Some(e) = reg_entry(op, mode()) else {
+            assert!(reg_handler_for(op, mode()).is_none(), "{}: a register entry without a description", op.mnemonic());
             continue;
         };
-        let rf = reg_handler(op).unwrap_or_else(|| panic!("{}: no register entry", op.mnemonic()));
+        let rf = reg_handler_for(op, mode()).unwrap_or_else(|| panic!("{}: no register entry", op.mnemonic()));
         let info = op.info();
         let mn = op.mnemonic();
         if info.operands.iter().any(|o| matches!(o.kind, OperandKind::Sym | OperandKind::Const | OperandKind::Abs)) {
             continue;
         }
         let fx = effects(op).unwrap();
-        let l = layout(op, MODE);
+        let l = layout(op, mode());
         let divides = ["div.", "rem."].iter().any(|p| mn.starts_with(p));
         // The width of a float opcode's (`fadd.f32`) values.
         let float = if mn.ends_with(".f32") {
@@ -112,7 +133,7 @@ fn register_entries_match_frame_entries() {
             let fp = frame.0.as_mut_ptr().wrapping_add(512);
             // The frame entry.
             let mut r = [0u64; 6];
-            if FP_ARG {
+            if mode().fp_arg {
                 r[0] = fp as u64;
             }
             for (i, o) in info.operands.iter().enumerate() {
@@ -151,7 +172,7 @@ fn register_entries_match_frame_entries() {
                     data_regs[loc.reg as usize] = data_regs[loc.reg as usize] & !0xffff_ffff | junk;
                 }
             }
-            let ret = call_with_fp(r[0], r[1], r[2], r[3], r[4], r[5], fp, handler(op).unwrap());
+            let ret = call_with_fp(r[0], r[1], r[2], r[3], r[4], r[5], fp, handler_for(op, mode()).unwrap());
             // The register entry.
             for k in 0..e.nin as usize {
                 rr[k] = vals[e.ins[k] as usize];

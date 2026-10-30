@@ -94,9 +94,9 @@ reuse under incremental compilation and `rt.rs` the runtime crates' identity.
 3. **Lower VM functions** with one `par_map` over every CGU's functions, so the work is
    parallel over CGUs and over the functions within each: every function is lowered on its own straight into machine code plus a
    relocation list ([lowering.md](lowering.md), [vm.md](vm.md#machine-code)), in the mode
-   `asm_mode` gives: `fp` passing as `ryo_rt`'s `FP_ARG` says (the backend evaluates the
-   const), a frame pointer only where rustc's LLVM backend would keep one, or `FP_ARG`
-   or PE require it ([vm.md](vm.md#frames)), loop alignment unless `RYO_ASM_ALIGN=0`, inline instructions, the JIT's counters
+   `asm_mode` gives: a frame pointer only where rustc's LLVM backend would keep one or PE
+   requires it ([vm.md](vm.md#frames)), and with one `fp` left in `rbp` for `ryo_rt`'s
+   frame-pointer handler set (but on Apple, [vm.md](vm.md#handlers)), without it passed in `rdi`, loop alignment unless `RYO_ASM_ALIGN=0`, inline instructions, the JIT's counters
    (always, [vm.md](vm.md#jit-records-and-counters)), and the target's object
    format. A call of a VM function of the same CGU is a direct `call`; one of another CGU's
    image is a `call.sym` through a symbol slot, as for a native Rust function (the JIT
@@ -508,8 +508,7 @@ Environment variables read by the backend (and `y test`):
 `ryo_rt` reads only its JIT's (`RYO_JIT`, `RYO_JIT_THRESHOLD`, `RYO_JIT_SYNC`,
 `RYO_JIT_PERFMAP`, `RYO_JIT_LOG`, `RYO_JIT_SHUFFLE`, `RYO_JIT_TEST_PANIC`, `RYO_JIT_TEST_OOM`,
 [jit.md](jit.md#settings)), at run time; its build script reads `RYO_JIT_LIB_DIR`, the sealed JIT
-`y build` bundles. `y build` reads `RYO_RT_FEATURES`, extra cargo features for the sysroot's `ryo_rt` (such as `fp-rbp`,
-[vm.md](vm.md#handlers)); the backend follows `ryo_rt`'s `FP_ARG`.
+`y build` bundles. `y build` reads `RYO_RT_FEATURES`, extra cargo features for the sysroot's `ryo_rt`.
 
 No MIR is overridden or synthesized, and no DefIds are created. rustc freezes definitions
 right after type checking (`rustc_interface/src/passes.rs:1152`), long before mono items

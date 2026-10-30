@@ -16,7 +16,7 @@ use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use ryo_bytecode::asm::layout;
 use ryo_bytecode::full::{ElemKind, OperandKind};
 use ryo_bytecode::{ALL_OPCODES, Opcode};
-use ryo_rt::vm::{FP_ARG, MODE, handler};
+use ryo_rt::vm::{MODE, handler};
 
 /// Calls `f(a0..a5)` with `rbp = fp`, returning `rax`.
 #[cfg(not(windows))]
@@ -53,7 +53,7 @@ fn call(op: Opcode, vals: &[u128], fp: *mut u8, exception: u64) -> u64 {
     if op.info().shape == ryo_bytecode::full::Shape::Lpad {
         r[l.first as usize - 1] = exception;
     }
-    if FP_ARG {
+    if MODE.fp_arg {
         r[0] = fp as u64;
     }
     for (loc, &v) in l.locs.iter().zip(vals) {

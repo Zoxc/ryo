@@ -62,7 +62,7 @@ pub(super) fn vm_text<'tcx>(tcx: TyCtxt<'tcx>, vm: &[VmFn<'tcx>], mode: asm::Mod
 /// names ([`image_names`]): `image <index> <path>` per function, and `ref <index> <global>
 /// <local>` per reference of its code, the image's name (`fn12`, `k96`) then the
 /// function's (`fn0`, `k1`), with which the JIT's code (`RYO_JIT_DUMP`) is printed.
-pub(super) fn code_text<'tcx>(tcx: TyCtxt<'tcx>, vm: &[VmFn<'tcx>]) -> String {
+pub(super) fn code_text<'tcx>(tcx: TyCtxt<'tcx>, vm: &[VmFn<'tcx>], mode: asm::Mode) -> String {
     use std::fmt::Write;
     let mut out = String::new();
     for (name, v) in sorted_by_path(vm) {
@@ -76,8 +76,8 @@ pub(super) fn code_text<'tcx>(tcx: TyCtxt<'tcx>, vm: &[VmFn<'tcx>]) -> String {
         out.push('\n');
         for r in &c.relocs {
             let to = match r.to {
-                Ref::Handler(op) => crate::objfile::handler_name(op),
-                Ref::RegHandler(op) => crate::objfile::reg_handler_name(op),
+                Ref::Handler(op) => crate::objfile::handler_name(op, mode),
+                Ref::RegHandler(op) => crate::objfile::reg_handler_name(op, mode),
                 Ref::Probe => crate::objfile::PROBE_SYMBOL.to_owned(),
                 Ref::Func(x) => x.to_string(),
                 Ref::Sym(x) => x.to_string(),

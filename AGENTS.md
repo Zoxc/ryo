@@ -118,7 +118,7 @@ code that calls the VM's handlers; cg_llvm compiles everything else. Start at
   line and exit summary on stderr; `2` adds progress at most once a minute), `RYO_JIT_TEST_PANIC=1`, `RYO_JIT_TEST_OOM=1`.
 - `y test` passes its env to the corpus: `RYO_JIT_THRESHOLD=0 RYO_JIT_SYNC=1 ./y.sh test`
   runs everything through the JIT.
-- Build: `RYO_RT_FEATURES` (e.g. `fp-rbp`); `RYO_LEAN_GEN=1` makes the `lean_*` tests rewrite
+- Build: `RYO_RT_FEATURES` (extra `ryo_rt` features); `RYO_LEAN_GEN=1` makes the `lean_*` tests rewrite
   their generated files.
 
 ## Measuring

@@ -92,6 +92,10 @@ const VARIANTS: &[Variant] = &[
     // (design/backend.md#unsupported-options).
     Variant { name: "ryo-cgu16-O3", flags: &["-Ccodegen-units=16", "-Copt-level=3"], vm_only: true, ..VARIANT },
     Variant { name: "ryo-cgu16-jit-ssa", flags: &["-Ccodegen-units=16"], env: JIT_SSA, jit: true, ..VARIANT },
+    // Code that keeps a frame pointer leaves `fp` in `rbp` and calls `ryo_rt`'s frame-pointer
+    // handler set (design/vm.md#handlers), AOT and through the JIT.
+    Variant { name: "ryo-fp", flags: &["-Cforce-frame-pointers=yes"], ..VARIANT },
+    Variant { name: "ryo-fp-jit-ssa", flags: &["-Cforce-frame-pointers=yes"], env: JIT_SSA, jit: true, ..VARIANT },
 ];
 
 /// The JIT's settings for [`Variant::env`]: compile every function at its first call, and
@@ -131,15 +135,15 @@ const FAST: &[(&str, &[&str])] = &[
     ("panics", &["ryo"]),
     ("generics_traits", &["ryo"]),
     ("vm_abi", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-osr", "ryo-jit-ssa-shuffle"]),
-    ("vm_control", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-osr", "ryo-jit-ssa-shuffle"]),
-    ("vm_calls", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-osr", "ryo-jit-ssa-shuffle", "ryo-cgu16"]),
+    ("vm_control", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-osr", "ryo-jit-ssa-shuffle", "ryo-fp", "ryo-fp-jit-ssa"]),
+    ("vm_calls", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-osr", "ryo-jit-ssa-shuffle", "ryo-cgu16", "ryo-fp", "ryo-fp-jit-ssa"]),
     ("vm_tail", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-osr", "ryo-jit-ssa-shuffle"]),
     ("vm_cross", &["ryo", "ryo-jit-ssa", "ryo-cgu16"]),
     ("vm_cgu", &["ryo", "ryo-cgu1", "ryo-cgu16", "ryo-cgu256", "ryo-cgu16-share-generics", "ryo-cgu16-O3", "ryo-cgu16-jit-ssa"]),
     ("vm_intrinsics", &["ryo"]),
     ("vm_lowerings", &["ryo", "ryo-jit-ssa"]),
     ("vm_simd", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-osr", "ryo-jit-ssa-shuffle"]),
-    ("vm_unwind", &["ryo", "ryo-jit-ssa"]),
+    ("vm_unwind", &["ryo", "ryo-jit-ssa", "ryo-fp", "ryo-fp-jit-ssa"]),
     ("vm_aggregates", &["ryo", "ryo-jit-ssa"]),
     ("vm_statics_cross", &["ryo", "ryo-jit-ssa", "ryo-cgu16"]),
     ("vm_dylib", &["ryo", "ryo-jit-ssa", "ryo-cgu16"]),
@@ -225,12 +229,10 @@ struct Sel {
     /// The fast set: two cargo runs (`vm`, `vm jit`), [`FAST`] and the cheap checks.
     fast: bool,
     lean: bool,
-    /// All six `ryo_jit` runs, the corpus under the [`Variant::jit`] variants, jit-private-std.
+    /// All three `ryo_jit` runs, the corpus under the [`Variant::jit`] variants, jit-private-std.
     jit: bool,
     /// The corpus under `ryo`.
     ryo_corpus: bool,
-    /// The `fp-rbp` cargo runs.
-    fp_rbp: bool,
     /// vm/rt/tests/codegen.rs.
     codegen: bool,
     /// [`SLOW_VM_TESTS`].
@@ -336,7 +338,6 @@ impl Sel {
             Area::Std => self.std = true,
             Area::Rt => {
                 self.rt = true;
-                self.fp_rbp = true;
                 self.codegen = true;
             }
         }
@@ -366,7 +367,7 @@ impl Sel {
             }
             Rule::Rt => {
                 self.area(Area::Rt);
-                "rt (vm, fp-rbp runs, codegen.rs, rt-core-only, jit-sealed, multi-staticlib/dylib)"
+                "rt (vm, codegen.rs, rt-core-only, jit-sealed, multi-staticlib/dylib)"
             }
             Rule::Jit => {
                 self.jit = true;
@@ -430,11 +431,10 @@ const JIT_SSA_RUN: &[(&str, &str)] = &[("RYO_JIT_OPT", "ssa"), ("RYO_JIT_CHECK",
 const JIT_REENCODE_RUN: &[(&str, &str)] = &[("RYO_JIT_OPT", "reencode"), ("RYO_JIT_CHECK", "1")];
 const JIT_NAIVE_RUN: &[(&str, &str)] = &[("RYO_JIT_OPT", "ssa-naive"), ("RYO_JIT_CHECK", "1")];
 
-/// The runtime once more with handlers that read `fp` from `rbp`, so VM code keeps the frame
-/// pointer (design/vm.md#handlers). And the JIT's tests, through the runtime's trips, also with
-/// `fp-rbp` (design/jit.md#testing); the runtime's own tests (its JIT side included) are the
-/// `vm` run's. The JIT's tests run through its SSA pipeline (the default) with its checkers,
-/// through the naive allocator, and through the re-encoding pipeline.
+/// The runtime's own tests (its JIT side included, and both handler sets, design/vm.md#handlers)
+/// are the `vm` run's. The JIT's tests, through the runtime's trips (design/jit.md#testing),
+/// run through its SSA pipeline (the default) with its checkers, through the naive allocator,
+/// and through the re-encoding pipeline.
 const CARGO_RUNS: &[CargoRun] = &[
     CargoRun {
         name: "vm",
@@ -445,14 +445,6 @@ const CARGO_RUNS: &[CargoRun] = &[
         ..CARGO_RUN
     },
     CargoRun {
-        name: "vm fp-rbp",
-        args: &["test", "-p", "ryo_rt", "--features", "fp-rbp"],
-        selected: |s| s.fp_rbp,
-        target_subdir: Some("fp-rbp"),
-        codegen_tests: true,
-        ..CARGO_RUN
-    },
-    CargoRun {
         name: "vm jit",
         args: &["test", "-p", "ryo_jit"],
         env: JIT_SSA_RUN,
@@ -460,30 +452,8 @@ const CARGO_RUNS: &[CargoRun] = &[
         target_subdir: Some("jit"),
         ..CARGO_RUN
     },
-    CargoRun {
-        name: "vm jit fp-rbp",
-        args: &["test", "-p", "ryo_jit", "--features", "ryo_rt/fp-rbp"],
-        env: JIT_SSA_RUN,
-        selected: |s| s.jit || s.fp_rbp,
-        target_subdir: Some("jit-fp-rbp"),
-        ..CARGO_RUN
-    },
     CargoRun { name: "vm jit reencode", args: &["test", "-p", "ryo_jit"], env: JIT_REENCODE_RUN, target_subdir: Some("jit"), ..CARGO_RUN },
-    CargoRun {
-        name: "vm jit reencode fp-rbp",
-        args: &["test", "-p", "ryo_jit", "--features", "ryo_rt/fp-rbp"],
-        env: JIT_REENCODE_RUN,
-        target_subdir: Some("jit-fp-rbp"),
-        ..CARGO_RUN
-    },
     CargoRun { name: "vm jit ssa-naive", args: &["test", "-p", "ryo_jit"], env: JIT_NAIVE_RUN, target_subdir: Some("jit"), ..CARGO_RUN },
-    CargoRun {
-        name: "vm jit ssa-naive fp-rbp",
-        args: &["test", "-p", "ryo_jit", "--features", "ryo_rt/fp-rbp"],
-        env: JIT_NAIVE_RUN,
-        target_subdir: Some("jit-fp-rbp"),
-        ..CARGO_RUN
-    },
 ];
 
 /// The checks besides the corpus and the cargo runs.
@@ -728,12 +698,6 @@ pub fn run(opts: &Options) -> Result<(), String> {
 
     for run in CARGO_RUNS {
         if !corpus_only && sel.cargo_run(run) {
-            // Apple's targets keep a frame pointer in every function, so handlers can't read the
-            // caller's from `rbp` there: `ryo_rt` rejects `fp-rbp` (design/vm.md#handlers).
-            if cfg!(target_vendor = "apple") && run.name.contains("fp-rbp") {
-                eprintln!("[y] test {}: skipped (fp-rbp is unsupported on Apple targets)", run.name);
-                continue;
-            }
             let t = Instant::now();
             report(run.name, t, cargo_run(run, &sel, &root), &failed);
         }

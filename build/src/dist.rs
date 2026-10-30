@@ -219,8 +219,8 @@ impl RuntimeBuild<'_> {
     }
 }
 
-/// The features `RYO_RT_FEATURES` adds to `ryo_rt` (split on commas and spaces, sorted), such
-/// as `fp-rbp` for measurements (design/build.md#test-and-bench).
+/// The features `RYO_RT_FEATURES` adds to `ryo_rt` (split on commas and spaces, sorted)
+/// (design/build.md#test-and-bench).
 pub(crate) fn rt_features() -> Vec<String> {
     let mut features: Vec<String> =
         std::env::var("RYO_RT_FEATURES").unwrap_or_default().split([',', ' ']).filter(|f| !f.is_empty()).map(str::to_owned).collect();

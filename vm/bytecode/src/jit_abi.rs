@@ -142,6 +142,11 @@ pub struct RtApi {
     /// without them, when PE code uses those (on Windows they are the PE form's).
     pub pe_handlers: *const [*const (); Opcode::COUNT],
     pub pe_reg_handlers: *const [*const (); Opcode::COUNT],
+    /// The frame-pointer set's handlers and register entries (`ryo_hf_<Opcode>`, for code of
+    /// a mode with [`crate::asm::Mode::rbp_set`]), as [`RtApi::handlers`]; null where the
+    /// runtime has none (PE, Apple).
+    pub fp_handlers: *const [*const (); Opcode::COUNT],
+    pub fp_reg_handlers: *const [*const (); Opcode::COUNT],
 }
 
 // SAFETY: immutable once built; the pointers are code addresses.

@@ -21,7 +21,9 @@ mod registry;
 mod seh;
 mod sys;
 
-pub use interp::{FP_ARG, MODE, RegRet, handler, handler_for, probe_stack, reg_handler};
+#[cfg(not(any(windows, target_vendor = "apple")))]
+pub use interp::{FP_MODE, fp_handler, fp_reg_handler};
+pub use interp::{HANDLER_MODES, MODE, RegRet, handler, handler_for, probe_stack, reg_handler, reg_handler_for};
 #[cfg(all(feature = "pe-test", not(windows)))]
 pub use interp::{PE_MODE, pe_handler, pe_reg_handler};
 pub use jit::{JIT_ENTRY_PREFIX, configure_jit, configure_jit_off, jit_shuffle_image};
