@@ -19,3 +19,7 @@ object = { version = "=0.38.1", default-features = false, features = ["std", "wr
 
 [package.metadata.rust-analyzer]
 rustc_private = true
+
+# Line tables keep backtraces readable at a fraction of full debuginfo's disk use.
+[profile.dev]
+debug = "line-tables-only"

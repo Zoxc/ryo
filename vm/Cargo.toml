@@ -4,3 +4,7 @@ members = ["bytecode", "jit", "rt"]
 
 [workspace.package]
 edition = "2024"
+
+# Line tables keep backtraces readable at a fraction of full debuginfo's disk use.
+[profile.dev]
+debug = "line-tables-only"

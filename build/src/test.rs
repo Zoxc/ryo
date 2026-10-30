@@ -4,8 +4,8 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 
 use crate::utils::{cmd, exe_name, output, root};
@@ -762,12 +762,16 @@ pub fn run(opts: &Options) -> Result<(), String> {
     // directories.
     let work = corpus_work(opts, &sel, &variants, &failed);
     let jobs = std::thread::available_parallelism().map_or(1, |n| (n.get() / 2).max(1));
+    // One job per program and variant, so a program with many variants isn't one long serial
+    // job; the variants of a program share its references, built by whichever job needs one first.
+    let refs: Vec<References> = work.iter().map(|_| References::default()).collect();
+    let jobs_list: Vec<(usize, &Variant)> = work.iter().enumerate().flat_map(|(i, (_, vs))| vs.iter().map(move |v| (i, *v))).collect();
     let next = AtomicUsize::new(0);
     std::thread::scope(|s| {
-        for _ in 0..jobs.min(work.len()) {
+        for _ in 0..jobs.min(jobs_list.len()) {
             s.spawn(|| {
-                while let Some((program, vs)) = work.get(next.fetch_add(1, Ordering::Relaxed)) {
-                    ctx.test_program(program, vs, &failed);
+                while let Some(&(i, variant)) = jobs_list.get(next.fetch_add(1, Ordering::Relaxed)) {
+                    ctx.test_variant(work[i].0, variant, &refs[i], &failed);
                 }
             });
         }
@@ -925,6 +929,13 @@ fn corpus_work<'v>(opts: &Options, sel: &Sel, variants: &[&'v Variant], failed: 
     work
 }
 
+/// A program's plain rustc runs, shared by its variants.
+#[derive(Default)]
+struct References {
+    plain: OnceLock<Result<RunResult, String>>,
+    abort: OnceLock<Result<RunResult, String>>,
+}
+
 struct Ctx<'a> {
     tests: PathBuf,
     out: PathBuf,
@@ -958,33 +969,24 @@ impl RunResult {
 }
 
 impl Ctx<'_> {
-    /// Builds and runs `program` with plain rustc and under each of `variants`, and compares.
-    fn test_program(&self, program: &Program, variants: &[&Variant], failed: &Mutex<Vec<String>>) {
-        let t = Instant::now();
-        let reference = match self.build_and_run(program, &REFERENCE) {
-            Ok(r) => r,
-            Err(msg) => {
-                report(&format!("{} [rustc]", program.name), t, Err(msg), failed);
-                return;
-            }
-        };
-        let mut reference_abort = None;
-        for variant in variants {
+    /// Builds and runs `program` under `variant` and compares with its reference, which the
+    /// first variant to need it builds (and reports, if that fails).
+    fn test_variant(&self, program: &Program, variant: &Variant, refs: &References, failed: &Mutex<Vec<String>>) {
+        let (cell, reference, label) =
+            if variant.abort { (&refs.abort, &REFERENCE_ABORT, "with plain rustc -Cpanic=abort") } else { (&refs.plain, &REFERENCE, "") };
+        let reference = cell.get_or_init(|| {
             let t = Instant::now();
-            let name = format!("{} [{}]", program.name, variant.name);
-            let reference = if variant.abort {
-                match reference_abort.get_or_insert_with(|| self.build_and_run(program, &REFERENCE_ABORT)) {
-                    Ok(r) => &*r,
-                    Err(msg) => {
-                        report(&name, t, Err(format!("with plain rustc -Cpanic=abort: {msg}")), failed);
-                        continue;
-                    }
-                }
-            } else {
-                &reference
-            };
-            report(&name, t, self.build_and_run(program, variant).and_then(|r| r.compare(reference)), failed);
-        }
+            let r = self.build_and_run(program, reference);
+            if let Err(msg) = &r {
+                let msg = if label.is_empty() { msg.clone() } else { format!("{label}: {msg}") };
+                report(&format!("{} [{}]", program.name, reference.name), t, Err(msg), failed);
+            }
+            r
+        });
+        let Ok(reference) = reference else { return };
+        let t = Instant::now();
+        let name = format!("{} [{}]", program.name, variant.name);
+        report(&name, t, self.build_and_run(program, variant).and_then(|r| r.compare(reference)), failed);
     }
 
     fn compiler(&self, variant: &Variant) -> Command {
