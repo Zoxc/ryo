@@ -1,4 +1,4 @@
-//! With the `jit` feature, bundles the sealed JIT (`libryo_jit.a`, or `ryo_jit.lib` on
+//! Bundles the sealed JIT (`libryo_jit.a`, or `ryo_jit.lib` on
 //! msvc) from `RYO_JIT_LIB_DIR` into the rlib (design/build.md#build, design/jit.md#packaging):
 //! `y build` builds and seals it first. Without `RYO_JIT_LIB_DIR` (`vm/`'s own tests) the
 //! `ryo_jit` crate must be linked as an rlib instead, for its `ryo_jit_start_<tag>`.
@@ -13,9 +13,6 @@ fn main() {
     println!("cargo:rerun-if-env-changed=RYO_JIT_LIB_DIR");
     println!("cargo:rerun-if-env-changed=RYO_ABI");
     println!("cargo:rustc-env=RYO_ABI={}", std::env::var("RYO_ABI").unwrap_or_else(|_| "dev".to_owned()));
-    if std::env::var_os("CARGO_FEATURE_JIT").is_none() {
-        return;
-    }
     let Some(dir) = std::env::var_os("RYO_JIT_LIB_DIR").map(PathBuf::from) else { return };
     let msvc = std::env::var("CARGO_CFG_TARGET_ENV").is_ok_and(|e| e == "msvc");
     println!("cargo:rerun-if-changed={}", dir.join(if msvc { "ryo_jit.lib" } else { "libryo_jit.a" }).display());

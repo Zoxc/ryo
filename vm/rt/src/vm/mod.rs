@@ -2,8 +2,8 @@
 //! design/vm.md.
 //!
 //! - [`ryo_vm_register`]: image registration, called by the registry object's constructor.
-//! - [`trip_entry`], [`trip_osr`]: where the JIT records' slots start: the JIT's trips, or
-//!   the no-op JIT's without the `jit` feature (design/jit.md).
+//! - [`trip_entry`], [`trip_osr`]: where the JIT records' slots start: the JIT's trips
+//!   (design/jit.md).
 //!
 //! VM functions are native functions of their signatures (design/vm.md, "Calls and
 //! islands"): native code calls them directly, and there is no entry from portals.
@@ -14,8 +14,6 @@
 //! `ryo_jit` with a std of its own (design/jit.md, "Packaging").
 
 mod interp;
-#[cfg_attr(feature = "jit", path = "jit/mod.rs")]
-#[cfg_attr(not(feature = "jit"), path = "jit/noop.rs")]
 mod jit;
 mod registry;
 // The PE exception handler of VM code (its logic is tested on every host).
@@ -26,13 +24,12 @@ mod sys;
 pub use interp::{FP_ARG, MODE, RegRet, handler, handler_for, probe_stack, reg_handler};
 #[cfg(all(feature = "pe-test", not(windows)))]
 pub use interp::{PE_MODE, pe_handler, pe_reg_handler};
-#[cfg(feature = "jit")]
-pub use jit::{JIT_ENTRY_PREFIX, configure_jit, jit_shuffle_image};
+pub use jit::{JIT_ENTRY_PREFIX, configure_jit, configure_jit_off, jit_shuffle_image};
 pub use jit::{trip_entry, trip_osr};
 
 /// A registration function: [`ryo_vm_register`] (`C-unwind`, but it never unwinds), called as
-/// `C`: a call through a `C-unwind` pointer would make `ryo_rt` require `panic=unwind`. Both
-/// JIT modules' `forward` return one.
+/// `C`: a call through a `C-unwind` pointer would make `ryo_rt` require `panic=unwind`.
+/// `jit::forward` returns one.
 pub(crate) type RegisterFn = unsafe extern "C" fn(*const *const u8, *const *const u8, *const u8);
 
 /// Registers the images whose header addresses are the non-null entries of `[start, end)` and

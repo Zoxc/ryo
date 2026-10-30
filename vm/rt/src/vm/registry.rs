@@ -121,7 +121,6 @@ fn publish(g: &mut Bump, snap: Snapshot) {
 ///
 /// # Safety
 /// As for `ryo_vm_register`, for `h` (a JIT record's `header`).
-#[cfg_attr(not(feature = "jit"), allow(dead_code))]
 pub unsafe fn ensure(h: *const u8) {
     if snapshot().is_some_and(|s| s.images.iter().any(|im| ptr::eq(im.header(), h.cast()))) {
         return;
@@ -195,7 +194,6 @@ unsafe fn admit(h: *const u8, anchor: *const u8, existing: &[Image<'static>]) ->
 /// Lock-free, like every reader.
 ///
 /// [`RtApi::image_at`]: ryo_bytecode::jit_abi::RtApi::image_at
-#[cfg_attr(not(feature = "jit"), allow(dead_code))]
 pub fn image_at(addr: usize) -> *const u8 {
     let Some(s) = snapshot() else { return ptr::null() };
     let secs = s.sections;

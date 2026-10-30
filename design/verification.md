@@ -127,7 +127,7 @@ in a stack overflow. Functions the checker can't validate are reported in a cove
 like `RYO_STATS`, and the program-level theorem is conditional on them.
 
 The counter stubs are no-ops only given the trip contract, which may transfer to JIT code.
-So the theorem comes in two versions: without the JIT (`RYO_JIT=off`, the no-op JIT) it is
+So the theorem comes in two versions: without the JIT (`RYO_JIT=off` or a JIT that couldn't start: the no-op JIT) it is
 unconditional on it; with the JIT on, it assumes every JIT compilation of the run passed
 validation.
 

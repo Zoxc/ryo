@@ -4,8 +4,8 @@
 
 #![allow(dead_code)]
 
-// The JIT's `ryo_jit_start`, which `ryo_rt`'s trips call with its `jit` feature (`y build`
-// bundles a sealed copy instead).
+// The JIT's `ryo_jit_start`, which `ryo_rt`'s trips call (`y build` bundles a sealed
+// copy instead).
 extern crate ryo_jit;
 
 use std::any::Any;
@@ -279,8 +279,18 @@ unsafe fn register_eh_frame(eh: *const u8) {
 }
 
 pub fn register(images: &[&Linked]) {
+    jit_off();
     let hs: Vec<*const u8> = images.iter().map(|l| l.header).collect();
     unsafe { ryo_rt::vm::ryo_vm_register(hs.as_ptr(), hs.as_ptr().add(hs.len()), std::ptr::null()) };
+}
+
+/// The JIT is off in `ryo_rt`'s tests, as with `RYO_JIT=off`: its trips settle the counters at
+/// the failed bias (`vm::jit::trip`), and no JIT thread starts. `ryo_jit`'s tests, which share
+/// this module, run the JIT.
+pub fn jit_off() {
+    if env!("CARGO_PKG_NAME") == "ryo_rt" {
+        assert!(ryo_rt::vm::configure_jit_off(), "the JIT's settings were read on");
+    }
 }
 
 /// Encodes and links an image (unregistered).

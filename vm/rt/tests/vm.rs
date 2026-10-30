@@ -860,6 +860,7 @@ fn fatal_child() {
         w.add_function(func(a.done(), 16, 0, 4));
         let l = assemble(w, &[]);
         let foreign = case == "foreign_anchor";
+        jit_off();
         unsafe {
             let h = l.header as *mut ryo_bytecode::image::Header;
             (*h).abi ^= 1;
@@ -1017,24 +1018,21 @@ fn concurrent_registration() {
     }
 }
 
-// ---- JIT counters and the no-op trip (without the `jit` feature; tests/jit.rs has the JIT) ----
+// ---- JIT counters and the trips with the JIT off (`RYO_JIT=off`; vm/jit/tests has the JIT) ----
 
 /// The record [`tick`] resets.
-#[cfg(not(feature = "jit"))]
 static TICK: AtomicUsize = AtomicUsize::new(0);
 
 /// Native: runs `TICK`'s loop counter out, so that the next loop head's check trips.
-#[cfg(not(feature = "jit"))]
 fn tick() {
     unsafe { (*(TICK.load(Ordering::Relaxed) as *mut JitRecord)).ctr_l = 0 };
 }
 
-/// Functions run through the no-op JIT's trips, at the entry and at loop heads: arguments of
+/// Functions run through the trips with the JIT off, at the entry and at loop heads: arguments of
 /// every kind (integer and SSE registers, the stack, an sret pointer) arrive intact, loops
-/// keep their state, and the counter that tripped ends at a failed record's bias
-/// (`-JIT_BIAS`), plus what ran since.
+/// keep their state, and a trip settles both counters at a failed record's bias (`-JIT_BIAS`),
+/// keeping their counts.
 #[test]
-#[cfg(not(feature = "jit"))]
 fn jit_trips() {
     use ryo_bytecode::asm::ArgReg;
     let mut w = ImageWriter::new(unique_scid());
@@ -1102,34 +1100,35 @@ fn jit_trips() {
         want.extend(xs.iter().map(|x| x.to_bits()));
         want.extend([1 << 40, 7]);
         assert_eq!(out[..], want[..], "counter {start}");
-        // Tripped iff the call counter stopped being negative.
-        let tripped = start + 1 >= 0;
-        assert_eq!(img.counters(spill), (if tripped { -JIT_BIAS } else { start + 1 }, -JIT_THRESHOLD));
+        // Tripped iff the call counter stopped being negative; the trip settles both counters
+        // at the failed bias, keeping their counts.
+        let bias = if start + 1 >= 0 { -JIT_BIAS } else { 0 };
+        assert_eq!(img.counters(spill), (bias + start + 1, bias - JIT_THRESHOLD));
     }
 
     img.set_counters(triple, 0, 0);
     assert_eq!(ok::<_, [u64; 3]>(img.id(triple), (5u64,)), [5, 6, 7]);
-    assert_eq!(img.counters(triple), (-JIT_BIAS, 0));
+    assert_eq!(img.counters(triple), (-JIT_BIAS + 1, -JIT_BIAS));
 
     // At the entry, then (`tick`) at every inner and outer loop head.
     TICK.store(img.record(nest) as usize, Ordering::Relaxed);
     for start in [0, -2, -JIT_ENTRY_THRESHOLD] {
         img.set_counters(nest, start, -JIT_THRESHOLD);
         assert_eq!(ok::<_, u64>(img.id(nest), (3u64, 4u64)), 12);
-        // The last `tick`'s trip was at the inner head; one outer check since.
-        assert_eq!(img.counters(nest), (if start + 1 >= 0 { -JIT_BIAS } else { start + 1 }, -JIT_BIAS + 1));
+        // Every loop trip settles the call counter too. The last `tick`'s trip was at the
+        // inner head, at a count of 1; one outer check since.
+        assert_eq!(img.counters(nest), (-JIT_BIAS + start + 1, -JIT_BIAS + 2));
     }
-    // Without `tick`: the outer head trips at its first check; three more outer and three
-    // inner checks follow.
+    // Without `tick`: the outer head trips at its first check (settling the call counter's
+    // -1 too); three more outer and three inner checks follow.
     img.set_counters(nest, -2, -1);
     assert_eq!(ok::<_, u64>(img.id(nest), (3u64, 0u64)), 0);
-    assert_eq!(img.counters(nest), (-1, -JIT_BIAS + 6));
+    assert_eq!(img.counters(nest), (-JIT_BIAS - 1, -JIT_BIAS + 6));
 }
 
 /// Panics unwind through frames that tripped, at the entry and at a loop head, and their
 /// landing pads run.
 #[test]
-#[cfg(not(feature = "jit"))]
 fn jit_trips_unwind() {
     let mut w = ImageWriter::new(unique_scid());
     let s_boom = w.symbol("boom", 0);

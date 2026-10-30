@@ -474,10 +474,10 @@ has one code shape, and code the JIT encodes for itself has none.
   nothing passes `al`, and no convention passes anything in `r11`. At a loop head nothing
   but `rsp` and `rbp` is live: the register cache is cleared at branch targets. So the stubs
   clobber only `r11`, `rax` and the flags, and the trip entry points may clobber those too.
-- **The no-op JIT** (`ryo_rt` without its `jit` feature, `vm/rt/src/vm/jit/noop.rs`): the
-  trip entry points set the counter that tripped to `-JIT_BIAS`, a failed record's bias, so
-  the function never trips again in practice, and return to the stub, which continues the AOT code. With the feature, the
-  trips are the [JIT](jit.md#records-and-trips)'s.
+- **The trips** are the [JIT](jit.md#records-and-trips)'s. With the JIT off (`RYO_JIT=off`,
+  or it couldn't start) they act as the no-op JIT: they settle the record's counters at
+  `-JIT_BIAS`, a failed record's bias, so the function never trips again in practice, and
+  return to the stub, which continues the AOT code.
 - **Unwinding**: the checks move nothing and call nothing, so only the prologue's rules
   move: the FDE's `advance_loc`s start at `Encoded::prologue`. The entry's stub, last in the
   code, runs before the prologue: its FDE rows say CFA = `rsp + 8` (and with a frame pointer
@@ -904,7 +904,7 @@ calls it by name, local otherwise (backtraces, profilers) ([backend.md](backend.
 
 ## JIT
 
-With its `jit` feature, `ryo_rt` recompiles hot functions on a background thread and
+`ryo_rt` recompiles hot functions on a background thread and
 switches their entry and loop heads over to the new code, entering it mid-call by OSR
 ([jit.md](jit.md)). What the VM provides for it is the code shape above: the [JIT
 records and counters](#jit-records-and-counters), canonical code that the JIT decodes from
@@ -977,7 +977,7 @@ templates and the `main` wrapper. It is a normal Rust dependency of every ryo-bu
   anyway (see "No re-entry" above). The [JIT](jit.md) thread has a std of its own, sealed in
   an object the rlib bundles ([Packaging](jit.md#packaging)), so `ryo_rt` is `core`-only in both
   sysroots; that object still needs libc and the unwinder, so a `#![no_std]` final artifact
-  doesn't link where `ryo_rt` has the JIT. Unwinding goes through the platform unwinder
+  doesn't link. Unwinding goes through the platform unwinder
   (`_Unwind_Resume`) and the program's personality and panic runtime. `y build` builds
   `ryo_rt` against each sysroot's `core`.
 - **Speed**:

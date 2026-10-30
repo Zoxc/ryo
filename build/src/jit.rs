@@ -18,9 +18,9 @@ pub const OBJECT: &str = "ryo_jit.o";
 /// the tag and `$`, so that two ryo builds' sealed objects never define the same name.
 const COFF_PREFIX: &str = "__ryo_jit$";
 
-/// Whether `ryo_rt` gets the JIT on `triple`: x86_64 Linux, windows-msvc and macOS
-/// (design/jit.md#packaging). Elsewhere `ryo_rt` has no `jit` feature, and its trips are the
-/// no-op JIT.
+/// Whether the JIT builds for `triple`: x86_64 Linux, windows-msvc and macOS
+/// (design/jit.md#packaging), the supported targets. `ryo_rt` always bundles it, so `y build`
+/// rejects other targets.
 pub fn supported(triple: &str) -> bool {
     triple.starts_with("x86_64-") && (triple.contains("-linux-") || is_coff(triple) || (is_macho(triple) && triple.ends_with("-darwin")))
 }

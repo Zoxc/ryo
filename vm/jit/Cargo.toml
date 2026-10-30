@@ -12,4 +12,4 @@ ryo_bytecode = { path = "../bytecode" }
 
 [dev-dependencies]
 # The tests run hand-assembled functions through the runtime's trips into this JIT.
-ryo_rt = { path = "../rt", features = ["jit", "pe-test"] }
+ryo_rt = { path = "../rt", features = ["pe-test"] }

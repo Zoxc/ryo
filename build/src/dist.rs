@@ -106,11 +106,14 @@ pub fn build_in(dist: &Path, target: &Path, o: &BuildOptions) -> Result<String, 
         crate::utils::create_dir(&target_lib)?;
         install_llvm_sysroot(&info, &dist, triple)?;
         let cross = rb.cross(triple);
-        let jit = if crate::jit::supported(triple) { Some(crate::jit::build(&rb, triple, false)?) } else { None };
+        if !crate::jit::supported(triple) {
+            return Err(format!("{triple}: unsupported target (no JIT for it, design/platforms.md)"));
+        }
+        let jit = crate::jit::build(&rb, triple, false)?;
         // For the host, also the checked JIT `y test` runs (design/build.md#build): `ryo_rt`
         // with it swapped in, in `dist/jit-checked/`.
-        let checked = if cross.is_none() && jit.is_some() { Some(crate::jit::build(&rb, triple, true)?) } else { None };
-        for (krate, rlib) in build_runtime(&rb, &dist, triple, jit.as_deref())? {
+        let checked = if cross.is_none() { Some(crate::jit::build(&rb, triple, true)?) } else { None };
+        for (krate, rlib) in build_runtime(&rb, &dist, triple, &jit)? {
             copy(&rlib, &target_lib.join(format!("lib{krate}.rlib")))?;
             if krate == "ryo_rt"
                 && let Some(sealed) = &checked
@@ -119,17 +122,15 @@ pub fn build_in(dist: &Path, target: &Path, o: &BuildOptions) -> Result<String, 
             }
             build_files.push(rlib);
         }
-        if cross.is_none()
-            && let (Some(release), Some(checked)) = (jit, checked)
-        {
-            host_jit = Some(crate::jit::SealedJits { release, checked });
+        if let Some(checked) = checked {
+            host_jit = Some(crate::jit::SealedJits { release: jit, checked });
         }
     }
 
     let build_id = build_id(&build_files)?;
     build_wrappers(&root, &dist_bin, &info, &build_id)?;
     if o.sysroot == Sysroot::Ryo {
-        crate::sysroot::build(&info, &dist, &target, host_jit.as_ref())?;
+        crate::sysroot::build(&info, &dist, &target, host_jit.as_ref().ok_or("no host JIT")?)?;
     }
     eprintln!("[y] done: {}", dist.display());
     Ok(build_id)
@@ -229,10 +230,9 @@ pub(crate) fn rt_features() -> Vec<String> {
 }
 
 /// Builds `ryo_rt` (and `ryo_bytecode`) with the stock LLVM backend against `dist/`'s std, for
-/// `triple`, and returns their crate names and rlibs. With `jit`, the
-/// directory of the sealed JIT ([`crate::jit::build`]), `ryo_rt` gets its `jit` feature and
-/// bundles it.
-fn build_runtime(rb: &RuntimeBuild, dist: &Path, triple: &str, jit: Option<&Path>) -> Result<Vec<(&'static str, PathBuf)>, String> {
+/// `triple`, and returns their crate names and rlibs. `ryo_rt` bundles the sealed JIT
+/// in `jit` ([`crate::jit::build`]).
+fn build_runtime(rb: &RuntimeBuild, dist: &Path, triple: &str, jit: &Path) -> Result<Vec<(&'static str, PathBuf)>, String> {
     let (root, target, tag, cross) = (rb.root, rb.target, rb.tag, rb.cross(triple));
     eprintln!("[y] runtime: ryo_rt{}", cross.map(|t| format!(" for {t}")).unwrap_or_default());
     let mut sysroot_flag = String::from("--sysroot=");
@@ -245,12 +245,8 @@ fn build_runtime(rb: &RuntimeBuild, dist: &Path, triple: &str, jit: Option<&Path
     }
     let mut cargo = cmd("cargo");
     // The JIT (design/jit.md), and what `RYO_RT_FEATURES` adds.
-    let mut features = rt_features();
-    if let Some(dir) = jit {
-        cargo.env(JIT_LIB_DIR_VAR, dir);
-        features.insert(0, "jit".to_owned());
-    }
-    let features = features.join(",");
+    cargo.env(JIT_LIB_DIR_VAR, jit);
+    let features = rt_features().join(",");
     cargo.args(["build", "--release", "-p", "ryo_rt", "--features", &features]);
     if let Some(t) = cross {
         cargo.args(["--target", t]);

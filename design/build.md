@@ -75,7 +75,7 @@ modeled on cg_clif's `build_system/`.
        build scripts with plain rustc, and every other crate with `rustc-ryo`. `ryo_rt` can't
        be ryo-built: every ryo-built crate depends on it, so it and what it depends on (only
        `core`: `ryo_rt` is `#![no_std]`, [vm.md](vm.md#runtime-crate-ryo_rt)) stay LLVM-built.
-       It gets its `jit` feature and the same sealed JIT as `dist/`'s (`RYO_JIT_LIB_DIR` for
+       It bundles the same sealed JIT as `dist/`'s (`RYO_JIT_LIB_DIR` for
        its build script, which the generated manifest names): the JIT has a std of its own,
        the native one, so it never enters this sysroot's VM code ([jit.md](jit.md#packaging)).
      - The copy adds `ryo_rt` and `ryo_bytecode` to the library workspace (manifests pointing
@@ -96,8 +96,8 @@ modeled on cg_clif's `build_system/`.
      macOS host can link for real (ld64 and the SDK; `test --cross` links with `rust-lld`
      against stand-ins). On a macOS host `y test` runs programs with `DYLD_LIBRARY_PATH` for
      their dylibs.
-   - **The JIT** (`build/src/jit.rs`, [jit.md](jit.md#packaging)), for each target that has
-     it (x86_64 Linux, windows-msvc and macOS): `cargo rustc --release
+   - **The JIT** (`build/src/jit.rs`, [jit.md](jit.md#packaging)), for each target (x86_64
+     Linux, windows-msvc and macOS; `y build` rejects others, as `ryo_rt` always bundles it): `cargo rustc --release
      -p ryo_jit --crate-type staticlib` in its own cargo invocation and target directory
      (`target/jit/`; with `ryo_rt`'s, `ryo_bytecode`'s `alloc` feature would be unified into
      `ryo_rt`'s copy), with fat LTO, `-Copt-level=3 -Ccodegen-units=1 -Cpanic=unwind`, no
@@ -123,9 +123,8 @@ modeled on cg_clif's `build_system/`.
    - `ryo_rt` is always built with the stock LLVM backend, against that std, with
      `-Copt-level=3 -Ccodegen-units=1 -Cpanic=unwind` regardless of the user's profile (no
      bitcode: ryo rejects `-Clto`, [backend.md](backend.md#unsupported-options)), and
-     installed next to std. Its cargo features are `jit` where the target has the JIT (its
-     build script then bundles the sealed library from `RYO_JIT_LIB_DIR` into the rlib,
-     [jit.md](jit.md#packaging)) and those listed in `RYO_RT_FEATURES` (comma-separated, such as
+     installed next to std. Its build script bundles the sealed JIT from `RYO_JIT_LIB_DIR` into
+     the rlib ([jit.md](jit.md#packaging)); its cargo features are those listed in `RYO_RT_FEATURES` (comma-separated, such as
      `fp-rbp`, [vm.md](vm.md#handlers)). `ryo_bytecode` is installed without its `alloc`
      feature.
 3. **Wrappers** (like cg_clif's `scripts/rustc-clif.rs`, `cargo-clif.rs`): tiny Rust programs
@@ -340,8 +339,9 @@ This gives a third backend, built from the same toolchain, to compare against.
   model, the handlers' codegen, and hand-assembled functions called as native functions
   ([vm.md](vm.md#handlers)), then `ryo_rt`'s again with `--features fp-rbp`, which takes
   the frame-pointer path, and `ryo_jit`'s tests (`-p ryo_jit`, with and without
-  `ryo_rt/fp-rbp`, [jit.md](jit.md#testing)), which link the JIT as an rlib; the first run
-  excludes `ryo_jit`, so `ryo_rt`'s other tests run without the JIT.
+  `ryo_rt/fp-rbp`, [jit.md](jit.md#testing)), which link the JIT as an rlib, as `ryo_rt`'s tests do (a dev-dependency, for
+  `ryo_jit_start`); those turn the JIT off (`vm::configure_jit_off`, as `RYO_JIT=off`), but
+  for the runtime's unit tests of its JIT side.
 - The corpus runs with the environment `y test` gets, so `RYO_JIT_THRESHOLD=0
   RYO_JIT_SYNC=1 ./y.sh test` runs every VM function's JIT code from its first call
   ([jit.md](jit.md#settings)); the `backtrace` check sets `RYO_JIT=off`, since JIT frames have

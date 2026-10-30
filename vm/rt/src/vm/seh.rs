@@ -118,7 +118,6 @@ pub fn decide(flags: u32, cxx: bool, pc: u32, entered: bool, data: &PeHandlerDat
 }
 
 #[cfg(windows)]
-#[cfg_attr(not(feature = "jit"), allow(unused_imports))]
 pub(crate) use win::handler;
 
 #[cfg(windows)]

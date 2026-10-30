@@ -155,19 +155,17 @@ pub fn run(target: &str) -> Result<(), String> {
     // The sealed JIT bundled into this target's `ryo_rt` (design/jit.md#packaging), and its
     // undefined symbols, as lld names them.
     let mut jit_imports = BTreeSet::new();
-    if crate::jit::supported(target) {
-        let dir = out.join("jit-sealed");
-        // As lld names them: ld64.lld with Mach-O's `_`, lld-link imports as dllimport. They
-        // are C symbols (`check_sealed` rejects Rust ones), so need no demangling.
-        if let Some(undefined) = report(target, &mut failed, "jit-sealed", crate::jit::check_sealed(&info, &rlib, &dir, target), |_| None) {
-            jit_imports = undefined
-                .iter()
-                .map(|s| match s.strip_prefix("__imp_") {
-                    Some(f) => format!("__declspec(dllimport) {f}"),
-                    None => crate::target::symbol(target, s),
-                })
-                .collect();
-        }
+    let dir = out.join("jit-sealed");
+    // As lld names them: ld64.lld with Mach-O's `_`, lld-link imports as dllimport. They
+    // are C symbols (`check_sealed` rejects Rust ones), so need no demangling.
+    if let Some(undefined) = report(target, &mut failed, "jit-sealed", crate::jit::check_sealed(&info, &rlib, &dir, target), |_| None) {
+        jit_imports = undefined
+            .iter()
+            .map(|s| match s.strip_prefix("__imp_") {
+                Some(f) => format!("__declspec(dllimport) {f}"),
+                None => crate::target::symbol(target, s),
+            })
+            .collect();
     }
     // `ryo_rt` keeps to `core` (`y test` checks the host's).
     report(target, &mut failed, "rt-core-only", crate::test::rt_core_only(&info, &root, target), |_| None);

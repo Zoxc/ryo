@@ -55,7 +55,7 @@ pub const PROBE: &str = rt_sym!(probe);
 pub const REGISTER: &str = rt_sym!(register);
 /// The language handler of VM code's PE unwind info (design/vm.md#unwinding).
 pub const SEH_HANDLER: &str = rt_sym!(seh_handler);
-/// The no-op JIT's trip entry points, which the JIT records' slots start at.
+/// The JIT's trip entry points, which the JIT records' slots start at.
 pub const TRIP_ENTRY: &str = rt_sym!(trip_entry);
 pub const TRIP_OSR: &str = rt_sym!(trip_osr);
 /// The JIT's one exported symbol (`ryo_jit`), which `ryo_rt` calls to start the JIT thread.

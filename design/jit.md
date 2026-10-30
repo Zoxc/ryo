@@ -1,7 +1,7 @@
 # JIT
 
-With its `jit` feature (`y build` enables it on x86_64 Linux and windows-msvc, in both
-sysroots, [build.md](build.md#build)), `ryo_rt` recompiles hot VM functions on a background
+`ryo_rt` (on every supported target, x86_64 Linux, windows-msvc and macOS, in both sysroots,
+[build.md](build.md#build)) recompiles hot VM functions on a background
 thread and switches their entry and loop heads over to the new code. Every image is built
 for it: each function counts its calls and loop iterations in a *JIT record* and leaves
 through a stub into the runtime when a counter stops being negative ([vm.md](vm.md#jit-records-and-counters)).
@@ -85,13 +85,11 @@ section; its fields and the counter checks and stubs that use it are in
 - **Counts**: the count is the value less its bias plus its threshold
   (`image::jit_count`), so the JIT thread reads exact call and loop-iteration counts of the
   AOT code with a plain load (`install::counts`; `RYO_JIT_LOG` prints them).
-- **The no-op JIT** (`ryo_rt` without its `jit` feature, `vm/rt/src/vm/jit/noop.rs`):
-  `ryo_jit_trip_entry` and `ryo_jit_trip_osr` are naked assembly, `mov rax, -JIT_BIAS; mov
-  [r11 + c], rax; ret` (`c` the tripped counter's offset): the counter gets a failed
-  record's bias, so the function never trips again in practice, and the stub continues
-  the AOT code. A store racing other threads' `inc`s may be lost; the counter then trips
-  again later, harmlessly. With the feature, the runtime
-  acts the same way when the JIT is off or couldn't start.
+- **The no-op JIT**: with `RYO_JIT=off`, or once the JIT couldn't start, a trip settles
+  both of the record's counters at a failed record's bias (`jit_settle`, keeping their
+  counts), so the function never trips again in practice, and the stub continues the AOT
+  code. An `inc` racing the settle may erase the bias; the counter then trips again later,
+  harmlessly. The JIT is always built in: there is no build of `ryo_rt` without it.
 
 ## Queue and thread
 
@@ -929,7 +927,7 @@ rlib bundles (`build/src/jit.rs`, [build.md](build.md#build)):
 ## Settings
 
 Read once by the runtime side, with the C runtime's `getenv`, and those the JIT needs passed
-on in `RtApi::settings` (`vm::configure_jit` sets them in tests, and `vm::jit_shuffle_image` asks
+on in `RtApi::settings` (`vm::configure_jit` sets them in tests, `vm::configure_jit_off` turns the JIT off, and `vm::jit_shuffle_image` asks
 for shuffled frames per image, `RtApi::shuffled`):
 
 | Variable | Effect |
@@ -1102,8 +1100,8 @@ vector folds and the splat hoist, a vector reassembled from its halves),
   deadlock there), and the same program built with `-Cpanic=abort` and run with
   `RYO_JIT_TEST_PANIC`, and again with `RYO_JIT_TEST_OOM`, which must run as without the
   JIT, logging the failed compiles.
-- The counters' code shape, its round trips and the trips of the no-op JIT are tested with
-  the encoder ([vm.md](vm.md#jit-records-and-counters)).
+- The counters' code shape, its round trips and the trips with `RYO_JIT=off` (the
+  no-op JIT; `vm/rt/tests` run with it, `vm::configure_jit_off`) are tested with the encoder ([vm.md](vm.md#jit-records-and-counters)).
 
 ## Future work
 

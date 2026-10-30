@@ -9,9 +9,9 @@
 // (design/build.md), and the runtime must not enter the VM through them (design/vm.md).
 #![cfg_attr(not(test), no_std)]
 
-// The unit tests with the `jit` feature: the JIT's `ryo_jit_start_<tag>`, which the trips
+// The unit tests: the JIT's `ryo_jit_start_<tag>`, which the trips
 // reference (link.exe resolves the references of unused functions too).
-#[cfg(all(test, feature = "jit"))]
+#[cfg(test)]
 extern crate ryo_jit;
 
 /// Unwind directives of a naked function for Windows only (`.seh_*`: its `.pdata`/`.xdata`
@@ -47,7 +47,7 @@ macro_rules! seh_savexmm {
         concat!(".seh_savexmm xmm", $r, ", ", $off, "\n")
     };
 }
-#[cfg(all(not(windows), feature = "jit"))]
+#[cfg(not(windows))]
 macro_rules! seh_savexmm {
     ($r:literal, $off:literal) => {
         ""
@@ -55,14 +55,12 @@ macro_rules! seh_savexmm {
 }
 /// Saves `xmm<r>` to `[rsp + off]` for each `r off` (`movaps`, so 16-aligned), each with
 /// its `.seh_savexmm` on Windows, as a template piece of `naked_asm!`.
-#[cfg(any(windows, feature = "jit"))]
 macro_rules! save_xmm {
     ($($r:literal $off:literal),*) => {
         concat!($("movaps [rsp + ", $off, "], xmm", $r, "\n", seh_savexmm!($r, $off)),*)
     };
 }
 /// [`save_xmm`]'s restore.
-#[cfg(any(windows, feature = "jit"))]
 macro_rules! restore_xmm {
     ($($r:literal $off:literal),*) => {
         concat!($("movaps xmm", $r, ", [rsp + ", $off, "]\n"),*)
@@ -70,7 +68,7 @@ macro_rules! restore_xmm {
 }
 /// The Win64 callee-saved `xmm6`–`xmm15` at `[rsp]`..`[rsp + 160]`: `save` (with the SEH
 /// directives on Windows) or `restore`.
-#[cfg(any(windows, all(feature = "jit", feature = "pe-test")))]
+#[cfg(any(windows, feature = "pe-test"))]
 macro_rules! xmm6_15 {
     ($m:ident) => {
         $m!(6 0, 7 16, 8 32, 9 48, 10 64, 11 80, 12 96, 13 112, 14 128, 15 144)

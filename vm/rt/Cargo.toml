@@ -8,11 +8,6 @@ license = "MIT OR Apache-2.0"
 # Handlers read the frame pointer from `rbp` instead of taking it in `rdi` (design/vm.md,
 # "Handlers"), so VM code keeps it there; the backend reads `FP_ARG` and encodes to match.
 fp-rbp = []
-# The JIT (design/jit.md): the trips start `ryo_jit`'s compiler thread through
-# `ryo_jit_start`. `build.rs` bundles the sealed library `y build` makes (`RYO_JIT_LIB_DIR`);
-# without it, something else must define `ryo_jit_start` (the `ryo_jit` rlib, in tests).
-# Without the feature the JIT records' trips are the no-op JIT.
-jit = []
 # Tests off Windows: a second set of handlers and register entries in the PE form's Win64
 # convention (`vm::PE_MODE`, no symbols), which the JIT gets through `RtApi::pe_handlers`, so
 # that PE code runs on Linux.
@@ -23,5 +18,7 @@ ryo_bytecode = { path = "../bytecode", default-features = false }
 
 [dev-dependencies]
 ryo_bytecode = { path = "../bytecode" }
-# `ryo_jit_start`, for tests with the `jit` feature (`tests/common`).
+# `ryo_jit_start`, for the tests (`tests/common`, `lib.rs`): the JIT's trips start `ryo_jit`'s
+# compiler thread through it. `build.rs` bundles the sealed library `y build` makes instead
+# (`RYO_JIT_LIB_DIR`).
 ryo_jit = { path = "../jit" }

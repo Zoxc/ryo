@@ -38,7 +38,7 @@ pub const PROBE_SYMBOL: &str = rt_symbols::PROBE;
 /// `ryo_rt`'s language handler of VM code's PE unwind info (design/vm.md#unwinding).
 pub const SEH_HANDLER_SYMBOL: &str = rt_symbols::SEH_HANDLER;
 
-/// The no-op JIT's trip entry points in `ryo_rt`, which the JIT records' slots start at
+/// The JIT's trip entry points in `ryo_rt`, which the JIT records' slots start at
 /// (before mangling).
 pub const TRIP_ENTRY_SYMBOL: &str = rt_symbols::TRIP_ENTRY;
 pub const TRIP_OSR_SYMBOL: &str = rt_symbols::TRIP_OSR;

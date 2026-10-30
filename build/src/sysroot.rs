@@ -51,7 +51,7 @@ pub fn ryo_sysroot_status(info: &RustcInfo, dist: &Path) -> SysrootStatus {
     let Ok(have) = fs::read_to_string(dist.join(STAMP_FILE)) else {
         return SysrootStatus::Stale(format!("no {STAMP_FILE}"));
     };
-    let want = match stamp(info, &root(), dist, crate::jit::supported(&info.host)) {
+    let want = match stamp(info, &root(), dist) {
         Ok(s) => s,
         Err(e) => return SysrootStatus::Stale(e),
     };
@@ -64,15 +64,14 @@ pub fn ryo_sysroot_status(info: &RustcInfo, dist: &Path) -> SysrootStatus {
     if have.lines().count() != want.lines().count() { SysrootStatus::Stale("stamp format changed".to_owned()) } else { SysrootStatus::Current }
 }
 
-/// The inputs of the ryo sysroot, a `key=value` line each. `jit`: whether `ryo_rt` bundles
-/// the JIT (as [`build`] gets it).
-fn stamp(info: &RustcInfo, root: &Path, dist: &Path, jit: bool) -> Result<String, String> {
+/// The inputs of the ryo sysroot, a `key=value` line each.
+fn stamp(info: &RustcInfo, root: &Path, dist: &Path) -> Result<String, String> {
     use crate::utils::hash_bytes;
     // The runtime's sources even when `RYO_ABI_OVERRIDE` fixes `abi=`.
     let vm = crate::dist::runtime_hash(root)?;
     let src = info.rust_src_library();
     Ok(format!(
-        "rustc={:x}\nrust-src={}\nbackend={:x}\nvm={:x}\ny={:x}\njit={jit}\nabi={}\n",
+        "rustc={:x}\nrust-src={}\nbackend={:x}\nvm={:x}\ny={:x}\nabi={}\n",
         hash_bytes(info.version.as_bytes()),
         src.display(),
         backend_stamp(dist)?,
@@ -148,19 +147,19 @@ fn is_ryo_crate(name: &str) -> bool {
 
 /// Builds std with the ryo backend for the host and installs it, with `ryo_rt`, into
 /// `dist/sysroot-ryo` (with the toolchain's `bin/`, for `rust-lld`). `dist/` must already hold
-/// the backend and `rustc-ryo`. With `jit`, `ryo_rt` gets its `jit` feature and bundles the
-/// release JIT, as in `dist/`: the JIT has a std of its own, the native one, so it never
+/// the backend and `rustc-ryo`. `ryo_rt` bundles the release JIT of `jits`, as in
+/// `dist/`: the JIT has a std of its own, the native one, so it never
 /// enters this sysroot's VM code. The checked JIT is swapped into a copy of `ryo_rt` in
 /// `sysroot-ryo/jit-checked/` as for `dist/`.
 /// `target`: cargo's target directory (the work directory is `<target>/sysroot-ryo`).
-pub fn build(info: &RustcInfo, dist: &Path, target: &Path, jits: Option<&crate::jit::SealedJits>) -> Result<(), String> {
-    let (jit, checked) = (jits.map(|j| j.release.as_path()), jits.map(|j| j.checked.as_path()));
+pub fn build(info: &RustcInfo, dist: &Path, target: &Path, jits: &crate::jit::SealedJits) -> Result<(), String> {
+    let (jit, checked) = (jits.release.as_path(), jits.checked.as_path());
     eprintln!("[y] sysroot: std with the ryo backend");
     let root = root();
     let work = target.join("sysroot-ryo");
     let lib_src = work.join("library");
-    let inputs = stamp(info, &root, dist, jit.is_some())?;
-    prepare_sources(info, &root, &lib_src, jit.is_some())?;
+    let inputs = stamp(info, &root, dist)?;
+    prepare_sources(info, &root, &lib_src)?;
 
     let rustc_ryo = dist.join("bin").join(exe_name("rustc-ryo"));
     let me = std::env::current_exe().map_err(|e| format!("current_exe: {e}"))?;
@@ -169,7 +168,7 @@ pub fn build(info: &RustcInfo, dist: &Path, target: &Path, jits: Option<&crate::
     // Cargo doesn't fingerprint the backend: a new one rebuilds everything, from a clean
     // directory (old `ryo_rt`s next to the new one would make `--extern force:ryo_rt` ambiguous).
     // So does a change of `ryo_rt`'s features, which `RYO_ABI_OVERRIDE` keeps out of the backend.
-    let stamp = format!("{} {:?} {}", backend_stamp(dist)?, crate::dist::rt_features(), jit.is_some());
+    let stamp = format!("{} {:?}", backend_stamp(dist)?, crate::dist::rt_features());
     let stamp_file = work.join(".ryo-backend");
     if fs::read_to_string(&stamp_file).ok().as_deref() != Some(stamp.as_str()) {
         for dir in [&target_dir, &stats_dir] {
@@ -188,9 +187,7 @@ pub fn build(info: &RustcInfo, dist: &Path, target: &Path, jits: Option<&crate::
         rustflags.push(crate::jit::NO_REDZONE);
     }
     let mut cargo = cmd("cargo");
-    if let Some(dir) = jit {
-        cargo.env(crate::dist::JIT_LIB_DIR_VAR, dir);
-    }
+    cargo.env(crate::dist::JIT_LIB_DIR_VAR, jit);
     run(cargo
         .current_dir(&lib_src)
         .args(["build", "--release", "--offline", "-p", "sysroot", "--features", "backtrace panic-unwind"])
@@ -227,11 +224,8 @@ pub fn build(info: &RustcInfo, dist: &Path, target: &Path, jits: Option<&crate::
         let windows = matches!(ext, "dll" | "lib") && !name.starts_with("sysroot-");
         if (windows || name.starts_with("lib")) && !name.starts_with("libsysroot-") && matches!(ext, "rlib" | "rmeta" | "so" | "dll" | "lib") {
             copy(&path, &dst_lib.join(name))?;
-            if let Some(sealed) = checked
-                && name.starts_with("libryo_rt-")
-                && ext == "rlib"
-            {
-                crate::jit::swap_into_rlib(info, &dst_lib.join(name), sealed, &sysroot.join(crate::jit::CHECKED_DIR))?;
+            if name.starts_with("libryo_rt-") && ext == "rlib" {
+                crate::jit::swap_into_rlib(info, &dst_lib.join(name), checked, &sysroot.join(crate::jit::CHECKED_DIR))?;
             }
             n += 1;
         }
@@ -280,8 +274,8 @@ fn print_coverage(stats_dir: &Path) -> Result<(), String> {
 }
 
 /// Copies `rust-src`'s `library/` to `dst` (once per toolchain and version, so cargo's fingerprints
-/// survive rebuilds), and adds `ryo_rt` to it, with its `jit` feature if `jit`.
-fn prepare_sources(info: &RustcInfo, root: &Path, dst: &Path, jit: bool) -> Result<(), String> {
+/// survive rebuilds), and adds `ryo_rt` to it.
+fn prepare_sources(info: &RustcInfo, root: &Path, dst: &Path) -> Result<(), String> {
     let src = info.rust_src_library();
     if !src.is_dir() {
         return Err("no `rust-src` in the toolchain; run `rustup component add rust-src`".to_owned());
@@ -312,19 +306,15 @@ fn prepare_sources(info: &RustcInfo, root: &Path, dst: &Path, jit: bool) -> Resu
             "[package]\nname = \"ryo_rt\"\nversion = \"0.1.0\"\nedition = \"2024\"\nbuild = {}\n\n\
              [lib]\npath = {}\ntest = false\nbench = false\ndoc = false\n\n\
              [dependencies]\ncore = {{ path = \"../core\" }}\ncompiler_builtins = {{ path = \"../compiler-builtins/compiler-builtins\", features = [\"compiler-builtins\"] }}\n\
-             ryo_bytecode = {{ path = \"../ryo_bytecode\" }}\n\n[features]\nfp-rbp = []\njit = []\npe-test = []\n",
+             ryo_bytecode = {{ path = \"../ryo_bytecode\" }}\n\n[features]\nfp-rbp = []\npe-test = []\n",
             path(vm.join("rt").join("build.rs"))?,
             path(vm.join("rt").join("src").join("lib.rs"))?,
         ),
     )?;
     // The crates directly on `core` that the ryo backend builds depend on `ryo_rt` through
     // these two (everything else in the sysroot depends on one of them).
-    // The JIT, and what `RYO_RT_FEATURES` adds, as in `dist/`'s `ryo_rt`.
-    let mut features = crate::dist::rt_features();
-    if jit {
-        features.insert(0, "jit".to_owned());
-    }
-    let features: Vec<String> = features.iter().map(|f| format!("{f:?}")).collect();
+    // What `RYO_RT_FEATURES` adds, as in `dist/`'s `ryo_rt`.
+    let features: Vec<String> = crate::dist::rt_features().iter().map(|f| format!("{f:?}")).collect();
     let dep = format!("ryo_rt = {{ path = \"../ryo_rt\", features = [{}] }}\n", features.join(", "));
     for krate in ["alloc", "rustc-std-workspace-core"] {
         let manifest = dst.join(krate).join("Cargo.toml");

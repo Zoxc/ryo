@@ -292,6 +292,14 @@ pub fn configure_jit(sync: bool, threshold: Option<i64>) -> bool {
     })
 }
 
+/// Turns the JIT off instead of the environment, as `RYO_JIT=off` does, before anything reads
+/// the settings (tests of the runtime without the JIT). True if they are off: set now or
+/// read so before.
+#[doc(hidden)]
+pub fn configure_jit_off() -> bool {
+    set_config(|| Config { enabled: false, ..from_env(false) }) || !config().enabled
+}
+
 /// The images whose functions the JIT compiles with another frame layout, as with
 /// `RYO_JIT_SHUFFLE` (tests), by header address; 0 for a free entry.
 static SHUFFLED: [AtomicUsize; 256] = [const { AtomicUsize::new(0) }; 256];

@@ -68,8 +68,6 @@ fn rt_asm(dir: &str, features: &[&str], target: Option<&str>) -> String {
         .arg(&manifest)
         .arg("--target-dir")
         .arg(&dir);
-    // With the JIT, whose interface references the register entries.
-    c.args(["--features", "jit"]);
     for f in features {
         c.args(["--features", f]);
     }

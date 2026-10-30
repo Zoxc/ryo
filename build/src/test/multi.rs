@@ -13,7 +13,7 @@ use crate::utils::{RustcInfo, capture, capture_ok, cmd, run};
 const NATIVE_LIBS: &[&str] = &["-lgcc_s", "-lutil", "-lrt", "-lpthread", "-lm", "-ldl", "-lc"];
 
 fn applies(info: &RustcInfo) -> bool {
-    cfg!(target_os = "linux") && crate::jit::supported(&info.host)
+    cfg!(target_os = "linux")
 }
 
 /// Runs `exe` (with `env`), failing unless it succeeds; its stdout.

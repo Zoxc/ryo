@@ -3,6 +3,14 @@
 Rust-side changes that the Lean model or proofs don't reflect yet. Add an entry per change;
 remove it once a Lean session has handled it.
 
+- No-op JIT stubs gone (Commit: "Rt: Always build the JIT, drop the jit feature"): `ryo_rt`
+  has no `jit` feature and no `vm/rt/src/vm/jit/noop.rs`; the trips are always the JIT's
+  (Rust behind assembly), and "the no-op JIT" now means them with `RYO_JIT=off` or a JIT
+  that couldn't start: they settle both counters at the `Failed` bias (keeping counts)
+  instead of storing `-JIT_BIAS` into the tripped one. `lean/docs/aot.md` ("with `RYO_JIT=off`
+  or the no-op JIT") and any wording about naked-assembly no-op trips (`TripContract`'s
+  sources in `lean/docs/assumptions.md`) should say so; `counter_noop` itself is unaffected.
+
 - Several ryo runtimes (Commit: "Rt: ABI tag, private runtime per module, run-time merge"):
   the image header gains `abi` (u64 at 160, FNV-1a of the ABI tag) and `anchor` (u64 at 168,
   relocated against `__ryo_registry_anchor_<tag>`; the separate `ryo_anchor` slot section is

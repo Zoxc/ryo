@@ -222,7 +222,7 @@ pub struct Options {
 #[derive(Default)]
 struct Sel {
     full: bool,
-    /// The fast set: three cargo runs (`vm`, `vm jit`, `vm rt jit`), [`FAST`] and the cheap checks.
+    /// The fast set: two cargo runs (`vm`, `vm jit`), [`FAST`] and the cheap checks.
     fast: bool,
     lean: bool,
     /// All six `ryo_jit` runs, the corpus under the [`Variant::jit`] variants, jit-private-std.
@@ -235,8 +235,7 @@ struct Sel {
     codegen: bool,
     /// [`SLOW_VM_TESTS`].
     slow_vm: bool,
-    /// The workspace cargo run, `vm rt jit`, rt-core-only, jit-sealed, multi-staticlib and
-    /// multi-dylib.
+    /// The workspace cargo run, rt-core-only, jit-sealed, multi-staticlib and multi-dylib.
     rt: bool,
     /// The corpus under every variant without a ryo std, and every check.
     backend: bool,
@@ -367,7 +366,7 @@ impl Sel {
             }
             Rule::Rt => {
                 self.area(Area::Rt);
-                "rt (vm rt jit, fp-rbp runs, codegen.rs, rt-core-only, jit-sealed, multi-staticlib/dylib)"
+                "rt (vm, fp-rbp runs, codegen.rs, rt-core-only, jit-sealed, multi-staticlib/dylib)"
             }
             Rule::Jit => {
                 self.jit = true;
@@ -433,10 +432,9 @@ const JIT_NAIVE_RUN: &[(&str, &str)] = &[("RYO_JIT_OPT", "ssa-naive"), ("RYO_JIT
 
 /// The runtime once more with handlers that read `fp` from `rbp`, so VM code keeps the frame
 /// pointer (design/vm.md#handlers). And the JIT's tests, through the runtime's trips, also with
-/// `fp-rbp` (design/jit.md#testing); the other runtime tests run without the JIT: with it, the
-/// `jit` feature would unify into `ryo_rt`. The JIT's tests run through its SSA pipeline (the
-/// default) with its checkers, through the naive allocator, and through the re-encoding
-/// pipeline.
+/// `fp-rbp` (design/jit.md#testing); the runtime's own tests (its JIT side included) are the
+/// `vm` run's. The JIT's tests run through its SSA pipeline (the default) with its checkers,
+/// through the naive allocator, and through the re-encoding pipeline.
 const CARGO_RUNS: &[CargoRun] = &[
     CargoRun {
         name: "vm",
@@ -459,15 +457,6 @@ const CARGO_RUNS: &[CargoRun] = &[
         args: &["test", "-p", "ryo_jit"],
         env: JIT_SSA_RUN,
         selected: |s| s.fast || s.jit,
-        target_subdir: Some("jit"),
-        ..CARGO_RUN
-    },
-    // The runtime's own unit tests of its JIT side (`vm::jit`: the merge rendezvous etc.),
-    // which the `vm` run builds without the `jit` feature.
-    CargoRun {
-        name: "vm rt jit",
-        args: &["test", "-p", "ryo_rt", "--features", "jit", "--lib"],
-        selected: |s| s.fast || s.rt,
         target_subdir: Some("jit"),
         ..CARGO_RUN
     },

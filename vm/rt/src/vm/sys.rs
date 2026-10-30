@@ -9,7 +9,6 @@
 //! VM from the runtime").
 
 use core::cell::UnsafeCell;
-#[cfg(feature = "jit")]
 use core::ffi::CStr;
 use core::ops::{Deref, DerefMut};
 use core::ptr;
@@ -24,7 +23,6 @@ const PAGE: usize = vmem::PAGE;
 mod os {
     unsafe extern "C" {
         pub fn abort() -> !;
-        #[cfg(feature = "jit")]
         pub fn getpid() -> core::ffi::c_int;
     }
 }
@@ -33,7 +31,6 @@ mod os {
 mod os {
     #[link(name = "kernel32")]
     unsafe extern "system" {
-        #[cfg(feature = "jit")]
         pub fn GetCurrentProcessId() -> u32;
     }
 }
@@ -42,7 +39,6 @@ mod os {
 /// `dlclose`/`FreeLibrary` of it become no-ops. Its images, its JIT thread's code and the JIT
 /// code other modules may call stay mapped (design/vm.md#several-ryo-runtimes-in-one-process).
 /// Best effort: a failure leaves the module as it was.
-#[cfg(feature = "jit")]
 pub(crate) fn pin_module(addr: *const ()) {
     #[cfg(unix)]
     {
@@ -99,7 +95,6 @@ pub fn fatal(msg: &str) -> ! {
 pub(crate) use ryo_bytecode::os::write_stderr;
 
 /// The process's id.
-#[cfg(feature = "jit")]
 pub(crate) fn pid() -> u32 {
     #[cfg(unix)]
     // SAFETY: always safe to call.
@@ -113,13 +108,11 @@ pub(crate) fn pid() -> u32 {
     }
 }
 
-#[cfg(feature = "jit")]
 unsafe extern "C" {
     fn getenv(name: *const core::ffi::c_char) -> *const core::ffi::c_char;
 }
 
 /// The environment variable `name`'s value, if it is set.
-#[cfg(feature = "jit")]
 pub(crate) fn var(name: &CStr) -> Option<&'static [u8]> {
     // SAFETY: a NUL-terminated name; the value stays valid unless the program changes the
     // environment, which it may not while other threads read it (as for std's `env::var`).
@@ -129,7 +122,7 @@ pub(crate) fn var(name: &CStr) -> Option<&'static [u8]> {
     }
 }
 
-#[cfg(all(feature = "jit", target_os = "linux"))]
+#[cfg(target_os = "linux")]
 mod futex {
     use core::ffi::{c_long, c_void};
     use core::ptr;
@@ -158,7 +151,7 @@ mod futex {
 
 /// Apple: `__ulock_wait`/`__ulock_wake` (libSystem; what libc++'s and std's waits use
 /// before macOS 14.4's `os_sync_wait_on_address`).
-#[cfg(all(feature = "jit", target_vendor = "apple"))]
+#[cfg(target_vendor = "apple")]
 mod futex {
     use core::ffi::{c_int, c_void};
     use core::sync::atomic::AtomicU32;
@@ -187,7 +180,7 @@ mod futex {
 }
 
 /// PE: `WaitOnAddress`, imported as std imports it (`raw-dylib`, no import library needed).
-#[cfg(all(feature = "jit", windows))]
+#[cfg(windows)]
 mod futex {
     use core::ffi::c_void;
     use core::sync::atomic::AtomicU32;
@@ -212,12 +205,11 @@ mod futex {
     }
 }
 
-#[cfg(feature = "jit")]
 pub(crate) use futex::{wait as futex_wait, wake as futex_wake};
 
 /// The `N` words at `at` in this process, read without faulting; `None` where
 /// unreadable (the merge rendezvous, `jit/merge.rs`).
-#[cfg(all(feature = "jit", target_os = "linux"))]
+#[cfg(target_os = "linux")]
 pub(crate) fn read_words<const N: usize>(at: usize) -> Option<[u64; N]> {
     use core::ffi::{c_int, c_long, c_void};
     #[repr(C)]
@@ -236,7 +228,7 @@ pub(crate) fn read_words<const N: usize>(at: usize) -> Option<[u64; N]> {
     (n == N as isize * 8).then_some(head)
 }
 
-#[cfg(all(feature = "jit", target_vendor = "apple"))]
+#[cfg(target_vendor = "apple")]
 pub(crate) fn read_words<const N: usize>(at: usize) -> Option<[u64; N]> {
     unsafe extern "C" {
         static mach_task_self_: u32;
@@ -249,7 +241,7 @@ pub(crate) fn read_words<const N: usize>(at: usize) -> Option<[u64; N]> {
     (ok && n == N as u64 * 8).then_some(head)
 }
 
-#[cfg(all(feature = "jit", windows))]
+#[cfg(windows)]
 pub(crate) fn read_words<const N: usize>(at: usize) -> Option<[u64; N]> {
     use core::ffi::c_void;
     #[link(name = "kernel32")]
@@ -265,7 +257,7 @@ pub(crate) fn read_words<const N: usize>(at: usize) -> Option<[u64; N]> {
 }
 
 /// Elsewhere `vmem::reserve` fails, and so does this: no merge rendezvous.
-#[cfg(all(feature = "jit", not(any(target_os = "linux", target_vendor = "apple", windows))))]
+#[cfg(not(any(target_os = "linux", target_vendor = "apple", windows)))]
 pub(crate) fn read_words<const N: usize>(_: usize) -> Option<[u64; N]> {
     None
 }
@@ -394,7 +386,6 @@ impl Bump {
 /// terminates every other thread (the JIT thread included) before it runs the exiting
 /// thread's TLS destructors and the modules' detach callbacks, which may still run VM code.
 /// Elsewhere other threads live on through `exit`'s handlers: always false.
-#[cfg(feature = "jit")]
 pub(crate) fn exiting() -> bool {
     #[cfg(windows)]
     {
