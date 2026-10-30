@@ -1,7 +1,7 @@
 # ryo
 
-A rustc codegen backend for fast development builds: MIR is lowered to VM code, with a JIT
-at run time.
+An experimental rustc codegen backend for fast development builds. MIR is lowered to
+executable and decodable VM code, with a JIT optimizer at run time.
 
 ## Requirements
 
@@ -9,8 +9,7 @@ Beyond what plain Rust needs (rustup, a linker):
 
 - x86_64 only: Linux, Windows (MSVC) or macOS.
 - Exactly **Rust 1.99.1** with the components `rustc-dev`, `rust-src` and `llvm-tools`.
-  `./y.sh install` installs them through rustup if you don't have them (and removes them
-  again on uninstall if it installed them).
+  `./y.sh install` installs them through rustup if you don't have them.
 
 ## Install
 
@@ -20,7 +19,7 @@ cd ryo
 ./y.sh install
 ```
 
-On Windows (PowerShell):
+On Windows:
 
 ```powershell
 git clone https://github.com/Zoxc/ryo
