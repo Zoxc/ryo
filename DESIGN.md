@@ -81,7 +81,7 @@ Every AOT function counts its calls and loop iterations in its JIT record. When 
 gets past its threshold, the function jumps into the runtime, which queues the function for
 the JIT thread (`ryo_jit`) ([jit.md](design/jit.md)). The thread decodes the function's
 machine code back to reduced instructions and compiles them through an SSA IR
-([jit.md](design/jit.md#the-ssa-tier)):
+([jit.md](design/jit.md#the-ssa-pipeline)):
 
 - **Construction.** Every frame slot becomes an *alloca* with provenance. Slots that no
   pointer can reach are promoted to SSA values, and the rest stay in memory.

@@ -1,4 +1,4 @@
-//! Cold paths out of the way (design/jit.md, "The SSA tier"): a block is cold when it is a
+//! Cold paths out of the way (design/jit.md, "The SSA pipeline"): a block is cold when it is a
 //! landing pad stub, ends in a trap (after a call or handler that doesn't return), has
 //! successors that are all cold, or has predecessors that are all cold. The layout becomes
 //! the hot blocks, then the cold ones, each in their previous order, so the hot paths fall

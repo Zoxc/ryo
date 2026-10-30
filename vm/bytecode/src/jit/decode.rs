@@ -1,7 +1,7 @@
 //! Decoded reduced code ([`crate::asm::Decoded`]) as the SSA builder reads it: each
 //! instruction classified ([`Kind`]) with its exact frame accesses ([`Acc`]), its unwinding
 //! and its successors, then cut into blocks with their CFG, landing pad edges included, and
-//! the cyclic loop heads (design/jit.md, "The SSA tier").
+//! the cyclic loop heads (design/jit.md, "The SSA pipeline").
 
 use alloc::vec::Vec;
 
@@ -245,7 +245,7 @@ fn slot(op: full::Opcode, w: &[u32], name: &str) -> i32 {
     imm(op, w, name) as u32 as i32
 }
 
-/// Rejects a 16-byte SSE value (an argument or a result), which the SSA tier doesn't pass.
+/// Rejects a 16-byte SSE value (an argument or a result), which the SSA pipeline doesn't pass.
 fn no_wide_sse(xmm: bool, size: u32, what: &'static str) -> Result<(), Unsupported> {
     if xmm && size > 8 { Err(Unsupported(what)) } else { Ok(()) }
 }
@@ -304,7 +304,7 @@ fn small_copy(h: full::Opcode, args: &[Arg], l: &asm::Layout, pool: bool) -> Opt
     (len != 0 && len <= MAX_COPY && clear(dst) && clear(src)).then_some((len, dst, src, p))
 }
 
-/// The handlers that are native operations on 16-byte vectors in the SSA tier, as the IR
+/// The handlers that are native operations on 16-byte vectors in the SSA pipeline, as the IR
 /// operation (`d` first, then the operands, in operand order).
 pub fn vector_op(h: full::Opcode) -> Option<super::ir::Op> {
     use super::ir::{Op, VOp};
@@ -471,7 +471,7 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Re
     let words = &d.words[at..];
     let len = reduced::insn_len(words).map_err(|_| Unsupported("reduced code"))?;
     let mut w = &words[..len];
-    // A native instruction the SSA tier has no operation for: its handler call.
+    // A native instruction the SSA pipeline has no operation for: its handler call.
     let as_handler;
     if reduced::Opcode::from_u16(w[0] as u16).and_then(|op| op.full()).is_some_and(asm::ssa_as_handler) {
         as_handler = asm::as_handler(w, mode);

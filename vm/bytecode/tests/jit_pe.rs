@@ -1,4 +1,4 @@
-//! The SSA tier's PE frames (`ryo_bytecode::jit`, PE mode): each function's prologue is run
+//! The SSA pipeline's PE frames (`ryo_bytecode::jit`, PE mode): each function's prologue is run
 //! symbolically and unwound at every step by its `UNWIND_INFO`, as the Win64 unwinder does
 //! (`RtlVirtualUnwind`), which must give back the caller's `rsp` and every callee-saved
 //! register (and `xmm6`–`xmm15`, saved to 16-byte aligned slots); its epilogues must restore
@@ -15,7 +15,7 @@ use ryo_bytecode::jit::{self, Allocator, Options, Output};
 const PE: Mode = Mode { fp_arg: false, frame_pointer: true, align_loops: true, pe: true, counters: false, far_rt: false };
 
 /// Encodes `insns` (targets as instruction indices) with frame `frame` in PE mode and
-/// compiles them through the SSA tier, its checkers on.
+/// compiles them through the SSA pipeline, its checkers on.
 fn compile(insns: &[Insn<'_>], frame: u32, scopes: &[(usize, i32, u32, ScopeKind)], alloc: Allocator, stress: bool) -> Result<Output, jit::Error> {
     let mut words = Vec::new();
     let mut starts = Vec::new();
@@ -587,7 +587,7 @@ fn xmm6_using_handlers_compiled() {
     assert!(r.is_ok(), "{r:?}");
 }
 
-/// Eight vectors live at once and across a call: on PE the SSA tier takes the SysV set,
+/// Eight vectors live at once and across a call: on PE the SSA pipeline takes the SysV set,
 /// `xmm0`–`xmm13` (scratch `xmm14`, `xmm15`), saving the callee-saved ones it names.
 #[test]
 fn vectors_save_xmm6_to_15() {
@@ -630,7 +630,7 @@ fn vectors_below_a_pinned_alloca() {
     assert!(stored, "no stored saves");
 }
 
-/// The SSA tier doesn't lay out PE pad regions (design/vm.md#pe-seh): a function with a
+/// The SSA pipeline doesn't lay out PE pad regions (design/vm.md#pe-seh): a function with a
 /// cleanup landing pad is left to re-encoding (`Unsupported`), one with only a terminate
 /// stub's (a catching pad, entered by `RtlUnwindEx` with the frame's `rsp`) compiles.
 #[test]

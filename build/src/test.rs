@@ -76,7 +76,7 @@ const VARIANTS: &[Variant] = &[
     Variant { name: "ryo-std-jit", ryo_std: true, env: JIT_SYNC, jit: true, ..VARIANT },
     Variant { name: "ryo-std-jit-shuffle", ryo_std: true, env: JIT_SHUFFLE, jit: true, ..VARIANT },
     Variant { name: "ryo-std-jit-reencode", ryo_std: true, env: JIT_REENCODE, jit: true, ..VARIANT },
-    // The JIT's SSA tier (design/jit.md#the-ssa-tier), with its checkers, on the corpus's
+    // The JIT's SSA pipeline (design/jit.md#the-ssa-pipeline), with its checkers, on the corpus's
     // own VM functions: from their first call, and entered by OSR at the first loop head.
     Variant { name: "ryo-jit-ssa", env: JIT_SSA, jit: true, ..VARIANT },
     Variant { name: "ryo-jit-ssa-osr", env: JIT_SSA_OSR, jit: true, ..VARIANT },
@@ -101,11 +101,11 @@ const JIT_SYNC: &[(&str, &str)] = &[("RYO_JIT_THRESHOLD", "0"), ("RYO_JIT_SYNC",
 const JIT_OFF: &[(&str, &str)] = &[("RYO_JIT", "off")];
 /// [`JIT_SYNC`], with shuffled JIT frames.
 const JIT_SHUFFLE: &[(&str, &str)] = &[("RYO_JIT_THRESHOLD", "0"), ("RYO_JIT_SYNC", "1"), ("RYO_JIT_SHUFFLE", "1")];
-/// [`JIT_SYNC`], through the re-encoding pipeline instead of the SSA tier.
+/// [`JIT_SYNC`], through the re-encoding pipeline instead of the SSA pipeline.
 const JIT_REENCODE: &[(&str, &str)] = &[("RYO_JIT_THRESHOLD", "0"), ("RYO_JIT_SYNC", "1"), ("RYO_JIT_OPT", "reencode")];
-/// [`JIT_SYNC`], through the SSA tier with its checkers.
+/// [`JIT_SYNC`], through the SSA pipeline with its checkers.
 const JIT_SSA: &[(&str, &str)] = &[("RYO_JIT_THRESHOLD", "0"), ("RYO_JIT_SYNC", "1"), ("RYO_JIT_OPT", "ssa"), ("RYO_JIT_CHECK", "1")];
-/// The SSA tier entered by OSR at the first loop head pass of each function's first call
+/// The SSA pipeline entered by OSR at the first loop head pass of each function's first call
 /// (whose entry check doesn't trip: the second call's does).
 const JIT_SSA_OSR: &[(&str, &str)] = &[("RYO_JIT_THRESHOLD", "2,0"), ("RYO_JIT_SYNC", "1"), ("RYO_JIT_OPT", "ssa"), ("RYO_JIT_CHECK", "1")];
 
@@ -434,7 +434,7 @@ const JIT_NAIVE_RUN: &[(&str, &str)] = &[("RYO_JIT_OPT", "ssa-naive"), ("RYO_JIT
 /// The runtime once more with handlers that read `fp` from `rbp`, so VM code keeps the frame
 /// pointer (design/vm.md#handlers). And the JIT's tests, through the runtime's trips, also with
 /// `fp-rbp` (design/jit.md#testing); the other runtime tests run without the JIT: with it, the
-/// `jit` feature would unify into `ryo_rt`. The JIT's tests run through its SSA tier (the
+/// `jit` feature would unify into `ryo_rt`. The JIT's tests run through its SSA pipeline (the
 /// default) with its checkers, through the naive allocator, and through the re-encoding
 /// pipeline.
 const CARGO_RUNS: &[CargoRun] = &[

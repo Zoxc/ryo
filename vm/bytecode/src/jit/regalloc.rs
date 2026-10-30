@@ -1,9 +1,9 @@
-//! Register allocation for the SSA tier (design/jit.md, "The SSA tier"): every value gets a
+//! Register allocation for the SSA pipeline (design/jit.md, "The SSA pipeline"): every value gets a
 //! location that holds it from its definition to its last use ([`Loc`]). [`naive`] puts every
 //! value in a stack slot of its own: the correctness baseline (`RYO_JIT_OPT=ssa-naive`).
 //!
 //! Two register classes: 1 to 8-byte values take general-purpose registers, 16-byte vectors
-//! `xmm` registers ([`xmm_registers`]). No `xmm` register is callee-saved for the SSA tier
+//! `xmm` registers ([`xmm_registers`]). No `xmm` register is callee-saved for the SSA pipeline
 //! (SysV has none; on PE the prologue saves the `xmm6`–`xmm15` it uses for its caller, but
 //! values don't live in them across calls), so a vector live across a call lives in a
 //! 16-byte spill slot (two 8-byte ones).
@@ -570,7 +570,7 @@ impl<Reg: RegIdx> Bank<Reg> {
     }
 }
 
-/// Linear scan on SSA without splitting (design/jit.md, "The SSA tier"): each value's
+/// Linear scan on SSA without splitting (design/jit.md, "The SSA pipeline"): each value's
 /// interval runs from its definition to its last use in the linear block order (holes
 /// ignored), and lives in one register or one stack slot throughout. Values live across a call
 /// (which clobbers every caller-saved register; [`crossing`], by the exact liveness, so a call

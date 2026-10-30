@@ -1,5 +1,5 @@
 //! What a function's calls call, by the form the region it is compiled for allows
-//! (design/jit.md, "Calls"), and what the SSA tier's inliner and folds see of other functions
+//! (design/jit.md, "Calls"), and what the SSA pipeline's inliner and folds see of other functions
 //! and images.
 
 use super::*;
@@ -182,7 +182,7 @@ impl jit::inline::Env for InlineEnv<'_> {
     }
 }
 
-/// The constant pools the SSA tier folds loads from ([`jit::opt::ConstMem`]): those of the
+/// The constant pools the SSA pipeline folds loads from ([`jit::opt::ConstMem`]): those of the
 /// image whose header is at `header` (the IR's), and through `image_at` every registered
 /// image's. Registered images stay forever, and their pools are final once registered: the
 /// loader applied their relocations before.

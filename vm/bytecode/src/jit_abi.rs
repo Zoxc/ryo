@@ -29,15 +29,15 @@ pub const JIT_ENTRY_PREFIX: usize = JIT_ENTRY_PREFIX_BYTES.len();
 /// the two instructions after the `lea`), `mov [rsp], r11`, `ret`.
 pub const JIT_ENTRY_PREFIX_BYTES: [u8; 12] = [0x4c, 0x8d, 0x1d, 5, 0, 0, 0, 0x4c, 0x89, 0x1c, 0x24, 0xc3];
 
-/// How the JIT compiles (`RYO_JIT_OPT`, design/jit.md, "The SSA tier").
+/// How the JIT compiles (`RYO_JIT_OPT`, design/jit.md, "The SSA pipeline").
 #[repr(u8)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum JitOpt {
     /// Re-encodes the AOT code (`reencode`).
     Reencode,
-    /// The SSA tier with every value in a stack slot (`ssa-naive`).
+    /// The SSA pipeline with every value in a stack slot (`ssa-naive`).
     SsaNaive,
-    /// The SSA tier with its register allocator (`ssa`, the default).
+    /// The SSA pipeline with its register allocator (`ssa`, the default).
     Ssa,
 }
 
@@ -76,14 +76,14 @@ pub struct JitSettings {
     /// Every compile fails an allocation, which must fail the function and nothing else
     /// (`RYO_JIT_TEST_OOM`, tests).
     pub test_oom: bool,
-    /// Run the SSA tier's checkers (`RYO_JIT_CHECK`).
+    /// Run the SSA pipeline's checkers (`RYO_JIT_CHECK`).
     pub check: bool,
     /// How functions are compiled (`RYO_JIT_OPT`).
     pub opt: JitOpt,
-    /// Only the first this many functions go to the SSA tier, the rest are re-encoded
+    /// Only the first this many functions go to the SSA pipeline, the rest are re-encoded
     /// (`RYO_JIT_SSA_LIMIT`, debugging: bisects a miscompile); `u64::MAX` for all.
     pub ssa_limit: u64,
-    /// General loop-invariant code motion in the SSA tier (`RYO_JIT_LICM`), off by default.
+    /// General loop-invariant code motion in the SSA pipeline (`RYO_JIT_LICM`), off by default.
     pub licm: bool,
     /// `RYO_JIT_STATS`: 0 for nothing, 1 for a startup line and an exit summary, 2 also for
     /// progress lines from the JIT thread, at most one a minute.
@@ -91,7 +91,7 @@ pub struct JitSettings {
     /// Whether the JIT thread times its compiles for the statistics (`RYO_JIT_STATS` set, or
     /// tests); its other counters always count.
     pub count: bool,
-    /// Loop rotation in the SSA tier (`RYO_JIT_ROTATE=1`), off by default.
+    /// Loop rotation in the SSA pipeline (`RYO_JIT_ROTATE=1`), off by default.
     pub rotate: bool,
 }
 

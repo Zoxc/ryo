@@ -1,4 +1,4 @@
-//! The SSA tier's optimization passes (design/jit.md, "The SSA tier"), run on the IR as
+//! The SSA pipeline's optimization passes (design/jit.md, "The SSA pipeline"), run on the IR as
 //! construction ([`super::build`]) leaves it, before register allocation.
 //!
 //! - `lvn`: value numbering: constant folding, common subexpressions over the dominator

@@ -244,7 +244,7 @@ mod win {
 
 // `ryo_seh_call_pad(ctx, region, pad, obj)` (Win64): saves its own nonvolatile registers
 // (`rbx`, `rbp`, `rdi`, `rsi`, `r12`–`r15`, `xmm6`–`xmm15`), loads the VM frame's from the
-// `CONTEXT` at `rcx` (`rbp` its `fp`, the rest what the JIT's SSA tier may keep there), puts
+// `CONTEXT` at `rcx` (`rbp` its `fp`, the rest what the JIT's SSA pipeline may keep there), puts
 // the exception object in `rax` and the pad in `r11`, and calls the pad region's entry, which
 // allocates the region's frame below and jumps to the pad. `rsp` is 16-aligned at the call. Its
 // own unwind information makes the frames of the region and of the code it calls walk back

@@ -1,4 +1,4 @@
-//! The SSA IR (design/jit.md, "The SSA tier"): blocks with parameters, instructions in an
+//! The SSA IR (design/jit.md, "The SSA pipeline"): blocks with parameters, instructions in an
 //! arena, `u32` ids. Values are untyped bit vectors of 1, 2, 4 or 8 bytes (general-purpose
 //! registers) or 16 bytes (vectors, in `xmm` registers): an operation of width `w` reads the
 //! low `w` bytes of its operands and defines the low `w` bytes of its result (the rest of a

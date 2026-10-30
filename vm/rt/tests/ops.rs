@@ -926,7 +926,7 @@ fn addresses() {
     }
 }
 
-/// The handlers' frame effects (`ryo_bytecode::jit::effects`, which the JIT's SSA tier
+/// The handlers' frame effects (`ryo_bytecode::jit::effects`, which the JIT's SSA pipeline
 /// promotes frame slots by) are exact: run on a frame filled with a pattern, each handler
 /// writes only the bytes its table entry says it writes, all of them, and what it writes
 /// (and returns) depends only on the bytes the entry says it reads. Handlers with memory

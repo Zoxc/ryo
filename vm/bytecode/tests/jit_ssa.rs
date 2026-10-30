@@ -1,4 +1,4 @@
-//! The SSA tier's front end (`ryo_bytecode::jit`): hand-written functions encoded, decoded
+//! The SSA pipeline's front end (`ryo_bytecode::jit`): hand-written functions encoded, decoded
 //! back to the reduced set as the JIT reads them, and built into the SSA IR, which must
 //! verify; with checks of the frame's allocas, promotion, block parameters and OSR loads.
 
@@ -633,7 +633,7 @@ fn bit_counts_of_constants_fold() {
         for (k, mk) in mk.iter().enumerate() {
             let v = vec![arg(-8, 0), mk(Slot(-16), Slot(-8)), Insn::Ret { s: Slot(-16), k: 4 }];
             let f = ir(&decoded(&v, 16, &[]));
-            // `ctlz` and `cttz` are an operation of the tier's own.
+            // `ctlz` and `cttz` are an operation of the SSA pipeline's own.
             let n = live_ops(&f).iter().filter(|o| if k == 0 { matches!(o, Op::HCall(_)) } else { matches!(o, Op::Count { .. }) }).count();
             assert_eq!(n, 1, "{f}");
         }
@@ -1231,7 +1231,7 @@ fn licm_no_speculated_trap() {
 }
 
 /// A volatile access is an island (the backend lowers `volatile_load` and its kin to
-/// `ryo_island_volatile_*`): the tier never moves, merges or forwards one.
+/// `ryo_island_volatile_*`): the SSA pipeline never moves, merges or forwards one.
 fn volatile_read() -> Op {
     use ryo_bytecode::jit::ir::{CallTarget, Island, Site};
     Op::Island(Box::new(Island { isl: CallTarget::Sym(Sym(0)), ops: vec![], site: Site::None }))

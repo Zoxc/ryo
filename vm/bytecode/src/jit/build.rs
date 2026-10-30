@@ -1,5 +1,5 @@
 //! SSA construction (Braun et al., CC 2013) from decoded reduced code (design/jit.md, "The SSA
-//! tier"): the promoted fields of the frame ([`super::alloca`]) are the variables; blocks are
+//! pipeline"): the promoted fields of the frame ([`super::alloca`]) are the variables; blocks are
 //! filled in layout order and sealed once all their predecessors are filled. A read in an
 //! OSR entry block, which has no predecessors, loads the variable from the AOT frame
 //! ([`Op::OsrLoad`]), so exactly the variables something reads after the head are loaded.
@@ -825,7 +825,7 @@ fn dense_switch(h: crate::full::Opcode, args: &[Arg], mode: crate::asm::Mode) ->
     Some((w.bytes() as u8, l.imm(h, "base", args)?, n as u32))
 }
 
-/// The handlers that are native binary operations in the SSA tier: shifts and rotates by a
+/// The handlers that are native binary operations in the SSA pipeline: shifts and rotates by a
 /// variable, division and remainder (`d, a, b`, all of width `w` but a rotate's 4-byte `b`).
 fn native_bin(h: crate::full::Opcode) -> Option<(BinOp, u8)> {
     use crate::full::Family as F;

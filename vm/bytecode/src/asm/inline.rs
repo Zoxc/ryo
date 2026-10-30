@@ -232,7 +232,7 @@ pub fn has_inline(op: Opcode) -> bool {
     class(op).is_some()
 }
 
-/// Whether the JIT's SSA tier takes the inline instruction `op` as its handler call: it has
+/// Whether the JIT's SSA pipeline takes the inline instruction `op` as its handler call: it has
 /// no decoding of its own for it (variable shifts, rotates and division then become native
 /// operations from the handler, `jit::build`'s `native_bin`).
 pub fn ssa_as_handler(op: Opcode) -> bool {

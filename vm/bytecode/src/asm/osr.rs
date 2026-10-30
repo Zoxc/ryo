@@ -92,7 +92,7 @@ fn lea(out: &mut Vec<u8>, dst: u8, base: Base, disp: i32) {
 /// The CFA rules: offset in the code, DWARF call frame instructions.
 pub(crate) type Cfi = Vec<(u32, Vec<u8>)>;
 
-/// The start of an OSR code, shared by the AOT-layout entries here and the SSA tier's: the
+/// The start of an OSR code, shared by the AOT-layout entries here and the SSA pipeline's: the
 /// initial CFA rule and the dispatcher for `n` heads. Returns the code, the rules and the
 /// table's offset.
 ///

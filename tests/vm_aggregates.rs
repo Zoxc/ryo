@@ -78,7 +78,7 @@ fn repeat(v: u64, dst: &mut [u16; 6], big: &mut [u32; 9]) -> [u64; 5] {
     [v; 5]
 }
 
-/// Small `memcpy`, `memmove` and `memset` calls of constant lengths (the JIT's SSA tier does
+/// Small `memcpy`, `memmove` and `memset` calls of constant lengths (the JIT's SSA pipeline does
 /// them as loads and stores): overlapping both ways, odd lengths, through a local.
 #[inline(never)]
 fn small_copies(a: &mut [u8; 40], b: u8) -> ([u8; 40], u64) {

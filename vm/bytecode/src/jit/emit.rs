@@ -1,4 +1,4 @@
-//! The SSA tier's back end (design/jit.md, "The SSA tier"): the JIT frame's layout,
+//! The SSA pipeline's back end (design/jit.md, "The SSA pipeline"): the JIT frame's layout,
 //! instruction selection per IR instruction over the allocated locations, parallel moves on
 //! edges, branch relaxation, the OSR entries, the call sites and the unwind rows.
 //!
@@ -17,7 +17,7 @@ use crate::full::ElemKind;
 use crate::image::cfa;
 use crate::reduced::Arg;
 
-/// The SSA tier's machine code for one function.
+/// The SSA pipeline's machine code for one function.
 #[derive(Clone, Debug, Default)]
 pub struct Output {
     pub code: Vec<u8>,
@@ -407,7 +407,7 @@ impl Frame {
 /// Options of the back end.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Opts {
-    /// Place moved allocas in reverse order with gaps (`RYO_JIT_SHUFFLE` for the SSA tier).
+    /// Place moved allocas in reverse order with gaps (`RYO_JIT_SHUFFLE` for the SSA pipeline).
     pub stress: bool,
 }
 
@@ -2104,7 +2104,7 @@ pub(super) fn handler_arg_reg(pe: bool, k: usize) -> Option<R> {
     asm::x86::handler_reg(pe, k as u8).map(R::from)
 }
 
-/// What the SSA tier doesn't do on PE: arguments past the four Win64 registers (the reduced
+/// What the SSA pipeline doesn't do on PE: arguments past the four Win64 registers (the reduced
 /// code has none).
 fn check_pe(f: &Func) -> Result<(), Unsupported> {
     let regs_ok = |rs: &[asm::ArgReg]| rs.iter().all(|r| r.index < 4);

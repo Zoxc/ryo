@@ -668,7 +668,7 @@ offsets in the function, and the function's LSDA, the ELF one.
   instruction (one storing no result, an island in the region) is followed by a `nop`: its
   return address is never an epilogue's start.
 - **JIT**: the JIT's code gets the same, through a thunk to the handler in its code memory
-  ([jit.md](jit.md#unwinding-and-profiling)); the SSA tier leaves functions with cleanup
+  ([jit.md](jit.md#unwinding-and-profiling)); the SSA pipeline leaves functions with cleanup
   landing pads to re-encoding.
 
 On Windows `y test --full` runs it: panics, C++ exceptions and `__except` access violations

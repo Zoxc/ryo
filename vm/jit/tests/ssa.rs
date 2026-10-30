@@ -1,7 +1,7 @@
-//! The JIT's SSA tier (the default, but for `RYO_JIT_OPT=reencode`): hand-assembled
+//! The JIT's SSA pipeline (the default, but for `RYO_JIT_OPT=reencode`): hand-assembled
 //! functions using switches, tail calls, SSE arguments and results, catching landing pads,
 //! large frames and escaped locals across OSR. Each test checks the results, that the code ran in the JIT code, and, in an SSA
-//! mode, that every function it compiled went through the tier ([`ssa_stats`]; a
+//! mode, that every function it compiled went through the SSA pipeline ([`ssa_stats`]; a
 //! separate test binary, so that the counters are this file's alone).
 
 #![cfg(all(target_arch = "x86_64", any(target_os = "linux", target_vendor = "apple")))]
@@ -23,7 +23,7 @@ fn init() {
     ONCE.call_once(|| assert!(ryo_rt::vm::configure_jit(true, Some(0)), "the JIT's settings were read already"));
 }
 
-/// How many functions the SSA tier compiled, and how many it left (to the re-encoding
+/// How many functions the SSA pipeline compiled, and how many it left (to the re-encoding
 /// pipeline, or failed by its checkers).
 fn ssa_stats() -> (u64, u64) {
     let s = ryo_jit::stats();
@@ -40,11 +40,11 @@ fn start() -> (MutexGuard<'static, ()>, (u64, u64)) {
     (g, ssa_stats())
 }
 
-/// In an SSA mode: exactly `n` more functions compiled by the tier since `before`, none fell back.
+/// In an SSA mode: exactly `n` more functions compiled by the SSA pipeline since `before`, none fell back.
 fn check_stats(before: (u64, u64), n: usize) {
     if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
         let now = ssa_stats();
-        assert_eq!(now.0 - before.0, n as u64, "functions the SSA tier compiled ({before:?} -> {now:?})");
+        assert_eq!(now.0 - before.0, n as u64, "functions the SSA pipeline compiled ({before:?} -> {now:?})");
         assert_eq!(now.1, before.1, "fallbacks to re-encoding ({before:?} -> {now:?})");
     }
 }
@@ -1015,7 +1015,7 @@ fn inline_two_unwinding_calls_into_one_pad() {
 /// A call in code that an earlier splice made unreachable: `leaf` has no call that unwinds,
 /// so inlining it at `f`'s only unwinding site drops `f`'s cleanup pad, and with it the call
 /// of `bump` there, which was also selected for inlining (as `Vec::extend_with`'s
-/// `SetLenOnDrop` drop in its pad). The SSA tier must compile `f`.
+/// `SetLenOnDrop` drop in its pad). The SSA pipeline must compile `f`.
 #[test]
 fn inline_call_in_a_pruned_pad() {
     let (_g, before) = start();
@@ -1770,7 +1770,7 @@ enum PeSaves {
     Gap,
 }
 
-/// PE code through the SSA tier: a loop with values live across a Win64 native call (five
+/// PE code through the SSA pipeline: a loop with values live across a Win64 native call (five
 /// arguments, the fifth on the stack past the shadow space, which the callee overwrites, as
 /// it does every volatile register), entered at the entry and by OSR, with and without
 /// shuffled frames, with the saves pushed, in the home space and in the slots below `rdi`'s
@@ -1915,7 +1915,7 @@ fn pe_frames_at(saves: PeSaves, shuffle: bool, k: Option<i64>) {
     }
 }
 
-/// PE vectors through the SSA tier: ten vectors live around a loop, enough to take
+/// PE vectors through the SSA pipeline: ten vectors live around a loop, enough to take
 /// `xmm6`–`xmm13` (and the scratch `xmm14`, `xmm15`), which the prologue saves for the Win64
 /// caller and the OSR entries save as they find them, entered at the entry and by OSR. The
 /// results are the AOT code's, and every callee-saved register of Win64 survives.
@@ -2015,7 +2015,7 @@ fn pe_vectors_at(k: Option<i64>) {
     }
 }
 
-/// Loads from the constant pool, which the SSA tier folds: a vtable-like constant's function
+/// Loads from the constant pool, which the SSA pipeline folds: a vtable-like constant's function
 /// pointer (called through), its pointer to a string (read through), its plain field, a
 /// partial read of a pointer field (which stays a load), and a 16-byte `const` copy of a
 /// `(len, ptr)` pair whose second word is relocated. The data area's value, written by
@@ -2081,7 +2081,7 @@ fn constant_pool_loads() {
     check_stats(before, 1);
 }
 
-/// How many calls through constant pointers the SSA tier made direct in its roots since
+/// How many calls through constant pointers the SSA pipeline made direct in its roots since
 /// `before` (none through re-encoding).
 fn devirt_since(before: u64) -> u64 {
     ryo_jit::stats().devirt - before
@@ -2540,7 +2540,7 @@ fn simd_fn(c: SimdCase, s_note: Sym, s_mul3: Sym) -> FunctionDef {
     func(a.done(), 128, 32, 0)
 }
 
-/// Every SIMD instruction and fold, compiled natively by the SSA tier, against the handlers
+/// Every SIMD instruction and fold, compiled natively by the SSA pipeline, against the handlers
 /// the AOT code calls: each case on edge-lane and random vectors at every misalignment, the
 /// loop also entered by OSR at several head passes.
 #[test]

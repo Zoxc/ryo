@@ -1,5 +1,5 @@
 //! One-past-the-end pointers into escaped stack objects: compared, subtracted, stepped back
-//! from (the JIT's SSA tier must keep them with their object, whatever the frame layout).
+//! from (the JIT's SSA pipeline must keep them with their object, whatever the frame layout).
 use std::hint::black_box;
 use std::ptr;
 

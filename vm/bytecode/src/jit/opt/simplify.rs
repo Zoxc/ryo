@@ -1,4 +1,4 @@
-//! The global simplifications (design/jit.md, "The SSA tier"), after local value numbering
+//! The global simplifications (design/jit.md, "The SSA pipeline"), after local value numbering
 //! ([`super::lvn`]) and before the folds ([`super::fold`]):
 //! - **sparse conditional constant propagation** (Wegman and Zadeck) over the block
 //!   parameters, with executable edges: values proven constant become constants, branches

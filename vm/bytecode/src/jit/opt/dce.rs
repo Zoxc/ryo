@@ -13,7 +13,7 @@ pub(super) fn removable(op: &Op) -> bool {
     }
 }
 
-/// Dead code elimination by mark and sweep (design/jit.md, "The SSA tier"): a value is live
+/// Dead code elimination by mark and sweep (design/jit.md, "The SSA pipeline"): a value is live
 /// if an effect, a terminator, or a live value's definition reads it; a block parameter's
 /// arguments are read only when the parameter is live. Pure instructions with no live result
 /// (and effect-free handler calls, [`removable`]) are dropped, and so are dead block

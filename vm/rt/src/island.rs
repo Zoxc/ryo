@@ -142,7 +142,7 @@ intrinsic_wrappers! {
     raw_eq [T] (&T, &T) -> bool = intrinsics::raw_eq;
 }
 
-// Volatile accesses run here, not as VM loads and stores: the JIT's SSA tier would merge,
+// Volatile accesses run here, not as VM loads and stores: the JIT's SSA pipeline would merge,
 // forward or hoist those, but an island is opaque to it (design/lowering.md).
 intrinsic_wrappers! {
     volatile_load [T] (*const T) -> T = intrinsics::volatile_load;

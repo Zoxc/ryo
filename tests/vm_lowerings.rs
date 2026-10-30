@@ -144,7 +144,7 @@ fn copies() {
 }
 
 /// Division, remainder, shifts by a variable and the unsigned 64-bit overflowing `mul` at
-/// every width, with other values live across them: the SSA tier's fixed registers
+/// every width, with other values live across them: the SSA pipeline's fixed registers
 /// (`rax`/`rdx`, `cl`).
 #[inline(never)]
 fn fixed_regs() {
@@ -184,7 +184,7 @@ fn wide(a: u32, b: u16, c: u8) -> u64 {
     a as u64 * 3 + b as u64 * 5 + c as u64
 }
 
-/// Narrow values whose upper bits the SSA tier knows are zero (4-byte ops, narrow loads,
+/// Narrow values whose upper bits the SSA pipeline knows are zero (4-byte ops, narrow loads,
 /// zero extensions) as call arguments, return values and widened, and ones it doesn't
 /// (sign-extending shifts, block parameters).
 #[inline(never)]

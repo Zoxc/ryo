@@ -398,7 +398,7 @@ fn calls_of_functions_compiled_later() {
 }
 
 /// `leaf() = where it runs`, through `ret_addr`. It reads a stack argument (unused), so that
-/// the SSA tier doesn't inline it into its callers: these tests are about calls.
+/// the SSA pipeline doesn't inline it into its callers: these tests are about calls.
 fn add_leaf(w: &mut ImageWriter, s_ret: Sym) -> Func {
     let mut a = Asm::new();
     a.i(Insn::MovW64 { d: Slot(-8), s: Slot(16) });
@@ -687,7 +687,7 @@ fn jit_rsp_delta(f: u32, shuffle: bool) -> u64 {
 }
 
 /// Checks how far `rsp` moved between the AOT code's `note` (`first`) and the JIT code's
-/// (`last`): by the frames' difference. The SSA tier (the default, but for
+/// (`last`): by the frames' difference. The SSA pipeline (the default, but for
 /// `RYO_JIT_OPT=reencode`) lays out frames of its own, so there only by a multiple of 16.
 fn check_rsp(first: u64, last: u64, f: u32, shuffle: bool, what: &str) {
     if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
@@ -984,7 +984,7 @@ fn running_calls_switch_over() {
     }
 }
 
-// ---- SSA tier (the default, but for `RYO_JIT_OPT=reencode`) ----
+// ---- SSA pipeline (the default, but for `RYO_JIT_OPT=reencode`) ----
 
 fn o(a: &AtomicU64) -> u64 {
     a.load(std::sync::atomic::Ordering::SeqCst)
@@ -1033,7 +1033,7 @@ fn osr_escaped_after_head() {
     }
 }
 
-/// A backward jump that is no loop: its target's counter check trips. The SSA tier has no OSR
+/// A backward jump that is no loop: its target's counter check trips. The SSA pipeline has no OSR
 /// entry at a head on no cycle, so there the activation finishes in AOT code (the old pipeline
 /// moves into the JIT code); the next call runs the JIT code.
 #[test]
@@ -1059,7 +1059,7 @@ fn acyclic_head() {
     let obs = Obs::default();
     assert_eq!(ok::<_, u64>(img.id(f), (10u64, &raw const obs as u64)), 15);
     assert!(in_aot(&img, f, o(&obs.first)));
-    // The old pipeline has OSR entries at every head, the SSA tier only at cyclic ones.
+    // The old pipeline has OSR entries at every head, the SSA pipeline only at cyclic ones.
     let ssa = std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode");
     let last = o(&obs.last);
     assert!(if ssa { in_aot(&img, f, last) } else { in_jit(&img, f, last) }, "finished at {last:#x}");
@@ -1397,7 +1397,7 @@ extern "sysv64" fn call_checked(code: *const u8, a: u64, b: u64, regs: *mut [u64
 /// PE code through the JIT (design/platforms.md): compiled at the entry and by OSR at a loop
 /// head, with and without shuffled frames, with a frame that probes the stack; the results
 /// are the AOT code's, the calls end in JIT code, `rsp` moves by the frames' difference (by
-/// a multiple of 16 through the SSA tier), and the callee-saved registers, `rdi` and `rsi`
+/// a multiple of 16 through the SSA pipeline), and the callee-saved registers, `rdi` and `rsi`
 /// included, survive both.
 #[test]
 fn pe_code() {
@@ -1453,7 +1453,7 @@ fn pe_code_at(shuffle: bool, frame: u32, k: Option<i64>) {
     let check_prologue = || {
         let code = unsafe { std::slice::from_raw_parts((*img.record(f)).jit_code, 32) };
         if ssa {
-            // The SSA tier's own (its forms: `tests/jit_pe.rs`, and `ssa.rs`'s `pe_frames`).
+            // The SSA pipeline's own (its forms: `tests/jit_pe.rs`, and `ssa.rs`'s `pe_frames`).
             assert_eq!(code[0], 0x55, "{what}");
             return;
         }
@@ -1492,7 +1492,7 @@ fn pe_code_at(shuffle: bool, frame: u32, k: Option<i64>) {
 }
 
 /// PE code with a cleanup landing pad through the JIT (design/vm.md#unwinding): re-encoded
-/// with its pad region after the body (the SSA tier leaves such functions to re-encoding),
+/// with its pad region after the body (the SSA pipeline leaves such functions to re-encoding),
 /// and running as the AOT code on the normal path, callee-saved registers intact.
 #[test]
 fn pe_pad_region() {
@@ -1517,7 +1517,7 @@ fn pe_pad_region() {
     obj.unwind.clear();
     let img = link(obj, &[("note_pe", note_pe as *const () as usize)]);
     register(&[&img]);
-    // Functions the SSA tier left (to the re-encoding pipeline, or failed by its checkers).
+    // Functions the SSA pipeline left (to the re-encoding pipeline, or failed by its checkers).
     let ssa_left = || {
         let s = ryo_jit::stats();
         s.ssa_unsupported + s.ssa_check_failed()
@@ -1540,7 +1540,7 @@ fn pe_pad_region() {
     assert_eq!(code[..4], [0x55, 0x48, 0x89, 0xe5]);
     assert!(code.windows(7).any(|w| w == [0x48, 0x83, 0xec, 0x28, 0x41, 0xff, 0xe3]), "the region's entry");
     if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
-        assert!(ssa_left() > fallbacks, "the SSA tier left it");
+        assert!(ssa_left() > fallbacks, "the SSA pipeline left it");
     }
 }
 
@@ -1597,7 +1597,7 @@ fn pe_numeric_args() {
 
 /// A Win64 handler with five arguments, the fifth on the stack, and a register entry with
 /// two results, in `xmm0` (design/vm.md, "Handlers"): `atomic.cxchg` in PE code, in AOT code
-/// (the frame entry) and then in JIT code (with the SSA tier, the register entry).
+/// (the frame entry) and then in JIT code (with the SSA pipeline, the register entry).
 #[test]
 fn pe_cxchg() {
     init();

@@ -87,4 +87,4 @@ Running:
 - `RYO_JIT_SYNC=1`: compile synchronously (deterministic; needed for cachegrind).
 - `RYO_JIT_OPT=ssa|ssa-naive|reencode`: the JIT tier.
 - `RYO_JIT_CHECK=1`, `RYO_JIT_LOG=1`, `RYO_JIT_DUMP=dir`: check, log, dump.
-- `RYO_JIT_SSA_LIMIT=n`: only the first `n` functions through the SSA tier, for bisecting.
+- `RYO_JIT_SSA_LIMIT=n`: only the first `n` functions through the SSA pipeline, for bisecting.

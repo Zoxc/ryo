@@ -1,5 +1,5 @@
 //! The JIT thread's compiler: decodes a function from its image, compiles it with the SSA
-//! tier (`RYO_JIT_OPT=ssa`, the default) or, as the fallback and with `reencode`, encodes it
+//! pipeline (`RYO_JIT_OPT=ssa`, the default) or, as the fallback and with `reencode`, encodes it
 //! again without counters (in another frame layout with `RYO_JIT_SHUFFLE`), builds the OSR
 //! entries of its loop heads, and installs the code near the image: code memory, relocation, unwind
 //! information, the perf map, and the record's publication (design/jit.md, "Compiling and installing").
@@ -91,7 +91,7 @@ struct Gen {
     body: Body,
     osr: Option<asm::osr::OsrCode>,
     osr_at: usize,
-    /// PE: where the pad region starts (`code.len()` if there is none, as for the SSA tier's code).
+    /// PE: where the pad region starts (`code.len()` if there is none, as for the SSA pipeline's code).
     region: usize,
 }
 
@@ -99,9 +99,9 @@ struct Gen {
 enum Body {
     /// As the encoder lays out frames.
     Aot(EhFunc),
-    /// The SSA tier's rows.
+    /// The SSA pipeline's rows.
     Rows(Vec<(u32, Vec<u8>)>),
-    /// The SSA tier's PE `UNWIND_INFO`.
+    /// The SSA pipeline's PE `UNWIND_INFO`.
     Pe(Vec<u8>),
 }
 
@@ -160,10 +160,10 @@ pub(crate) struct Jit {
     slots: HashMap<(usize, usize, u32), usize>,
     /// The slots by (image header, function), which its publication updates.
     slots_of: HashMap<(usize, u32), Vec<usize>>,
-    /// `RYO_JIT_DUMP`: the directory the SSA tier writes a description of each compilation
+    /// `RYO_JIT_DUMP`: the directory the SSA pipeline writes a description of each compilation
     /// to.
     dump: Option<String>,
-    /// How many functions went to the SSA tier so far ([`ryo_bytecode::jit_abi::JitSettings::ssa_limit`]).
+    /// How many functions went to the SSA pipeline so far ([`ryo_bytecode::jit_abi::JitSettings::ssa_limit`]).
     ssa_tried: u64,
     /// The inliner's callee IR, by (image header, function) ([`InlineEnv`]).
     ir_cache: IrCache,
@@ -232,9 +232,9 @@ impl Jit {
             let v = Vec::<u8>::with_capacity(std::hint::black_box(usize::MAX / 2));
             std::hint::black_box(&v);
         }
-        // The SSA tier (`RYO_JIT_OPT`), else, or where it doesn't compile the function, the
+        // The SSA pipeline (`RYO_JIT_OPT`), else, or where it doesn't compile the function, the
         // re-encoding pipeline. `RYO_JIT_SSA_LIMIT=n` (debugging: bisects a miscompile): only
-        // the first `n` functions go through the SSA tier. Decided once, so that a retry
+        // the first `n` functions go through the SSA pipeline. Decided once, so that a retry
         // neither counts the function again nor switches its tier.
         let settings = self.rt.settings;
         let ssa = settings.opt != JitOpt::Reencode && self.ssa_tried < settings.ssa_limit;
@@ -262,7 +262,7 @@ impl Jit {
         })
     }
 
-    /// Compiles `rec`'s function with the SSA tier if `ssa`, else (or where that doesn't
+    /// Compiles `rec`'s function with the SSA pipeline if `ssa`, else (or where that doesn't
     /// compile it) by re-encoding; `retry` for any attempt after the first, whose stats
     /// the first one already counted.
     fn compile_once(&mut self, rec: *mut JitRecord, ssa: bool, retry: bool) -> Result<(), CompileError> {
@@ -280,7 +280,7 @@ impl Jit {
         let job = Job { rec, func, img: &img, d: &d, mode, shuffled, place, personality, retry };
 
         if ssa {
-            // The AOT layout's words (the SSA tier lays out its own frame); the calls are
+            // The AOT layout's words (the SSA pipeline lays out its own frame); the calls are
             // retargeted after inlining, by the rules `reencode` uses.
             if let Some((out, ssa_ext)) = self.compile_ssa(&job)? {
                 return self.install(&job, &ssa_ext, Tier::Ssa, out);
@@ -322,8 +322,8 @@ impl Jit {
         Ok((compile_reencode(d, &words, &map, img, mode)?, ext))
     }
 
-    /// Compiles `job`'s function through the SSA tier: its code and callees, or `None` where
-    /// the tier doesn't handle it (the re-encoding pipeline does).
+    /// Compiles `job`'s function through the SSA pipeline: its code and callees, or `None` where
+    /// the SSA pipeline doesn't handle it (the re-encoding pipeline does).
     fn compile_ssa(&mut self, job: &Job<'_>) -> Result<Option<(Gen, Vec<Ext>)>, CompileError> {
         let Job { rec, func, img, d, mode, shuffled, place, .. } = *job;
         let h = img.header();
@@ -564,11 +564,11 @@ struct Job<'a> {
 /// A function's unwind information, before its PC-relative fields are patched
 /// ([`Eh::patch`]). ELF: the CIE, the FDE, the OSR code's FDE, the terminator, then the
 /// LSDA. PE: the `RUNTIME_FUNCTION`s, then their `UNWIND_INFO`s: the body's
-/// (`pe_unwind_info`, the AOT code's form, or the SSA tier's own, from the same encoder,
+/// (`pe_unwind_info`, the AOT code's form, or the SSA pipeline's own, from the same encoder,
 /// `pe_unwind_codes`); for the AOT form, over the OSR code too unless a pad region lies
 /// between: past the prologue every `rsp` is described by `rbp`, the OSR code's included,
 /// which keeps the AOT frame's `rbp`; the pad region's; and if apart, or always for the SSA
-/// tier's code, the OSR code's (the body's, all of it past the prologue; for the SSA tier's
+/// pipeline's code, the OSR code's (the body's, all of it past the prologue; for the SSA pipeline's
 /// without a pad region, `pe_osr_unwind_info`). The body's and the region's name `ryo_seh_handler` through a thunk
 /// after the code, with the LSDA as their handler data (design/jit.md, "Unwinding and
 /// profiling").
@@ -710,7 +710,7 @@ impl PeEh {
         let r = if has_region { region as u32 } else { 0 };
         // The entries: their ranges in the code, `UNWIND_INFO`s and handler data.
         let mut entries: Vec<((usize, usize), Vec<u8>, Option<Vec<u8>>)> = Vec::new();
-        // The SSA tier's OSR code: its own entry ([`pe_osr_unwind_info`]); the entries' post
+        // The SSA pipeline's OSR code: its own entry ([`pe_osr_unwind_info`]); the entries' post
         // parts are in the body's code.
         let ssa_osr = matches!(body, Body::Pe(_)) && osr.is_some();
         let body_end = if has_region || ssa_osr {
@@ -807,7 +807,7 @@ fn map_and_register(code: &[u8], eh: &Eh, base: usize, eh_base: usize, mode: Mod
 }
 
 /// The address of an image part `r` refers to (`Sym`, `Const`, `Data`), as installed
-/// code relocates it and the SSA tier bakes it in ([`InlineEnv`]'s `addr`); `None` for other
+/// code relocates it and the SSA pipeline bakes it in ([`InlineEnv`]'s `addr`); `None` for other
 /// references and symbols out of range.
 fn image_ref_addr(img: &Image<'_>, r: Ref) -> Option<usize> {
     let h = img.header();

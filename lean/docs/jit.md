@@ -6,15 +6,15 @@ the Lean decoder reads from the AOT code it was compiled from. Composed with the
 layouts are in [reduced.md](reduced.md).
 
 Two pipelines are covered: today's JIT ([jit.md](../../design/jit.md): decode, re-encode in
-the same or a shuffled frame layout, OSR entries), and the planned optimizing SSA tier
+the same or a shuffled frame layout, OSR entries), and the planned optimizing SSA pipeline
 (§E.3), which turns frame objects into allocas with provenance and emits register-allocated
 x86.
 
 ## E.1 Today's JIT (decode → re-encode → remap → OSR entries)
 
 Its output is canonical, so it is validated with `decodeReduced`. It stays relevant as long
-as it is the JIT (and as the SSA tier's fallback), and its OSR lemma generalizes to the SSA
-tier.
+as it is the JIT (and as the SSA pipeline's fallback), and its OSR lemma generalizes to the SSA
+pipeline.
 
 - **Log** (`RYO_JIT_DUMP=<dir>`, a planned runtime setting), per compiled function: the AOT
   bytes + side data + `LinkMap`, the JIT bytes at their address, the `SlotMap`, the OSR code
@@ -54,9 +54,9 @@ tier.
 
 Trusted (assembly + Rust). Tested by `vm/rt/tests/jit.rs`.
 
-## E.3 The SSA tier's levels
+## E.3 The SSA pipeline's levels
 
-The optimizing tier builds a CFG SSA IR with block parameters from the decoded R program
+The optimizing SSA pipeline builds a CFG SSA IR with block parameters from the decoded R program
 (Braun et al.'s on-the-fly construction), and emits register-allocated x86. Two new
 semantics:
 
@@ -101,7 +101,7 @@ count as exposed. Because R already carries provenance, the R ↔ R-SSA relation
 Provenance is erased only at emission (LIR → L2+). A by-product: inlining needs no
 frame-merging injection (CompCert's `dstk`), because callee allocas are just more allocations.
 
-## E.4 SSA-tier validation, step by step
+## E.4 SSA-pipeline validation, step by step
 
 The JIT log per compilation (`RYO_JIT_DUMP=<dir>`) carries everything the checkers need, so
 the checkers never trust the JIT's view of its input:
@@ -134,19 +134,19 @@ the checkers never trust the JIT's view of its input:
 entry) simulates the R programs that the Lean decoder read from the AOT code of the root and
 of every inlined callee. Composed with the AOT theorem, the JIT code refines L0.
 
-**The SSA tier's passes so far** (none modelled in Lean yet; each is an obligation for steps
+**The SSA pipeline's passes so far** (none modelled in Lean yet; each is an obligation for steps
 3 and 4 when M7 starts, with the commit that added it):
 
 - **Address ops**: `Op::RefAddr(ref, ind)` for the three inline address instructions (a
   rip-relative `lea`, or the slot load and with `ind` one more load), pure and keyed by LVN.
-  Its rule is the R ones' (`inline_sound_rip`). ("Give the JIT SSA tier a pure op for
+  Its rule is the R ones' (`inline_sound_rip`). ("Give the JIT SSA pipeline a pure op for
   rip-relative addresses".)
 - **Small copies**: `copy`, `zero`, `load.copy`, `store.copy` of at most 128 bytes (`MAX_COPY`) and
   `mov.w128`, `load.w128`, `store.w128` decode as `Kind::Copy`, pieces cut at the other
   scalar accesses' boundaries, all reads before all writes; and after `simplify`,
   `memcpy`/`memmove`/`memset` handler calls of constant length 1 to 128 (operands all values,
   no unwinding) become loads then stores (`memset`: the byte times `0x0101…`), then LVN again
-  (`jit::opt::copies`). Rule: the pieces equal the handler's footprint effect. ("JIT SSA tier:
+  (`jit::opt::copies`). Rule: the pieces equal the handler's footprint effect. ("JIT SSA pipeline:
   small block copies as loads and stores"; "JIT SSA: constant-length memcpy/memmove/memset as
   loads and stores"; "JIT: do block copies of up to 128 bytes as loads and stores".)
 - **Inlining** (`jit::inline`, step 4): an IR-to-IR splice with landing-pad action
@@ -157,8 +157,8 @@ of every inlined callee. Composed with the AOT theorem, the JIT code refines L0.
   constants or a load through a symbol's value, its calls the JIT's call forms) and through
   symbols holding a VM function's entry. The splice lemma (§E.6) plus a rule for the
   specialization and for `rebase` (the pool-identity question, §E.6). ("Inline same-image
-  calls in the JIT's SSA tier"; "Weigh inlining by the counters and specialize callees to
-  constants"; "Inline across images in the JIT's SSA tier".) `rebase` also carries an
+  calls in the JIT's SSA pipeline"; "Weigh inlining by the counters and specialize callees to
+  constants"; "Inline across images in the JIT's SSA pipeline".) `rebase` also carries an
   island (a call of its address in the JIT's call form: `Island::isl` a `CallTarget`), a
   `call.sym.ind` (a `Load` of the slot's value, then a `CallTarget::Ptr` call) and a
   handler's code-constant argument (`Arg::Ro`, sparse switch cases: an `Arg::Imm` of its
@@ -205,7 +205,7 @@ of every inlined callee. Composed with the AOT theorem, the JIT code refines L0.
   inline forms the decoder takes as them) as `BinOp::Rotl`/`Rotr` at `w` bytes, the 4-byte
   amount extended or truncated to `w` and taken modulo the width, emitted as `rol`/`ror r,
   cl` with `rcx` a fixed clobber, or the immediate rotate for a constant amount; rule as for
-  the shifts ("JIT SSA: native rotates"). Of the AOT inline forms, the tier takes only the
+  the shifts ("JIT SSA: native rotates"). Of the AOT inline forms, the SSA pipeline takes only the
   variable shifts, rotates and division as their handler calls (`asm::ssa_as_handler`).
 - **Native bit ops and compares** (instead of handler calls; `Op::fold` folds constants):
   `bswap.w16-w64` as `Op::Bswap(w)` (`bswap r`; at 16 bits the 32-bit swap and `shr 16`;
@@ -280,7 +280,7 @@ decoder accepts a form only if its feature is in the set, and L2+ faults on a fo
 feature is absent. Validate per feature set the corpus runs on (at least: baseline x86-64
 and the development machine's set).
 
-## E.5 OSR and unwinding in the SSA tier
+## E.5 OSR and unwinding in the SSA pipeline
 
 - **OSR entries** are extra CFG entries at the root's AOT heads: blocks with no
   predecessors whose reads of variables are `osr.load`s of the AOT slots. The construction
@@ -363,7 +363,7 @@ Per validated compilation. Run the validators over the corpus with:
 
 - `RYO_JIT_THRESHOLD=0 RYO_JIT_SYNC=1` (every function compiled, entry path)
 - `RYO_JIT_THRESHOLD=16` (OSR at the first head pass)
-- `RYO_JIT_SHUFFLE=1`, and each inlining and optimization level of the SSA tier
+- `RYO_JIT_SHUFFLE=1`, and each inlining and optimization level of the SSA pipeline
 
 This turns the JIT test modes into a proof-backed oracle. Outside the test corpus, "every
 compilation is validated" (needed by [aot.md](aot.md) §C5 with the JIT on) needs one of: a

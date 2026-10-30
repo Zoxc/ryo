@@ -164,7 +164,7 @@ bytes itself, so the JIT's own decoder is not trusted.
   [jit.md](jit.md)) emits canonical code, so the same decoder reads its output. The checker
   verifies that the JIT program is the AOT program with its frame remapped, which in R is a
   change of layout, and that each OSR entry moves the bytes live at its head.
-- **The SSA tier** (its first step is implemented, [jit.md](jit.md#the-ssa-tier), without
+- **The SSA pipeline** (its first step is implemented, [jit.md](jit.md#the-ssa-pipeline), without
   the offline log yet; `RYO_JIT_DUMP` writes the IR, locations and code): R → R-SSA (Braun's construction with promotion of non-escaped
   objects) → passes and inlining → register allocation → register-allocated x86. Each step
   has its own validator: symbolic execution against a construction certificate; proved
@@ -192,9 +192,9 @@ in-process validation (Lean runtime or extracted checkers) or sampling, which is
 | M4 | validation of today's JIT |
 | M5a–c | the lowering checker C1' and its simulation lemmas: memory relation first, then places and aggregates, then calls, islands and unwinding |
 | M6 | composition: the AOT theorems, the linked-executable check |
-| M7a–d | the SSA tier's validators: construction, register allocation and emission, passes, inlining |
+| M7a–d | the SSA pipeline's validators: construction, register allocation and emission, passes, inlining |
 
 Value arrives early: M1b gives a differential oracle for the lowering, M2 an independent
 decoder and an accounting of every emitted byte, M3 verified decoding of all AOT code and the
-`opSem` the JIT's effect tables need. The SSA tier's log format and x86 forms are agreed with
-M7a before the tier is built, so the validators fit it.
+`opSem` the JIT's effect tables need. The SSA pipeline's log format and x86 forms are agreed with
+M7a before the SSA pipeline is built, so the validators fit it.

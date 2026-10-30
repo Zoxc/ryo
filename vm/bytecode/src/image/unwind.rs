@@ -395,7 +395,7 @@ pub fn pe_region_unwind_info() -> Vec<u8> {
     unwind_codes(sub, 0, &[(sub, PeUnwindOp::Alloc(asm::PE_REGION_ALLOC))])
 }
 
-/// The PE `UNWIND_INFO` (as [`pe_unwind_codes`]) of the SSA tier's OSR code up to where an
+/// The PE `UNWIND_INFO` (as [`pe_unwind_codes`]) of the SSA pipeline's OSR code up to where an
 /// entry has stored the callee-saved registers' saves (design/jit.md, "Unwinding and
 /// profiling"): the AOT frame's, `rbp` saved at `fp` and the frame register at offset 0, no
 /// prologue; the caller's other registers are still in place.

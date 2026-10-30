@@ -1,4 +1,4 @@
-//! A small x86-64 machine-code encoder for the SSA tier's back end: the forms register
+//! A small x86-64 machine-code encoder for the SSA pipeline's back end: the forms register
 //! allocation and instruction selection need, each in its shortest standard encoding.
 //!
 //! Widths `w` are operand sizes in bytes (1, 2, 4 or 8). Byte forms take a REX prefix whenever

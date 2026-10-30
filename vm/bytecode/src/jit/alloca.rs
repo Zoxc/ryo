@@ -1,4 +1,4 @@
-//! The frame as allocas (design/jit.md, "The SSA tier"): the AOT frame cut into byte ranges
+//! The frame as allocas (design/jit.md, "The SSA pipeline"): the AOT frame cut into byte ranges
 //! that no access, escaped object or island operand crosses (union-find over its bytes),
 //! each classified: promoted (its fields become SSA variables), memory, the outgoing
 //! argument area, or the incoming one. Also which allocas may be escaped at an OSR entry

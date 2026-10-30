@@ -1,4 +1,4 @@
-//! Check elimination (design/jit.md, "The SSA tier"): a walk of the dominator tree carrying
+//! Check elimination (design/jit.md, "The SSA pipeline"): a walk of the dominator tree carrying
 //! facts from the branch edges that dominate each block, plus value ranges computed from
 //! constants, extensions, masks and non-wrapping arithmetic:
 //! - an [`Op::Ovf`] that can't overflow becomes a plain [`Op::Bin`], its flag the constant

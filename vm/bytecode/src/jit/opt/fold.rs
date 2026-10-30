@@ -1,11 +1,11 @@
-//! The folds instruction selection relies on (design/jit.md, "The SSA tier"), after value
+//! The folds instruction selection relies on (design/jit.md, "The SSA pipeline"), after value
 //! numbering ([`super::lvn`]): compare- and overflow-branches, branches on negated booleans
 //! and on constants, and frame and constant-offset addresses.
 
 use crate::jit::ir::*;
 
 /// The folds instruction selection relies on, done on the IR (design/jit.md, "The SSA
-/// tier"): a compare used only by the branch right after it becomes a compare-branch;
+/// pipeline"): a compare used only by the branch right after it becomes a compare-branch;
 /// loads and stores through a frame address become accesses of the alloca, and through a
 /// pointer plus a constant take the constant into their offset.
 pub fn fold(f: &mut Func) {

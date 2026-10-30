@@ -24,7 +24,7 @@ pub(crate) enum Fail {
     Panicked,
     /// The region filled up twice ([`crate::install`]'s retry).
     RegionFull,
-    /// The SSA tier's checkers found a bug.
+    /// The SSA pipeline's checkers found a bug.
     SsaCheck,
     /// Anything else, for this reason.
     Other(&'static str),
@@ -64,7 +64,7 @@ impl Fail {
             Fail::NoPersonality => "no personality slot",
             Fail::Panicked => "panicked",
             Fail::RegionFull => "region full",
-            Fail::SsaCheck => "the SSA tier's checkers failed",
+            Fail::SsaCheck => "the SSA pipeline's checkers failed",
             Fail::Other(why) => why,
         }
     }
@@ -118,12 +118,12 @@ stats! {
     reencode,
     code_ssa,
     code_reencode,
-    /// Why functions were re-encoded: the SSA tier doesn't handle them, they were over
+    /// Why functions were re-encoded: the SSA pipeline doesn't handle them, they were over
     /// `RYO_JIT_SSA_LIMIT`, `RYO_JIT_OPT=reencode`.
     ssa_unsupported,
     ssa_limit,
     opt_reencode,
-    /// Calls the SSA tier made direct, and calls it inlined.
+    /// Calls the SSA pipeline made direct, and calls it inlined.
     devirt,
     inlined,
     /// Code regions mapped, and compiles retried in a new one.
@@ -165,7 +165,7 @@ impl Snapshot {
         self.failed.iter().sum()
     }
 
-    /// Records the SSA tier's checkers failed.
+    /// Records the SSA pipeline's checkers failed.
     pub fn ssa_check_failed(&self) -> u64 {
         self.failed[Fail::SsaCheck.slot()]
     }

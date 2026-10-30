@@ -217,9 +217,9 @@ This gives a third backend, built from the same toolchain, to compare against.
   `RYO_STATS=1` and must report them ([backend.md](backend.md#debugging-switches)).
   Programs with VM functions are also built at `-Copt-level=3` (`ryo-O3`), where only the
   output is checked, since MIR inlining removes functions. The variants `ryo-jit-ssa` and
-  `ryo-jit-ssa-osr` run the corpus through the JIT's SSA tier with its checkers, every VM
+  `ryo-jit-ssa-osr` run the corpus through the JIT's SSA pipeline with its checkers, every VM
   function from its first call or entered by OSR at its first loop head pass
-  ([jit.md](jit.md#testing)); `test` runs the JIT's own tests through the tier (`vm jit`),
+  ([jit.md](jit.md#testing)); `test` runs the JIT's own tests through the SSA pipeline (`vm jit`),
   its naive allocator (`vm jit ssa-naive`) and the re-encoding pipeline (`vm jit reencode`),
   each also with `fp-rbp`. rustc's default merges the corpus's small crates into one codegen
   unit; the `ryo-cgu*` variants ask for 1, 16 and 256 (also with `-Zshare-generics`, `-O3`
@@ -262,7 +262,7 @@ This gives a third backend, built from the same toolchain, to compare against.
   `ryo-std-jit` (run with `RYO_JIT_THRESHOLD=0 RYO_JIT_SYNC=1`: every VM function, std's
   included, runs its JIT code from its first call), `ryo-std-jit-shuffle` (also
   `RYO_JIT_SHUFFLE=1`) and `ryo-std-jit-reencode` (through the re-encoding pipeline instead
-  of the SSA tier). Without a current one (missing, or stale against its inputs), an
+  of the SSA pipeline). Without a current one (missing, or stale against its inputs), an
   explicit `--full`, `--only std` or `--variant ryo-std-*` fails; otherwise (the fast suite,
   `--only jit`, changed test programs, or `--full` reached from the changed paths) they are
   skipped with a warning.
@@ -321,9 +321,9 @@ This gives a third backend, built from the same toolchain, to compare against.
   `RYO_JIT_*` settings cleared), so that which functions it compiles, in which order, doesn't
   depend on timing, and with `RYO_JIT_DUMP` ([jit.md](jit.md#settings)), and writes, per
   function the JIT compiled, by path as in the AOT dumps: its code to
-  `bench/codegen/<program>.jit.s` (printed as `<program>.s`; a function the SSA tier
+  `bench/codegen/<program>.jit.s` (printed as `<program>.s`; a function the SSA pipeline
   doesn't handle is marked `(reencode)`, and the OSR code follows `; OSR entries`), and the
-  SSA tier's IR to `<program>.jit-ssa-pre.txt` (as construction leaves it: Braun et al.'s
+  SSA pipeline's IR to `<program>.jit-ssa-pre.txt` (as construction leaves it: Braun et al.'s
   construction with its copy and constant propagation and trivial-parameter removal) and
   `<program>.jit-ssa-post.txt` (after the folds, as register allocation gets it). Their
   references to functions, symbols, constants and data are named as in the function's AOT

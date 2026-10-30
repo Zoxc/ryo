@@ -1,4 +1,4 @@
-//! Inlining in the SSA tier (design/jit.md, "Inlining"): calls of VM functions (of the
+//! Inlining in the SSA pipeline (design/jit.md, "Inlining"): calls of VM functions (of the
 //! root's image directly, of any image through a symbol) are replaced by copies of their IR,
 //! so that one JIT unit runs the root and the callees it decides on in one frame. Another
 //! image's callee is first put in the root's image's terms ([`rebase`]).

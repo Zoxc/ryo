@@ -113,7 +113,7 @@ fn local_names(ir: &str, local: &dyn Fn(&str) -> String) -> String {
 /// gives the dump files' names and contents from the `RYO_JIT_DUMP` files and the image's
 /// names in `RYO_DUMP_CODE`'s text `aot`: `jit.s`, the code of each function the JIT
 /// compiled (by path, as the AOT code), its references named as there; `jit-ssa-pre.txt` and
-/// `jit-ssa-post.txt`, the SSA tier's IR as construction leaves it and as register
+/// `jit-ssa-post.txt`, the SSA pipeline's IR as construction leaves it and as register
 /// allocation gets it, after the folds.
 fn jit_dumps(exe: &Path, dir: &Path, aot: &str) -> Result<Vec<(&'static str, String)>, String> {
     crate::utils::remove_dir_if_exists(dir)?;
@@ -150,14 +150,14 @@ fn jit_dumps(exe: &Path, dir: &Path, aot: &str) -> Result<Vec<(&'static str, Str
             .collect();
         let local = |g: &str| exts.get(g).cloned().unwrap_or_else(|| local_ref(g));
         rewrite_code(&mut code, &text, path, &local)?;
-        // The SSA tier's description: the IR before value numbering and the folds, then after them.
+        // The SSA pipeline's description: the IR before value numbering and the folds, then after them.
         let desc = if dir.join(format!("{stem}.txt")).exists() { read(&format!("{stem}.txt"))? } else { String::new() };
         for (out, name) in [(&mut pre, "IR before value numbering and the folds"), (&mut post, "IR")] {
             writeln!(out, "fn {path}").unwrap();
             match ir_section(&desc, name) {
                 Some(ir) => writeln!(out, "{}", local_names(ir, &local)).unwrap(),
                 None => {
-                    let why = desc.lines().next().and_then(|l| l.strip_prefix("; unsupported: ")).unwrap_or("not compiled by the SSA tier");
+                    let why = desc.lines().next().and_then(|l| l.strip_prefix("; unsupported: ")).unwrap_or("not compiled by the SSA pipeline");
                     writeln!(out, "; {why}").unwrap()
                 }
             }
@@ -223,7 +223,7 @@ fn jit_functions(dir: &Path, names: &AotNames) -> Result<Vec<(String, u32, Strin
 }
 
 /// Appends a JIT code dump `text` of the function `path` to `code` in the AOT dumps' form:
-/// `ext` lines dropped, `tier` as `fn <path>` (with the tier if it isn't the SSA tier), and
+/// `ext` lines dropped, `tier` as `fn <path>` (with the tier if it isn't the SSA pipeline), and
 /// image references in `reloc` lines named by `local`.
 fn rewrite_code(code: &mut String, text: &str, path: &str, local: &dyn Fn(&str) -> String) -> Result<(), String> {
     for line in text.lines() {
@@ -345,7 +345,7 @@ fn disassemble_function(out: &mut String, code: &[u8], relocs: &[(u32, String)],
             continue;
         }
         let insn = d.decode();
-        // The JIT's tables: `lea r11, [rip + T]` (its OSR dispatcher and the SSA tier's
+        // The JIT's tables: `lea r11, [rip + T]` (its OSR dispatcher and the SSA pipeline's
         // switches). A relocated operand (`lea rcx, [image.kN]`) is no table.
         let r = insn.op0_register();
         if insn.mnemonic() == iced_x86::Mnemonic::Lea

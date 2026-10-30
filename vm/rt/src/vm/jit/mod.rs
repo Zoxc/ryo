@@ -67,7 +67,7 @@ struct Config {
     stats_bad: Option<&'static [u8]>,
 }
 
-/// `RYO_JIT_OPT`: the SSA tier unless it names another.
+/// `RYO_JIT_OPT`: the SSA pipeline unless it names another.
 fn opt() -> JitOpt {
     var(c"RYO_JIT_OPT").and_then(JitOpt::parse).unwrap_or(JitOpt::Ssa)
 }

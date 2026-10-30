@@ -1,4 +1,4 @@
-//! Dead store elimination (design/jit.md, "The SSA tier"), per block, after value numbering
+//! Dead store elimination (design/jit.md, "The SSA pipeline"), per block, after value numbering
 //! ([`super::lvn`]) forwarded what it could: a store to a memory alloca that no pointer
 //! reaches (not escaped, not pinned, no [`Op::AllocaAddr`] of it) is dropped when later
 //! stores of the block overwrite all its bytes before anything may read them. Only its own

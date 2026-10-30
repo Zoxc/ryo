@@ -114,7 +114,7 @@ the proofs ([verification.md](verification.md)) must justify. The model is R's
   R's provenance (reduced.md §C0.7); escape coverage is checked per function
   (`Check/Lower/CertCheck.lean`, `checkAddrs`).
 
-## JIT SSA tier (`vm/bytecode/src/jit/`, [jit.md](jit.md#the-ssa-tier))
+## JIT SSA pipeline (`vm/bytecode/src/jit/`, [jit.md](jit.md#the-ssa-pipeline))
 
 Values are untyped bit vectors; the IR has no pointer type and no provenance annotation
 beyond what an instruction is. The model ([lean/docs/jit.md](../lean/docs/jit.md) §E.3) is

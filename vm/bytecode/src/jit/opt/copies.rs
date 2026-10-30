@@ -1,6 +1,6 @@
 //! Small block copies whose length the folds made constant: a `memcpy`, `memmove` or `memset`
 //! handler call of at most [`MAX_COPY`] bytes, its operands all values, becomes plain loads
-//! and stores (design/jit.md, "The SSA tier"). Every piece is loaded before any is stored, so
+//! and stores (design/jit.md, "The SSA pipeline"). Every piece is loaded before any is stored, so
 //! overlap is exact and `memmove` is one too. Through frame addresses, [`super::fold`] then
 //! makes them alloca accesses, which promotion can turn into values.
 

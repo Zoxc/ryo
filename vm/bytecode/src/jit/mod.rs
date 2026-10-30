@@ -1,4 +1,4 @@
-//! The JIT's SSA tier (design/jit.md, "The SSA tier"): decoded reduced code
+//! The JIT's SSA pipeline (design/jit.md, "The SSA pipeline"): decoded reduced code
 //! ([`crate::asm::Decoded`]) to an SSA IR whose frame slots are allocas with provenance,
 //! promoted to SSA values where nothing can reach them through a pointer, and back to x86-64
 //! with a register allocator ([`compile`]).
@@ -41,7 +41,7 @@ pub mod regalloc;
 #[cfg(feature = "alloc")]
 pub mod x86;
 
-/// Why the SSA tier doesn't compile a function (it then goes through the re-encoding
+/// Why the SSA pipeline doesn't compile a function (it then goes through the re-encoding
 /// pipeline).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Unsupported(pub &'static str);
@@ -49,7 +49,7 @@ pub struct Unsupported(pub &'static str);
 #[cfg(feature = "alloc")]
 pub use emit::Output;
 
-/// How the SSA tier allocates registers.
+/// How the SSA pipeline allocates registers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Allocator {
     /// Every value in a stack slot of its own (`RYO_JIT_OPT=ssa-naive`).
@@ -58,7 +58,7 @@ pub enum Allocator {
     LinearScan,
 }
 
-/// The SSA tier's settings.
+/// The SSA pipeline's settings.
 #[derive(Clone, Copy, Debug)]
 pub struct Options {
     pub alloc: Allocator,
@@ -79,7 +79,7 @@ pub struct Options {
 #[cfg(feature = "alloc")]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Error {
-    /// The function uses something the SSA tier doesn't handle.
+    /// The function uses something the SSA pipeline doesn't handle.
     Unsupported(Unsupported),
     /// A checker (`RYO_JIT_CHECK`) found a bug: what, and where.
     Check(alloc::string::String),
@@ -93,7 +93,7 @@ impl From<Unsupported> for Error {
 }
 
 /// Compiles the decoded function `d` (its code constants `code_consts`, encoded in `mode`
-/// without counters) through the SSA tier, folding loads from `mem` (the constant pools,
+/// without counters) through the SSA pipeline, folding loads from `mem` (the constant pools,
 /// [`opt::ConstMem`]), with `env` inlining the image's functions it calls ([`inline`]).
 #[cfg(feature = "alloc")]
 pub fn compile(
@@ -104,7 +104,7 @@ pub fn compile(
     mem: Option<&dyn opt::ConstMem>,
     mut env: Option<&mut dyn inline::Env>,
 ) -> Result<Output, Error> {
-    // PE: cleanup landing pads run in a pad region (design/vm.md#unwinding), which this tier
+    // PE: cleanup landing pads run in a pad region (design/vm.md#unwinding), which this pipeline
     // doesn't lay out; re-encoding does.
     let pe_cleanup = |sites: &[crate::asm::CallSite]| mode.pe && sites.iter().any(|cs| cs.pad.is_some() && !cs.catch);
     if mode.pe && crate::asm::pe_region_start(&d.cleanup).is_some() {

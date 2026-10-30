@@ -1,4 +1,4 @@
-//! Value numbering (design/jit.md, "The SSA tier"): one forward pass per block, in a preorder
+//! Value numbering (design/jit.md, "The SSA pipeline"): one forward pass per block, in a preorder
 //! walk of the dominator tree, before the folds ([`super::fold`]). Copies and constants are
 //! already propagated by construction (a `mov` or an `imm` defines no value of its own); this
 //! pass adds:

@@ -1,6 +1,6 @@
-//! The exact frame effects of the handlers (design/jit.md, "The SSA tier"): for each operand
+//! The exact frame effects of the handlers (design/jit.md, "The SSA pipeline"): for each operand
 //! of a handler that names a frame slot, how many bytes the handler reads or writes there.
-//! `asm::frame` over-estimates them (16 bytes, never killing); the SSA tier needs them exact
+//! `asm::frame` over-estimates them (16 bytes, never killing); the SSA pipeline needs them exact
 //! to keep frame slots in registers across handler calls.
 //!
 //! The table (`effects_table.rs`) is generated from the Lean model's footprints of the
@@ -56,7 +56,7 @@ pub(super) const fn e(opnds: &[Option<Effect>], memory: bool) -> Option<Effects>
 }
 
 /// A handler's register entry (design/jit.md, "Register entries"): the handler body with its
-/// frame operands in registers instead of frame slots, for the SSA tier. Like the frame entry
+/// frame operands in registers instead of frame slots, for the SSA pipeline. Like the frame entry
 /// it is `extern "C-unwind" fn(a0, …, a5: u64)`, and it returns `(u64, u64)` in `rax`, `rdx`;
 /// on PE (Win64, at most four arguments, all in registers) one value in `rax`, two in
 /// `xmm0` (low, high). It takes, in the argument registers in this order:

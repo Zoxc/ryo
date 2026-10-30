@@ -54,7 +54,7 @@ code that calls the VM's handlers; cg_llvm compiles everything else. Start at
   - `bytecode/` `ryo_bytecode` (`no_std`): the format shared by writer and reader. `isa/` the
     full and reduced instruction sets (`isa/full_ops.rs` is the opcode list: single source of
     truth; order = encoding), `asm/` the machine code encoder/decoder and the mapping to the
-    reduced set, `image/` the image format, `jit/` the JIT's SSA tier.
+    reduced set, `image/` the image format, `jit/` the JIT's SSA pipeline.
   - `rt/` `ryo_rt` (`no_std` outside tests): handlers (`src/vm/handlers.rs` lists them,
     `interp.rs` the handler-kind macros), registry, island templates (`island.rs`), `main`
     wrapper (`entry.rs`), the JIT trips (`src/vm/jit/`).
@@ -79,7 +79,7 @@ code that calls the VM's handlers; cg_llvm compiles everything else. Start at
 - Islands: operations the VM lacks run as `ryo_rt` template instances compiled by cg_llvm.
 - JIT (`design/jit.md`): counters in each function's JIT record trip into `ryo_rt`, which
   queues the function for the `ryo_jit` thread. It decodes the AOT code back to the reduced
-  set and compiles it with the SSA tier (`vm/bytecode/src/jit/`, `RYO_JIT_OPT=ssa`, the
+  set and compiles it with the SSA pipeline (`vm/bytecode/src/jit/`, `RYO_JIT_OPT=ssa`, the
   default) or re-encodes it (`reencode`), then installs it through call slots.
 - OSR: running calls switch to JIT code at loop heads (`design/jit.md#osr`).
 
