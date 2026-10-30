@@ -696,12 +696,6 @@ pub fn run(opts: &Options) -> Result<(), String> {
     };
     let failed = Mutex::new(Vec::new());
 
-    for run in CARGO_RUNS {
-        if !corpus_only && sel.cargo_run(run) {
-            let t = Instant::now();
-            report(run.name, t, cargo_run(run, &sel, &root), &failed);
-        }
-    }
     if !corpus_only && (sel.full || sel.lean) {
         if crate::lean::have_lake() {
             let t = Instant::now();
@@ -720,7 +714,25 @@ pub fn run(opts: &Options) -> Result<(), String> {
     let refs: Vec<References> = work.iter().map(|_| References::default()).collect();
     let jobs_list: Vec<(usize, &Variant)> = work.iter().enumerate().flat_map(|(i, (_, vs))| vs.iter().map(move |v| (i, *v))).collect();
     let next = AtomicUsize::new(0);
+    // The cargo runs alongside the corpus: one thread per target directory (cargo locks it), its
+    // runs in order, their output printed when each ends so it doesn't interleave.
+    let mut groups: Vec<Vec<&CargoRun>> = Vec::new();
+    for run in CARGO_RUNS.iter().filter(|r| !corpus_only && sel.cargo_run(r)) {
+        match groups.iter_mut().find(|g| g[0].target_subdir == run.target_subdir) {
+            Some(g) => g.push(run),
+            None => groups.push(vec![run]),
+        }
+    }
     std::thread::scope(|s| {
+        for group in &groups {
+            let (sel, root, failed) = (&sel, &root, &failed);
+            s.spawn(move || {
+                for run in group {
+                    let t = Instant::now();
+                    report(run.name, t, cargo_run(run, sel, root), failed);
+                }
+            });
+        }
         for _ in 0..jobs.min(jobs_list.len()) {
             s.spawn(|| {
                 while let Some(&(i, variant)) = jobs_list.get(next.fetch_add(1, Ordering::Relaxed)) {
@@ -808,7 +820,8 @@ fn gate_variants(opts: &Options, sel: &Sel, info: &crate::utils::RustcInfo, root
     Ok(variants)
 }
 
-/// Runs `run`'s cargo command, skipping the slow and codegen tests unless selected.
+/// Runs `run`'s cargo command, skipping the slow and codegen tests unless selected; its output is
+/// printed only if it fails.
 fn cargo_run(run: &CargoRun, sel: &Sel, root: &Path) -> Result<(), String> {
     let mut c = cmd("cargo");
     c.current_dir(root.join("vm")).args(run.args).envs(run.env.iter().copied());
@@ -828,7 +841,12 @@ fn cargo_run(run: &CargoRun, sel: &Sel, root: &Path) -> Result<(), String> {
             c.args(["--skip", t]);
         }
     }
-    crate::utils::run(&mut c)
+    let r = crate::utils::capture(&mut c)?;
+    if r.status.success() {
+        return Ok(());
+    }
+    eprint!("{}{}", r.stdout, r.stderr);
+    Err(format!("`cargo {}` failed with {}", run.args.join(" "), r.status))
 }
 
 impl Variant {
