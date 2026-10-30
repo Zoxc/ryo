@@ -8,3 +8,6 @@ edition = "2024"
 # Line tables keep backtraces readable at a fraction of full debuginfo's disk use.
 [profile.dev]
 debug = "line-tables-only"
+# The tests are CPU-heavy (every opcode through the encoder, the Lean vectors); overflow
+# checks and debug assertions stay on.
+opt-level = 1
