@@ -372,8 +372,9 @@ impl ObjectFormat for Coff {
         obj.add_relocation(text, rel(target_at, target)).unwrap();
         // Read-only, like the CRT's own `.CRT$XC*` sections (`#pragma section(".CRT$XCU",
         // long, read)`), so the linker merges them without an attribute-mismatch warning.
-        // `XCT` sorts before the user initializers in `.CRT$XCU`, std's among them, which may
-        // be VM code (design/platforms.md).
+        // `XCT` sorts before the user initializers in `.CRT$XCU`, which may be VM code. std
+        // puts its own few (win7 vendor, aarch64) in `.CRT$XCT` too, where the order is the
+        // link input order (design/platforms.md).
         let init = obj.add_section(Vec::new(), b".CRT$XCT".to_vec(), SectionKind::ReadOnlyData);
         obj.append_section_data(init, &[0; 8], 8);
         let text_sym = obj.section_symbol(text);
@@ -611,8 +612,9 @@ fn elf_entries() -> String {
 }
 
 /// The Mach-O section (in `__DATA`) of the registration entries, `__ryo_<tag>`: section names
-/// have at most 16 bytes, so the tag is cut to its first 10 characters (a collision of two
-/// builds is caught by the header's `abi` check).
+/// have at most 16 bytes, so the tag is cut to its first 10 characters. Two builds whose tags
+/// collide share the section; each stub then skips the other build's entries silently, as
+/// their anchor (named with the full tag) isn't its own (`registry::admit`).
 fn macho_entries() -> String {
     let tag = ryo_bytecode::ABI_TAG;
     format!("__ryo_{}", &tag[..tag.len().min(10)])
