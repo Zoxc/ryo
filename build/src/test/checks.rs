@@ -13,6 +13,10 @@ use crate::utils::{Captured, capture, capture_ok, cmd, dll_name, exe_name, outpu
 pub(super) fn cargo_smoke(info: &crate::utils::RustcInfo, root: &Path, out: &Path) -> Result<(), String> {
     let pkg = out.join("cargo-hello");
     crate::utils::create_dir(&pkg)?;
+    // Leftovers of an interrupted run would make the builds below fresh.
+    for t in ["target", "target-sub"] {
+        crate::utils::remove_dir_if_exists(&pkg.join(t))?;
+    }
     let manifest = format!(
         "[package]\nname = \"cargo-hello\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n\
          [[bin]]\nname = \"hello\"\npath = {:?}\n\n[workspace]\n",
@@ -567,7 +571,9 @@ pub(super) fn jit_atomics(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<()
 /// runtime would enter the VM while it switches state. Everything `ryo_rt`'s rlib defines
 /// counts as runtime: the templates are generic and instantiated in the program's crates,
 /// which may panic like any program code. The edges are the relocations in each function
-/// (`llvm-objdump -dr`), which cover calls and taken addresses.
+/// (`llvm-objdump -dr`), which cover calls and taken addresses, and, on ELF, those in data
+/// sections (`llvm-objdump -r`: vtables, fn-pointer tables), from the section's symbol. Calls
+/// through core's non-generic code (e.g. `core::fmt::write`) are still dead ends.
 pub(super) fn panic_path(objdump: &Path, rt: &Path, bytecode: &Path, triple: &str) -> Result<Option<Vec<String>>, String> {
     use std::collections::HashMap;
     let mut edges: HashMap<String, Vec<String>> = HashMap::new();
@@ -601,16 +607,39 @@ pub(super) fn panic_path(objdump: &Path, rt: &Path, bytecode: &Path, triple: &st
                 // A relocation against a function's own section (`-ffunction-sections`, one
                 // function per section) names the section: map it to the function.
                 let target = [".text.unlikely.", ".text.hot.", ".text."].iter().find_map(|p| target.strip_prefix(p)).unwrap_or(target);
-                let target = crate::target::unprefixed(triple, target).to_owned();
+                let target = crate::target::unprefixed(triple, data_symbol(target)).to_owned();
                 edges.entry(f.clone()).or_default().push(target);
             }
         }
+        // Data sections, one per symbol (`-fdata-sections`): `RELOCATION RECORDS FOR [<section>]:`,
+        // then `<offset> <type> <target>` lines.
+        let relocs = output(cmd(objdump).arg("-r").arg(lib))?;
+        let mut cur: Option<String> = None;
+        let mut in_jit = false;
+        for line in relocs.lines() {
+            if line.contains(":\tfile format ") || line.contains(": file format ") {
+                in_jit = line.contains(&format!("({}):", crate::jit::OBJECT));
+                cur = None;
+            } else if let Some(sec) = line.strip_prefix("RELOCATION RECORDS FOR [").and_then(|l| l.strip_suffix("]:")) {
+                let data = [".data.", ".rodata."].iter().any(|p| sec.starts_with(p));
+                cur = (data && !in_jit).then(|| crate::target::unprefixed(triple, data_symbol(sec)).to_owned());
+            } else if let Some(sec) = &cur
+                && let [_, _, target] = line.split_whitespace().collect::<Vec<_>>()[..]
+            {
+                let target = target.split(['+', '-']).next().unwrap_or("");
+                let target = [".text.unlikely.", ".text.hot.", ".text."].iter().find_map(|p| target.strip_prefix(p)).unwrap_or(target);
+                let target = crate::target::unprefixed(triple, data_symbol(target)).to_owned();
+                edges.entry(sec.clone()).or_default().push(target);
+            }
+        }
     }
-    // core's panic entry points: `core::panicking::*`, and the `#[cold]` `*_fail`/`*_failed`
-    // helpers (slice indexing, `unwrap`, sort's `panic_on_ord_violation`).
+    // core's panic entry points: `core::panicking::*`, the `#[cold]` `*_fail`/`*_failed`
+    // helpers (slice indexing, `unwrap`), and the other outlined helpers named `panic_*` or
+    // `*_panic` (sort's `panic_on_ord_violation`, `RefCell`'s `panic_already_borrowed`,
+    // `ilog10`'s `panic_for_nonpositive_argument`, `overflow_panic::*`, ...).
     let panics = |s: &str| {
         crate_roots(s).first().is_some_and(|c| c == "4core")
-            && (s.contains("9panicking") || s.contains("_fail") || s.contains("panic_on_ord_violation"))
+            && (s.contains("9panicking") || s.contains("_fail") || s.contains("panic_") || s.contains("_panic"))
     };
     let mut from: HashMap<String, Option<String>> = HashMap::new();
     let mut stack: Vec<(String, Option<String>)> = roots.into_iter().map(|r| (r, None)).collect();
@@ -633,7 +662,17 @@ pub(super) fn panic_path(objdump: &Path, rt: &Path, bytecode: &Path, triple: &st
     Ok(None)
 }
 
-/// The crate roots (`<len><name>` after `Cs<disambiguator>_`) in a v0 symbol.
+/// The symbol of an ELF data section (`.data.rel.ro.<symbol>` etc.), or `name` itself.
+fn data_symbol(name: &str) -> &str {
+    [".data.rel.ro.local.", ".data.rel.ro.", ".data.rel.local.", ".data.rel.", ".rodata.", ".data."]
+        .iter()
+        .find_map(|p| name.strip_prefix(p))
+        .unwrap_or(name)
+}
+
+/// The crate roots (`<len>[_]<name>` after `Cs<disambiguator>_`, as mangled: the `_`
+/// separator comes before a name starting with `_` or a digit) in a v0 symbol. A scan, not a
+/// parser: a `Cs…_` inside an identifier counts too.
 pub(super) fn crate_roots(sym: &str) -> Vec<String> {
     let b = sym.as_bytes();
     let mut out = Vec::new();
@@ -653,12 +692,13 @@ pub(super) fn crate_roots(sym: &str) -> Vec<String> {
             while j < b.len() && b[j].is_ascii_digit() {
                 j += 1;
             }
+            let sep = (b.get(j) == Some(&b'_')) as usize;
             if j > start
                 && let Ok(n) = sym[start..j].parse::<usize>()
-                && j + n <= b.len()
+                && j + sep + n <= b.len()
             {
-                out.push(sym[start..j + n].to_owned());
-                i = j + n;
+                out.push(sym[start..j + sep + n].to_owned());
+                i = j + sep + n;
                 continue;
             }
         }

@@ -1254,6 +1254,9 @@ mod tests {
         assert_eq!(roots, ["6ryo_rt"]);
         let roots = super::crate_roots("_RINvNtCsabc_4core3ptr13drop_in_placeNtCsdef_3std6ThreadE");
         assert_eq!(roots, ["4core", "3std"]);
+        // `_` separates the length from a name starting with `_`.
+        let roots = super::crate_roots("_RNvCsabc_7___rustc12ryo_h_Return");
+        assert_eq!(roots, ["7___rustc"]);
     }
 
     #[test]
