@@ -20,8 +20,9 @@ holds for the rest of the code (the body, its loop heads' counter stubs, jump ta
 
 - the entry's counter stub (the target of the entry check's `js`), which runs before the
   prologue, with the state at the `js`;
-- epilogues: the decoder accepts them only as the epilogue item directly followed by `ret`, so
-  no call (no unwind point) lies between the frame's release and the return, and the FDE gives
+- epilogues: the decoder accepts them only as the epilogue item directly followed by `ret` or
+  by a tail call's jump (`jmp func`, `jmp rax`), so no call (no unwind point) lies between the
+  frame's release and leaving the function, and the FDE gives
   them no rules of their own (by design: only asynchronous unwinding could stop there). The
   derived state keeps the body's there, which is the FDE's.
 

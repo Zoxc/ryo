@@ -1,7 +1,7 @@
 /-
 # Each image function's unwind tables (aot.md §C3, "Unwind")
 
-`unwind_elf` (`vm/bytecode/src/image/writer.rs`) gives every function of an image one FDE in
+`unwind_elf` (`vm/bytecode/src/image/unwind.rs`) gives every function of an image one FDE in
 `.eh_frame`, its first address relocated against the text section at the function's
 `code_off`, and one LSDA (`asm::lsda::write` of its call sites) in `.gcc_except_table.*`, the
 FDE's LSDA pointer relocated against it. The image's call-site table (`CallSiteEntry`) is

@@ -2,7 +2,7 @@
 # `.eh_frame` (aot.md §C3, "Unwind")
 
 A reader for the call frame information image objects carry
-(`vm/bytecode/src/image/writer.rs`: `eh_cie`, `eh_fde`, `eh_fde_rows`, `unwind_elf`): CIEs and
+(`vm/bytecode/src/image/unwind.rs`: `eh_cie`, `eh_fde`, `eh_fde_rows`, `unwind_elf`): CIEs and
 FDEs, each FDE's call frame instructions evaluated into its row table (code offset, the CFA
 rule `reg + offset`, the saved registers' rules), as `readelf --debug-dump=frames-interp`
 shows it. It reads what ryo emits and rejects the rest:
