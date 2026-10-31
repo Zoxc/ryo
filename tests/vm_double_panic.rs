@@ -1,7 +1,10 @@
 //! A panic in a drop while a panic unwinds from a VM frame towards a `catch_unwind`: the drop
 //! runs in the deeper VM frame's landing pad, its panic hits the cleanup's `Terminate`
 //! action, and `panic_in_cleanup` aborts after the frames inside the drop unwound (the exit
-//! status is compared too).
+//! status is compared too). That is ELF; on PE (design/vm.md#pe-seh) the pad runs in the
+//! unwind phase, outside the target frame, and the drop's panic, at a `Terminate` site of
+//! the pad region, makes the handler terminate the process in the search phase: at once,
+//! without unwinding the frames inside the drop or a message, as MSVC's code does.
 use std::hint::black_box;
 
 struct Bomb(u32);

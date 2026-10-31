@@ -1,5 +1,8 @@
 //! Milestone 5: a panic in a drop while VM code unwinds calls `panic_in_cleanup` (the
-//! terminate stub of the cleanup's `Terminate` action), which reports it and aborts.
+//! terminate stub of the cleanup's `Terminate` action), which reports it and aborts. That is
+//! ELF; on PE (design/vm.md#pe-seh) the drop runs in the pad region, and the SEH handler
+//! terminates the process at its `Terminate` site in the search phase, at once and without a
+//! message, as MSVC's code does.
 struct P(u32);
 impl Drop for P {
     fn drop(&mut self) {
