@@ -61,10 +61,11 @@ type Range = (u32, u32);
 /// One block's ranges.
 #[derive(Default)]
 struct BlockCert {
-    /// Per statement lowered on its own (the fused compare is lowered with the terminator).
+    /// Per statement lowered on its own (a fused statement is lowered with the terminator).
     stmts: Vec<Range>,
     term: Range,
-    /// Whether the last statement is a compare fused into the terminator.
+    /// Whether the last statement is fused into the terminator (`terminator::Fused`): a
+    /// compare, or a niche enum's `Discriminant`.
     fused: bool,
     /// Unreachable after monomorphization: lowered as a lone `unreachable` (its `term`), with
     /// no statement ranges.

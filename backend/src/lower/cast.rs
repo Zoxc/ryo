@@ -210,7 +210,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
 }
 
 /// The vtable entry holding the supertrait vtable for a `dyn` upcast from `sa` to `sb`, or
-/// `None` when the vtable pointer is reused (same principal, or none in `sb`).
+/// `None` when the vtable pointer is reused: same principal, none in `sb`, or `sb`'s vtable a
+/// prefix of `sa`'s (`supertrait_vtable_slot` gives no entry, as for the first supertrait).
 pub fn upcast_entry<'tcx>(tcx: TyCtxt<'tcx>, sa: Ty<'tcx>, sb: Ty<'tcx>) -> Option<usize> {
     let (ty::Dynamic(da, _), ty::Dynamic(db, _)) = (sa.kind(), sb.kind()) else { return None };
     let same = da.principal_def_id() == db.principal_def_id() || db.principal_def_id().is_none();
