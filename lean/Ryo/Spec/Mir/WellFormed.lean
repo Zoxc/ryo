@@ -8,7 +8,10 @@ part: `check_wf` for `PlaceExpr`, `ValueExpr`, `Statement`, `Terminator`, `Funct
 
 Checked:
 - every local type is well-formed (`Ty.wf`) and sized; `argCount`, `spreadArg` in range;
-- local, block, instance and global indices are in range;
+- local and block indices are in range, and so are the instances of calls, tail calls, drop
+  glue and assert panics, and the targets of globals' relocations (other instance and global
+  indices, in constants, `ThreadLocalRef`, fn-pointer and vtable casts and the lang items,
+  are only checked when they are used, `global?`/`callInstance`);
 - place projections type-check (deref of pointers, fields in range, index locals of type
   `usize`, downcasts in range);
 - `SwitchInt` operands are integers, `bool` or `char`;
@@ -242,6 +245,11 @@ def checkBinOp (op : BinOp) (a b dest : Ty) : WfM Unit := do
   match op with
   | .offset => do
     ensure (isRawPtr a) s!"BinaryOp Offset: {tyKind a} is not a raw pointer"
+    -- rustc emits `Offset` only for `T: Sized`, which the semantics needs (`pointeeSize`).
+    let sizedPointee := match a with
+      | .ptr pt _ => pt.pointee?.any (fun l => l.layout matches .sized ..)
+      | _ => false
+    ensure sizedPointee s!"BinaryOp Offset: {tyKind a} doesn't point at a sized type"
     ensure (b matches .int ⟨_, 8⟩ _)
       s!"BinaryOp Offset: offset of type {tyKind b}, expected isize or usize"
     expectShape "BinaryOp Offset" a dest
@@ -255,8 +263,14 @@ def checkBinOp (op : BinOp) (a b dest : Ty) : WfM Unit := do
     -- pointers three-way, so those are accepted too.
     both (fun x => isIntLike x || isRawPtr x || isFnPtr x)
       "a bool, char, integer, raw pointer or fn pointer"
-    -- `Ordering` (a fieldless `i8` enum); the semantics also accepts a plain integer.
-    ensure (isInt dest || dest matches .enum ..)
+    -- `Ordering` (a fieldless `i8` enum), or one like it: variants with the discriminants
+    -- -1, 0 and 1, as `orderingValue` needs; the semantics also accepts a plain integer.
+    let orderingLike := match dest with
+      | .int .. => true
+      | .enum vs discrTy .. =>
+        [-1, 0, 1].all fun (d : Int) => vs.any fun v => discrTy.bringInBounds v.discr == d
+      | _ => false
+    ensure orderingLike
       s!"BinaryOp Cmp: result assigned to a place of type {tyKind dest}, expected Ordering"
   | .addWithOverflow | .subWithOverflow | .mulWithOverflow => do
     both isInt "an integer"
@@ -307,7 +321,9 @@ def checkCast (k : CastKind) (src dst : Ty) : WfM Unit := do
   | .floatToFloat => expect (isFloat src && isFloat dst) "expected a float to a float"
   | .pointerExposeProvenance => expect (isPtr src && isInt dst) "expected a pointer to an integer"
   | .pointerWithExposedProvenance =>
-    expect (isIntLike src && isRawPtr dst) "expected an integer to a raw pointer"
+    -- `evalCast` gives a thin pointer (no metadata to attach).
+    expect (isIntLike src && isRawPtr dst && ptrTyMetaClass dst == 0)
+      "expected an integer, bool or char to a thin raw pointer"
   | .ptrToPtr =>
     -- A thin pointer cannot become a wide one; wide → wide keeps the metadata.
     expect (isPtr src && isPtr dst &&
@@ -342,6 +358,9 @@ def checkCast (k : CastKind) (src dst : Ty) : WfM Unit := do
         let cls := match m with | .length _ => 1 | _ => 2
         expect (ptrTyMetaClass dst == cls)
           s!"the target pointer's metadata does not fit the {ctorName m} metadata"
+        -- An upcast keeps or replaces the source's vtable (`unsizeValue`), so needs one.
+        if m matches .upcast _ then
+          expect (ptrTyMetaClass src == 2) "an upcast needs a source pointer with a vtable"
       | .tuple fs _ _, .tuple fs' _ _ => expect (fs.length == fs'.length) "the structs differ"
       | _, _ => expect false "expected a pointer or a struct of pointers"
 
@@ -476,6 +495,12 @@ def unwindEdge (b : Body) (fromCleanup : Bool) (u : UnwindAction) : WfM Unit := 
   | .continue => ensure (!fromCleanup) "UnwindAction::Continue in a cleanup block"
   | _ => pure ()
 
+/-- A caller location: `inherit` only in a `#[track_caller]` body, which has one to pass on
+(`evalCallerLoc`). -/
+def checkCallerLoc (b : Body) : Option CallerLoc → WfM Unit
+  | some .inherit => ensure b.trackCaller "inherited caller location in a body without #[track_caller]"
+  | _ => pure ()
+
 def checkTerminator (b : Body) (nInst : Nat) (cleanup : Bool) : Terminator → WfM Unit
   | .goto bb => edge b cleanup bb
   | .switchInt d cases otherwise => do
@@ -493,26 +518,31 @@ def checkTerminator (b : Body) (nInst : Nat) (cleanup : Bool) : Terminator → W
     if let some i := glue then ensure (i < nInst) "Drop: glue instance out of range"
     edge b cleanup target
     unwindEdge b cleanup unwind
-  | .call f args dest target unwind _ _ => do
+  | .call f args dest target unwind loc _ => do
     match f with
     | .inst i => ensure (i < nInst) "Call: instance out of range"
     | .fnPtr o => do let _ ← operandTy b o
     | .virtual _ => ensure (!args.isEmpty) "virtual call without a receiver"
     args.forM fun o => do let _ ← operandTy b o
+    checkCallerLoc b loc
     let _ ← placeTy b dest
     if let some t := target then edge b cleanup t
     unwindEdge b cleanup unwind
-  | .tailCall f args _ _ => do
+  | .tailCall f args loc _ => do
     match f with
     | .inst i => ensure (i < nInst) "TailCall: instance out of range"
     | .fnPtr o => do let _ ← operandTy b o
     | .virtual _ => pure ()
     args.forM fun o => do let _ ← operandTy b o
+    checkCallerLoc b loc
   | .assert c _ msg target unwind => do
     match ← operandTy b c with
     | .bool => pure ()
     | _ => throw "Assert on a non-bool"
     ensure (msg.panicFn < nInst) "Assert: panic function out of range"
+    -- The panic's operands, evaluated only when the assertion fails.
+    msg.args.forM fun o => do let _ ← operandTy b o
+    checkCallerLoc b msg.callerLocation
     edge b cleanup target
     unwindEdge b cleanup unwind
 
