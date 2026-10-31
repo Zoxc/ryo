@@ -14,7 +14,7 @@ Ryo.Proofs.DecodeLink.Bounds — decoded code that the bounds check accepts sati
   satisfies `FrameBounds` for `frameTop`, and so for every larger `K` up to `2 ^ 31`
   (`FrameBounds.mono`; the proofs' window is `[-F, 16 + argSize)`, so it needs
   `frameTop ≤ 16 + argSize` and `16 + argSize ≤ 2 ^ 31`, facts of the function entry: the image
-  checker's `checkSignature` checks the first, not yet the second).
+  checker's `checkSignature` checks both).
 
 The run-time side, `fp + K ≤ 2 ^ 64` (`FrameBounds.window`), is an environment assumption
 (lean/docs/assumptions.md, the frame lies in the address space).
