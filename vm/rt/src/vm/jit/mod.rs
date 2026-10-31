@@ -337,6 +337,9 @@ static WAKE: AtomicU32 = AtomicU32::new(0);
 static SLEEPING: AtomicBool = AtomicBool::new(false);
 /// The first push started the JIT thread.
 static STARTED: AtomicBool = AtomicBool::new(false);
+/// The process the first push started the JIT thread in (0 until it does): a forked child
+/// inherits [`STARTED`] but has no JIT thread, so its trips don't wait for compiles.
+static JIT_PID: AtomicU32 = AtomicU32::new(0);
 /// The JIT thread couldn't be started: the trips act as the no-op JIT.
 static DISABLED: AtomicBool = AtomicBool::new(false);
 
@@ -576,9 +579,14 @@ fn trip(rec: *mut JitRecord) -> u32 {
     // With `sync`, a queued record keeps its counters unbiased, so that every thread that
     // trips meanwhile waits for the compile too, rather than running on in AOT code. Not
     // once the process exits on PE: the JIT thread is gone (`sys::exiting`), the wait would
-    // never end, and the record stays queued (its code AOT).
+    // never end, and the record stays queued (its code AOT). Nor in a forked child, which has
+    // no JIT thread (`JIT_PID`).
     if cfg.sync && !super::sys::exiting() {
-        while JitRecord::state(rec).load(Acquire) == JIT_QUEUED && !DISABLED.load(Acquire) {
+        let has_jit = || {
+            let p = JIT_PID.load(Acquire);
+            p == 0 || p == super::sys::pid()
+        };
+        while JitRecord::state(rec).load(Acquire) == JIT_QUEUED && !DISABLED.load(Acquire) && has_jit() {
             futex_wait(JitRecord::state(rec), JIT_QUEUED);
         }
     }
@@ -604,24 +612,39 @@ fn push(rec: *mut JitRecord) {
             Err(h) => head = h,
         }
     }
-    if !STARTED.load(Relaxed) && !STARTED.swap(true, AcqRel) && !start() {
-        // Fail everything queued so far, this record included, and wake its waiters
-        // (`RYO_JIT_SYNC`). A push racing this one either precedes the swap, or its
-        // pusher sees `DISABLED` before it would wait.
-        DISABLED.store(true, SeqCst);
-        let mut list = QUEUE.swap(ptr::null_mut(), SeqCst);
-        while !list.is_null() {
-            let r = list;
-            // SAFETY: popped records are this thread's, as the JIT thread's.
-            list = unsafe { (*r).next };
-            fail(r);
-            futex_wake(JitRecord::state(r), i32::MAX);
+    if !STARTED.load(Relaxed) && !STARTED.swap(true, AcqRel) {
+        JIT_PID.store(super::sys::pid(), Release);
+        if !start() {
+            // Fail everything queued so far, this record included, and wake its waiters
+            // (`RYO_JIT_SYNC`).
+            DISABLED.store(true, SeqCst);
+            fail_queued();
+            return;
         }
+    }
+    // A push after a failed start's swap: nothing pops it, but other threads may wait on the
+    // record (`RYO_JIT_SYNC`), having checked `DISABLED` before this push. Fail what is
+    // queued, as the failed start does: a push either precedes its swap, or this load sees
+    // its `DISABLED` (the push's Acquire half reads from the swap or later).
+    if DISABLED.load(SeqCst) {
+        fail_queued();
         return;
     }
     WAKE.fetch_add(1, SeqCst);
     if SLEEPING.load(SeqCst) {
         futex_wake(&WAKE, 1);
+    }
+}
+
+/// Fails and wakes the queued records, once the JIT can't start ([`DISABLED`]).
+fn fail_queued() {
+    let mut list = QUEUE.swap(ptr::null_mut(), SeqCst);
+    while !list.is_null() {
+        let r = list;
+        // SAFETY: popped records are this thread's, as the JIT thread's.
+        list = unsafe { (*r).next };
+        fail(r);
+        futex_wake(JitRecord::state(r), i32::MAX);
     }
 }
 
