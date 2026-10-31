@@ -159,6 +159,9 @@ def checkSignature (o : ImageObject) (i : Nat) (d : Decoded) : Array String := I
   if !d.boundsOk mode then out := out.push s!"{l}: frame access outside the frame (Decoded.boundsOk)"
   if d.frameTop mode > 16 + (f.argSize : Int) then
     out := out.push s!"{l}: frame ranges end at fp + {d.frameTop mode}, past 16 + arg_size {f.argSize}"
+  -- `FrameBounds.mono` takes the window's end to at most `2 ^ 31`.
+  if 16 + (f.argSize : Int) > 2 ^ 31 then
+    out := out.push s!"{l}: 16 + arg_size {f.argSize} is past 2^31"
   -- The slots the first integer argument register is stored to (an sret function's pointer).
   let argSlots := d.insns.toList.filterMap fun
     | .native op [.slot s, .imm w] => if op.info.mnemonic == "arg" && w.toNat == 8 then some s else none
