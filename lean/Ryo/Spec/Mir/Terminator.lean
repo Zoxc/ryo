@@ -213,20 +213,25 @@ def evalTerminator : Terminator → SemM Unit
         | none => rawPtrTy ty true
       callInstance i [⟨.ptr pl.ptr, argTy, none⟩] none (.caller (some target) unwind []) none none
   | .call f args dest target unwind callerLoc abi => do
-    let (i, argVals) ← match f with
+    -- `evaluated`: the arguments as evaluated, before a virtual call's receiver is rewritten
+    -- (`resolveCallee` drops its place), for the `Move` arguments to de-initialize.
+    let (i, argVals, evaluated) ← match f with
       | .fnPtr o => do
         -- the callee operand is evaluated before the arguments
         let (cv, _) ← evalOperand o
         let argVals ← args.mapM evalArg
         match cv with
-        | .ptr p => pure (← instOfFnPtr p, argVals)
+        | .ptr p => pure (← instOfFnPtr p, argVals, argVals)
         | _ => throwIllFormed "call through a non-pointer"
-      | f => do resolveCallee f (← args.mapM evalArg)
+      | f => do
+        let evaluated ← args.mapM evalArg
+        let (i, argVals) ← resolveCallee f evaluated
+        pure (i, argVals, evaluated)
     let (destPl, destTy) ← evalPlace dest
     let loc ← evalCallerLoc callerLoc
     -- D12: the destination is unobservable while the call runs
     memUpdate (·.deinit destPl.ptr.thin destTy.size .one)
-    let deinit := argVals.filterMap fun a => a.inPlace.map fun pl => (pl.ptr.thin, a.ty.size)
+    let deinit := evaluated.filterMap fun a => a.inPlace.map fun pl => (pl.ptr.thin, a.ty.size)
     callInstance i argVals (some (destPl, destTy)) (.caller target unwind deinit) loc abi
   | .tailCall f args callerLoc abi => do
     let argVals ← args.mapM fun o => do
