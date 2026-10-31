@@ -174,7 +174,10 @@ def byteAt (st : State) (o : Int) : M AbstractByte :=
 def readFrame (st : State) (off : Int) (n : Nat) : M (List AbstractByte) :=
   (List.range n).mapM fun (i : Nat) => st.byteAt (off + i)
 
-/-- The bytes of `bs` that fall in escaped objects, written to their allocations. -/
+/-- The bytes of `bs` that fall in escaped objects, written to their allocations. Unlike
+`byteAt` it doesn't check the allocation live and large enough (it writes a dead one, and
+`set!` drops bytes past its data): states where an escaped object breaks that invariant
+(`EscWF`, `Ryo/Proofs/Scope.lean`) are ill-formed on reads only. -/
 def writeEscaped (st : State) (off : Int) (bs : List AbstractByte) : M Memory :=
   bs.zipIdx.foldlM (init := st.mem) fun mem (b, i) =>
     match st.escapedAt (off + i) with

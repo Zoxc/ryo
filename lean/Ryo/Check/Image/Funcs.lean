@@ -201,8 +201,11 @@ def checkSignature (o : ImageObject) (i : Nat) (d : Decoded) : Array String := I
           | some callee =>
             if callee.retKind != f.retKind then
               out := out.push s!"{l}: insn {k}: tail call of func {g} of ret_kind {hex callee.retKind}, own {hex f.retKind}"
-            if callee.argSize > f.argSize then
-              out := out.push s!"{l}: insn {k}: tail call of func {g} with arg_size {callee.argSize} > own {f.argSize}"
+            -- Equal, not just within: the caller's answer takes the outgoing area back at the
+            -- original callee's `arg_size` (`R.Program.invoke`, `Final.toAnswer`); `become`
+            -- requires matching signatures anyway.
+            if callee.argSize != f.argSize then
+              out := out.push s!"{l}: insn {k}: tail call of func {g} with arg_size {callee.argSize}, own {f.argSize}"
           | none => out := out.push s!"{l}: insn {k}: tail call of func {g} (no such function)"
         | _ => out := out.push s!"{l}: insn {k}: tail_call operands"
     | .handler .. => pure ()
