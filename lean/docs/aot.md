@@ -272,7 +272,7 @@ follows the decoder's structure:
   call (scopes, `view`, `opSem`, `Then.succ`) for shapes `op`, `lpad`, `br` and `trap` (a
   returning trap handler faults at the `ud2`), and `jmp` and a bare `unreachable`, are
   `Ryo/Proofs/Shapes.lean`, given `OpFacts h` (`opSem`'s control fits the shape and it keeps
-  `EscWF`; not yet proved) and a map `pos` from instruction indices to code positions. The
+  `EscWF`; proved for every opcode by `opFacts`, `RyoProofs/OpFacts.lean`) and a map `pos` from instruction indices to code positions. The
   `switch` table jump (`leaTable; movsxd; add; jmp rax` with the entries in code memory) is
   `Ryo/Proofs/Switch.lean`; `arg` (with `ArgsRel`, the incoming registers) and `ret` (the
   return registers, `RetRel`, and every epilogue form) are `Ryo/Proofs/ArgRet.lean`. `OpFacts`
@@ -344,11 +344,12 @@ follows the decoder's structure:
   over the generated mnemonics as character lists (`Generated/Mnemonics.lean`), with
   `String.splitOn` replaced by a fuelled split proved equal to it; it covers all 277 inline
   opcodes, the native `ovf`, `mulOvf`, `ext`, `addr.const`, `addr.sym` and `addr.sym.ind`
-  ones included, and uses no `bv_decide` or `native_decide`. Not yet covered: the classes
-  inlined later (`laterClass`: variable shifts and rotates `shiftVar`, `div`/`rem`,
-  `cttz`/`ctlz` `count`, `cmp3`, `bswap`), which `frameOnly` excludes and the register cache
-  proofs take as a hypothesis (`sequence_ok`'s `hlater`); `RyoTest/Inline.lean` runs their
-  sequences against the handlers' methods. The
+  ones included, and uses no `bv_decide` or `native_decide`. The classes inlined later
+  (`laterClass`: variable shifts and rotates `shiftVar`, `div`/`rem`, `cttz`/`ctlz` `count`,
+  `cmp3`, `bswap`), which `frameOnly` excludes, are proved in `Inline/Later.lean` and
+  `Inline/LaterDiv.lean` (`inline_soundC_all`, `Inline/All.lean`), and the register cache
+  proofs cover them through `sequence_ok2`; `RyoTest/Inline.lean` also runs their sequences
+  against the handlers' methods. The
   rip-relative addresses `addrConst`, `addrSym`, `addrSymInd` are `inline_sound_rip`
   (`Inline/Rip.lean`), given `Globals` (where constants, data and symbol slots are linked).
   The overflow ops `add.ovf`, `sub.ovf`, `mul.ovf`
