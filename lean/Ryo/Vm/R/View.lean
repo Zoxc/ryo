@@ -7,7 +7,10 @@ from its argument registers, and `view`, an R instruction as a full opcode with 
   stack) by `asm::layout(h, mode)`
   (`asm::read`, `vm/bytecode/src/asm/mod.rs`), one `OpSem.Val` per operand of `h`, with the
   checks of Rust's full decoder (`handler_operands`, `asm/decode.rs`): `none` when the
-  arguments don't fit the layout.
+  arguments don't fit the layout. Two of its checks are not here: a `List(Target)` case count
+  below `code_len / 4` (implied by `view`'s table length check) and a case list's values lying
+  in the code constants (`case_values`; here only `.ro o` must be placed): a sparse switch
+  whose values run past them is `some` here and fails in `opSem`'s load instead.
 - `view mode ρ i`: a native instruction as its full opcode with its operands as `Val`s; a
   `handler h args t` as `h` with `unpack` and `t`. It mirrors Rust's `asm::decode`, which reads
   the same machine code to full instructions (`insn`, `handler_operands`, `then`), and the
