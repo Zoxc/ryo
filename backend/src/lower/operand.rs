@@ -88,6 +88,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                         self.op(opw(IntOp::Store, w), &[p, k as u32, s]);
                     }
                     Split::Pieces(ps) => {
+                        let p = self.piece_ptr(p);
                         for (o, w) in ps {
                             self.op(opw(IntOp::Store, w), &[p, (k + o as i32) as u32, s + o]);
                         }
@@ -98,6 +99,23 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 }
             }
         }
+    }
+
+    /// The pointer slot for a store in pieces through `p`: each piece reads `p` again, and an
+    /// earlier piece may overwrite it when `p` is in a local whose address was taken (a
+    /// self-referential object), so then a copy of `p` in a temporary.
+    pub fn piece_ptr(&mut self, p: u32) -> u32 {
+        if self.frame.is_temp(p) {
+            return p;
+        }
+        let escapes = &self.uses.escapes;
+        let hit = self.frame.locals.iter_enumerated().any(|(l, ls)| escapes[l] && p.wrapping_sub(ls.off) < (ls.layout.size.bytes() as u32).max(1));
+        if !hit {
+            return p;
+        }
+        let t = self.temp8();
+        self.mov(t, p, 8);
+        t
     }
 
     /// How a `size`-byte copy is emitted: one access if `size` is a width, else (if
@@ -199,6 +217,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
 
     /// `store.wK [p+i], s+i` pieces (`K` <= 64) for `n` bytes.
     pub fn store_pieces(&mut self, p: u32, s: u32, n: u32) {
+        let p = self.piece_ptr(p);
         for (o, w) in pieces(n, Width::W64, &self.cuts) {
             self.op(opw(IntOp::Store, w), &[p, o, s + o]);
         }
@@ -220,6 +239,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 self.op_imm(IntOp::Mul, Width::W64, t, t, ones);
             }
         }
+        let dst = self.piece_ptr(dst);
         for (o, w) in pieces(n, Width::W64, &[]) {
             self.op(opw(IntOp::Store, w), &[dst, o, t]);
         }

@@ -2928,8 +2928,7 @@ L35:
     mov     r14d,[r14+4]
     mov     rbp,[rsp+378h]
     mov     [rbp],r15d
-    mov     r15,[rsp+378h]
-    mov     [r15+4],r14d
+    mov     [rbp+4],r14d
     mov     edx,1
     jmp     L38
 L36:

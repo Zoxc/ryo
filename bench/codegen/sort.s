@@ -8793,9 +8793,10 @@ L32:
     mov     edx,[rdx+4]
     mov     [rsp+14h],edx
     mov     rsi,[rsp+0A8h]
+    mov     [rsp+8],rsi
     mov     ecx,[rsp+10h]
     mov     [rsi],ecx
-    mov     rdi,[rsp+0A8h]
+    mov     rdi,[rsp+8]
     mov     ecx,[rsp+14h]
     mov     [rdi+4],ecx
     mov     qword ptr [rsp+0C0h],1
@@ -8902,7 +8903,6 @@ L40:
     call    fn20
     jmp     L21
     nop     [rax+rax]
-    nop
 L41:
     inc     qword ptr [jit_record.ctr_l]
     jns     L53

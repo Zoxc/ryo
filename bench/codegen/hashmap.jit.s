@@ -4780,20 +4780,17 @@ L16:
     mov     r8,[rsp+1E0h]
     mov     r11,[rsp+80h]
     mov     [r11],rdi
-    mov     rdi,[rsp+1B8h]
-    mov     [rdi+8],r8
-    mov     rdi,[rsp+1B8h]
-    mov     [rdi+10h],rcx
-    mov     rcx,[rsp+1B8h]
-    mov     [rcx+18h],rax
+    mov     r11,[rsp+80h]
+    mov     [r11+8],r8
+    mov     r11,[rsp+80h]
+    mov     [r11+10h],rcx
+    mov     r11,[rsp+80h]
+    mov     [r11+18h],rax
     mov     rax,[rsp+1B0h]
     mov     [rax],rdx
-    mov     rax,[rsp+1B0h]
     mov     [rax+8],rsi
-    mov     rax,[rsp+1B0h]
     mov     rcx,[rsp+160h]
     mov     [rax+10h],rcx
-    mov     rax,[rsp+1B0h]
     mov     rcx,[rsp+168h]
     mov     [rax+18h],rcx
     mov     rax,[rsp+1E0h]
@@ -5065,7 +5062,7 @@ L25:
     .long   L31
 L26:
     pop     rcx
-    lea     rdx,[rsp+270h]
+    lea     rdx,[rsp+280h]
     lea     rsp,[rdx-370h]
     mov     r11,[rdx-18h]
     mov     [rsp],r11
@@ -5131,7 +5128,7 @@ L26:
     jmp     L0
 L27:
     pop     rcx
-    lea     rdx,[rsp+270h]
+    lea     rdx,[rsp+280h]
     lea     rsp,[rdx-370h]
     mov     r11,[rdx-158h]
     mov     [rsp],r11

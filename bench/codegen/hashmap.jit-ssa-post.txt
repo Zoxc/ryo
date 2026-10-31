@@ -9349,527 +9349,523 @@ b11(): ; Body
     trap
 
 fn hashbrown::raw::RawTableInner::resize_inner::<std::alloc::Global>
-a0: $-624, 8 bytes, Promoted
-a1: $-616, 8 bytes, Promoted
-a2: $-608, 8 bytes, Promoted
-a3: $-600, 8 bytes, Promoted
-a4: $-592, 8 bytes, Promoted
-a5: $-584, 8 bytes, Promoted
-a6: $-576, 16 bytes, Memory, escaped
-a7: $-560, 8 bytes, Promoted
-a8: $-552, 8 bytes, Promoted
-a9: $-544, 8 bytes, Promoted
-a10: $-536, 8 bytes, Promoted
-a11: $-528, 8 bytes, Promoted
-a12: $-520, 8 bytes, Promoted
-a13: $-512, 8 bytes, Promoted
-a14: $-504, 8 bytes, Promoted
-a15: $-496, 8 bytes, Promoted
-a16: $-488, 8 bytes, Promoted
-a17: $-480, 32 bytes, Memory, escaped
-a18: $-448, 8 bytes, Promoted
-a19: $-440, 8 bytes, Promoted
-a20: $-432, 8 bytes, Promoted
-a21: $-424, 8 bytes, Promoted
-a22: $-416, 8 bytes, Promoted
-a23: $-408, 8 bytes, Promoted
-a24: $-400, 8 bytes, Promoted
-a25: $-392, 8 bytes, Promoted
-a26: $-384, 8 bytes, Promoted
-a27: $-376, 8 bytes, Promoted
-a28: $-368, 16 bytes, Promoted, escaped
-a29: $-352, 8 bytes, Promoted
-a30: $-344, 8 bytes, Promoted
-a31: $-336, 32 bytes, Memory, pinned, escaped
-a32: $-304, 56 bytes, Memory, pinned, escaped
-a33: $-248, 8 bytes, Promoted
-a34: $-240, 8 bytes, Promoted
-a35: $-144, 8 bytes, Promoted
-a36: $-120, 8 bytes, Promoted
-a37: $-112, 8 bytes, Promoted
-a38: $-104, 8 bytes, Promoted
-a39: $-96, 8 bytes, Promoted
-a40: $-88, 8 bytes, Memory
-a41: $-80, 8 bytes, Promoted
-a42: $-72, 8 bytes, Promoted
-a43: $-57, 1 bytes, Promoted
-a44: $-56, 8 bytes, Promoted
-a45: $-48, 8 bytes, Promoted
-a46: $-40, 8 bytes, Promoted
-a47: $-32, 8 bytes, Promoted
-a48: $-24, 8 bytes, Promoted
-a49: $-16, 8 bytes, Promoted
-a50: $-8, 8 bytes, Promoted
-a51: $16, 8 bytes, Incoming
-a52: $24, 8 bytes, Incoming
-a53: $-96, 16 bytes, Promoted, escaped, inlined
-a54: $-72, 8 bytes, Promoted, inlined
-a55: $-64, 16 bytes, Promoted, escaped, inlined
-a56: $-48, 16 bytes, Promoted, inlined
-a57: $-32, 16 bytes, Promoted, inlined
-a58: $-4, 4 bytes, Promoted, inlined
-a59: $-48, 8 bytes, Promoted, inlined
-a60: $-40, 8 bytes, Promoted, inlined
-a61: $-32, 8 bytes, Promoted, inlined
-a62: $-24, 8 bytes, Promoted, inlined
-a63: $-16, 8 bytes, Promoted, inlined
-a64: $-8, 8 bytes, Promoted, inlined
-a65: $-32, 8 bytes, Promoted, inlined
-a66: $-24, 8 bytes, Promoted, inlined
-a67: $-16, 8 bytes, Promoted, inlined
-a68: $-8, 8 bytes, Promoted, inlined
+a0: $-640, 8 bytes, Promoted
+a1: $-632, 8 bytes, Promoted
+a2: $-624, 8 bytes, Promoted
+a3: $-616, 8 bytes, Promoted
+a4: $-608, 8 bytes, Promoted
+a5: $-600, 8 bytes, Promoted
+a6: $-592, 8 bytes, Promoted
+a7: $-584, 8 bytes, Promoted
+a8: $-576, 16 bytes, Memory, escaped
+a9: $-560, 8 bytes, Promoted
+a10: $-552, 8 bytes, Promoted
+a11: $-544, 8 bytes, Promoted
+a12: $-536, 8 bytes, Promoted
+a13: $-528, 8 bytes, Promoted
+a14: $-520, 8 bytes, Promoted
+a15: $-512, 8 bytes, Promoted
+a16: $-504, 8 bytes, Promoted
+a17: $-496, 8 bytes, Promoted
+a18: $-488, 8 bytes, Promoted
+a19: $-480, 32 bytes, Memory, escaped
+a20: $-448, 8 bytes, Promoted
+a21: $-440, 8 bytes, Promoted
+a22: $-432, 8 bytes, Promoted
+a23: $-424, 8 bytes, Promoted
+a24: $-416, 8 bytes, Promoted
+a25: $-408, 8 bytes, Promoted
+a26: $-400, 8 bytes, Promoted
+a27: $-392, 8 bytes, Promoted
+a28: $-384, 8 bytes, Promoted
+a29: $-376, 8 bytes, Promoted
+a30: $-368, 16 bytes, Promoted, escaped
+a31: $-352, 8 bytes, Promoted
+a32: $-344, 8 bytes, Promoted
+a33: $-336, 32 bytes, Memory, pinned, escaped
+a34: $-304, 56 bytes, Memory, pinned, escaped
+a35: $-248, 8 bytes, Promoted
+a36: $-240, 8 bytes, Promoted
+a37: $-144, 8 bytes, Promoted
+a38: $-120, 8 bytes, Promoted
+a39: $-112, 8 bytes, Promoted
+a40: $-104, 8 bytes, Promoted
+a41: $-96, 8 bytes, Promoted
+a42: $-88, 8 bytes, Memory
+a43: $-80, 8 bytes, Promoted
+a44: $-72, 8 bytes, Promoted
+a45: $-57, 1 bytes, Promoted
+a46: $-56, 8 bytes, Promoted
+a47: $-48, 8 bytes, Promoted
+a48: $-40, 8 bytes, Promoted
+a49: $-32, 8 bytes, Promoted
+a50: $-24, 8 bytes, Promoted
+a51: $-16, 8 bytes, Promoted
+a52: $-8, 8 bytes, Promoted
+a53: $16, 8 bytes, Incoming
+a54: $24, 8 bytes, Incoming
+a55: $-96, 16 bytes, Promoted, escaped, inlined
+a56: $-72, 8 bytes, Promoted, inlined
+a57: $-64, 16 bytes, Promoted, escaped, inlined
+a58: $-48, 16 bytes, Promoted, inlined
+a59: $-32, 16 bytes, Promoted, inlined
+a60: $-4, 4 bytes, Promoted, inlined
+a61: $-48, 8 bytes, Promoted, inlined
+a62: $-40, 8 bytes, Promoted, inlined
+a63: $-32, 8 bytes, Promoted, inlined
+a64: $-24, 8 bytes, Promoted, inlined
+a65: $-16, 8 bytes, Promoted, inlined
+a66: $-8, 8 bytes, Promoted, inlined
+a67: $-32, 8 bytes, Promoted, inlined
+a68: $-24, 8 bytes, Promoted, inlined
 a69: $-16, 8 bytes, Promoted, inlined
 a70: $-8, 8 bytes, Promoted, inlined
-a71: $-32, 8 bytes, Promoted, inlined
-a72: $-24, 8 bytes, Promoted, inlined
-a73: $-16, 8 bytes, Promoted, inlined
-a74: $-8, 8 bytes, Promoted, inlined
-a75: $-152, 8 bytes, Promoted, inlined
-a76: $-144, 8 bytes, Promoted, inlined
-a77: $-136, 8 bytes, Promoted, inlined
-a78: $-128, 8 bytes, Promoted, inlined
-a79: $-120, 8 bytes, Promoted, inlined
-a80: $-112, 8 bytes, Promoted, inlined
-a81: $-104, 8 bytes, Promoted, inlined
-a82: $-96, 24 bytes, Memory, escaped, inlined
-a83: $-72, 8 bytes, Promoted, inlined
-a84: $-64, 8 bytes, Promoted, inlined
-a85: $-50, 1 bytes, Promoted, inlined
-a86: $-49, 1 bytes, Promoted, inlined
-a87: $-24, 8 bytes, Promoted, inlined
-a88: $-16, 8 bytes, Promoted, inlined
-a89: $-8, 8 bytes, Promoted, inlined
-a90: $-72, 8 bytes, Promoted, inlined
-a91: $-64, 8 bytes, Promoted, inlined
-a92: $-32, 8 bytes, Promoted, inlined
-a93: $-24, 8 bytes, Promoted, inlined
-a94: $-16, 8 bytes, Promoted, inlined
-a95: $-8, 8 bytes, Promoted, inlined
-a96: $-128, 16 bytes, Promoted, escaped, inlined
-a97: $-112, 8 bytes, Promoted, inlined
-a98: $-104, 8 bytes, Promoted, inlined
-a99: $-96, 16 bytes, Memory, escaped, inlined
-a100: $-80, 16 bytes, Memory, escaped, inlined
-a101: $-58, 1 bytes, Promoted, inlined
-a102: $-57, 1 bytes, Promoted, inlined
-a103: $-56, 8 bytes, Promoted, inlined
-a104: $-48, 8 bytes, Promoted, inlined
-a105: $-24, 8 bytes, Promoted, inlined
-a106: $-16, 8 bytes, Promoted, inlined
-a107: $-8, 8 bytes, Promoted, inlined
-a108: $-160, 16 bytes, Promoted, escaped, inlined
-a109: $-140, 4 bytes, Promoted, inlined
-a110: $-136, 8 bytes, Promoted, inlined
-a111: $-128, 8 bytes, Promoted, inlined
-a112: $-120, 8 bytes, Promoted, inlined
-a113: $-112, 8 bytes, Promoted, inlined
-a114: $-104, 8 bytes, Promoted, inlined
-a115: $-96, 2 bytes, Promoted, inlined
-a116: $-94, 1 bytes, Promoted, inlined
-a117: $-93, 1 bytes, Promoted, inlined
-a118: $-82, 2 bytes, Promoted, inlined
-a119: $-80, 16 bytes, Promoted, escaped, inlined
-a120: $-32, 8 bytes, Promoted, inlined
-a121: $-24, 8 bytes, Promoted, inlined
-a122: $-16, 8 bytes, Promoted, inlined
-a123: $-8, 8 bytes, Promoted, inlined
-a124: $-96, 16 bytes, Promoted, escaped, inlined
-a125: $-72, 8 bytes, Promoted, inlined
-a126: $-64, 16 bytes, Promoted, escaped, inlined
-a127: $-48, 16 bytes, Promoted, inlined
-a128: $-32, 16 bytes, Promoted, inlined
-a129: $-4, 4 bytes, Promoted, inlined
-a130: $-48, 8 bytes, Promoted, inlined
-a131: $-40, 8 bytes, Promoted, inlined
-a132: $-32, 8 bytes, Promoted, inlined
-a133: $-24, 8 bytes, Promoted, inlined
-a134: $-16, 8 bytes, Promoted, inlined
-a135: $-8, 8 bytes, Promoted, inlined
-a136: $-32, 8 bytes, Promoted, inlined
-a137: $-24, 8 bytes, Promoted, inlined
-a138: $-16, 8 bytes, Promoted, inlined
-a139: $-8, 8 bytes, Promoted, inlined
-a140: $-128, 16 bytes, Memory, escaped, inlined
-a141: $-112, 8 bytes, Promoted, inlined
-a142: $-104, 8 bytes, Promoted, inlined
-a143: $-96, 8 bytes, Promoted, inlined
-a144: $-88, 8 bytes, Promoted, inlined
-a145: $-80, 4 bytes, Promoted, inlined
-a146: $-66, 2 bytes, Promoted, inlined
-a147: $-56, 8 bytes, Promoted, inlined
-a148: $-48, 8 bytes, Promoted, inlined
-a149: $-40, 8 bytes, Promoted, inlined
-a150: $-32, 8 bytes, Promoted, inlined
-a151: $-24, 8 bytes, Promoted, inlined
-a152: $-16, 8 bytes, Promoted, inlined
-a153: $-8, 8 bytes, Promoted, inlined
-a154: $-96, 16 bytes, Promoted, escaped, inlined
-a155: $-72, 8 bytes, Promoted, inlined
-a156: $-64, 16 bytes, Promoted, escaped, inlined
-a157: $-48, 16 bytes, Promoted, inlined
-a158: $-32, 16 bytes, Promoted, inlined
-a159: $-4, 4 bytes, Promoted, inlined
-a160: $-48, 8 bytes, Promoted, inlined
-a161: $-40, 8 bytes, Promoted, inlined
-a162: $-32, 8 bytes, Promoted, inlined
-a163: $-24, 8 bytes, Promoted, inlined
-a164: $-16, 8 bytes, Promoted, inlined
-a165: $-8, 8 bytes, Promoted, inlined
-a166: $-72, 8 bytes, Promoted, inlined
-a167: $-64, 8 bytes, Promoted, inlined
-a168: $-56, 8 bytes, Promoted, inlined
-a169: $-48, 16 bytes, Memory, escaped, inlined
-a170: $-32, 8 bytes, Promoted, inlined
-a171: $-24, 8 bytes, Promoted, inlined
-a172: $-16, 8 bytes, Promoted, inlined
-a173: $-8, 8 bytes, Promoted, inlined
-a174: $-64, 8 bytes, Promoted, inlined
-a175: $-56, 8 bytes, Promoted, inlined
-a176: $-48, 8 bytes, Promoted, inlined
-a177: $-40, 8 bytes, Promoted, inlined
-a178: $-32, 8 bytes, Promoted, inlined
-a179: $-24, 8 bytes, Promoted, inlined
-a180: $-16, 8 bytes, Promoted, inlined
-a181: $-8, 8 bytes, Promoted, inlined
-a182: $-184, 8 bytes, Promoted, inlined
-a183: $-169, 1 bytes, Promoted, inlined
-a184: $-168, 8 bytes, Promoted, inlined
-a185: $-160, 8 bytes, Promoted, inlined
-a186: $-152, 8 bytes, Promoted, inlined
-a187: $-144, 8 bytes, Promoted, inlined
-a188: $-136, 8 bytes, Promoted, inlined
-a189: $-128, 8 bytes, Promoted, inlined
-a190: $-120, 8 bytes, Promoted, inlined
-a191: $-112, 8 bytes, Promoted, inlined
-a192: $-104, 8 bytes, Promoted, inlined
-a193: $-96, 8 bytes, Promoted, inlined
-a194: $-85, 1 bytes, Promoted, inlined
-a195: $-84, 1 bytes, Promoted, inlined
-a196: $-83, 1 bytes, Promoted, inlined
-a197: $-82, 1 bytes, Promoted, inlined
-a198: $-81, 1 bytes, Promoted, inlined
-a199: $-80, 8 bytes, Promoted, inlined
-a200: $-72, 8 bytes, Promoted, inlined
-a201: $-64, 8 bytes, Promoted, inlined
-a202: $-56, 8 bytes, Promoted, inlined
-a203: $-41, 1 bytes, Promoted, inlined
-a204: $-40, 8 bytes, Promoted, inlined
-a205: $-32, 8 bytes, Promoted, inlined
-a206: $-24, 8 bytes, Promoted, inlined
-a207: $-16, 8 bytes, Promoted, inlined
-a208: $-8, 8 bytes, Promoted, inlined
-a209: $-152, 8 bytes, Promoted, inlined
-a210: $-144, 8 bytes, Promoted, inlined
-a211: $-136, 8 bytes, Promoted, inlined
-a212: $-128, 8 bytes, Promoted, inlined
-a213: $-120, 8 bytes, Promoted, inlined
-a214: $-112, 1 bytes, Promoted, inlined
-a215: $-104, 8 bytes, Promoted, inlined
-a216: $-96, 8 bytes, Promoted, inlined
-a217: $-88, 8 bytes, Promoted, inlined
-a218: $-80, 8 bytes, Promoted, inlined
-a219: $-72, 8 bytes, Promoted, inlined
-a220: $-61, 1 bytes, Promoted, inlined
-a221: $-48, 8 bytes, Promoted, inlined
-a222: $-40, 8 bytes, Promoted, inlined
-a223: $-32, 8 bytes, Promoted, inlined
-a224: $-24, 8 bytes, Promoted, inlined
-a225: $-16, 8 bytes, Promoted, inlined
-a226: $-1, 1 bytes, Promoted, inlined
-a227: $-128, 8 bytes, Promoted, inlined
-a228: $-120, 8 bytes, Promoted, inlined
-a229: $-112, 8 bytes, Promoted, inlined
-a230: $-104, 8 bytes, Promoted, inlined
-a231: $-96, 8 bytes, Promoted, inlined
-a232: $-88, 8 bytes, Promoted, inlined
-a233: $-80, 8 bytes, Promoted, inlined
-a234: $-72, 8 bytes, Promoted, inlined
-a235: $-64, 8 bytes, Promoted, inlined
-a236: $-56, 8 bytes, Promoted, inlined
-a237: $-48, 8 bytes, Promoted, inlined
-a238: $-40, 8 bytes, Promoted, inlined
-a239: $-32, 8 bytes, Promoted, inlined
-a240: $-24, 8 bytes, Promoted, inlined
-a241: $-16, 8 bytes, Promoted, inlined
-a242: $-1, 1 bytes, Promoted, inlined
-a243: $-128, 8 bytes, Promoted, inlined
-a244: $-120, 8 bytes, Promoted, inlined
-a245: $-112, 8 bytes, Promoted, inlined
-a246: $-104, 8 bytes, Promoted, inlined
-a247: $-96, 8 bytes, Promoted, inlined
-a248: $-88, 8 bytes, Promoted, inlined
-a249: $-80, 8 bytes, Promoted, inlined
-a250: $-72, 8 bytes, Promoted, inlined
-a251: $-64, 8 bytes, Promoted, inlined
-a252: $-56, 8 bytes, Promoted, inlined
-a253: $-48, 8 bytes, Promoted, inlined
-a254: $-40, 8 bytes, Promoted, inlined
-a255: $-32, 8 bytes, Promoted, inlined
-a256: $-24, 8 bytes, Promoted, inlined
-a257: $-16, 8 bytes, Promoted, inlined
-a258: $-1, 1 bytes, Promoted, inlined
-a259: $-8, 8 bytes, Promoted, inlined
-a260: $-192, 16 bytes, Promoted, escaped, inlined
-a261: $-176, 4 bytes, Promoted, inlined
-a262: $-172, 2 bytes, Promoted, inlined
-a263: $-170, 2 bytes, Promoted, inlined
-a264: $-168, 8 bytes, Promoted, inlined
-a265: $-152, 8 bytes, Promoted, inlined
-a266: $-144, 8 bytes, Promoted, inlined
-a267: $-136, 8 bytes, Promoted, inlined
-a268: $-128, 8 bytes, Promoted, inlined
-a269: $-120, 8 bytes, Promoted, inlined
-a270: $-112, 16 bytes, Promoted, escaped, inlined
-a271: $-72, 8 bytes, Promoted, inlined
-a272: $-48, 8 bytes, Promoted, inlined
-a273: $-24, 8 bytes, Promoted, inlined
-a274: $-16, 8 bytes, Promoted, inlined
-a275: $-8, 8 bytes, Promoted, inlined
-a276: $-96, 16 bytes, Promoted, escaped, inlined
-a277: $-72, 8 bytes, Promoted, inlined
-a278: $-64, 16 bytes, Promoted, escaped, inlined
-a279: $-48, 16 bytes, Promoted, inlined
-a280: $-32, 16 bytes, Promoted, inlined
-a281: $-4, 4 bytes, Promoted, inlined
-a282: $-48, 8 bytes, Promoted, inlined
-a283: $-40, 8 bytes, Promoted, inlined
-a284: $-32, 8 bytes, Promoted, inlined
-a285: $-24, 8 bytes, Promoted, inlined
-a286: $-16, 8 bytes, Promoted, inlined
-a287: $-8, 8 bytes, Promoted, inlined
-a288: $-32, 8 bytes, Promoted, inlined
-a289: $-24, 8 bytes, Promoted, inlined
-a290: $-16, 8 bytes, Promoted, inlined
-a291: $-8, 8 bytes, Promoted, inlined
+a71: $-16, 8 bytes, Promoted, inlined
+a72: $-8, 8 bytes, Promoted, inlined
+a73: $-32, 8 bytes, Promoted, inlined
+a74: $-24, 8 bytes, Promoted, inlined
+a75: $-16, 8 bytes, Promoted, inlined
+a76: $-8, 8 bytes, Promoted, inlined
+a77: $-152, 8 bytes, Promoted, inlined
+a78: $-144, 8 bytes, Promoted, inlined
+a79: $-136, 8 bytes, Promoted, inlined
+a80: $-128, 8 bytes, Promoted, inlined
+a81: $-120, 8 bytes, Promoted, inlined
+a82: $-112, 8 bytes, Promoted, inlined
+a83: $-104, 8 bytes, Promoted, inlined
+a84: $-96, 24 bytes, Memory, escaped, inlined
+a85: $-72, 8 bytes, Promoted, inlined
+a86: $-64, 8 bytes, Promoted, inlined
+a87: $-50, 1 bytes, Promoted, inlined
+a88: $-49, 1 bytes, Promoted, inlined
+a89: $-24, 8 bytes, Promoted, inlined
+a90: $-16, 8 bytes, Promoted, inlined
+a91: $-8, 8 bytes, Promoted, inlined
+a92: $-72, 8 bytes, Promoted, inlined
+a93: $-64, 8 bytes, Promoted, inlined
+a94: $-32, 8 bytes, Promoted, inlined
+a95: $-24, 8 bytes, Promoted, inlined
+a96: $-16, 8 bytes, Promoted, inlined
+a97: $-8, 8 bytes, Promoted, inlined
+a98: $-128, 16 bytes, Promoted, escaped, inlined
+a99: $-112, 8 bytes, Promoted, inlined
+a100: $-104, 8 bytes, Promoted, inlined
+a101: $-96, 16 bytes, Memory, escaped, inlined
+a102: $-80, 16 bytes, Memory, escaped, inlined
+a103: $-58, 1 bytes, Promoted, inlined
+a104: $-57, 1 bytes, Promoted, inlined
+a105: $-56, 8 bytes, Promoted, inlined
+a106: $-48, 8 bytes, Promoted, inlined
+a107: $-24, 8 bytes, Promoted, inlined
+a108: $-16, 8 bytes, Promoted, inlined
+a109: $-8, 8 bytes, Promoted, inlined
+a110: $-160, 16 bytes, Promoted, escaped, inlined
+a111: $-140, 4 bytes, Promoted, inlined
+a112: $-136, 8 bytes, Promoted, inlined
+a113: $-128, 8 bytes, Promoted, inlined
+a114: $-120, 8 bytes, Promoted, inlined
+a115: $-112, 8 bytes, Promoted, inlined
+a116: $-104, 8 bytes, Promoted, inlined
+a117: $-96, 2 bytes, Promoted, inlined
+a118: $-94, 1 bytes, Promoted, inlined
+a119: $-93, 1 bytes, Promoted, inlined
+a120: $-82, 2 bytes, Promoted, inlined
+a121: $-80, 16 bytes, Promoted, escaped, inlined
+a122: $-32, 8 bytes, Promoted, inlined
+a123: $-24, 8 bytes, Promoted, inlined
+a124: $-16, 8 bytes, Promoted, inlined
+a125: $-8, 8 bytes, Promoted, inlined
+a126: $-96, 16 bytes, Promoted, escaped, inlined
+a127: $-72, 8 bytes, Promoted, inlined
+a128: $-64, 16 bytes, Promoted, escaped, inlined
+a129: $-48, 16 bytes, Promoted, inlined
+a130: $-32, 16 bytes, Promoted, inlined
+a131: $-4, 4 bytes, Promoted, inlined
+a132: $-48, 8 bytes, Promoted, inlined
+a133: $-40, 8 bytes, Promoted, inlined
+a134: $-32, 8 bytes, Promoted, inlined
+a135: $-24, 8 bytes, Promoted, inlined
+a136: $-16, 8 bytes, Promoted, inlined
+a137: $-8, 8 bytes, Promoted, inlined
+a138: $-32, 8 bytes, Promoted, inlined
+a139: $-24, 8 bytes, Promoted, inlined
+a140: $-16, 8 bytes, Promoted, inlined
+a141: $-8, 8 bytes, Promoted, inlined
+a142: $-128, 16 bytes, Memory, escaped, inlined
+a143: $-112, 8 bytes, Promoted, inlined
+a144: $-104, 8 bytes, Promoted, inlined
+a145: $-96, 8 bytes, Promoted, inlined
+a146: $-88, 8 bytes, Promoted, inlined
+a147: $-80, 4 bytes, Promoted, inlined
+a148: $-66, 2 bytes, Promoted, inlined
+a149: $-56, 8 bytes, Promoted, inlined
+a150: $-48, 8 bytes, Promoted, inlined
+a151: $-40, 8 bytes, Promoted, inlined
+a152: $-32, 8 bytes, Promoted, inlined
+a153: $-24, 8 bytes, Promoted, inlined
+a154: $-16, 8 bytes, Promoted, inlined
+a155: $-8, 8 bytes, Promoted, inlined
+a156: $-96, 16 bytes, Promoted, escaped, inlined
+a157: $-72, 8 bytes, Promoted, inlined
+a158: $-64, 16 bytes, Promoted, escaped, inlined
+a159: $-48, 16 bytes, Promoted, inlined
+a160: $-32, 16 bytes, Promoted, inlined
+a161: $-4, 4 bytes, Promoted, inlined
+a162: $-48, 8 bytes, Promoted, inlined
+a163: $-40, 8 bytes, Promoted, inlined
+a164: $-32, 8 bytes, Promoted, inlined
+a165: $-24, 8 bytes, Promoted, inlined
+a166: $-16, 8 bytes, Promoted, inlined
+a167: $-8, 8 bytes, Promoted, inlined
+a168: $-72, 8 bytes, Promoted, inlined
+a169: $-64, 8 bytes, Promoted, inlined
+a170: $-56, 8 bytes, Promoted, inlined
+a171: $-48, 16 bytes, Memory, escaped, inlined
+a172: $-32, 8 bytes, Promoted, inlined
+a173: $-24, 8 bytes, Promoted, inlined
+a174: $-16, 8 bytes, Promoted, inlined
+a175: $-8, 8 bytes, Promoted, inlined
+a176: $-64, 8 bytes, Promoted, inlined
+a177: $-56, 8 bytes, Promoted, inlined
+a178: $-48, 8 bytes, Promoted, inlined
+a179: $-40, 8 bytes, Promoted, inlined
+a180: $-32, 8 bytes, Promoted, inlined
+a181: $-24, 8 bytes, Promoted, inlined
+a182: $-16, 8 bytes, Promoted, inlined
+a183: $-8, 8 bytes, Promoted, inlined
+a184: $-184, 8 bytes, Promoted, inlined
+a185: $-169, 1 bytes, Promoted, inlined
+a186: $-168, 8 bytes, Promoted, inlined
+a187: $-160, 8 bytes, Promoted, inlined
+a188: $-152, 8 bytes, Promoted, inlined
+a189: $-144, 8 bytes, Promoted, inlined
+a190: $-136, 8 bytes, Promoted, inlined
+a191: $-128, 8 bytes, Promoted, inlined
+a192: $-120, 8 bytes, Promoted, inlined
+a193: $-112, 8 bytes, Promoted, inlined
+a194: $-104, 8 bytes, Promoted, inlined
+a195: $-96, 8 bytes, Promoted, inlined
+a196: $-85, 1 bytes, Promoted, inlined
+a197: $-84, 1 bytes, Promoted, inlined
+a198: $-83, 1 bytes, Promoted, inlined
+a199: $-82, 1 bytes, Promoted, inlined
+a200: $-81, 1 bytes, Promoted, inlined
+a201: $-80, 8 bytes, Promoted, inlined
+a202: $-72, 8 bytes, Promoted, inlined
+a203: $-64, 8 bytes, Promoted, inlined
+a204: $-56, 8 bytes, Promoted, inlined
+a205: $-41, 1 bytes, Promoted, inlined
+a206: $-40, 8 bytes, Promoted, inlined
+a207: $-32, 8 bytes, Promoted, inlined
+a208: $-24, 8 bytes, Promoted, inlined
+a209: $-16, 8 bytes, Promoted, inlined
+a210: $-8, 8 bytes, Promoted, inlined
+a211: $-152, 8 bytes, Promoted, inlined
+a212: $-144, 8 bytes, Promoted, inlined
+a213: $-136, 8 bytes, Promoted, inlined
+a214: $-128, 8 bytes, Promoted, inlined
+a215: $-120, 8 bytes, Promoted, inlined
+a216: $-112, 1 bytes, Promoted, inlined
+a217: $-104, 8 bytes, Promoted, inlined
+a218: $-96, 8 bytes, Promoted, inlined
+a219: $-88, 8 bytes, Promoted, inlined
+a220: $-80, 8 bytes, Promoted, inlined
+a221: $-72, 8 bytes, Promoted, inlined
+a222: $-61, 1 bytes, Promoted, inlined
+a223: $-48, 8 bytes, Promoted, inlined
+a224: $-40, 8 bytes, Promoted, inlined
+a225: $-32, 8 bytes, Promoted, inlined
+a226: $-24, 8 bytes, Promoted, inlined
+a227: $-16, 8 bytes, Promoted, inlined
+a228: $-1, 1 bytes, Promoted, inlined
+a229: $-128, 8 bytes, Promoted, inlined
+a230: $-120, 8 bytes, Promoted, inlined
+a231: $-112, 8 bytes, Promoted, inlined
+a232: $-104, 8 bytes, Promoted, inlined
+a233: $-96, 8 bytes, Promoted, inlined
+a234: $-88, 8 bytes, Promoted, inlined
+a235: $-80, 8 bytes, Promoted, inlined
+a236: $-72, 8 bytes, Promoted, inlined
+a237: $-64, 8 bytes, Promoted, inlined
+a238: $-56, 8 bytes, Promoted, inlined
+a239: $-48, 8 bytes, Promoted, inlined
+a240: $-40, 8 bytes, Promoted, inlined
+a241: $-32, 8 bytes, Promoted, inlined
+a242: $-24, 8 bytes, Promoted, inlined
+a243: $-16, 8 bytes, Promoted, inlined
+a244: $-1, 1 bytes, Promoted, inlined
+a245: $-128, 8 bytes, Promoted, inlined
+a246: $-120, 8 bytes, Promoted, inlined
+a247: $-112, 8 bytes, Promoted, inlined
+a248: $-104, 8 bytes, Promoted, inlined
+a249: $-96, 8 bytes, Promoted, inlined
+a250: $-88, 8 bytes, Promoted, inlined
+a251: $-80, 8 bytes, Promoted, inlined
+a252: $-72, 8 bytes, Promoted, inlined
+a253: $-64, 8 bytes, Promoted, inlined
+a254: $-56, 8 bytes, Promoted, inlined
+a255: $-48, 8 bytes, Promoted, inlined
+a256: $-40, 8 bytes, Promoted, inlined
+a257: $-32, 8 bytes, Promoted, inlined
+a258: $-24, 8 bytes, Promoted, inlined
+a259: $-16, 8 bytes, Promoted, inlined
+a260: $-1, 1 bytes, Promoted, inlined
+a261: $-8, 8 bytes, Promoted, inlined
+a262: $-192, 16 bytes, Promoted, escaped, inlined
+a263: $-176, 4 bytes, Promoted, inlined
+a264: $-172, 2 bytes, Promoted, inlined
+a265: $-170, 2 bytes, Promoted, inlined
+a266: $-168, 8 bytes, Promoted, inlined
+a267: $-152, 8 bytes, Promoted, inlined
+a268: $-144, 8 bytes, Promoted, inlined
+a269: $-136, 8 bytes, Promoted, inlined
+a270: $-128, 8 bytes, Promoted, inlined
+a271: $-120, 8 bytes, Promoted, inlined
+a272: $-112, 16 bytes, Promoted, escaped, inlined
+a273: $-72, 8 bytes, Promoted, inlined
+a274: $-48, 8 bytes, Promoted, inlined
+a275: $-24, 8 bytes, Promoted, inlined
+a276: $-16, 8 bytes, Promoted, inlined
+a277: $-8, 8 bytes, Promoted, inlined
+a278: $-96, 16 bytes, Promoted, escaped, inlined
+a279: $-72, 8 bytes, Promoted, inlined
+a280: $-64, 16 bytes, Promoted, escaped, inlined
+a281: $-48, 16 bytes, Promoted, inlined
+a282: $-32, 16 bytes, Promoted, inlined
+a283: $-4, 4 bytes, Promoted, inlined
+a284: $-48, 8 bytes, Promoted, inlined
+a285: $-40, 8 bytes, Promoted, inlined
+a286: $-32, 8 bytes, Promoted, inlined
+a287: $-24, 8 bytes, Promoted, inlined
+a288: $-16, 8 bytes, Promoted, inlined
+a289: $-8, 8 bytes, Promoted, inlined
+a290: $-32, 8 bytes, Promoted, inlined
+a291: $-24, 8 bytes, Promoted, inlined
 a292: $-16, 8 bytes, Promoted, inlined
 a293: $-8, 8 bytes, Promoted, inlined
-a294: $-32, 8 bytes, Promoted, inlined
-a295: $-24, 8 bytes, Promoted, inlined
-a296: $-16, 8 bytes, Promoted, inlined
-a297: $-8, 8 bytes, Promoted, inlined
+a294: $-16, 8 bytes, Promoted, inlined
+a295: $-8, 8 bytes, Promoted, inlined
+a296: $-32, 8 bytes, Promoted, inlined
+a297: $-24, 8 bytes, Promoted, inlined
+a298: $-16, 8 bytes, Promoted, inlined
+a299: $-8, 8 bytes, Promoted, inlined
 b0(v0:8, v1:8, v2:8, v3:8, v4:8, v5:1): ; Entry
-    v7:8 = ALoad(AllocaId(52), 0, 8) ()
-    v6:8 = ALoad(AllocaId(51), 0, 8) ()
-    v477:8 = Bin(ShrU, 8) (v6, 0x10)
-    v479:8 = Bin(ShrU, 8) (v6, 0x20)
-    v481:8 = Bin(ShrU, 8) (v6, 0x30)
-    v483:8 = Bin(ShrU, 8) (v6, 0x38)
-    v485:8 = Bin(ShrU, 8) (v7, 0x10)
-    v487:8 = Bin(ShrU, 8) (v7, 0x20)
-    v489:8 = Bin(ShrU, 8) (v7, 0x30)
-    v491:8 = Bin(ShrU, 8) (v7, 0x38)
-    v8:8 = AllocaAddr(AllocaId(17), 0) ()
+    v7:8 = ALoad(AllocaId(54), 0, 8) ()
+    v6:8 = ALoad(AllocaId(53), 0, 8) ()
+    v471:8 = Bin(ShrU, 8) (v6, 0x10)
+    v473:8 = Bin(ShrU, 8) (v6, 0x20)
+    v475:8 = Bin(ShrU, 8) (v6, 0x30)
+    v477:8 = Bin(ShrU, 8) (v6, 0x38)
+    v479:8 = Bin(ShrU, 8) (v7, 0x10)
+    v481:8 = Bin(ShrU, 8) (v7, 0x20)
+    v483:8 = Bin(ShrU, 8) (v7, 0x30)
+    v485:8 = Bin(ShrU, 8) (v7, 0x38)
+    v8:8 = AllocaAddr(AllocaId(19), 0) ()
     Call(Call { target: fn0.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }, ArgReg { xmm: false, size: 8, index: 4 }, ArgReg { xmm: false, size: 1, index: 5 }], parts: [], site: Continue }) (v8, v1, v6, v7, v2, v5)
-    v66:8 = ALoad(AllocaId(17), 0, 8) ()
-    br Eq.w8 v66, 0x0 ? b13() : b14()
+    v60:8 = ALoad(AllocaId(19), 0, 8) ()
+    br Eq.w8 v60, 0x0 ? b13() : b14()
 b1(): ; Body
     trap
-b2(v194:8, v198:8, v200:8, v732:2, v741:2, v750:2, v759:1, v768:1): ; Body head 0
-    v13:8 = ALoad(AllocaId(31), 16, 8) ()
+b2(v188:8, v192:8, v194:8, v726:2, v735:2, v744:2, v753:1, v762:1): ; Body head 0
+    v13:8 = ALoad(AllocaId(33), 16, 8) ()
     br Eq.w8 v13, 0x0 ? b6() : b128()
 b3(): ; Body
     trap
-b4(v16:8, v17:8, v19:8, v21:8, v729:2, v738:2, v747:2, v756:1, v765:1): ; Body head 1
-    v528:8 = Bin(ShrU, 8) (v16, 0x10)
-    v530:8 = Bin(ShrU, 8) (v16, 0x20)
-    v532:8 = Bin(ShrU, 8) (v16, 0x30)
-    v534:8 = Bin(ShrU, 8) (v16, 0x38)
+b4(v16:8, v17:8, v19:8, v21:8, v723:2, v732:2, v741:2, v750:1, v759:1): ; Body head 1
+    v522:8 = Bin(ShrU, 8) (v16, 0x10)
+    v524:8 = Bin(ShrU, 8) (v16, 0x20)
+    v526:8 = Bin(ShrU, 8) (v16, 0x30)
+    v528:8 = Bin(ShrU, 8) (v16, 0x38)
     v20:8 = Load(8, 40) (v19)
     v22:8 = Call(Call { target: Ptr, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v20, v21, v17, v16)
     invoke -> b28() unwind b29()
 b5(): ; Body
     trap
 b6(): ; Body head 2
-    v25:8 = Load(8, 24) (v194)
-    AStore(AllocaId(31), 24, 8) (v25)
-    v26:8 = ALoad(AllocaId(32), 40, 8) ()
+    v25:8 = Load(8, 24) (v188)
+    AStore(AllocaId(33), 24, 8) (v25)
+    v26:8 = ALoad(AllocaId(34), 40, 8) ()
     v28:8 = Bin(Sub, 8) (v26, v25)
-    AStore(AllocaId(32), 40, 8) (v28)
-    v29:8 = Load(8, 24) (v194)
-    AStore(AllocaId(31), 24, 8) (v29)
-    AStore(AllocaId(32), 48, 8) (v29)
-    AStore(AllocaId(31), 24, 8) (v194)
-    v31:8 = AllocaAddr(AllocaId(32), 24) ()
-    AStore(AllocaId(31), 16, 8) (v31)
-    v33:8 = Load(8, 0) (v194)
-    v35:8 = Load(8, 8) (v194)
-    v37:8 = Load(8, 16) (v194)
-    AStore(AllocaId(6), 0, 8) (v37)
-    v39:8 = Load(8, 24) (v194)
-    AStore(AllocaId(6), 8, 8) (v39)
-    v41:8 = ALoad(AllocaId(32), 24, 8) ()
-    v43:8 = ALoad(AllocaId(32), 32, 8) ()
-    Store(8, 0) (v194, v41)
-    v49:8 = ALoad(AllocaId(31), 24, 8) ()
-    Store(8, 8) (v49, v43)
-    v50:8 = ALoad(AllocaId(31), 24, 8) ()
-    Store(8, 16) (v50, v28)
-    v51:8 = ALoad(AllocaId(31), 24, 8) ()
-    Store(8, 24) (v51, v29)
-    v52:8 = ALoad(AllocaId(31), 16, 8) ()
-    Store(8, 0) (v52, v33)
-    v53:8 = ALoad(AllocaId(31), 16, 8) ()
-    Store(8, 8) (v53, v35)
-    v54:8 = ALoad(AllocaId(31), 16, 8) ()
-    v55:8 = ALoad(AllocaId(6), 0, 8) ()
-    Store(8, 16) (v54, v55)
-    v56:8 = ALoad(AllocaId(31), 16, 8) ()
-    v57:8 = ALoad(AllocaId(6), 8, 8) ()
-    Store(8, 24) (v56, v57)
-    v287:8 = ALoad(AllocaId(32), 32, 8) ()
-    br Eq.w8 v287, 0x0 ? b9(0xffff, 0xffff, 0xffff, 0xff, 0xff, 0x0, 0x0, 0x0, 0x0, 0x0) : b50()
+    AStore(AllocaId(34), 40, 8) (v28)
+    v29:8 = Load(8, 24) (v188)
+    AStore(AllocaId(33), 24, 8) (v29)
+    AStore(AllocaId(34), 48, 8) (v29)
+    AStore(AllocaId(33), 24, 8) (v188)
+    v31:8 = AllocaAddr(AllocaId(34), 24) ()
+    AStore(AllocaId(33), 16, 8) (v31)
+    v33:8 = Load(8, 0) (v188)
+    v35:8 = Load(8, 8) (v188)
+    v37:8 = Load(8, 16) (v188)
+    AStore(AllocaId(8), 0, 8) (v37)
+    v39:8 = Load(8, 24) (v188)
+    AStore(AllocaId(8), 8, 8) (v39)
+    v41:8 = ALoad(AllocaId(34), 24, 8) ()
+    v43:8 = ALoad(AllocaId(34), 32, 8) ()
+    Store(8, 0) (v188, v41)
+    Store(8, 8) (v188, v43)
+    Store(8, 16) (v188, v28)
+    Store(8, 24) (v188, v29)
+    v49:8 = ALoad(AllocaId(33), 16, 8) ()
+    Store(8, 0) (v49, v33)
+    Store(8, 8) (v49, v35)
+    v50:8 = ALoad(AllocaId(8), 0, 8) ()
+    Store(8, 16) (v49, v50)
+    v51:8 = ALoad(AllocaId(8), 8, 8) ()
+    Store(8, 24) (v49, v51)
+    v281:8 = ALoad(AllocaId(34), 32, 8) ()
+    br Eq.w8 v281, 0x0 ? b9(0xffff, 0xffff, 0xffff, 0xff, 0xff, 0x0, 0x0, 0x0, 0x0, 0x0) : b50()
 b7(): ; Body
     trap
 b8(): ; Body
     trap
-b9(v790:2, v791:2, v792:2, v793:1, v794:1, v795:2, v796:2, v797:2, v798:1, v799:1): ; Body head 3
-    v588:8 = Ext { from: 2, to: 8, sx: false } (v790)
-    v590:8 = Ext { from: 2, to: 8, sx: false } (v791)
-    v592:8 = Bin(Shl, 8) (v590, 0x10)
-    v593:8 = Bin(Or, 8) (v588, v592)
-    v595:8 = Ext { from: 2, to: 8, sx: false } (v792)
-    v597:8 = Bin(Shl, 8) (v595, 0x20)
-    v598:8 = Bin(Or, 8) (v593, v597)
-    v600:8 = Ext { from: 1, to: 8, sx: false } (v793)
-    v602:8 = Bin(Shl, 8) (v600, 0x30)
-    v603:8 = Bin(Or, 8) (v598, v602)
-    v605:8 = Ext { from: 1, to: 8, sx: false } (v794)
-    v607:8 = Bin(Shl, 8) (v605, 0x38)
-    v608:8 = Bin(Or, 8) (v603, v607)
-    v610:8 = Ext { from: 2, to: 8, sx: false } (v795)
-    v612:8 = Ext { from: 2, to: 8, sx: false } (v796)
-    v614:8 = Bin(Shl, 8) (v612, 0x10)
-    v615:8 = Bin(Or, 8) (v610, v614)
-    v617:8 = Ext { from: 2, to: 8, sx: false } (v797)
-    v619:8 = Bin(Shl, 8) (v617, 0x20)
-    v620:8 = Bin(Or, 8) (v615, v619)
-    v622:8 = Ext { from: 1, to: 8, sx: false } (v798)
-    v624:8 = Bin(Shl, 8) (v622, 0x30)
-    v625:8 = Bin(Or, 8) (v620, v624)
-    v627:8 = Ext { from: 1, to: 8, sx: false } (v799)
-    v629:8 = Bin(Shl, 8) (v627, 0x38)
-    v630:8 = Bin(Or, 8) (v625, v629)
-    ret 0x80808 (v608, v630)
+b9(v784:2, v785:2, v786:2, v787:1, v788:1, v789:2, v790:2, v791:2, v792:1, v793:1): ; Body head 3
+    v582:8 = Ext { from: 2, to: 8, sx: false } (v784)
+    v584:8 = Ext { from: 2, to: 8, sx: false } (v785)
+    v586:8 = Bin(Shl, 8) (v584, 0x10)
+    v587:8 = Bin(Or, 8) (v582, v586)
+    v589:8 = Ext { from: 2, to: 8, sx: false } (v786)
+    v591:8 = Bin(Shl, 8) (v589, 0x20)
+    v592:8 = Bin(Or, 8) (v587, v591)
+    v594:8 = Ext { from: 1, to: 8, sx: false } (v787)
+    v596:8 = Bin(Shl, 8) (v594, 0x30)
+    v597:8 = Bin(Or, 8) (v592, v596)
+    v599:8 = Ext { from: 1, to: 8, sx: false } (v788)
+    v601:8 = Bin(Shl, 8) (v599, 0x38)
+    v602:8 = Bin(Or, 8) (v597, v601)
+    v604:8 = Ext { from: 2, to: 8, sx: false } (v789)
+    v606:8 = Ext { from: 2, to: 8, sx: false } (v790)
+    v608:8 = Bin(Shl, 8) (v606, 0x10)
+    v609:8 = Bin(Or, 8) (v604, v608)
+    v611:8 = Ext { from: 2, to: 8, sx: false } (v791)
+    v613:8 = Bin(Shl, 8) (v611, 0x20)
+    v614:8 = Bin(Or, 8) (v609, v613)
+    v616:8 = Ext { from: 1, to: 8, sx: false } (v792)
+    v618:8 = Bin(Shl, 8) (v616, 0x30)
+    v619:8 = Bin(Or, 8) (v614, v618)
+    v621:8 = Ext { from: 1, to: 8, sx: false } (v793)
+    v623:8 = Bin(Shl, 8) (v621, 0x38)
+    v624:8 = Bin(Or, 8) (v619, v623)
+    ret 0x80808 (v602, v624)
 b10(): ; Body head 4 cold
-    v63:8 = AllocaAddr(AllocaId(32), 0) ()
-    v448:8 = AllocaAddr(AllocaId(32), 24) ()
-    Call(Call { target: image.fn71.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [], site: Pad { catch: true } }) (v63, v448)
+    v57:8 = AllocaAddr(AllocaId(34), 0) ()
+    v442:8 = AllocaAddr(AllocaId(34), 24) ()
+    Call(Call { target: image.fn71.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }], parts: [], site: Pad { catch: true } }) (v57, v442)
     invoke -> b141() unwind b33()
 b11(): ; Body
     trap
 b12(): ; Body
     trap
 b13(): ; Body
-    v68:2 = ALoad(AllocaId(17), 8, 2) ()
-    v69:2 = ALoad(AllocaId(17), 10, 2) ()
-    v70:2 = ALoad(AllocaId(17), 12, 2) ()
-    v71:1 = ALoad(AllocaId(17), 14, 1) ()
-    v72:1 = ALoad(AllocaId(17), 15, 1) ()
-    v73:2 = ALoad(AllocaId(17), 16, 2) ()
-    v74:2 = ALoad(AllocaId(17), 18, 2) ()
-    v75:2 = ALoad(AllocaId(17), 20, 2) ()
-    v76:1 = ALoad(AllocaId(17), 22, 1) ()
-    v77:1 = ALoad(AllocaId(17), 23, 1) ()
-    AStore(AllocaId(17), 16, 2) (v68)
-    AStore(AllocaId(17), 18, 2) (v69)
-    AStore(AllocaId(17), 20, 2) (v70)
-    AStore(AllocaId(17), 22, 1) (v71)
-    AStore(AllocaId(17), 23, 1) (v72)
-    AStore(AllocaId(17), 24, 2) (v73)
-    AStore(AllocaId(17), 26, 2) (v74)
-    AStore(AllocaId(17), 28, 2) (v75)
-    AStore(AllocaId(17), 30, 1) (v76)
-    AStore(AllocaId(17), 31, 1) (v77)
-    AStore(AllocaId(17), 8, 8) (0x1)
-    AStore(AllocaId(17), 7, 1) (0x1)
-    jmp b9(v68, v69, v70, v71, v72, v73, v74, v75, v76, v77)
+    v62:2 = ALoad(AllocaId(19), 8, 2) ()
+    v63:2 = ALoad(AllocaId(19), 10, 2) ()
+    v64:2 = ALoad(AllocaId(19), 12, 2) ()
+    v65:1 = ALoad(AllocaId(19), 14, 1) ()
+    v66:1 = ALoad(AllocaId(19), 15, 1) ()
+    v67:2 = ALoad(AllocaId(19), 16, 2) ()
+    v68:2 = ALoad(AllocaId(19), 18, 2) ()
+    v69:2 = ALoad(AllocaId(19), 20, 2) ()
+    v70:1 = ALoad(AllocaId(19), 22, 1) ()
+    v71:1 = ALoad(AllocaId(19), 23, 1) ()
+    AStore(AllocaId(19), 16, 2) (v62)
+    AStore(AllocaId(19), 18, 2) (v63)
+    AStore(AllocaId(19), 20, 2) (v64)
+    AStore(AllocaId(19), 22, 1) (v65)
+    AStore(AllocaId(19), 23, 1) (v66)
+    AStore(AllocaId(19), 24, 2) (v67)
+    AStore(AllocaId(19), 26, 2) (v68)
+    AStore(AllocaId(19), 28, 2) (v69)
+    AStore(AllocaId(19), 30, 1) (v70)
+    AStore(AllocaId(19), 31, 1) (v71)
+    AStore(AllocaId(19), 8, 8) (0x1)
+    AStore(AllocaId(19), 7, 1) (0x1)
+    jmp b9(v62, v63, v64, v65, v66, v67, v68, v69, v70, v71)
 b14(): ; Body
-    v119:8 = ALoad(AllocaId(17), 8, 8) ()
-    v120:8 = ALoad(AllocaId(17), 16, 8) ()
-    v121:8 = ALoad(AllocaId(17), 24, 8) ()
-    AStore(AllocaId(17), 8, 8) (v1)
-    v638:8 = Ext { from: 2, to: 8, sx: false } (v6)
-    v640:8 = Ext { from: 2, to: 8, sx: false } (v477)
-    v642:8 = Bin(Shl, 8) (v640, 0x10)
-    v643:8 = Bin(Or, 8) (v638, v642)
-    v645:8 = Ext { from: 2, to: 8, sx: false } (v479)
-    v647:8 = Bin(Shl, 8) (v645, 0x20)
-    v648:8 = Bin(Or, 8) (v643, v647)
-    v650:8 = Ext { from: 1, to: 8, sx: false } (v481)
-    v652:8 = Bin(Shl, 8) (v650, 0x30)
-    v653:8 = Bin(Or, 8) (v648, v652)
-    v655:8 = Ext { from: 1, to: 8, sx: false } (v483)
-    v657:8 = Bin(Shl, 8) (v655, 0x38)
-    v658:8 = Bin(Or, 8) (v653, v657)
-    AStore(AllocaId(17), 16, 8) (v658)
-    v660:8 = Ext { from: 2, to: 8, sx: false } (v7)
-    v662:8 = Ext { from: 2, to: 8, sx: false } (v485)
-    v664:8 = Bin(Shl, 8) (v662, 0x10)
-    v665:8 = Bin(Or, 8) (v660, v664)
-    v667:8 = Ext { from: 2, to: 8, sx: false } (v487)
-    v669:8 = Bin(Shl, 8) (v667, 0x20)
-    v670:8 = Bin(Or, 8) (v665, v669)
-    v672:8 = Ext { from: 1, to: 8, sx: false } (v489)
-    v674:8 = Bin(Shl, 8) (v672, 0x30)
-    v675:8 = Bin(Or, 8) (v670, v674)
-    v677:8 = Ext { from: 1, to: 8, sx: false } (v491)
-    v679:8 = Bin(Shl, 8) (v677, 0x38)
-    v680:8 = Bin(Or, 8) (v675, v679)
-    AStore(AllocaId(17), 24, 8) (v680)
-    AStore(AllocaId(17), 8, 8) (v1)
-    AStore(AllocaId(17), 16, 8) (v658)
-    AStore(AllocaId(17), 24, 8) (v680)
-    AStore(AllocaId(31), 0, 8) (v66)
-    AStore(AllocaId(31), 8, 8) (v119)
-    AStore(AllocaId(31), 16, 8) (v120)
-    AStore(AllocaId(31), 24, 8) (v121)
-    AStore(AllocaId(32), 0, 8) (v1)
-    AStore(AllocaId(32), 8, 8) (v658)
-    AStore(AllocaId(32), 16, 8) (v680)
-    AStore(AllocaId(32), 24, 8) (v66)
-    AStore(AllocaId(32), 32, 8) (v119)
-    AStore(AllocaId(32), 40, 8) (v120)
-    AStore(AllocaId(32), 48, 8) (v121)
-    v148:8 = Load(8, 0) (v0)
-    AStore(AllocaId(31), 0, 8) (v148)
-    AStore(AllocaId(31), 24, 8) (v148)
-    AStore(AllocaId(31), 8, 8) (v148)
-    v284:8 = Load(8, 0) (v148)
-    v285:8 = Load(8, 8) (v148)
-    v704:8 = Bin(ShrU, 8) (v284, 0x10)
-    v706:8 = Bin(ShrU, 8) (v284, 0x20)
-    v708:8 = Bin(ShrU, 8) (v284, 0x30)
-    v710:8 = Bin(ShrU, 8) (v284, 0x38)
-    v712:8 = Bin(ShrU, 8) (v285, 0x20)
-    v714:8 = Bin(ShrU, 8) (v285, 0x30)
-    v716:8 = Bin(ShrU, 8) (v285, 0x38)
-    AStore(AllocaId(6), 0, 2) (v284)
-    AStore(AllocaId(6), 2, 2) (v704)
-    AStore(AllocaId(6), 4, 2) (v706)
-    AStore(AllocaId(6), 6, 1) (v708)
-    AStore(AllocaId(6), 7, 1) (v710)
-    AStore(AllocaId(6), 8, 4) (v285)
-    AStore(AllocaId(6), 12, 2) (v712)
-    AStore(AllocaId(6), 14, 1) (v714)
-    AStore(AllocaId(6), 15, 1) (v716)
-    v275:16 = ALoad(AllocaId(6), 0, 16) ()
-    v281:2 = V(Msb) (v275)
-    v282:4 = Ext { from: 2, to: 4, sx: false } (v281)
-    AStore(AllocaId(31), 12, 4) (v282)
-    AStore(AllocaId(31), 16, 2) (v281)
-    hcall not.w16 [(Fp, [None, None]), (Imm(4294966978), [Some(Alloca(AllocaId(31), 18)), None]), (Imm(4294966976), [Some(Alloca(AllocaId(31), 16)), None])] ins [] outs [] ()
-    v165:2 = ALoad(AllocaId(31), 18, 2) ()
-    AStore(AllocaId(31), 20, 2) (v165)
-    AStore(AllocaId(31), 22, 2) (v165)
-    v167:8 = Load(8, 24) (v0)
-    AStore(AllocaId(31), 8, 8) (v167)
-    AStore(AllocaId(40), 0, 2) (v165)
-    AStore(AllocaId(31), 0, 8) (v148)
-    AStore(AllocaId(31), 8, 8) (0x0)
-    AStore(AllocaId(31), 16, 8) (v167)
-    v171:8 = ALoad(AllocaId(40), 0, 8) ()
-    AStore(AllocaId(31), 24, 8) (v171)
-    jmp b2(v0, v4, v3, v6, v477, v479, v481, v483)
+    v113:8 = ALoad(AllocaId(19), 8, 8) ()
+    v114:8 = ALoad(AllocaId(19), 16, 8) ()
+    v115:8 = ALoad(AllocaId(19), 24, 8) ()
+    AStore(AllocaId(19), 8, 8) (v1)
+    v632:8 = Ext { from: 2, to: 8, sx: false } (v6)
+    v634:8 = Ext { from: 2, to: 8, sx: false } (v471)
+    v636:8 = Bin(Shl, 8) (v634, 0x10)
+    v637:8 = Bin(Or, 8) (v632, v636)
+    v639:8 = Ext { from: 2, to: 8, sx: false } (v473)
+    v641:8 = Bin(Shl, 8) (v639, 0x20)
+    v642:8 = Bin(Or, 8) (v637, v641)
+    v644:8 = Ext { from: 1, to: 8, sx: false } (v475)
+    v646:8 = Bin(Shl, 8) (v644, 0x30)
+    v647:8 = Bin(Or, 8) (v642, v646)
+    v649:8 = Ext { from: 1, to: 8, sx: false } (v477)
+    v651:8 = Bin(Shl, 8) (v649, 0x38)
+    v652:8 = Bin(Or, 8) (v647, v651)
+    AStore(AllocaId(19), 16, 8) (v652)
+    v654:8 = Ext { from: 2, to: 8, sx: false } (v7)
+    v656:8 = Ext { from: 2, to: 8, sx: false } (v479)
+    v658:8 = Bin(Shl, 8) (v656, 0x10)
+    v659:8 = Bin(Or, 8) (v654, v658)
+    v661:8 = Ext { from: 2, to: 8, sx: false } (v481)
+    v663:8 = Bin(Shl, 8) (v661, 0x20)
+    v664:8 = Bin(Or, 8) (v659, v663)
+    v666:8 = Ext { from: 1, to: 8, sx: false } (v483)
+    v668:8 = Bin(Shl, 8) (v666, 0x30)
+    v669:8 = Bin(Or, 8) (v664, v668)
+    v671:8 = Ext { from: 1, to: 8, sx: false } (v485)
+    v673:8 = Bin(Shl, 8) (v671, 0x38)
+    v674:8 = Bin(Or, 8) (v669, v673)
+    AStore(AllocaId(19), 24, 8) (v674)
+    AStore(AllocaId(19), 8, 8) (v1)
+    AStore(AllocaId(19), 16, 8) (v652)
+    AStore(AllocaId(19), 24, 8) (v674)
+    AStore(AllocaId(33), 0, 8) (v60)
+    AStore(AllocaId(33), 8, 8) (v113)
+    AStore(AllocaId(33), 16, 8) (v114)
+    AStore(AllocaId(33), 24, 8) (v115)
+    AStore(AllocaId(34), 0, 8) (v1)
+    AStore(AllocaId(34), 8, 8) (v652)
+    AStore(AllocaId(34), 16, 8) (v674)
+    AStore(AllocaId(34), 24, 8) (v60)
+    AStore(AllocaId(34), 32, 8) (v113)
+    AStore(AllocaId(34), 40, 8) (v114)
+    AStore(AllocaId(34), 48, 8) (v115)
+    v142:8 = Load(8, 0) (v0)
+    AStore(AllocaId(33), 0, 8) (v142)
+    AStore(AllocaId(33), 24, 8) (v142)
+    AStore(AllocaId(33), 8, 8) (v142)
+    v278:8 = Load(8, 0) (v142)
+    v279:8 = Load(8, 8) (v142)
+    v698:8 = Bin(ShrU, 8) (v278, 0x10)
+    v700:8 = Bin(ShrU, 8) (v278, 0x20)
+    v702:8 = Bin(ShrU, 8) (v278, 0x30)
+    v704:8 = Bin(ShrU, 8) (v278, 0x38)
+    v706:8 = Bin(ShrU, 8) (v279, 0x20)
+    v708:8 = Bin(ShrU, 8) (v279, 0x30)
+    v710:8 = Bin(ShrU, 8) (v279, 0x38)
+    AStore(AllocaId(8), 0, 2) (v278)
+    AStore(AllocaId(8), 2, 2) (v698)
+    AStore(AllocaId(8), 4, 2) (v700)
+    AStore(AllocaId(8), 6, 1) (v702)
+    AStore(AllocaId(8), 7, 1) (v704)
+    AStore(AllocaId(8), 8, 4) (v279)
+    AStore(AllocaId(8), 12, 2) (v706)
+    AStore(AllocaId(8), 14, 1) (v708)
+    AStore(AllocaId(8), 15, 1) (v710)
+    v269:16 = ALoad(AllocaId(8), 0, 16) ()
+    v275:2 = V(Msb) (v269)
+    v276:4 = Ext { from: 2, to: 4, sx: false } (v275)
+    AStore(AllocaId(33), 12, 4) (v276)
+    AStore(AllocaId(33), 16, 2) (v275)
+    hcall not.w16 [(Fp, [None, None]), (Imm(4294966978), [Some(Alloca(AllocaId(33), 18)), None]), (Imm(4294966976), [Some(Alloca(AllocaId(33), 16)), None])] ins [] outs [] ()
+    v159:2 = ALoad(AllocaId(33), 18, 2) ()
+    AStore(AllocaId(33), 20, 2) (v159)
+    AStore(AllocaId(33), 22, 2) (v159)
+    v161:8 = Load(8, 24) (v0)
+    AStore(AllocaId(33), 8, 8) (v161)
+    AStore(AllocaId(42), 0, 2) (v159)
+    AStore(AllocaId(33), 0, 8) (v142)
+    AStore(AllocaId(33), 8, 8) (0x0)
+    AStore(AllocaId(33), 16, 8) (v161)
+    v165:8 = ALoad(AllocaId(42), 0, 8) ()
+    AStore(AllocaId(33), 24, 8) (v165)
+    jmp b2(v0, v4, v3, v6, v471, v473, v475, v477)
 b15(): ; Body
     trap
 b16(): ; Body
@@ -9894,33 +9890,33 @@ b24(): ; Body cold
 b25(): ; Body
     trap
 b26(): ; Osr(0)
-    v237:8 = OsrLoad(-24, 8) ()
-    v238:8 = OsrLoad(-48, 8) ()
-    v239:8 = OsrLoad(-56, 8) ()
-    v801:2 = OsrLoad(-80, 2) ()
-    v803:2 = OsrLoad(-78, 2) ()
-    v805:2 = OsrLoad(-76, 2) ()
-    v807:1 = OsrLoad(-74, 1) ()
-    v809:1 = OsrLoad(-73, 1) ()
-    jmp b2(v237, v238, v239, v801, v803, v805, v807, v809)
+    v231:8 = OsrLoad(-24, 8) ()
+    v232:8 = OsrLoad(-48, 8) ()
+    v233:8 = OsrLoad(-56, 8) ()
+    v795:2 = OsrLoad(-80, 2) ()
+    v797:2 = OsrLoad(-78, 2) ()
+    v799:2 = OsrLoad(-76, 2) ()
+    v801:1 = OsrLoad(-74, 1) ()
+    v803:1 = OsrLoad(-73, 1) ()
+    jmp b2(v231, v232, v233, v795, v797, v799, v801, v803)
 b27(): ; Osr(1)
-    v195:8 = OsrLoad(-344, 8) ()
-    v196:8 = OsrLoad(-24, 8) ()
-    v197:8 = OsrLoad(-48, 8) ()
-    v199:8 = OsrLoad(-56, 8) ()
-    v800:2 = OsrLoad(-80, 2) ()
-    v802:2 = OsrLoad(-78, 2) ()
-    v804:2 = OsrLoad(-76, 2) ()
-    v806:1 = OsrLoad(-74, 1) ()
-    v808:1 = OsrLoad(-73, 1) ()
-    jmp b4(v195, v196, v197, v199, v800, v802, v804, v806, v808)
+    v189:8 = OsrLoad(-344, 8) ()
+    v190:8 = OsrLoad(-24, 8) ()
+    v191:8 = OsrLoad(-48, 8) ()
+    v193:8 = OsrLoad(-56, 8) ()
+    v794:2 = OsrLoad(-80, 2) ()
+    v796:2 = OsrLoad(-78, 2) ()
+    v798:2 = OsrLoad(-76, 2) ()
+    v800:1 = OsrLoad(-74, 1) ()
+    v802:1 = OsrLoad(-73, 1) ()
+    jmp b4(v189, v190, v191, v193, v794, v796, v798, v800, v802)
 b28(): ; Body
-    AStore(AllocaId(99), 0, 8) (v22)
-    v303:8 = ALoad(AllocaId(32), 32, 8) ()
-    v304:8 = Bin(And, 8) (v22, v303)
-    AStore(AllocaId(99), 8, 8) (v304)
-    AStore(AllocaId(100), 0, 8) (v304)
-    AStore(AllocaId(100), 8, 8) (0x0)
+    AStore(AllocaId(101), 0, 8) (v22)
+    v297:8 = ALoad(AllocaId(34), 32, 8) ()
+    v298:8 = Bin(And, 8) (v22, v297)
+    AStore(AllocaId(101), 8, 8) (v298)
+    AStore(AllocaId(102), 0, 8) (v298)
+    AStore(AllocaId(102), 8, 8) (0x0)
     jmp b61()
 b29(): ; Stub cold
     v23:8 = LandingPad ()
@@ -9932,7 +9928,7 @@ b31(): ; Body cold
 b32(): ; Body cold
     trap
 b33(): ; Stub cold
-    v64:8 = LandingPad ()
+    v58:8 = LandingPad ()
     jmp b23()
 b34(): ; Body
     trap
@@ -9967,27 +9963,27 @@ b48(): ; Body
 b49(): ; Body
     trap
 b50(): ; Body
-    v288:8 = ALoad(AllocaId(32), 0, 8) ()
-    v289:8 = ALoad(AllocaId(32), 8, 8) ()
-    v290:8 = ALoad(AllocaId(32), 16, 8) ()
-    v291:8 = Bin(Add, 8) (v287, 0x1)
-    v292:8 = AllocaAddr(AllocaId(82), 0) ()
-    Call(Call { target: image.fn104.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: Continue }) (v292, v289, v290, v291)
-    v293:8 = ALoad(AllocaId(82), 0, 8) ()
-    v294:8 = ALoad(AllocaId(82), 8, 8) ()
-    v295:8 = ALoad(AllocaId(82), 16, 8) ()
-    v296:8 = ALoad(AllocaId(32), 24, 8) ()
-    AStore(AllocaId(82), 0, 8) (v296)
-    AStore(AllocaId(82), 8, 8) (v296)
-    v297:8 = Bin(Sub, 8) (0x0, v295)
-    AStore(AllocaId(82), 0, 8) (v297)
-    v298:8 = PtrIndex(1) (v296, v297)
-    AStore(AllocaId(82), 16, 8) (v298)
-    br Eq.w8 v294, 0x0 ? b9(0xffff, 0xffff, 0xffff, 0xff, 0xff, 0x0, 0x0, 0x0, 0x0, 0x0) : b52()
+    v282:8 = ALoad(AllocaId(34), 0, 8) ()
+    v283:8 = ALoad(AllocaId(34), 8, 8) ()
+    v284:8 = ALoad(AllocaId(34), 16, 8) ()
+    v285:8 = Bin(Add, 8) (v281, 0x1)
+    v286:8 = AllocaAddr(AllocaId(84), 0) ()
+    Call(Call { target: image.fn104.slot, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: Continue }) (v286, v283, v284, v285)
+    v287:8 = ALoad(AllocaId(84), 0, 8) ()
+    v288:8 = ALoad(AllocaId(84), 8, 8) ()
+    v289:8 = ALoad(AllocaId(84), 16, 8) ()
+    v290:8 = ALoad(AllocaId(34), 24, 8) ()
+    AStore(AllocaId(84), 0, 8) (v290)
+    AStore(AllocaId(84), 8, 8) (v290)
+    v291:8 = Bin(Sub, 8) (0x0, v289)
+    AStore(AllocaId(84), 0, 8) (v291)
+    v292:8 = PtrIndex(1) (v290, v291)
+    AStore(AllocaId(84), 16, 8) (v292)
+    br Eq.w8 v288, 0x0 ? b9(0xffff, 0xffff, 0xffff, 0xff, 0xff, 0x0, 0x0, 0x0, 0x0, 0x0) : b52()
 b51(): ; Body
     trap
 b52(): ; Body
-    Call(Call { target: image.sym41, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: None }) (v298, v294, v293)
+    Call(Call { target: image.sym41, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: None }) (v292, v288, v287)
     jmp b9(0xffff, 0xffff, 0xffff, 0xff, 0xff, 0x0, 0x0, 0x0, 0x0, 0x0)
 b53(): ; Body
     trap
@@ -10006,14 +10002,14 @@ b59(): ; Body
 b60(): ; Body
     trap
 b61(): ; Body
-    v306:8 = ALoad(AllocaId(100), 0, 8) ()
-    v307:8 = ALoad(AllocaId(32), 24, 8) ()
-    v308:8 = PtrIndex(1) (v307, v306)
-    AStore(AllocaId(169), 0, 8) (0x0)
-    AStore(AllocaId(169), 8, 8) (0x0)
-    v310:8 = AllocaAddr(AllocaId(169), 0) ()
-    v312:8 = RefAddr(image.k696, false) ()
-    br Eq.w8 v308, 0x0 ? b93() : b74()
+    v300:8 = ALoad(AllocaId(102), 0, 8) ()
+    v301:8 = ALoad(AllocaId(34), 24, 8) ()
+    v302:8 = PtrIndex(1) (v301, v300)
+    AStore(AllocaId(171), 0, 8) (0x0)
+    AStore(AllocaId(171), 8, 8) (0x0)
+    v304:8 = AllocaAddr(AllocaId(171), 0) ()
+    v306:8 = RefAddr(image.k696, false) ()
+    br Eq.w8 v302, 0x0 ? b93() : b74()
 b62(): ; Body
     trap
 b63(): ; Body
@@ -10039,7 +10035,7 @@ b72(): ; Body
 b73(): ; Body
     trap
 b74(): ; Body
-    br Eq.w8 v310, 0x0 ? b93() : b79()
+    br Eq.w8 v304, 0x0 ? b93() : b79()
 b75(): ; Body
     trap
 b76(): ; Body
@@ -10049,37 +10045,37 @@ b77(): ; Body
 b78(): ; Body
     trap
 b79(): ; Body
-    br LtU.w8 v308, v310 ? b82() : b83()
+    br LtU.w8 v302, v304 ? b82() : b83()
 b80(): ; Body
     trap
 b81(): ; Body
     trap
 b82(): ; Body
-    v317:8 = Bin(Sub, 8) (v310, v308)
-    jmp b84(v317)
+    v311:8 = Bin(Sub, 8) (v304, v302)
+    jmp b84(v311)
 b83(): ; Body
-    v318:8 = Bin(Sub, 8) (v308, v310)
-    jmp b84(v318)
-b84(v319:8): ; Body
-    br GeU.w8 v319, 0x10 ? b87() : b93()
+    v312:8 = Bin(Sub, 8) (v302, v304)
+    jmp b84(v312)
+b84(v313:8): ; Body
+    br GeU.w8 v313, 0x10 ? b87() : b93()
 b85(): ; Body
     trap
 b86(): ; Body
     trap
 b87(): ; Body
-    v468:8 = Load(8, 0) (v308)
-    v469:8 = Load(8, 8) (v308)
-    AStore(AllocaId(169), 0, 8) (v468)
-    AStore(AllocaId(169), 8, 8) (v469)
-    AStore(AllocaId(99), 0, 8) (v468)
-    AStore(AllocaId(99), 8, 8) (v469)
-    v331:4 = ALoad(AllocaId(99), 12, 4) ()
-    AStore(AllocaId(140), 0, 8) (v468)
-    AStore(AllocaId(140), 8, 4) (v469)
-    AStore(AllocaId(140), 12, 4) (v331)
-    v333:16 = ALoad(AllocaId(140), 0, 16) ()
-    v339:2 = V(Msb) (v333)
-    br Eq.w2 v339, 0x0 ? b106() : b105()
+    v462:8 = Load(8, 0) (v302)
+    v463:8 = Load(8, 8) (v302)
+    AStore(AllocaId(171), 0, 8) (v462)
+    AStore(AllocaId(171), 8, 8) (v463)
+    AStore(AllocaId(101), 0, 8) (v462)
+    AStore(AllocaId(101), 8, 8) (v463)
+    v325:4 = ALoad(AllocaId(101), 12, 4) ()
+    AStore(AllocaId(142), 0, 8) (v462)
+    AStore(AllocaId(142), 8, 4) (v463)
+    AStore(AllocaId(142), 12, 4) (v325)
+    v327:16 = ALoad(AllocaId(142), 0, 16) ()
+    v333:2 = V(Msb) (v327)
+    br Eq.w2 v333, 0x0 ? b106() : b105()
 b88(): ; Body
     trap
 b89(): ; Body
@@ -10091,8 +10087,8 @@ b91(): ; Body
 b92(): ; Body
     trap
 b93(): ; Body cold
-    v322:8 = RefAddr(image.k3619, false) ()
-    Call(Call { target: image.sym39, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v322, 0x237, 0x0, v312)
+    v316:8 = RefAddr(image.k3619, false) ()
+    Call(Call { target: image.sym39, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v316, 0x237, 0x0, v306)
     trap
 b94(): ; Body
     trap
@@ -10114,17 +10110,17 @@ b102(): ; Body
     trap
 b103(): ; Body
     trap
-b104(v343:8, v344:8): ; Body
-    br Eq.w8 v343, 0x1 ? b111() : b109()
+b104(v337:8, v338:8): ; Body
+    br Eq.w8 v337, 0x1 ? b111() : b109()
 b105(): ; Body
-    v345:4 = Count { lz: false, w: 2 } (v339)
-    AStore(AllocaId(140), 12, 4) (v345)
-    v346:8 = Ext { from: 4, to: 8, sx: false } (v345)
-    v347:8 = ALoad(AllocaId(100), 0, 8) ()
-    v348:8 = Bin(Add, 8) (v347, v346)
-    v349:8 = ALoad(AllocaId(32), 32, 8) ()
-    v350:8 = Bin(And, 8) (v348, v349)
-    jmp b104(0x1, v350)
+    v339:4 = Count { lz: false, w: 2 } (v333)
+    AStore(AllocaId(142), 12, 4) (v339)
+    v340:8 = Ext { from: 4, to: 8, sx: false } (v339)
+    v341:8 = ALoad(AllocaId(102), 0, 8) ()
+    v342:8 = Bin(Add, 8) (v341, v340)
+    v343:8 = ALoad(AllocaId(34), 32, 8) ()
+    v344:8 = Bin(And, 8) (v342, v343)
+    jmp b104(0x1, v344)
 b106(): ; Body
     jmp b104(0x0, 0x0)
 b107(): ; Body
@@ -10132,30 +10128,30 @@ b107(): ; Body
 b108(): ; Body
     trap
 b109(): ; Body
-    v356:8 = ALoad(AllocaId(32), 32, 8) ()
-    v357:8 = ALoad(AllocaId(100), 8, 8) ()
-    v358:8 = Bin(Add, 8) (v357, 0x10)
-    AStore(AllocaId(100), 8, 8) (v358)
-    v359:8 = ALoad(AllocaId(100), 0, 8) ()
-    v360:8 = Bin(Add, 8) (v359, v358)
-    AStore(AllocaId(100), 0, 8) (v360)
-    v361:8 = Bin(And, 8) (v360, v356)
-    AStore(AllocaId(100), 0, 8) (v361)
+    v350:8 = ALoad(AllocaId(34), 32, 8) ()
+    v351:8 = ALoad(AllocaId(102), 8, 8) ()
+    v352:8 = Bin(Add, 8) (v351, 0x10)
+    AStore(AllocaId(102), 8, 8) (v352)
+    v353:8 = ALoad(AllocaId(102), 0, 8) ()
+    v354:8 = Bin(Add, 8) (v353, v352)
+    AStore(AllocaId(102), 0, 8) (v354)
+    v355:8 = Bin(And, 8) (v354, v350)
+    AStore(AllocaId(102), 0, 8) (v355)
     jmp b61()
 b110(): ; Body
     trap
 b111(): ; Body
-    v362:8 = ALoad(AllocaId(32), 24, 8) ()
-    v363:8 = PtrIndex(1) (v362, v344)
-    v364:1 = Load(1, 0) (v363)
-    v365:1 = Bin(And, 1) (v364, 0x80)
-    br Eq.w1 v365, 0x0 ? b113() : b121()
+    v356:8 = ALoad(AllocaId(34), 24, 8) ()
+    v357:8 = PtrIndex(1) (v356, v338)
+    v358:1 = Load(1, 0) (v357)
+    v359:1 = Bin(And, 1) (v358, 0x80)
+    br Eq.w1 v359, 0x0 ? b113() : b121()
 b112(): ; Body
     trap
 b113(): ; Body
-    v473:16 = Load(16, 0) (v362)
-    v378:2 = V(Msb) (v473)
-    br Eq.w2 v378, 0x0 ? b124() : b122()
+    v467:16 = Load(16, 0) (v356)
+    v372:2 = V(Msb) (v467)
+    br Eq.w2 v372, 0x0 ? b124() : b122()
 b114(): ; Body
     trap
 b115(): ; Body
@@ -10168,65 +10164,65 @@ b118(): ; Body
     trap
 b119(): ; Body
     trap
-b120(v382:8): ; Body
-    v201:8 = ALoad(AllocaId(32), 24, 8) ()
-    v202:8 = PtrIndex(1) (v201, v382)
-    v203:1 = Load(1, 0) (v202)
-    v205:8 = Bin(ShrU, 8) (v22, 0x39)
-    v207:8 = Bin(And, 8) (v205, 0x7f)
-    v208:1 = Ext { from: 8, to: 1, sx: false } (v207)
-    v210:8 = Bin(Sub, 8) (v382, 0x10)
-    v211:8 = ALoad(AllocaId(32), 32, 8) ()
-    v212:8 = Bin(And, 8) (v210, v211)
-    v214:8 = Bin(Add, 8) (v212, 0x10)
-    Store(1, 0) (v202, v208)
-    v217:8 = ALoad(AllocaId(32), 24, 8) ()
-    v218:8 = PtrIndex(1) (v217, v214)
-    Store(1, 0) (v218, v208)
-    v544:8 = Ext { from: 2, to: 8, sx: false } (v729)
-    v546:8 = Ext { from: 2, to: 8, sx: false } (v738)
-    v548:8 = Bin(Shl, 8) (v546, 0x10)
-    v549:8 = Bin(Or, 8) (v544, v548)
-    v551:8 = Ext { from: 2, to: 8, sx: false } (v747)
-    v553:8 = Bin(Shl, 8) (v551, 0x20)
-    v554:8 = Bin(Or, 8) (v549, v553)
-    v556:8 = Ext { from: 1, to: 8, sx: false } (v756)
-    v558:8 = Bin(Shl, 8) (v556, 0x30)
-    v559:8 = Bin(Or, 8) (v554, v558)
-    v561:8 = Ext { from: 1, to: 8, sx: false } (v765)
-    v563:8 = Bin(Shl, 8) (v561, 0x38)
-    v564:8 = Bin(Or, 8) (v559, v563)
-    v220:8 = Load(8, 0) (v17)
-    v566:8 = Ext { from: 2, to: 8, sx: false } (v16)
-    v568:8 = Ext { from: 2, to: 8, sx: false } (v528)
-    v570:8 = Bin(Shl, 8) (v568, 0x10)
-    v571:8 = Bin(Or, 8) (v566, v570)
-    v573:8 = Ext { from: 2, to: 8, sx: false } (v530)
-    v575:8 = Bin(Shl, 8) (v573, 0x20)
-    v576:8 = Bin(Or, 8) (v571, v575)
-    v578:8 = Ext { from: 1, to: 8, sx: false } (v532)
-    v580:8 = Bin(Shl, 8) (v578, 0x30)
-    v581:8 = Bin(Or, 8) (v576, v580)
-    v583:8 = Ext { from: 1, to: 8, sx: false } (v534)
-    v585:8 = Bin(Shl, 8) (v583, 0x38)
-    v586:8 = Bin(Or, 8) (v581, v585)
-    v223:8 = Bin(Add, 8) (v586, 0x1)
-    v224:8 = Bin(Mul, 8) (v223, v564)
-    v226:8 = Bin(Sub, 8) (0x0, v224)
-    v227:8 = PtrIndex(1) (v220, v226)
-    v228:8 = ALoad(AllocaId(32), 24, 8) ()
-    v230:8 = Bin(Add, 8) (v382, 0x1)
-    v231:8 = Bin(Mul, 8) (v230, v564)
-    v233:8 = Bin(Sub, 8) (0x0, v231)
-    v234:8 = PtrIndex(1) (v228, v233)
-    hcall.reg memcpy [(Fp, [None, None]), (Imm(4294966904), [Some(Scratch(0)), None]), (Imm(4294966912), [Some(Scratch(8)), None]), (Imm(4294966736), [Some(Scratch(16)), None])] outs 0 (v234, v227, v564)
-    jmp b2(v17, v19, v21, v729, v738, v747, v756, v765)
+b120(v376:8): ; Body
+    v195:8 = ALoad(AllocaId(34), 24, 8) ()
+    v196:8 = PtrIndex(1) (v195, v376)
+    v197:1 = Load(1, 0) (v196)
+    v199:8 = Bin(ShrU, 8) (v22, 0x39)
+    v201:8 = Bin(And, 8) (v199, 0x7f)
+    v202:1 = Ext { from: 8, to: 1, sx: false } (v201)
+    v204:8 = Bin(Sub, 8) (v376, 0x10)
+    v205:8 = ALoad(AllocaId(34), 32, 8) ()
+    v206:8 = Bin(And, 8) (v204, v205)
+    v208:8 = Bin(Add, 8) (v206, 0x10)
+    Store(1, 0) (v196, v202)
+    v211:8 = ALoad(AllocaId(34), 24, 8) ()
+    v212:8 = PtrIndex(1) (v211, v208)
+    Store(1, 0) (v212, v202)
+    v538:8 = Ext { from: 2, to: 8, sx: false } (v723)
+    v540:8 = Ext { from: 2, to: 8, sx: false } (v732)
+    v542:8 = Bin(Shl, 8) (v540, 0x10)
+    v543:8 = Bin(Or, 8) (v538, v542)
+    v545:8 = Ext { from: 2, to: 8, sx: false } (v741)
+    v547:8 = Bin(Shl, 8) (v545, 0x20)
+    v548:8 = Bin(Or, 8) (v543, v547)
+    v550:8 = Ext { from: 1, to: 8, sx: false } (v750)
+    v552:8 = Bin(Shl, 8) (v550, 0x30)
+    v553:8 = Bin(Or, 8) (v548, v552)
+    v555:8 = Ext { from: 1, to: 8, sx: false } (v759)
+    v557:8 = Bin(Shl, 8) (v555, 0x38)
+    v558:8 = Bin(Or, 8) (v553, v557)
+    v214:8 = Load(8, 0) (v17)
+    v560:8 = Ext { from: 2, to: 8, sx: false } (v16)
+    v562:8 = Ext { from: 2, to: 8, sx: false } (v522)
+    v564:8 = Bin(Shl, 8) (v562, 0x10)
+    v565:8 = Bin(Or, 8) (v560, v564)
+    v567:8 = Ext { from: 2, to: 8, sx: false } (v524)
+    v569:8 = Bin(Shl, 8) (v567, 0x20)
+    v570:8 = Bin(Or, 8) (v565, v569)
+    v572:8 = Ext { from: 1, to: 8, sx: false } (v526)
+    v574:8 = Bin(Shl, 8) (v572, 0x30)
+    v575:8 = Bin(Or, 8) (v570, v574)
+    v577:8 = Ext { from: 1, to: 8, sx: false } (v528)
+    v579:8 = Bin(Shl, 8) (v577, 0x38)
+    v580:8 = Bin(Or, 8) (v575, v579)
+    v217:8 = Bin(Add, 8) (v580, 0x1)
+    v218:8 = Bin(Mul, 8) (v217, v558)
+    v220:8 = Bin(Sub, 8) (0x0, v218)
+    v221:8 = PtrIndex(1) (v214, v220)
+    v222:8 = ALoad(AllocaId(34), 24, 8) ()
+    v224:8 = Bin(Add, 8) (v376, 0x1)
+    v225:8 = Bin(Mul, 8) (v224, v558)
+    v227:8 = Bin(Sub, 8) (0x0, v225)
+    v228:8 = PtrIndex(1) (v222, v227)
+    hcall.reg memcpy [(Fp, [None, None]), (Imm(4294966904), [Some(Scratch(0)), None]), (Imm(4294966912), [Some(Scratch(8)), None]), (Imm(4294966736), [Some(Scratch(16)), None])] outs 0 (v228, v221, v558)
+    jmp b2(v17, v19, v21, v723, v732, v741, v750, v759)
 b121(): ; Body
-    jmp b120(v344)
+    jmp b120(v338)
 b122(): ; Body
-    v383:4 = Count { lz: false, w: 2 } (v378)
-    v384:8 = Ext { from: 4, to: 8, sx: false } (v383)
-    jmp b120(v384)
+    v377:4 = Count { lz: false, w: 2 } (v372)
+    v378:8 = Ext { from: 4, to: 8, sx: false } (v377)
+    jmp b120(v378)
 b123(): ; Body
     trap
 b124(): ; Body
@@ -10238,32 +10234,32 @@ b126(): ; Body
 b127(): ; Body
     trap
 b128(): ; Body
-    v414:2 = ALoad(AllocaId(31), 24, 2) ()
-    br Eq.w2 v414, 0x0 ? b130() : b129()
+    v408:2 = ALoad(AllocaId(33), 24, 2) ()
+    br Eq.w2 v408, 0x0 ? b130() : b129()
 b129(): ; Body
-    v415:4 = Count { lz: false, w: 2 } (v414)
-    v416:8 = Ext { from: 4, to: 8, sx: false } (v415)
-    v417:2 = Bin(Sub, 2) (v414, 0x1)
-    v418:2 = Bin(And, 2) (v414, v417)
-    AStore(AllocaId(31), 24, 2) (v418)
-    v419:8 = ALoad(AllocaId(31), 8, 8) ()
-    v420:8 = Bin(Add, 8) (v419, v416)
-    v188:8 = ALoad(AllocaId(31), 16, 8) ()
-    v190:8 = Bin(Sub, 8) (v188, 0x1)
-    AStore(AllocaId(6), 0, 8) (v190)
-    AStore(AllocaId(31), 16, 8) (v190)
-    jmp b4(v420, v194, v198, v200, v732, v741, v750, v759, v768)
+    v409:4 = Count { lz: false, w: 2 } (v408)
+    v410:8 = Ext { from: 4, to: 8, sx: false } (v409)
+    v411:2 = Bin(Sub, 2) (v408, 0x1)
+    v412:2 = Bin(And, 2) (v408, v411)
+    AStore(AllocaId(33), 24, 2) (v412)
+    v413:8 = ALoad(AllocaId(33), 8, 8) ()
+    v414:8 = Bin(Add, 8) (v413, v410)
+    v182:8 = ALoad(AllocaId(33), 16, 8) ()
+    v184:8 = Bin(Sub, 8) (v182, 0x1)
+    AStore(AllocaId(8), 0, 8) (v184)
+    AStore(AllocaId(33), 16, 8) (v184)
+    jmp b4(v414, v188, v192, v194, v726, v735, v744, v753, v762)
 b130(): ; Body
-    v421:8 = ALoad(AllocaId(31), 0, 8) ()
-    v422:8 = PtrAdd(16) (v421)
-    AStore(AllocaId(31), 0, 8) (v422)
-    v470:16 = Load(16, 16) (v421)
-    v435:2 = V(Msb) (v470)
-    v439:2 = hcall.reg not.w16 [(Fp, [None, None]), (Imm(4294967178), [Some(Scratch(0)), None]), (Imm(4294967176), [Some(Scratch(8)), None])] outs 1 (v435)
-    AStore(AllocaId(31), 24, 2) (v439)
-    v440:8 = ALoad(AllocaId(31), 8, 8) ()
-    v441:8 = Bin(Add, 8) (v440, 0x10)
-    AStore(AllocaId(31), 8, 8) (v441)
+    v415:8 = ALoad(AllocaId(33), 0, 8) ()
+    v416:8 = PtrAdd(16) (v415)
+    AStore(AllocaId(33), 0, 8) (v416)
+    v464:16 = Load(16, 16) (v415)
+    v429:2 = V(Msb) (v464)
+    v433:2 = hcall.reg not.w16 [(Fp, [None, None]), (Imm(4294967178), [Some(Scratch(0)), None]), (Imm(4294967176), [Some(Scratch(8)), None])] outs 1 (v429)
+    AStore(AllocaId(33), 24, 2) (v433)
+    v434:8 = ALoad(AllocaId(33), 8, 8) ()
+    v435:8 = Bin(Add, 8) (v434, 0x10)
+    AStore(AllocaId(33), 8, 8) (v435)
     jmp b128()
 b131(): ; Body
     trap

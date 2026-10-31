@@ -272,6 +272,8 @@ pub struct FnCx<'a, 'tcx> {
     pub in_region: bool,
     /// [`abi_sig`] of the callees so far: call sites repeat callees.
     sigs: FxHashMap<Instance<'tcx>, AbiSig<'tcx>>,
+    /// [`uses::analyze`] of the body ([`FnCx::blocks`] takes the counts and dead hints).
+    pub uses: uses::LocalUses,
 }
 
 impl<'a, 'tcx> FnCx<'a, 'tcx> {
@@ -312,6 +314,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             strict_simd: !tcx.codegen_instance_attrs(instance.def).target_features.is_empty(),
             in_region: false,
             sigs: FxHashMap::default(),
+            uses: uses::analyze(body),
         })
     }
 
@@ -337,7 +340,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// blocks stay in the body.
     fn blocks(&mut self) -> Result<(), NeedsNative> {
         let body = self.body;
-        let uses::LocalUses { count: uses, dead_after_read: dead } = uses::analyze(body);
+        let uses = std::mem::take(&mut self.uses.count);
+        let dead = std::mem::take(&mut self.uses.dead_after_read);
         let pe = self.cx.mode.pe;
         let reachable = rustc_middle::mir::traversal::mono_reachable_as_bitset(body, self.tcx, self.instance);
         let mut order: Vec<BasicBlock> = body.basic_blocks.indices().collect();

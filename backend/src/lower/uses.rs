@@ -1,6 +1,7 @@
 //! The per-function use analysis of MIR locals, run once before lowering: how often each
 //! local is used (compare and discriminant fusion, [`super::terminator`]), and which locals
-//! are dead after the statement reading them (the register cache's dead hints).
+//! are dead after the statement reading them (the register cache's dead hints), and which
+//! have their address taken.
 
 use rustc_index::IndexVec;
 use rustc_middle::mir::visit::{MutatingUseContext, NonMutatingUseContext, PlaceContext, Visitor};
@@ -18,6 +19,8 @@ pub struct LocalUses {
     /// Every execution of the read follows the definition, so nothing reads the value after
     /// it.
     pub dead_after_read: Vec<(Location, Local)>,
+    /// The locals borrowed, dropped or indexed: whose bytes code may write through a pointer.
+    pub escapes: IndexVec<Local, bool>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -93,5 +96,5 @@ pub fn analyze(body: &Body<'_>) -> LocalUses {
             })
             .collect();
     dead_after_read.sort_unstable();
-    LocalUses { count: v.0.iter().map(|u| u.total).collect(), dead_after_read }
+    LocalUses { count: v.0.iter().map(|u| u.total).collect(), dead_after_read, escapes: v.0.iter().map(|u| u.escapes).collect() }
 }

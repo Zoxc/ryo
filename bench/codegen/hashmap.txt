@@ -5110,7 +5110,7 @@ L10:
   fn3 = hashbrown::raw::RawTableInner::resize_inner::<std::alloc::Global>
   sym4 = hashbrown::raw::Fallibility::capacity_overflow
 
-fn hashbrown::raw::RawTableInner::resize_inner::<std::alloc::Global> (frame 624, args 16, ret 16) [always]
+fn hashbrown::raw::RawTableInner::resize_inner::<std::alloc::Global> (frame 640, args 16, ret 16) [always]
     arg $-24, 8
     arg $-32, 264
     arg $-40, 520
@@ -5158,17 +5158,19 @@ L4:
     load.w64 $-616, [$-320 + 8]
     load.w64 $-608, [$-320 + 16]
     load.w64 $-600, [$-320 + 24]
-    store.w64 [$-312 + 0], $-624
-    store.w64 [$-312 + 8], $-616
-    store.w64 [$-312 + 16], $-608
-    store.w64 [$-312 + 24], $-600
-    store.w64 [$-320 + 0], $-592
-    store.w64 [$-320 + 8], $-584
-    store.w64 [$-320 + 16], $-576
-    store.w64 [$-320 + 24], $-568
+    mov.w64 $-632, $-312
+    store.w64 [$-632 + 0], $-624
+    store.w64 [$-632 + 8], $-616
+    store.w64 [$-632 + 16], $-608
+    store.w64 [$-632 + 24], $-600
+    mov.w64 $-640, $-320
+    store.w64 [$-640 + 0], $-592
+    store.w64 [$-640 + 8], $-584
+    store.w64 [$-640 + 16], $-576
+    store.w64 [$-640 + 24], $-568
     jmp L18
 L5:
-    ; end $-624, 72 bytes
+    ; end $-640, 88 bytes
     ; escape align 8 $-304, 56 bytes
     addr $-384, $-280
 L6:

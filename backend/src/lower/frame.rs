@@ -232,6 +232,11 @@ impl<'tcx> Frame<'tcx> {
         only(false).or_else(|| only(true))
     }
 
+    /// Whether the slot `s` is a temporary or in the outgoing block, not part of a local.
+    pub fn is_temp(&self, s: u32) -> bool {
+        s < OUT_END || (s.wrapping_sub(BIAS) as i32) < -(self.locals_end as i32)
+    }
+
     /// Bytes below `fp` the locals take, and the locals with the most temporaries took (the
     /// frame size without the outgoing block): the certificate's frame map (`cert.rs`).
     pub fn extent(&self) -> (u32, u32) {
