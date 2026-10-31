@@ -64,7 +64,9 @@ operands, so they are layout-relative already.
   are reachable only through frame operands. At an `Escape` scope it becomes an
   **allocation** at `φ(o)`, with a fresh `AllocId`, holding its current bytes. At the
   matching `End` (a `StorageDead`, the temporaries' reset) or at return, the allocation is
-  deallocated. At an `End` the bytes it covers become private and `Uninit`, escaped or not.
+  deallocated. At an `End` the bytes it covers become `Uninit`; an escaped object it covers
+  whole is deallocated and its bytes become private, while one it covers only partly stays
+  escaped, its covered bytes `Uninit` in its allocation.
   This matches L0, where `StorageDead` then `StorageLive` gives uninitialized bytes, and
   LLVM's `lifetime.end`; and the backend already treats those bytes as dead (`reset_temps`
   marks the temporaries dead, `Asm::dead`, along with their `storage_end`, and a local isn't
