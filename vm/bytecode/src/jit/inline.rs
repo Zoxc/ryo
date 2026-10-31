@@ -669,7 +669,7 @@ fn outgoing_pending(f: &Func, site: Inst) -> bool {
             if i == site {
                 at_site = waiting;
             }
-            if f.insts[i.idx()].op.is_call() {
+            if matches!(f.insts[i.idx()].op, Op::Call(_)) {
                 waiting = false;
             } else if out(i) {
                 waiting = true;
