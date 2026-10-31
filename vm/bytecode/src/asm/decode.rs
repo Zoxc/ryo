@@ -111,9 +111,11 @@ struct Read {
 }
 
 /// The index of the instruction at byte position `b` of `ipos` ([`Read::ipos`]), for a
-/// target of the instruction at `at`.
+/// target of the instruction at `at`. A sequence that left no code shares its position with
+/// the next instruction, where labels bind: the last at the position.
 fn insn_index(ipos: &[u32], at: u32, b: u32) -> Result<usize, AsmError> {
-    ipos.binary_search(&b).map_err(|_| err(at, "target isn't an instruction"))
+    let i = ipos.partition_point(|&p| p <= b);
+    i.checked_sub(1).filter(|&i| ipos[i] == b).ok_or_else(|| err(at, "target isn't an instruction"))
 }
 
 /// The side data the decoder reads alongside a function's machine code: its call sites, and
