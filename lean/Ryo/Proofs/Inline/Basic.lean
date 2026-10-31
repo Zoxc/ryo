@@ -107,7 +107,7 @@ theorem nv_target {ρ : R.Addrs} {o : R.Opnd Nat} {v : Val} :
     R.nativeVal ρ .target o = some v ↔ ∃ t, o = .target t ∧ v = .none := by
   cases o <;> simp [R.nativeVal, eq_comm]
 
-/-- An immediate of kind `k`: below `2 ^ bits k`. -/
+/-- The bits of an immediate of kind `k`: it is below `2 ^ immBits k` (`nv_imm`). -/
 def immBits : OperandKind → Nat
   | .u8 => 8 | .u16 => 16 | .u32 => 32 | _ => 64
 
@@ -128,7 +128,7 @@ theorem memW_eq (s : Ryo.X86.State) (w : W) (a : BitVec 64) :
     s.memW w a = BitVec.ofNat w.bits (leDecode (bytesAt s.mem a (w.bits / 8))) := by
   simp [State.memW, readNat_eq]
 
-/-- A frame read at `o` of `n` bytes, decoded as an integer: the x86 bytes' value. -/
+/-- A frame read at `s.toInt` of `n` bytes, decoded as an integer: the x86 bytes' value. -/
 theorem read_int {st : OpSem.State} {x : Ryo.X86.State} (hr : Rel st x) {s : BitVec 32} {n : Nat}
     (hn : n ≤ 16) {bs : List AbstractByte} {v : Nat} (h : st.readFrame s.toInt n = .ok bs)
     (hv : asNat bs = .ok v) : v = leDecode (bytesAt x.mem (fpAddr x s.toInt) n) := by

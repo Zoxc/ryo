@@ -594,7 +594,7 @@ theorem body_divW (ctx : Ctx) (x : Ryo.X86.State) (sg : Bool) (w : W) (hw : w = 
   rw [divBody_W hw]
   generalize hA : x.memW w (x.ea (M.frame a)) = A at hov ⊢
   generalize hB : x.memW w (x.ea (M.frame b)) = B at hB0 hov ⊢
-  -- `mov`/`movzx` of `a` into `rax`
+  -- `mov` of `a` into `eax`/`rax`
   obtain ⟨s1, e1, f1, v1⟩ : ∃ s1, (Item.ld w false .rax (M.frame a)).exec ctx x = .ok s1 ∧
       Facts [0, 1, 2] x s1 [Item.ld w false .rax (M.frame a)] ∧ s1.regW w .rax = A := by
     refine ⟨_, exec_ld ctx w false .rax (M.frame a) x, by ld_fone, ?_⟩

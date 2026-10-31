@@ -508,7 +508,8 @@ theorem SameButWrites.refl (st : OpSem.State) : SameButWrites st st :=
 
 /-- The relation after a frame write at `d` (private or escaped bytes), against an x86 state
 whose memory changed exactly at `rbp + d + i` (`i < bs.length`), to bytes the written ones
-relate to. `opSem`'s memory changes only by the escaped bytes written (`EscFrom`). -/
+relate to. `opSem`'s memory changes only in the escaped objects' allocations (`EscOnly`), and
+the escaped objects, `exposed`, `exception` and `zeroSized` are kept. -/
 theorem rel_writeFrame {st st' : OpSem.State} {x x' : X86.State} {d : Int} {bs : List AbstractByte}
     {xs : List UInt8} (hr : Rel st x) (hw : st.writeFrame d bs = .ok st') (hd : -2 ^ 63 ≤ d)
     (hdn : d + bs.length ≤ 2 ^ 63) (hx : BytesRel bs xs) (hrbp : x'.reg .rbp = x.reg .rbp)
