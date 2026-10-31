@@ -478,7 +478,7 @@ structure PostMem (items : List Item) (st st' : OpSem.State) (ctl : Control) (x 
   rel : Rel st' x'
   memRel : MemRel st' x'
   same : st'.frame = st.frame ∧ st'.escaped = st.escaped ∧ st'.exposed = st.exposed ∧
-    st'.exception = st.exception
+    st'.exception = st.exception ∧ st'.zeroSized = st.zeroSized
   regs : ∀ i : Fin 16, i ≠ 0 → i ≠ 1 → x'.regs i = x.regs i
   xmm : x'.xmm = x.xmm
   rip : x'.rip = x.rip + BitVec.ofNat 64 (items.map Item.size).sum
@@ -504,7 +504,7 @@ theorem postMem_store {items : List Item} {st : OpSem.State} {mem' : Memory}
   subst hlen hE
   obtain ⟨h1, h2, h3⟩ := post_store (x' := (y.jump a1).setMem (BitVec.ofNat 64 (a.addr + off)) bs.length V) hr hm hap hdis hg hlv
     hb (by omega) hmem' hx (by simpa using hyb) (by simp [hym])
-  exact ⟨h2, h1, ⟨rfl, rfl, rfl, rfl⟩, fun i h0 h1 => by simpa using hyr i h0 h1,
+  exact ⟨h2, h1, ⟨rfl, rfl, rfl, rfl, rfl⟩, fun i h0 h1 => by simpa using hyr i h0 h1,
     by simpa using hyx, by simpa using hrip, h3, rfl⟩
 
 theorem sound_store (w : W) : ∀ (ctx : Ctx) (ρ : R.Addrs) (op : Full.Opcode)
