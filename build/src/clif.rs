@@ -24,13 +24,20 @@ pub fn build() -> Result<(), String> {
     if !src.join("Cargo.toml").exists() {
         return Err(format!("{} is missing; install the `rustc-dev` component of the pinned toolchain", src.display()));
     }
-    eprintln!("[y] cg_clif: copying {} to out/clif/", src.display());
     let copy_to = crate::utils::out_dir(&root).join("clif");
-    crate::utils::remove_dir_if_exists(&copy_to)?;
-    copy_dir(&src, &copy_to)?;
+    // Copied once per toolchain and version: the copies get fresh mtimes, which would make
+    // cargo rebuild cg_clif every time.
+    let stamp = copy_to.join(".ryo-source");
+    let want = format!("{}\n{}", src.to_string_lossy(), info.version);
+    if std::fs::read_to_string(&stamp).ok().as_deref() != Some(want.as_str()) {
+        eprintln!("[y] cg_clif: copying {} to out/clif/", src.display());
+        crate::utils::remove_dir_if_exists(&copy_to)?;
+        copy_dir(&src, &copy_to)?;
+        crate::utils::write(&stamp, &want)?;
+    }
 
     eprintln!("[y] cg_clif: rustc_codegen_cranelift");
-    // Outside out/clif/, so recopying the sources keeps the build cache.
+    // Outside out/clif/, so recopying the sources keeps the crates.io dependencies' build cache.
     let target_dir = crate::utils::out_dir(&root).join("target").join("clif");
     run(cmd("cargo")
         .args(["build", "--release", "-Zembed-metadata=no", "--manifest-path"])

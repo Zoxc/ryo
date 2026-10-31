@@ -19,8 +19,8 @@ pub(super) fn cargo_smoke(info: &crate::utils::RustcInfo, root: &Path, out: &Pat
     }
     let manifest = format!(
         "[package]\nname = \"cargo-hello\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n\
-         [[bin]]\nname = \"hello\"\npath = {:?}\n\n[workspace]\n",
-        root.join("tests").join("hello.rs").to_str().ok_or("non-UTF-8 path")?,
+         [[bin]]\nname = \"hello\"\npath = {}\n\n[workspace]\n",
+        crate::install::quote(root.join("tests").join("hello.rs").to_str().ok_or("non-UTF-8 path")?),
     );
     crate::utils::write(pkg.join("Cargo.toml"), manifest)?;
     let cargo_ryo = crate::utils::dist_bin(&root, "cargo-ryo");
@@ -121,14 +121,15 @@ pub(super) fn backtrace(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), 
         (&["vm_backtrace::inner", "vm_backtrace::outer", "__rust_try", "vm_backtrace::main"], &["vm_backtrace::outer", "vm_backtrace::main"])
     };
     let want_stdout = "guard dropped\ncaught: true\n";
-    let mut missing: Vec<_> = want.iter().filter(|w| !stderr.contains(*w)).collect();
+    // The panic hook prints the message and its backtrace before unwinding reaches the guard.
+    let (panic, in_drop) = stderr.split_once("drop backtrace:").unwrap_or((&stderr, ""));
+    let mut missing: Vec<_> = want.iter().filter(|w| !panic.contains(*w)).collect();
     // The backtrace the guard's drop captures in the landing pad walks out of it, through
     // `outer` (on PE through the pad region, the trampoline and the unwinder's frames), into
     // `main`.
-    let in_drop = stderr.split_once("drop backtrace:").map_or("", |(_, b)| b);
     missing.extend(in_drop_want.iter().filter(|w| !in_drop.contains(*w)));
     if !status.success() || stdout != want_stdout || !missing.is_empty() {
-        return Err(format!("{status}, missing frames {missing:?}\nstdout:\n{stdout}stderr:\n{stderr}"));
+        return Err(format!("{status}, missing {missing:?}\nstdout:\n{stdout}stderr:\n{stderr}"));
     }
     Ok(())
 }
@@ -414,10 +415,15 @@ pub(super) fn is_runtime_symbol(s: &str) -> bool {
 }
 
 /// Whether the mangled `sym` is a path in the crate `krate` (its length-prefixed name): at the
-/// root of a legacy path, or after a v0 crate root's `C` (and disambiguator). A user module
-/// of that name (`da::ryo_rt`) isn't.
+/// root of a legacy path, or after a v0 crate root's `C` (and disambiguator `s<base-62>_`). A
+/// user module of that name (`da::ryo_rt`) isn't, also not after a back-reference (`B<n>_`)
+/// or a path disambiguator, which end in `_` as well.
 fn in_crate(sym: &str, krate: &str) -> bool {
-    sym.starts_with(&format!("_ZN{krate}")) || sym.contains(&format!("C{krate}")) || sym.contains(&format!("_{krate}"))
+    let dis = |(k, _): (usize, &str)| {
+        let rest = sym[k + 2..].trim_start_matches(|c: char| c.is_ascii_alphanumeric());
+        rest.strip_prefix('_').is_some_and(|r| r.starts_with(krate))
+    };
+    sym.starts_with(&format!("_ZN{krate}")) || sym.contains(&format!("C{krate}")) || sym.match_indices("Cs").any(dis)
 }
 
 /// Whether `s` is one of `ryo_rt`'s own `#[rustc_std_internal_symbol]`s (mangled under the
@@ -434,7 +440,7 @@ pub(super) fn is_rt_internal(s: &str) -> bool {
 pub(super) const CRATES: [&str; 4] = ["4core", "17compiler_builtins", "12ryo_bytecode", "6ryo_rt"];
 
 /// Whether `s` is a Rust symbol of a crate outside [`CRATES`] (std's), or std's allocator
-/// shim (`__rust_*`, `__rdl_*`, `__rg_*`).
+/// shim ([`crate::utils::is_std_alloc_shim`]).
 pub(super) fn outside(s: &str) -> bool {
     if crate::utils::is_std_alloc_shim(s) {
         return true;
@@ -987,10 +993,12 @@ pub(super) fn cgu_ownership(info: &crate::utils::RustcInfo, rustc_ryo: &Path, sr
     Ok(())
 }
 
-/// Runs `c`, which must fail with `needle` in its stderr.
+/// Runs `c`, which must fail with ryo's rejection mentioning `needle` in its stderr (plain
+/// rustc rejects some of the cases itself, with messages that contain the needle).
 fn expect_reject(c: &mut Command, needle: &str) -> Result<(), String> {
     let res = capture(c)?;
-    if res.status.success() || !res.stderr.contains(needle) {
+    let ryo = res.stderr.lines().any(|l| l.contains("the ryo backend doesn't support") && l.contains(needle));
+    if res.status.success() || !ryo {
         return Err(format!("expected `{}` to fail mentioning {needle}; stderr:\n{}", crate::utils::describe(c), res.stderr));
     }
     Ok(())
@@ -1025,4 +1033,17 @@ pub(super) fn cgu_deterministic(rustc_ryo: &Path, src: &Path, out: &Path) -> Res
         return Err(format!("two builds gave different image objects: {:?} vs {:?}", names(&a), names(&b)));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn in_crate() {
+        assert!(super::in_crate("_ZN6ryo_rt2vm3foo17h0123456789abcdefE", "6ryo_rt"));
+        assert!(super::in_crate("_RNvNtCs1a2B_6ryo_rt2vm3foo", "6ryo_rt"));
+        assert!(super::in_crate("_RNvNtC6ryo_rt2vm3foo", "6ryo_rt"));
+        // `da::ryo_rt::f`, and `da::g::<da::ryo_rt::S>` with `da` as a back-reference.
+        assert!(!super::in_crate("_RNvNtCs1a2B_2da6ryo_rt1f", "6ryo_rt"));
+        assert!(!super::in_crate("_RINvCs1a2B_2da1gNtNtB2_6ryo_rt1SEB2_", "6ryo_rt"));
+    }
 }

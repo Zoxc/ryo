@@ -397,12 +397,13 @@ const CLEARED_ENV: &[&str] = &[
 
 /// Whether the inherited variable `k` is cleared: [`CLEARED_ENV`], the backend's and the
 /// runtime's switches (`RYO_*`, but not `y`'s own `RYO_Y_*`), cargo profile settings and
-/// per-target `RUSTFLAGS` and runners.
+/// unstable features, and per-target `RUSTFLAGS`, runners, linkers and archivers.
 fn cleared(k: &str) -> bool {
     CLEARED_ENV.contains(&k)
         || (k.starts_with("RYO_") && !k.starts_with("RYO_Y_"))
         || k.starts_with("CARGO_PROFILE_")
-        || (k.starts_with("CARGO_TARGET_") && (k.ends_with("_RUSTFLAGS") || k.ends_with("_RUNNER")))
+        || k.starts_with("CARGO_UNSTABLE_")
+        || (k.starts_with("CARGO_TARGET_") && ["_RUSTFLAGS", "_RUNNER", "_LINKER", "_AR"].iter().any(|s| k.ends_with(s)))
 }
 
 /// Removes the inherited variables [`cleared`] matches from `c`.
@@ -634,7 +635,7 @@ fn prepare(root: &Path, base: &Path, krate: &Crate) -> Result<Sources, String> {
     }
     text.push_str("\n[[example]]\nname = \"ryo_bench\"\npath = \"examples/ryo_bench.rs\"\n\n[workspace]\n");
     crate::utils::write(&manifest, text)?;
-    Ok(Sources { dir, members: vec![krate.name.to_owned()], overrides: Vec::new(), workload: true })
+    Ok(Sources { dir, members: vec![format!("{}@{}", krate.name, krate.version)], overrides: Vec::new(), workload: true })
 }
 
 /// A [`Target`]'s prepared sources.
@@ -642,6 +643,8 @@ struct Sources {
     /// The package or workspace directory the builds run in.
     dir: PathBuf,
     /// The leaf packages: cleaned between leaf samples.
+    /// `name@version` package specs: `cargo clean -p name` would also clean any dependency
+    /// with the same name (serde_json's dev-dependencies pull in another serde_json).
     members: Vec<String>,
     /// A local workspace's per-package profile overrides (`prepare_local`).
     overrides: Vec<String>,
@@ -650,25 +653,53 @@ struct Sources {
     workload: bool,
 }
 
-/// Fetches a local workspace's dependencies and lists its members' package names and its
+/// Fetches a local workspace's dependencies and lists its members' package specs and its
 /// per-package profile overrides (`profile.dev.package."*"`, see [`override_configs`]). The
 /// sources are used in place (nothing is written to them; the target directory is the
 /// bench's).
 fn prepare_local(dir: &Path) -> Result<Sources, String> {
     let text = crate::utils::read(dir.join("Cargo.toml"))?;
-    let overrides = text
-        .lines()
-        .filter_map(|l| l.trim().strip_prefix('[')?.strip_suffix(']'))
-        .filter(|l| l.starts_with("profile.") && l.contains(".package."))
-        .map(str::to_owned)
-        .collect();
+    let overrides = profile_overrides(&text)?;
     crate::utils::run(cmd("cargo").current_dir(dir).args(["fetch", "--locked"]))?;
     // `viewer v0.1.0 (/path)`, one line per member.
     let tree = output(cmd("cargo").current_dir(dir).args(["tree", "--offline", "--workspace", "--depth", "0", "--prefix", "none"]))?;
-    let mut members: Vec<String> = tree.lines().filter_map(|l| l.split_whitespace().next()).map(str::to_owned).collect();
+    let mut members: Vec<String> = tree
+        .lines()
+        .filter_map(|l| {
+            let mut f = l.split_whitespace();
+            Some(format!("{}@{}", f.next()?, f.next()?.strip_prefix('v')?))
+        })
+        .collect();
     members.sort();
     members.dedup();
     Ok(Sources { dir: dir.to_owned(), members, overrides, workload: false })
+}
+
+/// The per-package profile override sections of a manifest (`profile.dev.package."*"`), as
+/// headers without spaces. Other forms of them (dotted or inline keys under `[profile.dev]` or
+/// `[profile.dev.package]`) are rejected, as they would escape [`override_configs`].
+fn profile_overrides(text: &str) -> Result<Vec<String>, String> {
+    let mut overrides = Vec::new();
+    let mut section = String::new();
+    for l in text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')) {
+        if let Some(h) = l.strip_prefix('[').filter(|h| !h.starts_with('[')) {
+            // `[a . "b"]  # comment`: up to the `]` (package names have no `]`).
+            section = h.split(']').next().unwrap_or("").chars().filter(|c| !c.is_whitespace()).collect();
+            if section.starts_with("profile.") && section.contains(".package.") {
+                overrides.push(section.clone());
+            }
+        } else if l.starts_with('[') {
+            section.clear();
+        } else if let Some(p) = section.strip_prefix("profile.") {
+            let key = l.split(['=', '.', ' ']).next().unwrap_or("");
+            if p.ends_with(".package") || (!p.contains('.') && key == "package") {
+                return Err(format!(
+                    "unsupported form of a per-package profile override in [{section}]: `{l}`; use a `[profile.<name>.package.<spec>]` header"
+                ));
+            }
+        }
+    }
+    Ok(overrides)
 }
 
 /// `--config` values restating `PROFILE_ENV` in each per-package override section, which
@@ -780,7 +811,7 @@ fn build_sample(env: &Env, clean: bool, stats: bool) -> Result<BuildSample, Stri
     // Built for the workload; its timing isn't reported.
     let example = if local { None } else { Some(step(&["--example", "ryo_bench"])?.0) };
     if !clean && let Some(u) = [&lib, &tests].into_iter().chain(&example).flat_map(|s| &s.units).find(|u| !u.primary) {
-        return Err(format!("dependency `{}` was rebuilt in a sample", u.krate));
+        return Err(format!("dependency `{}` ({} `{}`) was rebuilt in a sample", u.package, u.kind, u.krate));
     }
     let test_exes = test_executables(&json);
     let example_exe = (!local).then(|| env.target.join("debug").join("examples").join(exe_name("ryo_bench")));
@@ -854,13 +885,45 @@ fn run_raw(c: &mut Command, timeout: u64) -> Result<(f64, std::process::Output),
     clear_env(c);
     c.env("RUST_TEST_THREADS", "1");
     // Its own process group, so a timeout also kills the processes it starts (which would keep
-    // the pipes open).
+    // the pipes open). That takes it out of the terminal's foreground group, so Ctrl-C would
+    // only stop `y`: `kill_group_on_sigint` kills the group too.
     #[cfg(unix)]
-    std::os::unix::process::CommandExt::process_group(c, 0);
+    {
+        std::os::unix::process::CommandExt::process_group(c, 0);
+        kill_group_on_sigint();
+    }
     let start = Instant::now();
     // Only the error's first line: the report shows it inline.
     let out = crate::utils::output_timeout(c, Duration::from_secs(timeout)).map_err(|e| e.lines().next().unwrap_or_default().to_owned())?;
     Ok((start.elapsed().as_secs_f64(), out))
+}
+
+/// Installs (once) a SIGINT handler that kills the process group of the child
+/// `output_timeout` is running (see `run_raw`), then dies of the signal.
+#[cfg(unix)]
+fn kill_group_on_sigint() {
+    const SIGINT: i32 = 2;
+    const SIGKILL: i32 = 9;
+    unsafe extern "C" {
+        fn signal(sig: i32, handler: usize) -> usize;
+        fn kill(pid: i32, sig: i32) -> i32;
+        fn raise(sig: i32) -> i32;
+    }
+    extern "C" fn handler(sig: i32) {
+        let pid = crate::utils::TIMEOUT_CHILD.load(std::sync::atomic::Ordering::SeqCst);
+        // Only async-signal-safe calls. Without a group (pid not a leader) `kill` fails.
+        unsafe {
+            if pid != 0 {
+                kill(-(pid as i32), SIGKILL);
+            }
+            signal(sig, 0); // SIG_DFL
+            raise(sig);
+        }
+    }
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| unsafe {
+        signal(SIGINT, handler as extern "C" fn(i32) as usize);
+    });
 }
 
 /// Runs every test binary once, single-threaded, from its package directory with its
@@ -963,6 +1026,15 @@ fn header(info: &RustcInfo, root: &Path, opts: &Options) -> Vec<(String, String)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn overrides() {
+        let t = "[package]\nname = \"a\"\n\n[ profile.dev.package.\"*\" ]  # deps fast\nopt-level = 3\n[profile.dev]\nopt-level = 1\n";
+        assert_eq!(profile_overrides(t).unwrap(), ["profile.dev.package.\"*\""]);
+        assert!(profile_overrides("[profile.dev]\npackage.\"*\".opt-level = 3\n").is_err());
+        assert!(profile_overrides("[profile.dev.package]\nfoo = { opt-level = 3 }\n").is_err());
+        assert!(profile_overrides("[[bin]]\nname = \"package\"\n").unwrap().is_empty());
+    }
 
     #[test]
     fn options() {

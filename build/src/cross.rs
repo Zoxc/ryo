@@ -8,7 +8,7 @@
 //! symbols `ryo_rt` itself uses ([`RT_IMPORTS`], [`RT_IMPORTS_MACHO`]) or its sealed JIT does
 //! (in a Rust dylib, which plain rustc links to std's DLL, the JIT's private std brings its own
 //! imports), i.e. comes from the missing system libraries. A missing ryo symbol (an image, a
-//! portal, an `__imp_` slot, the registry) shows up as a difference. The ryo builds must also compile the functions each
+//! VM function, an `__imp_` slot, the registry) shows up as a difference. The ryo builds must also compile the functions each
 //! program lists to bytecode (`Program::check_vm`), so a silent fallback to LLVM fails.
 
 use std::collections::BTreeSet;
@@ -42,7 +42,9 @@ const STUB_LIBS: &[&str] = &[
 /// CRT and SDK symbols `ryo_rt` uses that a plain rustc build of a program may not: its
 /// kernel32 imports (`vm/rt/src/vm/sys.rs`, `seh.rs`, `jit/merge.rs`, `vm/bytecode/src/vmem.rs`, `vm/bytecode/src/os.rs`, as lld names their `__imp_` references) and the
 /// C runtime functions its code needs. The only unresolved symbols allowed besides plain
-/// rustc's.
+/// rustc's and the sealed JIT's (whose std's are listed here too: `_tls_index` and the
+/// C++-mangled `??_7type_info@@6B@` of its SEH panic runtime, which lld prints demangled,
+/// so the sealed JIT's own list doesn't match it).
 const RT_IMPORTS: &[&str] = &[
     "__declspec(dllimport) VirtualAlloc",
     "__declspec(dllimport) VirtualFree",
@@ -53,6 +55,9 @@ const RT_IMPORTS: &[&str] = &[
     // The run-time merge's rendezvous and module pinning (`vm/rt/src/vm/jit/merge.rs`, `sys.rs`).
     "__declspec(dllimport) ReadProcessMemory",
     "__declspec(dllimport) GetModuleHandleExW",
+    "__declspec(dllimport) GetCurrentProcess",
+    // The JIT thread's owning process (`sys.rs`'s `pid`).
+    "__declspec(dllimport) GetCurrentProcessId",
     // The PE exception handler's unwind to a terminate stub (`vm/rt/src/vm/seh.rs`).
     "__declspec(dllimport) RtlUnwindEx",
     "atexit",
@@ -65,6 +70,7 @@ const RT_IMPORTS: &[&str] = &[
     "fmod",
     "fmodf",
     "_fltused",
+    // The sealed JIT's std: its TLS and its SEH panic runtime.
     "_tls_index",
     "const type_info::`vftable'",
 ];
@@ -101,6 +107,8 @@ const RT_IMPORTS_MACHO: &[&str] = &[
     "_dlopen",
     "_mach_task_self_",
     "_mach_vm_read_overwrite",
+    // The JIT thread's owning process (`sys.rs`'s `pid`).
+    "_getpid",
 ];
 
 /// What differs between the object formats `y test --cross` covers.
@@ -117,12 +125,14 @@ const PE: Flavor = Flavor { stub_libs: STUB_LIBS, rt_imports: RT_IMPORTS, macho:
 const MACHO: Flavor = Flavor { stub_libs: STUB_LIBS_MACHO, rt_imports: RT_IMPORTS_MACHO, macho: true };
 
 pub fn run(target: &str) -> Result<(), String> {
-    let flavor = if target.starts_with("x86_64-") && crate::target::is_macho(target) {
+    // Only x86-64 Windows and macOS: the PE checks are Win64's, the Mach-O stubs x86_64-macos'.
+    let x64 = target.starts_with("x86_64-");
+    let flavor = if x64 && target.ends_with("-apple-darwin") {
         &MACHO
-    } else if crate::target::is_coff(target) {
+    } else if x64 && crate::target::is_coff(target) {
         &PE
     } else {
-        return Err(format!("test --cross {target}: only windows-msvc and x86_64 macOS targets are supported"));
+        return Err(format!("test --cross {target}: only x86_64 windows-msvc and macOS targets are supported"));
     };
     let root = root();
     let info = RustcInfo::get()?;
@@ -161,7 +171,8 @@ pub fn run(target: &str) -> Result<(), String> {
     let mut jit_imports = BTreeSet::new();
     let dir = out.join("jit-sealed");
     // As lld names them: ld64.lld with Mach-O's `_`, lld-link imports as dllimport. They
-    // are C symbols (`check_sealed` rejects Rust ones), so need no demangling.
+    // are C symbols (`check_sealed` rejects Rust ones) and not demangled; the one C++
+    // symbol of its std, `type_info`'s vtable, is in `RT_IMPORTS` under lld's name.
     if let Some(undefined) = report(target, &mut failed, "jit-sealed", crate::jit::check_sealed(&info, &rlib, &dir, target), |_| None) {
         jit_imports = undefined
             .iter()
@@ -385,7 +396,8 @@ mod tests {
 }
 
 /// Checks that no code in `rlib` (`ryo_rt`, with the sealed JIT it bundles) accesses memory
-/// below `rsp`: on Windows, exception dispatch, APCs and debuggers may write there, and LLVM
+/// at a negative displacement from `rsp`, a heuristic for red-zone use (accesses below `rsp`
+/// through `rbp` or another copy of `rsp` aren't caught): on Windows, exception dispatch, APCs and debuggers may write there, and LLVM
 /// gives `sysv64` functions a red zone unless built with [`crate::jit::NO_REDZONE`]
 /// (design/platforms.md). Returns how many objects it checked.
 fn no_red_zone(info: &RustcInfo, rlib: &Path, dir: &Path) -> Result<usize, String> {

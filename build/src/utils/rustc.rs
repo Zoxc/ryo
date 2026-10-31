@@ -62,12 +62,28 @@ pub fn host_tool(sysroot: &Path, host: &str, name: &str) -> PathBuf {
     rustlib(sysroot, host).join("bin").join(exe_name(name))
 }
 
-/// Copies `<from>/lib/rustlib/<triple>/bin` (the self-contained linker) to the same place
-/// under `to`, if the toolchain has one.
+/// Copies `<from>/lib/rustlib/<triple>/bin` (the self-contained linker and the other tools
+/// rustc runs: `rust-lld`, `gcc-ld/`, `rust-objcopy`, ...) to the same place under `to`, if
+/// the toolchain has one; not the `llvm-tools` component's tools (`llvm-*`, `llc`, `opt`).
 pub fn copy_target_bin(from: &Path, to: &Path, triple: &str) -> Result<(), String> {
     let src = rustlib(from, triple).join("bin");
-    if src.is_dir() {
-        copy_dir(&src, &rustlib(to, triple).join("bin"))?;
+    if !src.is_dir() {
+        return Ok(());
+    }
+    let dst = rustlib(to, triple).join("bin");
+    crate::utils::create_dir(&dst)?;
+    for entry in std::fs::read_dir(&src).map_err(|e| format!("{}: {e}", src.display()))? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let name = entry.file_name();
+        let stem = Path::new(&name).file_stem().unwrap_or_default().to_string_lossy().into_owned();
+        if stem.starts_with("llvm-") || stem == "llc" || stem == "opt" {
+            continue;
+        }
+        if entry.file_type().map_err(|e| e.to_string())?.is_dir() {
+            copy_dir(&entry.path(), &dst.join(&name))?;
+        } else {
+            crate::utils::copy(&entry.path(), &dst.join(&name))?;
+        }
     }
     Ok(())
 }

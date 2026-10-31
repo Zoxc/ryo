@@ -207,7 +207,7 @@ th:first-child, td:first-child { text-align:left; }
 table.hdr td { text-align:left; } table.hdr td:first-child { color:var(--fg2); white-space:nowrap; }
 td.noisy { background:var(--warn-bg); } td.bad { background:var(--bad-bg); color:var(--bad); }
 .sub { color:var(--fg2); font-size:.85em; }
-svg text { fill:var(--fg); font:12px system-ui, sans-serif; } svg .axis { fill:var(--fg2); font-size:11px; }
+svg text { fill:var(--fg); font:12px system-ui, sans-serif; } svg .axis { fill:var(--fg2); font-size:11px; } svg .fail { fill:var(--bad); }
 svg .grid { stroke:var(--grid); } svg .ref { stroke:var(--fg2); stroke-dasharray:3 3; }
 .legend span { display:inline-block; margin-right:1.2em; } .sw { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:4px; vertical-align:-1px; }
 #tip { position:fixed; pointer-events:none; background:var(--bg); color:var(--fg); border:1px solid var(--grid);
@@ -220,7 +220,8 @@ const JS: &str = r#"
 const tip = document.getElementById('tip');
 document.querySelectorAll('[data-tip]').forEach(el => {
   el.addEventListener('mousemove', e => { tip.textContent = el.dataset.tip; tip.style.display = 'block';
-    tip.style.left = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8) + 'px'; tip.style.top = (e.clientY + 14) + 'px'; });
+    tip.style.left = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8) + 'px'; 
+    tip.style.top = Math.max(8, e.clientY + 14 + tip.offsetHeight + 8 > innerHeight ? e.clientY - tip.offsetHeight - 14 : e.clientY + 14) + 'px'; });
   el.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
 });
 "#;
@@ -273,7 +274,7 @@ fn ratio_chart(r: &Report, m: &Metric, data: &[Vec<Option<Summary>>]) -> String 
     let nb = r.backends.len() as f64;
     let group_h = nb * row_h + band;
     let height = 30.0 + data.len() as f64 * group_h;
-    let x = |v: f64| left + (v.max(lo).ln() - lo.ln()) / (hi.ln() - lo.ln()) * (width - left - 20.0);
+    let x = |v: f64| left + (v.max(lo).ln() - lo.ln()) / (hi.ln() - lo.ln()) * (width - left - 80.0);
     let mut s = format!(r#"<svg viewBox="0 0 {width} {height}" width="100%" role="img" aria-label="{} relative to LLVM">"#, esc(m.title));
     for t in &ticks {
         let tx = x(*t);
@@ -319,7 +320,7 @@ fn ratio_chart(r: &Report, m: &Metric, data: &[Vec<Option<Summary>>]) -> String 
                         (Some(_), Some(_)) => "LLVM median is 0",
                         (Some(_), None) => "no LLVM baseline",
                     };
-                    let _ = write!(s, r#"<text class="axis" x="{left}" y="{:.1}" fill="var(--bad)">{} {what}</text>"#, cy + 4.0, backend.name());
+                    let _ = write!(s, r#"<text class="axis fail" x="{left}" y="{:.1}">{} {what}</text>"#, cy + 4.0, backend.name());
                 }
             }
         }
@@ -355,7 +356,8 @@ fn breakdown_chart(r: &Report) -> String {
     let (left, width, bar, gap) = (200.0, 820.0, 12.0, 4.0);
     let nb = r.backends.len().max(1);
     let height = 10.0 + rows.len() as f64 * (bar + gap) + (rows.len() / nb) as f64 * 8.0;
-    let scale = (width - left - 70.0) / max;
+    // Room right of the longest bar for its total and state, e.g. "12.3 s (build failed)".
+    let scale = (width - left - 160.0) / max;
     let mut s = format!(r#"<svg viewBox="0 0 {width} {height}" width="100%" role="img" aria-label="compile time breakdown">"#);
     let mut y = 6.0;
     for (i, (label, parts, state, none)) in rows.iter().enumerate() {
@@ -385,12 +387,13 @@ fn breakdown_chart(r: &Report) -> String {
             }
             x += w;
         }
+        let class = if *none { "axis fail" } else { "axis" };
         let total = match (none, state) {
             (true, _) => "failed / no data".to_owned(),
             (false, Some(st)) => format!("{} ({st})", fmt_value(total, Measure::Secs)),
             (false, None) => fmt_value(total, Measure::Secs),
         };
-        let _ = write!(s, r#"<text class="axis" x="{:.1}" y="{:.1}">{}</text></g>"#, x + 6.0, y + bar - 2.0, esc(&total));
+        let _ = write!(s, r#"<text class="{class}" x="{:.1}" y="{:.1}">{}</text></g>"#, x + 6.0, y + bar - 2.0, esc(&total));
         y += bar + gap;
     }
     s.push_str("</svg><div class=\"legend\">");
@@ -531,8 +534,9 @@ fn unit_details(r: &Report) -> String {
         "<h2 id=\"units\">Per-unit compile times</h2><p class=\"muted\">Median rustc wall time / backend (codegen section) per rustc invocation; ★ marks units of the benchmarked package.</p>",
     );
     for c in &r.crates {
-        // A unit is its crate name, kind, package and source file (several build scripts, two
-        // versions of a dependency, a lib's and a bin's tests share a crate name and kind).
+        // A unit is its crate name, kind, package (with its features) and source file (several
+        // build scripts, two versions or feature sets of a dependency, a lib's and a bin's tests
+        // share a crate name and kind).
         let mut keys: Vec<(String, String, String, String, bool, usize)> = Vec::new();
         for cell in &c.cells {
             for (si, steps) in [&cell.build, &cell.test_build].into_iter().enumerate() {
@@ -600,7 +604,9 @@ fn tests_section(r: &Report) -> String {
                         t.passed, t.failed, t.ignored, t.binaries
                     );
                 }
-                None => s.push_str("<td class=\"bad\">not run</td>"),
+                // Only a failure if the build failed; with `--run-samples 0` nothing runs.
+                None if cell.build_failed() => s.push_str("<td class=\"bad\">not run</td>"),
+                None => s.push_str("<td class=\"muted\">not run</td>"),
             }
             for e in &cell.errors {
                 let _ = write!(problems, "<li><b>{} [{}]</b>: <pre>{}</pre></li>", esc(c.krate.name()), r.backends[bi].name(), esc(&e.to_string()));
@@ -609,8 +615,11 @@ fn tests_section(r: &Report) -> String {
         s.push_str("</tr>");
     }
     s.push_str("</table>");
-    if problems.is_empty() {
+    let workloads_ran = r.crates.iter().any(|c| c.cells.iter().any(|cell| cell.workload_output.is_some()));
+    if problems.is_empty() && workloads_ran {
         s.push_str("<p>No build, test or workload failures, and every workload printed the same output with every backend.</p>");
+    } else if problems.is_empty() {
+        s.push_str("<p>No build, test or workload failures.</p>");
     } else {
         let _ = write!(s, "<h3 class=\"fail\">Failures</h3><ul>{problems}</ul>");
     }

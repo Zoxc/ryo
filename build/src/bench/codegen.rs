@@ -323,8 +323,9 @@ fn disassemble_function(out: &mut String, code: &[u8], relocs: &[(u32, String)],
             // `i32` offsets from the table to its targets. The table ends at the first
             // target after it, or (all targets before it) at an offset out of the function.
             // In that case, code after the table whose 4-byte groups land in the function
-            // would be read as entries; no dump has such a table today.
-            let mut end = code.len();
+            // would be read as entries; no dump has such a table today. Never past the body
+            // (JIT code), so the padding and the OSR code aren't.
+            let mut end = osr.map_or(code.len(), |(body_end, _)| if at < body_end { body_end } else { code.len() });
             let mut pos = at;
             while pos + 4 <= end {
                 let e = i32::from_le_bytes(code[pos..pos + 4].try_into().unwrap()) as i64;

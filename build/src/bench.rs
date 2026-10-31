@@ -107,7 +107,8 @@ pub struct Options {
     pub ryo: Vec<RyoMode>,
     pub metric: Metric,
     /// Also compile each program once more with `-Zself-profile`, writing rustc's
-    /// `.mm_profdata` to `DIR/<program>/<column>/`.
+    /// `.mm_profdata` to `DIR/<program>/<column>/`, emptied first (a repeated column gets a
+    /// `-<n>` suffix).
     pub self_profile: Option<PathBuf>,
 }
 
@@ -232,7 +233,15 @@ impl Timer {
     /// Compiles with `job`, filling `cell.compile` if timed.
     fn compile(&self, job: &Job, runs: u32, cell: &mut Cell) -> Result<(), String> {
         match self {
-            Timer::Wall(clock) => cell.compile = Some(clock.measure(job, runs)?),
+            // The timed compiles discard the compiler's output, so a failed one is rerun with
+            // it shown, for the diagnostics.
+            Timer::Wall(clock) => match clock.measure(job, runs) {
+                Ok(s) => cell.compile = Some(s),
+                Err(e) => {
+                    let _ = crate::utils::run(&mut job.command());
+                    return Err(e);
+                }
+            },
             Timer::Cachegrind => crate::utils::run(&mut job.command())?,
         }
         Ok(())
@@ -358,11 +367,19 @@ pub fn run(opts: &Options) -> Result<(), String> {
     let mut rows = Vec::new();
     // Output mismatches and failed builds or runs, reported at the end.
     let mut failures = Vec::new();
+    // Self-profile directory names, with repeated columns numbered so they don't share one.
+    let bases: Vec<String> = columns.iter().map(|c| c.name.replace([' ', '-'], "")).collect();
+    let pnames: Vec<String> = (0..bases.len())
+        .map(|i| match bases[..i].iter().filter(|b| **b == bases[i]).count() {
+            0 => bases[i].clone(),
+            n => format!("{}-{}", bases[i], n + 1),
+        })
+        .collect();
     for &program in PROGRAMS {
         let src = root.join("bench").join(format!("{program}.rs"));
         let mut cells = Vec::new();
         let mut reference: Option<(String, &str)> = None;
-        for column in &columns {
+        for (column, pname) in columns.iter().zip(&pnames) {
             eprintln!("[y] bench {program} [{}]", column.name);
             let dir = out.join(program).join(column.name.replace([' ', '-'], ""));
             crate::utils::create_dir(&dir)?;
@@ -379,8 +396,8 @@ pub fn run(opts: &Options) -> Result<(), String> {
             let built = timer.compile(&compile_job, runs, &mut cell).map_err(|e| failed("compile", e)).is_ok();
             // A separate, untimed compile, so the profiler's overhead stays out of the timings.
             if let (true, Some(base)) = (built, &opts.self_profile) {
-                let pdir = base.join(program).join(column.name.replace([' ', '-'], ""));
-                crate::utils::create_dir(&pdir)?;
+                let pdir = base.join(program).join(pname);
+                crate::utils::fresh_dir(&pdir)?;
                 let mut job = compile_job.clone();
                 job.args.push(format!("-Zself-profile={}", path_str(&pdir)?));
                 if let Err(e) = crate::utils::run(&mut job.command()) {

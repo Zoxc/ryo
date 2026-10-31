@@ -363,7 +363,7 @@ A plain `y test` runs the fast set plus the tests the changed paths select
   `RYO_JIT_OPT=ssa RYO_JIT_CHECK=1`); the corpus programs in `FAST`, each under the variants
   listed there (`ryo` on most, the `ryo-jit-ssa*` variants on the VM programs, `ryo-abort` on `vm_abort_cleanup`, `ryo-std` and `ryo-std-jit` on
   `collections`); and the cheap checks (`reject-unsupported`, `cgu-deterministic`, `cgu-ownership`, `metadata-only`, `dump`, `exports`,
-  `backtrace`). Every other corpus program is on `FULL_ONLY` with a reason; a unit test
+  `backtrace`, `pe-imports`). Every other corpus program is on `FULL_ONLY` with a reason; a unit test
   checks that each program is on exactly one of the two lists. Without a current ryo sysroot
   the ryo-std entries are skipped with a warning; the fast suite never builds the sysroot.
 - Changed paths: those in `git diff --name-only` against the merge base with `main`, plus
@@ -373,13 +373,16 @@ A plain `y test` runs the fast set plus the tests the changed paths select
   - `notes/`, `design/`, `.github/`, `*.md` outside `lean/`, `vm/bytecode/tests/` (the fast
     set runs them) and `bench/codegen/`: nothing extra.
   - `lean/`, `tests/lean/`: `y lean` (if `lake` is present).
-  - `vm/bytecode/src/{asm/,isa/,abi.rs}`: the whole corpus under `ryo`
-    and the JIT variants, all six `ryo_jit` runs, the slow vm tests, `y lean`.
-  - `vm/bytecode/src/jit*`, `vm/jit/`: all six `ryo_jit` runs, the corpus under the JIT
-    variants (`ryo-jit-ssa`, `-osr`, `-shuffle` and the `ryo-std-jit*` ones), `jit-private-std`.
+  - `vm/bytecode/src/{asm/,isa/full.rs,isa/reduced.rs,abi.rs}`: the whole corpus under `ryo`
+    and the JIT variants, all three `ryo_jit` runs, the slow vm tests, `y lean`,
+    `rt-core-only`, `jit-sealed`, `jit-private-std`, `jit-atomics`. The rest of `isa/`
+    (`full_ops.rs` renumbers opcodes) escalates to `--full`.
+  - `vm/bytecode/src/jit/`, `vm/jit/`: all three `ryo_jit` runs, the corpus under the JIT
+    variants (`ryo-jit-ssa`, `-osr`, `-shuffle` and the `ryo-std-jit*` ones), `jit-private-std`,
+    `jit-atomics`, `rt-core-only`, `jit-sealed`.
   - `vm/rt/src/vm/handlers.rs`: as other `vm/rt/` paths, plus `y lean`.
   - `vm/rt/src/`, `vm/rt/tests/`, `vm/rt/build.rs`: the `vm` run, codegen.rs,
-    `rt-core-only`, `jit-sealed`.
+    `rt-core-only`, `jit-sealed`, `multi-staticlib`, `multi-dylib`.
   - `backend/`: the whole corpus under every variant (the ryo-std ones need a current
     sysroot), every check, the slow vm tests and the JIT set.
   - `tests/<file>`: the programs built from that file (or its directory) under every
@@ -429,7 +432,7 @@ real crates.io crates, in cargo's `dev` profile only. The default is `llvm,ryo`.
   The dev profile's defaults (opt-level 0, debug assertions, overflow checks, unwind) are
   restated through `CARGO_PROFILE_{DEV,TEST}_*`, since crates can override `profile.test`
   (memchr sets opt-level 3); build overrides are forced the same way, and a crate with
-  per-package profile overrides is rejected (none of the nine has any). `rustc-ryo` forces `-Ccodegen-units=1` anyway; no MIR
+  per-package profile overrides is rejected (none of the nine has any). No MIR
   optimization flags are added for any backend.
 - **`--stock`**: none of the above; cargo's and rustc's defaults (the crate's own profiles,
   parallel jobs, codegen units, incremental, debuginfo), only `RUSTC` changed. An unfair
@@ -476,7 +479,6 @@ real crates.io crates, in cargo's `dev` profile only. The default is `llvm,ryo`.
 ```
 y.sh, y.cmd, y.ps1                         entry points for the build tool
 build/          bin        y                   build tool (own Cargo.lock, iced-x86 only)
-  clif/                                        cg_clif sources copied by `y build-clif` (not committed)
 scripts/                                       rustc-ryo.rs, cargo-ryo.rs, rustc-clif.rs wrappers;
                                                Cargo.toml, launcher.rs: `y install`'s launchers
 install/                                       `y install`'s build and installed copy (not committed)

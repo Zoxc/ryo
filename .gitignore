@@ -2,3 +2,6 @@ target/
 /out/
 __pycache__/
 /install/
+# Build output from before out/ (8bc297e6), which `y test` would otherwise see as changes.
+/dist/
+/build/clif/

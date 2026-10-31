@@ -212,7 +212,8 @@ impl Manifest {
     }
 }
 
-fn quote(s: &str) -> String {
+/// A TOML basic string (also used for `cargo_smoke`'s manifest).
+pub(crate) fn quote(s: &str) -> String {
     let mut out = String::from('"');
     for c in s.chars() {
         if c == '"' || c == '\\' {
@@ -243,8 +244,22 @@ fn parse_list(s: &str) -> Option<Vec<String>> {
     if inner.is_empty() {
         return Some(Vec::new());
     }
-    // Items are plain names and paths: no `,` inside strings.
-    inner.split(',').map(|i| unquote(i.trim())).collect()
+    // Split at the commas outside strings (paths can hold `,`).
+    let (mut items, mut start, mut in_str, mut escaped) = (Vec::new(), 0, false, false);
+    for (i, c) in inner.char_indices() {
+        match c {
+            _ if escaped => escaped = false,
+            '\\' if in_str => escaped = true,
+            '"' => in_str = !in_str,
+            ',' if !in_str => {
+                items.push(unquote(inner[start..i].trim())?);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    items.push(unquote(inner[start..].trim())?);
+    Some(items)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -331,13 +346,15 @@ fn toolchain_in_use(toolchain: &str) -> Result<Option<String>, String> {
 /// `$CARGO_HOME`, else `~/.cargo`.
 fn cargo_root() -> Result<PathBuf, String> {
     if let Some(v) = std::env::var_os("CARGO_INSTALL_ROOT").filter(|v| !v.is_empty()) {
-        return Ok(PathBuf::from(v));
+        // Relative to the cwd, as cargo takes it: absolute, so the manifest's copy holds from
+        // anywhere.
+        return std::path::absolute(v).map_err(|e| format!("CARGO_INSTALL_ROOT: {e}"));
     }
     if let Some(root) = config_install_root() {
         return Ok(root);
     }
     if let Some(v) = std::env::var_os("CARGO_HOME").filter(|v| !v.is_empty()) {
-        return Ok(PathBuf::from(v));
+        return std::path::absolute(v).map_err(|e| format!("CARGO_HOME: {e}"));
     }
     let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).ok_or("no home directory to find ~/.cargo in")?;
     Ok(Path::new(&home).join(".cargo"))
@@ -383,6 +400,12 @@ fn cargo_ryo_source(list: &str) -> Option<String> {
     Some(line.split_once(" (").and_then(|(_, s)| s.strip_suffix(')')).unwrap_or("").to_owned())
 }
 
+/// Whether `a` and `b` name the same existing path, however spelled (symlinks, case on
+/// Windows, relative paths).
+fn same_path(a: &Path, b: &Path) -> bool {
+    a == b || a.canonicalize().ok().zip(b.canonicalize().ok()).is_some_and(|(a, b)| a == b)
+}
+
 fn launchers(root_dir: &Path) -> Result<Launchers, String> {
     let out = capture(cmd("cargo").args(["install", "--list", "--root"]).arg(root_dir))?;
     if !out.status.success() {
@@ -391,8 +414,7 @@ fn launchers(root_dir: &Path) -> Result<Launchers, String> {
     }
     let Some(source) = cargo_ryo_source(&out.stdout) else { return Ok(Launchers::None) };
     let ours = root().join("scripts");
-    let same = |a: &Path, b: &Path| a == b || a.canonicalize().ok().zip(b.canonicalize().ok()).is_some_and(|(a, b)| a == b);
-    if !source.is_empty() && same(Path::new(&source), &ours) {
+    if !source.is_empty() && same_path(Path::new(&source), &ours) {
         return Ok(Launchers::Ours);
     }
     Ok(Launchers::Other(if source.is_empty() { "a registry".to_owned() } else { source }))
@@ -738,7 +760,7 @@ fn plan_install(o: &InstallOptions) -> Result<InstallPlan, String> {
     let mut old_cargo_roots: Vec<PathBuf> = Vec::new();
     for r in previous.iter().flat_map(|m| m.old_cargo_roots.iter().chain([&m.cargo_root])) {
         let r = PathBuf::from(r);
-        if !r.as_os_str().is_empty() && r != cargo_root && !old_cargo_roots.contains(&r) && launchers(&r)? == Launchers::Ours {
+        if !r.as_os_str().is_empty() && !same_path(&r, &cargo_root) && !old_cargo_roots.contains(&r) && launchers(&r)? == Launchers::Ours {
             old_cargo_roots.push(r);
         }
     }
@@ -858,9 +880,18 @@ fn install_version(plan: &InstallPlan, build: &Path, build_id: String, manifest:
     crate::utils::remove_dir_if_exists(&partial)?;
     eprintln!("[y] install: copying to {}", install.join(&plan.version).display());
     copy_dir(build, &partial)?;
+    // `build_in` keeps an earlier `--sysroot ryo` build's ryo sysroot in `build`.
+    if plan.build.sysroot != Sysroot::Ryo {
+        crate::utils::remove_dir_if_exists(&partial.join(crate::sysroot::SYSROOT_DIR))?;
+        let stamp = partial.join(crate::sysroot::STAMP_FILE);
+        if stamp.exists() {
+            fs::remove_file(&stamp).map_err(|e| format!("removing {}: {e}", stamp.display()))?;
+        }
+    }
     let dest = install.join(&plan.version);
-    // A reinstall moves the installed copy aside and back on failure, so that until the
-    // rename `current` still names a working copy (`do_install`'s "still works").
+    // A reinstall moves the installed copy aside and back on failure, so that after a failure
+    // `current` still names a working copy (`do_install`'s "still works"). Between the two
+    // renames it names no directory, and a launcher started then fails.
     let mut aside = dest.as_os_str().to_owned();
     aside.push(".old");
     let aside = PathBuf::from(aside);
@@ -879,7 +910,10 @@ fn install_version(plan: &InstallPlan, build: &Path, build_id: String, manifest:
         // In use (Windows): deleted on the next run (`remove_leftovers`).
         let _ = fs::remove_dir_all(&aside);
     }
-    write(install.join("current"), format!("{}\n", plan.version))?;
+    // Through a renamed temporary file, so a launcher never reads a truncated `current`.
+    let tmp = install.join("current.tmp");
+    write(&tmp, format!("{}\n", plan.version))?;
+    fs::rename(&tmp, install.join("current")).map_err(|e| format!("renaming {}: {e}", tmp.display()))?;
     manifest.version = plan.version.clone();
     manifest.build_id = build_id;
     manifest.targets = plan.targets.clone();
@@ -895,6 +929,9 @@ fn install_launchers(plan: &InstallPlan) -> Result<(), String> {
         .arg(&plan.scripts)
         .arg("--root")
         .arg(&plan.cargo_root)
+        // Not `scripts/target/`: everything but the launchers stays under `install/`.
+        .arg("--target-dir")
+        .arg(plan.install.join("target").join("launchers"))
         .env_remove("RUSTC_BOOTSTRAP"))
     .map_err(|e| format!("{e}\nryo {} is installed, but its launchers weren't updated; rerun ./y.sh install", plan.version))?;
     Ok(())
@@ -954,7 +991,7 @@ fn print_install_report(plan: &InstallPlan, manifest: &Manifest) {
     } else {
         println!("[y]   toolchain {PINNED_VERSION}: yours, nothing added");
     }
-    let on_path = std::env::var_os("PATH").is_some_and(|p| std::env::split_paths(&p).any(|d| d == bin));
+    let on_path = std::env::var_os("PATH").is_some_and(|p| std::env::split_paths(&p).any(|d| same_path(&d, &bin)));
     if !on_path {
         if cfg!(windows) {
             println!("[y] note: {} is not on PATH; add it to your user PATH", bin.display());
@@ -1132,7 +1169,7 @@ pub fn uninstall(o: &UninstallOptions) -> Result<Option<ExitCode>, String> {
         println!("[y] ryo is not installed in this checkout");
         return Ok(None);
     }
-    let version = manifest.as_ref().map_or("(unknown version)".to_owned(), |m| m.version.clone());
+    let version = manifest.as_ref().map(|m| m.version.clone()).filter(|v| !v.is_empty()).unwrap_or_else(|| "(unknown version)".to_owned());
     let mut plan = format!("ryo uninstall plan (ryo {version})\n\n");
     for (n, s) in steps.iter().enumerate() {
         plan.push_str(&format!("  {}. {}\n", n + 1, s.describe()));
@@ -1153,13 +1190,14 @@ pub fn uninstall(o: &UninstallOptions) -> Result<Option<ExitCode>, String> {
     }
     for s in &steps {
         if let Step::RemoveInstall(dir, keep) = s {
-            drop(lock);
             // The manifest goes last (or is replaced by `keep`), so that after a failure a
-            // rerun still knows what to remove.
+            // rerun still knows what to remove. The lock is held until then, so a concurrent
+            // install can't start in a directory being deleted.
             let manifest = Manifest::path(dir);
+            let lock_file = dir.join(".lock");
             for entry in fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))? {
                 let path = entry.map_err(|e| e.to_string())?.path();
-                if path == manifest {
+                if path == manifest || path == lock_file {
                     continue;
                 }
                 let res = if path.is_dir() { fs::remove_dir_all(&path) } else { fs::remove_file(&path) };
@@ -1167,7 +1205,11 @@ pub fn uninstall(o: &UninstallOptions) -> Result<Option<ExitCode>, String> {
             }
             match keep {
                 Some(m) => m.save(dir)?,
-                None => crate::utils::remove_dir_if_exists(dir)?,
+                None => {
+                    // Open files can't be deleted on Windows.
+                    drop(lock);
+                    crate::utils::remove_dir_if_exists(dir)?;
+                }
             }
             break;
         }
@@ -1203,7 +1245,7 @@ mod tests {
                 targets_added: vec!["x86_64-pc-windows-msvc".into()],
             }],
             old_versions: vec!["0.3.0-40-g1234abc".into()],
-            old_cargo_roots: vec!["/tmp/r".into()],
+            old_cargo_roots: vec!["/tmp/r".into(), r#"/tmp/a,b "c,\d""#.into()],
         };
         assert_eq!(Manifest::parse(&m.to_toml()), Ok(m));
         assert!(Manifest::parse("format = 2\n").is_err());

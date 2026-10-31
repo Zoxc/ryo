@@ -16,15 +16,34 @@ fn applies() -> bool {
     cfg!(target_os = "linux")
 }
 
+/// `exe` without the caller's `RYO_JIT*` settings: the checks assert facts (JIT threads,
+/// merging) that depend on them, so each run sets the ones it needs.
+fn program(exe: &Path) -> Command {
+    let mut c = Command::new(exe);
+    for (k, _) in std::env::vars_os() {
+        if k.to_str().is_some_and(|k| k.starts_with("RYO_JIT")) {
+            c.env_remove(k);
+        }
+    }
+    c
+}
+
 /// Runs `exe` (with `env`), failing unless it succeeds; its stdout.
 fn run_out(exe: &Path, args: &[&str], env: &[(&str, &str)]) -> Result<String, String> {
-    Ok(capture_ok(Command::new(exe).args(args).envs(env.iter().copied()))?.stdout)
+    Ok(capture_ok(program(exe).args(args).envs(env.iter().copied()))?.stdout)
 }
 
 /// The output of `run` without the JIT, then with it ([`JIT_OFF`], [`JIT_SYNC`]).
 fn plain_and_jit(run: impl Fn(&[(&str, &str)]) -> Result<String, String>) -> Result<(String, String), String> {
     Ok((run(JIT_OFF)?, run(JIT_SYNC)?))
 }
+
+/// What `tests/multi_ryo/main2.c` prints: the sums of `a_run(1000)` and `b_run(50)` over 200
+/// calls, and `b_count()`.
+const MAIN2_OUT: &str = "299900000 510600 10000\n";
+/// What `tests/multi_ryo/main3.c` prints: the sums of `a_run(1000)`, `b_run(50)` and
+/// `c_run(100)` over 200 calls.
+const MAIN3_OUT: &str = "299900000 510600 1011200\n";
 
 /// The first line of `s`, or `""`.
 fn first_line(s: &str) -> &str {
@@ -43,14 +62,15 @@ fn cc(info: &RustcInfo, lld: bool) -> Command {
 }
 
 /// Same-version ryo staticlibs in one C program: two and three of them, in both orders, with
-/// GNU ld and lld, each running correctly with and without the JIT. These links happen to pull
+/// GNU ld and lld, each printing the expected sums with and without the JIT. These links happen to pull
 /// only one archive's runtime members today; that isn't guaranteed (design/vm.md, "Several
 /// runtimes"), and a link that pulls two fails on duplicate symbols. That failure is asserted
 /// only with `--whole-archive`, which pulls every member (the users' std and the runtime
 /// collide: the documented limitation). Staticlibs each
 /// combined into one object with their std localized (`ld -r` + `objcopy
-/// --keep-global-symbol`) link and run as two runtimes, each registering its own images
-/// (anchor ownership).
+/// --keep-global-symbol`), meant to be two runtimes each registering its own images (anchor
+/// ownership), link and print the expected sums; that they are two runtimes isn't checked
+/// (`main2.c` prints no JIT thread count).
 pub(super) fn multi_staticlib(info: &RustcInfo, rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
     if !applies() {
         return Ok(());
@@ -80,11 +100,14 @@ pub(super) fn multi_staticlib(info: &RustcInfo, rustc_ryo: &Path, src: &Path, ou
         }
         Ok((exe, capture(l.args(NATIVE_LIBS))?))
     };
-    // The first output of each `main`, which the other links of it must match.
-    let mut wants: Vec<(&str, String)> = Vec::new();
     for lld in [false, true] {
         let ld = if lld { "lld" } else { "bfd" };
-        for (main, libs) in [("main2.c", vec![&a, &b]), ("main2.c", vec![&b, &a]), ("main3.c", vec![&a, &b, &c]), ("main3.c", vec![&c, &b, &a])] {
+        for (main, want, libs) in [
+            ("main2.c", MAIN2_OUT, vec![&a, &b]),
+            ("main2.c", MAIN2_OUT, vec![&b, &a]),
+            ("main3.c", MAIN3_OUT, vec![&a, &b, &c]),
+            ("main3.c", MAIN3_OUT, vec![&c, &b, &a]),
+        ] {
             let names: Vec<String> = libs.iter().map(|l| l.file_stem().unwrap().to_string_lossy().into_owned()).collect();
             let name = format!("{}-{ld}", names.join("-"));
             let libs: Vec<&Path> = libs.iter().map(|p| p.as_path()).collect();
@@ -93,13 +116,8 @@ pub(super) fn multi_staticlib(info: &RustcInfo, rustc_ryo: &Path, src: &Path, ou
                 return Err(format!("{name}: the link failed:\n{}", res.stderr));
             }
             let (plain, jit) = plain_and_jit(|env| run_out(&exe, &[], env))?;
-            match wants.iter().find(|w| w.0 == main) {
-                Some((_, want)) if plain != *want => return Err(format!("{name}: {plain:?}, expected {want:?}")),
-                Some(_) => {}
-                None => wants.push((main, plain.clone())),
-            }
-            if jit != plain {
-                return Err(format!("{name}: with the JIT {jit:?}, without {plain:?}"));
+            if plain != want || jit != want {
+                return Err(format!("{name}: {plain:?} / with the JIT {jit:?}, expected {want:?}"));
             }
         }
     }
@@ -130,9 +148,8 @@ pub(super) fn multi_staticlib(info: &RustcInfo, rustc_ryo: &Path, src: &Path, ou
         return Err(format!("hidden std: the link failed:\n{}", res.stderr));
     }
     let (plain, jit) = plain_and_jit(|env| run_out(&exe, &[], env))?;
-    let want = wants.into_iter().find(|w| w.0 == "main2.c").map(|w| w.1).unwrap_or_default();
-    if plain != want || jit != want {
-        return Err(format!("hidden std: {plain:?} / with the JIT {jit:?}, expected {want:?}"));
+    if plain != MAIN2_OUT || jit != MAIN2_OUT {
+        return Err(format!("hidden std: {plain:?} / with the JIT {jit:?}, expected {MAIN2_OUT:?}"));
     }
     Ok(())
 }
@@ -201,7 +218,7 @@ pub(super) fn multi_dylib(info: &RustcInfo, root: &Path, rustc_ryo: &Path, src: 
     let lib_path = crate::utils::prepend_paths("LD_LIBRARY_PATH", [dir.clone(), std_dir])?;
     // `run_out` with the libraries' directories on the search path.
     let run_libs = |exe: &Path, args: &[&str], env: &[(&str, &str)]| -> Result<String, String> {
-        Ok(capture_ok(Command::new(exe).args(args).env("LD_LIBRARY_PATH", &lib_path).envs(env.iter().copied()))?.stdout)
+        Ok(capture_ok(program(exe).args(args).env("LD_LIBRARY_PATH", &lib_path).envs(env.iter().copied()))?.stdout)
     };
     let plain = run_libs(&exe, &[], JIT_OFF)?;
     for (merge, threads) in [("1", 1), ("0", 3)] {
@@ -225,8 +242,8 @@ pub(super) fn multi_dylib(info: &RustcInfo, root: &Path, rustc_ryo: &Path, src: 
 
 /// Two ryo builds: a second `out/dist/` built with another ABI tag (`RYO_ABI_OVERRIDE`, in
 /// `out/target/abi-alt/`; a full `y build`):
-/// - a staticlib of each in one C program links (disjoint names) and runs, the JIT on, as two
-///   runtimes;
+/// - a staticlib of each in one C program links (disjoint names) and prints the expected sums,
+///   with and without the JIT (that the two runtimes stay separate isn't checked);
 /// - an executable of one dlopening a cdylib of the other runs;
 /// - a crate of one against an rlib of the other is rustc's error (`ryo_rt`'s crate hash).
 pub(super) fn multi_version(info: &RustcInfo, root: &Path, rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
@@ -261,8 +278,8 @@ pub(super) fn multi_version(info: &RustcInfo, root: &Path, rustc_ryo: &Path, src
             return Err(format!("two ryo builds' staticlibs: the link failed:\n{}", res.stderr));
         }
         let (plain, jit) = plain_and_jit(|env| run_out(&exe, &[], env))?;
-        if plain != jit {
-            return Err(format!("two ryo builds' staticlibs: with the JIT {jit:?}, without {plain:?}"));
+        if plain != MAIN2_OUT || jit != MAIN2_OUT {
+            return Err(format!("two ryo builds' staticlibs: {plain:?} / with the JIT {jit:?}, expected {MAIN2_OUT:?}"));
         }
     }
     let plugin = dir.join("libplugin.so");

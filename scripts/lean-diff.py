@@ -98,6 +98,9 @@ def main():
                 if args.fuel:
                     cmd += ["--fuel", args.fuel]
                 code, out, lean_err = run(cmd)
+                # The status alone can't tell `exit(3)` from UB (see `ryo-lean`'s usage).
+                if b"ryo-lean: outcome: program" not in lean_err:
+                    code = f"{code} (UB or failure)"
                 results["lean"] = (code, out)
             else:
                 results["lean"] = (None, b"")

@@ -33,7 +33,7 @@ pub fn wrapper(log_dir: OsString) -> ExitCode {
         return ExitCode::FAILURE;
     };
     let args: Vec<OsString> = args.collect();
-    let exit = |s: std::process::ExitStatus| ExitCode::from(s.code().unwrap_or(1).clamp(0, 255) as u8);
+    let exit = |s: std::process::ExitStatus| ExitCode::from(s.code().and_then(|c| u8::try_from(c).ok()).unwrap_or(1));
     let fail = |e: std::io::Error| {
         eprintln!("error: running {}: {e}", rustc.to_string_lossy());
         ExitCode::FAILURE
@@ -62,9 +62,11 @@ pub fn wrapper(log_dir: OsString) -> ExitCode {
         if let Some(rec) = parse_section(&text) {
             log.push_str(&format!("section {} {} {}\n", rec.name, rec.event, rec.timestamp));
         } else if let Some(rest) = text.strip_prefix("ryo: ").filter(|r| is_stats(r)) {
-            // The backend's `RYO_STATS` output: keep the summary, not the per-function lines.
+            // The backend's `RYO_STATS` output: keep the summary (with the reused images'
+            // caveat, `native functions and the coverage ...`), not the per-function lines.
             // Other `ryo: ` lines (panic messages, warnings) go to cargo.
-            if !rest.starts_with("vm fn ") && !(rest.starts_with("native ") && !rest.starts_with("native reason: ")) {
+            let per_fn_native = rest.starts_with("native ") && !rest.starts_with("native reason: ") && !rest.starts_with("native functions ");
+            if !rest.starts_with("vm fn ") && !per_fn_native {
                 log.push_str(&format!("ryo {rest}\n"));
             }
             continue;
@@ -83,10 +85,20 @@ pub fn wrapper(log_dir: OsString) -> ExitCode {
     let kind = args.iter().position(|a| a == "--crate-type").and_then(|i| args.get(i + 1));
     let kind = kind.map_or(if test { "test".into() } else { "bin".into() }, |k| k.to_string_lossy().into_owned());
     let name = name.to_string_lossy();
-    // Which package and source file: crate name and kind alone don't tell apart build scripts,
-    // two versions of a dependency, or a package's lib and bin tests.
+    // Which package, features and source file: crate name and kind alone don't tell apart
+    // build scripts, two versions of a dependency, a package built with two feature sets (for
+    // the host and the target), or a package's lib and bin tests.
     let var = |k: &str| std::env::var(k).unwrap_or_default();
-    let package = format!("{} {}", var("CARGO_PKG_NAME"), var("CARGO_PKG_VERSION"));
+    let mut package = format!("{} {}", var("CARGO_PKG_NAME"), var("CARGO_PKG_VERSION"));
+    let mut features: Vec<String> = args
+        .windows(2)
+        .filter(|w| w[0] == "--cfg")
+        .filter_map(|w| Some(w[1].to_str()?.strip_prefix("feature=\"")?.strip_suffix('"')?.to_owned()))
+        .collect();
+    features.sort();
+    if !features.is_empty() {
+        package = format!("{package} [{}]", features.join(","));
+    }
     let src = args.iter().map(|a| a.to_string_lossy()).find(|a| a.ends_with(".rs")).unwrap_or_default();
     let head = format!(
         "crate {name}\nkind {kind}\npackage {package}\nsrc {src}\nprimary {}\nwall {wall}\nstatus {}\n",
@@ -132,7 +144,7 @@ pub fn parse_section(line: &str) -> Option<Section<'_>> {
 pub struct Unit {
     pub krate: String,
     pub kind: String,
-    /// `<name> <version>` of the package.
+    /// `<name> <version>` of the package, then ` [<features>]` if it has any enabled.
     pub package: String,
     /// The crate root's source file.
     pub src: String,

@@ -142,10 +142,12 @@ fn parse_test(rest: &[&str]) -> Result<Cmd, String> {
     let mut args = crate::utils::Flags::new(rest);
     while let Some(flag) = args.next()? {
         match flag {
+            "--cross" if cross.is_some() => return Err("`--cross` given twice".to_owned()),
             "--cross" => cross = Some(args.value()?.to_owned()),
             "--clif" => opts.clif = true,
             "--full" => opts.full = true,
             "--no-changed" => opts.no_changed = true,
+            "--only" if opts.only.is_some() => return Err("`--only` given twice".to_owned()),
             "--only" => opts.only = Some(test::Area::parse(args.value()?)?),
             "--program" => opts.programs.push(args.value()?.to_owned()),
             "--variant" => opts.variants.push(args.value()?.to_owned()),

@@ -19,7 +19,8 @@ pub fn root() -> PathBuf {
 
 /// `out/`, where all build output goes (`y clean` removes it): `dist/`, `y build`'s cargo
 /// `target/` and the trees of `y test`/`y bench`, `cargo/` (the workspaces' own target
-/// directory, `.cargo/config.toml`), `y/` (the `y` tool itself), `clif/` (cg_clif's sources).
+/// directory, `.cargo/config.toml`), `y/` (the `y` tool itself), `clif/` (cg_clif's sources), `vm-features/` (`y test`'s
+/// ryo_rt feature-combination runs).
 pub fn out_dir(root: &Path) -> PathBuf {
     root.join("out")
 }
@@ -61,9 +62,11 @@ pub fn nm_symbols(info: &RustcInfo, args: &[&str], file: &Path, triple: &str) ->
     Ok(out.lines().map(|l| crate::target::unprefixed(triple, l.trim())).filter(|l| !l.is_empty()).map(str::to_owned).collect())
 }
 
-/// Whether `s` is a symbol of std's allocator shim (`__rust_*`, `__rdl_*`, `__rg_*`).
+/// Whether `s` is a symbol of std's allocator shim (`__rust_alloc`, `__rust_dealloc`, ...,
+/// `__rdl_*`, `__rg_*`), plain or v0-mangled under the `__rustc` root as the pinned toolchain
+/// emits them (`_RNv…7___rustc12___rust_alloc`). Not compiler_builtins' `__rust_[iu]128_*`.
 pub fn is_std_alloc_shim(s: &str) -> bool {
-    ["__rust", "__rdl", "__rg_"].iter().any(|p| s.starts_with(p))
+    ["__rust_alloc", "__rust_dealloc", "__rust_realloc", "__rust_no_alloc_shim", "__rdl_", "__rg_"].iter().any(|p| s.contains(p))
 }
 
 /// `out/dist/bin/<name>` (an executable).

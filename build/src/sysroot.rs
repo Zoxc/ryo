@@ -96,7 +96,7 @@ pub fn shim(rustc_ryo: OsString) -> std::process::ExitCode {
         eprintln!("error: running {}: {e}", program.to_string_lossy());
         std::process::ExitCode::FAILURE
     };
-    let exit = |s: std::process::ExitStatus| std::process::ExitCode::from(s.code().unwrap_or(1).clamp(0, 255) as u8);
+    let exit = |s: std::process::ExitStatus| std::process::ExitCode::from(s.code().and_then(|c| u8::try_from(c).ok()).unwrap_or(1));
     // `___` is cargo's target-info probe (`--print`), which compiles nothing.
     let (Some(name), Some(stats_dir)) = (name.filter(|&n| is_ryo_crate(n) && n != "___"), std::env::var_os(STATS_DIR_VAR)) else {
         let rustc = OsString::from("rustc");

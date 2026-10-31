@@ -61,6 +61,11 @@ pub fn capture_ok(cmd: &mut Command) -> Result<Captured, String> {
     Ok(res)
 }
 
+/// The pid of the child [`output_timeout`] last started, 0 once it is reaped. `y bench
+/// crates` kills its process group on Ctrl-C (the group isn't the terminal's foreground one,
+/// so the signal doesn't reach it).
+pub static TIMEOUT_CHILD: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
 /// Runs `cmd` with stdin closed and its stdout and stderr captured, killing it if it runs
 /// longer than `limit`: then fails with what it printed so far, so a hang (a deadlock, a
 /// read of stdin) fails the test instead of the CI job's timeout. The first line of an error
@@ -73,6 +78,7 @@ pub fn output_timeout(cmd: &mut Command, limit: std::time::Duration) -> Result<s
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("failed to run `{}`: {e}", describe(cmd)))?;
+    TIMEOUT_CHILD.store(child.id(), std::sync::atomic::Ordering::SeqCst);
     // The readers append to shared buffers, so what was read is there even if a descendant
     // that inherited the pipes keeps them open after the child exits.
     type Buf = std::sync::Arc<std::sync::Mutex<Vec<u8>>>;
@@ -105,7 +111,10 @@ pub fn output_timeout(cmd: &mut Command, limit: std::time::Duration) -> Result<s
     let start = std::time::Instant::now();
     let status = loop {
         match child.try_wait() {
-            Ok(Some(status)) => break status,
+            Ok(Some(status)) => {
+                TIMEOUT_CHILD.store(0, std::sync::atomic::Ordering::SeqCst);
+                break status;
+            }
             Ok(None) if start.elapsed() < limit => std::thread::sleep(std::time::Duration::from_millis(10)),
             Ok(None) => {
                 // If `cmd` made the child a process group leader (`process_group(0)`), kill
@@ -129,6 +138,14 @@ pub fn output_timeout(cmd: &mut Command, limit: std::time::Duration) -> Result<s
         }
     };
     if !drained((start + limit).max(std::time::Instant::now() + std::time::Duration::from_secs(1))) {
+        // Kill the child's process group as on a timeout, if `cmd` made one. The child is
+        // reaped, so its pid may be reused; but while no process has it, a group of that id
+        // is the child's (the kernel doesn't reuse an id a group still has).
+        #[cfg(target_os = "linux")]
+        if !std::path::Path::new("/proc").join(child.id().to_string()).exists() {
+            let _ = Command::new("kill").args(["-9", "--", &format!("-{}", child.id())]).stderr(Stdio::null()).status();
+        }
+        drained(std::time::Instant::now() + std::time::Duration::from_secs(1));
         return Err(format!(
             "`{}` exited ({status}) but left a process holding its stdout or stderr open\nstdout:\n{}stderr:\n{}",
             describe(cmd),

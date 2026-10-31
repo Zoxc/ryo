@@ -230,7 +230,8 @@ struct Sel {
     /// The fast set: two cargo runs (`vm`, `vm jit`), [`FAST`] and the cheap checks.
     fast: bool,
     lean: bool,
-    /// All three `ryo_jit` runs, the corpus under the [`Variant::jit`] variants, jit-private-std.
+    /// All three `ryo_jit` runs, the corpus under the [`Variant::jit`] variants, jit-private-std,
+    /// jit-atomics.
     jit: bool,
     /// The corpus under `ryo`.
     ryo_corpus: bool,
@@ -258,6 +259,8 @@ enum Rule {
     Nothing,
     Full,
     Lean,
+    /// A file holding a [`SLOW_VM_TESTS`] test, which the fast set skips.
+    SlowVm,
     /// The encoder, decoder and ABI of the bytecode.
     Bytecode,
     /// vm/rt/src/vm/handlers.rs, which the Lean tables include.
@@ -282,6 +285,8 @@ const RULES: &[(&str, Rule)] = &[
     ("vm/bytecode/src/isa/reduced.rs", Rule::Bytecode),
     ("vm/bytecode/src/abi.rs", Rule::Bytecode),
     ("vm/bytecode/src/jit/", Rule::Jit),
+    ("vm/bytecode/tests/asm.rs", Rule::SlowVm),
+    ("vm/bytecode/tests/full.rs", Rule::SlowVm),
     // The workspace run (the fast set) runs them.
     ("vm/bytecode/tests/", Rule::Nothing),
     ("vm/rt/src/vm/handlers.rs", Rule::Handlers),
@@ -293,6 +298,7 @@ const RULES: &[(&str, Rule)] = &[
     ("tests/", Rule::Tests),
     ("build/", Rule::Full),
     ("rust-toolchain", Rule::Full),
+    (".cargo/", Rule::Full),
     // Generated dumps (`y bench codegen`).
     ("bench/codegen/", Rule::Nothing),
     ("bench/", Rule::Full),
@@ -357,13 +363,17 @@ impl Sel {
                 self.lean = true;
                 "lean"
             }
+            Rule::SlowVm => {
+                self.slow_vm = true;
+                "slow vm tests"
+            }
             Rule::Bytecode => {
                 self.ryo_corpus = true;
                 self.jit = true;
                 self.lean = true;
                 self.slow_vm = true;
                 self.rt_checks = true;
-                "bytecode (corpus under ryo and the JIT, all ryo_jit runs, lean, rt-core-only, jit-sealed)"
+                "bytecode (corpus under ryo and the JIT, all ryo_jit runs, slow vm tests, lean, rt-core-only, jit-sealed, jit-private-std, jit-atomics)"
             }
             Rule::Handlers => {
                 self.area(Area::Rt);
@@ -377,7 +387,7 @@ impl Sel {
             Rule::Jit => {
                 self.jit = true;
                 self.rt_checks = true;
-                "jit (all ryo_jit runs, corpus under the JIT variants, rt-core-only, jit-sealed)"
+                "jit (all ryo_jit runs, corpus under the JIT variants, rt-core-only, jit-sealed, jit-private-std, jit-atomics)"
             }
             Rule::Backend => {
                 self.area(Area::Backend);
@@ -547,8 +557,8 @@ impl Check {
         }
     }
 
-    /// Whether `sel`'s groups run it; `--full`, `--only backend` and a change to its test
-    /// run every check.
+    /// Whether `sel`'s groups run it; `--full`, `--only backend` and a change under `backend/`
+    /// also run every check, and a change to a check's test runs that check.
     fn selected(self, sel: &Sel) -> bool {
         match self {
             Check::RejectUnsupported

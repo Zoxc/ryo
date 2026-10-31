@@ -71,6 +71,19 @@ pub fn build_in(dist: &Path, target: &Path, o: &BuildOptions) -> Result<String, 
     // SAFETY: `y` is single-threaded here.
     unsafe { std::env::set_var(ABI_VAR, &tag) };
 
+    let mut all = vec![info.host.clone()];
+    all.extend(o.targets.iter().filter(|t| **t != info.host).cloned());
+    // Checked before `dist` is emptied below, so a mistyped or unsupported target keeps it.
+    // (A build failing later still leaves it without a runtime or wrappers.)
+    for triple in &all {
+        if !crate::jit::supported(triple) {
+            return Err(format!("{triple}: unsupported target (no JIT for it, design/platforms.md)"));
+        }
+        if !crate::utils::rustlib(&info.sysroot, triple).join("lib").is_dir() {
+            return Err(format!("no std for {triple} in the toolchain; run `rustup target add {triple}`"));
+        }
+    }
+
     let backend = build_backend(&root, &target, &info)?;
 
     eprintln!("[y] sysroot: {}", dist.display());
@@ -97,8 +110,6 @@ pub fn build_in(dist: &Path, target: &Path, o: &BuildOptions) -> Result<String, 
     crate::utils::write(dist.join(ABI_FILE), &tag)?;
     // What `rustc-ryo -vV` identifies the build by (design/build.md#the-y-build-tool).
     let mut build_files = vec![backend.clone()];
-    let mut all = vec![info.host.clone()];
-    all.extend(o.targets.iter().filter(|t| **t != info.host).cloned());
     let mut host_jit = None;
     let rb = RuntimeBuild { root: &root, target: &target, info: &info, tag: &tag };
     for triple in &all {
@@ -106,9 +117,6 @@ pub fn build_in(dist: &Path, target: &Path, o: &BuildOptions) -> Result<String, 
         crate::utils::create_dir(&target_lib)?;
         install_llvm_sysroot(&info, &dist, triple)?;
         let cross = rb.cross(triple);
-        if !crate::jit::supported(triple) {
-            return Err(format!("{triple}: unsupported target (no JIT for it, design/platforms.md)"));
-        }
         let jit = crate::jit::build(&rb, triple, false)?;
         // For the host, also the checked JIT `y test` runs (design/build.md#build): `ryo_rt`
         // with it swapped in, in `out/dist/jit-checked/`.

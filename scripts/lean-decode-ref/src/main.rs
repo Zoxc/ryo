@@ -397,7 +397,11 @@ impl<'d> Linked<'d> {
                 let line = match to {
                     Some(to) if counters && to == record => "rec".into(),
                     Some(to) if counters && to == record + JIT_LOOP_CTR as u64 => "recloopctr".into(),
-                    Some(to) => res.resolve(to).map_or_else(|| "error: unresolved".into(), render),
+                    // `resolve` leaves handlers to the instruction list's hints (`handlers`).
+                    Some(to) => match self.handlers.iter().find(|h| h.0 as u64 == to) {
+                        Some(&(_, op)) => render(Ref::Handler(op)),
+                        None => res.resolve(to).map_or_else(|| "error: unresolved".into(), render),
+                    },
                     None => format!("error: against `{}`", self.sym_name(r.sym)),
                 };
                 out.push(format!("  reloc {pos} {line}"));

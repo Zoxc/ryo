@@ -55,8 +55,7 @@ pub fn copy(from: &Path, to: &Path) -> Result<(), String> {
     let mut tmp = to.as_os_str().to_owned();
     tmp.push(format!(".tmp{}", std::process::id()));
     let tmp = PathBuf::from(tmp);
-    std::fs::copy(from, &tmp).map_err(err)?;
-    std::fs::rename(&tmp, to).map_err(|e| {
+    std::fs::copy(from, &tmp).and_then(|_| std::fs::rename(&tmp, to)).map_err(|e| {
         let _ = std::fs::remove_file(&tmp);
         err(e)
     })
