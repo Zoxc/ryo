@@ -399,6 +399,9 @@ def kindSem (k : HandlerKind) (ps : List String) (e : Env) : M Out := do
     let vals ← (List.range cnt).mapM fun i => asNat ((bs.drop (i * n)).take n)
     pure (out e [] (.index (sparseIndex vals.toArray v)))
   | .abort_now => throw .abort
+  -- The exception object is `st.exception`, while the handler gets it in `rax`; nothing
+  -- relates the two yet (`Rel` ignores `exception`), so `HandlerContract.sound` at `lpad`
+  -- can't hold for a real handler until a pad's invariant carries `rax = st.exception`.
   | .lpad => pure (out e [("x", encodePtr st.exception)])
 
 /-- Write one of a kind's values at its operand's range in the footprint, checking its
