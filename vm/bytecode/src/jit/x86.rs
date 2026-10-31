@@ -1,5 +1,7 @@
 //! A small x86-64 machine-code encoder for the SSA pipeline's back end: the forms register
-//! allocation and instruction selection need, each in its shortest standard encoding.
+//! allocation and instruction selection need, each in a standard encoding (short immediate
+//! and displacement forms where it pays, but not the accumulator short forms nor the
+//! shift-by-1 form).
 //!
 //! Widths `w` are operand sizes in bytes (1, 2, 4 or 8). Byte forms take a REX prefix whenever
 //! a byte register is spl/bpl/sil/dil, so they never mean ah/ch/dh/bh. The SSE2 forms for
