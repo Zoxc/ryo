@@ -290,8 +290,9 @@ theorem esc_inj' {st : OpSem.State} {x : X86.State} (hlay : Layout st x) {o o' :
   simp only [BitVec.toNat_ofInt] at this
   omega
 
-/-- `rel_writeFrame` against an unchanged x86 state whose bytes at `[d, d + n)` the written
-bytes relate to: only the bytes outside the range need to relate before. -/
+/-- `rel_writeFrame` against an unchanged x86 state whose bytes at the frame offsets
+`[d, d + bs.length)` (from `fpAddr x d`) the written bytes relate to: only the bytes outside the
+range need to relate before. -/
 theorem rel_writeFrame_in {st st' : OpSem.State} {x : X86.State} {d : Int} {bs : List AbstractByte}
     (hfr : ∀ o : Int, -2 ^ 63 ≤ o → o < 2 ^ 63 → ¬ (d ≤ o ∧ o < d + bs.length) → ∀ b,
       st.byteAt o = .ok b → ByteRel b (x.mem (fpAddr x o)))
