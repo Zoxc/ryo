@@ -227,8 +227,8 @@ impl CodegenBackend for RyoBackend {
 
     fn provide(&self, providers: &mut Providers) {
         self.llvm.provide(providers);
-        // The defaults are `rustc_monomorphize`'s, `rustc_symbol_mangling`'s and
-        // `rustc_codegen_ssa`'s, installed before the backend's `provide` runs
+        // The defaults are `rustc_monomorphize`'s, `rustc_symbol_mangling`'s,
+        // `rustc_codegen_ssa`'s and (`dylib_dependency_formats`) `rustc_metadata`'s, installed before the backend's `provide` runs
         // (`rustc_interface/src/passes.rs:980-981`). `provide` runs once per session, and the
         // providers are plain fns, so a second session would find the same ones.
         let q = &mut providers.queries;
@@ -420,7 +420,8 @@ fn unsupported_features(sess: &Session) -> Option<String> {
     }
     // LLVM's Spectre and LVI hardening, which rustc passes to LLVM by their LLVM names (it
     // only warns that they aren't Rust features): VM code would silently lack it, as with
-    // `-Zretpoline`. The target's features, then `-Ctarget-feature`; the last sign wins.
+    // `-Zretpoline`. The target's features, then `-Ctarget-feature`, then
+    // `-Zllvm-target-feature` (which cg_llvm appends last); the last sign wins.
     const HARDENING: [&str; 9] = [
         "retpoline",
         "retpoline-indirect-calls",
@@ -433,7 +434,8 @@ fn unsupported_features(sess: &Session) -> Option<String> {
         "harden-sls-ijmp",
     ];
     let mut on: Vec<&str> = Vec::new();
-    for f in sess.target.features.split(',').chain(sess.opts.cg.target_feature.split(',')) {
+    let lists = [&*sess.target.features, &sess.opts.cg.target_feature, &sess.opts.unstable_opts.llvm_target_feature];
+    for f in lists.into_iter().flat_map(|l| l.split(',')) {
         let f = f.trim();
         let (enable, name) = match f.split_at_checked(1) {
             Some(("+", n)) => (true, n),

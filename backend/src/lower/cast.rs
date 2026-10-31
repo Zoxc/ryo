@@ -118,7 +118,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         }
     }
 
-    /// `addr.sym` of `instance` (its portal if it is a VM function).
+    /// `addr.sym` of `instance` (its own symbol, also for a VM function).
     fn fn_addr_into(&mut self, dst: PlaceVal<'tcx>, instance: Instance<'tcx>) -> Result<(), NeedsNative> {
         self.into_place(dst, |fx, d| {
             fx.addr_sym(d, CodeReloc::Symbol { target: instance });

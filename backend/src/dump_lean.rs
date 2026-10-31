@@ -354,11 +354,14 @@ impl<'tcx> Dumper<'tcx> {
     }
 
     fn fn_abi(&self, fn_abi: &FnAbi<'tcx, Ty<'tcx>>, abi: rustc_abi::ExternAbi) -> J {
-        let conv = match abi {
-            rustc_abi::ExternAbi::Rust => tag("rust"),
-            rustc_abi::ExternAbi::RustCall => tag("rustCall"),
-            rustc_abi::ExternAbi::C { .. } => tag("c"),
-            other => ctor("other", vec![("name", J::Str(other.to_string()))]),
+        // `rust-call` is kept apart (its arguments are spread); otherwise the lowered
+        // convention, as rustc and Miri compare it: `system`, `sysv64`, … are C where they
+        // lower to it.
+        let conv = match (abi, fn_abi.conv) {
+            (rustc_abi::ExternAbi::RustCall, _) => tag("rustCall"),
+            (_, rustc_abi::CanonAbi::Rust) => tag("rust"),
+            (_, rustc_abi::CanonAbi::C) => tag("c"),
+            (_, other) => ctor("other", vec![("name", J::Str(format!("{other:?}")))]),
         };
         obj(vec![("conv", conv), ("args", J::Arr(fn_abi.args.iter().map(|a| self.arg_abi(a)).collect())), ("ret", self.arg_abi(&fn_abi.ret))])
     }
@@ -1102,6 +1105,12 @@ impl<'a, 'tcx> FnDump<'a, 'tcx> {
     /// `UnsizeMeta`, as cg_ssa's `unsized_info`.
     fn unsize_meta(&mut self, d: &mut Dumper<'tcx>, from: Ty<'tcx>, to: Ty<'tcx>) -> Res<J> {
         let tcx = d.tcx;
+        // Types equal after region erasure (a coercion that only changes a trait object's
+        // lifetime bound): the value is unchanged, as in cg_ssa's `unsize_ptr`. Only `dyn`
+        // pointees get here, whose `upcast none` keeps the vtable.
+        if from == to {
+            return Ok(ctor("upcast", vec![("entry", opt(None))]));
+        }
         let (a, b) = Self::unsize_pointees(d, from, to).ok_or("Unsize between unexpected types")?;
         let (sa, sb) = tcx.struct_lockstep_tails_for_codegen(a, b, d.typing_env());
         Ok(match (sa.kind(), sb.kind()) {

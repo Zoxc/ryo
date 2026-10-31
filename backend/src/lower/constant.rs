@@ -1,6 +1,6 @@
 //! Constants (design/lowering.md#constants): scalars become immediates, everything else is
 //! copied from the image's constant pool. The merge pass copies allocations into the pool
-//! (with their pointers relocated: to other pool allocations, to functions or portals, to
+//! (with their pointers relocated: to other pool allocations, to functions, to
 //! statics), so the lowering only records which allocation an operand refers to
 //! ([`CodeReloc::Const`]). On PE, allocations pointing directly at imports go into the
 //! image's writable fixup area instead ([`CodeReloc::Data`], [`needs_fixup`]).
@@ -191,8 +191,9 @@ fn check_static(tcx: TyCtxt<'_>, def_id: DefId) -> Result<(), NeedsNative> {
 }
 
 /// Whether a pointer to `target` inside a constant must be a load-time fixup: on PE, a
-/// function or static another crate or library defines is reached through its `__imp_`
-/// slot (design/platforms.md), so its address isn't a link-time constant of the image.
+/// function or static another crate or library defines whose `sym` slot would be indirect
+/// (`symbols::symbol_flags`/`static_symbol_flags`) is reached through its `__imp_` slot
+/// (design/platforms.md), so its address isn't a link-time constant of the image.
 pub fn is_import<'tcx>(tcx: TyCtxt<'tcx>, target: &GlobalAlloc<'tcx>) -> bool {
     match target {
         GlobalAlloc::Function { instance } => crate::symbols::symbol_flags(tcx, *instance, crate::symbols::SymRole::Target) != 0,

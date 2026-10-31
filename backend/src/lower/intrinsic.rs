@@ -163,6 +163,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 let el = self.layout_of(ty0())?;
                 let size = el.size.bytes();
                 let [x, y] = self.arg_slots::<2>(args)?;
+                // `y` is read again after the stores through `x`, which may overwrite it.
+                let y = self.piece_ptr(y);
                 let t = self.frame.temp(size, 16);
                 if size <= u64::from(SPLIT_MAX) {
                     // Inline pieces: `x` into `t`, `y` into `x`, `t` into `y`.
@@ -379,9 +381,6 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let n = name.as_str();
         if self.simd_op(n, callee, args, cont)? {
             return Ok(true);
-        }
-        if self.strict_simd {
-            return native("simd_* without an opcode in a #[target_feature] fn");
         }
         let Some(template) = templates::wrapper(self.tcx, self.cx.rt, n) else { return Ok(false) };
         let ins = self.island_args(args)?;

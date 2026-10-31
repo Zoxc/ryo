@@ -57,8 +57,10 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 if size == 0 {
                     return;
                 }
-                // Split unless a piece would overwrite the pointer `p`.
-                match self.split(size, Width::W64, p + 8 <= d || p >= d + size) {
+                // Split unless a piece would overwrite the pointer `p` or its offset `k + o`
+                // would overflow.
+                let fits = k.checked_add_unsigned(size).is_some();
+                match self.split(size, Width::W64, fits && (p + 8 <= d || p >= d + size)) {
                     Split::One(w) => {
                         self.op(opw(IntOp::Load, w), &[d, p, k as u32]);
                     }
@@ -83,7 +85,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 if size == 0 {
                     return;
                 }
-                match self.split(size, Width::W64, true) {
+                // Split unless a piece's offset `k + o` would overflow.
+                match self.split(size, Width::W64, k.checked_add_unsigned(size).is_some()) {
                     Split::One(w) => {
                         self.op(opw(IntOp::Store, w), &[p, k as u32, s]);
                     }

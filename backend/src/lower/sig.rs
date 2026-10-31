@@ -84,7 +84,7 @@ impl ArgPlan {
 }
 
 impl<'tcx> AbiSig<'tcx> {
-    /// The tuple of the inputs: the portal's and the call templates' `Args`.
+    /// The tuple of the inputs: the call templates' `Args`.
     pub fn args_tuple(&self, tcx: TyCtxt<'tcx>) -> Ty<'tcx> {
         Ty::new_tup(tcx, &self.inputs)
     }

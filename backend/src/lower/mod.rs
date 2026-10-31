@@ -90,8 +90,8 @@ pub enum CodeReloc<'tcx> {
     /// [`LowerCx::vm`]); the merge pass fills in its function index. If `callee` ends up
     /// native after all, the caller is lowered again.
     Call { callee: Instance<'tcx> },
-    /// A `sym` operand: `target`'s symbol: a VM function's (which the image then defines
-    /// globally), the native definition otherwise (made visible to the image if it is
+    /// A `sym` operand: `target`'s symbol: a VM function's (which the image defines
+    /// globally unless it is internal and not unique in the crate), the native definition otherwise (made visible to the image if it is
     /// internal).
     Symbol { target: Instance<'tcx> },
     /// A `sym` operand: the static `def_id` (made visible to the image if it is internal).
@@ -206,8 +206,9 @@ pub fn vm_fn_sig<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> Result<Ab
     // features: the Rust ABI passes vectors indirectly (`rustc_target/src/callconv/mod.rs`,
     // #44367), and other ABIs stay native below. The MIR inliner only inlines callees whose
     // features are a subset, so what it inlined is checked with the body: an `llvm.*` link
-    // or inline asm keeps the function native, and so does a `simd_*` intrinsic without an
-    // instruction (`FnCx::strict_simd`).
+    // or inline asm keeps the function native. A `simd_*` intrinsic without an instruction is
+    // a wrapper island as elsewhere: islands are compiled with the crate's features, which
+    // include the function's.
     if !attrs.target_features.iter().all(|f| tcx.sess.internal_target_features.contains(&f.name)) {
         return native("#[target_feature] not enabled for the crate");
     }
@@ -265,9 +266,6 @@ pub struct FnCx<'a, 'tcx> {
     insns: u32,
     /// The certificate being recorded, if [`LowerCx::cert`].
     cert: Option<Box<cert::Recorder>>,
-    /// A `#[target_feature]` function: a `simd_*` intrinsic without an instruction keeps it
-    /// native instead of becoming an island, which is compiled without the features.
-    pub strict_simd: bool,
     /// PE: lowering the pad region ([`Asm::begin_region`]), whose `rsp` isn't `fp - F`.
     pub in_region: bool,
     /// [`abi_sig`] of the callees so far: call sites repeat callees.
@@ -311,7 +309,6 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             insns: 0,
             cert: cx.cert.then(Box::default),
             caller_location,
-            strict_simd: !tcx.codegen_instance_attrs(instance.def).target_features.is_empty(),
             in_region: false,
             sigs: FxHashMap::default(),
             uses: uses::analyze(body),

@@ -1,7 +1,6 @@
 //! Portable `simd_*` intrinsics as VM instructions (design/lowering.md#simd): a table of
 //! (intrinsic, type-argument shapes) → opcode. The intrinsics and shapes without a row stay
-//! wrapper islands (`intrinsic.rs`), or keep a `#[target_feature]` function native
-//! ([`FnCx::strict_simd`]).
+//! wrapper islands (`intrinsic.rs`).
 
 use rustc_middle::ty::{self, Instance, Ty};
 use ryo_bytecode::full::Opcode;

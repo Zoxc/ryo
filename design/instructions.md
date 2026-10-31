@@ -109,7 +109,7 @@ ptr::copy_nonoverlapping(k, frame.addr(d), len as usize);
 #### `zero d, len`
 
 Zeroes `len` bytes of the frame: `[0; N]` and other `Rvalue::Repeat`s of an all-zero
-scalar into a slot. Handler `ryo_h_Zero` (`zero`):
+scalar into a slot, above `SPLIT_MAX` bytes (smaller ones are `imm 0` pieces). Handler `ryo_h_Zero` (`zero`):
 
 ```rust
 ptr::write_bytes(frame.addr(d), 0, len as usize);
@@ -714,7 +714,9 @@ At `w128` both compare-branch families are handler calls.
 
 `switch.dense.wN s, base, t_default, n, t_0 … t_{n-1}` is a jump table on `s - base`, for
 a `SwitchInt` of three or more values (two or more at `w128`) whose values span at most
-1024 and at most twice the case count plus 4.
+1024 and at most twice the case count plus 4. A niche-encoded enum's discriminant switch
+testing more than four niche variants also uses one, on `tag - niche_start` after a range
+check, with one entry per niche variant and no bound on the span.
 
 `switch.sparse.wN s, t_default, n, (v_i, t_i)…` is the other `SwitchInt`s of more than one
 value (more than two below `w128`), the values sorted (unsigned); the handler scans linearly for `n ≤ 4` and searches

@@ -416,9 +416,9 @@ upstream images.
   `-Zfunction-return`, `-Zindirect-branch-cs-prefix` and `-Cjump-tables=no` (`switch.dense`
   is a jump table in VM code), and the same hardening enabled by
   its LLVM feature names, which rustc passes to LLVM with only a warning (`retpoline*`,
-  `lvi-cfi`, `lvi-load-hardening`, `seses`, `harden-sls-*`, in `-Ctarget-feature` or the
-  target's features; the last sign wins). `-Cno-redzone` is supported: VM
-  frames never use a red zone ([platforms.md](platforms.md)).
+  `lvi-cfi`, `lvi-load-hardening`, `seses`, `harden-sls-*`, in the target's features,
+  `-Ctarget-feature` or `-Zllvm-target-feature`; the last sign wins). `-Cno-redzone` is
+  supported: VM frames never use a red zone ([platforms.md](platforms.md)).
 - Instrumentation and profiling, which VM functions would silently lack:
   `-Cinstrument-coverage` (they would vanish from the report), `-Cprofile-generate`,
   `-Zinstrument-xray`, `-Zinstrument-mcount`, `-Zpatchable-function-entry`. A function
@@ -483,7 +483,8 @@ Environment variables read by the backend (and `y test`):
   functions by reason (`ryo: native reason: <n> <reason>`). `RYO_STATS=2` also prints why
   each other function stayed native (`ryo: native <instance>: <reason>`). With images reused
   (incremental), the native functions and the coverage cover only the CGUs lowered this
-  session, which a line says; the VM functions cover every CGU.
+  session, which a line says; the VM functions cover every CGU. Every count takes a function
+  once, however many CGUs hold a copy of it.
 - `RYO_DUMP=<file>` writes every VM function of the crate's image (local and upstream generic
   instances alike) to `<file>`, sorted by instance path: `fn <instance> (frame F, args A, ret R)`,
   its machine code decoded back to VM instructions (`asm::decode`, printed as the

@@ -51,9 +51,9 @@ already enabled for the crate (`sess.internal_target_features`, which includes i
 `_mm_*` functions): the attribute then changes nothing about its code. Its ABI is no reason
 to keep it native, since the Rust ABI passes vectors indirectly whatever the features
 (`rustc_target/src/callconv/mod.rs`, #44367), and other ABIs stay native anyway. Its body is
-checked like every body: an `llvm.*` link or inline asm keeps it native, and so does a
-`simd_*` intrinsic without an instruction ([SIMD](#simd)), which elsewhere is an island
-compiled without the features. So it is VM code only if all of it maps. A function with
+checked like every body: an `llvm.*` link or inline asm keeps it native. A `simd_*`
+intrinsic without an instruction ([SIMD](#simd)) is a wrapper island as elsewhere: islands
+are compiled by cg_llvm with the crate's features, which include all of the function's. A function with
 features the crate doesn't enable (`avx2` in memchr) stays native. Such fn items don't
 implement the `Fn*` traits, so they never go through the `call` island
 ([Calls](#calls)).
@@ -173,7 +173,7 @@ so a MIR change in a toolchain bump is a compile error. The tables below follow 
 |---|---|
 | `Assign(place, rvalue)` | see Rvalues |
 | `SetDiscriminant` | a plain store of the tag value, computed at lowering time (also for niches) |
-| `Intrinsic(CopyNonOverlapping)` | `memcpy` |
+| `Intrinsic(CopyNonOverlapping)` | `load`/`store` pieces through a temporary for a constant count of at most `SPLIT_MAX` bytes, else `memcpy` |
 | `Intrinsic(Assume)` | nothing |
 | `StorageLive` | nothing (slot allocation used it) |
 | `StorageDead` | no code: a storage end of the local's slot ([vm.md](vm.md#escapes-storage-ends-and-island-operands)) |
@@ -190,7 +190,7 @@ a temporary slot up to 256 bytes, and uses `memmove` above that.
 |---|---|
 | `Use(op, _)` | `mov.wN` (scalar), `copy`/`memmove` (aggregate), or a load/store when a side is in memory. The retag flag is ignored |
 | `CopyForDeref(place)` | same as `Use(Copy(place))` |
-| `Repeat(op, n)` | A scalar constant: `zero` or `fill` into a slot, `memset` into memory if all its bytes are equal. Otherwise the element is written once, then doubled with `memcpy`s (⌈log₂ n⌉ of them) |
+| `Repeat(op, n)` | A scalar constant: `zero` (`imm 0` pieces up to `SPLIT_MAX` bytes) or `fill` into a slot, `memset` into memory if all its bytes are equal (stores of pieces up to `SPLIT_MAX` bytes). Otherwise the element is written once, then doubled with `memcpy`s (⌈log₂ n⌉ of them) |
 | `Ref`, `RawPtr` | `addr` (slot address) or the place's address computation. For unsized places, the wide pointer (data plus metadata) |
 | `Reborrow(_, _, place)` | same as `Use(Copy(place))`: same layout, bitwise copy |
 | `ThreadLocalRef(def)` | `call.sym` (`call.sym.ind` through `__imp_` on PE) of `Shim(ThreadLocal(def))`, without a cleanup entry (the shim can't unwind), which returns the address on the current thread in `rax`. On ELF, rustc doesn't create that shim (`needs_thread_local_shim` is false when the target exports TLS, `rustc_middle/src/ty/util.rs:731-735`), so the backend adds it to the native CGU itself, also for upstream statics, as `WeakODR` + `Hidden` ([backend.md](backend.md#pipeline), Linkage). On PE, the collector puts a local static's shim in the CGU, and an upstream crate exports its own (`symbol_export.rs:203-220`), which the image reaches through `__imp_`. The shim itself is never a VM function (its body is a `ThreadLocalRef`). Foreign thread locals have no shim and stay native |
@@ -375,8 +375,7 @@ their type arguments, to VM instructions ([instructions.md](instructions.md#simd
 | `simd_and` / `or` / `xor` | any 16-byte integer vector | `and` / `or` / `xor.w128 d, a, b` |
 
 Vectors are 16-byte slots like any other value. Everything else (unsigned compares,
-`ne`/`le`/`ge`, other shapes, float vectors, `simd_shuffle`, …) is a wrapper island, or
-keeps a `#[target_feature]` function native (see the top of this file). The table is
+`ne`/`le`/`ge`, other shapes, float vectors, `simd_shuffle`, …) is a wrapper island. The table is
 trusted, like the island contracts: L0 has no `simd_*` semantics yet.
 
 ### Caller location

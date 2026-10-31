@@ -45,8 +45,9 @@ pub enum ArgSrc<'b, 'tcx> {
 
 /// [`ArgSrc`] accessors.
 impl<'a, 'tcx> FnCx<'a, 'tcx> {
-    /// An argument in a frame slot, with its size (a slot given as one is a receiver's data
-    /// pointer).
+    /// An argument in a frame slot, with its size (8: the slots given as one here are
+    /// receivers' data pointers; `drop_terminator`'s wide-pointer slots go through
+    /// `write_args`, which takes the signature's sizes).
     fn arg_slot_sized(&mut self, a: &ArgSrc<'_, 'tcx>) -> Result<(u32, u32), NeedsNative> {
         match *a {
             ArgSrc::Operand(op) => self.operand_slot(op).map(|(s, l)| (s, l.size.bytes() as u32)),
@@ -81,17 +82,6 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         match *a {
             ArgSrc::Operand(op) => self.const_int(op),
             ArgSrc::Slot(_) => Ok(None),
-        }
-    }
-
-    /// Copies argument `a` (`size` bytes) to slot `d`.
-    fn arg_into(&mut self, a: ArgSrc<'_, 'tcx>, d: u32, size: u32) -> Result<(), NeedsNative> {
-        match a {
-            ArgSrc::Operand(op) => self.operand_into(op, Loc::Slot(d)),
-            ArgSrc::Slot(s) => {
-                self.mov(d, s, size);
-                Ok(())
-            }
         }
     }
 }
@@ -211,6 +201,11 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         cont: CallCont<'tcx>,
         source_info: SourceInfo,
     ) -> Result<(), NeedsNative> {
+        // Empty drop glue: a no-op (as cg_ssa and `drop_terminator` treat it). It has no mono
+        // item, so a call would force cg_llvm to emit it.
+        if let InstanceKind::Shim(ty::ShimKind::DropGlue(_, None)) = callee.def {
+            return self.continue_at(&cont);
+        }
         let (target, sig, args) = self.direct_target(fty, callee, args, false)?;
         let homes = self.write_args(&sig, &args, source_info, target.is_island())?;
         self.emit_call(target, &sig, &homes, cont)
@@ -594,18 +589,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let direct = if spread { args.len().saturating_sub(1) } else { args.len() };
         let mut homes = Vec::with_capacity(sig.inputs.len());
         for (i, a) in args[..direct].iter().enumerate() {
-            let f = sig.fields[i];
             let s = match *a {
                 ArgSrc::Slot(s) => s,
-                ArgSrc::Operand(op) => match self.operand_slot(op) {
-                    Ok((s, _)) => s,
-                    Err(_) => {
-                        // An operand without a slot of its own: a temporary.
-                        let t = self.frame.temp(u64::from(f.size), u64::from(f.align));
-                        self.arg_into(*a, t, f.size)?;
-                        t
-                    }
-                },
+                ArgSrc::Operand(op) => self.operand_slot(op)?.0,
             };
             homes.push(home(self, i, s));
         }

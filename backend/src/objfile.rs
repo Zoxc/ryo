@@ -34,22 +34,25 @@ pub fn anchor_symbol() -> String {
 /// The registration entry point in `ryo_rt` (before tagging and mangling).
 pub const REGISTER_SYMBOL: &str = rt_symbols::REGISTER;
 
-/// The stack probe of large frames, in `ryo_rt` (before mangling).
+/// The stack probe of large frames, in `ryo_rt` (before tagging and mangling).
 pub const PROBE_SYMBOL: &str = rt_symbols::PROBE;
-/// `ryo_rt`'s language handler of VM code's PE unwind info (design/vm.md#unwinding).
+/// `ryo_rt`'s language handler of VM code's PE unwind info (design/vm.md#unwinding; before
+/// tagging and mangling).
 pub const SEH_HANDLER_SYMBOL: &str = rt_symbols::SEH_HANDLER;
 
 /// The JIT's trip entry points in `ryo_rt`, which the JIT records' slots start at
-/// (before mangling).
+/// (before tagging and mangling).
 pub const TRIP_ENTRY_SYMBOL: &str = rt_symbols::TRIP_ENTRY;
 pub const TRIP_OSR_SYMBOL: &str = rt_symbols::TRIP_OSR;
 
-/// The name of opcode `op`'s handler in `ryo_rt` for code of `mode` (before mangling).
+/// The name of opcode `op`'s handler in `ryo_rt` for code of `mode` (before tagging and
+/// mangling).
 pub fn handler_name(op: Opcode, mode: Mode) -> String {
     rt_symbols::handler(op, mode).to_string()
 }
 
-/// The name of opcode `op`'s register entry in `ryo_rt` (JIT code only; before mangling).
+/// The name of opcode `op`'s register entry in `ryo_rt` (JIT code only; before tagging and
+/// mangling).
 pub fn reg_handler_name(op: Opcode, mode: Mode) -> String {
     rt_symbols::reg_handler(op, mode).to_string()
 }
@@ -714,7 +717,9 @@ pub fn write_image(
                 // a GOT reference to the personality itself, as LLVM writes it (ld64 takes
                 // the personality from it).
                 RelocTarget::Section(Section::ReadOnly) => {
-                    let personality = undefined(&mut obj, &fmt.mangle(ryo_bytecode::image::PERSONALITY), SymbolKind::Text);
+                    // The personality slot's symbol, if the image has one (Unknown-kind, see above).
+                    let name = fmt.mangle(ryo_bytecode::image::PERSONALITY);
+                    let personality = unknown.get(&name).copied().unwrap_or_else(|| undefined(&mut obj, &name, SymbolKind::Text));
                     let flags = RelocationFlags::MachO { r_type: macho::X86_64_RELOC_GOT, r_pcrel: true, r_length: 2 };
                     obj.add_relocation(eh, Relocation { offset: r.offset, symbol: personality, addend: 0, flags })
                         .map_err(|e| format!("image relocation: {e}"))?;
@@ -937,6 +942,7 @@ mod tests {
         assert_eq!(sym("___ryo_main").scope(), SymbolScope::Linkage);
         for undef in ["_ext_fn", "_main_fn", &format!("_{}", anchor_symbol()), "_rust_eh_personality"] {
             assert!(sym(undef).is_undefined(), "{undef}");
+            assert_eq!(file.symbols().filter(|s| s.name() == Ok(undef)).count(), 1, "{undef}");
         }
         // The header's `anchor` field is relocated against it.
         let at = std::mem::offset_of!(ryo_bytecode::image::Header, anchor) as u64;

@@ -240,8 +240,8 @@ fn check_outputs(tcx: TyCtxt<'_>) {
 /// Whether the crate may have VM code. Proc macros stay native: it keeps VM code out of
 /// rustc's own process, and they gain nothing from it. `RYO_NO_VM` is a debugging switch
 /// (design/backend.md#pipeline, step 2). A panic runtime (`panic_unwind`, `panic_abort`) too:
-/// portals re-raise a panic from the VM through its `__rust_start_panic` (design/vm.md,
-/// Unwinding), so that must be native, and the rest of the runtime gains nothing from the VM.
+/// VM code unwinds natively through it (design/vm.md, Unwinding), and it gains nothing from
+/// the VM.
 /// Runtime-internal crates too (design/backend.md#unsupported-options): `compiler_builtins`
 /// and `#![no_builtins]` crates implement `memcpy` and friends, which the handlers call (VM
 /// code there would recurse), as does a target that sets `no_builtins` (rustc treats every
@@ -523,8 +523,10 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         let tcx = self.tcx;
         let entry = tcx.entry_fn(()).map(|(def_id, _)| Instance::mono(tcx, def_id));
         let (images, fresh) = self.lower(entry);
+        // Each function once, however many CGUs hold a copy of it (`LocalCopy`).
+        let mut seen = FxHashSet::default();
         let failed: Vec<(Instance<'tcx>, NeedsNative)> =
-            fresh.iter().flat_map(|f| f.failed.iter().map(|(i, w)| (*i, NeedsNative(w.0.clone())))).collect();
+            fresh.iter().flat_map(|f| f.failed.iter()).filter(|(i, _)| seen.insert(*i)).map(|(i, w)| (*i, NeedsNative(w.0.clone()))).collect();
         if self.switches.stats >= 2 {
             for (instance, why) in &failed {
                 eprintln!("ryo: native {}: {}", path(*instance), why.0);
@@ -606,14 +608,16 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
 
     /// `RYO_STATS=1`'s totals.
     fn print_stats(&self, natives: &[CodegenUnit<'tcx>], fresh: &[Fresh<'tcx>], failed: &[(Instance<'tcx>, NeedsNative)]) {
-        let mut n_vm = 0;
+        // Each function counts once, however many CGUs hold a copy of it (`LocalCopy`).
+        let mut vm = FxHashSet::default();
         for unit in &self.units {
             for &(v, global) in &unit.vm.vm {
                 let global = if global { " (global)" } else { "" };
                 eprintln!("ryo: vm fn {}{global}", path(v));
+                vm.insert(v);
             }
-            n_vm += unit.vm.vm.len();
         }
+        let n_vm = vm.len();
         eprintln!(
             "ryo: {n_vm} VM functions, {} native functions, {} islands, {} native items",
             self.stats.native_fns,
