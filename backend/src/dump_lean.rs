@@ -887,7 +887,7 @@ impl<'a, 'tcx> FnDump<'a, 'tcx> {
         at: SourceInfo,
         tail: bool,
     ) -> Res<CallParts> {
-        let (f, abi, tc) = self.callee(d, func, tail)?;
+        let (f, abi, tc) = self.callee(d, func, args, tail)?;
         let args = self.operands(d, args.iter().map(|a| &a.node))?;
         let loc = tc.then(|| self.caller_location(d, at));
         Ok(CallParts { f, args: J::Arr(args), loc: opt(loc), abi: opt(abi) })
@@ -1136,9 +1136,18 @@ impl<'a, 'tcx> FnDump<'a, 'tcx> {
 
     /// The callee of a call of `func`, the caller's ABI, and whether the callee takes a caller
     /// location.
-    fn callee(&mut self, d: &mut Dumper<'tcx>, func: &Operand<'tcx>, tail: bool) -> Res<(J, Option<J>, bool)> {
+    fn callee(
+        &mut self,
+        d: &mut Dumper<'tcx>,
+        func: &Operand<'tcx>,
+        args: &[rustc_span::Spanned<Operand<'tcx>>],
+        tail: bool,
+    ) -> Res<(J, Option<J>, bool)> {
         let tcx = d.tcx;
         let fty = self.operand_ty(d, func);
+        // cg_ssa: the ABI includes a C-variadic call's extra arguments.
+        let n_fixed = if fty.is_fn() { fty.fn_sig(tcx).skip_binder().inputs().len() } else { args.len() };
+        let extra = tcx.mk_type_list_from_iter(args.get(n_fixed..).unwrap_or(&[]).iter().map(|a| self.operand_ty(&*d, &a.node)));
         match *fty.kind() {
             ty::FnDef(def_id, args) => {
                 let args = args.no_bound_vars().ok_or("fn item with bound vars")?;
@@ -1151,9 +1160,7 @@ impl<'a, 'tcx> FnDump<'a, 'tcx> {
                 let abi = match i.def {
                     // (`fn_abi_of_instance` asserts on LLVM intrinsics)
                     InstanceKind::Intrinsic(_) | InstanceKind::LlvmIntrinsic(_) => None,
-                    _ => {
-                        tcx.fn_abi_of_instance(d.typing_env().as_query_input((i, ty::List::empty()))).ok().map(|a| d.fn_abi(a, fty.fn_sig(tcx).abi()))
-                    }
+                    _ => tcx.fn_abi_of_instance(d.typing_env().as_query_input((i, extra))).ok().map(|a| d.fn_abi(a, fty.fn_sig(tcx).abi())),
                 };
                 let tc = i.def.requires_caller_location(tcx)
                     || matches!(i.def, InstanceKind::Intrinsic(_)) && tcx.item_name(def_id).as_str() == "caller_location";
@@ -1165,7 +1172,7 @@ impl<'a, 'tcx> FnDump<'a, 'tcx> {
             }
             ty::FnPtr(..) => {
                 let sig = fty.fn_sig(tcx);
-                let abi = tcx.fn_abi_of_fn_ptr(d.typing_env().as_query_input((sig, ty::List::empty()))).ok().map(|a| d.fn_abi(a, sig.abi()));
+                let abi = tcx.fn_abi_of_fn_ptr(d.typing_env().as_query_input((sig, extra))).ok().map(|a| d.fn_abi(a, sig.abi()));
                 Ok((ctor("fnPtr", vec![("o", self.operand(d, func)?)]), abi, false))
             }
             _ => Err("call of a non-fn type".into()),
