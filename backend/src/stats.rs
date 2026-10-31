@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 
+use rustc_data_structures::fx::FxHashSet;
 use rustc_hir::def_id::LOCAL_CRATE;
 use rustc_middle::ty::{Instance, TyCtxt};
 
@@ -10,7 +11,8 @@ use super::lower::{CodeReloc, NeedsNative};
 use super::partition::{Fresh, path};
 
 /// Island and native-function tallies of the images built this session, shared by
-/// `RYO_STATS` and `RYO_DUMP_NATIVE`.
+/// `RYO_STATS` and `RYO_DUMP_NATIVE`. Each function counts once, however many CGUs hold a
+/// copy of it (`LocalCopy`).
 struct Coverage<'a, 'tcx> {
     n_vm: usize,
     /// Each VM function with islands, with its island instructions by template name
@@ -33,7 +35,11 @@ fn coverage<'a, 'tcx>(fresh: &[Fresh<'tcx>], failed: &'a [(Instance<'tcx>, Needs
     let mut n_vm = 0;
     let mut with_islands = Vec::new();
     let mut templates: BTreeMap<String, (usize, usize)> = BTreeMap::new();
+    let mut seen = FxHashSet::default();
     for v in fresh.iter().flat_map(|f| f.vm.iter()) {
+        if !seen.insert(v.instance) {
+            continue;
+        }
         n_vm += 1;
         let mut by: BTreeMap<String, usize> = BTreeMap::new();
         for r in &v.lowered.relocs {
@@ -54,7 +60,11 @@ fn coverage<'a, 'tcx>(fresh: &[Fresh<'tcx>], failed: &'a [(Instance<'tcx>, Needs
     let mut templates: Vec<_> = templates.into_iter().collect();
     by_count_desc(&mut templates, |t| t.0);
     let mut reasons: BTreeMap<&str, usize> = BTreeMap::new();
-    for (_, why) in failed {
+    let mut seen = FxHashSet::default();
+    for (i, why) in failed {
+        if !seen.insert(*i) {
+            continue;
+        }
         *reasons.entry(why.0.as_str()).or_default() += 1;
     }
     let mut reasons: Vec<_> = reasons.into_iter().collect();
@@ -99,6 +109,7 @@ pub(super) fn native_text<'tcx>(
     let c = coverage(fresh, failed);
     let mut natives: Vec<(String, &str)> = failed.iter().map(|(i, w)| (name(*i), w.0.as_str())).collect();
     natives.sort();
+    natives.dedup();
     let mut kept: Vec<String> = kept.iter().map(|i| name(*i)).collect();
     kept.sort();
     kept.dedup();
