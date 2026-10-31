@@ -54,8 +54,9 @@ impl Program {
     }
 
     /// Compiles each crate, in order, from `tests` into `dir` with `compiler()`: the common
-    /// flags, then `extra(krate, cmd)`'s. Every library
-    /// crate is an `--extern` of the crates after it. Returns each crate's stderr.
+    /// flags, then `extra(krate, cmd)`'s. Every rlib or
+    /// dylib crate is an `--extern` of the crates after it (rustc takes no staticlib, cdylib
+    /// or bin there). Returns each crate's stderr.
     pub(crate) fn compile(
         &self,
         tests: &Path,
