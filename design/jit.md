@@ -54,8 +54,10 @@ section; its fields and the counter checks and stubs that use it are in
     record's `osr` slot, the OSR dispatcher, in assembly. Only a stub that read the slot before the publication
     gets there: the stubs call the dispatcher directly afterwards. A trip that waited for
     the compile (`RYO_JIT_SYNC`) continues the same way.
-- **Registers**: the trips may clobber only `rax`, `r11` and the flags (vm.md's counter
-  stubs' contract). `ryo_jit_trip_entry` saves the argument registers (`rdi`…`r9`,
+- **Registers**: the entry trip may clobber `rax`, `r11` and the flags (vm.md's counter
+  stubs' contract), and also `r10`, off PE `xmm8`–`xmm15` and vector registers' upper
+  halves, none of which carries anything at an entry; the loop-head trip also the caller-saved registers, none of which is live
+  at a head. `ryo_jit_trip_entry` saves the argument registers (`rdi`…`r9`,
   `xmm0`–`xmm7`) in a 192-byte area, which keeps `rsp` 16-aligned for the Rust call (`rsp`
   is 16-aligned at the trip), and restores them; it returns to the stub, or jumps to the
   JIT entry, with the stack as it found it. `ryo_jit_trip_osr` saves only `eax`, the
@@ -258,7 +260,7 @@ section; its fields and the counter checks and stubs that use it are in
   loaded image covers. It has no exit teardown; the common `FRAMES_OPEN` lock and `atexit`
   close stay anyway.
 - **Perf map**: with `RYO_JIT_PERFMAP=1`, a line per function in `/tmp/perf-<pid>.map`,
-  named `ryo-jit:f<index>@<AOT address>`, so `perf` names JIT frames (Linux only: off on
+  named `ryo-jit:f<index>@<AOT address>`, and one for its OSR code (`...:osr`), so `perf` names JIT frames (Linux only: off on
   Windows and macOS, `sys::perfmap_path`).
 - **Backtraces**: JIT frames have no symbols, so backtraces show them unnamed (`y test`'s
   `backtrace` check runs with `RYO_JIT=off`).
@@ -314,8 +316,10 @@ frames convert. The JIT compiles the entries with the function (`asm::osr`, `asm
 - **Unwinding**: the OSR code has an FDE of its own, without an LSDA (nothing in it unwinds
   but through the probe). With a frame pointer its rules are the body's (CFA = `rbp + 16`);
   without, CFA = `rsp + F_aot + 24` while the stub's return address is on the stack,
-  `rsp + F_aot + 16` after the `pop`, and `rdx + 16` once `rdx` is `fp`, until the jump into
-  the body, whose FDE describes `F_jit`.
+  `rsp + F_aot + 16` after the `pop`, and `rdx + 16` once `rdx` is `fp`; in the SSA
+  pipeline's entries, where a head parameter may go to `rdx`, `rsp + low + 16` before the
+  register parameters are loaded and `rsp + F_jit + 16` after `rsp` is set, until the jump
+  into the body, whose FDE describes `F_jit`.
 
 ## The SSA pipeline
 
@@ -779,7 +783,7 @@ the units that inline it.
 - **Across images**: a callee of another image (a dylib's, an rlib's own image, std's) is
   inlined if its image's mode is the root's (but for counters). Its IR is cached by its
   image's header and function, and `inline::rebase` puts it in the root's image's terms
-  before it is explored: addresses of its constants, data and site caches (`RefAddr`,
+  before it is explored: addresses of its constants and data (`RefAddr`,
   handler arguments) become 64-bit constants, a symbol's `RefAddr` the value its slot held
   when compiling (slots are filled before VM code runs and never again; an indirect one
   loads through it at run time), its calls of its functions and symbols the JIT's call
@@ -979,7 +983,8 @@ the stderr it compares), each with one `write`:
 - **Summary**: the `atexit` handler calls the JIT's report (formatted on the stack, no lock,
   no waiting for the JIT thread), or prints `JIT off`, `no function reached a threshold`,
   `JIT thread failed to start` or `JIT thread still starting`. Read mid-compile, the counters needn't balance: `in flight`
-  saturates at 0. A forked child prints nothing; `_exit`, `abort`, signals and `exec` skip it.
+  saturates at 0. A child forked after the first push prints nothing (one forked
+  before it prints the summary of the JIT it starts, but no startup line); `_exit`, `abort`, signals and `exec` skip it.
 - **Progress** (`2`): the JIT thread checks after each batch, so an idle JIT prints none.
 - With `RYO_JIT_SYNC` in a single-threaded program, everything but the times and the pid is
   deterministic.
@@ -989,7 +994,8 @@ the stderr it compares), each with one `write`:
 
 ## Limits
 
-- A child of `fork` has no JIT thread, so with `RYO_JIT_SYNC` its trips wait forever.
+- A child forked after the JIT thread started has no JIT thread: its functions stay AOT (with
+  `RYO_JIT_SYNC` its trips don't wait, `JIT_PID`).
 - The JIT runs on Linux, Windows and x86_64 macOS (`sys`). On Windows `y test` passes with the JIT
   from the first call, by OSR, shuffled, with each tier and `RYO_JIT_CHECK=1`, and with
   `RYO_JIT_TEST_PANIC`/`RYO_JIT_TEST_OOM`, including panics unwinding through JIT frames

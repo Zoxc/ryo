@@ -369,7 +369,7 @@ fn case(lean: &mut Lean, op: Opcode, rng: &mut Rng) -> bool {
     }
     if let Some(stop) = r.get("stop") {
         let J::Str(stop) = stop else { panic!() };
-        assert!(matches!(stop.as_str(), "ub" | "unreachable" | "abort"), "{mn}: {r:?}\n{}", req(""));
+        assert!(matches!(stop.as_str(), "ub" | "abort"), "{mn}: {r:?}\n{}", req(""));
         return false;
     }
     let ret = call(op, &vals, fp, exception);

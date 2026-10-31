@@ -347,7 +347,8 @@ static DISABLED: AtomicBool = AtomicBool::new(false);
 /// and the stub's return addresses are on it), the argument registers live. Saves them,
 /// calls [`entry_trip`], restores them, and returns into the AOT code, or jumps to the JIT
 /// entry [`entry_trip`] gives, which drops the stub's return address
-/// ([`JIT_ENTRY_PREFIX`]). Clobbers `rax` and `r11`, which carry nothing at an entry. On PE
+/// ([`JIT_ENTRY_PREFIX`]). Clobbers `rax`, `r10`, `r11`, off PE `xmm8`–`xmm15`, and
+/// the upper halves of vector registers, none of which carries anything at an entry. On PE
 /// (and with `pe-test`, so PE-mode tests off Windows run the same code) it also saves
 /// `xmm8`–`xmm15`, callee-saved on Win64 but not for the `sysv64` Rust code it calls (`rdi`,
 /// `rsi`, `xmm6` and `xmm7` are among the argument registers it saves anyway), in a 320-byte
@@ -669,7 +670,7 @@ fn start() -> bool {
     let (pe_handlers, pe_reg_handlers) = {
         static PE: Once<[[*const (); ryo_bytecode::Opcode::COUNT]; 2]> = Once::new();
         let Some(t) = PE.set_with(|| [table(super::interp::pe_handler), table(super::interp::pe_reg_handler)]) else {
-            super::sys::fatal("ryo: the JIT started twice");
+            super::sys::fatal("the JIT started twice");
         };
         (&raw const t[0], &raw const t[1])
     };
@@ -679,7 +680,7 @@ fn start() -> bool {
     let (fp_handlers, fp_reg_handlers) = {
         static FP: Once<[[*const (); ryo_bytecode::Opcode::COUNT]; 2]> = Once::new();
         let Some(t) = FP.set_with(|| [table(super::interp::fp_handler), table(super::interp::fp_reg_handler)]) else {
-            super::sys::fatal("ryo: the JIT started twice");
+            super::sys::fatal("the JIT started twice");
         };
         (&raw const t[0], &raw const t[1])
     };
@@ -708,7 +709,7 @@ fn start() -> bool {
     // The JIT thread runs this module's code (the sealed JIT) and reads its images for the
     // rest of the process: pin the module first.
     super::sys::pin_module(start as *const ());
-    let Some(api) = RT_API.set_with(|| api) else { super::sys::fatal("ryo: the JIT started twice") };
+    let Some(api) = RT_API.set_with(|| api) else { super::sys::fatal("the JIT started twice") };
     // SAFETY: the JIT reads `api` only after the start, and it lives forever.
     let report = unsafe { ryo_jit_start(api) };
     if let Some(r) = report {
@@ -807,8 +808,8 @@ pub(crate) fn registered(img: &Image<'_>) {
 /// `RYO_JIT_STATS`: the startup line was printed (or is being printed) by the first
 /// registration.
 static ANNOUNCED: AtomicBool = AtomicBool::new(false);
-/// The process that printed the startup line: a forked child, which has no JIT thread,
-/// prints no summary.
+/// The process that printed the startup line, which prints the summary unless the JIT thread
+/// started in another process ([`JIT_PID`], a child forked before the first push).
 static ANNOUNCED_PID: AtomicU32 = AtomicU32::new(0);
 
 /// `RYO_JIT_STATS`'s start: the malformed-value warning, the startup line, and the exit
@@ -869,10 +870,14 @@ fn startup_line(cfg: &Config, pid: u32, l: &mut Line) {
 }
 
 /// `RYO_JIT_STATS`'s exit summary: the JIT's report once its thread started, else one line
-/// of why there is none. Nothing in a forked child. Takes no lock and never waits for the
-/// JIT thread.
+/// of why there is none. Only in the process that runs the JIT thread or, if none started
+/// one, in the one that printed the startup line: nothing in a forked child that inherited
+/// the JIT state, or that never started a JIT of its own. Takes no lock and never waits for
+/// the JIT thread.
 extern "C" fn at_exit() {
-    if super::sys::pid() != ANNOUNCED_PID.load(Relaxed) {
+    let jit_pid = JIT_PID.load(Acquire);
+    let owner = if jit_pid != 0 { jit_pid } else { ANNOUNCED_PID.load(Relaxed) };
+    if super::sys::pid() != owner {
         return;
     }
     let report = REPORT.load(Acquire);

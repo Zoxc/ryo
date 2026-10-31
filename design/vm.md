@@ -45,8 +45,8 @@ native frames, and unwind natively ([Unwinding](#unwinding)). The runtime lives 
   the prologue starts at byte 9 (13 with a long `jns`).
 - **Frame pointer**: the backend keeps one where rustc's LLVM backend would
   (`partition::asm_mode`, following `rustc_codegen_llvm::attributes::frame_pointer`): if
-  the target's `frame_pointer` isn't `MayOmit`, with `-Cforce-frame-pointers` or
-  `-Zinstrument-mcount`. Also on PE, whose handlers read `fp` from `rbp` and whose unwind
+  the target's `frame_pointer` isn't `MayOmit`, or with `-Cforce-frame-pointers`
+  (`-Zinstrument-mcount`, which would also need one, is rejected). Also on PE, whose handlers read `fp` from `rbp` and whose unwind
   info describes frames by their frame register. Then the prologue is
   ```
   push rbp
@@ -473,7 +473,9 @@ has one code shape, and code the JIT encodes for itself has none.
   are live, but `rax` and `r11` aren't: VM functions aren't variadic (those stay native), so
   nothing passes `al`, and no convention passes anything in `r11`. At a loop head nothing
   but `rsp` and `rbp` is live: the register cache is cleared at branch targets. So the stubs
-  clobber only `r11`, `rax` and the flags, and the trip entry points may clobber those too.
+  clobber only `r11`, `rax` and the flags, and the trip entry points may clobber those too
+  and the other registers that carry nothing at an entry (`r10`, off PE `xmm8`–`xmm15`,
+  vector registers' upper halves; [jit.md](jit.md#records-and-trips)) (the loop-head one also the caller-saved registers, which aren't live there).
 - **The trips** are the [JIT](jit.md#records-and-trips)'s. With the JIT off (`RYO_JIT=off`,
   or it couldn't start) they act as the no-op JIT: they settle the record's counters at
   `-JIT_BIAS`, a failed record's bias, so the function never trips again in practice, and
@@ -646,8 +648,10 @@ offsets in the function, and the function's LSDA, the ELF one.
   per exception, however many VM frames and pads; nothing is copied, re-raised or caught on
   the way, and the panic count, the hook, `__except` filters and foreign exceptions behave as
   through native frames. As in LLVM's code for rustc (`__CxxFrameHandler3` with `/EHs`), an
-  SEH exception (an `__except`'s `STATUS_UNWIND`, `longjmp`) unwinds the frame without its
-  cleanups.
+  unwind with a non-C++ record (an SEH exception caught by `__except`, which unwinds with the
+  original record, say an access violation's; `longjmp`'s `STATUS_LONGJUMP`) passes the frame
+  without its cleanups, while a C++ exception caught by `__except` keeps its C++ record, so
+  the cleanups run.
 - **Pad region**: on PE the lowering emits the cleanup blocks last
   ([lowering.md](lowering.md#unwinding)): the body, its terminate stubs, then the cleanup
   landing pads, the cleanup blocks and their own terminate stubs (`Asm::begin_region`; the
@@ -900,8 +904,9 @@ calls it by name, local otherwise (backtraces, profilers) ([backend.md](backend.
   and only the JIT needs the registry there (the image's thresholds, `image_at`; Mach-O
   images have no fixups).
   It does no other work: it only parses headers (`Image::parse`, O(1)), checks each against
-  the images registered before (a linear scan, and an insertion sort of the new snapshot, so
-  quadratic in the number of images, which stays in the thousands with cheap steps), and runs `Image::validate` only for images with PE fixups, which
+  the images registered before (a linear scan, so
+  quadratic in the number of images, which stays in the thousands with cheap steps, and a
+  heapsort of the new snapshot), and runs `Image::validate` only for images with PE fixups, which
   `apply_fixups` requires. Nothing looks functions up at run time: calls go to symbols.
   Registry memory comes from `mmap`ed chunks (`VirtualAlloc` on PE), not the Rust
   allocator.

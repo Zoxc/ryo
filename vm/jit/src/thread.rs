@@ -13,6 +13,18 @@ const NAME: &str = "ryo-jit";
 use crate::install::Jit;
 use crate::stats::{self, Fail, STATS};
 
+std::thread_local! {
+    /// Whether this is the JIT thread, for the hooks: `std::thread::current()` can panic
+    /// (after the thread's TLS is gone) or allocate (no handle yet) there. A `const` `Cell`
+    /// has no destructor, so it is readable at any time.
+    static IS_JIT: core::cell::Cell<bool> = const { core::cell::Cell::new(false) };
+}
+
+/// Whether the current thread is the JIT thread.
+fn is_jit() -> bool {
+    IS_JIT.try_with(|c| c.get()).unwrap_or(false)
+}
+
 /// Starts the JIT thread. False if the thread didn't start.
 pub(crate) fn start(rt: &'static RtApi) -> bool {
     quiet_panics(rt.settings.log);
@@ -28,7 +40,7 @@ pub(crate) fn start(rt: &'static RtApi) -> bool {
 fn quiet_panics(log: bool) {
     let prev = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        if std::thread::current().name() != Some(NAME) {
+        if !is_jit() {
             prev(info);
         } else if log {
             crate::install::log_line(&format!("ryo-jit: {info}\n"));
@@ -49,7 +61,7 @@ fn oom_panics() {
 }
 
 fn oom_hook(layout: std::alloc::Layout) {
-    if std::thread::current().name() == Some(NAME) {
+    if is_jit() {
         panic!("memory allocation of {} bytes failed", layout.size());
     }
     // SAFETY: stored by `oom_panics` from a `fn(Layout)` before this hook was set.
@@ -61,6 +73,7 @@ fn oom_hook(layout: std::alloc::Layout) {
 type Recheck = Vec<(*mut JitRecord, u8)>;
 
 fn main(rt: &'static RtApi) {
+    IS_JIT.set(true);
     let mut jit = Jit::new(rt);
     // Records published lately, whose counters' bias a racing AOT increment may have erased
     // (`JitRecord`): re-checked after each batch and, while there are any, after a pause

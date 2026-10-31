@@ -11,8 +11,10 @@
 //! no state, so images keep calling their own copy's.
 //!
 //! Copies with another personality (a cdylib's own std, a localized staticlib blob) skip the
-//! winner's page and merge among themselves at the next probe address. Copies that find no
-//! free page, or a page that isn't this build's, stay private instances, as does every copy under `RYO_JIT_MERGE=0`.
+//! winner's page and merge among themselves at the next probe address. A page that isn't this
+//! build's also moves a copy on to the next probe address. Copies that reach a page of this
+//! build they can't join, or exhaust the probes, stay private instances, as does every copy
+//! under `RYO_JIT_MERGE=0`.
 //!
 //! The rendezvous: a page at a fixed address derived from the tag, mapped exclusively
 //! (Linux `MAP_FIXED_NOREPLACE`, Windows `VirtualAlloc` at an address; macOS an `mmap` with
@@ -217,7 +219,7 @@ mod tests {
     }
 
     #[test]
-    fn stays_private_on_foreign_pages() {
+    fn skips_foreign_pages() {
         // A foreign zero page that never becomes READY: a bounded wait, then the next probe.
         assert_eq!(join_page(&page(0, 0, 0, 0, 0), 7, 0x2000, 1000), None);
         // READY but not this build's: no magic, another tag, or another tag's winner caught

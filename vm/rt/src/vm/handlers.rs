@@ -18,7 +18,8 @@
 // types the format; `Atomic*` the atomic type; orderings are `core::sync::atomic::Ordering`
 // variants. The `*_ptr` atomic kinds are `AtomicPtr`'s: the same machine operations as the
 // 64-bit integer ones, but the value is a pointer (with provenance, in the Lean semantics),
-// and the read-modify-write ones take a `usize` operand (`fetch_byte_add`, `fetch_or`, ...).
+// and the read-modify-write ones but `swap` take a `usize` operand (`fetch_byte_add`,
+// `fetch_or`, ...; `swap`'s is a pointer).
 // The SIMD kinds (`vsplat`, `vcmp`, `vmsb`) take the lane type and the lane count.
 
 macro_rules! for_each_handler {

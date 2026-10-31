@@ -902,8 +902,8 @@ unsafe extern "win64-unwind" fn resume_pe() -> ! {
 }
 
 /// The stack probe of frames of 4096 bytes or more: touches every page of the `rax` bytes
-/// below the caller's stack pointer, top down, so the guard page is hit in order. Called
-/// before `sub rsp, F`; preserves every register but `r11`.
+/// below the caller's stack pointer (and nothing below them), top down, so the guard page is
+/// hit in order. Called before `sub rsp, F`; preserves every register but `r11`.
 #[unsafe(naked)]
 #[rustc_std_internal_symbol]
 #[unsafe(export_name = tagged!(ryo_bytecode::rt_sym!(probe)))]
@@ -922,7 +922,11 @@ pub unsafe extern "sysv64-unwind" fn probe_stack() {
         "sub r11, 4096",
         "test qword ptr [r11], r11",
         "sub rax, 4096",
+        "cmp rax, 4096",
         "ja 2b",
+        // The last probe at the frame's bottom, not the page below it.
+        "sub r11, rax",
+        "test qword ptr [r11], r11",
         "pop rax",
         cfi!(".cfi_adjust_cfa_offset -8"),
         "ret",

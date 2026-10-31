@@ -98,8 +98,8 @@ pub unsafe fn drop_in_place<T: ?Sized>(fp: *mut u8, ops: *const u32) -> u32 {
 }
 
 /// Island for `intrinsics::catch_unwind`. `ops`: `[try_fn, data, catch_fn, dest]`. The fn
-/// pointers of VM functions are their portals, so a panic in the VM leaves the portal
-/// natively and is caught here (design/lowering.md#unwinding).
+/// pointers of VM functions are their own native symbols, so a panic in the VM unwinds
+/// natively out of them and is caught here (design/lowering.md#unwinding).
 ///
 /// # Safety
 /// As for `intrinsics::catch_unwind`, with the operands initialized.

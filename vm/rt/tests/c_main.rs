@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU8, Ordering};
 struct FnAddr(#[allow(dead_code)] *const ());
 unsafe impl Sync for FnAddr {}
 
-/// Stands in for the image's slot holding the entry fn's portal.
+/// Stands in for the image's slot holding the entry fn's address.
 #[unsafe(no_mangle)]
 static __ryo_main: FnAddr = FnAddr(fake_main as *const ());
 

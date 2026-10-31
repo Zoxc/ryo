@@ -5,8 +5,8 @@
 //! information, the perf map, and the record's publication (design/jit.md, "Compiling and installing").
 
 use core::ptr;
-use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering::{Acquire, Relaxed, Release};
+use core::sync::atomic::{AtomicU64, AtomicUsize};
 use std::collections::HashMap;
 use std::io::Write;
 use std::vec::Vec;
@@ -165,6 +165,9 @@ pub(crate) struct Jit {
     dump: Option<String>,
     /// How many functions went to the SSA pipeline so far ([`ryo_bytecode::jit_abi::JitSettings::ssa_limit`]).
     ssa_tried: u64,
+    /// The statistics of the compile in progress that count only once it is published: why it
+    /// is re-encoded, and the SSA pipeline's direct and inlined calls.
+    pending: Pending,
     /// The inliner's callee IR, by (image header, function) ([`InlineEnv`]).
     ir_cache: IrCache,
 }
@@ -207,6 +210,7 @@ impl Jit {
             slots_of: HashMap::new(),
             dump,
             ssa_tried: 0,
+            pending: Pending::default(),
             ir_cache: HashMap::new(),
         }
     }
@@ -241,11 +245,15 @@ impl Jit {
         let ssa = settings.opt != JitOpt::Reencode && self.ssa_tried < settings.ssa_limit;
         if ssa {
             self.ssa_tried += 1;
-        } else if settings.opt == JitOpt::Reencode {
-            stats::add(&STATS.opt_reencode, 1);
-        } else {
-            stats::add(&STATS.ssa_limit, 1);
         }
+        let why = if ssa {
+            None
+        } else if settings.opt == JitOpt::Reencode {
+            Some(&STATS.opt_reencode)
+        } else {
+            Some(&STATS.ssa_limit)
+        };
+        self.pending = Pending { why, ..Pending::default() };
         // Again in another region if the one it was compiled for filled up. That one may be a
         // used region reaching the image, so it can be full as well (each retry retires one);
         // a newly mapped region is empty, and the function fits half of one.
@@ -264,8 +272,8 @@ impl Jit {
     }
 
     /// Compiles `rec`'s function with the SSA pipeline if `ssa`, else (or where that doesn't
-    /// compile it) by re-encoding; `retry` for any attempt after the first, whose stats
-    /// the first one already counted.
+    /// compile it) by re-encoding; `retry` for any attempt after the first, whose logs and
+    /// dumps the first one already wrote.
     fn compile_once(&mut self, rec: *mut JitRecord, ssa: bool, retry: bool) -> Result<(), CompileError> {
         // SAFETY: a record of a linked image, whose header it points at.
         let (func, img) = unsafe { ((*rec).func, Image::from_header((*rec).header.cast()).map_err(|_| "invalid image")?) };
@@ -305,7 +313,7 @@ impl Jit {
                     map = m;
                 }
                 Err(e) => {
-                    if self.rt.settings.log {
+                    if self.rt.settings.log && !job.retry {
                         self.log(rec, e.what);
                     }
                 }
@@ -370,21 +378,17 @@ impl Jit {
                     osr_at: o.osr_at as usize,
                     region: len,
                 };
-                if !job.retry {
-                    stats::add(&STATS.devirt, o.devirt as u64);
-                    stats::add(&STATS.inlined, o.inlined as u64);
-                }
+                self.pending.devirt = o.devirt as u64;
+                self.pending.inlined = o.inlined as u64;
                 Ok(Some((out, ssa_ext)))
             }
             Err(jit::Error::Unsupported(u)) => {
-                if !job.retry {
-                    stats::add(&STATS.ssa_unsupported, 1);
-                }
-                if let Some(dir) = &self.dump {
+                self.pending.why = Some(&STATS.ssa_unsupported);
+                if let Some(dir) = self.dump.as_ref().filter(|_| !job.retry) {
                     let text = std::format!("; unsupported: {}\n{}", u.0, reduced::Disasm(&d.words));
                     let _ = std::fs::write(dump::dump_path(dir, func, h as *const _ as usize, "txt"), text);
                 }
-                if self.rt.settings.log {
+                if self.rt.settings.log && !job.retry {
                     self.log(rec, &std::format!("ssa: {}", u.0));
                 }
                 Ok(None)
@@ -433,7 +437,7 @@ impl Jit {
             code[thunk_at + 6..][..8].copy_from_slice(&(self.rt.seh_handler as u64).to_le_bytes());
         }
         map_and_register(&code, &eh, base, eh_base, mode)?;
-        self.publish(job, tier, jit_f, osr.is_some().then(|| jit_f + osr_at), code_len, ro_at + rodata.len());
+        self.publish(job, tier, jit_f, osr.is_some().then(|| jit_f + osr_at), code_len, osr_len, ro_at + rodata.len());
         Ok(())
     }
 
@@ -501,14 +505,18 @@ impl Jit {
     }
 
     /// Publishes the installed code of `job`'s function, compiled by `tier`, at `jit_f` with its OSR dispatcher at
-    /// `osr_entry`: the perf map, the record, the call slots of it, and the log. `bytes` is
+    /// `osr_entry`: the perf map (the `code_len` bytes of code and the `osr_len` of OSR code),
+    /// the record, the call slots of it, and the log. `bytes` is
     /// the size of its code memory, for the statistics.
-    fn publish(&mut self, job: &Job<'_>, tier: Tier, jit_f: usize, osr_entry: Option<usize>, code_len: usize, bytes: usize) {
+    fn publish(&mut self, job: &Job<'_>, tier: Tier, jit_f: usize, osr_entry: Option<usize>, code_len: usize, osr_len: usize, bytes: usize) {
         let (rec, func) = (job.rec, job.func);
         let h = job.img.header();
         if let Some(m) = &mut self.perfmap {
             let aot = job.img.entry(func);
             let _ = writeln!(m, "{jit_f:x} {code_len:x} ryo-jit:f{func}@{aot:x}");
+            if let Some(osr) = osr_entry {
+                let _ = writeln!(m, "{osr:x} {osr_len:x} ryo-jit:f{func}@{aot:x}:osr");
+            }
         }
 
         // Nothing allocates from the publication on: a panic past it (an allocation failure,
@@ -526,6 +534,14 @@ impl Jit {
         };
         stats::add(n, 1);
         stats::add(b, bytes as u64);
+        let p = std::mem::take(&mut self.pending);
+        match tier {
+            Tier::Ssa => {
+                stats::add(&STATS.devirt, p.devirt);
+                stats::add(&STATS.inlined, p.inlined);
+            }
+            Tier::Reencode => p.why.into_iter().for_each(|c| stats::add(c, 1)),
+        }
         // The dispatcher, at the start of the OSR code: every head's stub calls it from now.
         // SAFETY: the record is this thread's until `Done`.
         unsafe { JitRecord::publish(rec, jit_f as *const u8, (jit_f - JIT_ENTRY_PREFIX) as *mut u8, osr_entry.map(|a| a as *mut u8)) };
@@ -554,6 +570,15 @@ impl Jit {
     }
 }
 
+/// [`Jit::pending`].
+#[derive(Default)]
+struct Pending {
+    /// The reason counter of a re-encoded function.
+    why: Option<&'static AtomicU64>,
+    devirt: u64,
+    inlined: u64,
+}
+
 /// A function being compiled: the function `func` of `img` (record `rec`), decoded as `d`, to
 /// be compiled in `mode` (`shuffled`: `RYO_JIT_SHUFFLE`) for the region `place`, and its
 /// image's personality slot.
@@ -567,7 +592,8 @@ struct Job<'a> {
     shuffled: bool,
     place: Place,
     personality: usize,
-    /// An attempt after the first, after [`CompileError::Retry`]: the first counted the stats.
+    /// An attempt after the first, after [`CompileError::Retry`]: the first wrote the logs and
+    /// dumps.
     retry: bool,
 }
 

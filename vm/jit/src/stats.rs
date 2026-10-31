@@ -119,12 +119,12 @@ stats! {
     reencode,
     code_ssa,
     code_reencode,
-    /// Why functions were re-encoded: the SSA pipeline doesn't handle them, they were over
-    /// `RYO_JIT_SSA_LIMIT`, `RYO_JIT_OPT=reencode`.
+    /// Why published functions were re-encoded: the SSA pipeline doesn't handle them, they
+    /// were over `RYO_JIT_SSA_LIMIT`, `RYO_JIT_OPT=reencode`.
     ssa_unsupported,
     ssa_limit,
     opt_reencode,
-    /// Calls the SSA pipeline made direct, and calls it inlined.
+    /// Calls the SSA pipeline made direct, and calls it inlined, in published code.
     devirt,
     inlined,
     /// Code regions mapped, and compile attempts retried in another region (an existing one

@@ -1,8 +1,8 @@
 //! The image registry (design/vm.md, "Image format": Registry).
 //!
 //! Registered images are kept in immutable snapshots, published through one atomic pointer.
-//! Readers load the pointer and never block. Writers (registration, lazy table builds) take
-//! the runtime lock. Snapshots and tables are allocated with
+//! Readers load the pointer and never block. The writer, registration, takes
+//! the runtime lock. Snapshots and their section indexes are allocated with
 //! [`sys::Bump::alloc_forever`] and never freed, so `&'static` references to them stay valid.
 
 use core::ptr;
@@ -217,20 +217,36 @@ pub fn image_at(addr: usize) -> *const u8 {
     if addr.wrapping_sub(sec.start) < sec.len { sec.header } else { ptr::null() }
 }
 
-/// An insertion sort: core's sorts reference its panic path (`panic_on_ord_violation`), which
-/// the runtime must not reach (design/vm.md, "No re-entry"). Quadratic in the worst case,
-/// but the lists (one or two entries per image) stay in the thousands, and each registration
-/// adds to an already sorted list.
+/// A heapsort: core's sorts reference its panic path (`panic_on_ord_violation`), which the
+/// runtime must not reach (design/vm.md, "No re-entry"). O(n log n) whatever the input order:
+/// the section index is rebuilt from hash order on every registration.
 fn sort_by_key<T, K: Ord>(list: &mut [T], key: impl Fn(&T) -> K) {
     let p = list.as_mut_ptr();
-    for i in 1..list.len() {
-        let mut j = i;
-        // SAFETY: `j` and `j - 1` are below `list.len()`.
-        unsafe {
-            while j > 0 && key(&*p.add(j - 1)) > key(&*p.add(j)) {
-                ptr::swap(p.add(j - 1), p.add(j));
-                j -= 1;
-            }
+    let n = list.len();
+    // Moves the entry at `i` down the max-heap of the first `end` entries.
+    let sift = |mut i: usize, end: usize| loop {
+        let mut c = 2 * i + 1;
+        if c >= end {
+            break;
         }
+        // SAFETY: `i < c < end <= n`, and `c + 1 < end` where read.
+        unsafe {
+            if c + 1 < end && key(&*p.add(c)) < key(&*p.add(c + 1)) {
+                c += 1;
+            }
+            if key(&*p.add(i)) >= key(&*p.add(c)) {
+                break;
+            }
+            ptr::swap(p.add(i), p.add(c));
+        }
+        i = c;
+    };
+    for i in (0..n / 2).rev() {
+        sift(i, n);
+    }
+    for end in (1..n).rev() {
+        // SAFETY: `end < n`.
+        unsafe { ptr::swap(p, p.add(end)) };
+        sift(0, end);
     }
 }

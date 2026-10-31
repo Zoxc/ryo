@@ -6,7 +6,7 @@
 //!   (design/jit.md).
 //!
 //! VM functions are native functions of their signatures (design/vm.md, "Calls and
-//! islands"): native code calls them directly, and there is no entry from portals.
+//! islands"): native code calls them directly, with no stub in between.
 //!
 //! Everything reachable from these uses `core` and OS calls only (no std allocator, locks or
 //! TLS), so it never re-enters the VM (design/vm.md, "No re-entry into the VM from the
