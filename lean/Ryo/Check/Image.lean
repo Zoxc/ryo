@@ -88,7 +88,7 @@ def cli (args : List String) : IO UInt32 := do
   let rec split (l : List String) (objs : List String) (reg : Option String) : Option (List String × Option String) :=
     match l with
     | [] => some (objs.reverse, reg)
-    | "--registry" :: r :: l => split l objs (some r)
+    | "--registry" :: r :: l => if reg.isSome then none else split l objs (some r)
     | "--registry" :: [] => none
     | o :: l => split l (o :: objs) reg
   match split args [] none with
@@ -98,7 +98,7 @@ def cli (args : List String) : IO UInt32 := do
       pure 2
     else run objs reg
   | none =>
-    IO.eprintln "check-image: --registry needs an object"
+    IO.eprintln "check-image: --registry needs an object, and takes only one"
     pure 2
 
 end Ryo.Check.Image
