@@ -207,8 +207,9 @@ reuse under incremental compilation and `rt.rs` the runtime crates' identity.
    any Rust dependency, so there is no native runtime library. Two additions:
    - **Registration through the linker**: each image object registers itself. It holds
      one pointer-sized entry pointing at its header, in a section of its own: ELF
-     `ryo_images` (writable, `SHF_GNU_RETAIN`), PE `.ryo$m`, Mach-O `__DATA,__ryo_images`
-     (`S_ATTR_NO_DEAD_STRIP`). The linker concatenates the entries of every image object in
+     `ryo_images_<tag>` (writable, `SHF_GNU_RETAIN`), PE `.ryo$<tag>m`, Mach-O `__DATA,__ryo_<tag10>`
+     (`S_ATTR_NO_DEAD_STRIP`; `<tag>` is the ABI tag, [build.md](build.md#the-abi-tag),
+     cut to 10 characters on Mach-O). The linker concatenates the entries of every image object in
      the link unit, and keeps them under section GC (`--gc-sections`, `/OPT:REF`,
      `-dead_strip`); the image they point at stays with them.
    - **Registry stub**: at every final link (exe, dylib, cdylib, staticlib) the backend adds
@@ -222,9 +223,9 @@ reuse under incremental compilation and `rt.rs` the runtime crates' identity.
      register in their own runtime instead of the first one loaded. The
      JIT's trip entry points and the handlers are `#[rustc_std_internal_symbol]`s, which a
      cdylib doesn't export. The bounds are the linker's
-     `__start_ryo_images`/`__stop_ryo_images` (referenced hidden, so a dylib and the exe
-     that links it each walk their own list), on Mach-O `section$start$__DATA$__ryo_images`
-     and `section$end$...`, on PE the stub's own markers in `.ryo$a` and `.ryo$z` (the
+     `__start_ryo_images_<tag>`/`__stop_ryo_images_<tag>` (referenced hidden, so a dylib and the exe
+     that links it each walk their own list), on Mach-O `section$start$__DATA$__ryo_<tag10>`
+     and `section$end$...`, on PE the stub's own markers in `.ryo$<tag>a` and `.ryo$<tag>z` (the
      linker sorts grouped sections by their suffix, as the CRT's `.CRT$XC*`). Null entries
      (the stub's, PE incremental-link padding) are skipped. The stub lists no images, so
      `link` reads no rlib symbol tables. Images in rlibs are archive members, taken only if
