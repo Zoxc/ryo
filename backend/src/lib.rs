@@ -375,6 +375,8 @@ fn unsupported(sess: &Session) -> Option<String> {
         (z.retpoline, "`-Zretpoline`"),
         (z.function_return != FunctionReturn::Keep, "`-Zfunction-return`"),
         (z.indirect_branch_cs_prefix, "`-Zindirect-branch-cs-prefix`"),
+        // `switch.dense` is a jump table in VM code.
+        (!c.jump_tables, "`-Cjump-tables=no`"),
         // Tuple layouts (island argument blocks) must agree between crates.
         (z.randomize_layout, "`-Zrandomize-layout`"),
         // The images use rel32 calls and RIP-relative addressing, which need the small

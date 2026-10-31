@@ -408,7 +408,8 @@ upstream images.
   images without the IBT/SHSTK property note silently turn CET off for the whole binary),
   `-Ccontrol-flow-guard` and `-Zehcont-guard` (VM functions and landing pads aren't in the
   tables), `-Zstack-protector`, `-Zretpoline`, `-Zretpoline-external-thunk`,
-  `-Zfunction-return` and `-Zindirect-branch-cs-prefix`, and the same hardening enabled by
+  `-Zfunction-return`, `-Zindirect-branch-cs-prefix` and `-Cjump-tables=no` (`switch.dense`
+  is a jump table in VM code), and the same hardening enabled by
   its LLVM feature names, which rustc passes to LLVM with only a warning (`retpoline*`,
   `lvi-cfi`, `lvi-load-hardening`, `seses`, `harden-sls-*`, in `-Ctarget-feature` or the
   target's features; the last sign wins). `-Cno-redzone` is supported: VM
