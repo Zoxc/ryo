@@ -656,9 +656,9 @@ structure Hyps (S : Setup) : Prop where
   cacheRegsOk : ∀ k, S.c.mode.pe = true → ∀ cand : List Item,
     (emitHead { S.used k with tick := (S.used k).tick + 1 } cand).1 ≠ 2 ∧
       (emitHead { S.used k with tick := (S.used k).tick + 1 } cand).1 ≠ 3
-  /-- Every inline opcode's class is of its shape and `clsOk` (proved by kernel evaluation in
-  `RyoProofs/InlineOk.lean`: `inlineOps_shape`, `inlineOps_clsOk`; outside the default build,
-  hence a field). -/
+  /-- Every inline opcode's class is of its shape and `clsOk` (proved by kernel evaluation:
+  `inlineOps_shape`, `RyoProofs/InlineOps.lean`, and `inlineOps_clsOk`,
+  `RyoProofs/InlineOk.lean`; outside the default build, hence a field). -/
   inlineClsOk : ∀ (f : Full.Opcode) (cls : Class), (f, cls) ∈ inlineOps →
     shapeOk f cls = true ∧ CacheStep.clsOk cls = true
   /-- Open privacy invariant (`InlinePrivate`, as `loadPrivate`): after the scopes, an inline
