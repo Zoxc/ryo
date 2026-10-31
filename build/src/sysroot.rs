@@ -97,7 +97,8 @@ pub fn shim(rustc_ryo: OsString) -> std::process::ExitCode {
         std::process::ExitCode::FAILURE
     };
     let exit = |s: std::process::ExitStatus| std::process::ExitCode::from(s.code().unwrap_or(1).clamp(0, 255) as u8);
-    let (Some(name), Some(stats_dir)) = (name.filter(|n| is_ryo_crate(n)), std::env::var_os(STATS_DIR_VAR)) else {
+    // `___` is cargo's target-info probe (`--print`), which compiles nothing.
+    let (Some(name), Some(stats_dir)) = (name.filter(|&n| is_ryo_crate(n) && n != "___"), std::env::var_os(STATS_DIR_VAR)) else {
         let rustc = OsString::from("rustc");
         let program = if name.is_some_and(is_ryo_crate) { &rustc_ryo } else { &rustc };
         let mut c = cmd(program);
@@ -222,7 +223,10 @@ pub fn build(info: &RustcInfo, dist: &Path, target: &Path, jits: &crate::jit::Se
         // `libsysroot` is the build's dummy root crate. Windows dylibs and their import
         // libraries have no `lib` prefix (`std-<hash>.dll`, `std-<hash>.dll.lib`).
         let windows = matches!(ext, "dll" | "lib") && !name.starts_with("sysroot-");
-        if (windows || name.starts_with("lib")) && !name.starts_with("libsysroot-") && matches!(ext, "rlib" | "rmeta" | "so" | "dll" | "lib") {
+        if (windows || name.starts_with("lib"))
+            && !name.starts_with("libsysroot-")
+            && matches!(ext, "rlib" | "rmeta" | "so" | "dylib" | "dll" | "lib")
+        {
             copy(&path, &dst_lib.join(name))?;
             if name.starts_with("libryo_rt-") && ext == "rlib" {
                 crate::jit::swap_into_rlib(info, &dst_lib.join(name), checked, &sysroot.join(crate::jit::CHECKED_DIR))?;
