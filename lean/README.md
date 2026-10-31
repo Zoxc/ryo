@@ -22,8 +22,9 @@ MiniRust (with D1–D36 checked against the code) in
 
 ```
 lake build                         # library Ryo + exe ryo-lean (Lean 4.35.0, core + Std only)
-lake build RyoProofs               # the proofs too slow for the default build (~3.5 min):
-                                   # inlineOps_shape (RyoProofs/InlineOps.lean)
+lake build RyoProofs               # the proofs too slow for the default build (minutes):
+                                   # inlineOps_shape (RyoProofs/InlineOps.lean), the inline
+                                   # table facts (InlineOk.lean), OpFacts (OpFacts.lean)
 lake test                          # runs the ported MiniRust tests and divergence tests
 lake exe ryotest <substring>       # only the tests whose name contains <substring>
 lake exe ryo-lean example factorial fact.json
@@ -149,7 +150,10 @@ Ryo/Vm/OpSem/                      `opSem` (reduced.md Part D): Basic (operands,
 Ryo/Proofs/Inline.lean, Inline/    inline sequences against `opSem` (aot.md §C2): Rel, OpSem, Exec, Shape, Basic, Move/Arith/Cmp/Ext/Ovf
 RyoProofs.lean, RyoProofs/         library RyoProofs, outside the default build (slow):
                                    InlineOps (`inlineOps_shape`: every inline opcode is of its
-                                   class's shape)
+                                   class's shape), InlineOk (`inlineOps_ok`, `inlineOps_clsOk`:
+                                   the opcode-table facts of the inline step), OpFacts
+                                   (`opFacts`: `Shapes.OpFacts` of every opcode); `decode_sound`'s
+                                   `Hyps` take these, so plain `lake build` doesn't check them
 Ryo/Vm/DecodeObj.lean              `ryo-lean decode <obj>`: an image object's functions decoded
                                    (Ryo/Obj's inputs, linked at made-up addresses), printed as
                                    scripts/lean-decode-ref prints Rust's
