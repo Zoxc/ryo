@@ -778,12 +778,14 @@ theorem Regs.get_set_other (rs : R.Regs) {r r' : R.Reg} (bs : List AbstractByte)
 
 theorem Regs.get_empty (r : R.Reg) : ({} : R.Regs).get r = List.replicate r.width .uninit := rfl
 
-/-- The return registers' x86 homes: integer part `i` in `rax` (0) or `rdx`, `xmm` part `i` in
-`xmm{i}`. -/
+/-- The return registers' integer homes: integer part `i` in `rax` (0) or `rdx`. An `xmm` part
+gets `r11`, a placeholder `loadItems` doesn't use; its home is `xmm{retXmm}`. -/
 def retX86 : R.Reg → Reg
   | .gpr i => if i = 0 then .rax else .rdx
   | .xmm _ => .r11
 
+/-- The `xmm` index of a return register's home: `xmm{i}` for `xmm` part `i` (0 for an integer
+part, unused). -/
 def retXmm : R.Reg → Nat
   | .gpr _ => 0
   | .xmm i => i
