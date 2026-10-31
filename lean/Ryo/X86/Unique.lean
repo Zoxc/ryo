@@ -13,8 +13,12 @@ function (`step_deterministic_of_refsNear`, by `step_deterministic`):
   target (`branch`, `leaTable`) as `ctx.base + t` with `t` unsigned 32-bit. So `jmp r` and the
   long `jmp` of `branch .always t true` (`t` the low 32 bits of `ctx.addrOf r - ctx.base`) have
   the same bytes, as `lea rcx, r` and `leaTable t` do, and execute alike exactly when
-  `ctx.addrOf r = ctx.base + t`. The hypothesis is the weakest on `ctx` that works:
-  `refsNear_of_execUnique` derives it back (`execUnique_iff_refsNear`). (It is not the linker's
+  `ctx.addrOf r = ctx.base + t`. The hypothesis is the weakest on `ctx` that works for this
+  `Item.Canonical`: `refsNear_of_execUnique` derives it back (`execUnique_iff_refsNear`). But it
+  covers every reference, used or not, so a real link where anything (a handler, an earlier
+  function) lies below the function breaks it: it comes from `Canonical` admitting long
+  `branch`/`leaTable` targets past the function's end; bounding those, or quantifying over the
+  references the function uses, would allow a weaker, satisfiable hypothesis. (It is not the linker's
   guarantee, a target within ±2 GiB of each field: that one bounds `target - field`, this one
   the target's offset from the function's start, which the model's unsigned in-function targets
   need.)

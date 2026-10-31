@@ -6,7 +6,8 @@ Mirrors `vm/bytecode/src/asm/x86.rs` (`Reg`, `Cond`, `W`, `M`, `Rm`, `Alu`, `Sh`
 every item is one instruction, and the items' encodings are prefix-free (`Ryo.X86.Unique`).
 Rust's fixed-width integers are
 `BitVec`s of the same width (wrapping arithmetic as in Rust), except small enumerations (`Nop`'s
-length, `Sse`'s size and the `xmm` numbers), which are `Nat`s constrained by `Item.wf`.
+length, `Sse`'s size and the `xmm` numbers), which are `Nat`s constrained by `Item.wf`, and
+positions and indices (`Reloc.pos`, the `Ref` indices, Rust `u32`s), which are `Nat`s.
 
 `Item.wf` says which items the encoder can emit: exactly those whose encoding decodes back to
 them (`decodeItem (encode i) = some i`, tested in `RyoTest/X86.lean`). Rust states the same
@@ -63,7 +64,8 @@ theorem ofNum_num (r : Reg) : ofNum? r.num = some r := by cases r <;> rfl
 
 end Reg
 
-/-- The handler argument registers, in order (`sysv64`; `x86.rs` `ARGS`). -/
+/-- The handler argument registers, in order (`sysv64`; the `SYSV` table of
+`asm::handler_arg`, `x86::handler_reg`). -/
 def argRegs : List Reg := [.rdi, .rsi, .rdx, .rcx, .r8, .r9]
 
 /-- A branch condition (`x86.rs` `Cond`). -/
@@ -182,7 +184,7 @@ inductive Ref
   | recordLoopCtr
 deriving DecidableEq, Repr, Inhabited, ToJson, FromJson, Hashable
 
-/-- The offset of a JIT record's loop counter (`x86::LOOP_CTR`, `image::JIT_LOOP_CTR`), which
+/-- The offset of a JIT record's loop counter (`image::JIT_LOOP_CTR`), which
 `Ref.recordLoopCtr` names: a linked field that reaches the record plus this is that reference. -/
 def loopCtr : Nat := 56
 

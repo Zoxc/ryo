@@ -40,6 +40,14 @@ faulting state step). `Ryo.X86.Unique` proves it given `RefsNear ctx` (`execUniq
 decoding is prefix-determined, and canonical items with equal linked bytes differ only in what
 the linker resolved to the same address).
 
+`Step` is faithful to the CPU only at an item's real position in the function, without 32-bit
+wrap: it applies at any `pos` with `x.rip = addrAt ctx pos`, but `Item.exec` takes `branch`
+and `leaTable` targets as unsigned offsets from `ctx.base`, where the CPU adds a signed `rel32`
+to the next instruction's address. So `branch .always 0xFFFFFFF8 false` at position 0 (bytes
+`eb f6`) steps to `base + 0xFFFFFFF8` while the CPU goes to `base - 8`, and so would bytes at
+an offset of 2^32 or more, or `call r` bytes inside other code. Statements built on `Step`
+(`Reach`) should only use steps at real positions, as `steps_of_run` gives.
+
 Calls leave the function: `Step` executes `call` as `Item.exec` does (a push and a jump); what
 runs at the target is the environment's (`Ryo.Proofs.Handler`'s `Ret` for handlers,
 `Ryo/X86/Env.lean` later).

@@ -65,7 +65,7 @@ inductive Fault
   | ud
   /-- `int3` (`#BP`). -/
   | breakpoint
-  /-- A `jcc`/`setcc` read a flag the SDM leaves undefined at that point. -/
+  /-- A `jcc`/`setcc`/`cmovcc` read a flag the SDM leaves undefined at that point. -/
   | undefinedFlag (flag : String)
   /-- Data executed: a jump table entry. -/
   | notCode

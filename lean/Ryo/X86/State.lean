@@ -4,7 +4,7 @@ Ryo.X86.State — the x86-64 machine state of L2 (x86.md §B.2).
 - 16 general-purpose registers (`BitVec 64`, by x86 number: `rax` 0 … `r15` 15), `rip`;
 - the flags the emitted code reads or writes: `CF ZF SF OF`. Each is an `Option Bool`: `none` is
   a value the SDM leaves undefined (e.g. `OF` after a shift by more than one, `SF`/`ZF` after
-  `imul`). Reading an undefined flag (`jcc`, `setcc`) faults (`Fault.undefinedFlag`), so a
+  `imul`). Reading an undefined flag (`jcc`, `setcc`, `cmovcc`) faults (`Fault.undefinedFlag`), so a
   proof about code that executes must show it never reads one, and a co-simulation compares only
   defined flags. `PF` and `AF` are not modeled: no emitted instruction reads them;
 - `xmm0`–`xmm15` (`BitVec 128`);
