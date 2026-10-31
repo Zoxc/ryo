@@ -6,7 +6,8 @@ Part D).
   the ranges of the footprint's writes.
 - `opSem_reads_footprint` (proved): `opSem`'s result depends on the private frame bytes only
   through the footprint's read ranges: two states that agree on those bytes (and on memory,
-  escapes, exposure and the exception) give the same outcome, the same control and memory,
+  escapes, exposure, the exception and the zero-sized objects, `State.SameButFrame`) give the
+  same outcome, the same control and memory,
   and frames that are equal wherever either was written.
 
 Both hold for every opcode at once, because `opSem` reads the frame only in `readAll` (the

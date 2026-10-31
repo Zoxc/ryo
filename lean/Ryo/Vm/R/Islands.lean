@@ -14,7 +14,7 @@ calls `FnCx::island` with the operands in this order):
 - `ryo_island_call` (`call<F, Args, R>`): `[args, dest]`: reads the argument block, writes
   `R` (`lower/call.rs`, `emit_call`, `Target::Template`: `[(block, bn), (d, dn)]`).
 - `ryo_island_call_cN` (`call_c0` … `call_c16`): `[args, dest, fn pointer]`: reads the fn
-  pointer and the argument block, writes `R` (`emit_call`, `Target::Sym`/`Target::Ptr(_, C)`:
+  pointer and the argument block, writes `R` (`emit_call`, `Target::CIsland`:
   `[(block, bn), (d, dn), (p, 8)]`).
 - `ryo_island_drop_in_place` (`drop_in_place<T>`): `[ptr]`: reads the (thin or wide) pointer
   (`drop_terminator`). The pointee is memory through a pointer, not an operand.
@@ -22,10 +22,14 @@ calls `FnCx::island` with the operands in this order):
   the three, writes the `bool` result (`lower/intrinsic.rs`, `"catch_unwind"`).
 - The intrinsic wrappers (`intrinsic_wrappers!`): the `n` inputs in order, read, then the
   destination, written (`FnCx::wrapper`: `ins` then `(d, dn)`; `binop.rs`: `[a, b, dest]`;
-  `cast.rs`: `[src, dest]`): `sqrtf32/64` (1), `powif32/64` (2), `fmaf32/64` (3),
-  `compare_bytes` (3), `raw_eq` (2), the `simd_*` wrappers (their arity, the same as
-  `lower/island.rs`'s `templates::simd`), the 128-bit `mul_w128`, `div_{u,s}_w128`,
-  `rem_{u,s}_w128`, `mul_ovf_{u,s}_w128` (2), and `ryo_island_as_cast` (1).
+  `cast.rs`: `[src, dest]`): `compare_bytes` (3), `raw_eq` (2), the `simd_*` wrappers (their
+  arity, which nothing on the backend side records: `templates::wrapper` finds a template by
+  its diagnostic item `ryo_island_<name>`, and `FnCx::simd_intrinsic` forwards the
+  intrinsic's generic arguments as they are, so each wrapper's must match the intrinsic's),
+  the 128-bit `mul_w128`, `div_{u,s}_w128`, `rem_{u,s}_w128`, `mul_ovf_{u,s}_w128` (2), and
+  `ryo_island_as_cast` (1). The table also has `sqrtf32/64` (1), `powif32/64` (2) and
+  `fmaf32/64` (3), whose templates no lowering emits now; the `volatile_*` wrappers, which
+  are emitted, aren't in it (so they read every operand, which is sound).
 
 Any other name, or an operand list of another length than the template's, reads every operand
 (`roles` is `none`).

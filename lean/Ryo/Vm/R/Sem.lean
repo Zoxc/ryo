@@ -114,7 +114,7 @@ def Regs.get (rs : Regs) (r : Reg) : List AbstractByte :=
 def Regs.set (rs : Regs) (r : Reg) (bs : List AbstractByte) : Regs :=
   ⟨rs.vals.filter (·.1 != r) ++ [(r, bs)]⟩
 
-/-- An integer register holding `v` (its 8 bytes). -/
+/-- The register file with `vs[i]` (its 8 bytes) in integer register `i`. -/
 def Regs.ofInts (vs : List Nat) : Regs :=
   ⟨vs.zipIdx.map fun (v, i) => (.gpr i, encodeBits 8 v)⟩
 

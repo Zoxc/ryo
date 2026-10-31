@@ -209,7 +209,8 @@ def footprint (op : Full.Opcode) : Option Footprint :=
 def opndVal (info : OpInfo) (ops : Operands) (name : String) : Option Val :=
   ((info.operands.zip ops).find? (·.1.name == name)).map (·.2)
 
-/-- An extent's length given the operand values (`none` for the memory-only extents). -/
+/-- An extent's length given the operand values (`none` for `slotVal`, whose length is in
+memory, and for an operand value of the wrong kind). -/
 def Extent.eval (val : String → Option Val) : Extent → Option Nat
   | .bytes n => some n
   | .opnd a => match val a with

@@ -3,8 +3,9 @@ Ryo.Vm.R.Syntax — the syntax of the reduced VM level R (reduced.md §C0.1), as
 gives it.
 
 Mirrors `vm/bytecode/src/isa/reduced.rs` (`Arg`, the reduced `Insn`), `asm/reduce.rs` (`Then`,
-`Insn`: native instructions of the full set's reduced subset, and `handler h args neg t`),
-`asm/encode.rs` (`Opnd`, `Scope`, `ScopeKind`, `CallSite`) and `asm/decode.rs` (`Decoded`):
+`Insn`: native instructions of the full set's reduced subset, and `handler h args then`),
+`asm/encode.rs` (`Opnd`, `Scope`), `asm/list.rs` (`ScopeKind`) and `asm/decode.rs`
+(`Decoded`); `CallSite` (`asm/lsda.rs`) is `Ryo.Vm.Asm.CallSite`:
 
 - a native instruction is a reduced opcode (`Generated/Reduced`) with its operands by kind;
 - `handler h args then` calls the handler of the full opcode `h` with the argument registers

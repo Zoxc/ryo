@@ -798,7 +798,8 @@ def decodeInlineSearch (items : List Item) (branch : Option (Cond × Nat)) :
   none
 
 /-- `inline::decode`: the instruction an inline sequence encodes, targets byte positions. The
-operands come from the frame displacements in order (`d` last), the `rax` displacement, the
+operands come from the frame displacements in order (`d` last, but for the overflow ops, whose
+flag `o` follows `d`), the `rax` displacement, the
 immediate, and the rip item's `Ref` (`addr.const`'s `Abs`, `addr.sym`'s `Sym`).
 
 The search's result is checked again (`(op, cls)` an inline opcode and its class, whose

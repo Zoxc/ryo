@@ -22,8 +22,10 @@ don't express, handled here explicitly:
 - Fences have an empty footprint (opSem is sequentially consistent: a fence does nothing),
   but the JIT's `memory` also means "orders memory accesses", so they have it (`isFence`).
 - `resume`'s handler is assembly, outside opSem (no footprint): `overrides` gives its entry
-  (it reads the exception slot `x`). `vm/rt/tests/ops.rs` checks it, like every entry,
-  against the handlers themselves.
+  (it reads the exception slot `x`). Nothing checks it against the handler:
+  `vm/rt/tests/ops.rs`'s `handler_effects_are_exact_in` checks the entries it can against
+  the handlers themselves, but skips traps (`resume` among them), `memory` entries, `Block`
+  and `Addr` operands and the symbol-address ops.
 -/
 import Ryo.Vm.OpSem.Footprint
 
