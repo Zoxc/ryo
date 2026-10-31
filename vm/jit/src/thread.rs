@@ -97,11 +97,17 @@ fn main(rt: &'static RtApi) {
     }
 }
 
-/// Re-checks the records of `recheck`: settles each, and drops those seen settled twice.
+/// Re-checks the records of `recheck`: settles each that isn't, and drops those seen settled
+/// in two passes in a row. A pass that settles a record doesn't count: an AOT increment can
+/// still erase what its compare-exchange wrote, after this thread reads it back.
 fn recheck_pass(recheck: &mut Recheck) {
     recheck.retain_mut(|(rec, seen)| {
-        JitRecord::settle(*rec);
-        *seen = if crate::install::settled(*rec) { *seen + 1 } else { 0 };
+        if crate::install::settled(*rec) {
+            *seen += 1;
+        } else {
+            JitRecord::settle(*rec);
+            *seen = 0;
+        }
         *seen < 2
     });
 }
