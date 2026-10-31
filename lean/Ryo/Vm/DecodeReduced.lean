@@ -339,7 +339,7 @@ def callInsn (fr : Frame) (dropped : List DroppedStore) : DM (Option Proto) := d
     | _ => setPos p0; return Pre.none)
   let ps ← params fr.mode
   let callAt ← pos
-  if dropped.head?.any (·.at_ < callAt) then setPos p0; return none
+  if dropped.head?.any (·.at_ ≤ callAt) then setPos p0; return none
   let aOp : Opnd Nat := .words ps
   let it ← tryItem
   let r : Option (Full.Opcode × List (Opnd Nat) × Bool) ← (do

@@ -950,7 +950,7 @@ fn call_insn(c: &mut Cursor<'_>, fr: &Frame, dropped: &[DroppedStore]) -> Option
         c.pos = pos;
         None
     };
-    if dropped.first().is_some_and(|d| d.at < call_at) {
+    if dropped.first().is_some_and(|d| d.at <= call_at) {
         return fail(c);
     }
     let a_op = Opnd::Words(ps);
