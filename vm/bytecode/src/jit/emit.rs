@@ -890,7 +890,8 @@ impl<'a> E<'a> {
         self.site(m, len, site, pad);
     }
 
-    /// The prologue: frame, saves, and the entry's arguments into their locations. Pushed
+    /// The prologue: frame and saves (the entry's arguments are still in their ABI registers;
+    /// [`E::entry_args`] moves them into their locations afterwards). Pushed
     /// saves ([`Frame::pushed`]) come right after the frame pointer's, before the stack
     /// probe and the `sub` of the rest of the frame.
     fn prologue(&mut self) {
@@ -1117,8 +1118,9 @@ impl<'a> E<'a> {
         }
     }
 
-    /// Sets `r` to the handler call's argument register `k` (from `rdi`), with its slot
-    /// operands' offsets patched in.
+    /// Sets `r` to the value of the handler call's argument position `k` (see
+    /// [`handler_arg_reg`]: from `rdi` on SysV, `rcx` on PE, where the last position is a
+    /// stack slot and `r` a scratch register), with its slot operands' offsets patched in.
     fn hcall_arg(&mut self, h: &HCall, k: usize, r: R) -> Result<(), Unsupported> {
         let (arg, patch) = &h.regs[k];
         match *arg {
@@ -1756,7 +1758,8 @@ impl<'a> E<'a> {
                 self.a.x().imul(w, rd, s);
                 X::O
             }
-            // 8 and 16 bits: the exact product in 32 bits, out of the width's range.
+            // 8 bits, and unsigned 16 bits (signed 16 bits take the `imul` above): the exact
+            // product in 32 bits, out of the width's range.
             (_, _, 1 | 2) => {
                 self.ext_into(rd, a, w, signed);
                 self.ext_into(S2, b, w, signed);
