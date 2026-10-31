@@ -39,7 +39,8 @@ backend's MIR dump (`RYO_DUMP_LEAN`, `Ryo.Spec.Program`):
 - **Vtables.** Matched vtables have the D29 layout `[drop_in_place, size, align, entries…]`
   in the dump: a function pointer or null for `drop_in_place` (rustc's `vtable_allocation`
   puts null for types without drop glue), initialized size and align, and each entry a
-  function pointer, a vtable pointer (supertrait) or null (vacant).
+  function pointer, a vtable pointer (supertrait), null or uninitialized (vacant: rustc
+  allocates the vtable uninitialized and writes nothing for `VtblEntry::Vacant`).
 -/
 import Std.Data.HashMap
 import Std.Data.HashSet
@@ -361,6 +362,7 @@ def vtableShape (c : Ctx) (gi : Nat) : Option String := Id.run do
   if g.size < 24 || g.size % 8 != 0 then return some s!"size {g.size}"
   let zero (o : Nat) := (List.range 8).all fun j => g.bytes[o + j]! == some 0
   let init (o : Nat) := (List.range 8).all fun j => (g.bytes[o + j]!).isSome
+  let uninit (o : Nat) := (List.range 8).all fun j => (g.bytes[o + j]!).isNone
   for o in [0:g.size:8] do
     match g.relocs[o]? with
     | some r =>
@@ -374,7 +376,10 @@ def vtableShape (c : Ctx) (gi : Nat) : Option String := Id.run do
     | none =>
       if o == 8 || o == 16 then
         if !init o then return some s!"uninitialized size/align word at {o}"
-      else if !zero o then return some s!"word {o / 8} neither a pointer nor null"
+      -- A vacant entry: rustc leaves it uninitialized (`AllocInit::Uninit`, nothing written
+      -- for `VtblEntry::Vacant`); only `drop_in_place` gets an explicit null.
+      else if !(zero o || (o ≥ 24 && uninit o)) then
+        return some s!"word {o / 8} neither a pointer nor null nor (an entry) uninitialized"
   -- `align` is a power of two.
   let a := (List.range 8).foldr (fun j acc => acc * 256 + ((g.bytes[16 + j]!).getD 0).toNat) 0
   if a == 0 || a &&& (a - 1) != 0 then return some s!"align {a}"
