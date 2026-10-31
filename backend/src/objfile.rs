@@ -1026,7 +1026,8 @@ mod tests {
         let def = |name: &str| FunctionDef { name: name.into(), code: c.words.clone(), frame_size: 32, ..Default::default() };
         w.add_function(def("f"));
         w.add_function(def("g"));
-        let img = w.finish(Mode { pe: true, ..MODE }).expect("image");
+        // PE handlers read `fp` from rbp (`Mode::valid`).
+        let img = w.finish(Mode { pe: true, fp_arg: false, ..MODE }).expect("image");
         let bytes = write_image(&Coff, &img, None, &rt).expect("write_image");
         let file = CoffFile::<&[u8]>::parse(&*bytes).unwrap();
         let xdata = file.sections().find(|s| s.name() == Ok(".xdata")).expect(".xdata");
@@ -1045,7 +1046,9 @@ mod tests {
             // site.
             let d = ryo_bytecode::image::PeHandlerData::parse(&data[*at as usize + 4..]).unwrap();
             assert_eq!((d.begin, d.region), (0, 0));
-            assert!(ryo_bytecode::asm::lsda::find(d.lsda, 0).is_some());
+            let sites = ryo_bytecode::asm::lsda::parse(d.lsda).expect("an LSDA");
+            assert_eq!(sites.len(), 1, "{sites:?}");
+            assert!(matches!(ryo_bytecode::asm::lsda::find(d.lsda, sites[0].start), Some(Some(_))));
         }
         // The flags of the first: UNW_FLAG_EHANDLER | UNW_FLAG_UHANDLER.
         assert_eq!(data[0], 1 | 3 << 3);
