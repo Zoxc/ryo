@@ -23,9 +23,9 @@ remove it once a Lean session has handled it.
   sources in `lean/docs/assumptions.md`) should say so; `counter_noop` itself is unaffected.
 
 - Several ryo runtimes (Commit: "Rt: ABI tag, private runtime per module, run-time merge"):
-  the image header gains `abi` (u64 at 160, FNV-1a of the ABI tag) and `anchor` (u64 at 168,
+  the image header gains `abi` (u64 at 152, after `cgu_hash` at 144, FNV-1a of the ABI tag) and `anchor` (u64 at 160,
   relocated against `__ryo_registry_anchor_<tag>`; the separate `ryo_anchor` slot section is
-  gone); the header is 176 bytes. Runtime symbols carry the tag (`ryo_h_<Op>_<tag>`, trips,
+  gone); the header is 168 bytes. Runtime symbols carry the tag (`ryo_h_<Op>_<tag>`, trips,
   `ryo_probe_stack_<tag>`, `ryo_vm_register_<tag>`, now mangled as an internal symbol); the
   registration section is `ryo_images_<tag>`; the registry constructor is `lea rdi, start;
   lea rsi, stop; lea rdx, anchor; jmp ryo_vm_register`, i.e. `register(start, end, anchor)`
