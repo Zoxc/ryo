@@ -71,7 +71,8 @@ The five representation laws of MiniRust's `representation.md`
 | `decode_mono` | Theorems/Monotone.lean | more-defined bytes decode to a more-defined value |
 | `store_load` (`store_load_eq`) | Theorems/Memory.lean | `typedStore` then `typedLoad` gives back the value, in every memory |
 
-`store_load` relies on a fact MiniRust's version does not need: `typedLoad` re-runs
+`store_load` (ryo's own: MiniRust's generic properties have no store-then-load law) relies
+on a fact: `typedLoad` re-runs
 `checkValue` in the memory after the store, and a store into a *mutable* vtable allocation
 could change the size/alignment words a stored wide pointer's metadata refers to. Vtable
 allocations are read-only by construction: `Allocation.vtableRo` is a proof field
