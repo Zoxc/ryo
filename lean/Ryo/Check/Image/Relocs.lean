@@ -16,8 +16,11 @@ handler call's target resolves to the set of opcodes registered at that address 
 when MergeFunctions or ICF folded handlers, also through a PLT stub or import thunk), and the
 opcode comes from the call's `HANDLER_SEL` entry in the instruction list, which must be in
 that set, as `DecodeObj` models it (`HandlerTable`, `linkHandlerCalls`, `checkEntries`). Calls between the image's functions carry no relocation (the writer resolves
-them), so for that decode a `Ref.func` field is added at every `call`/`jmp rel32` (`e8`/`e9`)
-whose unrelocated displacement leaves the function for a function's first byte. With
+them), so for that decode a `Ref.func` field is added after every `e8`/`e9` byte (the
+`call`/`jmp rel32` opcodes, but the scan doesn't know instruction starts) whose unrelocated
+displacement leaves the function for a function's first byte. A byte that only happens to be
+`e8`/`e9` gets such a field by chance (about one in 2^32 per byte and function); that can
+only make the decode fail, never hide a bad relocation. With
 `Fields.relocs` `decodeItem` accepts an item only if the relocations starting in its bytes are
 exactly its own fields' (`Cursor.encodedAt`), padding and jump table entries only without
 any, and the R decoder only takes each form's references (handlers and the probe for `call`,
@@ -40,17 +43,28 @@ check (`Ryo/Check/Image/Pool.lean`).
 `-JIT_ENTRY_THRESHOLD` (at 0), `ctr_l` = `-JIT_THRESHOLD` (at `JIT_LOOP_CTR`), `func` its
 index, every other byte 0; `entry` and `osr` relocated
 (`R_X86_64_64` + 0) against `ryo_jit_trip_entry` and `ryo_jit_trip_osr`, `header` against the
-image's header; data-area pointers as the pool's.
+image's header; data-area pointers as the pool's (and at most one relocation per offset,
+which the pool gets from `const_relocs`).
 
 **Header**: the image symbol is `__ryo_image_<stable_crate_id>_<cgu_hash>` (each as 16 hex
-digits), `crate_hash` folds the id, the sections are where and as large as the header says (the read-only one RELRO).
+digits), `crate_hash` folds the id, the sections are where and as large as the header says
+(the read-only one RELRO; the text exactly `text_size` bytes).
 **Anchor**: one `R_X86_64_64` + 0 against `__ryo_registry_anchor`, the only content of an
 8-byte RELRO section. **Registration entry**: one 8-byte `ryo_images` section
 (`SHF_ALLOC | SHF_WRITE | SHF_GNU_RETAIN`), its one `R_X86_64_64` + 0 field against the start
 of the read-only section (the header), which the registry stub's constructor passes to
 `ryo_vm_register` with the other objects' (`Ryo/Check/Image/Registry.lean`). **`__ryo_main`**: at most one, an 8-byte slot with one `R_X86_64_64` + 0
-against a symbol, which, if this object defines it, is one of its functions. Which function
-it must be (`main`'s instance) needs the dump.
+against a symbol, which, if this object defines it, is one of its functions; a
+`.data.rel.ro.ryo_main` section that doesn't hold it is a mismatch. Which function it must be
+(`main`'s instance) needs the dump.
+
+**Stale.** This describes, and the checks implement, the image object as it was before the ABI
+tag ("Rt: ABI tag, private runtime per module, run-time merge", `lean/PENDING.md`): the
+writer now relocates the header's `anchor` field (offset 160) against
+`__ryo_registry_anchor_<tag>` instead of writing an anchor slot section, the registration
+section is `ryo_images_<tag>`, and the runtime symbols carry the tag. So these checks reject
+current objects (`checkRoRelocs` on the anchor field, `checkAnchor`, `checkEntry`, the trip
+names) until that update.
 -/
 import Ryo.Check.Image.Common
 
@@ -229,6 +243,8 @@ def checkDataRelocs (o : ImageObject) : Array String := Id.run do
   let dataEnd := if recs.count != 0 then recs.off else h.dataSize
   -- (record, field) → relocations seen.
   let mut seen : Std.HashMap (Nat × Nat) Nat := {}
+  -- Data-area offsets with a relocation.
+  let mut dataSeen : Std.HashMap Nat Unit := {}
   let db := o.elf.data o.data
   for r in o.elf.relocsOf o.data.index do
     let t := relaText o.elf r
@@ -253,6 +269,8 @@ def checkDataRelocs (o : ImageObject) : Array String := Id.run do
         if !ok then out := out.push s!"JIT record {k}: header: {t}, not the image's header"
       else out := out.push s!"JIT record {k}: {t} at record offset {fld}"
     else if off + 8 ≤ dataEnd then
+      if dataSeen.contains off then out := out.push s!"data area: {t}: a second relocation at offset {off}"
+      dataSeen := dataSeen.insert off ()
       if off % 8 != 0 then out := out.push s!"data area: {t} at an offset that isn't 8-aligned"
       if let some e := allocTarget o names r then out := out.push s!"data area: {t}: {e}"
     else
@@ -289,6 +307,8 @@ def checkHeader (o : ImageObject) : Array String := Id.run do
     out := out.push s!"header: `{o.ro.name}` has {o.ro.size} bytes, the image {o.roBase + h.size}"
   if o.data.size != o.dataBase + h.dataSize then
     out := out.push s!"header: `{o.data.name}` has {o.data.size} bytes, data_size says {o.dataBase + h.dataSize}"
+  if o.text.size != o.textBase + h.textSize then
+    out := out.push s!"header: `{o.text.name}` has {o.text.size} bytes, text_size says {o.textBase + h.textSize}"
   if !o.ro.name.startsWith ".data.rel.ro." || o.ro.flags &&& (Elf.SHF_WRITE ||| Elf.SHF_ALLOC ||| Elf.SHF_EXECINSTR) != Elf.SHF_WRITE ||| Elf.SHF_ALLOC then
     out := out.push s!"header: read-only section `{o.ro.name}` (flags {o.ro.flags}) isn't RELRO data"
   if o.data.flags &&& (Elf.SHF_WRITE ||| Elf.SHF_ALLOC ||| Elf.SHF_EXECINSTR) != Elf.SHF_WRITE ||| Elf.SHF_ALLOC
@@ -385,7 +405,10 @@ def checkOtherRelocs (o : ImageObject) : Array String := Id.run do
     let some s := e.section? rs.target | continue
     let known := rs.target == o.ro.index || rs.target == o.data.index || rs.target == o.text.index
       || s.name == ".eh_frame" || s.name.startsWith ".gcc_except_table"
-      || s.name == ".data.rel.ro.ryo_anchor" || s.name == ".data.rel.ro.ryo_main" || s.name == entriesSection
+      || s.name == ".data.rel.ro.ryo_anchor" || s.name == entriesSection
+      -- The `__ryo_main` slot only where the symbol is (`checkMain` checks it there).
+      || (s.name == ".data.rel.ro.ryo_main" &&
+        e.symbols.any fun m => m.name == mainSlotName && m.defined && m.shndx == rs.target)
     if !known then out := out.push s!"relocations of `{s.name}`, which isn't an image section"
   return out
 
