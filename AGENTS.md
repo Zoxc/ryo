@@ -24,6 +24,9 @@
   branch mispredictions), so changes that move cost without moving instructions show.
 - CPU time. Don't measure or rely on CPU time unless the user asks: the machine is typically
   busy, so timings are noise.
+- Self-profiling. "Self-profiling" means rustc's own `-Zself-profile` output: the
+  `.mm_profdata` files rustc writes directly (read with measureme's `summarize`), not
+  perf, cachegrind or `-Ztime-passes`.
 - Lean sync. Changes to the Rust code (backend, JIT, VM) don't update the Lean code. Instead,
   when a change affects what the Lean model or proofs describe, add an entry to
   `lean/PENDING.md` saying what changed (with the commit), for a later Lean session to apply.
