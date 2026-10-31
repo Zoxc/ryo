@@ -24,7 +24,7 @@ simulations discharges it). Then:
 
 **The relation** (§2). `Setup` fixes the function: the R code `c` (its `Decoded` the decoder's),
 the decoder's read (`r`, the body cursor and its iterations' positions, caches and dropped
-stores, `Layout`), the window end `K`, the state `x0` at the function's entry (the caller's
+stores, the `arg` flags, `Indexed`), the window end `K`, the state `x0` at the function's entry (the caller's
 `call` done), and the environment's parameters. At an instruction boundary (`BInv S s x`):
 
 - `rip` at instruction `s.pc`'s start (where the previous one falls through, before its
@@ -52,8 +52,9 @@ relocation boundary (`boundary_start`), R's scopes never stop with `noBehavior` 
 facts of the decoder: the prologue read item by item (`read_instructions_prologue`), landing
 pads are `lpad`s (`pad_lpad`, so not leading `arg`s, `pad_not_leadArg`), protos lie within the
 code (`posOf_le_size`, so `posOf_lt_32`). `bodySim_inline` is `DSWork/Inline.lean`'s
-`bodySim_inline'` (its open steps are `Hyps` fields: `inlineBelowLink`, `cacheRegsOk`,
-`inlinePrivate`, `inlineMemKept`, `inlineClsOk`).
+`bodySim_inline'` (its open steps are `Hyps` fields: `cacheRegsOk`, `inlinePrivate`,
+`inlineMemKept`; it also takes `inlineClsOk`, proved in `RyoProofs`, and `InlineBelowLink`,
+from `FrameBounds.writesOff`).
 
 **Files.** `DecodeSound/Basic.lean`: §1–§3 and §4's helpers, `bodySim_unreachable`,
 `bodySim_jmp`, `reach_padding`, `boundary_start`. `DSWork/Boundary.lean`: the decoder facts.
@@ -71,8 +72,10 @@ gives them.
 environment's `ret` (`HandlerContract`, `ResumeContract`: `resume`'s handler is assembly, outside
 `opSem`, and comes back only at a landing pad; `CallContract`, `IslandContract`,
 `TripContract`; on PE every return keeps `rsi`/`rdi`, `peSaved`), the link map (`Linked`,
-`Globals`). Proved elsewhere, outside the default build: `OpFacts` of every opcode
-(`RyoProofs/OpFacts.lean`) and `InlineOk` of every inline class (`inlineClsOk`, `RyoProofs/InlineOk.lean`). Restrictions: the frame-pointer mode (`fp`), the items without a
+`Globals`). Proved elsewhere, outside the default build: `OpFacts` of every opcode (`opFacts`,
+`RyoProofs/OpFacts.lean`), `InlineOk` of every inline opcode (`inlineOk`, by `inlineOps_ok`,
+`RyoProofs/InlineOk.lean`) and each inline class of its shape and `clsOk` (`inlineClsOk`, by
+`inlineOps_shape`, `RyoProofs/InlineOps.lean`, and `inlineOps_clsOk`). Restrictions: the frame-pointer mode (`fp`), the items without a
 frame pointer have no step lemmas yet; handler calls with their arguments in registers
 (`regArgs`: PE's stack argument, the `atomic.cxchg` handlers', writes the frame's bottom, its
 step is open); no PE pad region (`Decodes.noRegion`: PE's cleanup code after the body, which the
@@ -80,11 +83,14 @@ exception dispatcher enters on its own stack). Open prerequisites, each a named 
 discharged later:
 
 - of the decoded code, checkable (the decoder or a check could reject the code otherwise):
-  `frameBounds` (`FrameBounds c K`, from the decoder, `DecodeLink/Bounds.lean`, in progress),
+  `frameBounds` (`FrameBounds c K`: `decode_frameBounds`, `DecodeLink/Bounds.lean`, gives it
+  for `K = frameTop` from `decodeBounded`'s acceptance, and `FrameBounds.mono` for larger `K` up
+  to `2 ^ 31`; not wired in yet, as `decode_sound` takes `decodeReduced`'s acceptance),
+  `argSizeK` (the window holds the incoming area, `16 + argSize ≤ K`),
   `peFrame` (on PE `F + 8 < 2 ^ 31`, for the epilogue),
   `relocsIn` (`RelocsIn`: relocated fields within the code), `argsOk` (`ArgsOk`:
   the leading `arg`s read distinct argument registers of the convention, and no branch target
-  is one), `inlineBelowLink` (inline frame writes miss the link slots), `cacheRegsOk` (on PE
+  is one), `cacheRegsOk` (on PE
   `emit` never computes in `rsi`/`rdi`, a decoder fact);
 - privacy after the scopes (checkable with the scopes, as an invariant): `loadPrivate` (a
   `load`'s destination, `LoadPrivate`), `argPrivate` (an `arg`'s, `ArgPrivate`),
@@ -148,13 +154,13 @@ variable {S : Setup} {code : ByteArray} {relocs : Array Reloc} {rodata : ByteArr
 
 Proved in `DSWork/*.lean`: `bodySim_arg` (Arg), `bodySim_ret` (Ret), `bodySim_island` (Island),
 `reach_counter` (Counter), `bodySim_call'` (Call), `bodySim_handler'` (Handler),
-`bodySim_inline'` (Inline, under `Hyps`' `inlineBelowLink`, `cacheRegsOk`, `inlinePrivate`,
-`inlineMemKept`, `inlineClsOk`);
+`bodySim_inline'` (Inline, under `Hyps`' `cacheRegsOk`, `inlinePrivate`, `inlineMemKept`, and
+the proved `inlineClsOk` and `InlineBelowLink`, `inlineBelowLink_of`);
 `bodySim_unreachable`, `bodySim_jmp` in `DecodeSound/Basic.lean`. -/
 
 /-- An inline sequence without a dropped store: `DSWork/Inline.lean`'s `bodySim_inline'`, its
-extra hypotheses from `Hyps` (`inlineBelowLink`, `cacheRegsOk`, `inlinePrivate`,
-`inlineMemKept`, `inlineClsOk`). -/
+extra hypotheses from `Hyps` (`cacheRegsOk`, `inlinePrivate`, `inlineMemKept`, `inlineClsOk`)
+and `InlineBelowLink` from `frameBounds` (`inlineBelowLink_of`). -/
 theorem bodySim_inline (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (H : Hyps S) {k p : Nat} {a : Bool} {q : Proto} {cur cur' c' : Cursor}
     {cache' : Cache} {dr' : List DroppedStore}
@@ -163,7 +169,7 @@ theorem bodySim_inline (hD : Decodes S code relocs rodata callSites dropped scop
     (hr : (inlineInsn (S.used k) (S.dr k) true).run cur' = .ok (some (q, cache', dr'), c'))
     (hq : q.dropped = false) :
     BodySim S k p (S.used k) := by
-  exact bodySim_inline' hD H H.inlineBelowLink H.cacheRegsOk H.inlinePrivate H.inlineMemKept H.inlineClsOk hP hn hc hr hq
+  exact bodySim_inline' hD H (inlineBelowLink_of H.frameBounds) H.cacheRegsOk H.inlinePrivate H.inlineMemKept H.inlineClsOk hP hn hc hr hq
 
 /-! #### The dense switch -/
 
@@ -638,8 +644,9 @@ end Insn
 
 /-! ## 5. `decode_sound` -/
 
-/-- Every function `decodeReduced` accepts has a `Setup` that is its read, for any R code with
-its `Decoded` and mode and any choice of the other parameters. -/
+/-- Every function `decodeReduced` accepts without a PE pad region (`regionPad … = none`) has a
+`Setup` that is its read, for any R code with its `Decoded` and mode and any choice of the other
+parameters. -/
 theorem decodes_of_ok {code : ByteArray} {relocs : Array Reloc} {rodata : ByteArray}
     {callSites : Array CallSite} {dropped : Array DroppedStore} {scopes : Array R.Scope}
     {mode : Ryo.Obj.Mode} {d : Decoded}
@@ -690,7 +697,8 @@ theorem decode_sound {S : Setup} {code : ByteArray} {relocs : Array Reloc} {roda
       exact insnSim_main hD H hk hpk hpad hctr hpr hnop hca1 htable s x rfl hbi hsafe
   · exact insnSim_oob hD (Nat.le_of_not_lt hk) s x rfl hbi hsafe
 
-/-- `decode_sound` from the decoder's acceptance directly. -/
+/-- `decode_sound` from the decoder's acceptance directly (without a PE pad region, as
+`decodes_of_ok`; and with the switch tables checked, `htc`). -/
 theorem decode_sound_of_ok {code : ByteArray} {relocs : Array Reloc} {rodata : ByteArray}
     {callSites : Array CallSite} {dropped : Array DroppedStore} {scopes : Array R.Scope}
     {mode : Ryo.Obj.Mode} {d : Decoded}

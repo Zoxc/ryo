@@ -861,17 +861,24 @@ theorem inline_cls_step (H : Hyps S) {s s' : R.RState} {x : X86.State} {ch : OpS
   | ext a b sx => exact cached (inline_soundC _ (.inl rfl))
   | shiftVar | div | count | cmp3 | bswap => exact cached (inline_soundC_all _ (.inr (.inr rfl)))
 
-/-- Open (checkable), missing from `FrameBounds.writes`: an inline instruction's frame writes miss
-the frame's link slots `[0, 16)` (the saved `rbp`, the return address). `FrameBounds.writes` only bounds them by the window `[-F, K)`, and neither
-`LoadPrivate` nor `LinkPrivate` keeps them apart (both only say the bytes are private), so
-without it a `mov.w64` to slot `0` (`mov [rbp], rax`) overwrites the saved `rbp` and breaks
+/-- An inline instruction's frame writes miss the frame's link slots `[0, 16)` (the saved
+`rbp`, the return address): `FrameBounds.writesOff` for the inline opcodes
+(`inlineBelowLink_of`). `FrameBounds.writes` only bounds them by the window `[-F, K)`, and
+neither `LoadPrivate` nor `LinkPrivate` keeps them apart (both only say the bytes are private),
+so without it a `mov.w64` to slot `0` (`mov [rbp], rax`) overwrites the saved `rbp` and breaks
 `FrameFacts.savedRbp` after the step, while R's step (a private frame write) succeeds: the
-conclusion of `inline_run'` is false. Like `FrameBounds.argBelow` for `arg`. -/
+conclusion of `inline_run'` is false. -/
 def InlineBelowLink (S : Setup) : Prop :=
   ∀ (k : Nat) (op : Reduced.Opcode) (ops : List (R.Opnd Nat)) (f : Full.Opcode) (cls : Class)
     (vals : Operands), S.c.d.insns[k]? = some (.native op ops) → op.full = some f →
     (f, cls) ∈ inlineOps → nativeVals S.c.ρ f ops = some vals →
     ∀ r ∈ wranges f vals, r.1 + r.2 ≤ 0 ∨ 16 ≤ r.1
+
+/-- `InlineBelowLink` from the frame bounds (`FrameBounds.writesOff`, every native
+instruction's). -/
+theorem inlineBelowLink_of {S : Setup} {K : Int} (hfb : FrameBounds S.c K) :
+    InlineBelowLink S :=
+  fun k op ops f _ vals hi hf _ hv => hfb.writesOff k op ops f vals hi hf hv
 
 /-- Open (decoder): on PE, `emit` never computes in `rsi` or `rdi` (pool entries 2 and 3, Win64
 callee-saved) with the cache an inline instruction is emitted with: `fresh` skips them when
@@ -966,7 +973,8 @@ theorem inline_link_kept {x x' : X86.State}
     exact hb _ (by omega) (by omega)
 
 /-- A byte outside the window, or in the link slots, is outside an inline instruction's frame
-writes (in the window, `FrameBounds.writes`, and off the link slots, `InlineBelowLink`). -/
+writes (in the window, `FrameBounds.writes`, and off the link slots, `FrameBounds.writesOff`
+as `InlineBelowLink`). -/
 theorem inline_memW_cases (H : Hyps S) {s : R.RState} {x : X86.State} (hf : FrameInv S s x)
     {f : Full.Opcode} {vals : Operands} (hwin : WrIn (-(S.F : Int)) S.K f vals)
     (hoff : ∀ r ∈ wranges f vals, r.1 + r.2 ≤ 0 ∨ 16 ≤ r.1) {b : BitVec 64}

@@ -649,13 +649,7 @@ structure Hyps (S : Setup) : Prop where
   padsLinked : PadsLinked S
   stubsLinked : StubsLinked S
   -- Open prerequisites of the inline steps (`DSWork/Inline.lean`'s `bodySim_inline'`; stated
-  -- here unfolded, as `InlineBelowLink` and `CacheRegsOk` there).
-  /-- Checkable (missing from `FrameBounds.writes`): an inline instruction's frame writes miss
-  the frame's link slots `[0, 16)` (`InlineBelowLink`). -/
-  inlineBelowLink : ∀ (k : Nat) (op : Reduced.Opcode) (ops : List (R.Opnd Nat)) (f : Full.Opcode)
-    (cls : Class) (vals : Operands), S.c.d.insns[k]? = some (.native op ops) → op.full = some f →
-    (f, cls) ∈ inlineOps → nativeVals S.c.ρ f ops = some vals →
-    ∀ r ∈ wranges f vals, r.1 + r.2 ≤ 0 ∨ 16 ≤ r.1
+  -- here unfolded, as `CacheRegsOk` there).
   /-- Checkable (a decoder fact): on PE, `emit` never computes in `rsi`/`rdi` (pool entries 2
   and 3) with the cache an instruction is read with (`CacheRegsOk`): the decoder's caches start
   with `pe` set and only `emit` fills entries, never those two then. -/
