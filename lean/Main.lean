@@ -96,8 +96,10 @@ def describeResult (r : RunResult) : String :=
 def runFile (path : String) (fuel : Nat) (stdout : Bool := false) : IO UInt32 := do
   let s ← IO.FS.readFile path
   let j ← IO.ofExcept (Json.parse s)
-  let req : RunRequest ← match fromJson? j with
-    | .ok (r : RunRequest) => pure r
+  -- A `RunRequest` has a `program` field, a bare `Program` doesn't: pick the decoder by it, so
+  -- an error inside a request is reported as itself.
+  let req : RunRequest ← match j.getObjVal? "program" with
+    | .ok _ => IO.ofExcept (fromJson? j)
     | .error _ => do
       let p : Program ← IO.ofExcept (fromJson? j)
       pure { program := p }
@@ -250,6 +252,13 @@ def lsdaObj (path : String) : IO UInt32 := do
     IO.println s!"error: {e}"
     pure 1
 
+/-- `rrun`'s arguments without `R.cli`'s options `--fuel N` and `--unwind <text>`. -/
+def stripRunOptions : List String → List String
+  | "--fuel" :: _ :: l => stripRunOptions l
+  | "--unwind" :: _ :: l => stripRunOptions l
+  | a :: l => a :: stripRunOptions l
+  | [] => []
+
 /-- `ryo-lean rrun`, with `--cert <cert.json>` read here (`Ryo.Vm.R` doesn't import the
 certificate): per function symbol, the offsets of its certificate's locals of size 0 as
 `Code.zeroSized`, from the image object's own certificate image (`Cert.functionsOf`; the
@@ -260,12 +269,15 @@ def rrun (args : List String) : IO UInt32 := do
   | some i =>
     let some path := args[i + 1]? | IO.eprintln "--cert needs a certificate file"; return 2
     let cert ← IO.ofExcept (Ryo.Check.Lower.Cert.ofJsonString (← IO.FS.readFile path))
-    let some objPath := args.head? | IO.eprintln "rrun needs an image object"; return 2
+    let rest := args.take i ++ args.drop (i + 2)
+    -- The object is the first argument once the options (`R.cli`'s too) and their values are
+    -- removed, as `R.cli` takes it.
+    let some objPath := (stripRunOptions rest).head? | IO.eprintln "rrun needs an image object"; return 2
     let o ← IO.ofExcept (Ryo.Obj.readImageObject (← IO.FS.readBinFile objPath))
     let zs : Std.HashMap String (List Int) := (cert.functionsOf o).foldl (init := {}) fun m (sym, fc) =>
       if m.contains sym then m
       else m.insert sym ((fc.locals.filter (·.size == 0)).toList.map (·.off))
-    Ryo.Vm.R.cli (args.take i ++ args.drop (i + 2)) (fun sym => zs.getD sym [])
+    Ryo.Vm.R.cli rest (fun sym => zs.getD sym [])
 
 def main (args : List String) : IO UInt32 := do
   match args with
@@ -302,5 +314,5 @@ def main (args : List String) : IO UInt32 := do
   | "effects" :: rest => Ryo.Vm.OpSem.JitEffects.main rest
   | "rrun" :: rest => rrun rest
   | _ =>
-    IO.eprintln "usage: ryo-lean run <program.json> [--fuel N] [--stdout]\n       ryo-lean example <name> [out.json]\n       ryo-lean obj <file.o>\n       ryo-lean elf <file.o>\n       ryo-lean decode <inputs.json | file.o>\n       ryo-lean dead <file.o> [<dump.json> <cert.json>]\n       ryo-lean ehframe|lsda <file.o>\n       ryo-lean check-pool <dump.json> <file.o>... [-v]\n       ryo-lean check-cert <dump.json> <cert.json> <image.o>... [-v]\n       ryo-lean check-image <image.o>... [--registry <registry.o>]\n       ryo-lean opsem\n       ryo-lean effects [<out.rs>]\n       ryo-lean rrun <image.o> <fn>|--all [<int>...] [--fuel N] [--unwind <text>] [--cert <cert.json>]"
+    IO.eprintln "usage: ryo-lean run <program.json> [--fuel N] [--stdout]\n       ryo-lean example <name> [out.json]\n       ryo-lean obj <file.o>\n       ryo-lean elf <file.o>\n       ryo-lean decode <inputs.json | file.o>\n       ryo-lean dead <file.o> [<dump.json> <cert.json>]\n       ryo-lean ehframe|lsda <file.o>\n       ryo-lean check-pool <dump.json> <file.o>... [-v]\n       ryo-lean check-cert <dump.json> <cert.json> <image.o>... [-v]\n       ryo-lean check-image <image.o>... [--registry <registry.o>]\n       ryo-lean exec-item\n       ryo-lean opsem\n       ryo-lean effects [<out.rs>]\n       ryo-lean rrun <image.o> <fn>|--all [<int>...] [--fuel N] [--unwind <text>] [--cert <cert.json>]"
     pure 2
