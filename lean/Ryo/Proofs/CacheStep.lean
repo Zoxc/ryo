@@ -27,12 +27,13 @@ cache emits it (aot.md §C2 "Register cache", "Inline steps"; milestone M3 `deco
 - Opcode tables: `kindOk`, `inlineOk_of`, `not_ext64` reduce `InlineOk` and the extension fact to
   `Full.all.all kindOk = true` and `shapeOk`; `RyoProofs/InlineOk.lean` proves the former
   (`all_kindOk`, a slow `decide`), giving `inlineOps_ok`, `inlineOps_ext` and
-  `inline_step_cached_ops` (the step for `(f, cls) ∈ inlineOps`). `soundC_of`: the `SoundC`
-  classes are those of `inline_soundC` (all but `load`, `store` and the rip-relative addresses,
-  which have only `Sound` with `Private`/`SoundG` with `Globals`).
+  `inline_step_cached_ops` (the step for `(f, cls) ∈ inlineOps`). `soundC_of`: `SoundC` for
+  the classes of `inline_soundC` (all but `load`, `store`, the rip-relative addresses, which
+  have only `Sound` with `Private`/`SoundG` with `Globals`, the immediate rotates and the later
+  classes); `inline_soundC_all` (`Inline/All.lean`) adds the later classes (`laterClass`).
 
 Left as hypotheses: `SoundC cls` (so `load`, `store`, `addrConst`, `addrSym`, `addrSymInd` are
-not covered); the link from the decoder's candidate to R's operands: `inlineInsn` accepts `cand`
+not covered; `inline_soundC_all` gives it for the other inline classes); the link from the decoder's candidate to R's operands: `inlineInsn` accepts `cand`
 when `decodeInline cand branch = some (f, ops₀)` (so `decodeInline_spec` gives `cls` with
 `(f, cls) ∈ inlineOps` and `sequence cls ops₀ = some (cand, branch.map (·.1))`), but R's `ops`
 are `ops₀` with targets mapped to instruction indices (`reducedOf`), and that `sequence` ignores
@@ -378,8 +379,9 @@ theorem not_ext64 {f : Full.Opcode} {cls : Class} (hall : Full.all.all kindOk = 
   rintro b rfl
   exact h4 ⟨rfl, by cases b <;> decide⟩
 
-/-- The classes with `SoundC` (all but `load`, `store` and the rip-relative addresses, which
-have `SoundG`). -/
+/-- `SoundC` for the classes of `inline_soundC`: all but `load`, `store` and the rip-relative
+addresses (which have `SoundG`), the immediate rotates and `laterClass`'s (for those,
+`inline_soundC_all`). -/
 theorem soundC_of (cls : Class) (h : frameOnly cls = true ∨ ovfClass cls = true) : SoundC cls :=
   inline_soundC cls h
 

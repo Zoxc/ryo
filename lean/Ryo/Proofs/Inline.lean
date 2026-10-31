@@ -30,9 +30,11 @@ Classes: `mov`, `mov128`, `imm`, `addr`, `ptrAdd`, `ptrIndex`, `bin`, `binImm`, 
 `brCmpImm`, `ext` (`inline_sound`), and the rip-relative
 addresses `addrConst`, `addrSym`, `addrSymInd` (`inline_sound_rip`, `SoundG`: `Sound` given
 `Globals`, where the constants, data and symbol slots are linked and that out-of-frame loads
-read the x86 bytes; `Ryo/Proofs/Inline/Rip.lean`). Not yet: `load`, `store` (memory through a
-pointer; see aot.md §C2), and the classes inlined later (`laterClass`: the variable shifts and
-rotates, `div`/`rem`, `cttz`/`ctlz`, `cmp3`, `bswap`).
+read the x86 bytes; `Ryo/Proofs/Inline/Rip.lean`). Elsewhere: `load`, `store` (memory through a
+pointer; see aot.md §C2), not as `Sound` but under more hypotheses (`sound_load`, `sound_store`,
+`Ryo/Proofs/Inline/Mem.lean`), and the classes inlined later (`laterClass`: the variable shifts
+and rotates, `div`/`rem`, `cttz`/`ctlz`, `cmp3`, `bswap`; `Inline/Later.lean`,
+`Inline/LaterDiv.lean`), which `Inline/All.lean` combines with these (`inline_soundC_all`).
 
 The overflow ops `ovf` (`add.ovf`/`sub.ovf`) and `mulOvf` are `inline_sound_ovf`
 (`Ryo/Proofs/Inline/Ovf.lean`): the sequences store the result `d`, then the flag byte `o`, as
@@ -59,14 +61,16 @@ def frameOnly : Class → Bool
   | .load _ | .store _ | .ovf .. | .mulOvf .. | .addrConst | .addrSym | .addrSymInd => false
   -- No inline opcode is an immediate rotate (`classOfParts`).
   | .shiftImm sh _ => sh.isShift
-  -- Not covered yet: the variable shifts and rotates, `div`/`rem`, `cttz`/`ctlz`, `cmp3`, `bswap`.
+  -- In their own modules (`inline_soundC_all`): the variable shifts and rotates, `div`/`rem`,
+  -- `cttz`/`ctlz`, `cmp3`, `bswap`.
   | .shiftVar .. | .div .. | .count .. | .cmp3 .. | .bswap _ => false
   | _ => true
 
-/-- The classes inlined after these proofs were written, which they don't cover yet (lean/PENDING.md):
-the variable shifts and rotates, `div`/`rem`, `cttz`/`ctlz`, `cmp3` and `bswap`. Their
-sequences use items the register cache proofs don't track (`cacheSafe`) and registers other than
-`rax` and `rcx` (`rdx`). -/
+/-- The classes inlined after these proofs were written, proved in their own modules
+(`Inline/Later.lean`, `Inline/LaterDiv.lean`, combined in `inline_soundC_all`): the variable
+shifts and rotates, `div`/`rem`, `cttz`/`ctlz`, `cmp3` and `bswap`. Their sequences use items
+beyond `sequence_ok`'s (`sequence_ok2` covers them), and `div`'s registers other than `rax` and
+`rcx` (`rdx`). -/
 def laterClass : Class → Bool
   | .shiftVar .. | .div .. | .count .. | .cmp3 .. | .bswap _ => true
   | _ => false
