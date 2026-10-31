@@ -1,10 +1,11 @@
 /-
 Ryo.Proofs.CacheMem — one R step of a `load`, `store` or rip-relative address instruction
 (`addrConst`, `addrSym`, `addrSymInd`) against its sequence, on `rax` and as the register
-cache emits it (aot.md §C2 "Inline sequences", "Register cache"): the classes
+cache emits it (aot.md §C2 "Inline sequences", "Register cache"): mainly the classes
 `inline_step_cached` (`Ryo/Proofs/CacheStep.lean`) leaves out, as they have `Sound` only with
 more hypotheses (`sound_load`, `sound_store`: `Inline/Mem.lean`; `inline_sound_rip`:
-`Inline.lean`, from `Inline/Rip.lean`).
+`Inline.lean`, from `Inline/Rip.lean`); and, for every class, the steps that also keep the
+registers and memory outside the writes.
 
 - `step_of`: `inline_step`'s argument with the class's soundness replaced by `hrun`, what the
   sequence gives after the scopes and `opSem` (`RRel` with the new state, a predicate `P`,
@@ -28,6 +29,13 @@ more hypotheses (`sound_load`, `sound_store`: `Inline/Mem.lean`; `inline_sound_r
   `accept`). A store through a pointer clears every entry inside `emit` (`update`'s `write`
   drops all entries for a base other than `rbp`), so no separate clearing point is needed;
   `CacheInv` follows from `update_inv`, as for the other classes.
+- Keeping the registers and the memory outside the writes (what `DSWork/Inline.lean` uses):
+  `KeptRegs` (all but `rax`, `rcx`), `MemOutW` (memory outside the written frame ranges),
+  `MemOutA` (outside the live allocations), `EmitKept` (all but `clobbers` and the register
+  `emit` computes in); `cached_of_regs` (`cached_of` with `EmitKept`); `load_step_sep_regs`,
+  `store_step_sep_regs`, `rip_step_sep_regs` and their `_cached_regs` forms; and
+  `inline_step_cached_regs`, `inline_step_cached` for every `SoundC` class with `EmitKept` and
+  `MemOutW`.
 
 Left as hypotheses: `InlineOk f cls` (discharged by `inlineOps_ok`, `RyoProofs/InlineOk.lean`,
 for `(f, cls) ∈ inlineOps`), `ripAddr cls` for the rip classes (by `decide` once `cls` is
@@ -271,8 +279,8 @@ theorem swapI_other {xr : Reg} {i : Fin 16} (h0 : i ≠ 0) (hx : i ≠ xr.idx) :
   simp only [h0, hx, ↓reduceIte]
 
 /-- `cached_of`, also keeping the registers: when every run of the sequence (on the swapped state)
-keeps the registers outside `Clob` (which holds `rax`), the emitted run keeps those outside
-`Clob` and the register `emit` computes in. -/
+keeps the registers outside `Clob` (which holds `rax`), the emitted run keeps every register
+outside `Clob` but the one `emit` computes in (which it clobbers). -/
 theorem cached_of_regs (ctx : Ctx) {T : Type} {cls : Class} {ops : List (R.Opnd T)}
     {cand : List Item} {br : Option Cond} {cache : Cache} {x : X86.State} {Q : X86.State → Prop}
     {Clob : Fin 16 → Prop} (h0 : Clob 0)
