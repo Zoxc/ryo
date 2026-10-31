@@ -181,8 +181,12 @@ impl Loc {
     }
 
     /// The operand's value in the reduced handler call's arguments `args`, from its
-    /// register `part` (0 or 1): `None` when that isn't an immediate.
+    /// register `part` (0 or 1): `None` when that isn't an immediate, or the call doesn't
+    /// receive the operand (no such register).
     pub fn imm(&self, args: &[crate::reduced::Arg], part: u8) -> Option<u64> {
+        if part >= self.count {
+            return None;
+        }
         let crate::reduced::Arg::Imm(v) = *args.get((self.reg + part) as usize)? else { return None };
         Some(self.field(v))
     }
