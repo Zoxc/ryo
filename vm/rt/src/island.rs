@@ -155,8 +155,8 @@ intrinsic_wrappers! {
 }
 
 // SIMD wrappers: generic exactly like the intrinsic (same generic params, in order), so the
-// lowering passes the intrinsic's generic args unchanged. The backend's
-// `island::templates::simd` lists the same names with their arities.
+// lowering passes the intrinsic's generic args unchanged (`FnCx::simd_intrinsic`; the backend
+// finds each by its diagnostic item and records no names or arities).
 intrinsic_wrappers! {
     simd_add [T] (T, T) -> T = intrinsics::simd::simd_add;
     simd_sub [T] (T, T) -> T = intrinsics::simd::simd_sub;

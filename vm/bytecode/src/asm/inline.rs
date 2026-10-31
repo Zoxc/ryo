@@ -707,9 +707,9 @@ fn classify(items: &[Item], br: bool) -> Option<Class> {
 
 /// The instruction an inline sequence encodes: its items, and its final branch (condition and
 /// target) for a branch. The operands come from the sequence's fields: frame displacements in
-/// order (`d`, where there is one, last), the `rax` displacement (a memory operand's offset,
-/// or `ptr.add`'s), the immediate, and the rip item's [`Ref`]; the result must re-encode to
-/// the same sequence.
+/// order (`d`, where there is one, last, but before an overflow op's flag `o`), the `rax`
+/// displacement (a memory operand's offset, or `ptr.add`'s), the immediate, and the rip
+/// item's [`Ref`]; the result must re-encode to the same sequence.
 pub(super) fn decode(items: &[Item], branch: Option<(Cond, u32)>) -> Option<(Opcode, Vec<Opnd>)> {
     let key = classify(items, branch.is_some())?;
     ALL_OPCODES.iter().find_map(|&op| decode_keyed(op, key, items, branch))
