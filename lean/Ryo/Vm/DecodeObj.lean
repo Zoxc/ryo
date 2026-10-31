@@ -194,8 +194,12 @@ def handlerCallAt (c : Cursor) (pe : Bool) (p0 : Nat) : Option (Nat × Nat) := I
 /-- The handler entries of `hints` are exactly the handler calls read (`r`, with the decoding's
 cursor `c`), by position and opcode, in order: `insn`'s check that a handler call has its
 entry ("handler call without its instruction list entry") and `instructions`' that no entry
-is left over ("instruction list entry not at its inline sequence"), at the first mismatch.
-A handler call's position is past its loop head's counter check. -/
+is left over ("instruction list entry not at its inline sequence"): at the first mismatch the
+call's error at the call while calls remain, as `insn` reports it, else the leftover entry's.
+Rust raises the latter per part (the body, then PE's pad region) and before reading on, and
+this runs after the whole read, so on a malformed list the error can still differ (a later
+decode error, or a stray body entry reported after a pad-region call's). A handler call's
+position is past its loop head's counter check. -/
 def checkEntries (r : ReadResult) (c : Cursor) (pe : Bool) (hints : Array Ryo.Obj.Hint) :
     Except AsmError Unit := do
   let entries := hints.filterMap fun h => if h.isHandler then some (h.pos, h.op.val.toNat) else none
@@ -206,8 +210,9 @@ def checkEntries (r : ReadResult) (c : Cursor) (pe : Bool) (hints : Array Ryo.Ob
     match calls[k]?, entries[k]? with
     | some (a, op), some (b, op') =>
       if a == b && op == op' then continue
-      if a ≤ b then throw ⟨a, "handler call without its instruction list entry"⟩
-      throw ⟨b, "instruction list entry not at its inline sequence"⟩
+      -- Rust's `insn` meets the call with another entry first: the call's error, also for a
+      -- stray entry before it.
+      throw ⟨a, "handler call without its instruction list entry"⟩
     | some (a, _), none => throw ⟨a, "handler call without its instruction list entry"⟩
     | none, some (b, _) => throw ⟨b, "instruction list entry not at its inline sequence"⟩
     | none, none => pure ()
