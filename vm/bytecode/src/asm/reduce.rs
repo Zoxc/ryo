@@ -331,6 +331,10 @@ fn check_handler<'c>(h: Opcode, args: &[Arg], neg: bool, ts: Vec<Label>, code_co
     {
         return Err(());
     }
+    // PE's stack argument is one 32-bit immediate.
+    if mode.pe && args.len() > super::PE_ARG_REGS && !matches!(args[super::PE_ARG_REGS], Arg::Imm(v) if v <= u32::MAX as u64) {
+        return Err(());
+    }
     let mut values: &[u8] = &[];
     let mut cases = 0u64;
     let mut ro_args = 0;
