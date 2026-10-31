@@ -896,8 +896,9 @@ calls it by name, local otherwise (backtraces, profilers) ([backend.md](backend.
   constructor order follows link order (Mach-O, [platforms.md](platforms.md#mach-o-x86_64-apple-darwin)),
   and only the JIT needs the registry there (the image's thresholds, `image_at`; Mach-O
   images have no fixups).
-  It does no other work, so startup is O(number of images): it only parses headers
-  (`Image::parse`, O(1)), and runs `Image::validate` only for images with PE fixups, which
+  It does no other work: it only parses headers (`Image::parse`, O(1)), checks each against
+  the images registered before (a linear scan, and an insertion sort of the new snapshot, so
+  quadratic in the number of images, which stays in the thousands with cheap steps), and runs `Image::validate` only for images with PE fixups, which
   `apply_fixups` requires. Nothing looks functions up at run time: calls go to symbols.
   Registry memory comes from `mmap`ed chunks (`VirtualAlloc` on PE), not the Rust
   allocator.

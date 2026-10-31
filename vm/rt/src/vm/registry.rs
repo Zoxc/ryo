@@ -218,8 +218,9 @@ pub fn image_at(addr: usize) -> *const u8 {
 }
 
 /// An insertion sort: core's sorts reference its panic path (`panic_on_ord_violation`), which
-/// the runtime must not reach (design/vm.md, "No re-entry"). Lists are short (one or two
-/// entries per image).
+/// the runtime must not reach (design/vm.md, "No re-entry"). Quadratic in the worst case,
+/// but the lists (one or two entries per image) stay in the thousands, and each registration
+/// adds to an already sorted list.
 fn sort_by_key<T, K: Ord>(list: &mut [T], key: impl Fn(&T) -> K) {
     let p = list.as_mut_ptr();
     for i in 1..list.len() {
