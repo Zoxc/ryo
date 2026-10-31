@@ -68,8 +68,10 @@ pub enum ArgLoc {
 pub struct ArgPlan {
     /// Per input, its pieces.
     pub locs: Vec<Vec<ArgLoc>>,
-    /// The size of the stack argument area: the outgoing area's, a multiple of 8 (16 for the
-    /// frame), and on PE at least the 32 bytes of shadow space.
+    /// The size of the stack argument area: the outgoing area's, a multiple of 16, and on PE
+    /// at least the 32 bytes of shadow space ([`arg_plan`]). The plans the certificate gets for
+    /// virtual drops and thread-local shims, built by hand, have 0 on every target: they have
+    /// no stack arguments, and `FnCx::finish` reserves the shadow space for every call.
     pub stack_size: u32,
 }
 
