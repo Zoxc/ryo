@@ -14,7 +14,7 @@ Divergences:
   is de-initialized at the call and the callee writes its `_0` there (Miri's return place).
 - D14: ABI compatibility follows rustc's documented rules as Miri implements them
   (`check_argument_compat`): equal types; 1-ZSTs; `repr(transparent)`-like wrappers unfolded;
-  `Option<&T>`-like enums as their pointer; integers of the same size *and* signedness;
+  `Option<&T>`/`Option<NonZero*>`-like enums as their pointer or integer; integers of the same size *and* signedness;
   `char` ~ `u32`; pointers with the same metadata kind. If both sides have a `FnAbiSummary`,
   those must agree too. `rust-call`: the caller's last argument (a tuple) is spread; a callee
   with `spread_arg` gathers trailing arguments back into a tuple. `#[track_caller]` bodies get
@@ -34,7 +34,8 @@ open SemM
 def _root_.Ryo.Spec.Ty.is1Zst (t : Ty) : Bool := t.isSized && t.size == 0 && t.align == .one
 
 /-- Unfold wrappers that are ABI-transparent: structs whose only non-1-ZST field covers the
-whole struct, and `Option<&T>`-like enums (nullable pointer optimization). -/
+whole struct, and `Option<&T>`-like enums (nullable pointer optimization: the payload a
+pointer, also a wide one, or a `NonZero` integer, at its own size). -/
 def unfoldTransparent : Nat → Ty → Ty
   | 0, t => t
   | fuel + 1, t =>
@@ -61,8 +62,11 @@ def unfoldTransparent : Nat → Ty → Ty
         | _, _ => none
       match p with
       | some pt =>
+        -- rustc's guarantee (Miri's `unfold_npo`): references, `Box`, `NonNull`, fn
+        -- pointers (thin or wide) and `NonZero*`, the payload being as large as the enum.
         match unfoldTransparent fuel pt with
-        | .ptr k _ => if size == 8 then .ptr k (ValidRange.full 8) else t
+        | .ptr k _ => if size == (if k.isWide then 16 else 8) then .ptr k (ValidRange.full 8) else t
+        | .int it _ => if size == it.size then .int it (ValidRange.full it.size) else t
         | _ => t
       | none => t
     | _ => t
