@@ -239,6 +239,9 @@ struct Sel {
     slow_vm: bool,
     /// The workspace cargo run, rt-core-only, jit-sealed, multi-staticlib and multi-dylib.
     rt: bool,
+    /// rt-core-only and jit-sealed only: `ryo_rt` and the sealed `ryo_jit` include
+    /// `ryo_bytecode`, and `ryo_jit` is built from vm/jit/.
+    rt_checks: bool,
     /// The corpus under every variant without a ryo std, and every check.
     backend: bool,
     /// The corpus under the ryo-std variants.
@@ -358,7 +361,8 @@ impl Sel {
                 self.jit = true;
                 self.lean = true;
                 self.slow_vm = true;
-                "bytecode (corpus under ryo and the JIT, all ryo_jit runs, lean)"
+                self.rt_checks = true;
+                "bytecode (corpus under ryo and the JIT, all ryo_jit runs, lean, rt-core-only, jit-sealed)"
             }
             Rule::Handlers => {
                 self.area(Area::Rt);
@@ -371,7 +375,8 @@ impl Sel {
             }
             Rule::Jit => {
                 self.jit = true;
-                "jit (all ryo_jit runs, corpus under the JIT variants)"
+                self.rt_checks = true;
+                "jit (all ryo_jit runs, corpus under the JIT variants, rt-core-only, jit-sealed)"
             }
             Rule::Backend => {
                 self.area(Area::Backend);
@@ -553,7 +558,8 @@ impl Check {
             | Check::Exports
             | Check::Backtrace
             | Check::PeImports => sel.fast,
-            Check::RtCoreOnly | Check::JitSealed | Check::MultiStaticlib | Check::MultiDylib => sel.rt,
+            Check::RtCoreOnly | Check::JitSealed => sel.rt || sel.rt_checks,
+            Check::MultiStaticlib | Check::MultiDylib => sel.rt,
             Check::JitPrivateStd | Check::JitAtomics => sel.jit,
             Check::Incremental | Check::CargoRyo | Check::MultiVersion => false,
         }
@@ -670,7 +676,7 @@ fn report(name: &str, start: Instant, res: Result<(), String>, failed: &Mutex<Ve
 const SLOW_VM_TESTS: [&str; 1] = ["every_opcode_round_trips"];
 
 /// The tests in vm/rt/tests/codegen.rs (skipped unless [`Sel::codegen`]).
-const CODEGEN_TESTS: [&str; 2] = ["win64_handlers_preserve_xmm6_to_15", "handlers_read_rbp_first_and_hot_ones_have_no_prologue"];
+const CODEGEN_TESTS: [&str; 2] = ["win64_handlers", "handlers_read_rbp_first_and_hot_ones_have_no_prologue"];
 
 pub fn run(opts: &Options) -> Result<(), String> {
     let start = Instant::now();
