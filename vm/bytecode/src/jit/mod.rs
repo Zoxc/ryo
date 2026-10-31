@@ -139,6 +139,9 @@ pub fn compile(
     if opts.check {
         f.verify().map_err(|e| Error::Check(alloc::format!("IR: {e}")))?;
     }
+    if mode.pe {
+        emit::check_pe(&f)?;
+    }
     if opts.alloc == Allocator::LinearScan {
         regalloc::remat(&mut f);
     }

@@ -2108,8 +2108,9 @@ pub(super) fn handler_arg_reg(pe: bool, k: usize) -> Option<R> {
 }
 
 /// What the SSA pipeline doesn't do on PE: arguments past the four Win64 registers (the reduced
-/// code has none).
-fn check_pe(f: &Func) -> Result<(), Unsupported> {
+/// code has none). [`super::compile`] checks it before register allocation, whose hints
+/// ([`int_arg`]) panic on such arguments; [`emit`] again for other callers.
+pub(super) fn check_pe(f: &Func) -> Result<(), Unsupported> {
     let regs_ok = |rs: &[asm::ArgReg]| rs.iter().all(|r| r.index < 4);
     if !regs_ok(&f.entry_regs) {
         return Err(Unsupported("PE: an argument past the fourth"));
