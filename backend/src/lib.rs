@@ -180,7 +180,10 @@ impl CodegenBackend for RyoBackend {
     }
 
     fn supported_crate_types(&self, sess: &Session) -> Vec<CrateType> {
-        self.llvm.supported_crate_types(sess)
+        // `link` keeps the runtime copy private for `Dylib` only; an `sdylib` would export it.
+        let mut types = self.llvm.supported_crate_types(sess);
+        types.retain(|t| *t != CrateType::Sdylib);
+        types
     }
 
     fn print_passes(&self) {
