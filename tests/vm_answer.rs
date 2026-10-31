@@ -1,5 +1,5 @@
-//! VM functions called from native code through their portals. `main` prints, so it stays
-//! native; the small functions are bytecode.
+//! VM functions: `main`, which std's `lang_start` calls through its portal, and the small
+//! functions it calls VM to VM, all bytecode (printing included).
 
 fn answer() -> i32 {
     42
