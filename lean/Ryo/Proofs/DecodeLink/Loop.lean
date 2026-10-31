@@ -475,8 +475,9 @@ theorem nopStep_read {fr : Frame} {callSites : Array CallSite} {c c' c'' : Curso
 set_option maxHeartbeats 2000000 in
 /-- What a successful `instructions` read (see the module comment): the protos, a chain of
 iterations from the cursor with an empty cache and every dropped store, ending at the cursor
-it returns with no dropped store left, at the code's end or at the first counter stub (the
-entry's, or the first loop head's). -/
+it returns with no dropped store left, at or past `limit` (the code's end, or the pad region's
+entry or the counter stubs' start for the body pass; an item may run past it, which the caller
+rejects) or at the first counter stub (the entry's, or the first loop head's). -/
 theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedStore}
     {targets : Option (Array Nat)} {entryStub : Option Nat} {limit : Nat}
     {callSites : Array CallSite} {c c' : Cursor} {protos : Array Proto} {padded : Array Bool}
@@ -1198,7 +1199,9 @@ theorem readParts_pos {fr : Frame} {ro : ByteArray} {callSites : Array CallSite}
 
 /-- `read`'s protos, for a function without a pad region (`regionPad = none`, always off PE),
 are its second `instructions` pass (targets known) from the body's cursor (the code's, its
-relocations, and without a frame pointer the frame size as `spFrame`) to the code's end. -/
+relocations, and without a frame pointer the frame size as `spFrame`) with the code's end as
+`limit`; with counters it stops earlier, at the entry's or the first loop head's counter stub
+(`stub`, the stubs follow up to the code's end). -/
 theorem read_instructions {ro : ByteArray} {callSites : Array CallSite}
     {dropped : List DroppedStore} {scopes : Array Scope} {mode : Mode} {c c' : Cursor}
     {r : ReadResult} (h : (Vm.read ro callSites dropped scopes mode).run c = .ok (r, c'))
