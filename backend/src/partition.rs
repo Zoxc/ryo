@@ -106,7 +106,8 @@ pub(super) struct Exports<'tcx> {
     /// For `exported_generic_symbols`: the VM functions with `External` linkage whose symbols
     /// the images define, with their visibility.
     pub(super) vm: Vec<(Instance<'tcx>, Visibility)>,
-    /// Native items made `External` + `Hidden` only because an image references them.
+    /// Native items made `External` or `WeakODR` + `Hidden` only because an image references
+    /// them.
     pub(super) hidden_for_image: Vec<Instance<'tcx>>,
 }
 
