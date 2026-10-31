@@ -188,10 +188,10 @@ fn reads_rbp_first(name: &str, op: Opcode, a: &[&str]) {
 #[test]
 fn handlers_read_rbp_first_and_hot_ones_have_no_prologue() {
     let asm = rt_asm("codegen", None);
-    // The sets: the target's (`fp` in `rdi`), and off Apple the frame-pointer set (`rbp`):
+    // The sets: the target's (`fp` in `rdi`), and off Windows and Apple the frame-pointer set (`rbp`):
     // symbol prefix, register entry module, mode.
     let mut sets = vec![("ryo_h_", "hr", ryo_rt::vm::MODE)];
-    #[cfg(not(target_vendor = "apple"))]
+    #[cfg(not(any(windows, target_vendor = "apple")))]
     sets.push(("ryo_hf_", "hrf", ryo_rt::vm::FP_MODE));
     for (prefix, hr, mode) in sets {
         // Written in assembly: they use `rbp` and the stack by design.
