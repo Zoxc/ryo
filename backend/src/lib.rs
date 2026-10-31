@@ -255,8 +255,7 @@ impl CodegenBackend for RyoBackend {
         // registers its upstream crates' images.
         let results = partition::results(tcx);
         let images = results.map(|r| write_images(tcx, r)).unwrap_or_default();
-        let modules = images.iter().filter(|i| i.path.is_some()).map(|i| i.name.clone()).collect();
-        let _ = self.link_info.set(link::LinkInfo::new(tcx, modules));
+        let _ = self.link_info.set(link::LinkInfo::new(tcx));
         if let Some(results) = results {
             dump_lean::dump(tcx, &self.switches, results);
         }
@@ -343,8 +342,8 @@ fn unsupported(sess: &Session) -> Option<String> {
     let (c, z) = (&sess.opts.cg, &sess.opts.unstable_opts);
     let flags = [
         // LTO: the images are separate objects LTO doesn't see, so it would internalize or
-        // drop what only they refer to; linker-plugin LTO also makes the rlib's Rust objects
-        // bitcode, whose symbols the rebuilt archive index (`link::append_to_rlib`) lacks.
+        // drop what only they refer to. Rlibs also list the images as Rust objects
+        // (`rmeta-link`), which downstream LTO would drop from the link and read bitcode from.
         (!matches!(c.lto, LtoCli::Unspecified | LtoCli::No), "`-Clto`"),
         (c.linker_plugin_lto.enabled(), "`-Clinker-plugin-lto`"),
         (z.dylib_lto, "`-Zdylib-lto`"),
@@ -389,9 +388,9 @@ fn unsupported(sess: &Session) -> Option<String> {
         // `codegen_crate`, so without the registry object.
         (z.no_link, "`-Zno-link`"),
         (z.link_only, "`-Zlink-only`"),
-        // The staticlib options rewrite or hide the Rust objects' symbols, but not the
-        // upstream images, which are plain members: renamed symbols they refer to don't
-        // resolve, and their own symbols aren't hidden.
+        // The staticlib options rewrite or hide the symbols of every Rust object in the
+        // upstream rlibs, images included, which were never checked against that: the images'
+        // registry entries and calls between VM functions and islands rely on their names.
         (z.staticlib_rename_internal_symbols, "`-Zstaticlib-rename-internal-symbols`"),
         (z.staticlib_hide_internal_symbols, "`-Zstaticlib-hide-internal-symbols`"),
     ];

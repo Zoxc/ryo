@@ -185,10 +185,11 @@ reuse under incremental compilation and `rt.rs` the runtime crates' identity.
    `rustc_codegen_llvm/src/lib.rs:399-410`), then pushes a `CompiledModule` for the image
    (`kind: ModuleKind::Regular`, `object: Some(path)`) onto `CompiledModules.modules`
    (`rustc_codegen_ssa/src/lib.rs:124-134`), so the object list of final links includes it.
-   An rlib gets it as a plain (non-Rust) archive member instead: `link` takes the module out
-   before `link_rlib` and appends the object to the finished rlib afterwards (with
-   `ArArchiveBuilder`), so rustc doesn't list it among the rlib's Rust objects
-   (`rmeta-link`), which it treats as its own codegen's. `link_rlib` writes the rlib only
+   An rlib gets it the same way: `link_rlib` writes it in the one archive build, and lists it
+   among the rlib's Rust objects (`rmeta-link`) like the CGUs. Downstream rustc reads that list
+   only for LTO and the `-Zstaticlib-*` symbol options, which are rejected
+   ([Unsupported options](#unsupported-options)); a final link pulls the image in through the
+   archive index like any member. `link_rlib` writes the rlib only
    with `link` output to a file, which a crate with VM code therefore needs
    ([Unsupported options](#unsupported-options)).
    The image defines one global symbol, `__ryo_image_<StableCrateId>_<CGU hash>` (both as
@@ -389,8 +390,8 @@ upstream images.
   `-Zdylib-lto`, and targets that require LTO (`-Zthinlto=yes` needs no check of its own:
   with `thin_lto_supported() == false`, `Session::lto` returns `Lto::No` before reading it). The images are objects LTO
   doesn't see, so it would internalize or drop symbols only they refer to (a native item
-  exposed as hidden for an image, a handler); linker-plugin LTO also makes the Rust
-  objects of an rlib bitcode, whose symbols the rebuilt rlib's index would lack. rustc's
+  exposed as hidden for an image, a handler); an rlib also lists its images among its Rust
+  objects (`rmeta-link`), which downstream LTO would drop from the link and read bitcode from. rustc's
   implicit crate-local ThinLTO (`opt-level` >= 1 with several codegen units) internalizes
   the same way, so the backend reports `thin_lto_supported() == false`, which makes
   `Session::lto` return `Lto::No` for it: optimized builds work, without cross-CGU
@@ -440,15 +441,17 @@ upstream images.
 - For a crate with VM code: `--emit=obj`, `llvm-bc` and `thin-link-bitcode` (cg_llvm's
   modules, copied to the outputs inside its `join`, without the image objects, so the VM
   functions would be undefined); any `--emit` without `link` (an rlib is written only with
-  `link`, and the images are appended to it afterwards: without it they would go to a
-  missing or stale rlib, or be left behind); and `-o -` (nothing to append the images to).
+  `link`, and the images are written into it: without it they would be missing from the
+  output or left behind); and `-o -` (kept
+  rejected: untested with the images).
   Output for reading (`asm`, `llvm-ir`, `mir`) alongside `link` is allowed and covers the
   native code only. Checked after the partitioning, which knows whether there is VM code.
 - `-Zno-link` and `-Zlink-only`: the `.rlink` path links without `codegen_crate`, so without
   the registry object.
 - `-Zstaticlib-rename-internal-symbols` and `-Zstaticlib-hide-internal-symbols`: they rename
-  or hide symbols in the Rust objects of the staticlib, but not in the upstream images
-  (plain archive members), which then refer to old names or leak their symbols.
+  or hide symbols in the Rust objects of the staticlib's upstream rlibs, which include the
+  images (listed in `rmeta-link` like the CGUs); that was never checked against the images'
+  registry entries and their references between VM functions, islands and native code.
 
 Runtime-internal crates aren't rejected but stay native as a whole, like proc macros and
 panic runtimes ([Pipeline](#pipeline), step 1): `compiler_builtins`, `#![profiler_runtime]`
@@ -523,7 +526,7 @@ instantiate generics in their own VM.
 machine code), `ryo_stubs` (islands, stub neighbors, the native CGU), `ryo_merge`
 (relocation resolution) and `ryo_finish_image` (image layout); `ryo_write_image` (step 5); and at link time
 `ryo_link_prep` (per crate type, everything before rustc's `link_binary`) with
-`ryo_registry` (writing the stub), and `ryo_append_rlib`. measureme's `summarize` lists them.
+`ryo_registry` (writing the stub). measureme's `summarize` lists them.
 
 ## Symbol consistency
 

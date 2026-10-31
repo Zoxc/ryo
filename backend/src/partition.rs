@@ -203,11 +203,10 @@ pub fn collect_and_partition_mono_items<'tcx>(tcx: TyCtxt<'tcx>, original: super
 
 /// Fails for the outputs a crate with VM code can't have (design/backend.md#unsupported-options).
 /// An object or bitcode file is cg_llvm's native modules only, without the images, so it
-/// would lack the VM functions. Without `link` there is nothing to add the images to (`link`
-/// appends them to an rlib after `link_binary`, which writes it only then), so they would be
-/// left behind as temporaries, or appended to a stale rlib; output for reading (`asm`,
-/// `llvm-ir`, `mir`) is fine alongside `link`. And an output written to stdout (`-o -`) can't
-/// have the images appended.
+/// would lack the VM functions. Without `link` nothing takes the images (`link_binary` writes
+/// them into the rlib or links them like any module), so they would be left behind as
+/// temporaries; output for reading (`asm`, `llvm-ir`, `mir`) is fine alongside `link`. An
+/// output written to stdout (`-o -`) stays rejected: it was never tested with the images.
 fn check_outputs(tcx: TyCtxt<'_>) {
     let opts = &tcx.sess.opts;
     let fail = |what: String| -> ! {

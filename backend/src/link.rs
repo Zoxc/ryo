@@ -4,7 +4,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use rustc_codegen_ssa::back::archive::{AddArchiveKind, ArArchiveBuilderBuilder, ArchiveBuilderBuilder, ArchiveEntryKind};
 use rustc_codegen_ssa::traits::CodegenBackend;
 use rustc_codegen_ssa::{CompiledModule, CompiledModules, CrateInfo, ModuleKind};
 use rustc_metadata::EncodedMetadata;
@@ -15,8 +14,6 @@ use crate::objfile;
 
 /// What `link` needs from `codegen_crate`.
 pub struct LinkInfo {
-    /// The `CompiledModule` names of the local crate's images (one per CGU with VM code).
-    pub images: Vec<String>,
     /// The target writes Mach-O objects.
     pub macho: bool,
     /// The symbol of `ryo_rt`'s `ryo_vm_register` (tagged and mangled).
@@ -27,10 +24,9 @@ pub struct LinkInfo {
 }
 
 impl LinkInfo {
-    pub fn new(tcx: rustc_middle::ty::TyCtxt<'_>, images: Vec<String>) -> Self {
+    pub fn new(tcx: rustc_middle::ty::TyCtxt<'_>) -> Self {
         let dylib = tcx.crate_types().contains(&CrateType::Dylib);
         LinkInfo {
-            images,
             macho: crate::symbols::is_macho(tcx.sess),
             register: crate::symbols::rt_symbol(tcx, objfile::REGISTER_SYMBOL),
             runtime_exports: if dylib { crate::symbols::runtime_exports(tcx) } else { Default::default() },
@@ -88,10 +84,9 @@ pub fn link(
                 these.modules.push(registry);
             }
         }
-        // In an rlib, the image is added afterwards, as a plain member (not a Rust object,
-        // which downstream crates would read as rustc's own codegen). `link_binary` writes the
-        // rlib only with `link` output to a file, which `partition::check_outputs` requires.
-        let images = if crate_type == CrateType::Rlib { take_images(&mut these, info) } else { Vec::new() };
+        // In an rlib, the images are Rust objects like the CGUs (listed in `rmeta-link`):
+        // fine while LTO and the staticlib symbol options, the only readers of that list, are
+        // rejected (`unsupported`).
         let mut single = crate_info.clone();
         single.crate_types = vec![crate_type];
         // A Rust dylib's copy of the runtime is private (`dylib_dependency_formats`): rustc
@@ -103,17 +98,6 @@ pub fn link(
         }
         drop(prep_t);
         llvm.link(sess, these, single, this_metadata, outputs);
-        let objects: Vec<PathBuf> = images.into_iter().filter_map(|m| m.object).collect();
-        if !objects.is_empty() {
-            let _t = sess.prof.generic_activity("ryo_append_rlib");
-            let rlib = rustc_session::output::out_filename(sess, crate_type, outputs, crate_info.local_crate_name);
-            if let rustc_session::config::OutFileName::Real(rlib) = rlib {
-                append_to_rlib(sess, &rlib, &objects);
-            }
-            for o in &objects {
-                remove_temp(sess, o);
-            }
-        }
     }
     // Unpacked split debuginfo points at the objects and `.dwo` files, which rustc keeps for
     // it: so must we for every output but the last.
@@ -144,35 +128,12 @@ fn registry_module(
     object_module(name, path)
 }
 
-/// Moves the local crate's image modules out of `modules`.
-fn take_images(modules: &mut CompiledModules, info: &LinkInfo) -> Vec<CompiledModule> {
-    let (images, rest) = std::mem::take(&mut modules.modules).into_iter().partition(|m| info.images.contains(&m.name));
-    modules.modules = rest;
-    images
-}
-
 /// Removes a temporary file or directory, unless `-Csave-temps` keeps it.
 fn remove_temp(sess: &Session, path: &Path) {
     if sess.opts.cg.save_temps {
         return;
     }
     let _ = if path.is_dir() { fs::remove_dir_all(path) } else { fs::remove_file(path) };
-}
-
-/// Appends `objects` to the archive `rlib` as non-Rust members (`ArchiveEntryKind::Other`).
-fn append_to_rlib(sess: &Session, rlib: &Path, objects: &[PathBuf]) {
-    let tmp = rlib.with_extension("rlib.ryo-tmp");
-    let mut ab = ArArchiveBuilderBuilder.new_archive_builder(sess);
-    if let Err(e) = ab.add_archive(rlib, AddArchiveKind::Other) {
-        sess.dcx().fatal(format!("reading {}: {e}", rlib.display()));
-    }
-    for object in objects {
-        ab.add_file(object, ArchiveEntryKind::Other);
-    }
-    ab.build(&tmp, None);
-    if let Err(e) = fs::rename(&tmp, rlib) {
-        sess.dcx().fatal(format!("writing {}: {e}", rlib.display()));
-    }
 }
 
 /// Copies the metadata file (and its stub) into `dir`, so later `link_binary` calls can reload
