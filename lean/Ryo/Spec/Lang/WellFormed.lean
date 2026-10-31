@@ -183,7 +183,11 @@ end
 
 mutual
 
-/-- The shape part of `check_value` (no memory: pointer dereferenceability is not checked). -/
+/-- The shape part of `check_value`. Weaker than its memory-independent part: besides pointer
+dereferenceability (which needs memory), it skips the pointer checks (`checkPtr`'s address
+limit, non-null and alignment for safe pointers, `checkPtrMetadata`'s slice length and vtable
+address bounds) and, for an enum with `EnumRepr.single i`, that the variant is `i`. So a
+`WfValue` need not encode. -/
 def Value.wfShape : Value → Ty → Bool
   | .int i, .int t r => t.canRepresent i && r.contains (t.toBits i)
   | .int i, .char => 0 ≤ i && isUnicodeScalar i.toNat
@@ -223,7 +227,8 @@ end
 /-- `WfTy` as a proposition. -/
 def WfTy (t : Ty) : Prop := t.wf = true
 
-/-- `WfValue` as a proposition (the memory-independent part of `check_value`). -/
+/-- `WfValue` as a proposition (`Value.wfShape`: part of `check_value`'s memory-independent
+checks). -/
 def WfValue (v : Value) (t : Ty) : Prop := v.wfShape t = true
 
 end Ryo.Spec

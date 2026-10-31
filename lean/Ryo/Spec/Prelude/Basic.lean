@@ -52,7 +52,9 @@ def ofBytes? (n : Nat) : Option Align :=
     let e := Nat.log2 n
     if 2 ^ e == n then some ⟨e⟩ else none
 
-/-- Total version, rounding down to a power of two (used only for literals in tests). -/
+/-- Total version, rounding down to a power of two (`ofBytes 0 = ofBytes 1 = 1`, `ofBytes 12 =
+8`). The semantics use it too (`IntType.align`, `FloatTy.align`, the VM's `R` and OpSem
+semantics), always on powers of two, where it is exact. -/
 def ofBytes (n : Nat) : Align := ⟨Nat.log2 n⟩
 
 def isAligned (a : Align) (addr : Nat) : Bool := addr % a.bytes == 0
@@ -124,7 +126,8 @@ def isize : IntType := ⟨true, 8⟩
 
 end IntType
 
-/-- Floating-point formats (D5). `f16`/`f128` are bits only. -/
+/-- Floating-point formats (D5). mir-spec only requires the bits of `f16`/`f128`, but the spec
+computes their arithmetic too (`Ryo.Spec.Lang.Float`). -/
 inductive FloatTy where
   | f16 | f32 | f64 | f128
 deriving DecidableEq, Repr, Inhabited, Hashable, ToJson, FromJson

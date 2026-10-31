@@ -1,7 +1,9 @@
 /-
 Ryo.Spec.Theorems.Memory — typed stores and loads: `store_load`.
 
-Ports: MiniRust `lang/representation.md` § Generic properties, for `typed_store`/`typed_load`.
+Ryo's own: MiniRust `lang/representation.md` § Generic properties states only the `encode`/
+`decode` laws (size, monotonicity, round trips), no store-then-load law; `store_load` is their
+consequence for `typedStore`/`typedLoad`, in the `leDefined` form chosen here.
 
 `typedLoad` re-runs `checkValue` in the memory *after* the store. A wide pointer's validity
 depends on the vtable its metadata points to (`vtableSizeAlign` reads the vtable's size and
@@ -151,7 +153,9 @@ theorem Memory.store_load_bytes {mem mem' : Memory} {p : ThinPointer} {bytes : L
 
 /-! ## The store preserves everything `checkValue` looks at -/
 
-/-- `mem'` differs from `mem` only in the data of non-vtable allocations. -/
+/-- `mem'` has the same allocations as `mem`, each with the same address, kind, liveness and
+size, and vtable allocations unchanged; non-vtable allocations may differ in anything else
+(data, but also alignment and mutability). -/
 def Agree (mem mem' : Memory) : Prop :=
   mem.allocs.size = mem'.allocs.size ∧
     ∀ i (h : i < mem.allocs.size) (h' : i < mem'.allocs.size),
@@ -315,7 +319,8 @@ theorem store_load_eq (mem mem' : Memory) (p : ThinPointer) (t : Ty) (v : Value)
   rfl
 
 /-- A typed store followed by a typed load at the same type and pointer gives back the value
-(MiniRust's shape; here the loaded value is in fact equal, see `store_load_eq`). -/
+(an existential `leDefined` form chosen here, not MiniRust's: its spec has no such law; the
+loaded value is in fact equal, see `store_load_eq`). -/
 theorem store_load (mem mem' : Memory) (p : ThinPointer) (t : Ty) (v : Value) (al : Align)
     (hwf : t.wf = true) (hc : checkValue mem v t = .ok ())
     (hs : typedStore mem p v t al = .ok mem') :

@@ -206,8 +206,11 @@ end
 
 mutual
 
-/-- `Type::encode`: a value to bytes; `none` if the value does not fit the type (a spec bug
-for well-formed values). -/
+/-- `Type::encode`: a value to bytes; `none` if the value has the wrong shape for the type, or
+is an integer the integer type can't represent (a spec bug for well-formed values). Other
+ranges aren't checked here but by `checkValue`: a `char` above `u32`, float bits wider than
+the format, a slice length or address of 2^64 or more are truncated, and integer and pointer
+`ValidRange`s are ignored. -/
 def Ty.encode : Ty → Value → Option (List AbstractByte)
   | .int t _, .int i => if t.canRepresent i then some (encodeBits t.size (t.toBits i)) else none
   | .bool, .bool b => some [.init (if b then 1 else 0) none]
