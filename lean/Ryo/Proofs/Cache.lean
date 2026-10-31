@@ -30,10 +30,13 @@ writing `rax` and `rdx`), and `bsf`/`bsr`, at every width: `update` records no z
 after them, as a zero source leaves the register's old value (`Ctx.bsZero`; at 32 bits its
 upper half either kept or cleared).
 
-Left: that the items of `Asm.sequence` are `cacheSafe` (by inspection they are: no `rbp` or
-64-bit `movsx` destination, no memory `aluImm` but `cmp`), `unemit`'s completeness (that the
-sequence `emit` was given is among the decoder's candidates), and the decoder's clearing points
-(stated above, not modeled here).
+That the items of `Asm.sequence` are `cacheSafe` (no `rbp` or 64-bit `movsx` destination, no
+memory `aluImm` but `cmp`) is proved in `CacheStep.lean` (`sequence_cacheSafe`, and
+`sequence_ok2` with the later classes), for every class but the 64-bit sign extension
+(`.ext .q _ true`).
+
+Left: `unemit`'s completeness (that the sequence `emit` was given is among the decoder's
+candidates), and the decoder's clearing points (stated above, not modeled here).
 -/
 import Ryo.Vm.Asm
 import Ryo.X86.Exec
@@ -849,8 +852,9 @@ theorem CacheInv.find_read {c : Cache} {x : X86.State} {m : M} {w : W} {i : Nat}
   simp only [State.rmW, State.regW, BitVec.toNat_setWidth, memW_toNat]
   rw [this, ← ea_frame_of hb, bits_eq, readNat_mod _ _ _ _ hw]
 
-/-- A reload of a slot the cache holds at that width (`find … true`) changes nothing but
-`rip`: `emit` drops it. -/
+/-- A reload of `pool[i]` from a frame slot that entry `i` caches at the load's width changes
+nothing but `rip`, from the entry directly (`emit`'s pinned `rax` of `mulQ`/`div` checks
+`regs[0]`'s slot without `find`). -/
 theorem CacheInv.reload_of {ctx : Ctx} {c : Cache} {x : X86.State} {m : M} {sw : W} {i : Nat}
     (h : CacheInv c x) (hb : m.base = .rbp) (hi8 : i < 8)
     (hsl : c.regs[i]!.slot = some (m.disp, sw)) :
