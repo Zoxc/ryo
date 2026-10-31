@@ -22,7 +22,8 @@ pub(crate) enum Fail {
     NoPersonality,
     /// The compile panicked.
     Panicked,
-    /// The region filled up twice ([`crate::install`]'s retry).
+    /// Every attempt's region filled up: the first and four retries ([`crate::install`]'s
+    /// `Jit::compile`).
     RegionFull,
     /// The SSA pipeline's checkers found a bug.
     SsaCheck,
@@ -126,7 +127,8 @@ stats! {
     /// Calls the SSA pipeline made direct, and calls it inlined.
     devirt,
     inlined,
-    /// Code regions mapped, and compiles retried in a new one.
+    /// Code regions mapped, and compile attempts retried in another region (an existing one
+    /// reaching the image, or a new one) after theirs filled up.
     regions,
     region_retries,
     /// Compiles timed (`JitSettings::count`), their total and longest time in nanoseconds.
