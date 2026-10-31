@@ -38,12 +38,14 @@ template writes must not count (for islands, `Safe` is where the trust that the 
   call reach the template's entry `x1` related to `q` (`IslandAt`), `RRel s' x1`,
   `MemRel s'.st x1`, the return address pushed, the callee-saved registers kept.
 - `island_return`: every `Ret x1 x'` gives an answer with `R.answer c s a = .ok (.step s'')`,
-  and `x'` itself is related to `s''`, at the next item, with `rsp = fp - F`.
+  and `x'` itself is related to `s''`, at the next item, with `rsp` as before the call
+  (`x1.rsp + 8`).
 - `island_sound`: the two composed.
 - `island_unwind`: every `Unw x1 x'` lands at the island's landing pad, related to R's
   `unwindAt`.
 
-**Hypotheses** beyond the shape: `rsp = fp - F` (`hsp`), the stack has room (`hlo`), the operand
+**Hypotheses** beyond the shape: `rsp = fp - F` (`hsp`, which `island_query` takes but its
+proof doesn't use), the stack has room (`hlo`), the operand
 array is in memory as the decoder read it (`hro`, the rodata relocation) and off the stack
 (`hroA`), the symbol slots off the stack (`Call.SymsApart`), no initialized private frame byte
 or live allocation byte on the stack below `rsp` (`Handler.StackApart`), no initialized
@@ -103,8 +105,9 @@ structure IslandAt (ctx : Ctx) (pe : Bool) (isl fp : Nat) (ops : List Int) (st :
   frame : Rel st x
   world : WorldRel w x
 
-/-- Where a template may write: the stack below `sp0` (the caller's `rsp`), the `Lend` extents,
-the query world's live allocations, runtime-owned bytes. -/
+/-- Where a template may write: the stack below `sp0` (the caller's `rsp` plus, on PE, the
+32-byte shadow space above it: `shadow`, as `IslandEnd` passes it), the `Lend` extents, the
+query world's live allocations, runtime-owned bytes. -/
 def IslandMayWrite (Owned : BitVec 64 → Prop) (lo sp0 : BitVec 64) (fp : Nat)
     (lends : List (Int × Nat)) (w : R.World) (b : BitVec 64) : Prop :=
   InStack lo sp0 b ∨ (∃ l ∈ lends, (b - lendAddr fp l.1).toNat < l.2) ∨ InAlloc w b ∨ Owned b
