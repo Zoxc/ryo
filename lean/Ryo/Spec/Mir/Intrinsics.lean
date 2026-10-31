@@ -281,6 +281,10 @@ def evalIntrinsic (name : String) (args : List (Value × Ty)) (destTy : Ty) : Se
     if !t.canRepresent (x.tdiv y) then throwUb "overflow in division"
     if x.tmod y != 0 then throwUb "non-zero remainder in exact division"
     pure (.int (x.tdiv y))
+  | "disjoint_bitor", [(.bool x, .bool), (.bool y, .bool)] => do
+    -- `T = bool` (`fallback::DisjointBitOr` covers it too).
+    if x && y then throwUb "`disjoint_bitor` on overlapping bits"
+    pure (.bool (x || y))
   | "disjoint_bitor", [a, b] => do
     let (x, t) ← intArg a
     let (y, _) ← intArg b
