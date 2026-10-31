@@ -609,6 +609,10 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         let cross = self.cross_image_refs(fresh);
         eprintln!("ryo: {n_images} images in {} codegen units, {cross} cross-image references to VM functions", self.units.len());
         eprintln!("ryo: {} of {n_images} images reused", self.stats.reused);
+        if self.stats.reused > 0 {
+            // Reused side data lists the VM functions, not the native ones or the islands.
+            eprintln!("ryo: native functions and the coverage cover the images built only, not the reused ones");
+        }
         // Constants are deduplicated per image only: several images may each hold a copy.
         let pool: usize = fresh.iter().map(|f| f.pool).sum();
         eprintln!("ryo: {pool} bytes of constant pools in the {} images built", fresh.iter().filter(|f| !f.vm.is_empty()).count());

@@ -480,7 +480,9 @@ Environment variables read by the backend (and `y test`):
   distinct island instances), and the coverage: island instructions per VM function, island
   instructions by template (`ryo: island <template>: <n> in <m> functions`) and native
   functions by reason (`ryo: native reason: <n> <reason>`). `RYO_STATS=2` also prints why
-  each other function stayed native (`ryo: native <instance>: <reason>`).
+  each other function stayed native (`ryo: native <instance>: <reason>`). With images reused
+  (incremental), the native functions and the coverage cover only the CGUs lowered this
+  session, which a line says; the VM functions cover every CGU.
 - `RYO_DUMP=<file>` writes every VM function of the crate's image (local and upstream generic
   instances alike) to `<file>`, sorted by instance path: `fn <instance> (frame F, args A, ret R)`,
   its machine code decoded back to VM instructions (`asm::decode`, printed as the
