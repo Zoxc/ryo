@@ -10,6 +10,10 @@
 
 #![cfg(all(target_arch = "x86_64", any(target_os = "linux", target_vendor = "apple")))]
 
+// The JIT's `ryo_jit_start_<tag>`, which `ryo_rt`'s trips reference (link.exe resolves
+// the references of unused functions too).
+extern crate ryo_jit;
+
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 

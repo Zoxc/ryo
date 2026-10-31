@@ -4,6 +4,10 @@
 
 #![cfg(target_arch = "x86_64")]
 
+// The JIT's `ryo_jit_start_<tag>`, which `ryo_rt`'s trips reference (link.exe resolves
+// the references of unused functions too).
+extern crate ryo_jit;
+
 use ryo_bytecode::asm::Mode;
 use ryo_bytecode::asm::layout;
 use ryo_bytecode::{ALL_OPCODES, Opcode};

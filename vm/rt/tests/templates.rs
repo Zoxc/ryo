@@ -4,6 +4,10 @@
 #![feature(repr_simd, tuple_trait, unboxed_closures, f16, f128)]
 #![allow(internal_features)]
 
+// The JIT's `ryo_jit_start_<tag>`, which `ryo_rt`'s trips reference (link.exe resolves
+// the references of unused functions too).
+extern crate ryo_jit;
+
 use std::cell::Cell;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::rc::Rc;

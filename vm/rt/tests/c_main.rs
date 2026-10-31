@@ -1,6 +1,10 @@
 //! `c_main` with a fake `start` and a test-defined `__ryo_main`. In its own test binary,
 //! because it defines `__ryo_main`.
 
+// The JIT's `ryo_jit_start_<tag>`, which `ryo_rt`'s trips reference (link.exe resolves
+// the references of unused functions too).
+extern crate ryo_jit;
+
 use std::ffi::{c_char, c_int};
 use std::sync::atomic::{AtomicU8, Ordering};
 
