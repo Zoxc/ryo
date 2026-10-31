@@ -425,7 +425,8 @@ pub enum Op {
     Store(u8, i32),
     /// `w` bytes at byte `k` of a memory alloca.
     ALoad(AllocaId, i32, u8),
-    /// The low `n` bytes (1 to 8) of the value to byte `k` of a memory alloca.
+    /// The low `n` bytes (1 to 8, or 16 for a vector) of the value to byte `k` of a memory
+    /// alloca. The value is read at `n` bytes when `n` is a power of two, else at 8.
     AStore(AllocaId, i32, u8),
     /// In an OSR entry block: `w` bytes of the AOT frame at `fp + off`.
     OsrLoad(i32, u8),
