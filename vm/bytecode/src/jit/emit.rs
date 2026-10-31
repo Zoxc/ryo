@@ -1259,7 +1259,12 @@ impl<'a> E<'a> {
             Op::Ext { from, to, sx } => {
                 let x = res[0];
                 let rd = self.work(x, &[]);
-                if to <= from || (!sx && self.zext(args[0]) <= from) {
+                if to > from && self.src(args[0]) == Src::Undef {
+                    // Only the low `from` bytes are undefined: the rest of the value isn't
+                    // (a split load's field nothing stored, or'ed into the others' bits:
+                    // `promote`), so not a register's garbage.
+                    self.a.x().mov_imm(8, Rm::R(rd), 0);
+                } else if to <= from || (!sx && self.zext(args[0]) <= from) {
                     self.load(rd, args[0]);
                 } else {
                     self.ext_into(rd, args[0], from, sx);

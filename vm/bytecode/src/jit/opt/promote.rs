@@ -263,7 +263,9 @@ fn try_promote(f: &mut Func, mut ok: Vec<bool>) -> Result<bool, AllocaId> {
     }
     f.resolve_aliases();
     // A split load's field nothing stored is undefined, but its other fields' bits aren't:
-    // its extension (which would leave a register's garbage, all 64 bits) reads a zero.
+    // its extension (which would leave a register's garbage, all 64 bits) reads a zero. One
+    // that becomes `Undef` only later (a parameter whose other operands' paths fold away) is
+    // zeroed by the emitter, which extends `Undef` to zero.
     for (i, w) in exts {
         let v = f.insts[i.idx()].args[0];
         if matches!(f.def(v), ValueDef::Undef) {
