@@ -1,8 +1,9 @@
 /-
 RyoProofs.InlineOps.Base — every opcode `Asm.inlineOps` lists is of its class's shape (`shapeOk`), so
-the inline-sequence theorems (`Ryo/Proofs/Inline.lean`, stated for every opcode of a class's
-shape) cover every inline opcode of a proved class. Not proved yet (see `frameOnly`): `load`, `store`,
-the variable shifts and rotates, `div`/`rem`, `cttz`/`ctlz`, `cmp3` and `bswap`.
+the inline-sequence theorems (stated for every opcode of a class's shape) cover every inline
+opcode: `Ryo/Proofs/Inline.lean` and `Inline/All.lean` (`inline_soundC_all`, with the later
+classes of `Inline/Later.lean`, `Inline/LaterDiv.lean`), `load` and `store` under more
+hypotheses (`Inline/Mem.lean`).
 
 `classOf` splits the mnemonic with `String.splitOn`, whose `splitOnAux` is defined by
 well-founded recursion and doesn't reduce in the kernel; and string operations on literals
