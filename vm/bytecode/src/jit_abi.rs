@@ -3,7 +3,8 @@
 //! switch a function over to its JIT code. `core` only, so that neither crate depends on the
 //! other.
 //!
-//! The JIT defines one C symbol, `ryo_jit_start(rt: &'static RtApi) -> Option<extern "C" fn()>`,
+//! The JIT defines one C symbol, `ryo_jit_start_<tag>(rt: &'static RtApi) -> Option<extern "C" fn()>`
+//! (ABI-tagged, [`crate::tagged!`]),
 //! which starts its thread and returns its exit report (`RYO_JIT_STATS`'s summary), or `None`
 //! if the thread doesn't start.
 //! Everything else goes through the [`RtApi`]: the JIT reads the handlers' addresses from

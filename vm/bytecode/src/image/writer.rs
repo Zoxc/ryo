@@ -4,8 +4,8 @@
 //! [`ImageWriter::finish`] encodes the functions ([`crate::asm`]) and lays out the three
 //! sections. The result, [`ImageObject`], is plain bytes plus a relocation list and each
 //! function's unwind information; the backend turns it into an object file (with the
-//! `object` crate), defining `__ryo_image_<StableCrateId>` at offset 0 of the read-only
-//! section.
+//! `object` crate), defining `__ryo_image_<StableCrateId>_<CGU hash>` (one image per CGU) at
+//! offset 0 of the read-only section.
 //!
 //! The data relocations are absolute 64-bit addresses (`R_X86_64_64` /
 //! `IMAGE_REL_AMD64_ADDR64`), written at `offset` in `section`, of `target + addend`:
@@ -19,8 +19,9 @@
 //!   and its `header` → the read-only section (with [`crate::asm::Mode::counters`])
 //!
 //! The code's are 32-bit PC-relative fields ([`RelocKind::Pc32`], [`RelocKind::Call32`]):
-//! RIP-relative addresses of symbol slots, constants, the data area and code
-//! constants, and calls of the handlers and `ryo_probe_stack`. Calls between functions are
+//! RIP-relative addresses of symbol slots, constants, the data area, code constants and
+//! the function's JIT record and loop counters (writable section), and calls of the handlers
+//! and `ryo_probe_stack`. Calls between functions are
 //! resolved by the writer.
 
 use alloc::collections::BTreeMap;

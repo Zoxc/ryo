@@ -85,8 +85,11 @@ pub unsafe fn make_executable(p: *mut u8, len: usize) -> bool {
 }
 
 /// Makes the instruction cache see what was written to `[p, p + len)`. Nothing to do on
-/// x86-64 Unix (coherent caches; a jump to the new code serializes enough); on Windows,
-/// `FlushInstructionCache`, as documented for code generators.
+/// x86-64 Unix: the caches are coherent, and code written to fresh memory, never fetched
+/// before, is made executable by `mprotect`, whose TLB shootdown serializes. A jump is not
+/// serializing, so rewriting code that may have been fetched needs more (Intel SDM Vol. 3,
+/// 8.1.3). Elsewhere on Unix it calls `__clear_cache` (Linux) or `sys_icache_invalidate`
+/// (aarch64 Apple); on Windows `FlushInstructionCache`, as documented for code generators.
 #[inline]
 pub fn flush_icache(p: *mut u8, len: usize) {
     os::flush_icache(p, len)

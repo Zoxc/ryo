@@ -15,7 +15,8 @@
 //! - [`reduce`] (`alloc`): full code to the reduced set ([`crate::reduced`]), which
 //!   [`decode_reduced`] reads machine code back to, and [`decode_linked`] linked machine
 //!   code, through a [`Resolver`].
-//! - [`lsda`] (`alloc`): the call-site table of a function's LSDA.
+//! - [`lsda`]: the call-site table of a function's LSDA (writing and parsing it need `alloc`).
+//! - [`list`]: an encoded function's instruction list (`InsnList` needs `alloc`).
 //! - [`frame`] (`alloc`): frame bytes of reduced code: accesses, liveness, renaming slots.
 //! - [`osr`] (`alloc`): the JIT's OSR entries from AOT loop heads into JIT code.
 //!

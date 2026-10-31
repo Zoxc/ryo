@@ -420,7 +420,7 @@ pub struct Header {
     /// ([`cgu_hash`]). The registry rejects two images with the same crate and CGU hashes.
     pub cgu_hash: u64,
     /// [`crate::ABI`] of the ryo build that wrote the image: registration rejects images of
-    /// another build (design/vm.md#registry).
+    /// another build (design/vm.md, "Image format": Registry).
     pub abi: u64,
     /// The address of the link unit's registry anchor (relocated; 0 in the unlinked bytes):
     /// a runtime registers only the images linked against the anchor its stub passes
@@ -507,8 +507,9 @@ pub struct CleanupEntry {
 /// What unwinding out of a call-like instruction does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Cleanup {
-    /// Enter the landing pad at this word offset in the function, catching the exception if
-    /// `catch`.
+    /// Enter the landing pad at this offset in the function, catching the exception if
+    /// `catch`: a word offset into its instructions ([`CleanupEntry::action`]), or a byte
+    /// offset into its machine code ([`CallSiteEntry::action`]).
     Pad(u32, bool),
     /// Leave the frame, and continue in the caller.
     Continue,
@@ -566,9 +567,11 @@ pub enum ImageError {
     /// The image or one of its parts is misaligned.
     Misaligned,
     BadMagic,
-    /// A part lies outside the read-only section.
+    /// A part lies outside the read-only section, or a flag table's count differs from its
+    /// table's (symbols, functions).
     OutOfBounds(&'static str),
-    /// The function table isn't sorted, or a function's code is out of range.
+    /// The function table isn't sorted, or a function's code, instruction list run or
+    /// call-site run is out of range.
     BadFunction(u32),
     /// A fixup is out of range of the writable section or the symbol table.
     BadFixup(u32),
@@ -580,10 +583,10 @@ pub enum ImageError {
     BadMode,
     /// A function's instruction list (function index) is malformed.
     BadList(u32),
-    /// A call-site table entry (index) is out of range of its function or overlaps the one
-    /// before.
+    /// A call-site table entry (index) is out of range of its function, overlaps the one
+    /// before, or has its landing pad outside the function's code.
     BadCallSite(u32),
-    /// The writable section layout is inconsistent.
+    /// The writable section layout (JIT records) is inconsistent, or `Header::pad` isn't 0.
     BadData,
     /// A constant relocation (index) is out of the pool, misaligned or out of order.
     BadConstReloc(u32),

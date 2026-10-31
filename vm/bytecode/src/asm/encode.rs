@@ -145,7 +145,8 @@ impl DroppedStore {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EncodeError {
     Decode(DecodeError),
-    /// A branch target that isn't an instruction start (word offset of the instruction).
+    /// A branch target or scope offset that isn't an instruction start (or one past the end
+    /// for a scope), with that word offset (a scope past the end: the code's length).
     BadTarget(u32),
     /// PE: the pad region (from the first cleanup landing pad on, [`pe_region_start`]) isn't
     /// closed: a branch into or out of it, a fall-through into it, a cleanup landing pad of
@@ -854,8 +855,8 @@ pub struct Asm {
     handler_calls: Vec<(usize, Opcode)>,
     /// PE: the piece the pad region starts at ([`Asm::begin_region`]).
     region: Option<usize>,
-    /// The calls that end their instruction (no result stores after them, or an island's in
-    /// the pad region): on PE one with a landing pad is followed by a `nop`, so that its
+    /// The calls that end their instruction (no result stores after them, or an island's):
+    /// on PE one with a landing pad is followed by a `nop`, so that its
     /// return address can't be an epilogue's start, where the unwinder takes the frame for one
     /// being left and calls no handler for it.
     bare_calls: Vec<usize>,
@@ -1529,7 +1530,7 @@ const TABLE_SEQ: [Item; 3] = [Item::LoadTableEntry, Item::AddRaxRcx, Item::JmpRa
 /// The elements [`Asm::finish_labels`] lowers the pieces to, with the counter checks.
 struct Lowered {
     out: Vec<Laid>,
-    /// The counter checks' `js`s (element indices), the entry's first, each continuing at
+    /// The counter checks' `jns`s (element indices), the entry's first, each continuing at
     /// the element after it; their stubs follow the code.
     checks: Vec<usize>,
 }
@@ -1539,7 +1540,7 @@ impl Lowered {
         self.out.push(Laid::Fixed { item, site: None });
     }
 
-    /// A counter check (`lp`: a loop head's), its `js` to a stub [`Lowered::stubs`] adds.
+    /// A counter check (`lp`: a loop head's), its `jns` to a stub [`Lowered::stubs`] adds.
     fn check(&mut self, lp: bool) {
         self.fixed(Item::CtrInc(lp));
         self.checks.push(self.out.len());
@@ -1555,11 +1556,11 @@ impl Lowered {
         if counters {
             let checks = core::mem::take(&mut self.checks);
             let (entry, heads) = checks.split_first().expect("the entry's check");
-            for (n, &js) in heads.iter().chain([entry]).enumerate() {
+            for (n, &jns) in heads.iter().chain([entry]).enumerate() {
                 let stub = self.out.len();
-                let Laid::Branch { to, .. } = &mut self.out[js] else { unreachable!() };
+                let Laid::Branch { to, .. } = &mut self.out[jns] else { unreachable!() };
                 *to = stub;
-                let head = if js == *entry {
+                let head = if jns == *entry {
                     entry_stub = stub;
                     None
                 } else {
@@ -1568,7 +1569,7 @@ impl Lowered {
                 for item in counter_stub(head) {
                     self.fixed(item);
                 }
-                self.out.push(Laid::Branch { cond: Cond::Always, to: js + 1, long: false });
+                self.out.push(Laid::Branch { cond: Cond::Always, to: jns + 1, long: false });
             }
         }
         entry_stub
