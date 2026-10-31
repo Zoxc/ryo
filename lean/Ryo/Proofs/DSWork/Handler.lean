@@ -533,7 +533,8 @@ theorem hdl_inStack_lift (H : Hyps S) {s : R.RState} {x : X86.State} (hf : Frame
   have := hdl_rsp_le H hf
   intro ⟨h1, h2⟩; exact h ⟨h1, by omega⟩
 
-/-- The frame window is apart from what the trip may write. -/
+/-- The frame window is apart from what the handler call may write (`S.Owned`, the stack below
+`rsp`). -/
 theorem hdl_window_apart (H : Hyps S) (HC : HdlApart S) {s : R.RState} {x : X86.State}
     (hf : FrameInv S s x) {o : Int} (h1 : -(S.F : Int) ≤ o) (h2 : o < S.K) :
     ¬ S.Owned (fpAddr x o) ∧ ¬ InStack S.lo x.rsp (fpAddr x o) := by
@@ -577,7 +578,8 @@ theorem hdl_read64 (H : Hyps S) (HC : HdlApart S) {s : R.RState} {x : X86.State}
   obtain ⟨a1, a2⟩ := hdl_window_apart H HC hf (o := o + i) (by omega) (by omega)
   exact hm _ a1 a2
 
-/-- A frame byte `opSem` can read and that is initialized is apart from the trip's writes. -/
+/-- A frame byte `opSem` can read and that is initialized is apart from the handler call's
+writes (`S.Owned`, the stack below `rsp`). -/
 theorem hdl_byte_apart (H : Hyps S) (HC : HdlApart S) {s : R.RState} {x : X86.State}
     (hf : FrameInv S s x) {o : Int} {b : AbstractByte} (hb : s.st.byteAt o = .ok b)
     (hu : b ≠ .uninit) :
@@ -1154,7 +1156,7 @@ theorem hdl_call_reach (hD : Decodes S code relocs rodata callSites dropped scop
   · rw [hrspX, hrbp']; exact hf.rsp
   · rw [hrspX]; exact hf.room
 
-/-- Falling through to instruction `k + 1` at `pC` (after PE's `nop`, as in `bodySim_island'`). -/
+/-- Falling through to instruction `k + 1` at `pC` (after PE's `nop`, as in `bodySim_island`). -/
 theorem hdl_fallthrough {k pC : Nat} {q : Proto} {s s' : R.RState} {y : X86.State}
     (hnop : NopRead S.fr S.callSites S.body q pC (S.start (k + 1)))
     (hlk : LinkOk S.ctx y.mem S.body S.rs) (hb : Boundary S.rs pC)
