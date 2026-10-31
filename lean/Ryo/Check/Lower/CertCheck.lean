@@ -63,7 +63,8 @@ Per object:
 Errors are rejections; gaps (no dumped body, no ABI) are counted.
 
 **Facts** (`Cert.facts`): what the dead-store check (`Frame.Facts`) may assume of a function:
-its calls' stack-argument sizes and sret sizes, only for calls verified by (ii), and the
+its calls' stack-argument sizes and sret sizes, only for calls verified by (ii) (counted as
+such even when (i) holds too), and the
 islands' templates; `check-cert`'s dead-store count merges them with `DecodeObj.imageFacts`,
 which bounds the calls of (i) by the callee's `arg_size` once the callee's own code is checked
 to stay within it. (ii) and the templates rely on what C1' checks later: that the call ↔ terminator map is right (the call instruction
@@ -167,7 +168,8 @@ header): stack-argument and sret sizes of the calls verified by the dump's ABI, 
 templates. Calls verified by the callee's `FuncEntry` get their stack-argument extent from
 `DecodeObj.imageFacts` instead, which also checks that the callee's code stays within its
 `arg_size` (check-image's bound alone doesn't cover access extents, escapes or tail calls),
-and no sret size: nothing checks an sret callee's `ret_size` against its return type yet. -/
+and no sret size: (i) doesn't check an sret callee's `ret_size` against its return type. A
+call that passes both is counted as verified by the ABI, so it gets these facts. -/
 def Cert.facts (r : FuncCheck) : Frame.Facts :=
   let ok := r.calls.filter (·.2 == .abi)
   let stack : HashMap Nat Nat := ok.foldl (init := {}) fun m (c, _) =>
@@ -261,7 +263,9 @@ def checkArgList (ws : List (BitVec 32)) (want : List (SlotReq × Nat)) : Option
     | _ => []
   let got := pairs ws
   let show_ (g : List (Int × Nat)) := " ".intercalate (g.map fun (s, r) => s!"{s}:{r}")
-  if ws.length % 2 != 0 || got.length != want.length then
+  if ws.length % 2 != 0 then
+    return some s!"argument list [{show_ got}] has an odd number of words ({ws.length})"
+  if got.length != want.length then
     return some s!"argument list [{show_ got}] has {got.length} entries, the plan {want.length}"
   let mut homes : HashMap Nat Int := {}
   for ((s, r), (req, w)) in got.zip want do
@@ -376,8 +380,11 @@ def checkFunc (c : Ctx) (i : Nat) (d : Decoded) (fc : FuncCert) : FuncCheck := I
     ++ (fc.pads.map fun p => ("pad", p.insns))
   let mut at_ := 0
   for (l, (lo, hi)) in ranges do
-    if lo != at_ || hi < lo then
+    if lo != at_ then
       r := err r s!"{l} {rangeText (lo, hi)} doesn't start at {at_}"
+      break
+    if hi < lo then
+      r := err r s!"{l} {rangeText (lo, hi)} ends before it starts"
       break
     at_ := hi
   if at_ != d.insns.size then r := err r s!"the ranges end at {at_}, the code at {d.insns.size}"
@@ -477,7 +484,8 @@ def checkFunc (c : Ctx) (i : Nat) (d : Decoded) (fc : FuncCert) : FuncCheck := I
             if p != plan then r := err r s!"call at {k}: plan {plan.text}, the dumped ABI's {p.text}"
             if abi.ret.size != cc.retSize then r := err r s!"call at {k}: return size {cc.retSize}, the dumped ABI's {abi.ret.size}"
             byAbi := r.errors.size == n1
-    let v := if r.errors.size != n0 then Verified.none else if byEntry then .entry else if byAbi then .abi else .none
+    -- (ii) first: it also gives the call's facts (`Cert.facts`), where (i) gives none.
+    let v := if r.errors.size != n0 then Verified.none else if byAbi then .abi else if byEntry then .entry else .none
     r := { r with calls := r.calls.push (cc, v) }
   -- Escape coverage.
   let (ac, aerrs) := checkAddrs d o.image.mode ((fc.locals.filter (·.size == 0)).toList.map (·.off))
