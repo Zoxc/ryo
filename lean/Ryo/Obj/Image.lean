@@ -8,8 +8,10 @@ text sections its header's `data` and `text` fields are relocated against. Ports
 (`vm/bytecode/src/image/mod.rs`) over the object's bytes, and gathers each function's inputs
 to `asm::decode_reduced` (`Ryo.Obj.FuncInputs`).
 
-Layouts are `repr(C)` (`Header` 160 bytes, `FuncEntry` 36, `CallSiteEntry` 12,
-`FixupEntry` 16). Each function's scopes, dropped stores and branch targets are in its
+Layouts are `repr(C)` (`Header` 152 bytes here, `FuncEntry` 36, `CallSiteEntry` 12,
+`FixupEntry` 16). Rust's `Header` has since grown to 168 bytes, with `abi` (at 152) and
+`anchor` (at 160, relocated against the registry anchor) after `cgu_hash`, which this port
+doesn't read yet (`lean/PENDING.md`, "Several ryo runtimes"). Each function's scopes, dropped stores and branch targets are in its
 instruction list (`Ryo.Obj.List`), a run of the instruction-list bytes.
 -/
 import Std.Data.HashMap
@@ -181,7 +183,7 @@ def Image.parse (bytes : ByteArray) (aligned : Bool := true) : Except ImageError
   if !aligned then throw .misaligned
   if (bytes.extract 0 8).toList != imageMagic then throw .badMagic
   let h := readHeader bytes
-  if h.size > bytes.size then throw .truncated
+  if h.size > bytes.size || h.size < headerSize then throw .truncated
   let bytes := bytes.extract 0 h.size
   let n := bytes.size
   let all := MODE_FP_ARG ||| MODE_FRAME_POINTER ||| MODE_ALIGN_LOOPS ||| MODE_PE ||| MODE_COUNTERS
@@ -291,8 +293,10 @@ def validate (img : Image) : Except ImageError Unit := do
       if !sorted || cEnd > f.codeLen || !padOk then throw (.badCallSite (f.callSites.off + j))
       j := j + 1
   let mut i := 0
+  -- `Image::fixup_area_len`: the data area ends at the JIT records, if any.
+  let fixupAreaLen := if h.jitRecords.count != 0 then h.jitRecords.off else h.dataSize
   for x in img.fixups do
-    if x.sym ≥ h.symbols.count || x.offset % 8 != 0 || x.offset + 8 > h.dataSize then
+    if x.sym ≥ h.symbols.count || x.offset % 8 != 0 || x.offset + 8 > fixupAreaLen then
       throw (.badFixup i)
     i := i + 1
   i := 0
@@ -430,21 +434,41 @@ def slotName (o : ImageObject) (i : Nat) : Except String String := do
 symbol (in symbol-table order) defined there. -/
 def funcName (o : ImageObject) (off : Nat) : String := o.funcSyms.getD off "?"
 
-/-- A handler's index by its symbol: `ryo_h_<Name>` as `rustc` mangles internal symbols (a
-v0 identifier `<len>ryo_h_<Name>` ending the name), or unmangled. -/
-def handlerOf? (name : String) : Option Full.Opcode :=
-  let parts := name.splitOn "ryo_h_"
+/-- `rest` is `<op>` or `<op>_<tag>` with a nonempty tag (`rt_symbol` appends the ABI tag,
+`<name>_<tag>`; opcode names have no `_`): `<op>`. -/
+private def untagged (rest : String) : Option String :=
+  match rest.splitOn "_" with
+  | [op] => some op
+  | op :: tag => if "_".intercalate tag == "" then none else some op
+  | [] => none
+
+/-- A handler's index by its symbol: `ryo_h_<Name>_<tag>` (`ryo_hf_<Name>_<tag>` for the
+frame-pointer handler set, `fp`: `Mode.rbpSet`) as `rustc` mangles internal symbols (a v0
+identifier `<len>ryo_h_<Name>_<tag>` ending the name), or unmangled; also without the tag.
+Any tag is accepted: the reader doesn't check it against the object's. -/
+def handlerOf? (name : String) (fp : Bool := false) : Option Full.Opcode :=
+  let pre := if fp then "ryo_hf_" else "ryo_h_"
+  let parts := name.splitOn pre
   if parts.length < 2 then none else
-  let op := parts.getLast!
-  let ident := "ryo_h_" ++ op
+  let rest := parts.getLast!
+  let ident := pre ++ rest
   let shapeOk := name == ident || name.endsWith (toString ident.length ++ ident)
   if !shapeOk then none else
-  Full.all.find? fun o => o.info.name == op && o.hasHandler
+  match untagged rest with
+  | none => none
+  | some op => Full.all.find? fun o => o.info.name == op && o.hasHandler
 
 def probeName : String := "ryo_probe_stack"
 
+/-- Whether `name` is `ryo_probe_stack`, with or without the ABI tag (any tag), mangled as
+`handlerOf?` reads handlers or unmangled. -/
 def isProbe (name : String) : Bool :=
-  name == probeName || name.endsWith (toString probeName.length ++ probeName)
+  let parts := name.splitOn probeName
+  if parts.length < 2 then false else
+  let rest := parts.getLast!
+  let ident := probeName ++ rest
+  let tagOk := rest == "" || (rest.startsWith "_" && rest.length > 1)
+  tagOk && (name == ident || name.endsWith (toString ident.length ++ ident))
 
 /-- What the code field `at` (a text offset) refers to, by its relocation: the inverse of the
 writer's mapping (`finish_encoded`), with the address ranges `ImageResolver::resolve` uses.
@@ -455,7 +479,7 @@ def refOf (o : ImageObject) (func : Nat) (r : Rela) : Except String Ref := do
   match r.type, tgt with
   | .plt32, .named n a =>
     unless a == -4 do throw s!"call relocation at {r.offset} with addend {a}"
-    match handlerOf? n with
+    match handlerOf? n o.image.mode.rbpSet with
     | some op => pure (.handler op)
     | none => if isProbe n then pure .probe else throw s!"call relocation at {r.offset} against `{n}`"
   | .pc32, .sect i off =>

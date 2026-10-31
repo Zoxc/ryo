@@ -1,10 +1,11 @@
 /-
 # What a function's code refers to: the decoder's inputs (aot.md §C2, §C3)
 
-Mirrors of the Rust types `asm::decode_reduced(code, relocs, rodata, call_sites, dropped,
-scopes, mode)` takes (`vm/bytecode/src/asm/encode.rs`, `asm/mod.rs`): `Mode`, `Ref`, `Reloc`,
-`CallSite`, `Scope`, `DroppedStore`, and `FuncInputs`, one function's inputs as
-`Ryo.Obj.Image` gathers them from an image object.
+Mirrors of the Rust types behind `asm::decode_reduced(enc: &Encoded, mode)`
+(`vm/bytecode/src/asm/decode.rs`; `Encoded`'s code, relocations, code constants, call sites,
+dropped stores and scopes, `asm/encode.rs`, `asm/mod.rs`): `Mode`, `Ref`, `Reloc`, `CallSite`,
+`Scope`, `DroppedStore`, and `FuncInputs`, one function's inputs as `Ryo.Obj.Image` gathers
+them from an image object.
 
 **Function references.** In an image object, the writer resolves calls between the image's
 functions itself (`ImageWriter::finish_encoded`): their `rel32` fields hold the displacement
@@ -41,7 +42,8 @@ def MODE_ALIGN_LOOPS : Nat := 4
 def MODE_PE : Nat := 8
 def MODE_COUNTERS : Nat := 16
 
-/-- `Image::mode_of`. -/
+/-- The fields of `Mode::from_header_bits`. Unlike it, this neither rejects unknown bits nor an
+invalid mode: `Image.parse` checks both (`Mode.valid`). -/
 def Mode.ofBits (m : Nat) : Mode :=
   { fpArg := m &&& MODE_FP_ARG != 0, framePointer := m &&& MODE_FRAME_POINTER != 0,
     alignLoops := m &&& MODE_ALIGN_LOOPS != 0, pe := m &&& MODE_PE != 0,
@@ -52,6 +54,10 @@ def Mode.ofBits (m : Nat) : Mode :=
 def Mode.valid (m : Mode) : Bool :=
   if m.pe then m.framePointer && !m.fpArg else m.framePointer || m.fpArg
 
+/-- `Mode::rbp_set`: the code calls the frame-pointer handler set (`ryo_hf_<Opcode>`, `fp` in
+`rbp`): no `fpArg`, not PE. -/
+def Mode.rbpSet (m : Mode) : Bool := !m.fpArg && !m.pe
+
 instance : ToString Mode where
   toString m :=
     let b (x : Bool) := if x then "1" else "0"
@@ -61,7 +67,7 @@ instance : ToString Mode where
 PC-relative: once linked, it holds `target - (field + 4)`. Indices are those of `full::Func`,
 `Sym`, `Const` (pool byte offset) and `Data` (fixup-area byte offset). -/
 inductive Ref where
-  /-- The handler `ryo_h_<op>`. -/
+  /-- The handler `ryo_h_<op>` (`ryo_hf_<op>` with `Mode.rbpSet`). -/
   | handler (op : Full.Opcode)
   /-- `ryo_probe_stack`. -/
   | probe
