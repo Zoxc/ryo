@@ -7,7 +7,9 @@
 //! handlers (`lean/Ryo/Vm/OpSem/JitEffects.lean`, `ryo-lean effects`; regenerate with
 //! `./y.sh lean gen`, which `y lean` checks was done). `vm/rt/tests/ops.rs` checks it against the handlers themselves: each handler run on a
 //! frame filled with a pattern writes only the bytes the table says, and depends only on the
-//! bytes it says it reads.
+//! bytes it says it reads. That test leaves out handlers with memory effects, lengths given by
+//! their operands, or no return (`load.*`, `store.*`, atomics, `copy`/`fill`/`zero`/`const`, ..):
+//! for those the table is only as good as the Lean footprints.
 
 use crate::asm::{ARG_REGS, Mode};
 use crate::full::{Opcode, OperandKind, Shape};
