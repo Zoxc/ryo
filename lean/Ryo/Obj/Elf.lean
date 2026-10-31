@@ -117,7 +117,8 @@ structure Section where
   deriving Repr, Inhabited
 
 /-- A symbol table entry. `shndx` is the section index (extended indices resolved through
-`SHT_SYMTAB_SHNDX`), or one of the reserved `SHN_*`. -/
+`SHT_SYMTAB_SHNDX`, which `readElf` takes only below `SHN_LORESERVE`), or one of the reserved
+`SHN_*`. -/
 structure Symbol where
   index : Nat
   name : String
@@ -277,7 +278,13 @@ def readElf (b : ByteArray) : Except String Elf := do
         let shndx0 ← readU16 b (o + 6)
         let shndx ← if shndx0 == Elf.SHN_XINDEX then
             match xindex with
-            | some x => readU32 x (i * 4)
+            | some x => do
+              let k ← readU32 x (i * 4)
+              -- `shndx` can't tell an index from 0xff00 on from a reserved `SHN_*`: such
+              -- objects (that many sections) aren't read.
+              if k ≥ shnum || k ≥ Elf.SHN_LORESERVE then
+                throw s!"symbol {i}'s extended section index {k} out of range or not supported"
+              pure k
             | none => throw s!"symbol {i} has SHN_XINDEX without SHT_SYMTAB_SHNDX"
           else pure shndx0
         if shndx != Elf.SHN_UNDEF && shndx < Elf.SHN_LORESERVE && shndx ≥ shnum then

@@ -191,7 +191,8 @@ def checkSignature (o : ImageObject) (i : Nat) (d : Decoded) : Array String := I
             -- (`StackSizes.frame`).
             if callee.argSize > d.frameSize then
               out := out.push s!"{l}: insn {k}: call of func {g} with arg_size {callee.argSize}, frame size {d.frameSize}"
-          | _, _ => out := out.push s!"{l}: insn {k}: call of func {g} (no such function)"
+          | none, _ => out := out.push s!"{l}: insn {k}: call of func {g} (no such function)"
+          | some _, none => out := out.push s!"{l}: insn {k}: call of func {g}: the kind operand isn't an immediate"
         | _ => out := out.push s!"{l}: insn {k}: call operands"
       else if m == "tail_call" then
         match ops with
