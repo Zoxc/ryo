@@ -27,11 +27,15 @@ fn rt_item(tcx: TyCtxt<'_>, krate: CrateNum, name: Symbol) -> Option<DefId> {
 pub const C_MAIN_ITEM: &str = "ryo_c_main";
 
 /// `ryo_rt`'s crate and template items, found through its diagnostic items. `None` if
-/// `ryo_rt` isn't loaded (rustc wasn't run through `rustc-ryo`).
+/// `ryo_rt` isn't loaded (rustc wasn't run through `rustc-ryo`); a fatal error if it is
+/// loaded but lacks an item (a `ryo_rt` from another source version).
 pub fn rt_items(tcx: TyCtxt<'_>) -> Option<RtItems> {
     let krate = *tcx.crates(()).iter().find(|&&c| is_rt_crate(tcx, c))?;
-    let get = |name: &str| rt_item(tcx, krate, Symbol::intern(name));
-    Some(RtItems { krate, c_main: get(C_MAIN_ITEM)? })
+    let get = |name: &str| {
+        rt_item(tcx, krate, Symbol::intern(name))
+            .unwrap_or_else(|| tcx.dcx().fatal(format!("the loaded `{RT_CRATE}` lacks the `{name}` diagnostic item; it doesn't match this backend")))
+    };
+    Some(RtItems { krate, c_main: get(C_MAIN_ITEM) })
 }
 
 /// The runtime crate's name.
