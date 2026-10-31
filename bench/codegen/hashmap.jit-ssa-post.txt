@@ -720,7 +720,7 @@ b72(v133:8, v134:8): ; Body
     br LtU.w8 v133, v40 ? b73() : b78(v134)
 b73(): ; Body
     v135:8 = Bin(Add, 8) (v38, v133)
-    v136:8 = RefAddr(image.k2368, false) ()
+    v136:8 = RefAddr(image.k2288, false) ()
     br LtU.w8 v135, v45 ? b75() : b76()
 b74(): ; Body
     trap
@@ -943,7 +943,7 @@ b158(): ; Body
 b159(v219:8, v220:8): ; Body
     br LtU.w8 v219, v265 ? b160() : b165(v220)
 b160(): ; Body
-    v221:8 = RefAddr(image.k2368, false) ()
+    v221:8 = RefAddr(image.k2288, false) ()
     br LtU.w8 v219, v2 ? b162() : b163()
 b161(): ; Body
     trap
@@ -3151,7 +3151,7 @@ b10(): ; Body
     AStore(AllocaId(263), 0, 8) (0x0)
     AStore(AllocaId(263), 8, 8) (0x0)
     v74:8 = AllocaAddr(AllocaId(263), 0) ()
-    v76:8 = RefAddr(image.k696, false) ()
+    v76:8 = RefAddr(image.k616, false) ()
     br Eq.w8 v72, 0x0 ? b85() : b66()
 b11(): ; Body
     trap
@@ -3329,7 +3329,7 @@ b79(): ; Body
     AStore(AllocaId(119), 0, 8) (0x0)
     AStore(AllocaId(119), 8, 8) (0x0)
     v138:8 = AllocaAddr(AllocaId(119), 0) ()
-    v140:8 = RefAddr(image.k696, false) ()
+    v140:8 = RefAddr(image.k616, false) ()
     br Eq.w8 v136, 0x0 ? b138() : b119()
 b80(): ; Body
     trap
@@ -4594,7 +4594,7 @@ b21(v27:8, v32:8): ; Body
     AStore(AllocaId(145), 0, 8) (0x0)
     AStore(AllocaId(145), 8, 8) (0x0)
     v36:8 = AllocaAddr(AllocaId(145), 0) ()
-    v38:8 = RefAddr(image.k696, false) ()
+    v38:8 = RefAddr(image.k616, false) ()
     br Eq.w8 v34, 0x0 ? b53() : b34()
 b22(): ; Body
     trap
@@ -5102,7 +5102,7 @@ b30(): ; Body
     AStore(AllocaId(90), 0, 8) (0x0)
     AStore(AllocaId(90), 8, 8) (0x0)
     v82:8 = AllocaAddr(AllocaId(90), 0) ()
-    v84:8 = RefAddr(image.k696, false) ()
+    v84:8 = RefAddr(image.k616, false) ()
     br Eq.w8 v80, 0x0 ? b62() : b43()
 b31(): ; Body
     trap
@@ -5974,7 +5974,7 @@ b0(v0:8, v1:8): ; Entry
     AStore(AllocaId(233), 0, 8) (0x0)
     AStore(AllocaId(233), 8, 8) (0x0)
     v20:8 = AllocaAddr(AllocaId(233), 0) ()
-    v22:8 = RefAddr(image.k696, false) ()
+    v22:8 = RefAddr(image.k616, false) ()
     br Eq.w8 v18, 0x0 ? b46() : b27()
 b1(): ; Body
     trap
@@ -6071,7 +6071,7 @@ b40(): ; Body
     AStore(AllocaId(89), 0, 8) (0x0)
     AStore(AllocaId(89), 8, 8) (0x0)
     v84:8 = AllocaAddr(AllocaId(89), 0) ()
-    v86:8 = RefAddr(image.k696, false) ()
+    v86:8 = RefAddr(image.k616, false) ()
     br Eq.w8 v82, 0x0 ? b99() : b80()
 b41(): ; Body
     trap
@@ -6605,7 +6605,7 @@ b21(v27:8, v32:8): ; Body
     AStore(AllocaId(145), 0, 8) (0x0)
     AStore(AllocaId(145), 8, 8) (0x0)
     v36:8 = AllocaAddr(AllocaId(145), 0) ()
-    v38:8 = RefAddr(image.k696, false) ()
+    v38:8 = RefAddr(image.k616, false) ()
     br Eq.w8 v34, 0x0 ? b53() : b34()
 b22(): ; Body
     trap
@@ -7147,7 +7147,7 @@ b21(v27:8, v32:8): ; Body
     AStore(AllocaId(145), 0, 8) (0x0)
     AStore(AllocaId(145), 8, 8) (0x0)
     v36:8 = AllocaAddr(AllocaId(145), 0) ()
-    v38:8 = RefAddr(image.k696, false) ()
+    v38:8 = RefAddr(image.k616, false) ()
     br Eq.w8 v34, 0x0 ? b53() : b34()
 b22(): ; Body
     trap
@@ -7629,7 +7629,7 @@ b25(): ; Body
     AStore(AllocaId(90), 0, 8) (0x0)
     AStore(AllocaId(90), 8, 8) (0x0)
     v89:8 = AllocaAddr(AllocaId(90), 0) ()
-    v91:8 = RefAddr(image.k696, false) ()
+    v91:8 = RefAddr(image.k616, false) ()
     br Eq.w8 v87, 0x0 ? b57() : b38()
 b26(): ; Body
     trap
@@ -8684,7 +8684,7 @@ b1(v15:8, v16:8, v29:1, v109:8, v113:8, v122:8): ; Body head 0
     AStore(AllocaId(129), 0, 8) (0x0)
     AStore(AllocaId(129), 8, 8) (0x0)
     v214:8 = AllocaAddr(AllocaId(129), 0) ()
-    v216:8 = RefAddr(image.k696, false) ()
+    v216:8 = RefAddr(image.k616, false) ()
     br Eq.w8 v21, 0x0 ? b85() : b66()
 b2(v24:2, v68:8, v71:8, v75:8, v77:8, v120:8, v134:1): ; Body head 1
     br Eq.w2 v24, 0x0 ? b10() : b3()
@@ -9098,7 +9098,7 @@ b1(v8:8): ; Body head 0
     AStore(AllocaId(73), 0, 8) (0x0)
     AStore(AllocaId(73), 8, 8) (0x0)
     v104:8 = AllocaAddr(AllocaId(73), 0) ()
-    v106:8 = RefAddr(image.k696, false) ()
+    v106:8 = RefAddr(image.k616, false) ()
     br Eq.w8 v12, 0x0 ? b65() : b46()
 b2(v14:8, v30:8, v32:8): ; Body head 1
     br Eq.w8 v14, 0x1 ? b6() : b3()
@@ -10008,7 +10008,7 @@ b61(): ; Body
     AStore(AllocaId(171), 0, 8) (0x0)
     AStore(AllocaId(171), 8, 8) (0x0)
     v304:8 = AllocaAddr(AllocaId(171), 0) ()
-    v306:8 = RefAddr(image.k696, false) ()
+    v306:8 = RefAddr(image.k616, false) ()
     br Eq.w8 v302, 0x0 ? b93() : b74()
 b62(): ; Body
     trap
@@ -11076,7 +11076,7 @@ a556: $-16, 8 bytes, Promoted, inlined
 a557: $-8, 8 bytes, Promoted, inlined
 b0(): ; Entry
     AStore(AllocaId(1), 32, 8) (0x50910)
-    v450:8 = RefAddr(image.k368, false) ()
+    v450:8 = RefAddr(image.k400, false) ()
     AStore(AllocaId(115), 0, 8) (v450)
     AStore(AllocaId(115), 8, 8) (0x0)
     AStore(AllocaId(115), 16, 8) (0x0)
@@ -11452,7 +11452,7 @@ b115(): ; Stub cold
     jmp b71(v110)
 b116(): ; Body
     AStore(AllocaId(66), 0, 8) (v119)
-    v411:8 = RefAddr(image.k368, false) ()
+    v411:8 = RefAddr(image.k400, false) ()
     AStore(AllocaId(63), 0, 8) (v411)
     AStore(AllocaId(63), 8, 8) (0x0)
     AStore(AllocaId(63), 16, 8) (0x0)
@@ -11621,7 +11621,7 @@ b177(): ; Body
     trap
 b178(): ; Body
     v287:8 = Bin(ShrU, 8) (v166, 0x1)
-    v288:8 = RefAddr(image.k2216, false) ()
+    v288:8 = RefAddr(image.k2136, false) ()
     br Eq.w8 v165, 0x0 ? b188() : b185()
 b179(): ; Body
     trap
@@ -12259,7 +12259,7 @@ b0(v0:8, v1:8): ; Entry
     AStore(AllocaId(3), 0, 8) (0x0)
     AStore(AllocaId(3), 8, 8) (0x0)
     v5:8 = AllocaAddr(AllocaId(3), 0) ()
-    v11:8 = RefAddr(image.k696, false) ()
+    v11:8 = RefAddr(image.k616, false) ()
     br Eq.w8 v1, 0x0 ? b30() : b11()
 b1(): ; Body
     trap
@@ -13056,7 +13056,7 @@ b28(): ; Body
     jmp b29(v38)
 b29(v43:8): ; Body
     v44:1 = Cmp(LtU, 8) (v43, v2)
-    v46:8 = RefAddr(image.k1840, false) ()
+    v46:8 = RefAddr(image.k1760, false) ()
     br v44 ? b32() : b31()
 b30(): ; Body
     trap
@@ -13151,7 +13151,7 @@ b58(): ; Body
 b59(): ; Body
     AStore(AllocaId(33), 0, 8) (v2)
     hcall memcpy [(Fp, [None, None]), (Imm(4294967160), [Some(Scratch(0)), None]), (Imm(4294967168), [Some(Scratch(8)), None]), (Imm(4294967136), [Some(Alloca(AllocaId(33), 0)), None])] ins [0, 8] outs [] (v125, v1)
-    v69:8 = RefAddr(image.k944, false) ()
+    v69:8 = RefAddr(image.k864, false) ()
     AStore(AllocaId(33), 0, 8) (v69)
     br LtU.w8 v38, v2 ? b75() : b74()
 b60(): ; Body
@@ -13426,7 +13426,7 @@ b47(): ; Body
     br Eq.w8 v76, 0x0 ? b20() : b22()
 b48(): ; Body cold
     v78:8 = RefAddr(image.k1227, false) ()
-    v79:8 = RefAddr(image.k1352, false) ()
+    v79:8 = RefAddr(image.k1272, false) ()
     Call(Call { target: image.sym31, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Pad { catch: true } }) (v78, 0x55, v79)
     invoke -> - unwind b35()
 b49(): ; Body
@@ -13439,7 +13439,7 @@ b51(): ; Body
     br Eq.w8 v86, 0x0 ? b12() : b14()
 b52(): ; Body cold
     v88:8 = RefAddr(image.k1227, false) ()
-    v89:8 = RefAddr(image.k1352, false) ()
+    v89:8 = RefAddr(image.k1272, false) ()
     Call(Call { target: image.sym31, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 8, index: 2 }], parts: [], site: Pad { catch: true } }) (v88, 0x55, v89)
     invoke -> - unwind b33()
 

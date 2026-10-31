@@ -60,7 +60,7 @@ use ryo_bytecode::asm::{self, Asm, InsnId, Label, Opnd, Unwind};
 use ryo_bytecode::full::{Abs, Const, ElemKind, Func, Opcode, OperandKind, Sym};
 
 pub use self::cast::upcast_entry;
-pub use self::constant::{is_import, is_tls_shim, vtable_alloc};
+pub use self::constant::{is_import, is_tls_shim, needs_fixup, vtable_alloc};
 use self::emit::{IntOp, Width};
 use self::frame::{Frame, PE_SHADOW};
 pub use self::operand::SPLIT_MAX;

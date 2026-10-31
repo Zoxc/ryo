@@ -192,14 +192,14 @@ L5:
     mov     r9,r13
     jmp     L2
 L6:
-    lea     rdi,[image.k7567]
+    lea     rdi,[image.k7575]
     mov     esi,193h
     mov     edx,0
     movzx   edx,dl
     call    image.sym49
     ud2
 L7:
-    lea     rdi,[image.k7768]
+    lea     rdi,[image.k7776]
     mov     esi,175h
     mov     edx,0
     mov     rcx,rax
@@ -363,14 +363,14 @@ L5:
     mov     rbp,r13
     jmp     L2
 L6:
-    lea     rdi,[image.k7567]
+    lea     rdi,[image.k7575]
     mov     esi,193h
     mov     edx,0
     movzx   edx,dl
     call    image.sym49
     ud2
 L7:
-    lea     rdi,[image.k7768]
+    lea     rdi,[image.k7776]
     mov     esi,175h
     mov     edx,0
     mov     rcx,r8
@@ -560,7 +560,7 @@ L3:
     je      L5
     jmp     L2
 L4:
-    lea     rdi,[image.k9686]
+    lea     rdi,[image.k9694]
     mov     esi,237h
     mov     edx,0
     mov     rcx,rax
@@ -568,7 +568,7 @@ L4:
     call    image.sym49
     ud2
 L5:
-    lea     rdi,[image.k9686]
+    lea     rdi,[image.k9694]
     mov     esi,237h
     mov     edx,0
     mov     rcx,rax
@@ -595,7 +595,7 @@ fn core::slice::<impl [u32]>::swap
     lea     rax,[rdi+rdx*4]
     lea     rdi,[rdi+rcx*4]
     lea     r9,[rsp+0Ch]
-    lea     rbx,[image.k488]
+    lea     rbx,[image.k496]
     mov     r12,rax
     and     r12,3
     test    r12,r12
@@ -621,7 +621,7 @@ L3:
     jb      L12
     mov     r12d,[rax]
     mov     [rsp+0Ch],r12d
-    lea     r12,[image.k512]
+    lea     r12,[image.k520]
     mov     r13,rdi
     and     r13,3
     test    r13,r13
@@ -639,7 +639,7 @@ L6:
     mov     r9d,[rdi]
     mov     [rax],r9d
     lea     r9,[rsp+0Ch]
-    lea     r13,[image.k536]
+    lea     r13,[image.k544]
     mov     r14,r9
     and     r14,3
     test    r14,r14
@@ -682,7 +682,7 @@ L11:
     je      L14
     jmp     L8
 L12:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,rbx
@@ -690,7 +690,7 @@ L12:
     call    image.sym49
     ud2
 L13:
-    lea     rdi,[image.k8904]
+    lea     rdi,[image.k8912]
     mov     esi,1BBh
     mov     edx,0
     mov     rcx,r12
@@ -698,7 +698,7 @@ L13:
     call    image.sym49
     ud2
 L14:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,r13
@@ -726,7 +726,7 @@ fn core::slice::<impl [u32]>::swap_unchecked
     lea     rax,[rdi+rdx*4]
     lea     rdi,[rdi+rcx*4]
     lea     rcx,[rsp+0Ch]
-    lea     rdx,[image.k488]
+    lea     rdx,[image.k496]
     mov     rsi,rax
     and     rsi,3
     test    rsi,rsi
@@ -752,7 +752,7 @@ L3:
     jb      L13
     mov     esi,[rax]
     mov     [rsp+0Ch],esi
-    lea     rsi,[image.k512]
+    lea     rsi,[image.k520]
     mov     r9,rdi
     and     r9,3
     test    r9,r9
@@ -770,7 +770,7 @@ L6:
     mov     ecx,[rdi]
     mov     [rax],ecx
     lea     rcx,[rsp+0Ch]
-    lea     r9,[image.k536]
+    lea     r9,[image.k544]
     mov     rbx,rcx
     and     rbx,3
     test    rbx,rbx
@@ -810,7 +810,7 @@ L11:
     je      L15
     jmp     L8
 L12:
-    lea     rdi,[image.k7128]
+    lea     rdi,[image.k7136]
     mov     esi,1B5h
     mov     edx,0
     mov     rcx,r8
@@ -818,7 +818,7 @@ L12:
     call    image.sym49
     ud2
 L13:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     rcx,rdx
     mov     edx,0
@@ -826,7 +826,7 @@ L13:
     call    image.sym49
     ud2
 L14:
-    lea     rdi,[image.k8904]
+    lea     rdi,[image.k8912]
     mov     edx,0
     mov     rcx,rsi
     mov     esi,1BBh
@@ -834,7 +834,7 @@ L14:
     call    image.sym49
     ud2
 L15:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,r9
@@ -979,7 +979,7 @@ L9:
     mov     rdi,rax
     jmp     L7
 L10:
-    lea     rdi,[image.k7567]
+    lea     rdi,[image.k7575]
     mov     esi,193h
     mov     rcx,rdx
     mov     edx,0
@@ -987,7 +987,7 @@ L10:
     call    image.sym49
     ud2
 L11:
-    lea     rdi,[image.k7567]
+    lea     rdi,[image.k7575]
     mov     edx,0
     mov     rcx,rsi
     mov     esi,193h
@@ -995,7 +995,7 @@ L11:
     call    image.sym49
     ud2
 L12:
-    lea     rdi,[image.k9125]
+    lea     rdi,[image.k9133]
     mov     esi,1BBh
     mov     edx,0
     mov     rcx,r9
@@ -1478,7 +1478,7 @@ L29:
     jne     L18
     jmp     L19
 L30:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,[rsp+10h]
@@ -1486,7 +1486,7 @@ L30:
     call    image.sym49
     ud2
 L31:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,[rsp+48h]
@@ -1494,7 +1494,7 @@ L31:
     call    image.sym49
     ud2
 L32:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     rcx,rdx
     mov     edx,0
@@ -1682,7 +1682,7 @@ L12:
     mov     rbx,rbp
     jmp     L1
 L13:
-    lea     r14,[image.k10496]
+    lea     r14,[image.k10504]
     mov     r15,r9
     and     r15,3
     test    r15,r15
@@ -1751,7 +1751,7 @@ L23:
     mov     rbp,rax
     jmp     L10
 L24:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,r12
@@ -1759,7 +1759,7 @@ L24:
     call    image.sym49
     ud2
 L25:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,r14
@@ -1959,7 +1959,7 @@ L8:
     mov     r8,r10
     jmp     L1
 L9:
-    lea     rbx,[image.k10496]
+    lea     rbx,[image.k10504]
     mov     r12,rsi
     and     r12,3
     test    r12,r12
@@ -2009,7 +2009,7 @@ L16:
     pop     rbx
     ret
 L17:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,r9
@@ -2017,7 +2017,7 @@ L17:
     call    image.sym49
     ud2
 L18:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,rbx
@@ -2132,7 +2132,7 @@ L8:
     pop     rbx
     ret
 L9:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,rbx
@@ -2218,7 +2218,7 @@ L7:
     test    rcx,rcx
     jne     L3
 L8:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,rbx
@@ -2971,7 +2971,7 @@ L39:
     sub     rdx,rdi
     test    rdx,rdx
     jbe     L40
-    lea     r11,[image.k6944]
+    lea     r11,[image.k6864]
     mov     [rsp+0C0h],r11
     mov     r11,rdi
     add     r11,1
@@ -2979,7 +2979,7 @@ L39:
     lea     rax,[rdi+1]
     mov     [rsp+3C0h],rax
     lea     rax,[rsp+3D0h]
-    lea     r11,[image.k7064]
+    lea     r11,[image.k6976]
     mov     [rsp+0B8h],r11
     cmp     rdi,2
     jae     L68
@@ -3268,7 +3268,7 @@ L60:
     call    sym21
     ud2
 L61:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,[rsp+0A8h]
@@ -3276,7 +3276,7 @@ L61:
     call    image.sym49
     ud2
 L62:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,[rsp+0C8h]
@@ -3284,7 +3284,7 @@ L62:
     call    image.sym49
     ud2
 L63:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,[rsp+0D0h]
@@ -3292,7 +3292,7 @@ L63:
     call    image.sym49
     ud2
 L64:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,[rsp+0D8h]
@@ -3300,7 +3300,7 @@ L64:
     call    image.sym49
     ud2
 L65:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,[rsp+0A0h]
@@ -3308,7 +3308,7 @@ L65:
     call    image.sym49
     ud2
 L66:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,[rsp+90h]
@@ -3316,7 +3316,7 @@ L66:
     call    image.sym49
     ud2
 L67:
-    lea     rdi,[image.k7768]
+    lea     rdi,[image.k7776]
     mov     esi,175h
     mov     edx,0
     mov     rcx,[rsp+0C0h]
@@ -3324,7 +3324,7 @@ L67:
     call    image.sym49
     ud2
 L68:
-    lea     rdi,[image.k9969]
+    lea     rdi,[image.k9977]
     mov     esi,1ADh
     mov     edx,0
     mov     rcx,[rsp+0B8h]
@@ -3332,7 +3332,7 @@ L68:
     call    image.sym49
     ud2
 L69:
-    lea     rdi,[image.k9407]
+    lea     rdi,[image.k9415]
     mov     esi,22Fh
     mov     edx,0
     mov     rcx,[rsp+0F8h]
@@ -3340,7 +3340,7 @@ L69:
     call    image.sym49
     ud2
 L70:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,[rsp+148h]
@@ -4693,7 +4693,7 @@ L50:
     call    image.sym11
     ud2
 L51:
-    lea     rax,[image.k8904]
+    lea     rax,[image.k8912]
     mov     rdi,rax
     mov     esi,1BBh
     mov     edx,0
@@ -4702,7 +4702,7 @@ L51:
     call    image.sym49
     ud2
 L52:
-    lea     rax,[image.k8338]
+    lea     rax,[image.k8346]
     mov     rdi,rax
     mov     esi,237h
     mov     rcx,rdx
@@ -4733,7 +4733,7 @@ L52:
     call    image.sym11
     ud2
 L53:
-    lea     rax,[image.k8904]
+    lea     rax,[image.k8912]
     mov     rdi,rax
     mov     esi,1BBh
     mov     edx,0
@@ -4742,7 +4742,7 @@ L53:
     call    image.sym49
     ud2
 L54:
-    lea     rax,[image.k8338]
+    lea     rax,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,rdi
@@ -4771,7 +4771,7 @@ L54:
     call    image.sym11
     ud2
 L55:
-    lea     rdi,[image.k8904]
+    lea     rdi,[image.k8912]
     mov     esi,1BBh
     mov     edx,0
     mov     rcx,[rsp+38h]
@@ -4779,7 +4779,7 @@ L55:
     call    image.sym49
     ud2
 L56:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,r9
@@ -4807,7 +4807,7 @@ L56:
     call    image.sym11
     ud2
 L57:
-    lea     rdi,[image.k8904]
+    lea     rdi,[image.k8912]
     mov     esi,1BBh
     mov     edx,0
     mov     rcx,[rsp+48h]
@@ -4815,7 +4815,7 @@ L57:
     call    image.sym49
     ud2
 L58:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,r8
@@ -4843,7 +4843,7 @@ L58:
     call    image.sym11
     ud2
 L59:
-    lea     rdi,[image.k8904]
+    lea     rdi,[image.k8912]
     mov     esi,1BBh
     mov     edx,0
     mov     rcx,[rsp+58h]
@@ -4851,7 +4851,7 @@ L59:
     call    image.sym49
     ud2
 L60:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     edx,0
     mov     rcx,rsi
     mov     esi,237h
@@ -4879,14 +4879,14 @@ L60:
     call    image.sym11
     ud2
 L61:
-    lea     rdi,[image.k8904]
+    lea     rdi,[image.k8912]
     mov     esi,1BBh
     mov     edx,0
     movzx   edx,dl
     call    image.sym49
     ud2
 L62:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,r13
@@ -5887,7 +5887,7 @@ L46:
     call    image.sym11
     ud2
 L47:
-    lea     rax,[image.k8904]
+    lea     rax,[image.k8912]
     mov     rdi,rax
     mov     esi,1BBh
     mov     edx,0
@@ -5895,7 +5895,7 @@ L47:
     call    image.sym49
     ud2
 L48:
-    lea     rax,[image.k8338]
+    lea     rax,[image.k8346]
     mov     rdi,rax
     mov     esi,237h
     mov     rcx,rdx
@@ -5924,7 +5924,7 @@ L48:
     call    image.sym11
     ud2
 L49:
-    lea     rax,[image.k8904]
+    lea     rax,[image.k8912]
     mov     rdi,rax
     mov     esi,1BBh
     mov     edx,0
@@ -5933,7 +5933,7 @@ L49:
     call    image.sym49
     ud2
 L50:
-    lea     rax,[image.k8338]
+    lea     rax,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,rdi
@@ -5962,7 +5962,7 @@ L50:
     call    image.sym11
     ud2
 L51:
-    lea     rdi,[image.k8904]
+    lea     rdi,[image.k8912]
     mov     esi,1BBh
     mov     edx,0
     mov     rcx,[rsp+70h]
@@ -5970,7 +5970,7 @@ L51:
     call    image.sym49
     ud2
 L52:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,r9
@@ -5998,7 +5998,7 @@ L52:
     call    image.sym11
     ud2
 L53:
-    lea     rdi,[image.k8904]
+    lea     rdi,[image.k8912]
     mov     esi,1BBh
     mov     edx,0
     mov     rcx,[rsp+80h]
@@ -6006,7 +6006,7 @@ L53:
     call    image.sym49
     ud2
 L54:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,[rsp+90h]
@@ -6034,7 +6034,7 @@ L54:
     call    image.sym11
     ud2
 L55:
-    lea     rdi,[image.k8904]
+    lea     rdi,[image.k8912]
     mov     esi,1BBh
     mov     edx,0
     mov     rcx,[rsp+0A0h]
@@ -6042,7 +6042,7 @@ L55:
     call    image.sym49
     ud2
 L56:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,r8
@@ -6070,7 +6070,7 @@ L56:
     call    image.sym11
     ud2
 L57:
-    lea     rdi,[image.k8904]
+    lea     rdi,[image.k8912]
     mov     esi,1BBh
     mov     edx,0
     mov     rcx,[rsp+0B0h]
@@ -6078,7 +6078,7 @@ L57:
     call    image.sym49
     ud2
 L58:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,r13
@@ -6265,14 +6265,14 @@ L8:
     call    image.sym11
     ud2
 L9:
-    lea     rdi,[image.k8904]
+    lea     rdi,[image.k8912]
     mov     esi,1BBh
     mov     edx,0
     movzx   edx,dl
     call    image.sym49
     ud2
 L10:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     rcx,rdx
     mov     edx,0
@@ -6357,7 +6357,7 @@ L9:
     jne     L0
     jmp     L1
 L10:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,r8
@@ -6463,7 +6463,7 @@ L3:
 L4:
     mov     rcx,rbx
 L5:
-    lea     r11,[image.k1336]
+    lea     r11,[image.k1248]
     mov     [rsp+58h],r11
     cmp     rcx,rbx
     jb      L24
@@ -6732,7 +6732,7 @@ L23:
     mov     [rsp+70h],rcx
     jmp     L14
 L24:
-    lea     rdi,[image.k7567]
+    lea     rdi,[image.k7575]
     mov     esi,193h
     mov     edx,0
     mov     rcx,[rsp+58h]
@@ -6740,7 +6740,7 @@ L24:
     call    image.sym49
     ud2
 L25:
-    lea     rdi,[image.k7567]
+    lea     rdi,[image.k7575]
     mov     esi,193h
     mov     edx,0
     mov     rcx,[rsp+98h]
@@ -6748,7 +6748,7 @@ L25:
     call    image.sym49
     ud2
 L26:
-    lea     rdi,[image.k9125]
+    lea     rdi,[image.k9133]
     mov     esi,1BBh
     mov     edx,0
     mov     rcx,[rsp+90h]
@@ -6760,7 +6760,7 @@ L27:
     call    ryo_h_Abort
     ud2
 L28:
-    lea     rdi,[image.k9686]
+    lea     rdi,[image.k9694]
     mov     esi,237h
     mov     edx,0
     mov     rcx,rbp
@@ -6768,7 +6768,7 @@ L28:
     call    image.sym49
     ud2
 L29:
-    lea     rdi,[image.k9686]
+    lea     rdi,[image.k9694]
     mov     esi,237h
     mov     edx,0
     mov     rcx,rbp
@@ -7053,7 +7053,7 @@ L3:
     mov     rdx,[rsp+110h]
     lea     rdi,[rdi+rdx*8]
     mov     rdx,[rsp+108h]
-    lea     r11,[image.k6632]
+    lea     r11,[image.k6640]
     mov     [rsp+68h],r11
     mov     r15,rdx
     and     r15,3
@@ -7121,7 +7121,7 @@ L12:
     mov     rdi,[rsp+110h]
     lea     rdx,[rdx+rdi*8]
     mov     rdi,[rsp+108h]
-    lea     r11,[image.k6632]
+    lea     r11,[image.k6640]
     mov     [rsp+88h],r11
     mov     r9,rdi
     and     r9,3
@@ -7189,7 +7189,7 @@ L21:
     mov     rdi,[rsp+110h]
     lea     rdx,[rdx+rdi*8]
     mov     rdi,[rsp+108h]
-    lea     r11,[image.k6632]
+    lea     r11,[image.k6640]
     mov     [rsp+90h],r11
     mov     r9,rdi
     and     r9,3
@@ -7258,7 +7258,7 @@ L30:
     mov     rdi,[rsp+110h]
     lea     rdx,[rdx+rdi*8]
     mov     rdi,[rsp+108h]
-    lea     r11,[image.k6632]
+    lea     r11,[image.k6640]
     mov     [rsp+98h],r11
     mov     r9,rdi
     and     r9,3
@@ -7339,7 +7339,7 @@ L40:
     mov     r8,[rsp+110h]
     lea     rdi,[rdi+r8*8]
     mov     r8,[rsp+108h]
-    lea     r11,[image.k6632]
+    lea     r11,[image.k6640]
     mov     [rsp+0A0h],r11
     mov     rbx,r8
     and     rbx,3
@@ -7403,7 +7403,7 @@ L49:
     mov     rcx,[rsp+110h]
     lea     rdx,[rdx+rcx*8]
     mov     rcx,[rsp+108h]
-    lea     rdi,[image.k6632]
+    lea     rdi,[image.k6640]
     mov     r8,rcx
     and     r8,3
     test    r8,r8
@@ -7606,7 +7606,7 @@ L73:
     add     rsp,208h
     ret
 L74:
-    lea     rax,[image.k8338]
+    lea     rax,[image.k8346]
     mov     rdi,rax
     mov     esi,237h
     mov     edx,0
@@ -7615,7 +7615,7 @@ L74:
     call    image.sym49
     ud2
 L75:
-    lea     rax,[image.k8338]
+    lea     rax,[image.k8346]
     mov     rdi,rax
     mov     esi,237h
     mov     edx,0
@@ -7624,7 +7624,7 @@ L75:
     call    image.sym49
     ud2
 L76:
-    lea     rax,[image.k8338]
+    lea     rax,[image.k8346]
     mov     rdi,rax
     mov     esi,237h
     mov     edx,0
@@ -7633,7 +7633,7 @@ L76:
     call    image.sym49
     ud2
 L77:
-    lea     rax,[image.k8338]
+    lea     rax,[image.k8346]
     mov     rdi,rax
     mov     esi,237h
     mov     edx,0
@@ -7642,7 +7642,7 @@ L77:
     call    image.sym49
     ud2
 L78:
-    lea     rax,[image.k8338]
+    lea     rax,[image.k8346]
     mov     rdi,rax
     mov     esi,237h
     mov     edx,0
@@ -7651,7 +7651,7 @@ L78:
     call    image.sym49
     ud2
 L79:
-    lea     rax,[image.k8338]
+    lea     rax,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,rdi
@@ -7660,12 +7660,12 @@ L79:
     call    image.sym49
     ud2
 L80:
-    lea     rdi,[image.k9346]
+    lea     rdi,[image.k9354]
     mov     esi,3Dh
     call    image.sym50
     ud2
 L81:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,r8
@@ -7673,7 +7673,7 @@ L81:
     call    image.sym49
     ud2
 L82:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,r9
@@ -7963,7 +7963,7 @@ L3:
     mov     r8,[rsp+100h]
     lea     rdx,[rdx+r8*8]
     mov     r8,[rsp+0F8h]
-    lea     r11,[image.k6632]
+    lea     r11,[image.k6640]
     mov     [rsp+68h],r11
     mov     r15,r8
     and     r15,3
@@ -8028,7 +8028,7 @@ L12:
     mov     rdi,[rsp+100h]
     lea     rdx,[rdx+rdi*8]
     mov     rdi,[rsp+0F8h]
-    lea     r11,[image.k6632]
+    lea     r11,[image.k6640]
     mov     [rsp+80h],r11
     mov     rbp,rdi
     and     rbp,3
@@ -8093,7 +8093,7 @@ L21:
     mov     rdi,[rsp+100h]
     lea     rdx,[rdx+rdi*8]
     mov     rdi,[rsp+0F8h]
-    lea     r11,[image.k6632]
+    lea     r11,[image.k6640]
     mov     [rsp+88h],r11
     mov     rbp,rdi
     and     rbp,3
@@ -8159,7 +8159,7 @@ L30:
     mov     rdi,[rsp+100h]
     lea     rdx,[rdx+rdi*8]
     mov     rdi,[rsp+0F8h]
-    lea     r11,[image.k6632]
+    lea     r11,[image.k6640]
     mov     [rsp+90h],r11
     mov     rbp,rdi
     and     rbp,3
@@ -8237,7 +8237,7 @@ L40:
     mov     r8,[rsp+100h]
     lea     r9,[r9+r8*8]
     mov     r8,[rsp+0F8h]
-    lea     r11,[image.k6632]
+    lea     r11,[image.k6640]
     mov     [rsp+98h],r11
     mov     rdx,r8
     and     rdx,3
@@ -8301,7 +8301,7 @@ L49:
     mov     rcx,[rsp+100h]
     lea     rdx,[rdx+rcx*8]
     mov     rcx,[rsp+0F8h]
-    lea     rdi,[image.k6632]
+    lea     rdi,[image.k6640]
     mov     r8,rcx
     and     r8,3
     test    r8,r8
@@ -8504,7 +8504,7 @@ L73:
     add     rsp,1F8h
     ret
 L74:
-    lea     rax,[image.k8338]
+    lea     rax,[image.k8346]
     mov     rdi,rax
     mov     esi,237h
     mov     edx,0
@@ -8513,7 +8513,7 @@ L74:
     call    image.sym49
     ud2
 L75:
-    lea     rax,[image.k8338]
+    lea     rax,[image.k8346]
     mov     rdi,rax
     mov     esi,237h
     mov     edx,0
@@ -8522,7 +8522,7 @@ L75:
     call    image.sym49
     ud2
 L76:
-    lea     rax,[image.k8338]
+    lea     rax,[image.k8346]
     mov     rdi,rax
     mov     esi,237h
     mov     edx,0
@@ -8531,7 +8531,7 @@ L76:
     call    image.sym49
     ud2
 L77:
-    lea     rax,[image.k8338]
+    lea     rax,[image.k8346]
     mov     rdi,rax
     mov     esi,237h
     mov     edx,0
@@ -8540,7 +8540,7 @@ L77:
     call    image.sym49
     ud2
 L78:
-    lea     rax,[image.k8338]
+    lea     rax,[image.k8346]
     mov     rdi,rax
     mov     esi,237h
     mov     edx,0
@@ -8549,7 +8549,7 @@ L78:
     call    image.sym49
     ud2
 L79:
-    lea     rax,[image.k8338]
+    lea     rax,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,rdi
@@ -8558,12 +8558,12 @@ L79:
     call    image.sym49
     ud2
 L80:
-    lea     rdi,[image.k9346]
+    lea     rdi,[image.k9354]
     mov     esi,3Dh
     call    image.sym50
     ud2
 L81:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,r8
@@ -8571,7 +8571,7 @@ L81:
     call    image.sym49
     ud2
 L82:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,r9
@@ -9079,7 +9079,7 @@ L26:
     add     rsp,0D8h
     ret
 L27:
-    lea     rdi,[image.k8904]
+    lea     rdi,[image.k8912]
     mov     esi,1BBh
     mov     edx,0
     mov     rcx,r8
@@ -9087,7 +9087,7 @@ L27:
     call    image.sym49
     ud2
 L28:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,rbx
@@ -9095,7 +9095,7 @@ L28:
     call    image.sym49
     ud2
 L29:
-    lea     rdi,[image.k8904]
+    lea     rdi,[image.k8912]
     mov     esi,1BBh
     mov     edx,0
     mov     rcx,r13
@@ -9103,14 +9103,14 @@ L29:
     call    image.sym49
     ud2
 L30:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     movzx   edx,dl
     call    image.sym49
     ud2
 L31:
-    lea     rdi,[image.k8904]
+    lea     rdi,[image.k8912]
     mov     esi,1BBh
     mov     edx,0
     mov     rcx,r9
@@ -9118,7 +9118,7 @@ L31:
     call    image.sym49
     ud2
 L32:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,r14
@@ -9255,7 +9255,7 @@ L6:
     je      L8
     jmp     L3
 L7:
-    lea     rax,[image.k8904]
+    lea     rax,[image.k8912]
     mov     esi,1BBh
     mov     edx,0
     mov     rcx,rdi
@@ -9264,7 +9264,7 @@ L7:
     call    image.sym49
     ud2
 L8:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,r8
@@ -9637,7 +9637,7 @@ L34:
     mov     r10,[rsp+18h]
     mov     [rsp+2E0h],r10
     lea     r12,[rsp+20Ch]
-    lea     r11,[image.k488]
+    lea     r11,[image.k496]
     mov     [rsp+40h],r11
     mov     r14,rbx
     and     r14,3
@@ -9664,7 +9664,7 @@ L38:
     jb      L147
     mov     r14d,[rbx]
     mov     [rsp+20Ch],r14d
-    lea     r11,[image.k512]
+    lea     r11,[image.k520]
     mov     [rsp+88h],r11
     mov     r15,r8
     and     r15,3
@@ -9683,7 +9683,7 @@ L41:
     mov     r12d,[r8]
     mov     [rbx],r12d
     lea     r12,[rsp+20Ch]
-    lea     r11,[image.k536]
+    lea     r11,[image.k544]
     mov     [rsp+70h],r11
     mov     rbp,r12
     and     rbp,3
@@ -10004,7 +10004,7 @@ L73:
     jae     L161
     lea     rcx,[rbx+r15*4]
     lea     rdx,[rsp+23Ch]
-    lea     r11,[image.k488]
+    lea     r11,[image.k496]
     mov     [rsp+0D8h],r11
     mov     rdi,rbx
     and     rdi,3
@@ -10029,7 +10029,7 @@ L76:
     jb      L158
     mov     edi,[rbx]
     mov     [rsp+23Ch],edi
-    lea     r11,[image.k512]
+    lea     r11,[image.k520]
     mov     [rsp+0E8h],r11
     mov     r8,rcx
     and     r8,3
@@ -10044,7 +10044,7 @@ L78:
     mov     edx,[rcx]
     mov     [rbx],edx
     lea     rdx,[rsp+23Ch]
-    lea     r11,[image.k536]
+    lea     r11,[image.k544]
     mov     [rsp+0E0h],r11
     mov     r9,rdx
     and     r9,3
@@ -10107,7 +10107,7 @@ L85:
     mov     r10,[rsp+78h]
     lea     rcx,[rbx+r10*4]
     lea     rdx,[rsp+24Ch]
-    lea     r11,[image.k488]
+    lea     r11,[image.k496]
     mov     [rsp+0D0h],r11
     mov     r13,rbx
     and     r13,3
@@ -10134,7 +10134,7 @@ L89:
     jb      L162
     mov     r13d,[rbx]
     mov     [rsp+24Ch],r13d
-    lea     r11,[image.k512]
+    lea     r11,[image.k520]
     mov     [rsp+128h],r11
     mov     r15,rcx
     and     r15,3
@@ -10153,7 +10153,7 @@ L92:
     mov     edx,[rcx]
     mov     [rbx],edx
     lea     rdx,[rsp+24Ch]
-    lea     r11,[image.k536]
+    lea     r11,[image.k544]
     mov     [rsp+0F0h],r11
     mov     rbp,rdx
     and     rbp,3
@@ -10467,7 +10467,7 @@ L124:
     jae     L176
     lea     rcx,[rbx+rbp*4]
     lea     rdx,[rsp+27Ch]
-    lea     r11,[image.k488]
+    lea     r11,[image.k496]
     mov     [rsp+168h],r11
     mov     r8,rbx
     and     r8,3
@@ -10492,7 +10492,7 @@ L127:
     jb      L173
     mov     r8d,[rbx]
     mov     [rsp+27Ch],r8d
-    lea     r8,[image.k512]
+    lea     r8,[image.k520]
     mov     r9,rcx
     and     r9,3
     test    r9,r9
@@ -10506,7 +10506,7 @@ L129:
     mov     edx,[rcx]
     mov     [rbx],edx
     lea     rdx,[rsp+27Ch]
-    lea     r9,[image.k536]
+    lea     r9,[image.k544]
     mov     r12,rdx
     and     r12,3
     test    r12,r12
@@ -10616,7 +10616,7 @@ L138:
     add     rsp,388h
     ret
 L139:
-    lea     rcx,[image.k8338]
+    lea     rcx,[image.k8346]
     mov     rdi,rcx
     mov     esi,237h
     mov     edx,0
@@ -10628,8 +10628,8 @@ L139:
     jmp     L141
     jmp     L141
 L140:
-    lea     rcx,[image.k8338]
-    lea     rsi,[image.k10496]
+    lea     rcx,[image.k8346]
+    lea     rsi,[image.k10504]
     mov     rdi,rcx
     mov     edx,0
     mov     rcx,rsi
@@ -10645,7 +10645,7 @@ L142:
     call    ryo_h_Abort
     ud2
 L143:
-    lea     rcx,[image.k9686]
+    lea     rcx,[image.k9694]
     mov     rdi,rcx
     mov     esi,237h
     mov     edx,0
@@ -10654,7 +10654,7 @@ L143:
     call    image.sym49
     ud2
 L144:
-    lea     rcx,[image.k7567]
+    lea     rcx,[image.k7575]
     mov     rdi,rcx
     mov     esi,193h
     mov     edx,0
@@ -10663,7 +10663,7 @@ L144:
     call    image.sym49
     ud2
 L145:
-    lea     rcx,[image.k7567]
+    lea     rcx,[image.k7575]
     mov     rdi,rcx
     mov     esi,193h
     mov     edx,0
@@ -10672,7 +10672,7 @@ L145:
     call    image.sym49
     ud2
 L146:
-    lea     rcx,[image.k9125]
+    lea     rcx,[image.k9133]
     mov     rdi,rcx
     mov     esi,1BBh
     mov     edx,0
@@ -10681,7 +10681,7 @@ L146:
     call    image.sym49
     ud2
 L147:
-    lea     rcx,[image.k8338]
+    lea     rcx,[image.k8346]
     mov     rdi,rcx
     mov     esi,237h
     mov     edx,0
@@ -10690,7 +10690,7 @@ L147:
     call    image.sym49
     ud2
 L148:
-    lea     rcx,[image.k8904]
+    lea     rcx,[image.k8912]
     mov     rdi,rcx
     mov     esi,1BBh
     mov     edx,0
@@ -10699,7 +10699,7 @@ L148:
     call    image.sym49
     ud2
 L149:
-    lea     rcx,[image.k8338]
+    lea     rcx,[image.k8346]
     mov     rdi,rcx
     mov     esi,237h
     mov     edx,0
@@ -10708,7 +10708,7 @@ L149:
     call    image.sym49
     ud2
 L150:
-    lea     rcx,[image.k9686]
+    lea     rcx,[image.k9694]
     mov     rdi,rcx
     mov     esi,237h
     mov     edx,0
@@ -10717,7 +10717,7 @@ L150:
     call    image.sym49
     ud2
 L151:
-    lea     rcx,[image.k9686]
+    lea     rcx,[image.k9694]
     mov     rdi,rcx
     mov     esi,237h
     mov     edx,0
@@ -10726,7 +10726,7 @@ L151:
     call    image.sym49
     ud2
 L152:
-    lea     rcx,[image.k8904]
+    lea     rcx,[image.k8912]
     mov     rdi,rcx
     mov     esi,1BBh
     mov     edx,0
@@ -10735,7 +10735,7 @@ L152:
     call    image.sym49
     ud2
 L153:
-    lea     rcx,[image.k8338]
+    lea     rcx,[image.k8346]
     mov     rdi,rcx
     mov     esi,237h
     mov     edx,0
@@ -10744,7 +10744,7 @@ L153:
     call    image.sym49
     ud2
 L154:
-    lea     rcx,[image.k8904]
+    lea     rcx,[image.k8912]
     mov     rdi,rcx
     mov     esi,1BBh
     mov     edx,0
@@ -10753,7 +10753,7 @@ L154:
     call    image.sym49
     ud2
 L155:
-    lea     rcx,[image.k8338]
+    lea     rcx,[image.k8346]
     mov     rdi,rcx
     mov     esi,237h
     mov     edx,0
@@ -10762,7 +10762,7 @@ L155:
     call    image.sym49
     ud2
 L156:
-    lea     rcx,[image.k8904]
+    lea     rcx,[image.k8912]
     mov     rdi,rcx
     mov     esi,1BBh
     mov     edx,0
@@ -10771,7 +10771,7 @@ L156:
     call    image.sym49
     ud2
 L157:
-    lea     rcx,[image.k8338]
+    lea     rcx,[image.k8346]
     mov     rdi,rcx
     mov     esi,237h
     mov     edx,0
@@ -10780,7 +10780,7 @@ L157:
     call    image.sym49
     ud2
 L158:
-    lea     rcx,[image.k8338]
+    lea     rcx,[image.k8346]
     mov     rdi,rcx
     mov     esi,237h
     mov     edx,0
@@ -10789,7 +10789,7 @@ L158:
     call    image.sym49
     ud2
 L159:
-    lea     rcx,[image.k8904]
+    lea     rcx,[image.k8912]
     mov     rdi,rcx
     mov     esi,1BBh
     mov     edx,0
@@ -10798,7 +10798,7 @@ L159:
     call    image.sym49
     ud2
 L160:
-    lea     rcx,[image.k8338]
+    lea     rcx,[image.k8346]
     mov     rdi,rcx
     mov     esi,237h
     mov     edx,0
@@ -10811,7 +10811,7 @@ L161:
     call    ryo_h_Abort
     ud2
 L162:
-    lea     rcx,[image.k8338]
+    lea     rcx,[image.k8346]
     mov     rdi,rcx
     mov     esi,237h
     mov     edx,0
@@ -10820,7 +10820,7 @@ L162:
     call    image.sym49
     ud2
 L163:
-    lea     rcx,[image.k8904]
+    lea     rcx,[image.k8912]
     mov     rdi,rcx
     mov     esi,1BBh
     mov     edx,0
@@ -10829,7 +10829,7 @@ L163:
     call    image.sym49
     ud2
 L164:
-    lea     rcx,[image.k8338]
+    lea     rcx,[image.k8346]
     mov     rdi,rcx
     mov     esi,237h
     mov     edx,0
@@ -10838,7 +10838,7 @@ L164:
     call    image.sym49
     ud2
 L165:
-    lea     rcx,[image.k9686]
+    lea     rcx,[image.k9694]
     mov     rdi,rcx
     mov     esi,237h
     mov     edx,0
@@ -10847,7 +10847,7 @@ L165:
     call    image.sym49
     ud2
 L166:
-    lea     rcx,[image.k9686]
+    lea     rcx,[image.k9694]
     mov     rdi,rcx
     mov     esi,237h
     mov     edx,0
@@ -10856,7 +10856,7 @@ L166:
     call    image.sym49
     ud2
 L167:
-    lea     rcx,[image.k8904]
+    lea     rcx,[image.k8912]
     mov     rdi,rcx
     mov     esi,1BBh
     mov     edx,0
@@ -10865,7 +10865,7 @@ L167:
     call    image.sym49
     ud2
 L168:
-    lea     rcx,[image.k8338]
+    lea     rcx,[image.k8346]
     mov     rdi,rcx
     mov     esi,237h
     mov     edx,0
@@ -10874,7 +10874,7 @@ L168:
     call    image.sym49
     ud2
 L169:
-    lea     rcx,[image.k8904]
+    lea     rcx,[image.k8912]
     mov     esi,1BBh
     mov     edx,0
     mov     r10,rdi
@@ -10884,7 +10884,7 @@ L169:
     call    image.sym49
     ud2
 L170:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,rax
@@ -10892,7 +10892,7 @@ L170:
     call    image.sym49
     ud2
 L171:
-    lea     rdi,[image.k8904]
+    lea     rdi,[image.k8912]
     mov     esi,1BBh
     mov     edx,0
     mov     rcx,[rsp+158h]
@@ -10900,7 +10900,7 @@ L171:
     call    image.sym49
     ud2
 L172:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,r14
@@ -10908,7 +10908,7 @@ L172:
     call    image.sym49
     ud2
 L173:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,[rsp+168h]
@@ -10916,7 +10916,7 @@ L173:
     call    image.sym49
     ud2
 L174:
-    lea     rdi,[image.k8904]
+    lea     rdi,[image.k8912]
     mov     esi,1BBh
     mov     edx,0
     mov     rcx,r8
@@ -10924,7 +10924,7 @@ L174:
     call    image.sym49
     ud2
 L175:
-    lea     rdi,[image.k8338]
+    lea     rdi,[image.k8346]
     mov     esi,237h
     mov     edx,0
     mov     rcx,r9
@@ -10936,7 +10936,7 @@ L176:
     call    ryo_h_Abort
     ud2
 L177:
-    lea     rdi,[image.k9686]
+    lea     rdi,[image.k9694]
     mov     esi,237h
     mov     rcx,rdx
     mov     edx,0
@@ -10944,7 +10944,7 @@ L177:
     call    image.sym49
     ud2
 L178:
-    lea     rdi,[image.k9686]
+    lea     rdi,[image.k9694]
     mov     esi,237h
     mov     rcx,rdx
     mov     edx,0
@@ -10952,7 +10952,7 @@ L178:
     call    image.sym49
     ud2
 L179:
-    lea     rdi,[image.k9686]
+    lea     rdi,[image.k9694]
     mov     esi,237h
     mov     edx,0
     mov     rcx,r15
@@ -10960,7 +10960,7 @@ L179:
     call    image.sym49
     ud2
 L180:
-    lea     rdi,[image.k9686]
+    lea     rdi,[image.k9694]
     mov     esi,237h
     mov     edx,0
     mov     rcx,r15
@@ -11102,7 +11102,7 @@ L3:
     jae     L52
     lea     r14,[rax+rdx*4]
     lea     r15,[rsp+0BCh]
-    lea     r11,[image.k488]
+    lea     r11,[image.k496]
     mov     [rsp+30h],r11
     mov     r12,r14
     and     r12,3
@@ -11129,7 +11129,7 @@ L7:
     jb      L49
     mov     r12d,[r14]
     mov     [rsp+0BCh],r12d
-    lea     r12,[image.k512]
+    lea     r12,[image.k520]
     mov     r9,r8
     and     r9,3
     test    r9,r9
@@ -11147,7 +11147,7 @@ L10:
     mov     r9d,[r8]
     mov     [r14],r9d
     lea     r9,[rsp+0BCh]
-    lea     r11,[image.k536]
+    lea     r11,[image.k544]
     mov     [rsp+58h],r11
     mov     rbp,r9
     and     rbp,3
@@ -11290,14 +11290,14 @@ L21:
     mov     r10,[rsp+50h]
     lea     rbx,[r14+r10*4]
     lea     r9,[rbx+r9*4]
-    lea     r11,[image.k6656]
+    lea     r11,[image.k6664]
     mov     [rsp+70h],r11
     cmp     r9,rbx
     jb      L55
     sub     r9,rbx
     mov     r15,r9
     shr     r15,2
-    lea     r11,[image.k6704]
+    lea     r11,[image.k6712]
     mov     [rsp+68h],r11
     mov     r9,rbx
     and     r9,3
@@ -11331,7 +11331,7 @@ L25:
     jbe     L30
     mov     r13,[rbp+8]
     lea     r13,[r13+r9*4]
-    lea     r11,[image.k7104]
+    lea     r11,[image.k7112]
     mov     [rsp+78h],r11
     mov     r9,rbx
     and     r9,3
@@ -11381,13 +11381,13 @@ L30:
     mov     r10,[rsp+48h]
     lea     r13,[r14+r10*4]
     lea     rbx,[r13+rbx*4]
-    lea     r11,[image.k6656]
+    lea     r11,[image.k6664]
     mov     [rsp+90h],r11
     cmp     rbx,r13
     jb      L59
     sub     rbx,r13
     shr     rbx,2
-    lea     r11,[image.k6704]
+    lea     r11,[image.k6712]
     mov     [rsp+88h],r11
     mov     r15,r13
     and     r15,3
@@ -11420,7 +11420,7 @@ L34:
     jbe     L39
     mov     r15,[rbp+8]
     lea     r15,[r15+r8*4]
-    lea     r11,[image.k7104]
+    lea     r11,[image.k7112]
     mov     [rsp+98h],r11
     mov     r8,r13
     and     r8,3
@@ -11465,7 +11465,7 @@ L39:
     mov     r11,[rsp+60h]
     cmp     r11,r8
     jne     L64
-    lea     r13,[image.k560]
+    lea     r13,[image.k568]
     mov     r11,[rsp+60h]
     cmp     r11,0
     jne     L40
@@ -11530,7 +11530,7 @@ L48:
     add     rsp,178h
     ret
 L49:
-    lea     rax,[image.k8338]
+    lea     rax,[image.k8346]
     mov     rdi,rax
     mov     esi,237h
     mov     edx,0
@@ -11539,7 +11539,7 @@ L49:
     call    image.sym49
     ud2
 L50:
-    lea     rax,[image.k8904]
+    lea     rax,[image.k8912]
     mov     rdi,rax
     mov     esi,1BBh
     mov     edx,0
@@ -11548,7 +11548,7 @@ L50:
     call    image.sym49
     ud2
 L51:
-    lea     rax,[image.k8338]
+    lea     rax,[image.k8346]
     mov     rdi,rax
     mov     esi,237h
     mov     edx,0
@@ -11587,7 +11587,7 @@ L54:
     call    image.sym31
     ud2
 L55:
-    lea     rax,[image.k7567]
+    lea     rax,[image.k7575]
     mov     rdi,rax
     mov     esi,193h
     mov     edx,0
@@ -11596,7 +11596,7 @@ L55:
     call    image.sym49
     ud2
 L56:
-    lea     rax,[image.k9407]
+    lea     rax,[image.k9415]
     mov     rdi,rax
     mov     esi,22Fh
     mov     edx,0
@@ -11605,7 +11605,7 @@ L56:
     call    image.sym49
     ud2
 L57:
-    lea     rax,[image.k8338]
+    lea     rax,[image.k8346]
     mov     rdi,rax
     mov     esi,237h
     mov     edx,0
@@ -11621,7 +11621,7 @@ L58:
     call    image.sym31
     ud2
 L59:
-    lea     rax,[image.k7567]
+    lea     rax,[image.k7575]
     mov     rdi,rax
     mov     esi,193h
     mov     edx,0
@@ -11630,7 +11630,7 @@ L59:
     call    image.sym49
     ud2
 L60:
-    lea     rax,[image.k9407]
+    lea     rax,[image.k9415]
     mov     rdi,rax
     mov     esi,22Fh
     mov     edx,0
@@ -11639,7 +11639,7 @@ L60:
     call    image.sym49
     ud2
 L61:
-    lea     rax,[image.k8338]
+    lea     rax,[image.k8346]
     mov     rdi,rax
     mov     esi,237h
     mov     edx,0
@@ -11648,13 +11648,13 @@ L61:
     call    image.sym49
     ud2
 L62:
-    lea     rax,[image.k9346]
+    lea     rax,[image.k9354]
     mov     rdi,rax
     mov     esi,3Dh
     call    image.sym50
     ud2
 L63:
-    lea     rax,[image.k8338]
+    lea     rax,[image.k8346]
     mov     rdi,rax
     mov     esi,237h
     mov     edx,0
@@ -12097,19 +12097,19 @@ L4:
     jmp     L0
 L5:
     lea     rdi,[image.k6432]
-    lea     rdx,[image.k6560]
+    lea     rdx,[image.k6480]
     mov     esi,55h
     call    image.sym6
     ud2
 L6:
     lea     rdi,[image.k6432]
-    lea     rdx,[image.k6560]
+    lea     rdx,[image.k6480]
     mov     esi,55h
     call    image.sym6
     ud2
 L7:
     lea     rdi,[image.k6432]
-    lea     rdx,[image.k6560]
+    lea     rdx,[image.k6480]
     mov     esi,55h
     call    image.sym6
     ud2
@@ -12243,18 +12243,18 @@ L7:
     jmp     L3
 L8:
     lea     rdi,[image.k6432]
-    lea     rdx,[image.k6560]
+    lea     rdx,[image.k6480]
     mov     esi,55h
     call    image.sym6
     ud2
 L9:
     lea     rdi,[image.k6432]
-    lea     rdx,[image.k6560]
+    lea     rdx,[image.k6480]
     mov     esi,55h
     call    image.sym6
     ud2
 L10:
-    lea     rdi,[image.k9346]
+    lea     rdi,[image.k9354]
     mov     esi,3Dh
     call    image.sym50
     ud2
@@ -12381,7 +12381,7 @@ L4:
     jmp     L6
 L5:
     lea     rdi,[image.k6432]
-    lea     rdx,[image.k6560]
+    lea     rdx,[image.k6480]
     mov     esi,55h
     call    image.sym6
     ud2

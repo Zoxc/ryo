@@ -485,6 +485,34 @@ impl ImageWriter {
         Const(off)
     }
 
+    /// Reserves a zeroed constant pool allocation of `size` bytes, for [`Self::fill_const`]
+    /// to fill in later: an allocation can then be referred to before it is complete (a
+    /// cycle of allocations pointing at each other).
+    pub fn reserve_const(&mut self, size: usize, align: u32) -> Const {
+        Const(add_alloc(&mut self.consts, &mut self.const_align, &vec![0; size], align))
+    }
+
+    /// Fills in the allocation `k` from [`Self::reserve_const`]; `relocs` offsets are
+    /// relative to it.
+    pub fn fill_const(&mut self, k: Const, bytes: &[u8], relocs: &[AllocReloc]) {
+        let off = k.0;
+        self.consts[off as usize..][..bytes.len()].copy_from_slice(bytes);
+        self.const_relocs.extend(relocs.iter().map(|r| AllocReloc { offset: off + r.offset, ..*r }));
+    }
+
+    /// Like [`Self::reserve_const`], for the fixup area.
+    pub fn reserve_data(&mut self, size: usize, align: u32) -> Data {
+        Data(add_alloc(&mut self.data, &mut self.data_align, &vec![0; size], align))
+    }
+
+    /// Fills in the allocation `d` from [`Self::reserve_data`], like [`Self::add_data`].
+    pub fn fill_data(&mut self, d: Data, bytes: &[u8], relocs: &[AllocReloc], fixups: &[AllocFixup]) {
+        let off = d.0;
+        self.data[off as usize..][..bytes.len()].copy_from_slice(bytes);
+        self.data_relocs.extend(relocs.iter().map(|r| AllocReloc { offset: off + r.offset, ..*r }));
+        self.fixups.extend(fixups.iter().map(|x| AllocFixup { offset: off + x.offset, ..*x }));
+    }
+
     /// Adds a fixup-area allocation (PE: constants pointing at DLL-imported data). Offsets
     /// are relative to it.
     pub fn add_data(&mut self, bytes: &[u8], align: u32, relocs: &[AllocReloc], fixups: &[AllocFixup]) -> Data {

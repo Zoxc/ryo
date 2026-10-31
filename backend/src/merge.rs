@@ -188,7 +188,16 @@ impl Pool {
                 tcx.dcx().fatal("ryo: constant-pool reference to a non-memory allocation")
             }
         };
+        // Placed before following its pointers, so that a cycle of allocations
+        // (`const_allocate` + `const_make_global`) finds it in `allocs`.
         let inner = alloc.inner();
+        let align = inner.align.bytes() as u32;
+        let t = if lower::needs_fixup(tcx, id) {
+            AllocTarget::Data(w.reserve_data(inner.len(), align))
+        } else {
+            AllocTarget::Const(w.reserve_const(inner.len(), align))
+        };
+        self.allocs.insert(id, t);
         let mut bytes = inner.inspect_with_uninit_and_ptr_outside_interpreter(0..inner.len()).to_vec();
         let mut relocs = Vec::new();
         let mut fixups = Vec::new();
@@ -218,13 +227,14 @@ impl Pool {
             bytes[at..at + 8].fill(0);
             relocs.push(AllocReloc { offset: at as u32, target, addend });
         }
-        let align = inner.align.bytes() as u32;
-        let t = if fixups.is_empty() {
-            AllocTarget::Const(w.add_const(&bytes, align, &relocs))
-        } else {
-            AllocTarget::Data(w.add_data(&bytes, align, &relocs, &fixups))
-        };
-        self.allocs.insert(id, t);
+        match t {
+            AllocTarget::Const(k) => {
+                assert!(fixups.is_empty(), "`needs_fixup` disagrees with the allocation's pointers");
+                w.fill_const(k, &bytes, &relocs)
+            }
+            AllocTarget::Data(d) => w.fill_data(d, &bytes, &relocs, &fixups),
+            AllocTarget::Symbol(_) => unreachable!(),
+        }
         t
     }
 

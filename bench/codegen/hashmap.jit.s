@@ -101,7 +101,7 @@ L10:
 L11:
     cmp     rdx,rax
     jae     L12
-    lea     r11,[image.k2368]
+    lea     r11,[image.k2288]
     mov     [rsp+18h],r11
     cmp     rdx,r13
     jae     L32
@@ -272,7 +272,7 @@ L27:
     cmp     rax,r12
     jae     L28
     add     r14,rax
-    lea     rsi,[image.k2368]
+    lea     rsi,[image.k2288]
     cmp     r14,[rsp+10h]
     jae     L36
     mov     byte ptr [rsp+45h],1
@@ -1502,7 +1502,7 @@ L7:
     mov     qword ptr [rsp+20h],0
     mov     qword ptr [rsp+28h],0
     lea     rdi,[rsp+20h]
-    lea     r8,[image.k696]
+    lea     r8,[image.k616]
     test    rcx,rcx
     je      L18
     test    rdi,rdi
@@ -1534,7 +1534,7 @@ L9:
     mov     qword ptr [rsp+30h],0
     mov     qword ptr [rsp+38h],0
     lea     r9,[rsp+30h]
-    lea     r15,[image.k696]
+    lea     r15,[image.k616]
     test    rdi,rdi
     je      L19
     test    r9,r9
@@ -2412,7 +2412,7 @@ L0:
     mov     qword ptr [rsp+60h],0
     mov     qword ptr [rsp+68h],0
     lea     rcx,[rsp+60h]
-    lea     rdx,[image.k696]
+    lea     rdx,[image.k616]
     test    rax,rax
     je      L15
     test    rcx,rcx
@@ -2586,7 +2586,7 @@ L0:
     mov     qword ptr [rsp+20h],0
     mov     qword ptr [rsp+28h],0
     lea     r9,[rsp+20h]
-    lea     r12,[image.k696]
+    lea     r12,[image.k616]
     test    rbx,rbx
     je      L16
     test    r9,r9
@@ -2986,7 +2986,7 @@ fn hashbrown::raw::RawTable::<(u64, u64)>::erase
     mov     qword ptr [rsp+10h],0
     mov     qword ptr [rsp+18h],0
     lea     rdx,[rsp+10h]
-    lea     r8,[image.k696]
+    lea     r8,[image.k616]
     test    rax,rax
     je      L8
     test    rdx,rdx
@@ -3018,7 +3018,7 @@ L1:
     mov     qword ptr [rsp+20h],0
     mov     qword ptr [rsp+28h],0
     lea     r9,[rsp+20h]
-    lea     rbx,[image.k696]
+    lea     rbx,[image.k616]
     test    rdx,rdx
     je      L9
     test    r9,r9
@@ -3138,7 +3138,7 @@ L0:
     mov     qword ptr [rsp+10h],0
     mov     qword ptr [rsp+18h],0
     lea     rdx,[rsp+10h]
-    lea     r8,[image.k696]
+    lea     r8,[image.k616]
     test    rcx,rcx
     je      L13
     test    rdx,rdx
@@ -3280,7 +3280,7 @@ L0:
     mov     qword ptr [rsp+10h],0
     mov     qword ptr [rsp+18h],0
     lea     rdx,[rsp+10h]
-    lea     r8,[image.k696]
+    lea     r8,[image.k616]
     test    rcx,rcx
     je      L13
     test    rdx,rdx
@@ -3441,7 +3441,7 @@ L0:
     mov     qword ptr [rsp+40h],0
     mov     qword ptr [rsp+48h],0
     lea     r14,[rsp+40h]
-    lea     rbp,[image.k696]
+    lea     rbp,[image.k616]
     test    r15,r15
     je      L16
     test    r14,r14
@@ -4032,7 +4032,7 @@ L0:
     mov     qword ptr [rsp+30h],0
     mov     qword ptr [rsp+38h],0
     lea     rbx,[rsp+30h]
-    lea     r11,[image.k696]
+    lea     r11,[image.k616]
     mov     [rsp+10h],r11
     test    r9,r9
     je      L9
@@ -4285,7 +4285,7 @@ L0:
     mov     qword ptr [rsp+10h],0
     mov     qword ptr [rsp+18h],0
     lea     rax,[rsp+10h]
-    lea     rdx,[image.k696]
+    lea     rdx,[image.k616]
     test    rcx,rcx
     je      L11
     test    rax,rax
@@ -4594,7 +4594,7 @@ L4:
     mov     qword ptr [rsp+0E0h],0
     mov     qword ptr [rsp+0E8h],0
     lea     rdx,[rsp+0E0h]
-    lea     r11,[image.k696]
+    lea     r11,[image.k616]
     mov     [rsp+0D0h],r11
     test    rsi,rsi
     je      L24
@@ -5401,7 +5401,7 @@ fn main
     mov     [rsp+178h],r12
     mov     [rsp+170h],r13
     mov     qword ptr [rsp+1A8h],50910h
-    lea     rax,[image.k368]
+    lea     rax,[image.k400]
     mov     [rsp+698h],rax
     mov     qword ptr [rsp+6A0h],0
     mov     qword ptr [rsp+6A8h],0
@@ -5597,7 +5597,7 @@ L17:
     mov     esi,0
     call    qword ptr [fn24.slot]
     mov     [rsp+0F8h],rax
-    lea     rax,[image.k368]
+    lea     rax,[image.k400]
     mov     [rsp+458h],rax
     mov     qword ptr [rsp+460h],0
     mov     qword ptr [rsp+468h],0
@@ -5683,7 +5683,7 @@ L22:
     jmp     L24
 L23:
     shr     rcx,1
-    lea     rdx,[image.k2216]
+    lea     rdx,[image.k2136]
     test    rax,rax
     je      L31
 L24:
@@ -6183,7 +6183,7 @@ fn std::arch::x86_64::_mm_loadu_si128
     mov     qword ptr [rsp+10h],0
     mov     qword ptr [rsp+18h],0
     lea     rax,[rsp+10h]
-    lea     rcx,[image.k696]
+    lea     rcx,[image.k616]
     test    rsi,rsi
     je      L2
     test    rax,rax
@@ -6525,7 +6525,7 @@ fn std::option::Option::<&str>::map_or_else::<std::string::String, {closure@std:
 L0:
     cmp     r8,r13
     setb    r8b
-    lea     r9,[image.k1840]
+    lea     r9,[image.k1760]
     test    r8b,r8b
     jne     L9
     mov     r8,rax
@@ -6568,7 +6568,7 @@ L4:
     mov     edx,0FFFFFF98h
     mov     ecx,0FFFFFFC0h
     call    ryo_h_Memcpy
-    lea     rdx,[image.k944]
+    lea     rdx,[image.k864]
     mov     [rsp+30h],rdx
     cmp     r15,r13
     jb      L12
@@ -6797,13 +6797,13 @@ L7:
     jmp     L3
 L8:
     lea     rdi,[image.k1227]
-    lea     rdx,[image.k1352]
+    lea     rdx,[image.k1272]
     mov     esi,55h
     call    image.sym31
     ud2
 L9:
     lea     rdi,[image.k1227]
-    lea     rdx,[image.k1352]
+    lea     rdx,[image.k1272]
     mov     esi,55h
     call    image.sym31
     ud2

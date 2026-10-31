@@ -77,14 +77,14 @@ L5:
     mov     rbp,r13
     jmp     L2
 L6:
-    lea     rdi,[image.k1032]
+    lea     rdi,[image.k1017]
     mov     esi,193h
     mov     edx,0
     movzx   edx,dl
     call    image.sym14
     ud2
 L7:
-    lea     rdi,[image.k1233]
+    lea     rdi,[image.k1218]
     mov     esi,175h
     mov     edx,0
     mov     rcx,r8
@@ -251,7 +251,7 @@ fn sieve
     movzx   edi,byte ptr [rsp+3Fh]
     cmp     rax,r13
     setb    r8b
-    lea     r11,[image.k1008]
+    lea     r11,[image.k912]
     mov     [rsp+20h],r11
     test    r8b,r8b
     jne     L6
@@ -364,7 +364,7 @@ L5:
     add     rsp,0D8h
     ret
 L6:
-    lea     rdx,[image.k1605]
+    lea     rdx,[image.k1590]
     mov     rdi,rdx
     mov     esi,1BBh
     mov     edx,0
@@ -557,7 +557,7 @@ fn std::iter::adapters::map::map_fold::<&bool, usize, usize, {closure@<std::iter
     pop     rbx
     ret
 L0:
-    lea     rdi,[image.k472]
+    lea     rdi,[image.k376]
     call    image.sym9
     ud2
     mov     ecx,1

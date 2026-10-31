@@ -192,7 +192,7 @@ b41(): ; Body
     v61:8 = Bin(Add, 8) (v17, 0x1)
     br Eq.w8 v61, v63 ? b11() : b31()
 b42(): ; Body cold
-    v92:8 = RefAddr(image.k1233, false) ()
+    v92:8 = RefAddr(image.k1218, false) ()
     Call(Call { target: image.sym14, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v92, 0x175, 0x0, v58)
     trap
 b43(): ; Body
@@ -203,7 +203,7 @@ b45(): ; Body
     v49:8 = Bin(Sub, 8) (v1, v0)
     jmp b22()
 b46(): ; Body cold
-    v96:8 = RefAddr(image.k1032, false) ()
+    v96:8 = RefAddr(image.k1017, false) ()
     Call(Call { target: image.sym14, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v96, 0x193, 0x0, v40)
     trap
 
@@ -685,7 +685,7 @@ b86(): ; Body
     v102:1 = ALoad(AllocaId(144), 22, 1) ()
     v103:1 = ALoad(AllocaId(144), 23, 1) ()
     v105:1 = Cmp(LtU, 8) (v99, v3)
-    v107:8 = RefAddr(image.k1008, false) ()
+    v107:8 = RefAddr(image.k912, false) ()
     br v105 ? b91() : b90()
 b87(): ; Body
     trap
@@ -718,7 +718,7 @@ b90(): ; Body
     Call(Call { target: image.fn29, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }], parts: [], site: Pad { catch: false } }) (v121, v3, v122)
     invoke -> b100() unwind b113()
 b91(): ; Body cold
-    v108:8 = RefAddr(image.k1605, false) ()
+    v108:8 = RefAddr(image.k1590, false) ()
     Call(Call { target: image.sym14, regs: [ArgReg { xmm: false, size: 8, index: 0 }, ArgReg { xmm: false, size: 8, index: 1 }, ArgReg { xmm: false, size: 1, index: 2 }, ArgReg { xmm: false, size: 8, index: 3 }], parts: [], site: None }) (v108, 0x1bb, 0x0, v107)
     trap
 b92(): ; Body
@@ -864,7 +864,7 @@ b13(): ; Body
 b14(): ; Body
     ret 0x8 (v15)
 b15(): ; Body cold
-    v17:8 = RefAddr(image.k472, false) ()
+    v17:8 = RefAddr(image.k376, false) ()
     Call(Call { target: image.sym9, regs: [ArgReg { xmm: false, size: 8, index: 0 }], parts: [], site: Pad { catch: false } }) (v17)
     invoke -> - unwind b11()
 
