@@ -372,7 +372,8 @@ struct Partitioner<'a, 'tcx> {
     units: Vec<Unit<'a, 'tcx>>,
     /// The CGUs holding each of rustc's items (several for `LocalCopy` items).
     homes: FxHashMap<MonoItem<'tcx>, Vec<usize>>,
-    /// The CGU that added each [`unique`] item no CGU of rustc's holds ([`Self::expose_unique`]).
+    /// The CGU that added each [`unique`] item no CGU of rustc's holds ([`Self::expose_unique`]),
+    /// and the one whose copy of a `LocalCopy` item is global ([`Self::own_copy`], islands).
     owners: FxHashMap<MonoItem<'tcx>, usize>,
     stats: Stats,
 }
@@ -916,10 +917,10 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
 
     /// Makes a native item CGU `u`'s image refers to by symbol linkable from the image's
     /// object: an internal item becomes External + Hidden if it is unique in the crate, else
-    /// (a `LocalCopy`, of which other CGUs may expose their own copy) WeakODR + Hidden; a
-    /// linkonce one (`#[linkage]`), which LLVM drops when no native code uses it, its weak form,
-    /// in whichever CGU holds it (design/backend.md, Linkage). Items that no CGU defines
-    /// globally but are codegened locally are added, WeakODR + Hidden.
+    /// (a `LocalCopy`) WeakODR + Hidden in one CGU only ([`Self::own_copy`]); a linkonce one
+    /// (`#[linkage]`), which LLVM drops when no native code uses it, its weak form, in
+    /// whichever CGU holds it (design/backend.md, Linkage). Items that no CGU defines
+    /// globally but are codegened locally are added, WeakODR + Hidden, by one CGU.
     fn make_visible(&mut self, u: usize, item: MonoItem<'tcx>) {
         let tcx = self.tcx;
         if let MonoItem::Fn(f) = item
@@ -939,18 +940,27 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             // rustc only creates `ThreadLocal` shims where the target doesn't export TLS
             // (`needs_thread_local_shim`), so on ELF the backend adds its own, also for
             // upstream statics. The same static always gives the same body, so copies from
-            // several crates and CGUs merge (design/backend.md, Linkage).
+            // several crates merge (design/backend.md, Linkage); one CGU adds it.
+            if self.owners.get(&item).is_some_and(|&h| h != u) {
+                return;
+            }
+            self.owners.insert(item, u);
             self.units[u].add_hidden(tcx, f, Linkage::WeakODR);
             return;
         }
-        let unit = &mut self.units[u];
-        if let Some(data) = unit.cgu.items().get(&item) {
-            let flip = linkable(data, Some(hidden_internal(item)));
-            unit.flip(item, flip);
+        let unit = &self.units[u];
+        if let Some(&data) = unit.cgu.items().get(&item) {
+            if data.linkage == Linkage::Internal && !unique(tcx, item) && !self.own_copy(u, item) {
+                return;
+            }
+            let flip = linkable(&data, Some(hidden_internal(item)));
+            self.units[u].flip(item, flip);
             return;
         }
         if unit.added.contains_key(&item) {
-            unit.hide_added(item, hidden_internal(item));
+            if unique(tcx, item) || self.own_copy(u, item) {
+                self.units[u].hide_added(item, hidden_internal(item));
+            }
             return;
         }
         if unique(tcx, item) && self.expose_unique(u, item) {
@@ -965,11 +975,29 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         if let MonoItem::Fn(f) = item
             && tcx.should_codegen_locally(f)
         {
-            if unique(tcx, item) {
-                self.owners.insert(item, u);
+            if self.owners.get(&item).is_some_and(|&h| h != u) {
+                return; // a `LocalCopy` another CGU added for its image
             }
+            self.owners.insert(item, u);
             self.units[u].add_hidden(tcx, f, Linkage::WeakODR);
         }
+    }
+
+    /// For an internal `LocalCopy` item CGU `u` holds (or added) and its image references:
+    /// whether `u`'s copy becomes the crate's global one, which the other CGUs' images link
+    /// to while their copies stay internal: not if another CGU defines one globally already
+    /// (made linkable, [`Self::flip_linkonce`]) or made its copy the global one (`owners`).
+    /// Not a WeakODR copy per CGU, for the reason in [`Self::add_islands`].
+    fn own_copy(&mut self, u: usize, item: MonoItem<'tcx>) -> bool {
+        if self.global_elsewhere(u, item) {
+            self.flip_linkonce(item);
+            return false;
+        }
+        if self.owners.get(&item).is_some_and(|&h| h != u) {
+            return false;
+        }
+        self.owners.insert(item, u);
+        true
     }
 }
 

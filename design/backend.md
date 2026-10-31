@@ -287,7 +287,11 @@ depends on changed (`partition.rs`, `image_part`; the side data and work product
     the same global symbol;
   - native items an image refers to are made linkable on the native side only:
     `External` + `Hidden` if unique, `WeakODR` + `Hidden` if a `LocalCopy`, and items added
-    for an image `WeakODR` + `Hidden`, so no CGU depends on another's choices.
+    for an image `WeakODR` + `Hidden`. A `LocalCopy` (or an added item) is made global by one
+    CGU only, which the other images link to, their copies staying internal: LLVM's function
+    merging (on at `-O2` and up) can turn a copy into an alias, a strong symbol on Mach-O and a
+    per-object weak default on COFF, so two such copies wouldn't link (as for islands). A
+    non-generic `LocalCopy` has the same symbol in every crate, hence `WeakODR`.
 - **The image's dep node** is a `CompileCodegenUnit` node named
   `<cgu>.ryo.<fingerprint>`, the fingerprint covering the CGU name, its candidates' symbols,
   linkage and visibility, the entry fn's symbol (only in the entry's own CGU's key), the
