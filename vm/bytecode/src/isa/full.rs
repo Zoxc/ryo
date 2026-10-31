@@ -583,7 +583,8 @@ impl<'a, T: Elem> List<'a, T> {
 
     pub fn get(&self, i: usize) -> Option<T> {
         let n = T::KIND.words();
-        self.words.get(i * n..i * n + n).map(T::get)
+        let at = i.checked_mul(n)?;
+        self.words.get(at..at.checked_add(n)?).map(T::get)
     }
 
     pub fn iter(&self) -> impl ExactSizeIterator<Item = T> + 'a {
@@ -1230,7 +1231,7 @@ macro_rules! define_ops {
             let w0 = *w.first().ok_or(DecodeError::Truncated)?;
             let op = Opcode::from_u16(w0 as u16).ok_or(DecodeError::UnknownOpcode(w0 as u16))?;
             if let Some(n) = op.fixed_len() {
-                return Ok(n);
+                return if w.len() >= n { Ok(n) } else { Err(DecodeError::Truncated) };
             }
             let info = op.info();
             info.operand_start(w, info.operands.len())
