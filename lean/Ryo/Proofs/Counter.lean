@@ -15,7 +15,7 @@ call [r11 + 8|16]; jmp back`), where `back` is the position right after the chec
 - `check_fallthrough`, `check_taken`: the two cases of `check_effect`.
 - `stub_returns`: running a stub (`Run`, with the trip in place of its `call`) from any state
   `s` with `lo + 8 ≤ rsp` reaches `back`'s address with `rsp`, the callee-saved registers
-  (`CalleeSaved`: `rbx rbp r12`–`r15`) and memory outside `Owned` and outside the stack below
+  (`CalleeSaved`: `rbx rbp r12`–`r15`, the ones SysV and PE share) and memory outside `Owned` and outside the stack below
   `s.rsp` (`[lo, s.rsp)`, `InStack`) as in `s`.
 - `counter_noop`: from `x` at the check, either way (fall-through, or taken + stub + trip
   return) the program reaches `after` in a state that `Agree`s with `x`: `rsp`, the
@@ -32,7 +32,8 @@ the callee-saved registers of `s`, and memory of `s` outside `Owned` (runtime-ow
 records with their counters, the queue, code memory) and outside the stack below the caller's
 `rsp` (`[lo, s.rsp + 8)`), given that stack has room for the return address
 (`lo + 8 ≤ s.rsp + 8`). jit.md's contract (every register but `rax`, `r11` and the flags
-kept) implies this one. Its other outcome (`Done`: transfer to JIT code, which never returns
+kept) implies the register part; the return (`ret_rip`, `ret_rsp`) and memory (`ret_mem`)
+parts are assumed beyond what jit.md states. Its other outcome (`Done`: transfer to JIT code, which never returns
 here) is not covered: it is a property of the transfer target (`FnSim`), not of this code.
 The counter bytes must be in `Owned` (`counter_noop`'s `hOwn`).
 
@@ -156,8 +157,10 @@ theorem check_taken (ctx : Ctx) (lp : Bool) (stub : BitVec 32) (long : Bool)
 
 /-! ### The trip contract and the stubs -/
 
-/-- The callee-saved registers (SysV and PE): `rbx rbp r12`–`r15` by number (`rsp` is
-treated on its own). The model's `Reg` names only `rbp` of them; the state has all 16. -/
+/-- The integer registers callee-saved under both SysV and PE: `rbx rbp r12`–`r15` by number
+(`rsp` is treated on its own). PE also saves `rsi`, `rdi` and `xmm6`–`xmm15`, which this leaves
+out (`Call.Saved` adds `rsi`, `rdi`). The model's `Reg` names only `rbp` of them; the state has
+all 16. -/
 def CalleeSaved (i : Fin 16) : Prop := i = 3 ∨ i = 5 ∨ i = 12 ∨ i = 13 ∨ i = 14 ∨ i = 15
 
 /-- `a` is on the stack below `sp`, down to the limit `lo`: `lo ≤ a < sp` (unsigned). -/
