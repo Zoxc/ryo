@@ -695,7 +695,10 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
         let shifts_by_var = |v: usize| matches!(f.values[v].def, ValueDef::Inst(i, _) if shift_by_var(f, &f.insts[i.idx()]));
         let ok =
             |r: &R| gp.free[r.num() as usize] && clob >> r.num() & 1 == 0 && (!cross || (callee.contains(r) && (!def_cold(v) || saved.contains(r))));
-        // A use's hint before an operand's, not before a register the value comes in.
+        // A use's hint before an operand's, not before a register the value comes in (an
+        // argument, a call's result). Div/rem and the unsigned 64-bit `mul` with overflow count
+        // as operand forms here: their result comes in `rax`/`rdx`, but a move after them costs
+        // the same as one before the use.
         let soft = match f.values[v].def {
             ValueDef::Inst(i, _) => {
                 matches!(f.insts[i.idx()].op, Op::Bin(..) | Op::Ovf(..) | Op::Ext { .. } | Op::PtrAdd(_) | Op::PtrIndex(_)) || hint.is_none()
