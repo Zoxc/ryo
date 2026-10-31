@@ -924,9 +924,9 @@ theorem reducedOf_cleanup {r : ReadResult} {pe : Bool} {d : Decoded} (h : reduce
   cases h3
   rfl
 
-/-- Proof idea: `hD.read` and `decodeReduced_read`'s `reducedOf`: `Code.cleanupAt` is
-`r.actions`' entry, set by `read`'s call-site loop only after its `protos[j]!.op != .lpad`
-check (unroll `read` past `instructions` as `read_instructions` does). -/
+/-- A landing pad is an `lpad` proto: `Code.cleanupAt` is `r.actions`' entry
+(`reducedOf_cleanup`), and `actionsOf` checks that each pad it records is an `lpad`
+(`read_tail_facts`, from `actionsOf_lpad`). -/
 theorem pad_lpad (hD : Decodes S code relocs rodata callSites dropped scopes mode) {k pad : Nat}
     {cat : Bool} (h : S.c.cleanupAt k = some (some pad, cat)) :
     ∃ hp : pad < S.r.protos.size, S.r.protos[pad].op = .lpad := by
@@ -950,9 +950,8 @@ theorem pad_lpad (hD : Decodes S code relocs rodata callSites dropped scopes mod
   · rw [getElem!_neg S.r.protos pad hp] at hl
     exact absurd hl (by decide)
 
-/-- Proof idea: `hD.iters`: each `Iter` starts at a position `p` where `PadRead`/the dropped
-store read; induction with `hD.run`'s `instructions` ending at most at the code's size
-(`instructions_read`), positions only grow (`Dec.le`). -/
+/-- Every proto lies within the code: `hD.run`'s `instructions` reads each at a position at
+most the code's size (`instructions_pos_le`). -/
 theorem posOf_le_size (hD : Decodes S code relocs rodata callSites dropped scopes mode) {k : Nat}
     (hk : k < S.r.protos.size) : posOf S.r k ≤ S.body.code.size := by
   obtain ⟨stub, padded, c1, hrun⟩ := hD.run
