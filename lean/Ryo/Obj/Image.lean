@@ -280,8 +280,8 @@ def codeConsts (img : Image) : ByteArray :=
 
 /-- `Image::validate`: the function table (sorted, in the text), each function's
 instruction list (well formed, `walkList`) and call-site run, the fixups, the symbol and
-function flags, and the constant relocations (each 8-aligned in the section, inside the pool,
-after the one before). -/
+function flags, and the constant relocations (each inside the pool, 8 or more past the one
+before; at any alignment, as fixups: a packed constant holds a pointer at any offset). -/
 def validate (img : Image) : Except ImageError Unit := do
   let h := img.header
   let mut prevEnd := 0
@@ -307,7 +307,7 @@ def validate (img : Image) : Except ImageError Unit := do
   -- `Image::fixup_area_len`: the data area ends at the JIT records, if any.
   let fixupAreaLen := if h.jitRecords.count != 0 then h.jitRecords.off else h.dataSize
   for x in img.fixups do
-    if x.sym ≥ h.symbols.count || x.offset % 8 != 0 || x.offset + 8 > fixupAreaLen then
+    if x.sym ≥ h.symbols.count || x.offset + 8 > fixupAreaLen then
       throw (.badFixup i)
     i := i + 1
   i := 0
@@ -321,7 +321,7 @@ def validate (img : Image) : Except ImageError Unit := do
   i := 0
   let mut next := 0
   for o in img.constRelocs do
-    if o < next || (h.consts.off + o) % 8 != 0 || o + 8 > h.consts.count then throw (.badConstReloc i)
+    if o < next || o + 8 > h.consts.count then throw (.badConstReloc i)
     next := o + 8
     i := i + 1
 

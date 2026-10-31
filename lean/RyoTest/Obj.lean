@@ -224,6 +224,16 @@ def imageValidate : Except String Unit := do
     (.badSymbolFlags 0)
   expectValidate (mkImage { functions := ⟨168, 1⟩, funcFlags := some ⟨204, 1⟩ } (funcEntry 0 0 ++ [16]))
     (.badFuncFlags 0)
+  -- Constant relocations at any alignment (packed constants), but 8 or more apart.
+  let pool := List.replicate 24 0
+  for (offs, ok) in [([3, 11], true), ([3, 10], false), ([17], false)] do
+    let img := mkImage { consts := ⟨168, 24⟩, constRelocs := ⟨192, offs.length⟩ } (pool ++ offs.flatMap (le 4 ·))
+    match Image.parse img with
+    | .error e => throw s!"parse: {e}"
+    | .ok i => match i.validate, ok with
+      | .ok (), true => pure ()
+      | .error (.badConstReloc _), false => pure ()
+      | r, _ => throw s!"constant relocations {offs}: {repr r}"
   -- A good one: a function with a call site to a catching pad.
   let rest := funcEntry 0 16 (callSites := ⟨0, 1⟩) ++ le 4 0 ++ le 4 5 ++ le 4 (CATCH + 8)
   match Image.parse (mkImage { functions := ⟨168, 1⟩, textSize := 16, callSites := ⟨204, 1⟩ } rest) with

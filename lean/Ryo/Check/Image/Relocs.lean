@@ -41,9 +41,9 @@ outside every function, overlapping ones and ones in no image section are mismat
 **Read-only section**: the header's `data` and `text` fields (`R_X86_64_64` to the start of
 the writable and text sections) and its `anchor` field (`R_X86_64_64` + 0 against the undefined
 `__ryo_registry_anchor_<tag>`, which the registry stub defines), the symbol slots (exactly one `R_X86_64_64` + 0 each, against
-a symbol, its `SYM_INDIRECT` flag clear: ELF), and pool pointers (`R_X86_64_64` at 8-aligned
-pool offsets, against one of the image's symbols, or into the pool or the data area); nothing
-else. The header's constant relocation table (`const_relocs`) is exactly the pool offsets of
+a symbol, its `SYM_INDIRECT` flag clear: ELF), and pool pointers (`R_X86_64_64` at any pool
+offset, unaligned in packed constants, against one of the image's symbols, or into the pool or
+the data area); nothing else. The header's constant relocation table (`const_relocs`) is exactly the pool offsets of
 the pool pointers, in order. That a pool pointer is the allocation's provenance is the pool
 check (`Ryo/Check/Image/Pool.lean`).
 
@@ -51,8 +51,8 @@ check (`Ryo/Check/Image/Pool.lean`).
 `-JIT_ENTRY_THRESHOLD` (at 0), `ctr_l` = `-JIT_THRESHOLD` (at `JIT_LOOP_CTR`), `func` its
 index, every other byte 0; `entry` and `osr` relocated
 (`R_X86_64_64` + 0) against `ryo_jit_trip_entry_<tag>` and `ryo_jit_trip_osr_<tag>`, `header` against the
-image's header; data-area pointers as the pool's (and at most one relocation per offset,
-which the pool gets from `const_relocs`).
+image's header; data-area pointers as the pool's (and, at any alignment, no two fields
+overlapping, which the pool gets from `const_relocs`).
 
 **Header**: the image symbol is `__ryo_image_<stable_crate_id>_<cgu_hash>` (each as 16 hex
 digits), `crate_hash` folds the id, `abi` hashes the tag, the sections are where and as large
@@ -213,7 +213,6 @@ def checkRoRelocs (o : ImageObject) (tag : String) : Array String := Id.run do
         if sym.isNone then out := out.push s!"symbol slot {k}: {t}: symbol {r.sym} out of range"
         else if isSection || r.addend != 0 then out := out.push s!"symbol slot {k}: {t}, not against a symbol + 0"
     else if h.consts.off ≤ off && off + 8 ≤ h.consts.off + h.consts.count then
-      if off % 8 != 0 then out := out.push s!"pool: {t} at a pool offset that isn't 8-aligned"
       if let some e := allocTarget o names r then out := out.push s!"pool: {t}: {e}"
     else
       out := out.push s!"read-only: {t} at image offset {off}: not the header's data/text/anchor, a symbol slot or a pool pointer"
@@ -275,10 +274,14 @@ def checkDataRelocs (o : ImageObject) (tag : String) : Array String := Id.run do
     else if off + 8 ≤ dataEnd then
       if dataSeen.contains off then out := out.push s!"data area: {t}: a second relocation at offset {off}"
       dataSeen := dataSeen.insert off ()
-      if off % 8 != 0 then out := out.push s!"data area: {t} at an offset that isn't 8-aligned"
       if let some e := allocTarget o names r then out := out.push s!"data area: {t}: {e}"
     else
       out := out.push s!"writable: {t} at offset {off}: not in a JIT record or the data area"
+  -- Unaligned (packed) fields: none overlaps the next.
+  let offs := dataSeen.toArray.map (·.1) |>.qsort (· < ·)
+  for j in [1:offs.size] do
+    if offs[j]! < offs[j - 1]! + 8 then
+      out := out.push s!"data area: the relocated fields at {offs[j - 1]!} and {offs[j]!} overlap"
   -- The records' initial values.
   for k in [0:recs.count] do
     let base := o.dataBase + recs.off + 64 * k

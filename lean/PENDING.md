@@ -59,11 +59,6 @@ remove it once a Lean session has handled it.
   in its dumped ABI", 335142a7): a call's dumped `abi` (FnAbiSummary) now includes the extra
   arguments of C-variadic calls.
 
-- Unaligned constant pointers (Commit: "Image: Accept unaligned pointers in constant and fixup
-  allocations", f32411df): constant relocations and PE fixups no longer have to be 8-aligned;
-  `Image::validate` doesn't check their alignment and `apply_fixups` writes unaligned. The
-  Lean image model/checks of the relocation tables should drop the alignment requirement.
-
 - Exact frame accesses (Commit: "JIT: Make frame accesses of unreachable, handler outputs and
   shift amounts exact", e59b6c33): in `frame::insns`, native `unreachable` doesn't fall
   through, handler outputs `o` and lpad's `x` are `Clobber`, `dp`/`sp`/`n` are `Read(8)`, and

@@ -570,7 +570,7 @@ a second time from its unlinked bytes with the object's relocations (`Fields.rel
 between functions added as `Ref.func` fields), which must succeed and agree with the linked
 decode, so every relocation is a field of the form that takes it; relocated fields 0; the
 read-only section's relocations only the header's `data`/`text`, one per symbol slot
-(`SYM_INDIRECT` clear) and 8-aligned pool pointers to the image's symbols, the pool or the
+(`SYM_INDIRECT` clear) and pool pointers (any alignment: packed constants) to the image's symbols, the pool or the
 data area; the JIT records (`ctr_e` = −625, `ctr_l` = −10000, `func`, zeros,
 `entry`/`osr`/`header` relocations); the header (image symbol from `stable_crate_id`,
 `crate_hash`, `abi`, section sizes, RELRO); the `anchor` field; the ABI tag of the runtime
