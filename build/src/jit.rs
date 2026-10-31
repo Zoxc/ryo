@@ -184,7 +184,7 @@ fn lto_member(members: &str) -> Result<String, String> {
 /// and it doesn't define the unwinder, which it must share with the program (`__register_frame`
 /// registers JIT code with the program's). On COFF it also has no linker directives
 /// (`.drectve`) and no CRT initializers (`.CRT$X*`), on Mach-O no initializers
-/// (`__mod_init_func`, `__init_offsets`) or linker options (`LC_LINKER_OPTION`, the
+/// or terminators (`__mod_init_func`, `__init_offsets`, `__mod_term_func`) or linker options (`LC_LINKER_OPTION`, the
 /// counterpart of `.drectve`, which would add `-l` libraries to every link). Names are
 /// compared without Mach-O's `_` prefix. Returns the object's undefined symbols, so named.
 pub fn check_sealed(info: &RustcInfo, rlib: &Path, dir: &Path, triple: &str) -> Result<Vec<String>, String> {
@@ -232,7 +232,7 @@ pub fn check_sealed(info: &RustcInfo, rlib: &Path, dir: &Path, triple: &str) -> 
     Ok(undefined)
 }
 
-/// Whether the sealed JIT for `triple` may define the global `s`: `ryo_jit_start<tag>`, and on
+/// Whether the sealed JIT for `triple` may define the global `s`: `ryo_jit_start_<tag>`, and on
 /// COFF the renamed `__ryo_jit$…` symbols and what [`coff_renamed`] leaves alone (LLVM's
 /// constants).
 fn allowed_global(s: &str, triple: &str) -> bool {
