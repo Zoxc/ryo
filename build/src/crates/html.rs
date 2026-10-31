@@ -48,7 +48,7 @@ const METRICS: &[Metric] = &[
         id: "build-deps-backend",
         phase: Phase::Build,
         title: "Build: dependencies, backend",
-        what: "the codegen section (backend) summed over the dependencies, build scripts and proc macros (clean builds)",
+        what: "the codegen section (backend) summed over the dependencies, their build scripts and proc macros (clean builds)",
         unit: Measure::Secs,
         pick: |c| steps(&c.dep_build, |s| sum(s, Some(false)).backend),
         summary: false,
@@ -75,7 +75,7 @@ const METRICS: &[Metric] = &[
         id: "build-leaf-backend",
         phase: Phase::Build,
         title: "Build: leaf crate, backend",
-        what: "the codegen section of the benchmarked crate's library",
+        what: "the codegen section of the benchmarked crate's library (and of its build script, if it has one)",
         unit: Measure::Secs,
         pick: |c| steps(&c.build, |s| sum(s, Some(true)).backend),
         summary: true,
@@ -84,7 +84,7 @@ const METRICS: &[Metric] = &[
         id: "build-leaf-frontend",
         phase: Phase::Build,
         title: "Build: leaf crate, frontend",
-        what: "process start to the codegen section, for the benchmarked crate's library",
+        what: "process start to the codegen section, for the benchmarked crate's library (and its build script)",
         unit: Measure::Secs,
         pick: |c| steps(&c.build, |s| sum(s, Some(true)).frontend),
         summary: false,
@@ -93,7 +93,7 @@ const METRICS: &[Metric] = &[
         id: "build-leaf-rustc",
         phase: Phase::Build,
         title: "Build: leaf crate, rustc total",
-        what: "rustc wall time of the benchmarked crate's library",
+        what: "rustc wall time of the benchmarked crate's library (and its build script)",
         unit: Measure::Secs,
         pick: |c| steps(&c.build, |s| sum(s, Some(true)).wall),
         summary: true,
@@ -102,7 +102,7 @@ const METRICS: &[Metric] = &[
         id: "test-build-wall",
         phase: Phase::Build,
         title: "Test build: wall time",
-        what: "cargo build --tests (= cargo test --no-run), on top of the library build in the same target directory, so only dev-dependencies and the test targets",
+        what: "cargo build --tests (= cargo test --no-run), on top of the library build in the same target directory, so only the package's test targets (the dev-dependencies are left built by earlier samples)",
         unit: Measure::Secs,
         pick: |c| steps(&c.test_build, |s| s.wall),
         summary: true,
@@ -287,7 +287,7 @@ fn ratio_chart(r: &Report, m: &Metric, data: &[Vec<Option<Summary>>]) -> String 
     for (ci, row) in data.iter().enumerate() {
         let gy = 24.0 + ci as f64 * group_h;
         let name = r.crates[ci].krate.name();
-        let _ = write!(s, r#"<text x="0" y="{:.1}">{name}</text>"#, gy + nb * row_h / 2.0 + 4.0);
+        let _ = write!(s, r#"<text x="0" y="{:.1}">{}</text>"#, gy + nb * row_h / 2.0 + 4.0, esc(name));
         let base = row[llvm].as_ref().filter(|s| s.median > 0.0);
         for (bi, cell) in row.iter().enumerate() {
             let cy = gy + bi as f64 * row_h + row_h / 2.0;
@@ -410,7 +410,7 @@ fn metric_table(r: &Report, m: &Metric, data: &[Vec<Option<Summary>>]) -> String
     let mut s = header_row("crate", &r.backends);
     for (ci, row) in data.iter().enumerate() {
         let c = &r.crates[ci];
-        let _ = write!(s, "<tr><td>{}</td>", c.krate.name());
+        let _ = write!(s, "<tr><td>{}</td>", esc(c.krate.name()));
         for (bi, cell) in row.iter().enumerate() {
             let state = cell_state(&c.cells[bi], m.phase);
             match cell {
@@ -441,9 +441,13 @@ fn metric_table(r: &Report, m: &Metric, data: &[Vec<Option<Summary>>]) -> String
                     let st = state.map(|s| format!("<br><span class=\"sub\">{s}</span>")).unwrap_or_default();
                     let _ = write!(s, "<td{class}>{}{ratio}{detail}{st}</td>", fmt_value(v.median, m.unit));
                 }
-                None => {
-                    let _ = write!(s, "<td class=\"bad\">{}</td>", state.unwrap_or_else(|| "no data".into()));
-                }
+                // No samples without a failure: e.g. no workload (`--path`) or no runs (`--run-samples 0`).
+                None => match state {
+                    Some(st) => {
+                        let _ = write!(s, "<td class=\"bad\">{st}</td>");
+                    }
+                    None => s.push_str("<td>no data</td>"),
+                },
             }
         }
         s.push_str("</tr>");
@@ -487,7 +491,7 @@ fn coverage_section(r: &Report) -> String {
     for c in &r.crates {
         let cell = &c.cells[ryo];
         let Some(super::BuildSteps { lib: build, tests }) = &cell.warmup else {
-            let _ = write!(s, "<tr><td>{}</td><td colspan=5 class=\"bad\">no data</td></tr>", c.krate.name());
+            let _ = write!(s, "<tr><td>{}</td><td colspan=5 class=\"bad\">no data</td></tr>", esc(c.krate.name()));
             continue;
         };
         let leaf: Vec<&Unit> = build.units.iter().filter(|u| u.primary).collect();
@@ -527,23 +531,30 @@ fn unit_details(r: &Report) -> String {
         "<h2 id=\"units\">Per-unit compile times</h2><p class=\"muted\">Median rustc wall time / backend (codegen section) per rustc invocation; ★ marks units of the benchmarked package.</p>",
     );
     for c in &r.crates {
-        let mut keys: Vec<(String, String, bool, usize)> = Vec::new();
+        // A unit is its crate name, kind, package and source file (several build scripts, two
+        // versions of a dependency, a lib's and a bin's tests share a crate name and kind).
+        let mut keys: Vec<(String, String, String, String, bool, usize)> = Vec::new();
         for cell in &c.cells {
             for (si, steps) in [&cell.build, &cell.test_build].into_iter().enumerate() {
                 for u in steps.first().map_or(&[][..], |s| &s.units) {
-                    let k = (u.krate.clone(), u.kind.clone(), u.primary, si);
+                    let k = (u.krate.clone(), u.kind.clone(), u.package.clone(), u.src.clone(), u.primary, si);
                     if !keys.contains(&k) {
                         keys.push(k);
                     }
                 }
             }
         }
-        let _ = write!(s, "<details><summary>{} ({} units)</summary>{}", c.krate.name(), keys.len(), header_row("unit</th><th>step", &r.backends));
-        for (krate, kind, primary, si) in &keys {
+        let _ =
+            write!(s, "<details><summary>{} ({} units)</summary>{}", esc(c.krate.name()), keys.len(), header_row("unit</th><th>step", &r.backends));
+        for (krate, kind, package, src, primary, si) in &keys {
             let _ = write!(
                 s,
-                "<tr><td>{}{krate} <span class=\"sub\">{kind}</span></td><td>{}</td>",
+                "<tr><td title=\"{}\">{}{} <span class=\"sub\">{} ({})</span></td><td>{}</td>",
+                esc(src),
                 if *primary { "★ " } else { "" },
+                esc(krate),
+                esc(kind),
+                esc(package),
                 ["build", "tests"][*si]
             );
             for cell in &c.cells {
@@ -551,7 +562,11 @@ fn unit_details(r: &Report) -> String {
                 let pick = |f: fn(&Unit) -> f64| {
                     let v: Vec<f64> = steps
                         .iter()
-                        .filter_map(|st| st.units.iter().find(|u| &u.krate == krate && &u.kind == kind && u.primary == *primary))
+                        .filter_map(|st| {
+                            st.units
+                                .iter()
+                                .find(|u| &u.krate == krate && &u.kind == kind && &u.package == package && &u.src == src && u.primary == *primary)
+                        })
                         .map(f)
                         .collect();
                     Summary::of(&v).map(|s| s.median)
@@ -574,7 +589,7 @@ fn tests_section(r: &Report) -> String {
     let mut s = format!("<h2 id=\"tests\">Test results and failures</h2>{}", header_row("crate", &r.backends));
     let mut problems = String::new();
     for c in &r.crates {
-        let _ = write!(s, "<tr><td>{} {}</td>", c.krate.name(), c.krate.version());
+        let _ = write!(s, "<tr><td>{} {}</td>", esc(c.krate.name()), esc(c.krate.version()));
         for (bi, cell) in c.cells.iter().enumerate() {
             match &cell.tests {
                 Some(t) => {
@@ -588,7 +603,7 @@ fn tests_section(r: &Report) -> String {
                 None => s.push_str("<td class=\"bad\">not run</td>"),
             }
             for e in &cell.errors {
-                let _ = write!(problems, "<li><b>{} [{}]</b>: <pre>{}</pre></li>", c.krate.name(), r.backends[bi].name(), esc(&e.to_string()));
+                let _ = write!(problems, "<li><b>{} [{}]</b>: <pre>{}</pre></li>", esc(c.krate.name()), r.backends[bi].name(), esc(&e.to_string()));
             }
         }
         s.push_str("</tr>");
@@ -615,7 +630,8 @@ pub fn render(r: &Report) -> String {
     for c in &r.crates {
         let args =
             if c.krate.test_args().is_empty() { String::new() } else { format!(" (test binaries run with `{}`)", c.krate.test_args().join(" ")) };
-        let _ = write!(s, "<tr><td>{}</td><td>{}</td><td>{}{}</td></tr>", c.krate.name(), c.krate.version(), esc(&c.krate.why()), esc(&args));
+        let _ =
+            write!(s, "<tr><td>{}</td><td>{}</td><td>{}{}</td></tr>", esc(c.krate.name()), esc(c.krate.version()), esc(&c.krate.why()), esc(&args));
     }
     s.push_str("</table><p class=\"legend\">");
     for (i, b) in r.backends.iter().enumerate() {
@@ -655,12 +671,13 @@ pub fn text_summary(r: &Report) -> String {
                 let bad = cell_state(&r.crates[ci].cells[bi], m.phase).is_some();
                 line.push(match cell {
                     Some(v) => format!("{}{}{}", fmt_value(v.median, m.unit), if v.noisy() { "*" } else { "" }, if bad { " !" } else { "" }),
-                    None => "failed".to_owned(),
+                    None if bad => "failed".to_owned(),
+                    None => "-".to_owned(),
                 });
             }
             lines.push(line);
         }
-        let _ = write!(out, "\n{} (median; * noisy, ! failures)\n{}", m.title, crate::utils::text_table(&lines, false));
+        let _ = write!(out, "\n{} (median; * noisy, ! failures, - no data)\n{}", m.title, crate::utils::text_table(&lines, false));
     }
     if let Some(units) = r.ryo_warmup_units() {
         let cov = coverage(units);
@@ -688,6 +705,8 @@ mod tests {
         let u = |name: &str, primary| Unit {
             krate: name.into(),
             kind: "lib".into(),
+            package: format!("{name} 1.0.0"),
+            src: "src/lib.rs".into(),
             primary,
             ok: true,
             wall,

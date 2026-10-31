@@ -220,7 +220,12 @@ pub fn parse_options(args: &[&str]) -> Result<Options, String> {
             "--backends" => {
                 o.backends.clear();
                 for b in args.value()?.split(',') {
-                    o.backends.push(Compiler::parse(b).ok_or(format!("unknown backend `{b}`"))?);
+                    let backend = Compiler::parse(b).ok_or(format!("unknown backend `{b}`"))?;
+                    // Each backend has one target directory and one column.
+                    if o.backends.contains(&backend) {
+                        return Err(format!("backend `{b}` given twice"));
+                    }
+                    o.backends.push(backend);
                 }
             }
             _ => return Err(args.unexpected()),
@@ -667,7 +672,8 @@ fn prepare_local(dir: &Path) -> Result<Sources, String> {
 }
 
 /// `--config` values restating `PROFILE_ENV` in each per-package override section, which
-/// `CARGO_PROFILE_*` can't reach. Only the keys a package override may set.
+/// `CARGO_PROFILE_*` can't reach. Only the keys `PROFILE_ENV` sets that a package override
+/// may set too (not `lto` or `panic`; `CARGO_INCREMENTAL=0` covers `incremental`).
 fn override_configs(overrides: &[String]) -> Vec<String> {
     const KEYS: &[(&str, &str)] =
         &[("opt-level", "0"), ("debug", "0"), ("debug-assertions", "true"), ("overflow-checks", "true"), ("codegen-units", "1")];
@@ -704,7 +710,8 @@ impl<'a> Env<'a> {
         clear_env(&mut c);
         for (k, v) in PROFILE_ENV.iter().filter(|_| !stock) {
             for p in ["DEV", "TEST", "DEV_BUILD_OVERRIDE", "TEST_BUILD_OVERRIDE"] {
-                // Build overrides can't set `lto`, `panic` or `incremental`.
+                // Build overrides can't set `lto` or `panic`; `CARGO_INCREMENTAL=0` (below)
+                // overrides every profile's `incremental`.
                 if p.ends_with("OVERRIDE") && matches!(*k, "LTO" | "PANIC" | "INCREMENTAL") {
                     continue;
                 }
@@ -934,7 +941,7 @@ fn header(info: &RustcInfo, root: &Path, opts: &Options) -> Vec<(String, String)
         ("profile".into(), "cargo dev: opt-level 0, debug-assertions and overflow-checks on, panic=unwind, no LTO, incremental off (restated for the test profile too)".into()),
         ("RUSTFLAGS".into(), format!("{RUSTFLAGS} (all crates: deps, build scripts, proc macros, leaf)")),
         ("environment".into(), "CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 RUSTC_BOOTSTRAP=1; no target-cpu, default linker for all".into()),
-        ("notes".into(), "Every backend gets -Ccodegen-units=1 from RUSTFLAGS (not under --stock). rustc-clif and rustc-ryo are wrapper executables: one extra exec per rustc invocation that plain rustc doesn't have (included in the rustc wall times). Build-override profiles are forced the same; crates with per-package profile overrides are rejected, except in a local workspace (--path), where --config restates the defaults in them. No MIR optimization flags are added for any backend. Doc tests are not run.".into()),
+        ("notes".into(), "Every backend gets -Ccodegen-units=1 from RUSTFLAGS (not under --stock). rustc-clif and rustc-ryo are wrapper executables: one extra exec per rustc invocation that plain rustc doesn't have (included in the rustc wall times). Build-override profiles are forced the same (not under --stock); crates with per-package profile overrides are rejected, except in a local workspace (--path), where --config restates the defaults in them (not under --stock). No MIR optimization flags are added for any backend. Doc tests are not run.".into()),
         ("timing".into(), "frontend/backend/link from rustc's --json=timings section records (cargo -Zsection-timings), captured by a RUSTC_WRAPPER; other = rustc wall - the three".into()),
         ("samples".into(), format!(
             "{} clean build samples (dependencies metrics), {} leaf build samples (the crate only, dependencies already built; all other build metrics), {} run samples, after one discarded warm-up each; backends interleaved; noisy = stddev > {:.0}% of median",
@@ -944,6 +951,7 @@ fn header(info: &RustcInfo, root: &Path, opts: &Options) -> Vec<(String, String)
     ];
     if opts.stock {
         h.retain(|(k, _)| !matches!(k.as_str(), "profile" | "RUSTFLAGS" | "environment"));
+        h.push(("environment".into(), "RUST_TEST_THREADS=1 RUSTC_BOOTSTRAP=1".into()));
         h.push(("stock".into(), "cargo's and rustc's defaults (crate profiles, jobs, codegen units, incremental, debuginfo as cargo sets them); only RUSTC is changed. Not a fair comparison.".into()));
     }
     if !governor.is_empty() {

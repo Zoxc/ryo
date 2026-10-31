@@ -83,7 +83,16 @@ pub fn wrapper(log_dir: OsString) -> ExitCode {
     let kind = args.iter().position(|a| a == "--crate-type").and_then(|i| args.get(i + 1));
     let kind = kind.map_or(if test { "test".into() } else { "bin".into() }, |k| k.to_string_lossy().into_owned());
     let name = name.to_string_lossy();
-    let head = format!("crate {name}\nkind {kind}\nprimary {}\nwall {wall}\nstatus {}\n", primary as u8, status.success() as u8);
+    // Which package and source file: crate name and kind alone don't tell apart build scripts,
+    // two versions of a dependency, or a package's lib and bin tests.
+    let var = |k: &str| std::env::var(k).unwrap_or_default();
+    let package = format!("{} {}", var("CARGO_PKG_NAME"), var("CARGO_PKG_VERSION"));
+    let src = args.iter().map(|a| a.to_string_lossy()).find(|a| a.ends_with(".rs")).unwrap_or_default();
+    let head = format!(
+        "crate {name}\nkind {kind}\npackage {package}\nsrc {src}\nprimary {}\nwall {wall}\nstatus {}\n",
+        primary as u8,
+        status.success() as u8
+    );
     let file = Path::new(&log_dir).join(format!("{name}-{}.txt", std::process::id()));
     let _ = fs::create_dir_all(&log_dir);
     if let Err(e) = fs::write(&file, head + &log) {
@@ -123,6 +132,10 @@ pub fn parse_section(line: &str) -> Option<Section<'_>> {
 pub struct Unit {
     pub krate: String,
     pub kind: String,
+    /// `<name> <version>` of the package.
+    pub package: String,
+    /// The crate root's source file.
+    pub src: String,
     /// A unit of the benchmarked package itself (cargo's `CARGO_PRIMARY_PACKAGE`), rather than
     /// a dependency.
     pub primary: bool,
@@ -151,6 +164,8 @@ pub fn parse_unit(text: &str) -> Option<Unit> {
     let mut u = Unit {
         krate: String::new(),
         kind: String::new(),
+        package: String::new(),
+        src: String::new(),
         primary: false,
         ok: false,
         wall: 0.0,
@@ -167,6 +182,8 @@ pub fn parse_unit(text: &str) -> Option<Unit> {
         match key {
             "crate" => u.krate = rest.to_owned(),
             "kind" => u.kind = rest.to_owned(),
+            "package" => u.package = rest.to_owned(),
+            "src" => u.src = rest.to_owned(),
             "primary" => u.primary = rest == "1",
             "status" => u.ok = rest == "1",
             "wall" => wall = us(rest),
@@ -198,7 +215,7 @@ pub fn parse_unit(text: &str) -> Option<Unit> {
     if u.krate.is_empty() { None } else { Some(u) }
 }
 
-/// Reads every unit logged in `dir`, sorted by crate name.
+/// Reads every unit logged in `dir`, sorted by crate name, kind, package and source file.
 pub fn read_units(dir: &Path) -> Result<Vec<Unit>, String> {
     let mut units = Vec::new();
     let Ok(entries) = fs::read_dir(dir) else { return Ok(units) };
@@ -206,7 +223,7 @@ pub fn read_units(dir: &Path) -> Result<Vec<Unit>, String> {
         let text = crate::utils::read(e.path())?;
         units.push(parse_unit(&text).ok_or_else(|| format!("{}: bad timing log", e.path().display()))?);
     }
-    units.sort_by(|a, b| (&a.krate, &a.kind).cmp(&(&b.krate, &b.kind)));
+    units.sort_by(|a, b| (&a.krate, &a.kind, &a.package, &a.src).cmp(&(&b.krate, &b.kind, &b.package, &b.src)));
     Ok(units)
 }
 
