@@ -152,6 +152,7 @@ const FAST: &[(&str, &[&str])] = &[
     ("vm_staticlib2", &["ryo", "ryo-jit-ssa"]),
     ("vm_abort_cleanup", &["ryo-abort"]),
     ("end_ptrs", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-shuffle"]),
+    ("packed_const_ptrs", &["ryo", "ryo-jit-ssa"]),
     ("vm_unwind_chain", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-osr", "ryo-abort"]),
     ("vm_double_panic", &["ryo", "ryo-jit-ssa"]),
     ("vm_cxx", &["ryo", "ryo-jit-ssa"]),
