@@ -76,21 +76,29 @@ fn relocs(file: &ElfFile64<'_, LittleEndian>, section: SectionIndex) -> Result<V
     Ok(out)
 }
 
+/// Whether (mangled) symbol `name` stands for `ryo_rt` entry point `base`: `rt_symbol`'s
+/// `<base>_<ABI tag>` (or `base` untagged), bare or as the v0 identifier `<len><ident>` ending
+/// the name.
+fn is_rt_symbol(name: &str, base: &str) -> bool {
+    [format!("{base}_{}", ryo_bytecode::ABI_TAG), base.to_owned()]
+        .iter()
+        .any(|ident| name == ident || name.ends_with(&format!("{}{ident}", ident.len())))
+}
+
 /// The handler `ryo_h_<Name>` (or of the frame-pointer set, `ryo_hf_<Name>`) a (mangled)
-/// symbol name stands for: a v0 identifier `<len>ryo_h_<Name>` ending the name, or the bare
-/// name.
+/// symbol name stands for (see [`is_rt_symbol`]).
 fn handler_of(name: &str) -> Option<Opcode> {
     let prefix = ["ryo_h_", "ryo_hf_"].into_iter().find(|p| name.contains(p))?;
-    let op = name.rsplit(prefix).next()?;
-    let ident = format!("{prefix}{op}");
-    if name != ident && !name.ends_with(&format!("{}{ident}", ident.len())) {
+    let rest = name.rsplit(prefix).next()?;
+    let op = rest.strip_suffix(&format!("_{}", ryo_bytecode::ABI_TAG)).unwrap_or(rest);
+    if !is_rt_symbol(name, &format!("{prefix}{op}")) {
         return None;
     }
     ALL_OPCODES.iter().copied().find(|o| format!("{o:?}") == op && ryo_bytecode::asm::has_handler(*o))
 }
 
 fn is_probe(name: &str) -> bool {
-    name == PROBE || name.ends_with(&format!("{}{PROBE}", PROBE.len()))
+    is_rt_symbol(name, PROBE)
 }
 
 fn render(r: Ref) -> String {
