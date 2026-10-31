@@ -276,7 +276,8 @@ theorem inline_throw_eq {α : Type} (e : Stop) : (throw e : M α) = .error e := 
 theorem inline_tub {α : Type} {s : String} {e : Outcome}
     (h : (throwUb s : Except Outcome α) = .error e) : e = .ub s := by cases h; rfl
 
-/-- A leaf computation: unfold, split, and see each error isn't `noBehavior`. -/
+/-- A leaf computation, already unfolded by the caller: split, and see each error isn't
+`noBehavior`. -/
 macro "inline_nb_leaf" : tactic =>
   `(tactic| (intro msg h; (repeat' split at h); all_goals first | cases h | simp_all [inline_ill_eq, inline_ub_eq, inline_throw_eq]))
 
