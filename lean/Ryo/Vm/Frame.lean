@@ -684,7 +684,10 @@ def droppedStore (d : Decoded) (k : Nat) : Option (BitVec 32 × Nat) :=
     | some (_, .slot s) =>
       let w := if op.info.mnemonic == "mov.w128" then 8
         else if op.info.mnemonic == "addr" || op.info.mnemonic.startsWith "ptr" then 8
-        -- `cmp3` stores a byte, `cttz`/`ctlz` a `u32`, at any width.
+        -- A compare stores a `bool` (as `native`), `cmp3` a byte, `cttz`/`ctlz` a `u32`, at
+        -- any width.
+        else if ["eq", "ne", "lt", "le", "gt", "ge"].contains ((op.info.mnemonic.splitOn ".").headD "")
+          then 1
         else if let some w := fixedDestWidth op.info.mnemonic then w
         else ((secondWidth op.info.mnemonic).orElse fun _ => widthOfMnemonic op.info.mnemonic).getD 8
       some (s, w)
