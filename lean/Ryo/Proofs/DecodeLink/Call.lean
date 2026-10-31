@@ -17,10 +17,11 @@ M3 `decode_sound`), against `Ryo.Proofs.Call`'s items.
 
 **Hypothesis `XmmOk`.** `params` builds an argument word from an `xmm` load's register number
 and size, and from a `movss`/`movsd`/`movups` load's memory operand only its displacement:
-the word gives back the decoded item only when the register number is below 8, the size 4, 8
-or 16 and the base `rbp`. `decodeItem` returns only such items (`sseCandidate` reads a 3-bit
-field and those sizes, `fromSpFrame` rejects `rsp` with a frame pointer, the `movd` parse a
-3-bit field), a property of the candidate parsers: `link_call` states `callSeq`/`tailSeq`
+the word gives back the decoded item only when the register number is below 8 and the size 4,
+8 or 16 (`params` itself checks the base is `rbp`, so `XmmOk`'s base conjunct isn't used
+there). `decodeItem` returns only such items (`sseCandidate` reads a 3-bit field and those
+sizes, `fromSpFrame` gives an `rbp` base in either frame form, the `movd` parse a 3-bit
+field), a property of the candidate parsers: `link_call` states `callSeq`/`tailSeq`
 under it, and `DecodeLink.Items` discharges it (`decodeItem_xmmOk`, `link_call_ok`).
 -/
 import Ryo.Proofs.DecodeLink.Links
@@ -120,8 +121,10 @@ theorem paramItems_append (pe : Bool) (s w : BitVec 32) (L : List Item) (hL : Ca
           List.append_assoc]
 
 /-- An `xmm` item as the decoder parses it: `x` from a 3-bit ModRM field, the size of `movss`,
-`movsd` or `movups`, the frame slot off `rbp` (`sseCandidate`, `fromSpFrame` with a frame
-pointer). Not proved of `decodeItem` here; the links that need it take it of the items read. -/
+`movsd` or `movups`, the frame slot off `rbp` (`sseCandidate`, `fromSpFrame`, which also maps
+`[rsp + _]` to `[rbp + _]` without a frame pointer; `params_read` doesn't need the base, which
+`params` checks). Not proved of `decodeItem` here (`DecodeLink.Items`' `decodeItem_xmmOk` does);
+the links that need it take it of the items read. -/
 def XmmOk : Item → Prop
   | .sse _ size x m => (size = 4 ∨ size = 8 ∨ size = 16) ∧ x < 8 ∧ m.base = .rbp
   | .movd _ x _ => x < 8
