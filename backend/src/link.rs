@@ -136,8 +136,8 @@ fn remove_temp(sess: &Session, path: &Path) {
     let _ = if path.is_dir() { fs::remove_dir_all(path) } else { fs::remove_file(path) };
 }
 
-/// Copies the metadata file (and its stub) into `dir`, so later `link_binary` calls can reload
-/// it after the first one dropped the original.
+/// Copies the metadata file (and its stub) into `dir`, so every `link_binary` call but the
+/// last, which gets the original, can reload it (each call deletes its metadata's temp dir).
 fn save_metadata(sess: &Session, metadata: &EncodedMetadata, dir: &Path) -> (PathBuf, Option<PathBuf>) {
     let full = dir.join("metadata.rmeta");
     let stub = dir.join("metadata.stub");
