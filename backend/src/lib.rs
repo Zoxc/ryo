@@ -162,9 +162,11 @@ impl CodegenBackend for RyoBackend {
         if self.switches.marker {
             eprintln!("{INIT_MARKER}");
         }
-        // `-Cincremental` is allowed: the partition query is `eval_always`, so the image is
-        // rebuilt every session, and the native CGU is hashed as our partition returns it
-        // (`codegen_unit`); `symbol_name` reads only tracked queries.
+        // `-Cincremental` is allowed: the partition query is `eval_always`, each CGU's image
+        // is reused only when its own dep node (the lowering's query reads and a fingerprint
+        // of its inputs) is green (design/backend.md#incremental), and the native CGU is
+        // hashed as our partition returns it (`codegen_unit`); `symbol_name` reads only
+        // tracked queries.
         if let Some(why) = unsupported(sess) {
             sess.dcx().fatal(format!("the ryo backend doesn't support {why} (design/backend.md#unsupported-options)"));
         }
