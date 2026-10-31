@@ -10,8 +10,9 @@
 //! thread and code allocator serve them all, and the losers' JITs never start. Handlers keep
 //! no state, so images keep calling their own copy's.
 //!
-//! Copies with another personality (a cdylib's own std, a localized staticlib blob) or that
-//! find no free page, or a page that isn't this build's, stay private instances, as does every copy under `RYO_JIT_MERGE=0`.
+//! Copies with another personality (a cdylib's own std, a localized staticlib blob) skip the
+//! winner's page and merge among themselves at the next probe address. Copies that find no
+//! free page, or a page that isn't this build's, stay private instances, as does every copy under `RYO_JIT_MERGE=0`.
 //!
 //! The rendezvous: a page at a fixed address derived from the tag, mapped exclusively
 //! (Linux `MAP_FIXED_NOREPLACE`, Windows `VirtualAlloc` at an address; macOS an `mmap` with
@@ -23,7 +24,7 @@
 //! Both sides pin their module when they merge: the winner's registration function and
 //! the joiners' images are used for the rest of the process.
 
-use core::sync::atomic::Ordering::{Acquire, Release};
+use core::sync::atomic::Ordering::{AcqRel, Acquire, Release};
 use core::sync::atomic::fence;
 use core::sync::atomic::{AtomicU32, AtomicUsize};
 use ryo_bytecode::vmem::PAGE;
@@ -58,10 +59,12 @@ const PRIVATE: usize = 1;
 pub(crate) fn forward() -> Option<RegisterFn> {
     let t = match TARGET.load(Acquire) {
         UNDECIDED => {
-            let t = decide();
-            // Two threads of one copy may race here; the rendezvous gives both the same answer.
-            TARGET.store(t, Release);
-            t
+            // Two threads of one copy may race here and decide differently (`decide`'s waits
+            // are bounded): the first answer stored wins, and both use it.
+            match TARGET.compare_exchange(UNDECIDED, decide(), AcqRel, Acquire) {
+                Ok(_) => TARGET.load(Acquire),
+                Err(t) => t,
+            }
         }
         t => t,
     };
@@ -126,20 +129,23 @@ const _: () = assert!(size_of::<Page>() == WORDS * 8 && core::mem::offset_of!(Pa
 /// # Safety
 /// `page` is a writable [`Page`] that no other copy reads before it is `READY`.
 unsafe fn publish(page: *mut Page, personality: usize, own: usize) {
+    // Volatile stores, so `magic` is written last ([`is_ours`]): other copies read the page
+    // through a syscall, not atomics, and x86-64 keeps the order of stores.
     // SAFETY: per the contract.
     unsafe {
-        (*page).abi = ryo_bytecode::ABI;
-        (*page).personality = personality;
-        (*page).register = own;
-        (*page).magic = MAGIC;
+        (&raw mut (*page).abi).write_volatile(ryo_bytecode::ABI);
+        (&raw mut (*page).personality).write_volatile(personality);
+        (&raw mut (*page).register).write_volatile(own);
+        (&raw mut (*page).magic).write_volatile(MAGIC);
         (*page).state.store(READY, Release);
     }
 }
 
 /// A joiner's decision on a page another copy mapped, read through `read`: the winner's
-/// registration function, or [`PRIVATE`] for this build's READY page with another
-/// personality (or no usable function). `None` if the page doesn't become READY within
-/// `spins` reads with this build's magic and tag, or becomes unreadable: it may be anything
+/// registration function, or [`PRIVATE`] for this build's READY page with no usable function.
+/// `None` if the page doesn't become READY within `spins` reads with this build's magic and
+/// tag, has another personality (whose copies own it; this copy tries the next probe, so each
+/// personality merges on its own), or becomes unreadable: it may be anything
 /// (a foreign zero page, another tag's winner caught mid-write), so nothing in it is used
 /// before that check.
 fn join(read: impl Fn() -> Option<[u64; WORDS]>, personality: usize, own: usize, spins: u32) -> Option<usize> {
@@ -158,8 +164,11 @@ fn join(read: impl Fn() -> Option<[u64; WORDS]>, personality: usize, own: usize,
     if magic != MAGIC || abi != ryo_bytecode::ABI {
         return None;
     }
+    if page_personality as usize != personality {
+        return None;
+    }
     let register = register as usize;
-    if page_personality as usize != personality || register == own || register == 0 {
+    if register == own || register == 0 {
         return Some(PRIVATE);
     }
     Some(register)
@@ -218,8 +227,9 @@ mod tests {
         assert_eq!(join_page(&page(0, ABI, 7, READY, 0x1000), 7, 0x2000, 10), None);
         // An unreadable page (unmapped meanwhile).
         assert_eq!(join(|| None, 7, 0x2000, 10), None);
-        // Another personality, this copy's own page, or no function.
-        assert_eq!(join_page(&page(MAGIC, ABI, 8, READY, 0x1000), 7, 0x2000, 10), Some(PRIVATE));
+        // Another personality: the next probe.
+        assert_eq!(join_page(&page(MAGIC, ABI, 8, READY, 0x1000), 7, 0x2000, 10), None);
+        // This copy's own page, or no function.
         assert_eq!(join_page(&page(MAGIC, ABI, 7, READY, 0x2000), 7, 0x2000, 10), Some(PRIVATE));
         assert_eq!(join_page(&page(MAGIC, ABI, 7, READY, 0), 7, 0x2000, 10), Some(PRIVATE));
     }

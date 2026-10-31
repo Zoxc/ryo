@@ -952,18 +952,19 @@ private copy of the runtime (`ryo_rt`, `ryo_bytecode` and the sealed JIT):
   personality (one std: an executable and its Rust dylibs with `-Cprefer-dynamic`, the ryo
   sysroot's `libstd` included) merge into one instance. At its first registration a copy
   maps a rendezvous page at a fixed address derived from the tag (Linux
-  `MAP_FIXED_NOREPLACE`, macOS `mach_vm_allocate` without `VM_FLAGS_ANYWHERE`, Windows
+  `MAP_FIXED_NOREPLACE`, macOS an `mmap` with the address as a hint, a mapping elsewhere
+  meaning the address is taken, Windows
   `VirtualAlloc` at that address: private to the process, no named object another user
   could create first) and publishes its `ryo_vm_register` there; later copies with the same
   personality forward their registrations to it. A later copy reads a taken address only
   through a call that fails on an unmapped one, waits a bounded time for it to be READY,
-  and joins only if it then has this build's magic and tag; a page that stays foreign moves it
-  on to the next probe address, and one that is this build's but can't be joined (or no
+  and joins only if it then has this build's magic and tag; a page that stays foreign, or
+  is a copy's with another personality, moves it on to the next probe address, and one that is this build's but can't be joined (or no
   probe working) leaves it private. The winner's
   registration points the images' JIT record slots at its own trips, so its registry, queue,
   JIT thread and code allocator serve all of them, and JIT code calls and inlines across
   modules; handlers keep no state. Copies with another personality (cdylibs, localized
-  blobs) stay separate instances. `RYO_JIT_MERGE=0` keeps every copy separate.
+  blobs) stay separate from them, and merge among themselves at another probe address. `RYO_JIT_MERGE=0` keeps every copy separate.
 - **Unloading** stays unsupported: a module that merges (the winner, whose function the page
   names, and each copy that joins, whose images the winner's registry holds) is pinned when
   it merges, and the module whose JIT starts is pinned.
