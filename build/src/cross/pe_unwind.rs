@@ -74,6 +74,8 @@ fn pe_unwind_file(info: &RustcInfo, file: &Path, map: &str) -> Result<usize, Str
         let start = insns.partition_point(|i| i.addr < f.begin);
         let mut want = Vec::new();
         let mut eax = None;
+        // `rbp - rsp` at the end of the prologue, once `rbp` is set up.
+        let mut fp = None;
         for (k, insn) in insns[start..].iter().enumerate() {
             if insn.addr >= f.begin + u64::from(f.prolog) {
                 break;
@@ -83,7 +85,12 @@ fn pe_unwind_file(info: &RustcInfo, file: &Path, map: &str) -> Result<usize, Str
             if insn.op.starts_with("movl") && insn.args.ends_with(", %eax") {
                 eax = parse_imm(insn.args.split(',').next().unwrap());
             }
-            if let Some(code) = prologue_code(insn, eax) {
+            if let Some(code) = prologue_code(insn, eax, fp) {
+                if let Some(o) = code.strip_prefix("setfp rbp ") {
+                    fp = o.parse::<u64>().ok();
+                } else if let (Some(f), Some(a)) = (fp, code.strip_prefix("alloc ").and_then(|a| a.parse::<u64>().ok())) {
+                    fp = Some(f + a);
+                }
                 want.push((off, code));
             }
         }
@@ -128,8 +135,15 @@ impl CodeRange {
 fn pe_units(map: &str, base: u64) -> Vec<CodeRange> {
     let mut units = Vec::new();
     for l in map.lines().skip(1) {
-        let mut it = l.split_whitespace();
-        let (Some(addr), Some(size), Some(_), Some(input), None) = (it.next(), it.next(), it.next(), it.next(), it.next()) else { continue };
+        // The input is the rest of the line: its object path may contain spaces.
+        let mut rest = l;
+        let mut field = || {
+            let (f, r) = rest.trim_start().split_once(char::is_whitespace)?;
+            rest = r;
+            Some(f)
+        };
+        let (Some(addr), Some(size), Some(_)) = (field(), field(), field()) else { continue };
+        let input = rest.trim();
         let Some((path, section)) = input.rsplit_once(":(") else { continue };
         let (Ok(addr), Ok(size)) = (u64::from_str_radix(addr, 16), u64::from_str_radix(size, 16)) else { continue };
         let section = section.trim_end_matches(')');
@@ -225,6 +239,9 @@ fn pe_instructions(dis: &str) -> Vec<Insn<'_>> {
 fn moves_rsp(insn: &Insn<'_>) -> bool {
     insn.op.starts_with("push")
         || (insn.op.starts_with("pop") && !insn.op.starts_with("popcnt"))
+        || insn.op.starts_with("leave")
+        || insn.op.starts_with("enter")
+        || ((insn.op.starts_with("xchg") || insn.op.starts_with("xadd")) && insn.args.contains("%rsp"))
         || (insn.args.ends_with("%rsp") && !insn.op.starts_with("cmp") && !insn.op.starts_with("test"))
 }
 
@@ -244,10 +261,22 @@ fn parse_imm(s: &str) -> Option<u64> {
 }
 
 /// The unwind code a prologue instruction needs, in [`unwind_code`]'s form, or `None` if it
-/// needs none. `eax` is the value last moved to `eax` (`__chkstk`'s size, for a `sub rsp, rax`).
-fn prologue_code(insn: &Insn<'_>, eax: Option<u64>) -> Option<String> {
+/// needs none. `eax` is the value last moved to `eax` (`__chkstk`'s size, for a `sub rsp, rax`);
+/// `fp` is `rbp - rsp` as of the end of the prologue, once a `setfp` has set `rbp` (a save
+/// through `rbp` is at that plus its displacement from the final `rsp`).
+fn prologue_code(insn: &Insn<'_>, eax: Option<u64>, fp: Option<u64>) -> Option<String> {
     let (src, dst) = insn.args.rsplit_once(", ").unwrap_or((insn.args, ""));
     let reg = |r: &str| r.strip_prefix('%').map(str::to_owned);
+    // The save slot `dst` as an offset from the final `rsp`.
+    let slot = |dst: &str| {
+        if dst.ends_with("(%rsp)") {
+            Some(parse_imm(dst).unwrap_or(u64::MAX))
+        } else if dst.ends_with("(%rbp)") {
+            Some(fp.zip(parse_imm(dst)).map_or(u64::MAX, |(f, d)| f.wrapping_add(d)))
+        } else {
+            None
+        }
+    };
     match insn.op {
         "pushq" => {
             let r = reg(src)?;
@@ -256,14 +285,16 @@ fn prologue_code(insn: &Insn<'_>, eax: Option<u64>) -> Option<String> {
         "subq" if dst == "%rsp" => Some(format!("alloc {}", if src == "%rax" { eax? } else { parse_imm(src)? })),
         "movq" if src == "%rsp" && dst == "%rbp" => Some("setfp rbp 0".to_owned()),
         "leaq" if dst == "%rbp" && src.ends_with("(%rsp)") => Some(format!("setfp rbp {}", parse_imm(src)?)),
-        "movq" if dst.ends_with("(%rsp)") => {
+        "movq" => {
+            let at = slot(dst)?;
             let r = reg(src)?;
-            NONVOLATILE.contains(&r.as_str()).then(|| format!("save {r} {}", parse_imm(dst).unwrap_or(u64::MAX)))
+            NONVOLATILE.contains(&r.as_str()).then(|| format!("save {r} {at}"))
         }
-        "movaps" | "movups" | "movdqa" | "movdqu" if dst.ends_with("(%rsp)") => {
+        "movaps" | "movups" | "movdqa" | "movdqu" => {
+            let at = slot(dst)?;
             let r = reg(src)?;
             let n: u32 = r.strip_prefix("xmm")?.parse().ok()?;
-            (n >= 6).then(|| format!("savexmm {r} {}", parse_imm(dst).unwrap_or(u64::MAX)))
+            (n >= 6).then(|| format!("savexmm {r} {at}"))
         }
         _ => None,
     }
@@ -309,7 +340,7 @@ mod tests {
         let insns = pe_instructions(dis);
         assert_eq!(insns.len(), 14);
         assert!(moves_rsp(&insns[0]) && !moves_rsp(&insns[1]) && moves_rsp(&insns[8]) && !moves_rsp(&insns[7]));
-        let codes: Vec<_> = insns[4..10].iter().filter_map(|i| prologue_code(i, None)).collect();
+        let codes: Vec<_> = insns[4..10].iter().filter_map(|i| prologue_code(i, None, None)).collect();
         assert_eq!(codes, ["push rbp", "setfp rbp 0", "alloc 112", "savexmm xmm6 16"]);
         let unwind = "UnwindInformation [\n  RuntimeFunction {\n    StartAddress: (0x140001040)\n    EndAddress: (0x140001061)\n\
                       UnwindInfo {\n      PrologSize: 23\n      UnwindCodes [\n        0x17: SAVE_XMM128 reg=XMM6, offset=0x10\n\
@@ -323,8 +354,10 @@ mod tests {
             [(1, "push rbp"), (4, "setfp rbp 0"), (0x12, "alloc 112"), (0x17, "savexmm xmm6 16")].map(|(o, c)| (o, c.to_owned())).into();
         assert_eq!(got, want);
         assert_eq!(unwind_code("SAVE_NONVOL reg=RSI, offset=0x8"), "save rsi 8");
-        assert_eq!(prologue_code(&Insn { addr: 0, op: "subq", args: "%rax, %rsp" }, Some(0x2000)).as_deref(), Some("alloc 8192"));
-        assert_eq!(prologue_code(&Insn { addr: 0, op: "pushq", args: "%rax" }, None).as_deref(), Some("alloc 8"));
-        assert_eq!(prologue_code(&Insn { addr: 0, op: "movq", args: "%rcx, 0x8(%rsp)" }, None), None);
+        assert_eq!(prologue_code(&Insn { addr: 0, op: "subq", args: "%rax, %rsp" }, Some(0x2000), None).as_deref(), Some("alloc 8192"));
+        assert_eq!(prologue_code(&Insn { addr: 0, op: "pushq", args: "%rax" }, None, None).as_deref(), Some("alloc 8"));
+        assert_eq!(prologue_code(&Insn { addr: 0, op: "movq", args: "%rcx, 0x8(%rsp)" }, None, None), None);
+        // A spill through the frame pointer: `leaq 0x80(%rsp), %rbp` then `-0x10(%rbp)`.
+        assert_eq!(prologue_code(&Insn { addr: 0, op: "movaps", args: "%xmm7, -0x10(%rbp)" }, None, Some(0x80)).as_deref(), Some("savexmm xmm7 112"));
     }
 }
