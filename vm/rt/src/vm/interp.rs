@@ -644,10 +644,13 @@ macro_rules! reg_handler {
             const E: RegEntry = reg_entry(Opcode::$name, M);
             const P: [(u64, u64); ARG_REGS] = reg_patch(Opcode::$name, M);
             let r = [r0, r1, r2, r3, r4, r5];
-            let mut buf = [0u64; asm::MAX_OPERANDS];
+            // Words the frame's slots hold, as there: inputs that may be pointers are stored as
+            // pointers (exposed provenance), outputs move out as `MaybeUninit` (module docs).
+            let mut buf = [MaybeUninit::new(0u64); asm::MAX_OPERANDS];
             let mut k = 0;
             while k < E.nin as usize {
-                buf[E.ins[k] as usize] = r[k];
+                // SAFETY: `E.ins[k]` is below `asm::MAX_OPERANDS`.
+                unsafe { buf.as_mut_ptr().add(E.ins[k] as usize).cast::<*mut u8>().write(ptr::with_exposed_provenance_mut(r[k] as usize)) };
                 k += 1;
             }
             let mut a = [0u64; ARG_REGS];
@@ -668,7 +671,7 @@ macro_rules! reg_handler {
             let mut out = [MaybeUninit::<u64>::uninit(); 2];
             let mut n = 0;
             while n < E.nout as usize {
-                out[n] = MaybeUninit::new(buf[E.outs[n] as usize]);
+                out[n] = buf[E.outs[n] as usize];
                 n += 1;
             }
             if let Some(v) = v {
