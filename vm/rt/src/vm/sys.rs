@@ -3,7 +3,11 @@
 //! possibly unmapped memory. Every OS call of the runtime is declared here or in
 //! `ryo_bytecode` (`vmem`, `os`), but `seh.rs`'s `RtlUnwindEx`.
 //!
-//! Everything here uses `core` and direct OS calls only (libc on ELF, kernel32 on PE). Under
+//! Everything here uses `core` and direct OS calls only: libc on ELF, libSystem on Mach-O
+//! (Mach calls included), and on PE kernel32, `ntdll`, the `WaitOnAddress` API set and the C
+//! runtime's `getenv` (so [`var`] reads the CRT's copy of the environment, not the process
+//! environment block `SetEnvironmentVariableW` changes). Only Linux, Apple and Windows
+//! targets are supported (the futexes, `read_words`). Under
 //! `--sysroot ryo`, std's allocator, `Mutex` and I/O may be VM functions, so the runtime must
 //! not call them while it sets up or switches VM state (design/vm.md, "No re-entry into the
 //! VM from the runtime").
@@ -254,12 +258,6 @@ pub(crate) fn read_words<const N: usize>(at: usize) -> Option<[u64; N]> {
     // SAFETY: a plain kernel32 call on this process, failing (not faulting) where unreadable.
     let ok = unsafe { ReadProcessMemory(GetCurrentProcess(), at as *const c_void, head.as_mut_ptr().cast(), N * 8, &mut n) } != 0;
     (ok && n == N * 8).then_some(head)
-}
-
-/// Elsewhere `vmem::reserve` fails, and so does this: no merge rendezvous.
-#[cfg(not(any(target_os = "linux", target_vendor = "apple", windows)))]
-pub(crate) fn read_words<const N: usize>(_: usize) -> Option<[u64; N]> {
-    None
 }
 
 /// Aborts the process without a message, as C++'s `terminate` does.
