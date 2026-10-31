@@ -17,7 +17,9 @@ indices with `pos32 r t = tgt`.
   at `tb` (`switch_tail`), the `then` table their targets (`tableEntry_itemAt`,
   `entries_codeAt`: the entries in memory given a boundary at `tb`, i.e. no relocation starting
   in the `int3` padding, which the decoder doesn't check). Not for a dense switch whose index
-  computation stands in for the call (`denseSwitch`, a hypothesis): its link is still to do.
+  computation stands in for the call (`denseSwitch`, a hypothesis): its link is still to do;
+  nor in the pad region (`fr.region = false`), whose `resume` proto carries a handler but is
+  `add rsp, 40; ret`.
 - `link_jmp`, `link_unreachable`, `link_ret`, `link_island`: `jmp tgt` (`jmp_step`), `ud2`
   (`unreachable_step`), `retLoads k.toNat src ++ epilogue F mode ++ [ret]` with `F` the frame size
   (`ret_step`), `islandPre` and the rodata operand words (`island_sound`).
@@ -163,7 +165,8 @@ theorem noHandler : Full.Opcode.jmp.hasHandler = false ∧ Full.Opcode.ret.hasHa
 
 /-- A handler call the decoder read at `c.pos` (`insn`): `setupItems` of its arguments and
 `call h` there (`Shapes.handler_step_op`/`_br`/`_trap`'s items, `h = q.op` with
-`ofNat? n = some h`), then its shape's control flow (`ThenAt`). -/
+`ofNat? n = some h`), then its shape's control flow (`ThenAt`). Not for a dense switch (`hnd`)
+nor in the pad region (`hrg`: its `resume` is `add rsp, 40; ret`, not a setup and a call). -/
 theorem link_handler {ctx : Ctx} {m : Mem} {c c' : Cursor} {rs : Array Reloc} {fr : Frame}
     {ro : ByteArray} {q : Proto} {args : List Arg} {t : Then Nat} (hk : LinkOk ctx m c rs)
     (hb : Boundary rs c.pos) (h : (insn fr ro).run c = .ok (q, c'))
