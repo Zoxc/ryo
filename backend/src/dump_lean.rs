@@ -239,6 +239,12 @@ impl<'tcx> Dumper<'tcx> {
                 if self.globals[id].take().is_some() {
                     self.global_queue.push_back((id, key));
                 }
+            } else if kind == GKind::Vtable && self.global_kinds[id] == (GKind::Vtable, None) && name.is_some() {
+                // A vtable reached first as a supertrait vtable's target, without its name.
+                self.global_kinds[id].1 = name;
+                if self.globals[id].take().is_some() {
+                    self.global_queue.push_back((id, key));
+                }
             }
             return id;
         }
