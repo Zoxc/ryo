@@ -593,7 +593,9 @@ impl Item {
         }
     }
 
-    /// The item with every register (operands and memory bases) mapped by `f`.
+    /// The item with every explicit register (operands and memory bases) mapped by `f`; the
+    /// implicit ones (`cl` of the shifts by `cl`, `rax`/`rdx` of `mul`, `div` and `cdq`) and
+    /// those of the items with no registers stay.
     pub fn map_regs(self, f: impl Fn(Reg) -> Reg) -> Item {
         let fm = |m: M| M { base: f(m.base), ..m };
         let frm = |rm: Rm| match rm {
@@ -623,6 +625,9 @@ impl Item {
             Item::SetReg(r, v) => Item::SetReg(f(r), v),
             Item::Lea(r, to) => Item::Lea(f(r), to),
             Item::LoadRip(r, to) => Item::LoadRip(f(r), to),
+            Item::Mov(dst, src) => Item::Mov(f(dst), f(src)),
+            Item::Sse { st, size, x, m } => Item::Sse { st, size, x, m: fm(m) },
+            Item::Movd { to_xmm, x, r } => Item::Movd { to_xmm, x, r: f(r) },
             it => it,
         }
     }
