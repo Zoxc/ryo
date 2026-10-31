@@ -5,7 +5,8 @@ Ryo.Proofs.DecodeLink.Inline — inline sequences as `inlineInsn` reads them (ao
 - `inlineInsn_read`: an exact read (`exact = true`, the second pass) that accepted a sequence
   without a dropped store (`q.dropped = false`) found a candidate `cand` the decoder decodes to
   `q.op`, `q.ops` (`decodeInline cand br = some (q.op, q.ops)`, so by `decodeInline_spec`
-  `(q.op, cls) ∈ inlineOps` and `sequence cls q.ops = some (cand, br)`), with
+  `(q.op, cls) ∈ inlineOps` and `sequence cls q.ops = some (cand, br.map (·.1))`: the sequence
+  fixes the branch condition, not its target), with
   `cache.emit cand = (q.items, cache')`: the items read, one after the other, are
   `cache.emit cand`'s, then, for a branch class, the `jcc` the loop stopped at.
 - `link_inline`: in memory (`LinkOk`): `CodeAt` of `(cache.emit cand).1` (and the `jcc`).
