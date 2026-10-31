@@ -161,10 +161,13 @@ def goNext : FnB Unit := do
   term (.goto bb)
   setBlock bb
 
-/-- A call that continues in a fresh block. -/
+/-- A call that continues in a fresh block. In a cleanup block, where `Continue` is not
+allowed, `unwind := .continue` (the default) means `.unreachable`. -/
 def call (f : Callee) (args : List Operand) (dest : MPlace) (unwind : UnwindAction := .continue)
     (callerLocation : Option CallerLoc := none) : FnB Unit := do
-  let next ← newBlock (cleanup := ← curIsCleanup)
+  let cleanup ← curIsCleanup
+  let next ← newBlock (cleanup := cleanup)
+  let unwind : UnwindAction := if cleanup && (unwind matches .continue) then .unreachable else unwind
   term (.call f args dest (some next) unwind callerLocation)
   setBlock next
 
@@ -273,21 +276,24 @@ def cleanupBlock (build : FnB Unit) : FnB BasicBlock := do
   modify fun s => { s with cur := saved.1, curStmts := saved.2 }
   pure bb
 
-/-- A normal block built by `build` (not entered); restores the current block. -/
+/-- A block built by `build` (not entered), of the current block's kind (normal, or cleanup
+in a cleanup block); restores the current block. -/
 def sideBlock (build : FnB Unit) : FnB BasicBlock := do
   let s ← get
   let saved := (s.cur, s.curStmts)
-  let bb ← newBlock
+  let bb ← newBlock (cleanup := ← curIsCleanup)
   setBlock bb
   build
   modify fun s => { s with cur := saved.1, curStmts := saved.2 }
   pure bb
 
-/-- `if c { then } else { else }`, continuing in a join block. -/
+/-- `if c { then } else { else }`, continuing in a join block (all of the current block's
+kind). -/
 def ite (c : Operand) (thn els : FnB Unit) : FnB Unit := do
-  let t ← newBlock
-  let e ← newBlock
-  let j ← newBlock
+  let cleanup ← curIsCleanup
+  let t ← newBlock cleanup
+  let e ← newBlock cleanup
+  let j ← newBlock cleanup
   term (.switchInt c [(0, e)] t)
   setBlock t; thn
   if (← get).cur.isSome then term (.goto j)
