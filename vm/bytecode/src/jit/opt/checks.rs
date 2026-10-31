@@ -82,7 +82,8 @@ impl Range {
 /// What the walk knows in the current dominator subtree.
 #[derive(Clone, Copy, Debug)]
 enum Fact {
-    /// The low `w` bytes of `v` are in `r` (the latest such fact on `v` at `w` has all).
+    /// The low `w` bytes of `v` are in `r` (the latest such fact on `v` at `w` has all the
+    /// facts on `v` before it at `w`, and at wider widths that fit in `w` bytes).
     In(Value, u8, Range),
     /// `a < b` (`strict`) or `a <= b` on the low `w` bytes, signed or not.
     Rel { a: Value, b: Value, w: u8, signed: bool, strict: bool },
@@ -106,7 +107,8 @@ impl Walk {
             _ => Range::full(w),
         };
         // From the facts: at `w`, or at a wider width when the value fits in `w` bytes (its
-        // higher bytes are then zero, so the low `w` bytes are the value).
+        // higher bytes are then zero, so the low `w` bytes are the value). The latest at `w`
+        // has all before it, but a wider one doesn't have the narrower ones: look past it.
         for fact in self.facts.iter().rev() {
             if let Fact::In(u, fw, fr) = *fact
                 && u == v
@@ -117,7 +119,6 @@ impl Walk {
                 }
                 if fw > w && fr.uhi <= mask(u64::MAX, w) {
                     r = r.meet(Range::unsigned(fr.ulo, fr.uhi, w), w);
-                    break;
                 }
             }
         }
