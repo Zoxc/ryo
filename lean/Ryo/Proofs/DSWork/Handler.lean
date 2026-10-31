@@ -684,12 +684,14 @@ theorem handler_thenSeq_resume {nn hat : Nat} {c c' : Cursor} {t : R.Then Nat}
 
 set_option maxRecDepth 100000 in
 /-- `resume` (`handler resume [x] trap`): R unwinds from `k` with the exception object in slot
-`x` (`R.unwindAt`). Proof idea: `handler_call_steps` reaches the handler (`H.envOutside.handler`,
-an environment step); each return is `H.resume`'s: at the landing pad `PadsLinked` gives
-(`cleanupAt k = some (some pad, _)`, `posOf_lt_32`), `rax` the slot's 8 bytes (related through
-`MemRel`/`Rel` to R's `asPtr`), memory kept off runtime-owned bytes and the stack below `rsp`
-(`EnvApart.window`, `CodeApart`, `LinkPrivate` keep `FrameInv`; `pad_not_leadArg`), the cache
-empty at the pad (`CacheCleared.pads`); no pad: no return. -/
+`x` (`R.unwindAt`). `handler_call_steps` reaches the handler (`H.envOutside.handler`, an
+environment step); each return is `H.resume`'s: at the landing pad `PadsLinked` gives
+(`cleanupAt k = some (some pad, _)`, `posOf_lt_32`), `rsp` and the saved registers as before
+the call, memory kept off runtime-owned bytes and the stack below `rsp` (`hdl_frameInv` keeps
+`FrameInv`; `pad_not_leadArg`), the cache empty at the pad (`CacheCleared.pads`); no pad: no
+return. `ResumeContract` also gives `rax` the slot's 8 bytes, but the proof discards it: R's
+new `exception` (`asPtr` of the slot) is not related to `rax` here, nor by `FrameInv` (`Rel`
+doesn't see `exception`), so the pad's `lpad` gets no relation to its `rax` (open). -/
 theorem handler_resume' (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (H : Hyps S) {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
     (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
