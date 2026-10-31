@@ -453,6 +453,11 @@ impl<'tcx> Dumper<'tcx> {
                 let alloc = if tcx.is_foreign_item(def_id) { None } else { tcx.eval_static_initializer(def_id).ok() };
                 let k = if tcx.is_thread_local_static(def_id) {
                     tag("threadLocal")
+                } else if matches!(tcx.def_kind(def_id), rustc_hir::def::DefKind::Static { nested: true, .. }) {
+                    // An inner allocation of a static's initializer, interned as a static of
+                    // its own: no type (`type_of` would ICE), the allocation has the mutability.
+                    let mutable = alloc.is_some_and(|a| a.inner().mutability == rustc_hir::Mutability::Mut);
+                    ctor("static", vec![("mutable", J::Bool(mutable))])
                 } else {
                     let t = tcx.normalize_erasing_regions(self.typing_env(), tcx.type_of(def_id).instantiate_identity());
                     let mutable = tcx.static_mutability(def_id) == Some(rustc_hir::Mutability::Mut) || !t.is_freeze(tcx, self.typing_env());
