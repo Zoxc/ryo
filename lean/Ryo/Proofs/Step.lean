@@ -148,8 +148,8 @@ theorem inline_step (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.State} {
         rw [← hp, hpc]
       | _ => simp [R.Then.succ] at hp
 
-/-- `inline_step` for a `SoundC` class (the overflow ops, and every `Sound` class): the registers
-of `clobbers` may change, which `RRel` doesn't see. -/
+/-- `inline_step` for a `SoundC` class (the overflow ops, `div`/`rem`, and every `Sound` class):
+the registers of `clobbers` may change, which `RRel` doesn't see. -/
 theorem inline_stepC (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.State}
     {ch : OpSem.Choice} {op : Reduced.Opcode} {ops : List (R.Opnd Nat)} {f : Full.Opcode}
     {cls : Class} {items : List Item} {br : Option Cond} (hsound : SoundC cls)

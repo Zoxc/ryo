@@ -3,8 +3,8 @@ Ryo.Proofs.Inline.Ovf — the overflowing operations (`add.ovf`/`sub.ovf`, class
 `mul.ovf`, class `mulOvf`) against `opSem` (`SoundC`). The sequences store the result `d`, then
 the flag byte `o`, as `opSem` commits them, so overlapping outputs need no side condition.
 Unsigned 64-bit `mul.ovf` (`mul`, `rdx:rax`) also clobbers `rdx` (`clobbers`), as the register
-cache knows (`Cache.update` drops `rdx`'s entry after a `mul`); every other class is `Sound`
-(`SoundC.sound`).
+cache knows (`Cache.update` drops `rdx`'s entry after a `mul`); so does `div`/`rem`
+(`Inline/LaterDiv.lean`). Every other class is `Sound` (`SoundC.sound`).
 
 In the module chain after `Ext` (see `Ryo/Proofs/Inline/Arith.lean`).
 -/
