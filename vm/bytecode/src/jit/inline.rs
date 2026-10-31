@@ -738,8 +738,7 @@ pub fn inline(
     let root = tree.nodes[0].func;
     let accepted = select(&tree.nodes, &clusters, cap, p, root, dump);
     let nodes = tree.nodes;
-    splice_accepted(f, &nodes, &accepted, check)?;
-    Ok(accepted.iter().filter(|&&a| a).count())
+    splice_accepted(f, &nodes, &accepted, check)
 }
 
 /// Exploration: the call tree of `f`, from its calls `only` or all of them, the pending
@@ -1075,13 +1074,15 @@ fn splice_checked(into: &mut Func, site: Inst, sub: &Func, check: bool, what: im
     Ok(())
 }
 
-/// The splices into `f`, each callee with its own accepted callees spliced in first.
-fn splice_accepted(f: &mut Func, nodes: &[Node], accepted: &[bool], check: bool) -> Result<(), String> {
-    fn build(nodes: &[Node], accepted: &[bool], k: usize, check: bool) -> Result<Func, String> {
+/// The splices into `f`, each callee with its own accepted callees spliced in first. Returns
+/// how many calls were spliced (not those an earlier splice pruned).
+fn splice_accepted(f: &mut Func, nodes: &[Node], accepted: &[bool], check: bool) -> Result<usize, String> {
+    fn build(nodes: &[Node], accepted: &[bool], k: usize, check: bool, n: &mut usize) -> Result<Func, String> {
         let mut g = (**nodes[k].ir.as_ref().unwrap()).clone();
         for &ch in &nodes[k].children {
             if accepted[ch] && live(&g, nodes[ch].site) {
-                let sub = build(nodes, accepted, ch, check)?;
+                let sub = build(nodes, accepted, ch, check, n)?;
+                *n += 1;
                 splice_checked(&mut g, nodes[ch].site, &sub, check, || {
                     alloc::format!("{} into {}", name(nodes[ch].func, nodes[0].func), name(nodes[k].func, nodes[0].func))
                 })?;
@@ -1089,13 +1090,15 @@ fn splice_accepted(f: &mut Func, nodes: &[Node], accepted: &[bool], check: bool)
         }
         Ok(g)
     }
+    let mut n = 0;
     for &ch in &nodes[0].children {
         if accepted[ch] && live(f, nodes[ch].site) {
-            let sub = build(nodes, accepted, ch, check)?;
+            let sub = build(nodes, accepted, ch, check, &mut n)?;
+            n += 1;
             splice_checked(f, nodes[ch].site, &sub, check, || alloc::format!("{} into the root", name(nodes[ch].func, nodes[0].func)))?;
         }
     }
-    Ok(())
+    Ok(n)
 }
 
 /// Whether the call `site` is still in `f`: a splice prunes the code that became
