@@ -96,7 +96,8 @@ code that calls the VM's handlers; cg_llvm compiles everything else. Start at
   (names are file stems and variants in `build/src/test.rs`).
 - vm crates directly: `cargo test --manifest-path vm/Cargo.toml -p ryo_bytecode --test
   jit_ssa` etc. (`ryo_jit`'s tests need `-p ryo_jit`).
-- `bench [--runs N] [--llvm O0,O3] [--clif] [--ryo aot,jit] [--metric time|cachegrind]`: no
+- `bench [--runs N] [--llvm O0,O3] [--clif] [--ryo aot,jit] [--metric time|cachegrind] [--self-profile DIR]`
+  (`.mm_profdata` per program and column, from an extra untimed compile): no
   per-program filter; use `compare-branches.py --programs fib` for one.
 - `bench codegen`: rewrites `bench/codegen/` (AOT `.txt`/`.s`, JIT `.jit.s`,
   `.jit-ssa-{pre,post}.txt`) using `dist/`, so `./y.sh build` first.

@@ -95,7 +95,8 @@ impl RyoMode {
     }
 }
 
-/// `y bench [--runs N] [--llvm LEVELS] [--clif [LEVELS]] [--ryo MODES] [--metric time|cachegrind]`.
+/// `y bench [--runs N] [--llvm LEVELS] [--clif [LEVELS]] [--ryo MODES] [--metric time|cachegrind]
+/// [--self-profile DIR]`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Options {
     pub runs: u32,
@@ -104,13 +105,16 @@ pub struct Options {
     pub clif: Vec<OptLevel>,
     pub ryo: Vec<RyoMode>,
     pub metric: Metric,
+    /// Also compile each program once more with `-Zself-profile`, writing rustc's
+    /// `.mm_profdata` to `DIR/<program>/<column>/`.
+    pub self_profile: Option<PathBuf>,
 }
 
 impl Default for Options {
     /// The default columns: LLVM -O0 and -O1 and ryo as it runs by default (no cg_clif, so
     /// no `build-clif` needed).
     fn default() -> Self {
-        Options { runs: DEFAULT_RUNS, llvm: Vec::new(), clif: Vec::new(), ryo: Vec::new(), metric: Metric::Time }
+        Options { runs: DEFAULT_RUNS, llvm: Vec::new(), clif: Vec::new(), ryo: Vec::new(), metric: Metric::Time, self_profile: None }
     }
 }
 
@@ -149,6 +153,7 @@ pub fn parse_options(args: &[&str]) -> Result<Options, String> {
                     m => return Err(format!("unknown metric `{m}`")),
                 }
             }
+            "--self-profile" => o.self_profile = Some(PathBuf::from(args.value()?)),
             _ => return Err(args.unexpected()),
         }
     }
@@ -192,6 +197,7 @@ struct Stats {
 }
 
 /// One timed command: a program, its arguments and the environment `cmd` gives it.
+#[derive(Clone)]
 struct Job {
     program: PathBuf,
     args: Vec<String>,
@@ -355,6 +361,16 @@ pub fn run(opts: &Options) -> Result<(), String> {
             let compile_job = Job { program: compiler, args, env: Vec::new() };
             let mut cell = Cell::default();
             let built = timer.compile(&compile_job, runs, &mut cell).map_err(|e| failed("compile", e)).is_ok();
+            // A separate, untimed compile, so the profiler's overhead stays out of the timings.
+            if let (true, Some(base)) = (built, &opts.self_profile) {
+                let pdir = base.join(program).join(column.name.replace([' ', '-'], ""));
+                crate::utils::create_dir(&pdir)?;
+                let mut job = compile_job.clone();
+                job.args.push(format!("-Zself-profile={}", path_str(&pdir)?));
+                if let Err(e) = crate::utils::run(&mut job.command()) {
+                    failed("self-profile", e);
+                }
+            }
             let output = if built { run_once(&exe, &column.env).map_err(|e| failed("run", e)).ok() } else { None };
             if let Some(output) = output {
                 match &reference {
@@ -551,6 +567,7 @@ mod tests {
         assert_eq!(columns(&o)[2].env, [("RYO_JIT_OPT", "ssa"), ("RYO_JIT_SYNC", "1")]);
         assert!(parse_options(&["--ryo", "x"]).is_err());
         assert!(parse_options(&["--runs", "0"]).is_err());
+        assert_eq!(parse_options(&["--self-profile", "p"]).unwrap().self_profile, Some(PathBuf::from("p")));
     }
 
     #[test]

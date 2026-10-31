@@ -46,6 +46,7 @@ commands:
                                x86_64-pc-windows-msvc or x86_64-apple-darwin; needs
                                `build --target T` first
   bench [--runs N] [--llvm O0,O2n,..] [--clif [O0,O3,..]] [--ryo aot,jit] [--metric time|cachegrind]
+               [--self-profile DIR]
                                compare LLVM -O0/-O1 and ryo (Cranelift with --clif): compile and run time
                                (or, with cachegrind, run instructions and est. cycles); built
                                with cargo's dev profile, except one CGU, no incremental and no
@@ -53,7 +54,9 @@ commands:
                                options pick the columns (`n`: no debug assertions or overflow
                                checks; a bare `--clif` is O0;
                                cg_clif's O1..O3 share Cranelift's `speed_and_size` and
-                               differ only in rustc's MIR passes)
+                               differ only in rustc's MIR passes); `--self-profile DIR` also
+                               compiles each once more (untimed) with `-Zself-profile`, writing
+                               `.mm_profdata` to DIR/<program>/<column>/
   bench codegen                dump ryo's code for each bench program to bench/codegen/
   lean [gen | --proofs]        check the generated Lean tables, then `lake build` and
                                `lake test` in lean/; `gen` regenerates the tables;
