@@ -210,7 +210,9 @@ pub(super) fn frame_access(op: Opcode) -> Option<Vec<Access>> {
         Class::PtrIndex => vec![Wr(8), R(8), R(8)],
         Class::Load(w) => vec![Wr(n(w)), R(8)],
         Class::Store(w) => vec![R(8), R(n(w))],
-        Class::Bin(_, w) | Class::Mul(w) | Class::ShiftVar(_, w) | Class::Div { w, .. } => vec![Wr(n(w)), R(n(w)), R(n(w))],
+        Class::Bin(_, w) | Class::Mul(w) | Class::Div { w, .. } => vec![Wr(n(w)), R(n(w)), R(n(w))],
+        // The amount is read at the width, at most 4 bytes (`sequence`).
+        Class::ShiftVar(_, w) => vec![Wr(n(w)), R(n(w)), R(n(w).min(4))],
         Class::BinImm(_, w) | Class::MulImm(w) | Class::ShiftImm(_, w) => vec![Wr(n(w)), R(n(w))],
         // The count is a `u32`, the three-way compare an `i8`, at any width.
         Class::Count { w, .. } => vec![Wr(4), R(n(w))],
@@ -444,7 +446,8 @@ pub(super) fn sequence<T>(op: Opcode, ops: &[Opnd<T>]) -> Option<(Vec<Item>, Opt
                 ]);
             } else {
                 // `cl`'s mask at 32 and 64 bits is the width's; rotates at 8 and 16 bits
-                // need none. The amount is read at the width (at most 4 bytes), as declared.
+                // need none. The amount is read at the width, at most 4 bytes (a `u32` for rotates,
+                // masked by `cl` for shifts), as `frame_access` declares.
                 let aw = if narrow { w } else { W::D };
                 v.extend([Item::Ld { w: aw, sx: false, dst: C, m: slot(2) }, Item::ShiftCl { op: sh, w, reg: R }]);
             }

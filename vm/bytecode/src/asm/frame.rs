@@ -93,7 +93,7 @@ pub fn insns(code: &[u32], mode: Mode) -> Result<Vec<InsnFrame>, FrameError> {
                         f.targets.push(rel(ow[0]));
                     }
                 }
-                f.next = !matches!(info.shape, Shape::Jmp | Shape::Ret | Shape::TailCall);
+                f.next = !matches!(info.shape, Shape::Jmp | Shape::Ret | Shape::TailCall | Shape::Trap);
                 f.reads_all = matches!(info.shape, Shape::Call | Shape::TailCall | Shape::Island);
             }
         }
@@ -217,9 +217,12 @@ fn handler(h: full::Opcode, args: List<Arg>, at: usize, mode: Mode, f: &mut Insn
         }
         // A slot is the argument value's low half, or its high one in a shared register.
         let word = at + reduced::handler_arg_value_word(loc.reg as usize, loc.half());
+        // Pointers and lengths are 8 bytes; `d`, `o` (the overflow and exchange flags) and
+        // `lpad`'s `x` are the outputs.
         let access = match (o.kind, o.name) {
-            (OperandKind::Mem, _) | (_, "p") => Access::Read(8),
-            (_, "d") => Access::Clobber(ext),
+            (OperandKind::Mem, _) | (_, "p" | "dp" | "sp" | "n") => Access::Read(8),
+            (_, "d" | "o") => Access::Clobber(ext),
+            (_, "x") if info.shape == Shape::Lpad => Access::Clobber(ext),
             _ => Access::Read(ext),
         };
         f.opnds.push(FrameOpnd { word, access });
