@@ -27,9 +27,11 @@ it (`thenSeq`'s tails), composing `Handler.handler_op_sound` / `br_tail` with th
 `ctx.base`; `pos : Nat → BitVec 32` is the placement (`pos t` is where instruction `t`'s items
 start, the offset the decoder read the branch with), assumed as `pos t = tgt`. The pre-step
 facts about the state after the scopes (`NoUB`, `StackApart`) are taken about `s1`, the
-scopes' result (`hsc`). `OpFacts h` is assumed of the opcode tables and `opSem`: the control
-result has the shape's form (`next` for `op`/`lpad`, a `bool` for `br`) and `opSem` keeps
-`EscWF` (it doesn't touch the escaped objects, and only adds allocations). Scopes are below
+scopes' result (`hsc`). `OpFacts h`, of the opcode tables and `opSem`, is a hypothesis here
+(proved for every opcode by `opFacts`, `RyoProofs/OpFacts.lean`, outside the default build): the
+control result has the shape's form (`next` for `op`/`lpad`, a `bool` for `br`) and `opSem`
+keeps `EscWF` (it keeps the escaped objects and the number of allocations,
+`Ryo/Proofs/OpFacts.lean`). Scopes are below
 `2^62` bytes (`memRel_foldlM`).
 -/
 import Ryo.Proofs.Handler
@@ -49,7 +51,8 @@ open Ryo.Proofs.Counter (CalleeSaved)
 def CtlFits (sh : Shape) (c : Control) : Prop :=
   ((sh = .op ∨ sh = .lpad) → c = .next) ∧ (sh = .br → ∃ b, c = .branch b)
 
-/-- What the step needs of `opSem h` (assumed; see the module comment). -/
+/-- What the step needs of `opSem h` (a hypothesis here, proved by `opFacts`; see the module
+comment). -/
 structure OpFacts (h : Full.Opcode) : Prop where
   ctl : ∀ vals st ch ctl st', opSem h vals st ch = .ok (ctl, st') → CtlFits h.info.shape ctl
   escWF : ∀ vals st ch ctl st', opSem h vals st ch = .ok (ctl, st') → EscWF st → EscWF st'
