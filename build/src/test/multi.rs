@@ -12,7 +12,7 @@ use crate::utils::{RustcInfo, capture, capture_ok, cmd, run};
 /// The C link's native libraries for a Rust staticlib on Linux (`--print=native-static-libs`).
 const NATIVE_LIBS: &[&str] = &["-lgcc_s", "-lutil", "-lrt", "-lpthread", "-lm", "-ldl", "-lc"];
 
-fn applies(info: &RustcInfo) -> bool {
+fn applies() -> bool {
     cfg!(target_os = "linux")
 }
 
@@ -52,7 +52,7 @@ fn cc(info: &RustcInfo, lld: bool) -> Command {
 /// --keep-global-symbol`) link and run as two runtimes, each registering its own images
 /// (anchor ownership).
 pub(super) fn multi_staticlib(info: &RustcInfo, rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
-    if !applies(info) {
+    if !applies() {
         return Ok(());
     }
     let dir = out.join("multi-staticlib");
@@ -160,7 +160,7 @@ fn jit_threads(stdout: &str) -> Option<usize> {
 ///   nothing of the runtime, and merge into one instance (one JIT thread), or stay three with
 ///   `RYO_JIT_MERGE=0`; `dlclose`d by a C program after merging, they stay loaded.
 pub(super) fn multi_dylib(info: &RustcInfo, root: &Path, rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
-    if !applies(info) {
+    if !applies() {
         return Ok(());
     }
     let dir = out.join("multi-dylib");
@@ -230,7 +230,7 @@ pub(super) fn multi_dylib(info: &RustcInfo, root: &Path, rustc_ryo: &Path, src: 
 /// - an executable of one dlopening a cdylib of the other runs;
 /// - a crate of one against an rlib of the other is rustc's error (`ryo_rt`'s crate hash).
 pub(super) fn multi_version(info: &RustcInfo, root: &Path, rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
-    if !applies(info) {
+    if !applies() {
         return Ok(());
     }
     let alt = root.join("target").join("abi-alt");

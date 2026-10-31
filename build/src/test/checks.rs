@@ -515,7 +515,7 @@ pub(super) fn jit_sealed(info: &crate::utils::RustcInfo, root: &Path, out: &Path
 /// it must still run as without the JIT: every compile panics, which fails the function
 /// instead of aborting; so must it with `RYO_JIT_TEST_OOM`, where every compile fails an
 /// allocation (the JIT's allocation error hook panics).
-pub(super) fn jit_private_std(info: &crate::utils::RustcInfo, rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
+pub(super) fn jit_private_std(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
     let want = "sum 499500 words w0,w97,w194,w291,w388,w485,w582,w679,w776,w873,w970\n";
     // Each case: the name, the flags, the environment, and what stderr must contain.
     let cases: [(&str, &[&str], &[(&str, &str)], &str); 3] = [
@@ -545,7 +545,7 @@ pub(super) fn jit_private_std(info: &crate::utils::RustcInfo, rustc_ryo: &Path, 
 /// The atomics on pointers and 64-bit integers, whose handlers MergeFunctions folds in pairs
 /// (`ptr` and `w64`), compiled by the JIT at their first call: every function must compile,
 /// none fail to decode (`RYO_JIT_STATS`'s exit summary).
-pub(super) fn jit_atomics(info: &crate::utils::RustcInfo, rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
+pub(super) fn jit_atomics(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
     let exe = out.join(exe_name("jit_atomics"));
     crate::utils::run(cmd(rustc_ryo).arg("--edition=2024").arg(src).arg("-o").arg(&exe))?;
     let r = capture(Command::new(&exe).envs(super::JIT_SYNC.iter().copied()).envs([("RYO_JIT_STATS", "1"), ("RYO_JIT_LOG", "1")]))?;

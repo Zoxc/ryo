@@ -564,8 +564,8 @@ impl Check {
         match self {
             Check::RtCoreOnly => rt_core_only(info, root, &info.host),
             Check::JitSealed => jit_sealed(info, root, out),
-            Check::JitPrivateStd => jit_private_std(info, rustc_ryo, &src(), out),
-            Check::JitAtomics => jit_atomics(info, rustc_ryo, &src(), out),
+            Check::JitPrivateStd => jit_private_std(rustc_ryo, &src(), out),
+            Check::JitAtomics => jit_atomics(rustc_ryo, &src(), out),
             Check::RejectUnsupported => reject_unsupported(rustc_ryo, &src(), out),
             Check::CguDeterministic => cgu_deterministic(rustc_ryo, &src(), out),
             Check::CguOwnership => cgu_ownership(info, rustc_ryo, &src(), out),
