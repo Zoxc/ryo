@@ -96,12 +96,10 @@ const RT_IMPORTS_MACHO: &[&str] = &[
     "_atexit",
     "_fmod",
     "_fmodf",
-    // Module pinning (`vm/rt/src/vm/sys.rs`) and the run-time merge's rendezvous page
-    // (`vm/rt/src/vm/jit/merge.rs`).
+    // Module pinning and reading words (`vm/rt/src/vm/sys.rs`).
     "_dladdr",
     "_dlopen",
     "_mach_task_self_",
-    "_mach_vm_allocate",
     "_mach_vm_read_overwrite",
 ];
 
@@ -119,6 +117,13 @@ const PE: Flavor = Flavor { stub_libs: STUB_LIBS, rt_imports: RT_IMPORTS, macho:
 const MACHO: Flavor = Flavor { stub_libs: STUB_LIBS_MACHO, rt_imports: RT_IMPORTS_MACHO, macho: true };
 
 pub fn run(target: &str) -> Result<(), String> {
+    let flavor = if target.starts_with("x86_64-") && crate::target::is_macho(target) {
+        &MACHO
+    } else if crate::target::is_coff(target) {
+        &PE
+    } else {
+        return Err(format!("test --cross {target}: only windows-msvc and x86_64 macOS targets are supported"));
+    };
     let root = root();
     let info = RustcInfo::get()?;
     let dist = root.join("dist");
@@ -135,7 +140,6 @@ pub fn run(target: &str) -> Result<(), String> {
     crate::utils::remove_dir_if_exists(&out)?;
     let stubs = out.join("stub-libs");
     crate::utils::create_dir(&stubs)?;
-    let flavor = if crate::target::is_macho(target) { &MACHO } else { &PE };
     let macho = flavor.macho;
     for lib in flavor.stub_libs {
         crate::utils::write(stubs.join(crate::target::static_lib_name(target, lib)), b"!<arch>\n")?;
