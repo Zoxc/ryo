@@ -32,7 +32,7 @@ usage: ./y.sh <command>
 
 commands:
   build [--sysroot llvm|ryo] [--target T]...
-                               build the backend, the sysroot and the wrappers into dist/;
+                               build the backend, the sysroot and the wrappers into out/dist/;
                                also install std and ryo_rt for each target T
   build-clif                   build cg_clif from the toolchain's rustc-dev sources
   test [--clif] [--full | --only jit|backend|lean|std|rt | --no-changed
@@ -69,7 +69,7 @@ commands:
                                prints the plan and asks first
   uninstall [--keep-toolchain] [--yes] [--dry-run]
                                remove the launchers, what install added to rustup, and install/
-  clean                        remove dist/ and target/ (not install/)
+  clean                        remove out/, all build output (not install/)
 ";
 
 fn usage() -> String {

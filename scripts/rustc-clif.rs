@@ -1,4 +1,4 @@
-//! `rustc-clif`: runs the pinned rustc with cg_clif (built by `y build-clif`) and the `dist/`
+//! `rustc-clif`: runs the pinned rustc with cg_clif (built by `y build-clif`) and the `out/dist/`
 //! sysroot, which has the toolchain's prebuilt LLVM std (design/build.md#build-clif).
 //!
 //! Like `rustc-ryo`, without `force:ryo_rt` and `--sysroot ryo`.

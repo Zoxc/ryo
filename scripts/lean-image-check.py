@@ -4,7 +4,7 @@ and symbols, the relocations, the JIT records, the header, the anchor and `__ryo
 the registry object) over the corpus, with `ryo-lean check-image`.
 
 The programs are those of scripts/lean-decode-diff.py: tests/lean/*.rs, tests/*.rs and
-bench/*.rs, compiled with dist/bin/rustc-ryo and -Csave-temps, which keeps each program's image
+bench/*.rs, compiled with out/dist/bin/rustc-ryo and -Csave-temps, which keeps each program's image
 objects (`<name>.<cgu>.ryo_image.rcgu.o`) and its registry object
 (`<name>.<name>.ryo_registry.bin.rcgu.o`); each program's objects are checked together, as one
 link. With a ryo sysroot (`./y.sh build --sysroot ryo`), the image objects of each of its rlibs

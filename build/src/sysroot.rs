@@ -1,7 +1,7 @@
 //! `y build --sysroot ryo`: std built from `rust-src` with the ryo backend
 //! (design/build.md#build, "Sysroot").
 //!
-//! The library workspace is copied to `target/sysroot-ryo/library` and built with cargo, with
+//! The library workspace is copied to `out/target/sysroot-ryo/library` and built with cargo, with
 //! `y` itself as `RUSTC` ([`shim`]): it compiles `core`, `compiler_builtins`, `ryo_rt` and the
 //! crates between them with plain rustc (LLVM), and everything else with `rustc-ryo`. `ryo_rt`
 //! is part of that build (a `#![no_std]` crate on `core`), and the copy makes `alloc` and
@@ -26,13 +26,13 @@ pub const SHIM_VAR: &str = "RYO_Y_SYSROOT_SHIM";
 const NATIVE_CRATES: &[&str] =
     &["core", "compiler_builtins", "rustc_std_workspace_core", "windows_link", "ryo_rt", "ryo_bytecode", "build_script_build"];
 
-/// The sysroot directory inside `dist/` (`rustc-ryo --sysroot ryo` selects it).
+/// The sysroot directory inside `out/dist/` (`rustc-ryo --sysroot ryo` selects it).
 pub const SYSROOT_DIR: &str = "sysroot-ryo";
 
-/// The stamp of `dist/sysroot-ryo`'s inputs, next to it in `dist/` ([`ryo_sysroot_status`]).
+/// The stamp of `out/dist/sysroot-ryo`'s inputs, next to it in `out/dist/` ([`ryo_sysroot_status`]).
 pub const STAMP_FILE: &str = "sysroot-ryo.stamp";
 
-/// Whether `dist/sysroot-ryo` is there and built from the current inputs.
+/// Whether `out/dist/sysroot-ryo` is there and built from the current inputs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SysrootStatus {
     Missing,
@@ -41,9 +41,9 @@ pub enum SysrootStatus {
     Current,
 }
 
-/// Checks `dist/sysroot-ryo` against its stamp: the backend in `dist/`, the runtime's sources
+/// Checks `out/dist/sysroot-ryo` against its stamp: the backend in `out/dist/`, the runtime's sources
 /// (`ryo_rt`, `ryo_bytecode` and the bundled JIT, as the ABI tag hashes them), the `rust-src` it is built from and how it
-/// is patched, and the rustc version. Doesn't check that `dist/`'s backend is current.
+/// is patched, and the rustc version. Doesn't check that `out/dist/`'s backend is current.
 pub fn ryo_sysroot_status(info: &RustcInfo, dist: &Path) -> SysrootStatus {
     if !dist.join(SYSROOT_DIR).is_dir() {
         return SysrootStatus::Missing;
@@ -103,7 +103,7 @@ pub fn shim(rustc_ryo: OsString) -> std::process::ExitCode {
         let program = if name.is_some_and(is_ryo_crate) { &rustc_ryo } else { &rustc };
         let mut c = cmd(program);
         c.args(&args);
-        // The runtime crates' identity carries the ABI tag, as in `dist/`
+        // The runtime crates' identity carries the ABI tag, as in `out/dist/`
         // (design/build.md#the-abi-tag).
         if let (Some(n), Ok(tag)) = (name, std::env::var(crate::dist::ABI_VAR))
             && crate::dist::RUNTIME_CRATES.contains(&n)
@@ -147,11 +147,11 @@ fn is_ryo_crate(name: &str) -> bool {
 }
 
 /// Builds std with the ryo backend for the host and installs it, with `ryo_rt`, into
-/// `dist/sysroot-ryo` (with the toolchain's `bin/`, for `rust-lld`). `dist/` must already hold
+/// `out/dist/sysroot-ryo` (with the toolchain's `bin/`, for `rust-lld`). `out/dist/` must already hold
 /// the backend and `rustc-ryo`. `ryo_rt` bundles the release JIT of `jits`, as in
-/// `dist/`: the JIT has a std of its own, the native one, so it never
+/// `out/dist/`: the JIT has a std of its own, the native one, so it never
 /// enters this sysroot's VM code. The checked JIT is swapped into a copy of `ryo_rt` in
-/// `sysroot-ryo/jit-checked/` as for `dist/`.
+/// `sysroot-ryo/jit-checked/` as for `out/dist/`.
 /// `target`: cargo's target directory (the work directory is `<target>/sysroot-ryo`).
 pub fn build(info: &RustcInfo, dist: &Path, target: &Path, jits: &crate::jit::SealedJits) -> Result<(), String> {
     let (jit, checked) = (jits.release.as_path(), jits.checked.as_path());
@@ -182,7 +182,7 @@ pub fn build(info: &RustcInfo, dist: &Path, target: &Path, jits: &crate::jit::Se
     let mut crate_path = String::from("-Lcrate=");
     crate_path.push_str(deps.to_str().ok_or("non-UTF-8 target path")?);
     let mut rustflags = vec![crate_path.as_str(), "-Zforce-unstable-if-unmarked", "--sysroot=/dev/null"];
-    // Windows: no red zone in `ryo_rt`'s `sysv64` handlers, as in `dist/` (design/platforms.md);
+    // Windows: no red zone in `ryo_rt`'s `sysv64` handlers, as in `out/dist/` (design/platforms.md);
     // the rest of std is Win64 code, which has none anyway.
     if crate::target::is_windows(&info.host) {
         rustflags.push(crate::jit::NO_REDZONE);
@@ -317,7 +317,7 @@ fn prepare_sources(info: &RustcInfo, root: &Path, dst: &Path) -> Result<(), Stri
     )?;
     // The crates directly on `core` that the ryo backend builds depend on `ryo_rt` through
     // these two (everything else in the sysroot depends on one of them).
-    // What `RYO_RT_FEATURES` adds, as in `dist/`'s `ryo_rt`.
+    // What `RYO_RT_FEATURES` adds, as in `out/dist/`'s `ryo_rt`.
     let features: Vec<String> = crate::dist::rt_features().iter().map(|f| format!("{f:?}")).collect();
     let dep = format!("ryo_rt = {{ path = \"../ryo_rt\", features = [{}] }}\n", features.join(", "));
     for krate in ["alloc", "rustc-std-workspace-core"] {
@@ -332,7 +332,7 @@ fn prepare_sources(info: &RustcInfo, root: &Path, dst: &Path) -> Result<(), Stri
     Ok(())
 }
 
-/// A hash of `dist/`'s backend's contents (`y build` copies it fresh each time, so its
+/// A hash of `out/dist/`'s backend's contents (`y build` copies it fresh each time, so its
 /// modification time always changes).
 fn backend_stamp(dist: &Path) -> Result<u64, String> {
     crate::utils::hash_files(&[dist.join("lib").join(crate::utils::dll_name("rustc_codegen_ryo"))])

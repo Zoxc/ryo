@@ -339,7 +339,7 @@ pub fn run(opts: &Options) -> Result<(), String> {
     compiler::ensure_tools(&root, "bench", columns.iter().map(|b| b.compiler))?;
     let runs = opts.runs;
 
-    let out = root.join("target").join("bench");
+    let out = crate::utils::out_dir(&root).join("target").join("bench");
     crate::utils::create_dir(&out)?;
     let timer = if opts.metric == Metric::Cachegrind {
         eprintln!("[y] bench: counting instructions and est. cycles of one run with cachegrind (cache and branch simulation)");

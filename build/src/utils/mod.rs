@@ -17,6 +17,13 @@ pub fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf()
 }
 
+/// `out/`, where all build output goes (`y clean` removes it): `dist/`, `y build`'s cargo
+/// `target/` and the trees of `y test`/`y bench`, `cargo/` (the workspaces' own target
+/// directory, `.cargo/config.toml`), `y/` (the `y` tool itself), `clif/` (cg_clif's sources).
+pub fn out_dir(root: &Path) -> PathBuf {
+    root.join("out")
+}
+
 /// The variable the dynamic loader searches for shared libraries.
 pub const LIB_PATH_VAR: &str = if cfg!(windows) {
     "PATH"
@@ -34,7 +41,7 @@ pub fn prepend_paths(var: &str, dirs: impl IntoIterator<Item = PathBuf>) -> Resu
     std::env::join_paths(paths).map_err(|e| format!("{var}: {e}"))
 }
 
-/// Compiles `scripts/<name>.rs` into `dist/bin/<name>` with plain rustc.
+/// Compiles `scripts/<name>.rs` into `out/dist/bin/<name>` with plain rustc.
 pub fn build_wrapper(root: &Path, dist_bin: &Path, info: &RustcInfo, name: &str, build_id: &str) -> Result<(), String> {
     eprintln!("[y] wrapper: {name}");
     run(cmd("rustc")
@@ -59,23 +66,23 @@ pub fn is_std_alloc_shim(s: &str) -> bool {
     ["__rust", "__rdl", "__rg_"].iter().any(|p| s.starts_with(p))
 }
 
-/// `dist/bin/<name>` (an executable).
+/// `out/dist/bin/<name>` (an executable).
 pub fn dist_bin(root: &Path, name: &str) -> PathBuf {
-    root.join("dist").join("bin").join(exe_name(name))
+    out_dir(root).join("dist").join("bin").join(exe_name(name))
 }
 
-/// `dist/bin/rustc-ryo`, or an error if `dist/` hasn't been built.
+/// `out/dist/bin/rustc-ryo`, or an error if `out/dist/` hasn't been built.
 pub fn require_dist(root: &Path) -> Result<PathBuf, String> {
     let rustc_ryo = dist_bin(root, "rustc-ryo");
     if !rustc_ryo.exists() {
-        return Err("dist/ is missing; run `./y.sh build` first".to_owned());
+        return Err("out/dist/ is missing; run `./y.sh build` first".to_owned());
     }
     Ok(rustc_ryo)
 }
 
-/// `dist/`'s `ryo_rt` rlib for `triple`.
+/// `out/dist/`'s `ryo_rt` rlib for `triple`.
 pub fn ryo_rt_rlib(root: &Path, triple: &str) -> PathBuf {
-    rustlib(&root.join("dist"), triple).join("lib").join("libryo_rt.rlib")
+    rustlib(&out_dir(root).join("dist"), triple).join("lib").join("libryo_rt.rlib")
 }
 
 /// Plain-text table of `lines` (the first is the header, optionally followed by a dashed

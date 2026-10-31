@@ -1,4 +1,4 @@
-//! `y test`'s standalone checks of `dist/`, besides the corpus.
+//! `y test`'s standalone checks of `out/dist/`, besides the corpus.
 
 use std::ffi::OsString;
 use std::fs;
@@ -8,7 +8,7 @@ use std::process::Command;
 use crate::utils::{Captured, capture, capture_ok, cmd, dll_name, exe_name, output};
 
 /// `cargo-ryo run` on a one-file package wrapping `tests/hello.rs`, then `cargo ryo build`
-/// (cargo's subcommand lookup, with `dist/bin` on `PATH`) between plain `cargo build`s in one
+/// (cargo's subcommand lookup, with `out/dist/bin` on `PATH`) between plain `cargo build`s in one
 /// target directory: plain, ryo (rebuilds), ryo again (fresh), plain again (fresh).
 pub(super) fn cargo_smoke(info: &crate::utils::RustcInfo, root: &Path, out: &Path) -> Result<(), String> {
     let pkg = out.join("cargo-hello");
@@ -39,7 +39,7 @@ pub(super) fn cargo_smoke(info: &crate::utils::RustcInfo, root: &Path, out: &Pat
         return Err(format!("{status}\nstdout:\n{stdout}\nstderr:\n{stderr}"));
     }
     // As a cargo subcommand, cargo runs `cargo-ryo ryo build`, which must not recurse.
-    let bin = cargo_ryo.parent().ok_or("dist/bin")?.to_path_buf();
+    let bin = cargo_ryo.parent().ok_or("out/dist/bin")?.to_path_buf();
     let path = crate::utils::prepend_paths("PATH", [bin])?;
     let target_sub = pkg.join("target-sub");
     let toolchain = &info.toolchain;
@@ -451,7 +451,7 @@ pub(super) fn outside(s: &str) -> bool {
 /// the rlib bundles (design/jit.md#packaging), which `ryo_rt` reaches only through `ryo_jit_start`
 /// and `jit-sealed` checks: this check skips it.
 pub(crate) fn rt_core_only(info: &crate::utils::RustcInfo, root: &Path, triple: &str) -> Result<(), String> {
-    let dist = root.join("dist");
+    let dist = crate::utils::out_dir(root).join("dist");
     let mut libs = Vec::new();
     for sysroot in [dist.clone(), dist.join(crate::sysroot::SYSROOT_DIR)] {
         let dir = crate::utils::rustlib(&sysroot, triple).join("lib");
@@ -464,7 +464,7 @@ pub(crate) fn rt_core_only(info: &crate::utils::RustcInfo, root: &Path, triple: 
         }
     }
     if libs.is_empty() {
-        return Err("no ryo_rt rlib in dist/".to_owned());
+        return Err("no ryo_rt rlib in out/dist/".to_owned());
     }
     const PANIC_RUNTIME: [&str; 3] = ["18___rust_start_panic", "20___rust_panic_cleanup", "rust_eh_personality"];
     for lib in libs {
@@ -763,12 +763,12 @@ pub(super) fn dump(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), Strin
 /// On PE, references go through `__imp_` exactly where plain rustc's do (design/platforms.md):
 /// [`tests/pe_imports`](../../../tests/pe_imports) built for `x86_64-pc-windows-msvc` as an
 /// rlib, by ryo and by plain rustc, refers to each upstream and foreign item with the same
-/// indirection (`llvm-objdump -r` of its objects). Skipped when `dist/` has no std for that
+/// indirection (`llvm-objdump -r` of its objects). Skipped when `out/dist/` has no std for that
 /// target (`./y.sh build --target x86_64-pc-windows-msvc`).
 pub(super) fn pe_imports(info: &crate::utils::RustcInfo, root: &Path, rustc_ryo: &Path, dir_in: &Path, out: &Path) -> Result<(), String> {
     const TARGET: &str = "x86_64-pc-windows-msvc";
-    if !crate::utils::rustlib(&root.join("dist"), TARGET).join("lib").exists() {
-        eprintln!("[y] pe-imports: skipped, dist/ has no {TARGET} (`./y.sh build --target {TARGET}`)");
+    if !crate::utils::rustlib(&crate::utils::out_dir(root).join("dist"), TARGET).join("lib").exists() {
+        eprintln!("[y] pe-imports: skipped, out/dist/ has no {TARGET} (`./y.sh build --target {TARGET}`)");
         return Ok(());
     }
     // The items, by a unique part of their (mangled) name.

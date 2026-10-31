@@ -2,7 +2,7 @@
 """Cross-checks the Lean object readers (lean/Ryo/Obj, milestone M2) against Rust on real image
 objects, and the Lean ELF reader against readelf.
 
-The image objects are those of the corpus, compiled with dist/bin/rustc-ryo and
+The image objects are those of the corpus, compiled with out/dist/bin/rustc-ryo and
 -Csave-temps (which keeps `<name>.<cgu>.ryo_image.rcgu.o`): tests/lean/*.rs, tests/*.rs and
 bench/*.rs (the single-file programs; the ones that don't build alone are skipped), and, with
 a ryo sysroot (`./y.sh build --sysroot ryo`), the `*.ryo_image.rcgu.o` members of each of its
@@ -48,6 +48,7 @@ import sys
 from lean_corpus import IMAGE_GLOB, ROOT, add_common_args, build_all, compile_program, finish, pool_map, print_rows, require, run, sysroot_images, variants, work_dir
 
 REF_DIR = ROOT / "scripts" / "lean-decode-ref"
+REF_TARGET = ROOT / "out" / "cargo"
 
 def build(src, flags, out_dir):
     """Builds `src` in `out_dir`: (the image objects it leaves, None) or (None, an error)."""
@@ -316,10 +317,11 @@ def main():
     args = ap.parse_args()
 
     require(args.ryo_lean)
-    code, _, err = run(["cargo", "build", "--release", "--quiet", "--manifest-path", str(REF_DIR / "Cargo.toml")])
+    code, _, err = run(["cargo", "build", "--release", "--quiet", "--manifest-path", str(REF_DIR / "Cargo.toml"),
+                       "--target-dir", str(REF_TARGET)])
     if code != 0:
         sys.exit("building scripts/lean-decode-ref failed:\n" + err.decode(errors="replace"))
-    ref = REF_DIR / "target" / "release" / "lean-decode-ref"
+    ref = REF_TARGET / "release" / "lean-decode-ref"
 
     work = work_dir(args.keep, "lean-decode-diff-")
     built, skipped = build_all(args.names, variants(args.opt, args.frame_pointer, args.codegen_units), work, args.j, build)

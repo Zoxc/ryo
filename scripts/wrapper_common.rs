@@ -1,4 +1,4 @@
-//! What the `dist/bin/` wrappers (`rustc-ryo`, `rustc-clif`, `cargo-ryo`) and the installed
+//! What the `out/dist/bin/` wrappers (`rustc-ryo`, `rustc-clif`, `cargo-ryo`) and the installed
 //! launchers (`launcher.rs`) share; each pulls it in with `#[path = "wrapper_common.rs"] mod
 //! common;`. Values baked in by `y build`:
 //! `RYO_TOOLCHAIN`, `RYO_RUSTC_DRIVER`, `RYO_RUSTC_RELEASE` (design/build.md#the-y-build-tool).
@@ -17,7 +17,7 @@ use std::process::Command;
 /// sets it unless the caller did.
 pub const JIT_CHECKED_VAR: &str = "RYO_JIT_CHECKED";
 
-/// Where a sysroot (`dist/`, `dist/sysroot-ryo/`) keeps its host `ryo_rt` with the checked JIT,
+/// Where a sysroot (`out/dist/`, `out/dist/sysroot-ryo/`) keeps its host `ryo_rt` with the checked JIT,
 /// which `y build` installs and `rustc-ryo` links under [`JIT_CHECKED_VAR`].
 pub const JIT_CHECKED_DIR: &str = "jit-checked";
 
@@ -39,13 +39,13 @@ pub fn jit_checked() -> bool {
     env::var_os(JIT_CHECKED_VAR).is_some_and(|v| jit_checked_value(&v))
 }
 
-/// The directory of this executable (`dist/bin/`).
+/// The directory of this executable (`out/dist/bin/`).
 pub fn bin_dir() -> PathBuf {
     let exe = real_path(env::current_exe().expect("current_exe"));
     exe.parent().expect("exe has a parent").to_path_buf()
 }
 
-/// `dist/`, found from the location of this executable (`dist/bin/<wrapper>`).
+/// `out/dist/`, found from the location of this executable (`out/dist/bin/<wrapper>`).
 pub fn dist_dir() -> PathBuf {
     let mut dir = bin_dir();
     if dir.file_name().is_some_and(|n| n == "bin") {

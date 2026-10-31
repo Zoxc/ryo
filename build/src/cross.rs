@@ -126,17 +126,17 @@ pub fn run(target: &str) -> Result<(), String> {
     };
     let root = root();
     let info = RustcInfo::get()?;
-    let dist = root.join("dist");
+    let dist = crate::utils::out_dir(&root).join("dist");
     let rustc_ryo = dist_bin(&root, "rustc-ryo");
     let rlib = ryo_rt_rlib(&root, target);
     if !rlib.exists() {
-        return Err(format!("dist/ has no ryo_rt for {target}; run `./y.sh build --target {target}` first"));
+        return Err(format!("out/dist/ has no ryo_rt for {target}; run `./y.sh build --target {target}` first"));
     }
     let lld = crate::utils::host_tool(&dist, &info.host, "rust-lld");
     if !lld.exists() {
         return Err(format!("test --cross {target}: no rust-lld at {} (`./y.sh build` copies it)", lld.display()));
     }
-    let out = root.join("target").join("tests-cross").join(target);
+    let out = crate::utils::out_dir(&root).join("target").join("tests-cross").join(target);
     crate::utils::remove_dir_if_exists(&out)?;
     let stubs = out.join("stub-libs");
     crate::utils::create_dir(&stubs)?;
@@ -315,7 +315,7 @@ struct Link<'a> {
     stubs: PathBuf,
     /// The ld64 flavor (macOS) rather than lld-link.
     macho: bool,
-    /// `dist/`'s std for the target.
+    /// `out/dist/`'s std for the target.
     std_dir: PathBuf,
 }
 
@@ -338,7 +338,7 @@ impl Link<'_> {
                 c.args(["-Clinker-flavor=ld64.lld", "-Clink-arg=-flat_namespace", "-Clink-arg=-undefined", "-Clink-arg=warning"])
                     .env("SDKROOT", &self.stubs);
                 // A flat namespace makes lld load the dependencies of dylibs too, std's among
-                // them by `@rpath`: the same file in the toolchain's sysroot and in `dist/`.
+                // them by `@rpath`: the same file in the toolchain's sysroot and in `out/dist/`.
                 c.arg("-Clink-arg=-rpath").arg(format!("-Clink-arg={}", self.std_dir.display()));
             } else {
                 c.args(["-Clinker-flavor=lld-link", "-Clink-arg=/force:unresolved", "-Clink-arg=/DEBUG:NONE"]);

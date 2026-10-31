@@ -1,5 +1,4 @@
 target/
-/dist/
-/build/clif/
+/out/
 __pycache__/
 /install/

@@ -34,12 +34,12 @@ impl Compiler {
     }
 }
 
-/// Builds `dist/` if it is missing, and rustc-clif if a backend needs it.
+/// Builds `out/dist/` if it is missing, and rustc-clif if a backend needs it.
 pub fn ensure_tools(root: &Path, cmd: &str, mut backends: impl Iterator<Item = Compiler>) -> Result<(), String> {
     if !Compiler::Ryo.rustc(root).exists() {
-        eprintln!("[y] {cmd}: dist/ is missing, building it");
-        // Into `dist/` itself (not `RYO_Y_DIST_DIR`): that is where the bench runs it from.
-        crate::dist::build_in(&root.join("dist"), &root.join("target"), &Default::default())?;
+        eprintln!("[y] {cmd}: out/dist/ is missing, building it");
+        // Into `out/dist/` itself (not `RYO_Y_DIST_DIR`): that is where the bench runs it from.
+        crate::dist::build_in(&crate::utils::out_dir(root).join("dist"), &crate::utils::out_dir(root).join("target"), &Default::default())?;
     }
     if backends.any(|b| b == Compiler::Clif) {
         crate::clif::ensure()?;

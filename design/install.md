@@ -3,7 +3,7 @@
 `./y.sh install` installs ryo for use on one's own crates; `./y.sh uninstall` undoes it.
 The code is `build/src/install.rs` and the launcher package `scripts/Cargo.toml`.
 
-Contributors don't use it: `./y.sh build` builds into `dist/` and `dist/bin/cargo-ryo` is
+Contributors don't use it: `./y.sh build` builds into `out/dist/` and `out/dist/bin/cargo-ryo` is
 used directly ([build.md](build.md)). That path is unchanged and stays the reference;
 `install/` exists only for `y install`, and the two never touch each other's directories.
 
@@ -34,14 +34,14 @@ Everything except the launchers and what is added to rustup is under `<checkout>
 | Path | What |
 |---|---|
 | `install/target/` | cargo output of the install build |
-| `install/build/` | `y`'s output dir for the install build: what `dist/` is for `y build` |
+| `install/build/` | `y`'s output dir for the install build: what `out/dist/` is for `y build` |
 | `install/<version>/` | the installed ryo: a copy of `install/build/` |
 | `install/current` | a text file naming the active `<version>` (a file, not a symlink) |
 | `install/manifest.toml` | what the install added |
 | `install/.lock` | locked (an OS file lock, released when the process ends) while `y install`/`uninstall` run; holds the pid |
 
-- `dist::build_in` takes the output and target dirs as parameters (`y build` passes `dist/`
-  and `target/`), so a dev build and an install can run at once without sharing cargo locks
+- `dist::build_in` takes the output and target dirs as parameters (`y build` passes `out/dist/`
+  and `out/target/`), so a dev build and an install can run at once without sharing cargo locks
   or forcing each other's rebuilds.
 - Everything the install build spawns runs with `RUSTUP_TOOLCHAIN=1.99.1-<host>`, so the
   wrappers bake in that explicit name, never `stable`, and `rustup update` can't swap it.
@@ -56,7 +56,7 @@ Everything except the launchers and what is added to rustup is under `<checkout>
 `scripts/Cargo.toml` is a package `cargo-ryo` (own workspace, no dependencies, `publish =
 false`) with the bins `cargo-ryo` and `rustc-ryo`, both `scripts/launcher.rs`. Each execs
 `<dir>/bin/<its name>` with its arguments, where `<dir>` is `$RYO_HOME` if set (e.g. a
-development `dist/`), else `<checkout>/install/<contents of current>`, the checkout coming
+development `out/dist/`), else `<checkout>/install/<contents of current>`, the checkout coming
 from `CARGO_MANIFEST_DIR` at build time (`cargo install --path` builds from the source dir,
 so a hand-run `cargo install --path scripts` works the same). Without an install:
 `error: ryo is not installed in <checkout>/install; run ./y.sh install there`.
@@ -169,8 +169,8 @@ leaves a command pointing at deleted files; `install/` last, since it holds the 
 
 Without a manifest (`install/` deleted by hand) it only offers to remove this checkout's
 launchers and says it can't know what was added to rustup; with neither:
-`[y] ryo is not installed in this checkout`, exit 0. Never touched: cargo's caches, `dist/`
-and `target/`, projects' `target/` dirs, and any config selecting ryo.
+`[y] ryo is not installed in this checkout`, exit 0. Never touched: cargo's caches, `out/`,
+projects' `target/` dirs, and any config selecting ryo.
 
 ## Windows
 

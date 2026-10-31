@@ -1,7 +1,7 @@
 //! The launchers `cargo-ryo` and `rustc-ryo` that `y install` puts in cargo's bin dir with
 //! `cargo install --path scripts` (design/install.md). Each runs the real wrapper of the
 //! same name in the installed ryo: `$RYO_HOME/bin/<name>` if `RYO_HOME` is set (e.g. a
-//! development `dist/`), else `<checkout>/install/<version>/bin/<name>`, where `<version>` is
+//! development `out/dist/`), else `<checkout>/install/<version>/bin/<name>`, where `<version>` is
 //! the contents of `install/current` and the checkout is where this package was built from.
 //! All logic stays in the real wrappers. Only std, no rustc-dev.
 

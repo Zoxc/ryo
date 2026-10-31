@@ -1,5 +1,5 @@
 """The corpus scaffolding shared by the scripts/lean-*-check.py and lean-decode-diff.py checkers:
-the programs, their builds with dist/bin/rustc-ryo -Csave-temps, the ryo sysroot's image
+the programs, their builds with out/dist/bin/rustc-ryo -Csave-temps, the ryo sysroot's image
 objects, and the tool checks."""
 
 import concurrent.futures
@@ -12,7 +12,7 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-RUSTC_RYO = ROOT / "dist" / "bin" / "rustc-ryo"
+RUSTC_RYO = ROOT / "out" / "dist" / "bin" / "rustc-ryo"
 RYO_LEAN = ROOT / "lean" / ".lake" / "build" / "bin" / "ryo-lean"
 TIMEOUT = 1800
 IMAGE_SUFFIX = ".ryo_image.rcgu.o"
@@ -125,7 +125,7 @@ def sysroot_images(names, out_dir):
     """The ryo sysroot's rlibs' image objects (one per CGU with VM code), extracted to
     `out_dir/<crate>/`, as `(sysroot/<crate>, path)` in member order, those `names` picks."""
     out = []
-    for rlib in sorted((ROOT / "dist" / "sysroot-ryo" / "lib" / "rustlib").glob("*/lib/*.rlib")):
+    for rlib in sorted((ROOT / "out" / "dist" / "sysroot-ryo" / "lib" / "rustlib").glob("*/lib/*.rlib")):
         crate = re.sub(r"^lib|-[0-9a-f]+$", "", rlib.stem)
         if names and crate not in names and f"sysroot/{crate}" not in names:
             continue

@@ -14,7 +14,7 @@ cd ~/src/my-crate
 ~/dev/ryo/dist/bin/cargo-ryo run --release
 ```
 
-- `cargo ryo build`: works with `dist/bin` on `PATH`, or with `cargo-ryo` symlinked into it.
+- `cargo ryo build`: works with `out/dist/bin` on `PATH`, or with `cargo-ryo` symlinked into it.
 - `RUSTC=~/dev/ryo/dist/bin/rustc-ryo cargo build`: an existing cargo.
 - `~/dev/ryo/dist/bin/rustc-ryo -O main.rs`: a single file.
 - `RUSTFLAGS="--sysroot ryo"`: use the std built with ryo.
@@ -24,7 +24,7 @@ Cargo rebuilds when ryo is rebuilt, and keeps ryo and plain-cargo artifacts apar
 
 ## Build
 
-- `./y.sh build`: backend, sysroot and wrappers into `dist/`.
+- `./y.sh build`: backend, sysroot and wrappers into `out/dist/`.
 - `./y.sh build --sysroot ryo`: also std built with ryo. `./y.sh build` doesn't rebuild it,
   so rerun this after backend or runtime changes.
 - `./y.sh build --target x86_64-pc-windows-msvc`: also std and `ryo_rt` for that target

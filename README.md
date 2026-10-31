@@ -104,7 +104,7 @@ Like install, it prints what it will remove (and what it keeps, and why) and ask
 3. `install/` in the checkout.
 
 Afterwards you can delete the checkout. Not touched: cargo's download cache, development
-builds (`dist/`, `target/`) and your projects' `target/` dirs. Projects that selected ryo
+builds (`out/`) and your projects' `target/` dirs. Projects that selected ryo
 through `.cargo/config.toml` need that setting removed.
 
 ## Development
@@ -112,7 +112,7 @@ through `.cargo/config.toml` need that setting removed.
 ```sh
 ./y.sh build
 ./y.sh test
-dist/bin/cargo-ryo build
+out/dist/bin/cargo-ryo build
 ```
 
 On Windows (PowerShell):
@@ -123,9 +123,9 @@ On Windows (PowerShell):
 dist\bin\cargo-ryo.exe build
 ```
 
-`./y.sh build` builds into `dist/` and `./y.sh test` runs the tests; `./y.sh --help` lists
+`./y.sh build` builds into `out/dist/` and `./y.sh test` runs the tests; `./y.sh --help` lists
 the other commands (benchmarks, the Lean model, cross builds). Development builds and
-`./y.sh install` don't affect each other; to make the installed launchers use your `dist/`,
+`./y.sh install` don't affect each other; to make the installed launchers use your `out/dist/`,
 set `RYO_HOME=<checkout>/dist`. [CHEATSHEET.md](CHEATSHEET.md) lists the common commands and
 settings, and [DESIGN.md](DESIGN.md) gives an overview of the design.
 

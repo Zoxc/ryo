@@ -610,7 +610,7 @@ impl InstallPlan {
         p(&mut s, "     Your default toolchain is not changed.".to_owned());
         s.push('\n');
         p(&mut s, format!("  2. Build and install, all in {}", dir_display(&self.install)));
-        p(&mut s, "     (separate from dist/ and target/; your development builds are not affected)".to_owned());
+        p(&mut s, "     (separate from out/; your development builds are not affected)".to_owned());
         p(&mut s, "     - target/              cargo build output: backend, runtime, JIT".to_owned());
         p(&mut s, format!("     - build/               the built ryo: backend, wrappers, std for {}", list(&self.targets)));
         if self.build.sysroot == Sysroot::Ryo {
@@ -1138,7 +1138,7 @@ pub fn uninstall(o: &UninstallOptions) -> Result<Option<ExitCode>, String> {
         plan.push_str(&format!("  {}. {}\n", n + 1, s.describe()));
     }
     plan.push_str(
-        "\n  Not touched: cargo's download cache, development builds (dist/, target/), your\n  \
+        "\n  Not touched: cargo's download cache, development builds (out/), your\n  \
          projects' target/ dirs, and any .cargo/config.toml, rust-toolchain.toml or rustup\n  \
          override selecting ryo.\n",
     );

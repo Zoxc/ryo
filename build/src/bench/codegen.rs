@@ -28,7 +28,7 @@ pub fn codegen() -> Result<(), String> {
     let root = root();
     let rustc_ryo = crate::utils::require_dist(&root)?;
     let dump_dir = root.join("bench").join("codegen");
-    let out = root.join("target").join("bench-codegen");
+    let out = crate::utils::out_dir(&root).join("target").join("bench-codegen");
     for dir in [&dump_dir, &out] {
         crate::utils::create_dir(dir)?;
     }

@@ -2,10 +2,10 @@
 """Compares any number of ryo builds on the `bench/` programs (compile time and run
 time) and, with `--crates` (or only, with `--only-crates`), on `y bench crates`.
 
-A build is a checkout with a built `dist/` (`./y.sh build`). Builds are given as
+A build is a checkout with a built `out/dist/` (`./y.sh build`). Builds are given as
 `--build NAME=PATH` or `--build PATH` (name: the directory name), repeated; `--worktree REV`
-adds a build of commit REV from a `git worktree` at `target/compare/<REV>` in this repo
-(created if missing, reused otherwise, and `./y.sh build` run there if it has no `dist/`) --
+adds a build of commit REV from a `git worktree` at `out/target/compare/<REV>` in this repo
+(created if missing, reused otherwise, and `./y.sh build` run there if it has no `out/dist/`) --
 the easy way to compare commits. With no builds given, the default is `--worktree main
 --build .`. The first build is the baseline: every other build gets a ratio column (its
 median / the baseline's median).
@@ -22,7 +22,7 @@ Examples:
     scripts/compare-branches.py --worktree HEAD~1 --worktree HEAD --metric wall
     scripts/compare-branches.py --worktree HEAD~1 --build head=. --metric cachegrind
 
-Programs: each is compiled with each build's `dist/bin/rustc-ryo` with cargo's dev profile,
+Programs: each is compiled with each build's `out/dist/bin/rustc-ryo` with cargo's dev profile,
 except one CGU, no incremental and no debuginfo (`DEV_FLAGS`, as `y bench`), then `--flags`; every build
 must print the same output. Samples are taken in
 rounds, one sample per build per round, the build order shuffled each round (`--seed`) so
@@ -145,21 +145,26 @@ def short_rev(d):
     return git(d, "rev-parse", "--short", "HEAD", check=False)
 
 
+def dist(d):
+    """A build's out/dist/: out/dist/, or out/dist/ in checkouts from before out/."""
+    return d / "out" / "dist" if (d / "out").is_dir() or not (d / "dist").is_dir() else d / "dist"
+
+
 def has_dist(d):
-    return (d / "dist" / "bin" / "rustc-ryo").exists()
+    return (dist(d) / "bin" / "rustc-ryo").exists()
 
 
 def ensure_built(d, name):
     if has_dist(d):
         return
-    PROGRESS.log(f"[compare] {name}: no dist/, running ./y.sh build in {d}")
+    PROGRESS.log(f"[compare] {name}: no out/dist/, running ./y.sh build in {d}")
     if subprocess.run(["./y.sh", "build"], cwd=d).returncode != 0:
         sys.exit(f"{name}: ./y.sh build failed in {d}")
 
 
 def worktree(rev):
     commit = git(ROOT, "rev-parse", "--verify", f"{rev}^{{commit}}")
-    path = ROOT / "target" / "compare" / rev.replace("/", "_")
+    path = ROOT / "out" / "target" / "compare" / rev.replace("/", "_")
     if not (path / ".git").exists():
         path.parent.mkdir(parents=True, exist_ok=True)
         PROGRESS.log(f"[compare] git worktree add {path} {rev}")
@@ -192,7 +197,7 @@ def resolve_builds(args):
         builds[name] = path
     for name, d in builds.items():
         if not has_dist(d):
-            sys.exit(f"{name}: no {d}/dist/bin/rustc-ryo (run ./y.sh build there)")
+            sys.exit(f"{name}: no {dist(d)}/bin/rustc-ryo (run ./y.sh build there)")
     if len(builds) < 2:
         PROGRESS.log("[compare] note: only one build; no ratios")
     for i, (name, d) in enumerate(builds.items()):
@@ -368,7 +373,7 @@ def programs_(args, builds, rng, programs, eta):
         exes = {n: out / f"{prog}-{n}" for n in names}
 
         def compile_(name):
-            cmd = [str(builds[name] / "dist" / "bin" / "rustc-ryo"), "--edition=2024", str(src),
+            cmd = [str(dist(builds[name]) / "bin" / "rustc-ryo"), "--edition=2024", str(src),
                    "-o", str(exes[name]), *flags]
             rc, _, err, m = timed(cmd, metric)
             if rc != 0:
@@ -528,9 +533,9 @@ def print_crates(results, crates, names, samples):
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--build", action="append", default=[], metavar="[NAME=]PATH",
-                   help="a checkout with a built dist/ (repeatable; the first build is the baseline)")
+                   help="a checkout with a built out/dist/ (repeatable; the first build is the baseline)")
     p.add_argument("--worktree", action="append", default=[], metavar="REV",
-                   help="add commit REV as a build, from a git worktree at target/compare/REV (repeatable)")
+                   help="add commit REV as a build, from a git worktree at out/target/compare/REV (repeatable)")
     p.add_argument("--samples", type=int, default=8, help="timed samples per measurement (default 8)")
     p.add_argument("--warmup", type=int, default=1, help="dropped rounds before sampling (default 1)")
     p.add_argument("--max-time", type=float, default=0,

@@ -1,6 +1,6 @@
 //! `cargo-ryo`: runs the pinned cargo with `RUSTC=rustc-ryo`.
 //!
-//! Built by `y build` with plain rustc into `dist/bin/`. `RYO_TOOLCHAIN` is baked in at build
+//! Built by `y build` with plain rustc into `out/dist/bin/`. `RYO_TOOLCHAIN` is baked in at build
 //! time (design/build.md#the-y-build-tool).
 
 #[path = "wrapper_common.rs"]

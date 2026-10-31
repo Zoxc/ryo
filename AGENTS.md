@@ -88,8 +88,8 @@ code that calls the VM's handlers; cg_llvm compiles everything else. Start at
 
 ## `./y.sh` commands (`./y.sh --help`)
 
-- `build [--sysroot llvm|ryo] [--target T]`: backend, sysroot, wrappers into `dist/`.
-  `--sysroot ryo` also builds std with ryo (`dist/sysroot-ryo/`).
+- `build [--sysroot llvm|ryo] [--target T]`: backend, sysroot, wrappers into `out/dist/`.
+  `--sysroot ryo` also builds std with ryo (`out/dist/sysroot-ryo/`).
 - `test`: fast set plus tests selected by paths changed since the merge base with `main`;
   `--full` (needs the ryo sysroot), `--only jit|backend|lean|std|rt`, `--no-changed`,
   `--clif`, `--cross T`. One program/variant: `./y.sh test --program hello --variant ryo`
@@ -100,13 +100,13 @@ code that calls the VM's handlers; cg_llvm compiles everything else. Start at
   (`.mm_profdata` per program and column, from an extra untimed compile): no
   per-program filter; use `compare-branches.py --programs fib` for one.
 - `bench codegen`: rewrites `bench/codegen/` (AOT `.txt`/`.s`, JIT `.jit.s`,
-  `.jit-ssa-{pre,post}.txt`) using `dist/`, so `./y.sh build` first.
+  `.jit-ssa-{pre,post}.txt`) using `out/dist/`, so `./y.sh build` first.
 - `bench crates [...]`: crates.io crates per backend, HTML report.
 - `install [--target T] [--sysroot ryo] [--yes|--dry-run]` / `uninstall`: install ryo for
   use into the checkout's `install/` plus `cargo install --path scripts` launchers
   (`design/install.md`). Changes the real rustup and `~/.cargo/bin`: test with `--dry-run`
   or an isolated `RUSTUP_HOME`/`CARGO_HOME`.
-- `lean [gen | --proofs]`, `build-clif`, `clean` (not `install/`).
+- `lean [gen | --proofs]`, `build-clif`, `clean` (removes `out/`, all build output; not `install/`).
 
 ## Env vars
 
@@ -145,8 +145,8 @@ code that calls the VM's handlers; cg_llvm compiles everything else. Start at
 - `ryo_rt` and `ryo_bytecode` are `no_std`; `ryo_rt` must not reach core's panic machinery
   or symbols outside core/libc (`y test`'s `rt-core-only` check, `design/vm.md`).
 - Editing `full_ops.rs` changes opcode numbering: regenerate the Lean tables and codegen dumps.
-- `compare-branches.py --worktree` creates nested git worktrees under `target/compare/`;
-  exclude `target/` when searching, and remove them with `git worktree remove`.
+- `compare-branches.py --worktree` creates nested git worktrees under `out/target/compare/`;
+  exclude `out/` when searching, and remove them with `git worktree remove`.
 - Toolchain is pinned to stable 1.99.1 with `RUSTC_BOOTSTRAP=1` (`rust-toolchain.toml`,
   `design/build.md#toolchain`).
 - The JIT is built for Linux, Windows and x86_64 macOS; it has run on Linux and Windows, never on a Mac.

@@ -419,7 +419,7 @@ pub fn run(opts: Options) -> Result<(), String> {
     let info = RustcInfo::get()?;
     let root = root();
     ensure_tools(&root, "bench crates", opts.backends.iter().copied())?;
-    let base = root.join("target").join("bench-crates");
+    let base = crate::utils::out_dir(&root).join("target").join("bench-crates");
     let selected: Vec<Target> = match &opts.path {
         Some(path) => vec![Target::local(path)?],
         None => CRATES.iter().filter(|c| opts.crates.iter().any(|n| n == c.name)).map(Target::Registry).collect(),
@@ -465,7 +465,7 @@ struct Ctx<'a> {
     root: &'a Path,
     /// This executable, the `RUSTC_WRAPPER`.
     y: &'a Path,
-    /// `target/bench-crates`.
+    /// `out/target/bench-crates`.
     base: &'a Path,
     /// `RYO_Y_BENCH_WRAPPER`'s log directory for a build step.
     logs: PathBuf,
@@ -937,7 +937,7 @@ fn header(info: &RustcInfo, root: &Path, opts: &Options) -> Vec<(String, String)
         ("ryo".into(), format!("{commit}{}", if dirty { " (with uncommitted changes)" } else { "" })),
         ("rustc".into(), format!("{rustc} ({}), host {}", info.toolchain, info.host)),
         ("cargo".into(), cargo),
-        ("backends".into(), "llvm: plain rustc; clif: rustc_codegen_cranelift from the toolchain's rustc-dev sources (y build-clif); ryo: dist/bin/rustc-ryo, default sysroot (prebuilt LLVM std)".into()),
+        ("backends".into(), "llvm: plain rustc; clif: rustc_codegen_cranelift from the toolchain's rustc-dev sources (y build-clif); ryo: out/dist/bin/rustc-ryo, default sysroot (prebuilt LLVM std)".into()),
         ("profile".into(), "cargo dev: opt-level 0, debug-assertions and overflow-checks on, panic=unwind, no LTO, incremental off (restated for the test profile too)".into()),
         ("RUSTFLAGS".into(), format!("{RUSTFLAGS} (all crates: deps, build scripts, proc macros, leaf)")),
         ("environment".into(), "CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 RUSTC_BOOTSTRAP=1; no target-cpu, default linker for all".into()),

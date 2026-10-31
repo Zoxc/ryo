@@ -4,7 +4,7 @@ lean/Ryo/Check/Lower/CertCheck.lean, lean/docs/aot.md §C1) over the corpus.
 
 Each program (tests/lean/*.rs, tests/*.rs and bench/*.rs: the single-file programs; the ones that
 don't build alone, or have no `main` and so no dump, are skipped) is built with
-dist/bin/rustc-ryo, -Csave-temps (which keeps `<name>.<cgu>.ryo_image.rcgu.o`) and RYO_DUMP_LEAN
+out/dist/bin/rustc-ryo, -Csave-temps (which keeps `<name>.<cgu>.ryo_image.rcgu.o`) and RYO_DUMP_LEAN
 (the MIR dump `<dir>/<name>.json` and the certificate `<dir>/<name>.cert.json`), at -O0 and with
 --opt also at -O3. Then `ryo-lean check-cert <dump> <cert> <objects>` checks the certificate
 against the objects' decoded code and the dump: the image map (with several images, one per

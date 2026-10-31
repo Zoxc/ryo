@@ -2,7 +2,7 @@
 """Differential runs of the Lean MIR interpreter (lean/, milestone M1b) against native code.
 
 For each program in tests/lean/ (or the names given), this builds it twice, with plain rustc
-and with dist/bin/rustc-ryo (with the same flags `y test` uses for its default variant), the
+and with out/dist/bin/rustc-ryo (with the same flags `y test` uses for its default variant), the
 ryo build with RYO_DUMP_LEAN set so the backend writes the program's MIR, runs both
 executables, runs `ryo-lean run <dump> --stdout`, and compares stdout and exit status three
 ways. ryo-lean's exit status: 0 when `main` returns, c for `exit(c)`, 134 for `abort`, 3 for

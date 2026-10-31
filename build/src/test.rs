@@ -1,5 +1,5 @@
 //! `y test` (design/build.md#test-and-bench): the test corpus, diffed against plain rustc, and
-//! the smoke tests of `dist/`.
+//! the smoke tests of `out/dist/`.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -23,9 +23,9 @@ pub(crate) use corpus::*;
 enum Compiler {
     /// Plain `rustc`: the reference.
     Rustc,
-    /// `dist/bin/rustc-ryo`.
+    /// `out/dist/bin/rustc-ryo`.
     Ryo,
-    /// `dist/bin/rustc-clif`.
+    /// `out/dist/bin/rustc-clif`.
     Clif,
 }
 
@@ -421,7 +421,7 @@ struct CargoRun {
     env: &'static [(&'static str, &'static str)],
     /// Whether the selection runs it (besides `--full`).
     selected: fn(&Sel) -> bool,
-    /// Its own target directory under `vm/target/features/`, so the ryo_rt feature sets don't
+    /// Its own target directory under `out/vm-features/`, so the ryo_rt feature sets don't
     /// rebuild each other.
     target_subdir: Option<&'static str>,
     /// It runs vm/rt/tests/codegen.rs ([`CODEGEN_TESTS`], skipped unless [`Sel::codegen`]).
@@ -605,7 +605,7 @@ fn changed_paths(root: &Path) -> Result<Vec<String>, String> {
 /// inputs: `Err` with the reason if not.
 fn ryo_sysroot_usable(info: &crate::utils::RustcInfo, root: &Path) -> Result<(), String> {
     use crate::sysroot::{SYSROOT_DIR, SysrootStatus, ryo_sysroot_status};
-    let dist = root.join("dist");
+    let dist = crate::utils::out_dir(root).join("dist");
     match ryo_sysroot_status(info, &dist) {
         SysrootStatus::Current => Ok(()),
         SysrootStatus::Missing => Err(format!("no ryo sysroot at {} (`./y.sh build --sysroot ryo`)", dist.join(SYSROOT_DIR).display())),
@@ -692,7 +692,7 @@ pub fn run(opts: &Options) -> Result<(), String> {
     let variants = gate_variants(opts, &sel, &info, &root)?;
     let corpus_only = !opts.programs.is_empty() || !opts.variants.is_empty();
 
-    let out = root.join("target").join("tests");
+    let out = crate::utils::out_dir(&root).join("target").join("tests");
     crate::utils::create_dir(&out)?;
     let ctx = Ctx {
         tests: root.join("tests"),
@@ -776,7 +776,7 @@ pub fn run(opts: &Options) -> Result<(), String> {
 
 /// Picks the JIT the tests run: the checked one (debug assertions, overflow checks;
 /// design/build.md#build): yes unless the caller set `RYO_JIT_CHECKED` otherwise. Sets the
-/// variable when unset, for `rustc-ryo`'s host compilations, and checks that `dist/` has it.
+/// variable when unset, for `rustc-ryo`'s host compilations, and checks that `out/dist/` has it.
 fn jit_checked_preflight(root: &Path) -> Result<(), String> {
     use crate::wrapper_common::{JIT_CHECKED_VAR, jit_checked_value};
     let checked = match std::env::var_os(JIT_CHECKED_VAR) {
@@ -787,12 +787,12 @@ fn jit_checked_preflight(root: &Path) -> Result<(), String> {
             true
         }
     };
-    if checked && !root.join("dist").join(crate::jit::CHECKED_DIR).is_dir() {
-        return Err("dist/jit-checked/ is missing; run `./y.sh build`".to_owned());
+    if checked && !crate::utils::out_dir(root).join("dist").join(crate::jit::CHECKED_DIR).is_dir() {
+        return Err("out/dist/jit-checked/ is missing; run `./y.sh build`".to_owned());
     }
     eprintln!(
         "[y] test: JIT: {}",
-        if checked { "checked (debug assertions, overflow checks; dist/jit-checked/)" } else { "release (RYO_JIT_CHECKED=0)" }
+        if checked { "checked (debug assertions, overflow checks; out/dist/jit-checked/)" } else { "release (RYO_JIT_CHECKED=0)" }
     );
     Ok(())
 }
@@ -833,7 +833,7 @@ fn cargo_run(run: &CargoRun, sel: &Sel, root: &Path) -> Result<(), String> {
     let mut c = cmd("cargo");
     c.current_dir(root.join("vm")).args(run.args).envs(run.env.iter().copied());
     if let Some(sub) = run.target_subdir {
-        c.arg("--target-dir").arg(root.join("vm").join("target").join("features").join(sub));
+        c.arg("--target-dir").arg(crate::utils::out_dir(root).join("vm-features").join(sub));
     }
     let mut skip: Vec<&str> = Vec::new();
     if !(sel.full || sel.codegen) && run.codegen_tests {
@@ -994,7 +994,7 @@ impl Ctx<'_> {
         Ok(PathBuf::from(libdir.trim()))
     }
 
-    /// Builds every crate of `program` into `target/tests/<program>/<variant>/` and runs the
+    /// Builds every crate of `program` into `out/target/tests/<program>/<variant>/` and runs the
     /// binary there.
     fn build_and_run(&self, program: &Program, variant: &Variant) -> Result<RunResult, String> {
         let dir = self.out.join(program.name).join(variant.name);

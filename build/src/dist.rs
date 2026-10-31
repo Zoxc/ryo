@@ -1,4 +1,4 @@
-//! `y build` and `y clean`: the `dist/` sysroot (design/build.md#build).
+//! `y build` and `y clean`: the `out/dist/` sysroot (design/build.md#build).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -22,7 +22,7 @@ pub struct BuildOptions {
 pub enum Sysroot {
     #[default]
     Llvm,
-    /// Also build std with the ryo backend into `dist/sysroot-ryo` (`--sysroot ryo`).
+    /// Also build std with the ryo backend into `out/dist/sysroot-ryo` (`--sysroot ryo`).
     Ryo,
 }
 
@@ -47,17 +47,17 @@ impl BuildOptions {
 /// `y build`.
 pub fn build(o: &BuildOptions) -> Result<(), String> {
     let root = root();
-    // Tests build a second `dist/` of another ryo build elsewhere (`RYO_ABI_OVERRIDE`).
-    let dir = |var: &str, default: &str| std::env::var_os(var).map_or_else(|| root.join(default), PathBuf::from);
+    // Tests build a second `out/dist/` of another ryo build elsewhere (`RYO_ABI_OVERRIDE`).
+    let dir = |var: &str, default: &str| std::env::var_os(var).map_or_else(|| crate::utils::out_dir(&root).join(default), PathBuf::from);
     build_in(&dir(DIST_DIR_VAR, "dist"), &dir(TARGET_DIR_VAR, "target"), o).map(drop)
 }
 
-/// `y build`'s output directory instead of `dist/` (tests).
+/// `y build`'s output directory instead of `out/dist/` (tests).
 pub const DIST_DIR_VAR: &str = "RYO_Y_DIST_DIR";
-/// `y build`'s cargo target directory instead of `target/` (tests).
+/// `y build`'s cargo target directory instead of `out/target/` (tests).
 pub const TARGET_DIR_VAR: &str = "RYO_Y_TARGET_DIR";
 
-/// [`build`] with `dist` as the output directory (what `dist/` is for `y build`) and `target`
+/// [`build`] with `dist` as the output directory (what `out/dist/` is for `y build`) and `target`
 /// as cargo's target directory (`y install` uses `install/build/` and `install/target/`).
 /// Returns the build id.
 pub fn build_in(dist: &Path, target: &Path, o: &BuildOptions) -> Result<String, String> {
@@ -111,7 +111,7 @@ pub fn build_in(dist: &Path, target: &Path, o: &BuildOptions) -> Result<String, 
         }
         let jit = crate::jit::build(&rb, triple, false)?;
         // For the host, also the checked JIT `y test` runs (design/build.md#build): `ryo_rt`
-        // with it swapped in, in `dist/jit-checked/`.
+        // with it swapped in, in `out/dist/jit-checked/`.
         let checked = if cross.is_none() { Some(crate::jit::build(&rb, triple, true)?) } else { None };
         for (krate, rlib) in build_runtime(&rb, &dist, triple, &jit)? {
             copy(&rlib, &target_lib.join(format!("lib{krate}.rlib")))?;
@@ -136,12 +136,29 @@ pub fn build_in(dist: &Path, target: &Path, o: &BuildOptions) -> Result<String, 
     Ok(build_id)
 }
 
+/// `y clean`: removes `out/`. On Windows the running `y` (in `out/y/`) can't be deleted, so
+/// `out/y/` stays there.
 pub fn clean() -> Result<(), String> {
-    let root = root();
-    for dir in [root.join("dist"), root.join("target")] {
+    let out = crate::utils::out_dir(&root());
+    let remove = |dir: &Path| {
         if dir.exists() {
             eprintln!("[y] removing {}", dir.display());
-            fs::remove_dir_all(&dir).map_err(|e| format!("removing {}: {e}", dir.display()))?;
+        }
+        crate::utils::remove_dir_if_exists(dir)
+    };
+    if !cfg!(windows) {
+        return remove(&out);
+    }
+    let Ok(entries) = fs::read_dir(&out) else { return Ok(()) };
+    for e in entries.flatten() {
+        let path = e.path();
+        if e.file_name() == "y" {
+            continue;
+        }
+        if path.is_dir() {
+            remove(&path)?;
+        } else {
+            fs::remove_file(&path).map_err(|e| format!("removing {}: {e}", path.display()))?;
         }
     }
     Ok(())
@@ -170,7 +187,7 @@ fn build_backend(root: &Path, target: &Path, info: &RustcInfo) -> Result<PathBuf
     Ok(target_dir.join("release").join(dll_name("rustc_codegen_ryo")))
 }
 
-/// Copies the toolchain's prebuilt std for `triple` into `dist/`, skipping the rustc-dev and
+/// Copies the toolchain's prebuilt std for `triple` into `out/dist/`, skipping the rustc-dev and
 /// LLVM libraries, as cg_clif does, and `lib/self-contained/` (the CRT objects and libc that
 /// musl and windows-gnu link by default). Also copies the target's `bin/` (the self-contained
 /// linker).
@@ -234,14 +251,14 @@ pub(crate) fn rt_features() -> Vec<String> {
     features
 }
 
-/// Builds `ryo_rt` (and `ryo_bytecode`) with the stock LLVM backend against `dist/`'s std, for
+/// Builds `ryo_rt` (and `ryo_bytecode`) with the stock LLVM backend against `out/dist/`'s std, for
 /// `triple`, and returns their crate names and rlibs. `ryo_rt` bundles the sealed JIT
 /// in `jit` ([`crate::jit::build`]).
 fn build_runtime(rb: &RuntimeBuild, dist: &Path, triple: &str, jit: &Path) -> Result<Vec<(&'static str, PathBuf)>, String> {
     let (root, target, tag, cross) = (rb.root, rb.target, rb.tag, rb.cross(triple));
     eprintln!("[y] runtime: ryo_rt{}", cross.map(|t| format!(" for {t}")).unwrap_or_default());
     let mut sysroot_flag = String::from("--sysroot=");
-    sysroot_flag.push_str(dist.to_str().ok_or("dist/ path is not UTF-8")?);
+    sysroot_flag.push_str(dist.to_str().ok_or("out/dist/ path is not UTF-8")?);
     let metadata = runtime_metadata_flag(tag);
     let mut rustflags = vec![sysroot_flag.as_str(), "-Ccodegen-units=1", "-Cpanic=unwind", metadata.as_str()];
     // Windows: no red zone in the `sysv64` handlers either (design/platforms.md).
@@ -323,10 +340,10 @@ pub fn runtime_metadata_flag(tag: &str) -> String {
 /// `ryo_rt`'s and `ryo_jit`'s build scripts).
 pub const ABI_VAR: &str = "RYO_ABI";
 
-/// Overrides the computed ABI tag (tests: a second `dist/` of another ryo build).
+/// Overrides the computed ABI tag (tests: a second `out/dist/` of another ryo build).
 pub const ABI_OVERRIDE_VAR: &str = "RYO_ABI_OVERRIDE";
 
-/// The file in `dist/` holding the tag it was built with.
+/// The file in `out/dist/` holding the tag it was built with.
 pub const ABI_FILE: &str = "abi-tag";
 
 /// The ABI tag (design/build.md#the-abi-tag): 16 hex digits of a hash of everything that

@@ -197,7 +197,7 @@ pub(super) fn multi_dylib(info: &RustcInfo, root: &Path, rustc_ryo: &Path, src: 
     let exe = dir.join("dexe");
     let ext = |n: &str| format!("{n}={}", dir.join(format!("lib{n}.so")).display());
     rustc(&["-Cprefer-dynamic", "--extern", &ext("da"), "--extern", &ext("db"), "-L", dir.to_str().ok_or("non-UTF-8 path")?], "dexe.rs", &exe)?;
-    let std_dir = crate::utils::rustlib(&root.join("dist"), &info.host).join("lib");
+    let std_dir = crate::utils::rustlib(&crate::utils::out_dir(root).join("dist"), &info.host).join("lib");
     let lib_path = crate::utils::prepend_paths("LD_LIBRARY_PATH", [dir.clone(), std_dir])?;
     // `run_out` with the libraries' directories on the search path.
     let run_libs = |exe: &Path, args: &[&str], env: &[(&str, &str)]| -> Result<String, String> {
@@ -223,8 +223,8 @@ pub(super) fn multi_dylib(info: &RustcInfo, root: &Path, rustc_ryo: &Path, src: 
     Ok(())
 }
 
-/// Two ryo builds: a second `dist/` built with another ABI tag (`RYO_ABI_OVERRIDE`, in
-/// `target/abi-alt/`; a full `y build`):
+/// Two ryo builds: a second `out/dist/` built with another ABI tag (`RYO_ABI_OVERRIDE`, in
+/// `out/target/abi-alt/`; a full `y build`):
 /// - a staticlib of each in one C program links (disjoint names) and runs, the JIT on, as two
 ///   runtimes;
 /// - an executable of one dlopening a cdylib of the other runs;
@@ -233,7 +233,7 @@ pub(super) fn multi_version(info: &RustcInfo, root: &Path, rustc_ryo: &Path, src
     if !applies() {
         return Ok(());
     }
-    let alt = root.join("target").join("abi-alt");
+    let alt = crate::utils::out_dir(root).join("target").join("abi-alt");
     let alt_dist = alt.join("dist");
     let y = std::env::current_exe().map_err(|e| e.to_string())?;
     run(cmd(&y)
@@ -241,7 +241,7 @@ pub(super) fn multi_version(info: &RustcInfo, root: &Path, rustc_ryo: &Path, src
         .env(crate::dist::ABI_OVERRIDE_VAR, "alt")
         .env(crate::dist::DIST_DIR_VAR, &alt_dist)
         .env(crate::dist::TARGET_DIR_VAR, alt.join("target")))?;
-    // Only the alt `dist/` is used from here on; its build tree is several GB, enough to fill a
+    // Only the alt `out/dist/` is used from here on; its build tree is several GB, enough to fill a
     // CI runner's disk.
     crate::utils::remove_dir_if_exists(alt.join("target"))?;
     let alt_rustc = alt_dist.join("bin").join(crate::utils::exe_name("rustc-ryo"));

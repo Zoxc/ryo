@@ -38,8 +38,8 @@ pub struct SealedJits {
 }
 
 /// Builds `ryo_jit` for `triple` (`cross` unless it is the host) as a staticlib, with fat LTO
-/// against the toolchain's std (the one `dist/` copies), and seals it into
-/// `target/jit/sealed/<triple>/`, which it returns: the directory `ryo_rt`'s build script
+/// against the toolchain's std (the one `out/dist/` copies), and seals it into
+/// `out/target/jit/sealed/<triple>/`, which it returns: the directory `ryo_rt`'s build script
 /// takes the library from (`RYO_JIT_LIB_DIR`). Making a staticlib needs no linker, so this
 /// works for a cross target too.
 ///
@@ -58,7 +58,7 @@ pub struct SealedJits {
 ///   keeps its import members.
 ///
 /// `checked`: with `-Cdebug-assertions=on -Coverflow-checks=on` on top of the release
-/// optimizations, in `target/jit-checked/`: the JIT `y test` runs ([`CHECKED_DIR`]).
+/// optimizations, in `out/target/jit-checked/`: the JIT `y test` runs ([`CHECKED_DIR`]).
 pub fn build(rb: &crate::dist::RuntimeBuild, triple: &str, checked: bool) -> Result<PathBuf, String> {
     let (root, info, cross) = (rb.root, rb.info, rb.cross(triple));
     eprintln!("[y] jit: ryo_jit{}{}", if checked { " (checked)" } else { "" }, cross.map(|t| format!(" for {t}")).unwrap_or_default());
@@ -100,7 +100,7 @@ pub fn build(rb: &crate::dist::RuntimeBuild, triple: &str, checked: bool) -> Res
     Ok(out)
 }
 
-/// Where a sysroot (`dist/`, `dist/sysroot-ryo/`) keeps its host `ryo_rt` with the checked
+/// Where a sysroot (`out/dist/`, `out/dist/sysroot-ryo/`) keeps its host `ryo_rt` with the checked
 /// JIT ([`build`]'s `checked`), which `rustc-ryo` links instead under `RYO_JIT_CHECKED=1`.
 pub const CHECKED_DIR: &str = crate::wrapper_common::JIT_CHECKED_DIR;
 

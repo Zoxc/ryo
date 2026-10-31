@@ -1,6 +1,6 @@
-//! `rustc-ryo`: runs the pinned rustc with the ryo backend and the `dist/` sysroot.
+//! `rustc-ryo`: runs the pinned rustc with the ryo backend and the `out/dist/` sysroot.
 //!
-//! Built by `y build` with plain rustc into `dist/bin/`. `RYO_TOOLCHAIN` is baked in at build
+//! Built by `y build` with plain rustc into `out/dist/bin/`. `RYO_TOOLCHAIN` is baked in at build
 //! time (design/build.md#the-y-build-tool).
 
 #[path = "wrapper_common.rs"]

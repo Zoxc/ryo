@@ -4,7 +4,7 @@ lean/docs/aot.md §C4) over the corpus.
 
 Each program (tests/lean/*.rs, tests/*.rs and bench/*.rs: the single-file programs; the ones that
 don't build alone, or have no `main` and so no dump, are skipped) is built with
-dist/bin/rustc-ryo, -Csave-temps (which keeps `<name>.<cgu>.ryo_image.rcgu.o`) and RYO_DUMP_LEAN
+out/dist/bin/rustc-ryo, -Csave-temps (which keeps `<name>.<cgu>.ryo_image.rcgu.o`) and RYO_DUMP_LEAN
 (the MIR dump, `<dir>/<name>.json`), at -O0 and with --opt also at -O3. Then `ryo-lean
 check-pool <dump> <objects>` checks every pool reference of the objects' code against the
 dump's const and vtable allocations, and `__ryo_main` and the function symbols against the

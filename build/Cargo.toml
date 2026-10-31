@@ -8,9 +8,8 @@ publish = false
 [dependencies]
 iced-x86 = { version = "1.21.0", default-features = false, features = ["std", "decoder", "intel"] }
 
-# Not a member of any workspace. build/clif/ is cg_clif's copy (`y build-clif`).
+# Not a member of any workspace.
 [workspace]
-exclude = ["clif"]
 
 # Line tables keep backtraces readable at a fraction of full debuginfo's disk use.
 [profile.dev]

@@ -1,5 +1,5 @@
 //! `y build-clif` (design/build.md#build-clif-the-cranelift-backend-on-stable): cg_clif, built
-//! from the pinned toolchain's rustc-dev sources, installed into `dist/` with a `rustc-clif`
+//! from the pinned toolchain's rustc-dev sources, installed into `out/dist/` with a `rustc-clif`
 //! wrapper.
 
 use std::path::Path;
@@ -7,9 +7,9 @@ use std::path::Path;
 use crate::utils::{RustcInfo, cmd, dist_bin, dll_name, root, run};
 use crate::utils::{build_wrapper, copy, copy_dir};
 
-/// Whether `dist/` has cg_clif and its wrapper (`y build` replaces `dist/`, removing them).
+/// Whether `out/dist/` has cg_clif and its wrapper (`y build` replaces `out/dist/`, removing them).
 pub fn installed(root: &Path) -> bool {
-    dist_bin(root, "rustc-clif").exists() && root.join("dist").join("lib").join(dll_name(DYLIB)).exists()
+    dist_bin(root, "rustc-clif").exists() && crate::utils::out_dir(root).join("dist").join("lib").join(dll_name(DYLIB)).exists()
 }
 
 const DYLIB: &str = "rustc_codegen_cranelift";
@@ -17,21 +17,21 @@ const DYLIB: &str = "rustc_codegen_cranelift";
 pub fn build() -> Result<(), String> {
     let info = RustcInfo::get()?;
     let root = root();
-    let dist = root.join("dist");
+    let dist = crate::utils::out_dir(&root).join("dist");
     crate::utils::require_dist(&root).map_err(|e| format!("{e} (cg_clif uses its std)"))?;
 
     let src = info.sysroot.join("lib/rustlib/rustc-src/rust/compiler/rustc_codegen_cranelift");
     if !src.join("Cargo.toml").exists() {
         return Err(format!("{} is missing; install the `rustc-dev` component of the pinned toolchain", src.display()));
     }
-    eprintln!("[y] cg_clif: copying {} to build/clif/", src.display());
-    let copy_to = root.join("build").join("clif");
+    eprintln!("[y] cg_clif: copying {} to out/clif/", src.display());
+    let copy_to = crate::utils::out_dir(&root).join("clif");
     crate::utils::remove_dir_if_exists(&copy_to)?;
     copy_dir(&src, &copy_to)?;
 
     eprintln!("[y] cg_clif: rustc_codegen_cranelift");
-    // Outside build/clif/, so recopying the sources keeps the build cache.
-    let target_dir = root.join("target").join("clif");
+    // Outside out/clif/, so recopying the sources keeps the build cache.
+    let target_dir = crate::utils::out_dir(&root).join("target").join("clif");
     run(cmd("cargo")
         .args(["build", "--release", "-Zembed-metadata=no", "--manifest-path"])
         .arg(copy_to.join("Cargo.toml"))
@@ -56,7 +56,7 @@ pub fn build() -> Result<(), String> {
     Ok(())
 }
 
-/// Builds cg_clif unless `dist/` already has it.
+/// Builds cg_clif unless `out/dist/` already has it.
 pub fn ensure() -> Result<(), String> {
     if installed(&root()) { Ok(()) } else { build() }
 }

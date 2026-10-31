@@ -29,9 +29,15 @@ modeled on cg_clif's `build_system/`.
   `bench crates [...]`, `lean [gen]`, `install`, `uninstall`, `clean`.
 - `install`/`uninstall`: build ryo into the checkout's `install/` (with `dist::build_in`, the
   same build as `build` into other directories) and put launchers in cargo's bin dir with
-  `cargo install --path scripts` ([install.md](install.md)). Independent of `dist/` and
-  `target/`; `clean` leaves `install/` alone.
+  `cargo install --path scripts` ([install.md](install.md)). Independent of `out/`;
+  `clean` removes `out/` and leaves `install/` alone.
 - It sets `RUSTC_BOOTSTRAP=1` on everything it spawns.
+- All build output goes to `out/` (`y clean` removes it): `out/dist/` (the sysroot),
+  `out/target/` (`y`'s cargo target directory and the trees of `test`/`bench`/`compare-branches.py`),
+  `out/cargo/` (what cargo run in the checkout builds into, set by `.cargo/config.toml`: the
+  workspaces' own target directory), `out/y/` (`y` itself, built by `y.sh`), `out/vm-features/`
+  (`test`'s `ryo_rt` feature sets), `out/clif/` (cg_clif's sources). On Windows `clean` keeps
+  `out/y/`, which holds the running `y`.
 
 ### `build`
 
@@ -45,27 +51,27 @@ modeled on cg_clif's `build_system/`.
    manifests, the lock file, the compiler's `-vV`, the build settings and the ABI tag
    `RYO_ABI`, [below](#the-abi-tag)), which incremental
    image reuse keys on ([backend.md](backend.md#incremental)).
-2. **Sysroot**: a self-contained `dist/` directory:
+2. **Sysroot**: a self-contained `out/dist/` directory:
    ```
-   dist/bin/rustc-ryo, cargo-ryo          wrappers
-   dist/lib/librustc_codegen_ryo.so       the backend
-   dist/lib/rustlib/<target>/lib/         std rlibs + libryo_rt.rlib, libryo_bytecode.rlib
-   dist/lib/rustlib/<target>/bin/         the toolchain's self-contained linker (rust-lld)
+   out/dist/bin/rustc-ryo, cargo-ryo          wrappers
+   out/dist/lib/librustc_codegen_ryo.so       the backend
+   out/dist/lib/rustlib/<target>/lib/         std rlibs + libryo_rt.rlib, libryo_bytecode.rlib
+   out/dist/lib/rustlib/<target>/bin/         the toolchain's self-contained linker (rust-lld)
    ```
-   Files are installed into `dist/` by copying to a temporary name and renaming it into
+   Files are installed into `out/dist/` by copying to a temporary name and renaming it into
    place (`utils::copy`), so a rustc still running the previous backend keeps its mapped
    file instead of seeing it overwritten (which could crash it).
    - `--sysroot llvm` (default): copy the toolchain's prebuilt std rlibs, skipping the
      `rustc_*`/LLVM rustc-dev libs, as cg_clif does. The target's `bin/` is copied too, since
      x86_64 Linux links with the sysroot's `rust-lld` by default.
    - `--sysroot ryo`: everything above, plus std built from `rust-src` with our backend, in
-     its own sysroot `dist/sysroot-ryo/` (`lib/rustlib/<host>/lib`, and the target's `bin/`
+     its own sysroot `out/dist/sysroot-ryo/` (`lib/rustlib/<host>/lib`, and the target's `bin/`
      for `rust-lld`). It is opt-in: `rustc-ryo --sysroot ryo` (or `RUSTFLAGS="--sysroot ryo"`
      for `cargo-ryo`) selects it, while the default of `y build`, the wrappers, `cargo-ryo`
      and `y test`'s default variants stays `--sysroot llvm`, the toolchain's prebuilt std, in
      which only std generics instantiated in ryo-built crates become VM functions. Both can be
-     tested from one `dist/`. Host only (Linux is what is tested).
-     - `library/` is copied to `target/sysroot-ryo/library` (once per toolchain), and cargo
+     tested from one `out/dist/`. Host only (Linux is what is tested).
+     - `library/` is copied to `out/target/sysroot-ryo/library` (once per toolchain), and cargo
        builds its `sysroot` crate there (`--release --features "backtrace panic-unwind"`,
        `--target <host>`), with `RUSTFLAGS` `-Zforce-unstable-if-unmarked --sysroot=/dev/null`
        (and `-Lcrate=` cargo's `deps`, for `ryo_rt`), like cg_clif's sysroot build but without
@@ -76,7 +82,7 @@ modeled on cg_clif's `build_system/`.
        build scripts with plain rustc, and every other crate with `rustc-ryo`. `ryo_rt` can't
        be ryo-built: every ryo-built crate depends on it, so it and what it depends on (only
        `core`: `ryo_rt` is `#![no_std]`, [vm.md](vm.md#runtime-crate-ryo_rt)) stay LLVM-built.
-       It bundles the same sealed JIT as `dist/`'s (`RYO_JIT_LIB_DIR` for
+       It bundles the same sealed JIT as `out/dist/`'s (`RYO_JIT_LIB_DIR` for
        its build script, which the generated manifest names): the JIT has a std of its own,
        the native one, so it never enters this sysroot's VM code ([jit.md](jit.md#packaging)).
      - The copy adds `ryo_rt` and `ryo_bytecode` to the library workspace (manifests pointing
@@ -100,7 +106,7 @@ modeled on cg_clif's `build_system/`.
    - **The JIT** (`build/src/jit.rs`, [jit.md](jit.md#packaging)), for each target (x86_64
      Linux, windows-msvc and macOS; `y build` rejects others, as `ryo_rt` always bundles it): `cargo rustc --release
      -p ryo_jit --crate-type staticlib` in its own cargo invocation and target directory
-     (`target/jit/`; with `ryo_rt`'s, `ryo_bytecode`'s `alloc` feature would be unified into
+     (`out/target/jit/`; with `ryo_rt`'s, `ryo_bytecode`'s `alloc` feature would be unified into
      `ryo_rt`'s copy), with fat LTO, `-Copt-level=3 -Ccodegen-units=1 -Cpanic=unwind`, no
      debug information and no `RUSTFLAGS`, against the toolchain's std. Then it is sealed
      with the toolchain's `llvm-ar` and `llvm-objcopy` (`llvm-tools`; no linker, so it works
@@ -108,13 +114,13 @@ modeled on cg_clif's `build_system/`.
      `ryo_jit_start` made local (ELF, Mach-O: `_ryo_jit_start`) or renamed (COFF), debug
      information stripped, and the object archived alone (ELF, Mach-O in the BSD format) or
      with the staticlib's import members (COFF) into
-     `target/jit/sealed/<target>/libryo_jit.a` (`ryo_jit.lib`). About 35 s from clean.
+     `out/target/jit/sealed/<target>/libryo_jit.a` (`ryo_jit.lib`). About 35 s from clean.
    - **The checked JIT**, for the host only: the same build with `-Cdebug-assertions=on
-     -Coverflow-checks=on` on top (`target/jit-checked/`), still optimized so tests stay
+     -Coverflow-checks=on` on top (`out/target/jit-checked/`), still optimized so tests stay
      fast. After `ryo_rt` is built, a copy of its rlib with the bundled `ryo_jit.o` replaced
      by the checked one (`llvm-ar r`; metadata unchanged, so crates built against either
-     `ryo_rt` link with either) goes to `dist/jit-checked/`, and likewise
-     `dist/sysroot-ryo/jit-checked/` for the ryo sysroot. `rustc-ryo` links it instead of the
+     `ryo_rt` link with either) goes to `out/dist/jit-checked/`, and likewise
+     `out/dist/sysroot-ryo/jit-checked/` for the ryo sysroot. `rustc-ryo` links it instead of the
      sysroot's `ryo_rt` (`--extern force:ryo_rt=<path>`) when `RYO_JIT_CHECKED=1` is set and
      there is no `--target` (it then also adds `+jit-checked` to its `-vV` build id, so cargo
      rebuilds on a switch). `y test` sets it unless already set (`RYO_JIT_CHECKED=0`: the
@@ -128,10 +134,10 @@ modeled on cg_clif's `build_system/`.
      the rlib ([jit.md](jit.md#packaging)); its cargo features are those listed in `RYO_RT_FEATURES` (comma-separated). `ryo_bytecode` is installed without its `alloc`
      feature.
 3. **Wrappers** (like cg_clif's `scripts/rustc-clif.rs`, `cargo-clif.rs`): tiny Rust programs
-   compiled with plain rustc. They locate `dist/` from `current_exe()`, set
+   compiled with plain rustc. They locate `out/dist/` from `current_exe()`, set
    `RUSTC_BOOTSTRAP=1` and `RUSTUP_TOOLCHAIN` (baked in at build time), and add:
    - `--sysroot dist`
-   - `-Zcodegen-backend=dist/lib/librustc_codegen_ryo.so`
+   - `-Zcodegen-backend=out/dist/lib/librustc_codegen_ryo.so`
    - `-Zunstable-options --extern force:ryo_rt`
    - nothing about codegen units: the backend makes one image per CGU
      ([backend.md](backend.md#pipeline))
@@ -142,7 +148,7 @@ modeled on cg_clif's `build_system/`.
    With no arguments, they pass none (so rustc prints its help), and an explicit `--sysroot`
    from the user replaces `--sysroot dist`.
 
-   `--sysroot ryo` (or `--sysroot=ryo`) means `dist/sysroot-ryo`; a directory named `ryo`
+   `--sysroot ryo` (or `--sysroot=ryo`) means `out/dist/sysroot-ryo`; a directory named `ryo`
    needs a path, such as `--sysroot ./ryo`. `-Zryo-stats[=N]` (or
    `-Z ryo-stats[=N]`, `N` defaulting to 1) is taken out of the arguments, since rustc has
    no such option and a backend can't add one, and sets `RYO_STATS=N` for the backend
@@ -152,7 +158,7 @@ modeled on cg_clif's `build_system/`.
    ([README.md](README.md#goals)).
 
    Cargo identifies the compiler by `rustc -vV` (hashed into every fingerprint and
-   metadata hash; cached in `target/.rustc_info.json`, keyed by the compiler's path and
+   metadata hash; cached in `out/target/.rustc_info.json`, keyed by the compiler's path and
    mtime). For `-vV` (or `-V -v`, `--version --verbose`) `rustc-ryo` appends a line
    `ryo-build: <hash>` to rustc's output, a hash of the backend dylib and the runtime rlibs
    that `y build` bakes in as `RYO_BUILD_ID` (each `y build` relinks the wrapper, so the
@@ -174,10 +180,10 @@ crates' sources and manifests (`bytecode`, `rt`, `jit`), `vm/Cargo.lock` and
 `RYO_ABI` for every cargo build (the backend's and the runtime's `ryo_bytecode::ABI_TAG`,
 `ryo_rt`'s and `ryo_jit`'s build scripts; `dev` without it), builds `ryo_rt` and
 `ryo_bytecode` with `-Cmetadata=<tag>` (also in the ryo sysroot), writes it to
-`dist/abi-tag` and `rustc-ryo -vV` (`ryo-abi:`). The runtime's symbols, the sealed JIT's
+`out/dist/abi-tag` and `rustc-ryo -vV` (`ryo-abi:`). The runtime's symbols, the sealed JIT's
 entry and COFF prefix (`__ryo_jit$<tag>$`), the registration section and the image header
 carry it ([vm.md](vm.md#several-ryo-runtimes-in-one-process)). `RYO_Y_DIST_DIR` and
-`RYO_Y_TARGET_DIR` move `dist/` and `target/` (tests).
+`RYO_Y_TARGET_DIR` move `out/dist/` and `out/target/` (tests).
 
 ### `build-clif`: the Cranelift backend on stable
 
@@ -186,16 +192,15 @@ sources include `compiler/rustc_codegen_cranelift` at the version that matches t
 toolchain (`lib/rustlib/rustc-src/rust/compiler/rustc_codegen_cranelift`). `y build-clif` builds
 it from there, the same way it builds our backend:
 
-- It copies that directory to `build/clif/` (gitignored, and excluded from `build/`'s cargo
-  workspace) and runs `cargo build --release -Zembed-metadata=no --features unwinding` with
+- It copies that directory to `out/clif/` and runs `cargo build --release -Zembed-metadata=no --features unwinding` with
   `RUSTC_BOOTSTRAP=1`, against the pinned stable toolchain and its `rustc-dev`. The target
-  directory is `target/clif/`. `unwinding` is what cg_clif's own `--panic-unwind-support`
+  directory is `out/target/clif/`. `unwinding` is what cg_clif's own `--panic-unwind-support`
   enables; without it cg_clif aborts on panic, while the LLVM std and the test corpus
   unwind. It doesn't use cg_clif's own `y.sh`, which would install the nightly from
   cg_clif's `rust-toolchain.toml`.
 - The Cranelift crates come from crates.io through cg_clif's `Cargo.lock`, so the build needs
   network access once, or a vendored copy.
-- It installs `dist/lib/librustc_codegen_cranelift.so` and a `rustc-clif` wrapper (like
+- It installs `out/dist/lib/librustc_codegen_cranelift.so` and a `rustc-clif` wrapper (like
   `rustc-ryo`, without `force:ryo_rt`), using the same
   prebuilt LLVM std sysroot.
 
@@ -255,7 +260,7 @@ This gives a third backend, built from the same toolchain, to compare against.
   with `-Cpanic=abort` and `RYO_JIT_TEST_PANIC` a panic in every compile, or with
   `RYO_JIT_TEST_OOM` an allocation failure
   ([jit.md](jit.md#testing)).
-- With a ryo sysroot in `dist/`, `test` also builds the corpus against it (`--sysroot ryo`):
+- With a ryo sysroot in `out/dist/`, `test` also builds the corpus against it (`--sysroot ryo`):
   variants `ryo-std`, `ryo-std-O3` (output only, like `ryo-O3`)
   and `ryo-std-abort` (`-Cpanic=abort`,
   compared with plain rustc's `-Cpanic=abort` build; programs with a Rust dylib are skipped),
@@ -271,7 +276,7 @@ This gives a third backend, built from the same toolchain, to compare against.
   cross-checking). `T` is `x86_64-pc-windows-msvc` (lld-link, `/force:unresolved`, empty
   import libraries) or `x86_64-apple-darwin` (ld64.lld, `-flat_namespace -undefined
   warning`, empty `libSystem`/`libc`/`libm` archives and a `usr/lib/libSystem.B.tbd` that
-  exports nothing, as `SDKROOT`, and `-rpath` to `dist/`'s std for the dylib programs). Skipped if the sysroot has no `rust-lld`. It also checks the target's
+  exports nothing, as `SDKROOT`, and `-rpath` to `out/dist/`'s std for the dylib programs). Skipped if the sysroot has no `rust-lld`. It also checks the target's
   bundled JIT object (`jit-sealed`, in the COFF form no `.drectve` or `.CRT$X*` either, in
   the Mach-O form no initializers or `LC_LINKER_OPTION`), and allows the imports of its
   private std. On Mach-O it also runs `rt-core-only` on the target's `ryo_rt` (Mach-O
@@ -292,7 +297,7 @@ This gives a third backend, built from the same toolchain, to compare against.
   on one thread. `scripts/compare-branches.py` uses the same
   flags. Failed builds and runs are collected and reported at the end. Without hyperfine on `PATH`,
   a built-in timer does the same (one warmup, then `N` runs, default 5). The programs'
-  output must agree across backends. `y bench` builds `dist/`, and cg_clif if a column needs it, first if they are
+  output must agree across backends. `y bench` builds `out/dist/`, and cg_clif if a column needs it, first if they are
   missing; `y test --clif` builds cg_clif too.
   `--llvm O0,O2n,..`, `--clif [O0,O3,..]` and `--ryo aot,jit` pick the columns instead (`n`:
   with `-Cdebug-assertions=off`, which turns off overflow checks too; ryo `aot` runs with `RYO_JIT=off`, `jit` with `RYO_JIT_OPT=ssa`); the first column is the
@@ -330,7 +335,7 @@ This gives a third backend, built from the same toolchain, to compare against.
   references to functions, symbols, constants and data are named as in the function's AOT
   code (`fn2`, `sym1`, `k0`; `<program>.txt` lists them), a call slot as `fn2.slot`. The dumps
   are checked in, so `git diff` shows how a backend or JIT change alters the generated code.
-  It uses the backend and JIT in `dist/`: run `y build` first.
+  It uses the backend and JIT in `out/dist/`: run `y build` first.
 - `lean`: checks that the Lean tables generated from the opcode lists, `asm::layout` and the
   handler table (`lean/Ryo/Vm/Generated/`) are up to date (the test
   `vm/bytecode/tests/lean_tables.rs`, which `y test` runs too), then runs `lake build` and
@@ -400,7 +405,7 @@ real crates.io crates, in cargo's `dev` profile only. The default is `llvm,ryo`.
   hashbrown, rand, regex-syntax, unicode-segmentation, serde_json. Pure Rust, no C
   dependencies, their own test suites ship in the `.crate` archive, and they build on the
   pinned stable. Each is pinned by version and sha256; the archive is downloaded once into
-  `target/bench-crates/cache/`, extracted fresh each run into `target/bench-crates/src/`,
+  `out/target/bench-crates/cache/`, extracted fresh each run into `out/target/bench-crates/src/`,
   and built `--locked --offline` against the `Cargo.lock` it was published with (after a
   `cargo fetch`). A crate that fails to download or prepare is reported, and the rest still run. Dependencies come
   from cargo's registry cache (network on first use). Crates whose archives lack test data
@@ -459,7 +464,7 @@ real crates.io crates, in cargo's `dev` profile only. The default is `llvm,ryo`.
   stderr and logs; the report shows VM/native functions and islands for the library, its
   dependencies and the test targets, native reasons and island templates. The warm-up is
   not timed, so the statistics cost nothing in the samples.
-- **Output**: `target/bench-crates/report.html` (or `--out`), self-contained (inline CSS,
+- **Output**: `out/target/bench-crates/report.html` (or `--out`), self-contained (inline CSS,
   SVG, a few lines of JS for tooltips): a header with toolchain, flags, machine and date;
   test results and every build, test or workload failure; a compile-time breakdown; per
   metric a chart of each backend relative to LLVM (log axis, ± stddev whiskers) and a table;
@@ -497,7 +502,7 @@ sides share one definition of the format.
 
 ## Usage
 
-`dist/bin/rustc-ryo foo.rs` or `dist/bin/cargo-ryo build`. With the default sysroot, std is
+`out/dist/bin/rustc-ryo foo.rs` or `out/dist/bin/cargo-ryo build`. With the default sysroot, std is
 the prebuilt LLVM-compiled one: std's own code is native, and generic std code instantiated
 in a ryo-built crate goes through ryo like everything else. With `--sysroot ryo` (after
 `y build --sysroot ryo`), std's own code is bytecode too, except `core`, `compiler_builtins`

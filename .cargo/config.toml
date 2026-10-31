@@ -1,0 +1,5 @@
+# Cargo run in this checkout builds into out/cargo/ (one target directory for the backend/,
+# vm/, build/, scripts/ and lean/harness/ workspaces), so all build output is under out/,
+# which `y clean` removes. `y` passes its own target directories where it needs others.
+[build]
+target-dir = "out/cargo"
