@@ -49,9 +49,11 @@ fn resolve(f: &Func, uses: &[u32], mut e: Edge, bare: bool) -> Edge {
 
 /// Threads jumps through empty blocks in `f` and drops the blocks left unreachable.
 pub fn thread(f: &mut Func) {
-    // Threading copies arguments around but never adds a use of a forwarding block's
-    // parameter, so the counts stay good enough for `forward`.
-    let uses = use_counts(f);
+    // Threading copies arguments around, and can pass a value more often than before (a
+    // forwarding block that passes a parameter twice): the counts follow each rewritten edge
+    // for `forward`. Dropped uses (a branch whose edges agree) only make them higher, which
+    // keeps `forward` sound.
+    let mut uses = use_counts(f);
     for b in 0..f.blocks.len() {
         let mut t = core::mem::replace(&mut f.blocks[b].term, Term::None);
         // A landing pad's normal return doesn't move edge arguments: leave it.
@@ -60,7 +62,10 @@ pub fn thread(f: &mut Func) {
         let jmp = matches!(t, Term::Jmp(_));
         if !matches!(t, Term::Invoke { .. }) {
             for e in t.edges_mut() {
-                *e = resolve(f, &uses, e.clone(), !jmp);
+                let new = resolve(f, &uses, e.clone(), !jmp);
+                e.args.iter().for_each(|a| uses[a.idx()] -= 1);
+                new.args.iter().for_each(|a| uses[a.idx()] += 1);
+                *e = new;
             }
         }
         t = match t {
