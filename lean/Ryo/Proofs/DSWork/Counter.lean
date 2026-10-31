@@ -226,8 +226,8 @@ theorem ctr_read_heads {ro : ByteArray} {callSites : Array CallSite}
   unfold posOf
   exact ctr_heads_of h9
 
-/-- A loop head is a branch target. Proof idea: unroll `read` past the second `instructions`
-(as `read_instructions` does): its loop-head pass sets `head[j]` only for `j = index p.pos t`
+/-- A loop head is a branch target (`ctr_read_heads`, without a pad region, `hD.noRegion`):
+`read`'s loop-head pass sets `head[j]` only for `j = index p.pos t`
 with `t` in `single ++ br` (a `.target` operand, a handler branch or a table's last target:
 all in `Proto.targets`), and its check `counter.isSome != (counters && head[i])` rejects a
 counter elsewhere; `rustBinarySearch` gives `posOf S.r j = t`. -/
@@ -472,7 +472,7 @@ theorem ctr_simple_canonical (i : Item) (h : i.wf 0 = true)
     (hw : ∀ p q, i.wf p = i.wf q) (ht : ∀ b e, i ≠ .tableEntry b e) (p : Nat) : i.Canonical p :=
   ⟨ht, .inl (by rw [hw _ 0]; exact h)⟩
 
-/-- `reach_counter`. Proof idea: the check's items (`ctrInc true`, `jns stub`) are fetched from
+/-- `reach_counter`. Proof: the check's items (`ctrInc true`, `jns stub`) are fetched from
 memory (`LinkOk.dec`, `branch_canonical`); `Counter.counter_noop` under `H.trip`: no trip falls
 through to `p2`; a trip branches to the stub (`H.stubsLinked`), whose `call [r11 + 16]` is an
 environment step (`H.envOutside.trip`) returning to its `jmp back` (`back = p2`); `ctr_frameInv`

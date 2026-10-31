@@ -630,11 +630,11 @@ variable {S : Setup} {code : ByteArray} {relocs : Array Reloc} {rodata : ByteArr
   {callSites : Array CallSite} {dropped : Array DroppedStore} {scopes : Array R.Scope}
   {mode : Ryo.Obj.Mode}
 
-/-- A call's result slots are apart after its return (`Call.call_return`'s `hres`). Proof idea:
-`ResultPrivate` gives them private after the scopes (the call's step and its answer keep
-`escaped`: `st` is the state after the answer); the `FrameSep` after the answer (`SepAcross.call`'s `AllocFacts`, `FrameSep.extend`) has `FrameOwn`,
-so a private window byte (`FrameBounds.result`: the slots are in the window) is in no live
-allocation. -/
+/-- A call's result slots are apart after its return (`Call.call_return`'s `hres`):
+`ResultPrivate` gives them private after the scopes, and so in `st` (the state after the
+answer, with the same escaped objects, `hesc`); the given `FrameSep` of `st` (`hsep`) has
+`FrameOwn`, so a private window byte (`FrameBounds.result`: the slots are in the window) is in
+no live allocation. -/
 theorem call_resultApart' (H : Hyps S) {s s1 : R.RState} {x x' : X86.State} {op : Reduced.Opcode}
     {d : BitVec 32} {fo : R.Opnd Nat} {k : BitVec 64} {ws : List (BitVec 32)} {f : Full.Opcode}
     (hf : FrameInv S s x)

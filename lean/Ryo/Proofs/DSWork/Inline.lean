@@ -1542,9 +1542,9 @@ theorem inline_run' (H : Hyps S) (hbl : InlineBelowLink S) (hpv : InlinePrivate 
   · rw [hrsp, hrbp]; exact hf.rsp
   · rw [hrsp]; exact hf.room
 
-/-- An inline instruction's R step with the default choice is not `noBehavior`. Proof idea: no
-inline class's `opSem` consults the choice (`Step.InlineOk`'s `opShape`, `stepView_native`), and
-the scopes never stop with `noBehavior` (`noNB_scopes`); case on the class as `inline_cls_step`. -/
+/-- An inline instruction's R step with the default choice is not `noBehavior`: the scopes never
+stop with `noBehavior` (`noNB_scopes`), the view is native (`Step.view_native`, by `InlineOk`'s
+`opShape`), and an inline opcode's `opSem` fails only otherwise (`inline_nb_opSem`). -/
 theorem inline_progress' (H : Hyps S) (s : R.RState) (op : Reduced.Opcode)
     (ops : List (R.Opnd Nat)) (f : Full.Opcode) (cls : Class) (m : String)
     (hi : S.c.d.insns[s.pc]? = some (.native op ops)) (hf : op.full = some f)
@@ -1583,11 +1583,11 @@ theorem inline_progress' (H : Hyps S) (s : R.RState) (op : Reduced.Opcode)
         | some pc' => simp [hp, pure, Except.pure] at hv
 
 set_option maxRecDepth 100000 in
-/-- After an inline instruction, R isn't at a leading `arg`. Proof idea: `step_native` and
-`stepView_native`: `s'.pc` is `k + 1` (`S.args (k + 1) = false`: `hP.args`, `q.op` isn't `arg`,
-no `inlineOps` entry is; so `S.args (k + 2) = false` by `hD.argsSucc`) or a target of proto `k`
-(`inline_branch_index`; `ArgsOk.untargeted` needs `H`, so take it: here only `k + 1` and the
-targets matter). -/
+/-- After an inline instruction, R isn't at a leading `arg`. By `Step.step_native` and
+`Step.stepView_native`, `s'.pc` is `k + 1` (`S.args (k + 1) = false`: `hP.args`, `q.op` isn't
+`arg`, no `inlineOps` entry is; so `S.args (k + 2) = false` by `hD.argsSucc`) or a target of
+the control, which is one of proto `k`'s targets (`inline_ctl_targets`), so no leading `arg`
+(`H.argsOk.untargeted`). -/
 theorem inline_not_leadArg' (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     {k p : Nat} {q : Proto} {c' : Cursor} {cache' : Cache} {s s' : R.RState} {op : Reduced.Opcode}
     {ops : List (R.Opnd Nat)} {f : Full.Opcode} {cls : Class} {ch : OpSem.Choice}

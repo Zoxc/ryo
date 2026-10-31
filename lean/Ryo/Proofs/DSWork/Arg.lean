@@ -322,7 +322,7 @@ theorem arg_regRel (H : Hyps S) {k : Nat} {r : R.Reg} {args : R.Regs} {x : X86.S
   hl r (H.argsOk.conv k r hk hr) (fun j hj hj' => H.argsOk.distinct j k r hj hk hj' hr)
 
 /-- After `arg` at `k` (register `a`, a convention register), the registers no `arg` up to `k`
-read stay related. Proof idea: `r ≠ .ofArgReg a`, so `ArgsLive` at `k` gives `RegRel r` at `x`;
+read stay related. Proof: `r ≠ .ofArgReg a`, so `ArgsLive` at `k` gives `RegRel r` at `x`;
 `RegRel.congr` with `hregs`: `argClobbers a pe` is `[]`, `[r11]` (no argument register) or
 `[intArg pe a.index]`, which is not `intArg pe i` for another `i` below 6 (PE 4) (`intArg`
 injective there, by `decide` over the indices); the `xmm`s are kept. -/
@@ -476,7 +476,7 @@ theorem arg_clobbers_pe (a : ArgReg) : ∀ g ∈ ArgRet.argClobbers a true, g.id
   rcases key with rfl | rfl | rfl | rfl | rfl | rfl <;> decide
 
 /-- `bodySim_arg`. The destination lies below the link slots (`FrameBounds.argBelow`) and the
-decoder's cache is empty at the instruction (`hce`). Proof idea: `argInsn_bounds`/`LinkOk.dec`
+decoder's cache is empty at the instruction (`hce`). Proof: `argInsn_bounds`/`LinkOk.dec`
 give the items `argStore a d pe` in memory at `p` (canonical, fetched as `Steps`, none writing
 the code: `CodeApart`); `FrameBounds.arg_step_fb` with `arg_regRel` gives `RRel`; `ArgPrivate`
 makes the write private, so R's memory and escaped objects are unchanged (`MemRel`: no live

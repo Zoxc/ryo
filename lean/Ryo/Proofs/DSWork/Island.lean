@@ -368,10 +368,10 @@ theorem island_allocsOff_foldlM {lo rsp : BitVec 64} {F : Nat} {K : Int} :
         (fun sc' h' => hl sc' (List.mem_cons_of_mem _ h'))
         (island_allocsOff_scope hrsp hF htop (hl sc (List.mem_cons_self ..)) hp h1) h
 
-/-- Live allocations stay off the stack below `rsp` across the scopes. Proof idea:
-`EnvApart.allocs` before them; an `Escape` allocates at `fp + off` with the scope in the window
+/-- Live allocations stay off the stack below `rsp` across the scopes: `EnvApart.allocs` before
+them; an `Escape` allocates at `fp + off` with the scope in the window
 (`FrameBounds.scopes`), at or above `rsp = fp - F` and below `fp + K ≤ 2^64` (`FrameInv.win`),
-so not `InStack`; `End` only frees. Induction over `foldlM` (`R.applyScope`, `R.escape`). -/
+so not `InStack`; `End` only frees (induction over `foldlM`: `island_allocsOff_foldlM`). -/
 theorem island_allocs' (H : Hyps S) {s s1 : R.RState} {x : X86.State} (hf : FrameInv S s x)
     (hsc : (S.c.scopesAt s.pc).foldlM R.applyScope s = .ok s1) : Handler.AllocsApart S.lo s1.st x := by
   have hK : (16 : Int) ≤ S.K := by have := H.argSizeK; omega
