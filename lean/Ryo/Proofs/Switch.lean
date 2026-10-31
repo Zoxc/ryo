@@ -12,8 +12,8 @@ add rax, rcx; jmp rax`, the `int3` padding, then the entries), fetched from memo
   `thenSeq`) is `CodeAt` of `es.map (tableEntry t)` from `t`.
 - `switch_tail`: from `rax = i` with `i < es.length`, the four items in memory at `rip`, and
   the table in memory, `Steps` reach `rip = ctx.base + es[i]`, with `rax` that address,
-  `rcx` the table's, the flags `add`'s, and everything else (other registers, `xmm`s,
-  memory) unchanged; it is also what `execItems` gives.
+  `rcx` the table's, and everything else but the flags (other registers, `xmm`s, memory)
+  unchanged; it is also what `execItems` gives.
 
 One hypothesis beyond the decoder's checks: the table's and the target's positions are below
 `2 ^ 31`. `movsxd` sign-extends the 32-bit entry and `add rax, rcx` adds it in 64 bits, which is
