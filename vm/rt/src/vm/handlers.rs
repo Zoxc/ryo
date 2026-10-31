@@ -11,8 +11,9 @@
 // success-failure pairs): `Post` is the ordering's name, its `Ordering` variants are appended
 // to the parameters.
 //
-// `full_ops.rs` has no handler for `jmp`, the calls, `ret`, `arg` and `island`; `resume` is
-// written in assembly (interp.rs). The list is checked against `full_ops.rs` when built.
+// `full_ops.rs` has no handler for `jmp`, the calls, `ret`, `arg`, `island` and
+// `unreachable` (a bare `ud2`); `resume`'s are written apart from the list (interp.rs: in
+// assembly off Windows). The list is checked against `full_ops.rs` when built.
 // Kinds: integer types select the width and signedness (`i*` for `.s` forms), float
 // types the format; `Atomic*` the atomic type; orderings are `core::sync::atomic::Ordering`
 // variants. The `*_ptr` atomic kinds are `AtomicPtr`'s: the same machine operations as the

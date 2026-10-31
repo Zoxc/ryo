@@ -21,10 +21,11 @@
 //! from code that keeps a frame pointer anyway, which then needn't pass `fp` in `rdi`
 //! ([`asm::Mode::rbp_set`]).
 //!
-//! With the `pe-test` feature (off Windows, for tests) a second set, the PE form's (Win64,
+//! With the `pe-test` feature (off Windows, for tests) a third set, the PE form's (Win64,
 //! [`PE_MODE`]), has no symbols: [`pe_handler`], [`pe_reg_handler`].
 //!
-//! `resume` ends in a tail jump, so it is written in assembly.
+//! Off Windows `resume` ends in a tail jump, so it is written in assembly; on PE (and in
+//! the `pe-test` set) it aborts, as only unreachable cleanup code reaches it.
 //!
 //! # Safety model
 //!
@@ -755,7 +756,7 @@ macro_rules! handlers {
         // The PE form's handlers (`pe-test`; tests run PE code off Windows with them): Win64,
         // without symbols.
         #[cfg(all(feature = "pe-test", not(windows)))]
-        handler_set!(hpe, hrpe, "win64-unwind", PE_MODE, handler, resume, export(any()); $($name => $kind $p $(-> $ret)?;)*);
+        handler_set!(hpe, hrpe, "win64-unwind", PE_MODE, handler, resume_pe, export(any()); $($name => $kind $p $(-> $ret)?;)*);
 
         /// Every opcode with a handler written in Rust, by value.
         const HANDLED: [bool; Opcode::COUNT] = {
@@ -887,6 +888,13 @@ unsafe extern "C-unwind" {
 #[rustc_std_internal_symbol]
 #[unsafe(export_name = tagged!(concat!(ryo_bytecode::rt_sym!(handler), "Resume")))]
 pub unsafe extern "C-unwind" fn resume() -> ! {
+    super::sys::fatal("resume: VM unwinding isn't supported on this target")
+}
+
+/// `resume x` of the PE form's set (`pe-test`): as on Windows, where it is only reached
+/// outside the pad region.
+#[cfg(all(feature = "pe-test", not(windows)))]
+unsafe extern "win64-unwind" fn resume_pe() -> ! {
     super::sys::fatal("resume: VM unwinding isn't supported on this target")
 }
 
