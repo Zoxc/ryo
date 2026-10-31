@@ -1,16 +1,19 @@
-//! Frame layout: argument block, local slots and temporaries (design/lowering.md#frame-slots).
+//! Frame layout: local slots, argument homes and temporaries (design/lowering.md#frame-slots).
 //!
 //! Frames grow downward ([`ryo_bytecode::abi`]):
 //!
 //! ```text
-//! fp + H      argument block (the ABI arguments, `sig::arg_block` layout), in the caller's frame
+//! fp + 16     the native stack-argument area (after the 32-byte shadow space on PE), in the caller's frame
 //! fp + 0      header (caller fp, return address)
-//! fp - …      other locals, then the temporaries of the statement being lowered
-//! fp - F      the outgoing argument block of the calls this function makes
+//! fp - …      locals (arguments included), then the temporaries of the statement being lowered
+//! fp - F      the outgoing argument area of the calls this function makes
 //! ```
 //!
-//! Locals with storage markers share slots when their storage ranges never overlap
-//! ([`Sharing`]). Arguments, `_0` and locals without `StorageLive` get slots of their own.
+//! A VM function takes its inputs by the native calling convention (`sig::ArgPlan`):
+//! [`FnCx::prologue`] copies them from the argument registers and the stack-argument area
+//! into the argument locals' own slots. Locals with storage markers share slots when their
+//! storage ranges never overlap ([`Sharing`]). Arguments, `_0` and locals without
+//! `StorageLive` get slots of their own.
 //!
 //! Slots are handed out *biased*, as `BIAS + off` for the signed frame offset `off`, so the
 //! lowering's arithmetic on them (`slot + field offset`) never wraps. Slots in the outgoing

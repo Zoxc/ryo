@@ -5,15 +5,17 @@
 //! Frames grow downward, and slot offsets are signed, relative to `fp`:
 //!
 //! ```text
-//! fp + 16 + …   argument block (written by the caller, in its outgoing area)
+//! fp + 16 + …   stack arguments (written by the caller, in its outgoing area)
 //! fp + 8        return address
 //! fp + 0        caller fp
 //! fp - 1 … fp - L       locals, `_0`, temporaries
 //! fp - F … fp - F + A   outgoing argument block (the callee's), F = round16(L + largest block)
 //! ```
 //!
-//! A callee's `fp` is its caller's `fp - F - 16`, so its argument block (at its `fp + 16`) is
-//! exactly the caller's outgoing block.
+//! A callee's `fp` is its caller's `fp - F - 16`, so its stack arguments (at its `fp + 16`)
+//! are exactly the caller's outgoing area. VM functions take their inputs by the native
+//! calling convention, and their prologue copies them into slots below `fp`; the argument
+//! block layout below is for island calls and for checking the inputs' sizes.
 //!
 //! # Why `check_arg_block` takes offsets instead of computing them
 //!
@@ -28,7 +30,7 @@
 //!
 //! So this crate doesn't replicate it. The backend gets the offsets from
 //! `tcx.layout_of(tuple)` and passes them to [`check_arg_block`], which checks that they form
-//! a valid block; the backend's frame code places argument `i` at `fp + H + offset`. The VM and the
+//! a valid block; island calls place argument `i` at `offset` in the block. The VM and the
 //! templates never need the computation: they either run code that already contains the
 //! offsets, or use the real Rust tuple type.
 
