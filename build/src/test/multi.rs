@@ -1,6 +1,6 @@
 //! Several ryo runtimes in one link or process (design/vm.md#several-ryo-runtimes-in-one-process):
-//! `tests/multi_ryo/` linked and loaded in the ways the design supports. Linux (GNU ld and lld
-//! for the C links); hosts with the JIT only.
+//! `tests/multi_ryo/` linked and loaded in the ways the design supports. Linux only (GNU ld and
+//! lld for the C links).
 
 use std::fs;
 use std::path::{Path, PathBuf};
