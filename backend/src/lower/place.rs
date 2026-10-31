@@ -169,6 +169,10 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         if pv.meta.is_some() {
             return native("deref of an unsized place");
         }
+        // Copies take `u32` sizes; locals are bounded (`Frame::new`), places behind pointers here.
+        if u32::try_from(pointee.size.bytes()).is_err() {
+            return native("deref of a value larger than 4 GiB");
+        }
         // From the pointer's size, not the pointee: pointers to extern types are thin.
         let wide = is_wide_ptr(pv.layout);
         let (p, meta) = match pv.loc {
