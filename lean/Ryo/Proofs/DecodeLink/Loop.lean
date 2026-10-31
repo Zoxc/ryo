@@ -15,17 +15,18 @@ One iteration (`Iter`) from position `p`, cache `cache`, dropped stores `dr`:
   one other instruction, each after the others failed; the proto's `pos` is `p1`, the branch
   target, before the counter check (the shape lemmas' `pos`), its items from `p2`.
 
-The decoder functions that return `none` leave the cursor (`callInsn_none`, `inlineInsn_none`),
-but for one quirk mirrored from Rust: `argInsn` after a `movd r11d, xmm` that no item follows
-returns `none` with the cursor past the `movd` (`argInsn_none`), and the next attempts read from
-there, so the `movd` is skipped. Every later attempt then reads at a position where
+The decoder functions that return `none` leave the cursor (`callInsn_none`, `inlineInsn_none`,
+`argInsn_none`). `argInsn` used to return `none` with the cursor past a `movd r11d, xmm` that no
+item follows (a Rust quirk, since fixed); `argInsn_none` and `NoArg` still allow that cursor,
+which no longer occurs (a simplification left to a later session). From that cursor every later
+attempt reads at a position where
 `decodeItem` fails, so only an inline sequence of a dropped store alone could still be accepted
 there; `ProtoRead` keeps that cursor explicit (`NoArg`).
 
 - `instructions_read`: a successful `instructions` is a chain of iterations (`Iters`) from the
   cursor's position, an empty cache and all dropped stores, to its end position with none left;
-  `read_instructions`: `read`'s protos are its second `instructions` pass, from the body's
-  cursor (without a frame pointer with `spFrame` the frame size).
+  `read_instructions`: without a pad region, `read`'s protos are its second `instructions`
+  pass, from the body's cursor (without a frame pointer with `spFrame` the frame size).
 -/
 import Ryo.Proofs.DecodeLink.Drop
 import Ryo.Proofs.DecodeLink.Arg
@@ -313,68 +314,72 @@ theorem callInsn_none {fr : Frame} {dropped : List DroppedStore} {c c' : Cursor}
   · obtain ⟨u, c5, h5, h⟩ := bind_ok h
     rw [run_setPos] at h5; cases h5
     obtain ⟨-, rfl⟩ := pure_ok h; exact back
-  · obtain ⟨it, c5, h5, h⟩ := bind_ok h
-    obtain ⟨r, c6, h6, h⟩ := bind_ok h
-    have e5 := PosOnly.tryItem _ _ _ h5
-    have e6 := (by loop_posonly : PosOnly _) _ _ _ h6
-    have back' : atPos c6 c1.pos = c1 := by rw [e6, e5]; exact back
-    split at h
-    · split at h
-      · obtain ⟨s, c7, h7, h⟩ := bind_ok h
-        obtain ⟨s, c8, h8, h⟩ := bind_ok h
-        split at h
-        obtain ⟨h, -⟩ := pure_ok h; cases h
-      · obtain ⟨h, -⟩ := pure_ok h; cases h
-    · obtain ⟨u, c7, h7, h⟩ := bind_ok h
-      rw [run_setPos] at h7; cases h7
-      obtain ⟨-, rfl⟩ := pure_ok h; exact back'
-
-/-- `inlineInsn` that finds no sequence leaves the cursor. -/
-theorem inlineInsn_none {cache : Cache} {dropped : List DroppedStore} {exact : Bool}
-    {c c' : Cursor} (h : (inlineInsn cache dropped exact).run c = .ok (none, c')) : c' = c := by
-  unfold inlineInsn at h
-  obtain ⟨p0, c1, h1, h⟩ := bind_ok h
-  obtain ⟨hp0, hc1⟩ := pos_run' h1
-  subst hp0 hc1
-  obtain ⟨fu, c2, h2, h⟩ := bind_ok h
-  have hc2 := fuel_run h2
-  subst hc2
-  obtain ⟨st, c3, h3, h⟩ := bind_ok h
-  have key := forIn_range_inv
-    (fun st cur => cur = atPos c2 cur.pos ∧ (st.1 = none ∨ (st.1 = some none ∧ cur.pos = c2.pos)))
-    (fun st cur => cur = atPos c2 cur.pos ∧ (st.1 = none ∨ (st.1 = some none ∧ cur.pos = c2.pos)))
-    _ ?_ _ _ _ _ _ ⟨rfl, .inl rfl⟩ h3
-  · have kc : c3 = atPos c2 c3.pos ∧ (st.1 = none ∨ (st.1 = some none ∧ c3.pos = c2.pos)) := by
-      rcases key with k | k <;> exact k
-    clear key
-    dsimp only at h
-    repeat (any_goals (first
-      | (obtain ⟨_, _, h1, h⟩ := bind_ok h
-         try (have hfo := forIn_keep _ _ _ (by simp) (by
-           intro a b c r c' hr
-           repeat (any_goals (first | split at hr | dsimp only at hr))
-           all_goals (obtain ⟨rfl, rfl⟩ := pure_ok hr; simp)) h1))
-      | split at h
-      | dsimp only at h))
-    all_goals (obtain ⟨h0, rfl⟩ := pure_ok h)
-    all_goals try (cases h0; done)
-    all_goals try (subst h0; exact absurd ‹_› hfo.2)
-    all_goals try (subst h0; rcases kc with ⟨e, h | ⟨_, hp⟩⟩
-                   · exact absurd (h.symm.trans ‹st.fst = some none›) (by simp)
-                   · rw [e, hp])
-    all_goals try (rw [run_setPos] at h1; cases h1; try rw [hfo.1]; exact (congrArg (atPos · c2.pos) kc.1).trans rfl)
-    all_goals exact (congrArg (atPos · c2.pos) kc.1).trans rfl
-  · intro a b cur r cur' hI hr
-    dsimp only at hr
-    have e' : cur' = atPos c2 cur'.pos := by rw [(by loop_posonly : PosOnly _) _ _ _ hr, hI.1]
-    repeat (any_goals (first
-      | (obtain ⟨_, _, h1, hr⟩ := bind_ok hr)
-      | split at hr
-      | dsimp only at hr))
-    all_goals (obtain ⟨rfl, rfl⟩ := pure_ok hr; refine ⟨e', ?_⟩; first | exact .inl rfl | (right; refine ⟨rfl, ?_⟩; rw [run_setPos] at h1; cases h1; rfl))
+  · split at h
+    · obtain ⟨u, c5, h5, h⟩ := bind_ok h
+      rw [run_setPos] at h5; cases h5
+      obtain ⟨-, rfl⟩ := pure_ok h; exact back
+    · obtain ⟨it, c5, h5, h⟩ := bind_ok h
+      obtain ⟨r, c6, h6, h⟩ := bind_ok h
+      have e5 := PosOnly.tryItem _ _ _ h5
+      have e6 := (by loop_posonly : PosOnly _) _ _ _ h6
+      have back' : atPos c6 c1.pos = c1 := by rw [e6, e5]; exact back
+      split at h
+      · split at h
+        · obtain ⟨s, c7, h7, h⟩ := bind_ok h
+          obtain ⟨s, c8, h8, h⟩ := bind_ok h
+          split at h
+          obtain ⟨h, -⟩ := pure_ok h; cases h
+        · obtain ⟨h, -⟩ := pure_ok h; cases h
+      · obtain ⟨u, c7, h7, h⟩ := bind_ok h
+        rw [run_setPos] at h7; cases h7
+        obtain ⟨-, rfl⟩ := pure_ok h; exact back'
+  
+  /-- `inlineInsn` that finds no sequence leaves the cursor. -/
+  theorem inlineInsn_none {cache : Cache} {dropped : List DroppedStore} {exact : Bool}
+      {c c' : Cursor} (h : (inlineInsn cache dropped exact).run c = .ok (none, c')) : c' = c := by
+    unfold inlineInsn at h
+    obtain ⟨p0, c1, h1, h⟩ := bind_ok h
+    obtain ⟨hp0, hc1⟩ := pos_run' h1
+    subst hp0 hc1
+    obtain ⟨fu, c2, h2, h⟩ := bind_ok h
+    have hc2 := fuel_run h2
+    subst hc2
+    obtain ⟨st, c3, h3, h⟩ := bind_ok h
+    have key := forIn_range_inv
+      (fun st cur => cur = atPos c2 cur.pos ∧ (st.1 = none ∨ (st.1 = some none ∧ cur.pos = c2.pos)))
+      (fun st cur => cur = atPos c2 cur.pos ∧ (st.1 = none ∨ (st.1 = some none ∧ cur.pos = c2.pos)))
+      _ ?_ _ _ _ _ _ ⟨rfl, .inl rfl⟩ h3
+    · have kc : c3 = atPos c2 c3.pos ∧ (st.1 = none ∨ (st.1 = some none ∧ c3.pos = c2.pos)) := by
+        rcases key with k | k <;> exact k
+      clear key
+      dsimp only at h
+      repeat (any_goals (first
+        | (obtain ⟨_, _, h1, h⟩ := bind_ok h
+           try (have hfo := forIn_keep _ _ _ (by simp) (by
+             intro a b c r c' hr
+             repeat (any_goals (first | split at hr | dsimp only at hr))
+             all_goals (obtain ⟨rfl, rfl⟩ := pure_ok hr; simp)) h1))
+        | split at h
+        | dsimp only at h))
+      all_goals (obtain ⟨h0, rfl⟩ := pure_ok h)
+      all_goals try (cases h0; done)
+      all_goals try (subst h0; exact absurd ‹_› hfo.2)
+      all_goals try (subst h0; rcases kc with ⟨e, h | ⟨_, hp⟩⟩
+                     · exact absurd (h.symm.trans ‹st.fst = some none›) (by simp)
+                     · rw [e, hp])
+      all_goals try (rw [run_setPos] at h1; cases h1; try rw [hfo.1]; exact (congrArg (atPos · c2.pos) kc.1).trans rfl)
+      all_goals exact (congrArg (atPos · c2.pos) kc.1).trans rfl
+    · intro a b cur r cur' hI hr
+      dsimp only at hr
+      have e' : cur' = atPos c2 cur'.pos := by rw [(by loop_posonly : PosOnly _) _ _ _ hr, hI.1]
+      repeat (any_goals (first
+        | (obtain ⟨_, _, h1, hr⟩ := bind_ok hr)
+        | split at hr
+        | dsimp only at hr))
+      all_goals (obtain ⟨rfl, rfl⟩ := pure_ok hr; refine ⟨e', ?_⟩; first | exact .inl rfl | (right; refine ⟨rfl, ?_⟩; rw [run_setPos] at h1; cases h1; rfl))
 
 /-- `argInsn` that finds no `arg` leaves the cursor, but after a `movd r11d, xmm` no item
-follows (Rust's quirk, see the module comment). -/
+follows (a fixed quirk whose case no longer occurs, see the module comment). -/
 theorem argInsn_none {mode : Mode} {c c' : Cursor}
     (h : (argInsn mode).run c = .ok (none, c')) :
     c' = c ∨ ∃ x n, decodeItem c = some (.movd false x .r11, n) ∧ c' = atPos c (c.pos + n) ∧
@@ -436,11 +441,6 @@ theorem argInsn_none {mode : Mode} {c c' : Cursor}
       | split at h3
       | dsimp only at h3))
     all_goals try (obtain ⟨h0, -⟩ := pure_ok h3; cases h0; done)
-    obtain ⟨-, rfl⟩ := pure_ok h3
-    rw [run_tryItem] at h4
-    split at h4
-    · cases h4
-    · cases h4; exact ⟨_, _, hn, rfl, ‹_›⟩
 
 /-! ### The loop -/
 
@@ -476,7 +476,7 @@ set_option maxHeartbeats 2000000 in
 /-- What a successful `instructions` read (see the module comment): the protos, a chain of
 iterations from the cursor with an empty cache and every dropped store, ending at the cursor
 it returns with no dropped store left, at or past `limit` (the code's end, or the pad region's
-entry or the counter stubs' start for the body pass; an item may run past it, which the caller
+entry for the body pass; an item may run past it, which the caller
 rejects) or at the first counter stub (the entry's, or the first loop head's). -/
 theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedStore}
     {targets : Option (Array Nat)} {entryStub : Option Nat} {limit : Nat}

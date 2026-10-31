@@ -10,8 +10,7 @@
 //! - [`reduced`]: the reduced instruction set, generated from `src/isa/reduced_ops.rs`: the
 //!   instructions that run as native code, and one `handler` instruction for the rest. It
 //!   shares [`full`]'s operand machinery (`define_ops!`), hence `full`'s `#[macro_use]`.
-//! - [`image`]: the image format, its zero-copy reader, the writer (`alloc`), and the portal
-//!   `ID` helpers.
+//! - [`image`]: the image format, its zero-copy reader, and the writer (`alloc`).
 //! - [`jit`]: the JIT's SSA pipeline: the handlers' frame effects, and (`alloc`) the SSA IR, its
 //!   construction from decoded code and its code generation.
 //! - [`jit_abi`]: the interface between the runtime and the JIT ([`jit_abi::RtApi`]).

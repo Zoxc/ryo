@@ -32,9 +32,10 @@ registers set in order, and recovers every operand, the frame size and the unwin
   `resume` as `add rsp, 40; ret` (taking the landing pads' exception slot, `resumeSlots`), and no
   branch across its start.
 
-The functions mirror Rust's one for one, including their quirks (`arg`'s cursor after a
-failed `movd` pair; `binary_search`'s choice among equal positions; `u32` wrapping where Rust
-wraps, and its checked sums: a result piece's offset, the pad region's entry).
+The functions mirror Rust's one for one, including their quirks (`binary_search`'s choice among equal positions; `u32` wrapping where Rust
+wraps, and its checked sums: a result piece's offset, the pad region's entry). Not mirrored:
+Rust finds a call site by binary search (`site_at`), Lean by a linear one, so the two agree only
+on call sites sorted by start with distinct starts, as the encoder writes and images check.
 Loops that Rust runs until the code ends take fuel (the code's length, plus the dropped stores
 for the instruction loop), which they never exhaust: every element read is at least one byte
 (`decodeItem_pos`).
@@ -55,7 +56,7 @@ test vectors:
   "relocs": [[<at>, "<ref>"], …],        -- sorted by `at`; <ref>: "handler <Name or number>",
                                          -- "probe", "func <i>", "sym <i>",
                                          -- "const <off>", "data <off>", "ro <off>", "rec", "recloopctr"
-  "call_sites": [[<start>, <len>, <pad or null>, <catches>], …],
+  "call_sites": [[<start>, <len>, <pad or null>, <catches>], …],   -- sorted by `start`, distinct
   "dropped": [[<at>, <frame_offset>, <size>, <reg number>], …],   -- sorted by `at`
   "scopes": [[<code_offset>, <frame_offset>, <size>, <align, null for an end, or "lend">], …] }
 ```
@@ -325,6 +326,19 @@ def params (mode : Mode) : DM (List (BitVec 32)) := do
     | none => setPos at_; return out.toList
   return out.toList
 
+/-- `params_ok`, plus on PE `pe_regs_ok`: valid registers, none twice, and on PE only the
+first four of each class. -/
+def paramsOk (pe : Bool) (ps : List (BitVec 32)) : Bool :=
+  let rec regs : List (BitVec 32) → List (Option ArgReg)
+    | _ :: r :: rest =>
+      let rn := r.toNat
+      (if rn &&& argAddr != 0 then (ArgReg.of? (rn - argAddr) false).filter (fun a => !a.xmm && a.size == 8)
+        else ArgReg.of? rn false) :: regs rest
+    | _ => []
+  let rs := regs ps
+  ps.length % 2 == 0 && rs.all (fun r => r.any (fun a => !pe || a.index < 4)) &&
+    (rs.filterMap (·.map (fun a => (a.xmm, a.index)))).Nodup
+
 inductive Pre
   | none
   | sym (s : Nat)
@@ -341,6 +355,7 @@ def callInsn (fr : Frame) (dropped : List DroppedStore) : DM (Option Proto) := d
   let ps ← params fr.mode
   let callAt ← pos
   if dropped.head?.any (·.at_ ≤ callAt) then setPos p0; return none
+  if !paramsOk fr.mode.pe ps then setPos p0; return none
   let aOp : Opnd Nat := .words ps
   let it ← tryItem
   let r : Option (Full.Opcode × List (Opnd Nat) × Bool) ← (do
@@ -355,9 +370,9 @@ def callInsn (fr : Frame) (dropped : List DroppedStore) : DM (Option Proto) := d
       if !(← expectItems fr.epilogue) then return none
       match ← tryItem, pre with
       | some (.jmp (.func f)), .none => return some (.tailCall, [.func f, aOp], false)
-      | some .jmpRax, .ptr p => return some (.tailCallPtr, [.slot p, aOp], false)
-      -- PE's form; either is accepted in any mode.
-      | some .jmpRaxW, .ptr p => return some (.tailCallPtr, [.slot p, aOp], false)
+      -- `rex.w jmp rax` on PE, `jmp rax` elsewhere, as the encoder.
+      | some .jmpRax, .ptr p => if fr.mode.pe then return none else return some (.tailCallPtr, [.slot p, aOp], false)
+      | some .jmpRaxW, .ptr p => if fr.mode.pe then return some (.tailCallPtr, [.slot p, aOp], false) else return none
       | _, _ => return none)
   let some (op, ops, call) := r | setPos p0; return none
   if call then
@@ -390,14 +405,12 @@ def argInsn (mode : Mode) : DM (Option Proto) := do
     | .movd false x .r11 =>
       match ← tryItem with
       | some (.st _ _ m) => return some (some ⟨true, 2, x⟩, m)
-      -- `c.item().ok()?`: out, the cursor past the `movd`.
-      | some _ => return some (none, M.frame 0)
-      | none => return none
+      | _ => return some (none, M.frame 0)
     | _ => return some (none, M.frame 0))
   let some (a, m) := r | return none
   let end_ ← pos
   setPos p0
-  let some a := a.filter (fun a => (ArgReg.of? a.word true).isSome && m.base == .rbp) | return none
+  let some a := a.filter (fun a => (ArgReg.of? a.word true).isSome && (!mode.pe || a.index < 4) && m.base == .rbp) | return none
   for w in argStore a m.disp mode.pe do
     if (← tryItem) != some w then setPos p0; return none
   if (← pos) != end_ then setPos p0; return none
@@ -1062,7 +1075,7 @@ def reducedOf (r : ReadResult) (pe : Bool) : Except AsmError Decoded := do
 
 /-- Decodes one function's machine code, its `rel32` fields as `fields` says (relocations, or
 linked code through a `LinkMap`), to R (`decode_reduced`, `decode_linked`). `dropped` sorted by
-position. -/
+position, `callSites` by start (distinct). -/
 def decodeReducedWith (code : ByteArray) (fields : Fields) (rodata : ByteArray)
     (callSites : Array CallSite) (dropped : Array DroppedStore) (scopes : Array Scope)
     (mode : Mode) : Except AsmError Decoded := do

@@ -5,12 +5,16 @@
 //! Frames grow downward, and slot offsets are signed, relative to `fp`:
 //!
 //! ```text
-//! fp + 16 + …   stack arguments (written by the caller, in its outgoing area)
+//! fp + 16 + …   stack arguments (written by the caller, in its outgoing area; on PE after
+//!               32 bytes of shadow space, from fp + 48)
 //! fp + 8        return address
 //! fp + 0        caller fp
 //! fp - 1 … fp - L       locals, `_0`, temporaries
-//! fp - F … fp - F + A   outgoing argument block (the callee's), F = round16(L + largest block)
+//! fp - F … fp - F + A   outgoing area (the callee's), F = round16(L + largest block)
 //! ```
+//!
+//! An island's argument block sits in the outgoing area, at `fp - F` (on PE at `fp - F + 32`
+//! or `+ 40`, past the shadow space and a handler's fifth argument; design/vm.md).
 //!
 //! A callee's `fp` is its caller's `fp - F - 16`, so its stack arguments (at its `fp + 16`)
 //! are exactly the caller's outgoing area. VM functions take their inputs by the native
@@ -34,8 +38,8 @@
 //! templates never need the computation: they either run code that already contains the
 //! offsets, or use the real Rust tuple type.
 
-/// Size of the frame header (caller fp, return address). The argument block starts at
-/// `fp + H`.
+/// Size of the frame header (caller fp, return address). Stack arguments start at `fp + H`
+/// (on PE past the shadow space).
 pub const HEADER_SIZE: u32 = 16;
 
 /// Alignment of every frame (`fp`), and of the frame size `F`.
@@ -43,7 +47,7 @@ pub const FRAME_ALIGN: u32 = 16;
 
 /// The frame size `F` of a function whose locals take `locals` bytes below `fp` and whose
 /// largest outgoing argument block is `outgoing` bytes: their sum rounded up to
-/// [`FRAME_ALIGN`]. The outgoing block is at `fp - F`.
+/// [`FRAME_ALIGN`]. The outgoing area is at `fp - F`.
 pub const fn frame_size(locals: u32, outgoing: u32) -> u32 {
     (locals + outgoing + FRAME_ALIGN - 1) & !(FRAME_ALIGN - 1)
 }

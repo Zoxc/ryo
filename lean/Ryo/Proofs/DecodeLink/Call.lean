@@ -398,6 +398,9 @@ theorem callInsn_read {fr : Frame} {dropped : List DroppedStore} {c c' : Cursor}
   · obtain ⟨u, c9, -, h10⟩ := bind_ok h
     obtain ⟨he, -⟩ := pure_ok h10; cases he
   dsimp only at h
+  split at h
+  · obtain ⟨u, c9, -, h10⟩ := bind_ok h
+    obtain ⟨he, -⟩ := pure_ok h10; cases he
   obtain ⟨it, c5, h5, h⟩ := bind_ok h
   obtain ⟨r, c6, h6, h⟩ := bind_ok h
   have hnone : r = none → False := by
@@ -473,12 +476,18 @@ theorem callInsn_read {fr : Frame} {dropped : List DroppedStore} {c c' : Cursor}
     · obtain ⟨rfl, rfl⟩ := pure_ok h6
       obtain ⟨n2, hn2, rfl⟩ := run_tryItem_some h8
       exact fin_tail false _ _ _ cE n2 (head_tailCall false _) dE' eE' hn2 rfl rfl
-    · obtain ⟨rfl, rfl⟩ := pure_ok h6
-      obtain ⟨n2, hn2, rfl⟩ := run_tryItem_some h8
-      exact fin_tail false _ _ _ cE n2 (head_tailCallPtr false _) dE' eE' hn2 rfl rfl
-    · obtain ⟨rfl, rfl⟩ := pure_ok h6
-      obtain ⟨n2, hn2, rfl⟩ := run_tryItem_some h8
-      exact fin_tail true _ _ _ cE n2 (head_tailCallPtr true _) dE' eE' hn2 rfl rfl
+    · split at h6
+      · obtain ⟨rfl, rfl⟩ := pure_ok h6
+        exact (hnone rfl).elim
+      · obtain ⟨rfl, rfl⟩ := pure_ok h6
+        obtain ⟨n2, hn2, rfl⟩ := run_tryItem_some h8
+        exact fin_tail false _ _ _ cE n2 (head_tailCallPtr false _) dE' eE' hn2 rfl rfl
+    · split at h6
+      · obtain ⟨rfl, rfl⟩ := pure_ok h6
+        obtain ⟨n2, hn2, rfl⟩ := run_tryItem_some h8
+        exact fin_tail true _ _ _ cE n2 (head_tailCallPtr true _) dE' eE' hn2 rfl rfl
+      · obtain ⟨rfl, rfl⟩ := pure_ok h6
+        exact (hnone rfl).elim
     · obtain ⟨rfl, rfl⟩ := pure_ok h6
       exact (hnone rfl).elim
 

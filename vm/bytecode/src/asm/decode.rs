@@ -73,7 +73,7 @@ struct Proto {
     /// With counters, a loop head's counter check before it: its stub's position and the
     /// position after the check, where the stub returns to.
     counter: Option<(u32, u32)>,
-    /// Its last item is its call (a call storing no result, an island in the pad region),
+    /// Its last item is its call (a call storing no result, a PE island),
     /// which on PE a `nop` follows if it has a landing pad (`encode::Asm::bare_calls`).
     bare: bool,
 }
@@ -546,7 +546,8 @@ fn op_targets(o: &Opnd) -> &[u32] {
 /// as the cache emits it; without, inline sequences are only delimited ([`inline_insn`]).
 /// With counters, the code ends at the counter stubs: at the first loop head's, or without
 /// loop heads at the entry's, `entry_stub`. `hints` are the instruction list's instruction
-/// entries, each of which must be taken by an inline sequence.
+/// entries, each of which must be taken: a handler call's by its call ([`insn`]), the others
+/// by an inline sequence (the leftover error says "inline sequence" for both).
 #[allow(clippy::too_many_arguments)]
 fn instructions(
     c: &mut Cursor<'_>,
@@ -955,6 +956,11 @@ fn call_insn(c: &mut Cursor<'_>, fr: &Frame, dropped: &[DroppedStore]) -> Option
     if dropped.first().is_some_and(|d| d.at <= call_at) {
         return fail(c);
     }
+    // Only lists the encoder emits: no register twice, and on PE only its registers.
+    let pe_ok = |ps: &[u32]| !fr.mode.pe || ps.chunks(2).all(|p| super::param_reg(p[1]).is_some_and(|r| r.index < 4));
+    if !super::params_ok(&ps) || !pe_ok(&ps) {
+        return fail(c);
+    }
     let a_op = Opnd::Words(ps);
     let item = c.item();
     let (op, mut ops, call) = match (item, &pre) {
@@ -970,7 +976,9 @@ fn call_insn(c: &mut Cursor<'_>, fr: &Frame, dropped: &[DroppedStore]) -> Option
             }
             match (c.item(), &pre) {
                 (Ok(Item::Jmp(Ref::Func(f))), Pre::None) => (Opcode::TailCall, vec![Opnd::Func(f), a_op.clone()], false),
-                (Ok(Item::JmpRax | Item::JmpRaxW), Pre::Ptr(p)) => (Opcode::TailCallPtr, vec![Opnd::Slot(*p), a_op.clone()], false),
+                // `rex.w jmp rax` on PE (an epilogue end to the Win64 unwinder), as the encoder.
+                (Ok(Item::JmpRaxW), Pre::Ptr(p)) if fr.mode.pe => (Opcode::TailCallPtr, vec![Opnd::Slot(*p), a_op.clone()], false),
+                (Ok(Item::JmpRax), Pre::Ptr(p)) if !fr.mode.pe => (Opcode::TailCallPtr, vec![Opnd::Slot(*p), a_op.clone()], false),
                 _ => return fail(c),
             }
         }
@@ -1011,15 +1019,16 @@ fn arg(c: &mut Cursor<'_>, mode: Mode) -> Option<Proto> {
             (int_index(src, mode).map(|index| ArgReg { xmm: false, size, index }), m)
         }
         Item::Sse { st: true, size, x, m } => (Some(ArgReg { xmm: true, size: size as u32, index: x as u32 }), m),
-        Item::Movd { to_xmm: false, x, r: F16_TMP } => match c.item().ok()? {
-            Item::St { m, .. } => (Some(ArgReg { xmm: true, size: 2, index: x as u32 }), m),
+        Item::Movd { to_xmm: false, x, r: F16_TMP } => match c.item() {
+            Ok(Item::St { m, .. }) => (Some(ArgReg { xmm: true, size: 2, index: x as u32 }), m),
             _ => (None, M::frame(0)),
         },
         _ => (None, M::frame(0)),
     };
     let end = c.pos;
     c.pos = pos;
-    let a = a.filter(|a| ArgReg::of(a.word(), true).is_some() && m.base == Reg::Rbp)?;
+    // PE passes arguments in the first four registers of each class only.
+    let a = a.filter(|a| ArgReg::of(a.word(), true).is_some() && (!mode.pe || a.index < 4) && m.base == Reg::Rbp)?;
     for w in arg_store(a, m.disp, mode.pe) {
         if c.item().ok() != Some(w) {
             c.pos = pos;

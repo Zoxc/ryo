@@ -190,7 +190,7 @@ theorem argInsn_bounds {mode : Mode} {c c' : Cursor} {q : Proto}
       simp only [Bool.and_eq_true, beq_iff_eq] at hfa
       have hd' : Dec c c.pos (argStore a mm.disp mode.pe) c6.pos := by simpa using hd
       obtain ⟨hx, hint⟩ := hR _ _ a rfl hfa.1
-      refine ⟨a, mm.disp, rfl, ?_, ?_, hfa.2.1, hd', hc6⟩
+      refine ⟨a, mm.disp, rfl, ?_, ?_, hfa.2.1.1, hd', hc6⟩
       · cases hxa : a.xmm
         · obtain ⟨-, items, hdi, hs⟩ := hint hxa
           have hne : c6.pos = c3.pos := by simpa using hne

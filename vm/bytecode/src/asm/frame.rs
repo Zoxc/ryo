@@ -5,8 +5,8 @@
 //!
 //! Extents: inline instructions, calls, `ret` and `arg` access their operands at the widths
 //! the opcode or the return kind gives. A handler's slot operands are taken to reach 16
-//! bytes (the widest scalar, `w128`), or the length its `len` operands give (`copy`, `const`,
-//! `zero`, `load.copy`, `store.copy`, `fill`): an over-estimate, which liveness only reads
+//! bytes (the widest scalar, `w128`), or the length its `len` operands give if longer
+//! (`copy`, `const`, `zero`, `load.copy`, `store.copy`, `fill`): an over-estimate, which liveness only reads
 //! and never kills. An island's operands have extents only their template knows, and a call
 //! may read the stack arguments in the outgoing area, which no operand names: both count as
 //! reading every byte.
@@ -197,7 +197,7 @@ fn handler(h: full::Opcode, args: List<Arg>, at: usize, mode: Mode, f: &mut Insn
         }
     };
     let index = |name: &str| info.operand_index(name);
-    // The extent of the slot operands: the lengths the opcode gives, else at most 16 bytes.
+    // The extent of the slot operands: 16 bytes, or the lengths the opcode gives if longer.
     let mut ext = 16u64;
     if let Some(k) = index("len") {
         ext = ext.max(imm(k)?);

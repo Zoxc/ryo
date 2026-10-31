@@ -28,7 +28,8 @@ relocations (a jump table's `int3` padding) are the one place a boundary isn't c
   boundary moves past it.
 - `decodeItem_itemAt`: the same for `decodeItem`, in the frame-pointer form (`c.spFrame =
   none`): there `decodeItem` returns the item it matched. (Without a frame pointer it returns
-  the encoder's `[rbp + d]` form of a matched `[rsp + F + d]` item; not covered.)
+  the encoder's `[rbp + d]` form of a matched `[rsp + F + d]` item; `Items.lean` covers that,
+  `decodeItem_itemAt_sp`.)
 - `Dec c p items q`: `decodeItem` reads `items` one after the other from position `p` to `q`
   (`c`'s code, fields and frame form); `codeAt_of_dec`: such items are `CodeAt` from `p`, and
   `q = p + codeSize items`.

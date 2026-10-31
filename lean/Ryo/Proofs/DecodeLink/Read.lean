@@ -14,7 +14,7 @@ item list, with the operands it records.
   per 4 bytes from `tb`, each what `Cursor.tableEntry` reads there.
 - `insn_read` (`InsnRead`): `insn`'s result is one of a handler call (setup items, `call h`,
   then `thenSeq`), `ret`, `unreachable`, `jmp`, `island`, in the pad region `resume`, or a
-  dense switch (`dense`: only that `denseSwitch` succeeds, not described further yet).
+  dense switch (`dense`: only that `denseSwitch` succeeds; `DecodeSound.lean`'s `dense_read` describes it).
 - `argInsn_read`: `argInsn`'s `arg d, word a` is the stores `argStore a d pe`, re-read from the
   start (the first parse only moves the cursor: `PosOnly`, the `posonly` tactic).
 -/
@@ -439,7 +439,7 @@ inductive InsnRead (fr : Frame) (ro : ByteArray) (c : Cursor) : Proto → Cursor
       InsnRead fr ro c { op := .resume, handler := some ([], .trap), pos := c.pos }
         (atPos c (c.pos + len + len2))
   /-- A dense switch's index computation and its table (`denseSwitch`), its handler call in the
-  reduced form: not described further yet. -/
+  reduced form (described by `DecodeSound.lean`'s `dense_read`). -/
   | dense {c' : Cursor} {q : Proto} : (denseSwitch fr).run c = .ok (some q, c') → InsnRead fr ro c q c'
 
 theorem insnCore_read {fr : Frame} {ro : ByteArray} {c c' : Cursor} {q : Proto}
@@ -749,7 +749,7 @@ theorem argInsn_read {mode : Mode} {c c' : Cursor} {q : Proto}
     · obtain ⟨he, rfl⟩ := pure_ok h
       cases he
       simp only [Bool.and_eq_true, beq_iff_eq] at hfa
-      exact ⟨a, mm.disp, rfl, hfa.2.1, by simpa using hd, hc6⟩
+      exact ⟨a, mm.disp, rfl, hfa.2.1.1, by simpa using hd, hc6⟩
   · dsimp only at h
     rw [hst] at h
     dsimp only at h

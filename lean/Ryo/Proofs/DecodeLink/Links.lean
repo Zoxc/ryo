@@ -17,7 +17,8 @@ indices with `pos32 r t = tgt`.
   at `tb` (`switch_tail`), the `then` table their targets (`tableEntry_itemAt`,
   `entries_codeAt`: the entries in memory given a boundary at `tb`, i.e. no relocation starting
   in the `int3` padding, which the decoder doesn't check). Not for a dense switch whose index
-  computation stands in for the call (`denseSwitch`, a hypothesis): its link is still to do;
+  computation stands in for the call (`denseSwitch`, a hypothesis): its link is `DecodeSound.lean`'s
+  `dense_read`;
   nor in the pad region (`fr.region = false`), whose `resume` proto carries a handler but is
   `add rsp, 40; ret`.
 - `link_jmp`, `link_unreachable`, `link_ret`, `link_island`: `jmp tgt` (`jmp_step`), `ud2`

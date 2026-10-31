@@ -60,7 +60,7 @@ theorem tableEntry_le {c : Cursor} {b e : BitVec 32} (h : c.tableEntry b = some 
   intro hc
   have hb : c.bytes 4 = none := by
     unfold Cursor.bytes
-    rw [if_neg hc]
+    rw [ite_eq_right hc]
   simp [Cursor.tableEntry, Cursor.i32At, hb] at h
 
 /-- A switch jump read item by item is one `switchTableAt` finds. -/

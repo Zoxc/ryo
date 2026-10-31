@@ -1312,7 +1312,8 @@ impl Asm {
 
     /// [`Asm::finish`], and the position in the code of every label (in order; `u32::MAX` for
     /// unbound ones): where the instruction after it starts, after a loop head's padding (the
-    /// JIT's OSR entries land there).
+    /// JIT's OSR entries land there); with counters, a loop head's is at its counter check
+    /// instead, before the instruction.
     pub fn finish_labels(self, frame_size: u32, fix: impl Fn(u32) -> u32) -> (Encoded, Vec<u32>) {
         let Asm { mode, mut pieces, labels, ro, unwind, targets, drops, seqs, handler_calls, region, bare_calls } = self;
         debug_assert!(mode.valid(), "{mode:?}");

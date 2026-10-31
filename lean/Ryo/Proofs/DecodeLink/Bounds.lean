@@ -8,8 +8,10 @@ Ryo.Proofs.DecodeLink.Bounds — decoded code that the bounds check accepts sati
   length an immediate's, which `nativeVal` gives the same under every placement (`erase`
   forgets the addresses, the only values that depend on it).
 - `frameBounds_of_boundsOk`: `boundsOk` gives `FrameBounds c c.d.frameTop`: each scope's range,
-  native frame write, `arg` destination and `ret` source is one of `frameRanges`, which all start
-  at or above `-F` and end at or below `frameTop` (`le_frameTop`).
+  native frame write, handler call's frame writes, `arg` destination, `ret` source and call's
+  16-byte result slot is one of `frameRanges`, which all start at or above `-F` and end at or
+  below `frameTop` (`le_frameTop`); the link-slot fields (`writesOff`, `handlerOff`,
+  `resultOff`, `argBelow`) come from `offLink` and `argRanges`.
 - `decode_frameBounds`: an accepted `decodeBounded` is `decodeReducedWith`'s decoding, and it
   satisfies `FrameBounds` for `frameTop`, and so for every larger `K` up to `2 ^ 31`
   (`FrameBounds.mono`; the proofs' window is `[-F, 16 + argSize)`, so it needs

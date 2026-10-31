@@ -377,6 +377,9 @@ theorem call_read_site {fr : Frame} {dropped : List DroppedStore} {c c' : Cursor
   · obtain ⟨u, c9, -, h10⟩ := bind_ok h
     obtain ⟨he, -⟩ := pure_ok h10; cases he
   dsimp only at h
+  split at h
+  · obtain ⟨u, c9, -, h10⟩ := bind_ok h
+    obtain ⟨he, -⟩ := pure_ok h10; cases he
   obtain ⟨it, c5, h5, h⟩ := bind_ok h
   obtain ⟨r, c6, h6, h⟩ := bind_ok h
   have hnone : r = none → False := by
@@ -454,12 +457,18 @@ theorem call_read_site {fr : Frame} {dropped : List DroppedStore} {c c' : Cursor
     · obtain ⟨rfl, rfl⟩ := pure_ok h6
       obtain ⟨n2, hn2, rfl⟩ := run_tryItem_some h8
       exact fin_tail false _ _ _ cE n2 (head_tailCall false _) dE' eE' hn2 rfl rfl
-    · obtain ⟨rfl, rfl⟩ := pure_ok h6
-      obtain ⟨n2, hn2, rfl⟩ := run_tryItem_some h8
-      exact fin_tail false _ _ _ cE n2 (head_tailCallPtr false _) dE' eE' hn2 rfl rfl
-    · obtain ⟨rfl, rfl⟩ := pure_ok h6
-      obtain ⟨n2, hn2, rfl⟩ := run_tryItem_some h8
-      exact fin_tail true _ _ _ cE n2 (head_tailCallPtr true _) dE' eE' hn2 rfl rfl
+    · split at h6
+      · obtain ⟨rfl, rfl⟩ := pure_ok h6
+        exact (hnone rfl).elim
+      · obtain ⟨rfl, rfl⟩ := pure_ok h6
+        obtain ⟨n2, hn2, rfl⟩ := run_tryItem_some h8
+        exact fin_tail false _ _ _ cE n2 (head_tailCallPtr false _) dE' eE' hn2 rfl rfl
+    · split at h6
+      · obtain ⟨rfl, rfl⟩ := pure_ok h6
+        obtain ⟨n2, hn2, rfl⟩ := run_tryItem_some h8
+        exact fin_tail true _ _ _ cE n2 (head_tailCallPtr true _) dE' eE' hn2 rfl rfl
+      · obtain ⟨rfl, rfl⟩ := pure_ok h6
+        exact (hnone rfl).elim
     · obtain ⟨rfl, rfl⟩ := pure_ok h6
       exact (hnone rfl).elim
 
@@ -878,8 +887,8 @@ theorem call_sep_uninit {lo hi : Int} {st st' : OpSem.State} {x : X86.State} {of
     simp only [OpSem.State.privateIn, he1, Option.isNone_none, Bool.and_true] at hu
     by_cases hr : off ≤ o ∧ o < off + (List.replicate n AbstractByte.uninit).length
     · have hlt : (o - off).toNat < n := by simp only [List.length_replicate] at hr; omega
-      rw [if_pos (decide_eq_true hr)] at hu
-      exact (hu (by rw [List.getD_eq_getElem?_getD, List.getElem?_replicate, if_pos hlt]; rfl)).elim
+      rw [ite_eq_left (decide_eq_true hr)] at hu
+      exact (hu (by rw [List.getD_eq_getElem?_getD, List.getElem?_replicate, ite_eq_left hlt]; rfl)).elim
     · simp only [hr, decide_false, Bool.false_eq_true, ↓reduceIte] at hu
       exact hs.init o he1 hu
   · intro id1 a1 id2 a2 i j hg1 hg2 hl1 hl2 hi hj heq
@@ -1223,7 +1232,7 @@ theorem call_sep_answer (H : Hyps S) {st0 st1 st2 : OpSem.State} {y : X86.State}
     parts st1 st2 h1 (fun q hq => (hpq q hq).2.2) hfold
 
 set_option maxHeartbeats 2000000 in
-/-- `bodySim_call`. A call: `Call.call_query` to the callee's entry (the items fetched by
+/-- `bodySim_call'`. A call: `Call.call_query` to the callee's entry (the items fetched by
 `steps_of_run_last`), the environment step there (`EnvOutside.call`), and per `SepAcross.call`'s
 answer either its return (`call_return_at`, the result stores fetched by `call_stores_steps`,
 `PE`'s `nop` by `NopRead`) or an unwind to the landing pad (`call_unwind_at`, `PadsLinked`);

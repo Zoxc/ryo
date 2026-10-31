@@ -1,8 +1,8 @@
 //! The inline form of the common VM instructions (design/vm.md, "Inline instructions"):
 //! moves, immediates, addresses (of slots, constants and symbols), address arithmetic, loads
 //! and stores, integer add/sub/logic/multiply, division and remainder, overflow-checked
-//! add/sub/mul, byte swaps, bit counts (`cttz`/`ctlz`), extensions and truncations, shifts and
-//! rotates (by an immediate or a slot), compares (including `cmp3`) and compare-branches, at
+//! add/sub/mul, byte swaps, bit counts (`cttz`/`ctlz`), extensions and truncations, shifts (by an
+//! immediate or a slot) and rotates (by a slot), compares (including `cmp3`) and compare-branches, at
 //! widths up to 64 bits (and 128-bit moves, as two 64-bit halves). They are short native
 //! sequences on `rax` and `rcx` instead of handler calls; the register cache ([`Cache`])
 //! renames `rax` as it emits them.
