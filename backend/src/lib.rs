@@ -256,6 +256,7 @@ impl CodegenBackend for RyoBackend {
         }
         // Usually already computed (metadata encoding, `exported_generic_symbols`); this forces
         // it otherwise, so the results are set.
+        let ryo_t = tcx.prof.generic_activity("ryo_codegen_crate");
         let _ = tcx.collect_and_partition_mono_items(());
         // A crate with no VM code has no image (`partition::vm_enabled`); its output still
         // registers its upstream crates' images.
@@ -265,6 +266,7 @@ impl CodegenBackend for RyoBackend {
         if let Some(results) = results {
             dump_lean::dump(tcx, &self.switches, results);
         }
+        drop(ryo_t);
         // The native CGUs (step 4), compiled by cg_llvm as usual.
         let llvm = self.llvm.codegen_crate(tcx);
         Box::new(RyoOngoingCodegen { llvm, images })
