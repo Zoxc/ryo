@@ -171,7 +171,9 @@ fn build_backend(root: &Path, target: &Path, info: &RustcInfo) -> Result<PathBuf
 }
 
 /// Copies the toolchain's prebuilt std for `triple` into `dist/`, skipping the rustc-dev and
-/// LLVM libraries, as cg_clif does. Also copies the target's `bin/` (the self-contained linker).
+/// LLVM libraries, as cg_clif does, and `lib/self-contained/` (the CRT objects and libc that
+/// musl and windows-gnu link by default). Also copies the target's `bin/` (the self-contained
+/// linker).
 fn install_llvm_sysroot(info: &RustcInfo, dist: &Path, triple: &str) -> Result<(), String> {
     let src_lib = crate::utils::rustlib(&info.sysroot, triple).join("lib");
     if !src_lib.is_dir() {
@@ -180,10 +182,13 @@ fn install_llvm_sysroot(info: &RustcInfo, dist: &Path, triple: &str) -> Result<(
     let dst_lib = crate::utils::rustlib(dist, triple).join("lib");
     for entry in fs::read_dir(&src_lib).map_err(|e| format!("{}: {e}", src_lib.display()))? {
         let entry = entry.map_err(|e| e.to_string())?;
+        let name = entry.file_name();
         if entry.file_type().map_err(|e| e.to_string())?.is_dir() {
+            if name == "self-contained" {
+                crate::utils::copy_dir(&entry.path(), &dst_lib.join(&name))?;
+            }
             continue;
         }
-        let name = entry.file_name();
         if is_std_lib(&name.to_string_lossy()) {
             copy(&entry.path(), &dst_lib.join(&name))?;
         }
