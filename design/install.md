@@ -78,17 +78,22 @@ y install [--target T]... [--sysroot llvm|ryo] [--no-toolchain-install] [--yes] 
    there. Printed, then confirmed (below). `--no-toolchain-install` fails here, printing the
    rustup commands to run, if anything is missing.
 2. **Toolchain**: `rustup toolchain install 1.99.1 --profile minimal`, `rustup component
-   add`, `rustup target add` for what is missing. The manifest is written after each, so a
-   later failure leaves the additions recorded. Checks `rustc +<toolchain> -vV` reports
+   add`, `rustup target add` for what is missing. The manifest records the toolchain after it is
+   installed and the components and targets before they are added (one rustup command can
+   add some and then fail), so a later failure leaves the additions recorded. Checks `rustc +<toolchain> -vV` reports
    1.99.1.
 3. **Build** into `install/build/` and `install/target/` (`dist::build_in`).
 4. **Copy** to `install/<version>.partial/`, rename it to `install/<version>/` (an existing
-   one of the same version is removed first), write `install/current` and the manifest.
+   one of the same version is moved to `<version>.old` first, and back if the rename
+   fails), write `install/current` and the manifest.
 5. **Launchers**: `cargo +1.99.1-<host> install --locked --force --path <checkout>/scripts
    --root <cargo root>` (the pinned toolchain, which is certainly there).
-6. **Previous version**: its `install/<old version>/` is deleted, and targets it added that
+6. **Previous version**: its `install/<old version>/` is deleted, its launchers in an
+   earlier cargo root (if the cargo root changed) are uninstalled, and targets it added that
    this install doesn't need are removed from rustup, and so is what earlier installs added to
-   other toolchains (an older pinned version, another host; all shown in the plan).
+   other toolchains (an older pinned version, another host; all shown in the plan). The
+   manifest records the old versions and cargo roots (`old_versions`, `old_cargo_roots`)
+   until they are cleaned up, so a rerun after a failure finishes the job.
 7. **Report**, including a hint if cargo's bin dir isn't on `PATH` (shell files are never
    edited).
 
@@ -115,6 +120,8 @@ host = "x86_64-unknown-linux-gnu"
 targets = ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
 sysroots = ["llvm"]
 cargo_root = "/home/u/.cargo"
+old_versions = []
+old_cargo_roots = []
 
 [toolchain]
 name = "1.99.1-x86_64-unknown-linux-gnu"
@@ -150,14 +157,15 @@ y uninstall [--keep-toolchain] [--yes] [--dry-run]
 Plans, confirms, then in this order (entry points first, so a half-done uninstall never
 leaves a command pointing at deleted files; `install/` last, since it holds the record):
 
-1. **Launchers**: `cargo uninstall --root <cargo_root> cargo-ryo` if they come from this
-   checkout; gone already: skipped; from elsewhere: kept, "not ours".
+1. **Launchers**: `cargo uninstall --root <cargo_root> cargo-ryo` (and from each of
+   `old_cargo_roots`) if they come from this checkout; gone already: skipped; from elsewhere: kept, "not ours".
 2. **Toolchain** (unless `--keep-toolchain`): what the manifest recorded. A toolchain ryo
    installed is uninstalled, unless it is rustup's default or `rustup override list` names it;
    otherwise the recorded components and targets are removed from the user's toolchain.
    Everything is kept while the launchers belong to another checkout, which may still use it.
    Kept items are listed with the reason.
-3. **`install/`**: deleted entirely (there is no option to keep a cache).
+3. **`install/`**: deleted entirely (there is no option to keep a cache), the manifest last,
+   so a rerun after a failure still knows what to remove.
 
 Without a manifest (`install/` deleted by hand) it only offers to remove this checkout's
 launchers and says it can't know what was added to rustup; with neither:

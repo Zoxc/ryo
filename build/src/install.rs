@@ -78,6 +78,11 @@ pub struct Manifest {
     /// What earlier installs added to other toolchains (an older pinned version, another
     /// host): removed at the end of the next install, or by `y uninstall`.
     pub old_toolchains: Vec<ToolchainRecord>,
+    /// Earlier installed versions whose `install/<version>/` is still to be deleted (by the
+    /// end of the install, or a rerun after it failed).
+    pub old_versions: Vec<String>,
+    /// Earlier cargo roots whose launchers are still to be removed (the cargo root changed).
+    pub old_cargo_roots: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -129,7 +134,8 @@ impl Manifest {
     pub fn to_toml(&self) -> String {
         let mut s = format!(
             "# Written by `y install`; `y uninstall` removes what it records.\n\
-             format = 1\nversion = {}\nbuild_id = {}\nhost = {}\ntargets = {}\nsysroots = {}\ncargo_root = {}\n\n\
+             format = 1\nversion = {}\nbuild_id = {}\nhost = {}\ntargets = {}\nsysroots = {}\ncargo_root = {}\n\
+             old_versions = {}\nold_cargo_roots = {}\n\n\
              [toolchain]\n{}",
             quote(&self.version),
             quote(&self.build_id),
@@ -137,6 +143,8 @@ impl Manifest {
             toml_list(&self.targets),
             toml_list(&self.sysroots),
             quote(&self.cargo_root),
+            toml_list(&self.old_versions),
+            toml_list(&self.old_cargo_roots),
             self.toolchain.toml_fields(),
         );
         for t in &self.old_toolchains {
@@ -182,6 +190,8 @@ impl Manifest {
                 ("", "targets") => m.targets = l()?,
                 ("", "sysroots") => m.sysroots = l()?,
                 ("", "cargo_root") => m.cargo_root = s()?,
+                ("", "old_versions") => m.old_versions = l()?,
+                ("", "old_cargo_roots") => m.old_cargo_roots = l()?,
                 ("toolchain", "name") => t.name = s()?,
                 ("toolchain", "installed_by_ryo") => {
                     t.installed_by_ryo = match value {
@@ -530,6 +540,10 @@ struct InstallPlan {
     previous_version: Option<String>,
     /// Targets an earlier install added that this one doesn't need: removed at the end.
     remove_targets: Vec<String>,
+    /// Earlier versions' `install/<version>/`: deleted at the end.
+    old_versions: Vec<String>,
+    /// Earlier cargo roots holding this checkout's launchers: removed from at the end.
+    old_cargo_roots: Vec<PathBuf>,
     /// The record after this install.
     record: ToolchainRecord,
     /// What earlier installs added to other toolchains: removed at the end.
@@ -549,14 +563,20 @@ impl InstallPlan {
             } else {
                 p(&mut s, format!("  0. Replace ryo {prev}"));
             }
-        } else if !self.remove_targets.is_empty() {
+        } else if !self.remove_targets.is_empty() || !self.old_versions.is_empty() || !self.old_cargo_roots.is_empty() {
             p(&mut s, "  0. At the end, clean up after an earlier install".to_owned());
         }
         // From the manifest, so also without a `current` version (an install that failed early).
         for t in &self.remove_targets {
             p(&mut s, format!("     - remove target {t} from toolchain {} (added by ryo, no longer needed)", self.toolchain));
         }
-        if self.previous_version.is_some() || !self.remove_targets.is_empty() {
+        for v in &self.old_versions {
+            p(&mut s, format!("     - delete {} (an earlier version)", dir_display(&self.install.join(v))));
+        }
+        for r in &self.old_cargo_roots {
+            p(&mut s, format!("     - cargo uninstall --root {} cargo-ryo (the earlier cargo root)", r.display()));
+        }
+        if self.previous_version.is_some() || !self.remove_targets.is_empty() || !self.old_versions.is_empty() || !self.old_cargo_roots.is_empty() {
             s.push('\n');
         }
         for r in &self.old_toolchains {
@@ -704,8 +724,26 @@ fn plan_install(o: &InstallOptions) -> Result<InstallPlan, String> {
     if let Launchers::Other(source) = launchers(&cargo_root)? {
         return Err(other_launchers_error(&source, &cargo_root));
     }
+    let version = version();
+    let previous_version = crate::wrapper_common::current_version(&install);
+    // Versions an earlier install superseded, or a failed one didn't get to delete.
+    let mut old_versions = Vec::new();
+    let earlier = previous.iter().flat_map(|m| m.old_versions.iter().chain([&m.version]));
+    for v in earlier.chain(&previous_version) {
+        if !v.is_empty() && *v != version && !old_versions.contains(v) && install.join(v).exists() {
+            old_versions.push(v.clone());
+        }
+    }
+    // Cargo roots this checkout's launchers were installed into before.
+    let mut old_cargo_roots: Vec<PathBuf> = Vec::new();
+    for r in previous.iter().flat_map(|m| m.old_cargo_roots.iter().chain([&m.cargo_root])) {
+        let r = PathBuf::from(r);
+        if !r.as_os_str().is_empty() && r != cargo_root && !old_cargo_roots.contains(&r) && launchers(&r)? == Launchers::Ours {
+            old_cargo_roots.push(r);
+        }
+    }
     Ok(InstallPlan {
-        version: version(),
+        version,
         host,
         toolchain,
         toolchain_present,
@@ -715,7 +753,9 @@ fn plan_install(o: &InstallOptions) -> Result<InstallPlan, String> {
         have_components,
         have_targets,
         build: o.build.clone(),
-        previous_version: crate::wrapper_common::current_version(&install),
+        previous_version,
+        old_versions,
+        old_cargo_roots,
         install,
         scripts: root().join("scripts"),
         cargo_root,
@@ -763,8 +803,10 @@ fn do_install(plan: &InstallPlan) -> Result<(), String> {
 }
 
 /// Installs the pinned toolchain and the components and targets the plan adds, and returns
-/// the manifest recording them. The manifest is saved after each addition, so a failure
-/// leaves what was added recorded and `y uninstall` removes it.
+/// the manifest recording them. Components and targets are recorded before they are added
+/// (one rustup command may add some and then fail; uninstall only removes what is there),
+/// the toolchain after it is installed, so a failure leaves what was added recorded and `y
+/// uninstall` removes it.
 fn install_toolchain(plan: &InstallPlan) -> Result<Manifest, String> {
     let install = &plan.install;
     let t = &plan.toolchain;
@@ -776,6 +818,9 @@ fn install_toolchain(plan: &InstallPlan) -> Result<Manifest, String> {
     record.targets_added.extend(plan.remove_targets.iter().cloned());
     // Other toolchains' records too (`remove_superseded`).
     manifest.old_toolchains = plan.old_toolchains.clone();
+    // Cleanups `remove_superseded` does, recorded until done, for a rerun after a failure.
+    manifest.old_versions = plan.old_versions.clone();
+    manifest.old_cargo_roots = plan.old_cargo_roots.iter().map(|r| r.display().to_string()).collect();
     let mut done = record.clone();
     done.installed_by_ryo &= plan.toolchain_present;
     done.components_added.retain(|c| !plan.add_components.contains(c));
@@ -787,16 +832,16 @@ fn install_toolchain(plan: &InstallPlan) -> Result<Manifest, String> {
         manifest.save(install)?;
     }
     if !plan.add_components.is_empty() {
-        run(cmd("rustup").args(["component", "add", "--toolchain", t]).args(&plan.add_components))?;
         done.components_added = record.components_added.clone();
         manifest.toolchain = done.clone();
         manifest.save(install)?;
-    }
-    if !plan.add_targets.is_empty() {
-        run(cmd("rustup").args(["target", "add", "--toolchain", t]).args(&plan.add_targets))?;
+        run(cmd("rustup").args(["component", "add", "--toolchain", t]).args(&plan.add_components))?;
     }
     manifest.toolchain = record;
     manifest.save(install)?;
+    if !plan.add_targets.is_empty() {
+        run(cmd("rustup").args(["target", "add", "--toolchain", t]).args(&plan.add_targets))?;
+    }
     let vv = crate::utils::output(cmd("rustc").arg(format!("+{t}")).arg("-vV"))?;
     let release = crate::utils::field(&vv, "release").unwrap_or("?");
     if release != PINNED_VERSION {
@@ -814,8 +859,26 @@ fn install_version(plan: &InstallPlan, build: &Path, build_id: String, manifest:
     eprintln!("[y] install: copying to {}", install.join(&plan.version).display());
     copy_dir(build, &partial)?;
     let dest = install.join(&plan.version);
-    remove_or_rename(&dest)?;
-    fs::rename(&partial, &dest).map_err(|e| format!("renaming {} to {}: {e}", partial.display(), dest.display()))?;
+    // A reinstall moves the installed copy aside and back on failure, so that until the
+    // rename `current` still names a working copy (`do_install`'s "still works").
+    let mut aside = dest.as_os_str().to_owned();
+    aside.push(".old");
+    let aside = PathBuf::from(aside);
+    let moved = dest.exists();
+    if moved {
+        crate::utils::remove_dir_if_exists(&aside)?;
+        fs::rename(&dest, &aside).map_err(|e| format!("renaming {} to {}: {e}", dest.display(), aside.display()))?;
+    }
+    if let Err(e) = fs::rename(&partial, &dest) {
+        if moved {
+            let _ = fs::rename(&aside, &dest);
+        }
+        return Err(format!("renaming {} to {}: {e}", partial.display(), dest.display()));
+    }
+    if moved {
+        // In use (Windows): deleted on the next run (`remove_leftovers`).
+        let _ = fs::remove_dir_all(&aside);
+    }
     write(install.join("current"), format!("{}\n", plan.version))?;
     manifest.version = plan.version.clone();
     manifest.build_id = build_id;
@@ -841,10 +904,18 @@ fn install_launchers(plan: &InstallPlan) -> Result<(), String> {
 fn remove_superseded(plan: &InstallPlan, manifest: &mut Manifest) -> Result<(), String> {
     let install = &plan.install;
     let t = &plan.toolchain;
-    if let Some(prev) = &plan.previous_version
-        && *prev != plan.version
-    {
-        remove_or_rename(&install.join(prev))?;
+    for r in &plan.old_cargo_roots {
+        if launchers(r)? == Launchers::Ours {
+            run(cmd("cargo").args(["uninstall", "--root"]).arg(r).arg("cargo-ryo"))?;
+        }
+    }
+    for v in &plan.old_versions {
+        remove_or_rename(&install.join(v))?;
+    }
+    if !manifest.old_versions.is_empty() || !manifest.old_cargo_roots.is_empty() {
+        manifest.old_versions.clear();
+        manifest.old_cargo_roots.clear();
+        manifest.save(install)?;
     }
     if !plan.remove_targets.is_empty() {
         run(cmd("rustup").args(["target", "remove", "--toolchain", t]).args(&plan.remove_targets))?;
@@ -984,6 +1055,12 @@ fn plan_uninstall(o: &UninstallOptions, manifest: Option<&Manifest>) -> Result<V
             Some(source.clone())
         }
     };
+    for r in manifest.iter().flat_map(|m| &m.old_cargo_roots) {
+        let r = PathBuf::from(r);
+        if r != cargo_root && self::launchers(&r)? == Launchers::Ours {
+            steps.push(Step::Launchers(r));
+        }
+    }
     let Some(m) = manifest else {
         steps.push(Step::Keep("rustup as it is: there is no manifest, so what ryo added to it is unknown".to_owned()));
         return Ok(steps);
@@ -1077,10 +1154,20 @@ pub fn uninstall(o: &UninstallOptions) -> Result<Option<ExitCode>, String> {
     for s in &steps {
         if let Step::RemoveInstall(dir, keep) = s {
             drop(lock);
-            crate::utils::remove_dir_if_exists(dir)?;
-            if let Some(m) = keep {
-                create_dir(dir)?;
-                m.save(dir)?;
+            // The manifest goes last (or is replaced by `keep`), so that after a failure a
+            // rerun still knows what to remove.
+            let manifest = Manifest::path(dir);
+            for entry in fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))? {
+                let path = entry.map_err(|e| e.to_string())?.path();
+                if path == manifest {
+                    continue;
+                }
+                let res = if path.is_dir() { fs::remove_dir_all(&path) } else { fs::remove_file(&path) };
+                res.map_err(|e| format!("removing {}: {e}; rerun ./y.sh uninstall", path.display()))?;
+            }
+            match keep {
+                Some(m) => m.save(dir)?,
+                None => crate::utils::remove_dir_if_exists(dir)?,
             }
             break;
         }
@@ -1115,6 +1202,8 @@ mod tests {
                 components_added: vec![],
                 targets_added: vec!["x86_64-pc-windows-msvc".into()],
             }],
+            old_versions: vec!["0.3.0-40-g1234abc".into()],
+            old_cargo_roots: vec!["/tmp/r".into()],
         };
         assert_eq!(Manifest::parse(&m.to_toml()), Ok(m));
         assert!(Manifest::parse("format = 2\n").is_err());
@@ -1179,6 +1268,8 @@ mod tests {
             previous: None,
             previous_version: None,
             remove_targets: vec![],
+            old_versions: vec![],
+            old_cargo_roots: vec![],
             record: ToolchainRecord { installed_by_ryo: true, ..Default::default() },
             old_toolchains: vec![],
         };
