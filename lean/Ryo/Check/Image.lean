@@ -1,14 +1,16 @@
 /-
 Ryo.Check.Image — the image checks of aot.md §C4 that need no dump: the structure of an image
-object (function table and symbols, relocations, JIT records, header, anchor and `__ryo_main`
-slots) and of the link's registry object, against the decoded code (`ryo-lean check-image`).
+object (function table and symbols, relocations, JIT records, header, anchor field,
+`__ryo_main` slot, ABI tag) and of the link's registry object, against the decoded code (`ryo-lean check-image`).
 
 - `Ryo/Check/Image/Funcs.lean`: the function table, the side-table runs, the function symbols,
   and the signature fields the code shows;
 - `Ryo/Check/Image/Relocs.lean`: the relocations of the text (a second decode by
   relocations), the read-only and writable sections (with the constant relocation table), the
-  JIT records, the header, the registration entry, the anchor and `__ryo_main`;
-- `Ryo/Check/Image/Registry.lean`: the registry stub, and the link-level checks;
+  JIT records, the header, the registration entry, the anchor and `__ryo_main`, and that the
+  object's names carry its ABI tag;
+- `Ryo/Check/Image/Registry.lean`: the registry stub, and the link-level checks (with the
+  tags: the stub registers only images of its own tag);
 - `Ryo/Check/Image/Unwind.lean`: the CIE, each function's FDE rows against the frame rules its
   decoded prologue establishes, and its LSDA against the image's call sites;
 - `Ryo/Check/Image/Pool.lean` and `Ryo/Check/Image/Dump.lean` (separate, `ryo-lean
@@ -32,6 +34,8 @@ structure ObjectResult where
   crateHash : Nat
   cguHash : Nat
   funcs : Nat
+  /-- The ABI tag (`objectTag`), if the object has one. -/
+  tag : Option String
   mismatches : Array String
   main : Option MainSlot
 
@@ -39,9 +43,16 @@ structure ObjectResult where
 def checkObject (o : ImageObject) : ObjectResult :=
   let ds := decodeAll o
   let (mainOut, main) := checkMain o
-  let mismatches := checkFuncs o ds ++ checkTextRelocs o ds ++ checkRoRelocs o ++ checkDataRelocs o ++
-    checkHeader o ++ checkEntry o ++ checkAnchor o ++ mainOut ++ checkOtherRelocs o ++ unwindChecks o ds
-  { symbol := o.symbol, crateHash := o.image.header.crateHash, cguHash := o.image.header.cguHash, funcs := o.funcs.size, mismatches, main }
+  -- Without a tag, the tagged names' checks run with an empty one (and fail).
+  let (tagOut, tag) := match objectTag o.elf with
+    | .ok t => (checkEntry o t, some t)
+    | .error m => (#[s!"entry: {m}"], none)
+  let t := tag.getD ""
+  let mismatches := checkFuncs o ds ++ checkTextRelocs o ds ++ checkRtTags o t ++ checkRoRelocs o t ++
+    checkDataRelocs o t ++ checkHeader o t ++ tagOut ++ checkAnchor o t ++ mainOut ++ checkOtherRelocs o t ++
+    unwindChecks o ds
+  { symbol := o.symbol, crateHash := o.image.header.crateHash, cguHash := o.image.header.cguHash,
+    funcs := o.funcs.size, tag, mismatches, main }
 
 /-- `ryo-lean check-image`: checks the image objects `objs` and the registry object, prints
 each mismatch (prefixed with its object), notes, and a summary; 1 on any mismatch. -/
@@ -49,6 +60,7 @@ def run (objs : List String) (registry : Option String) : IO UInt32 := do
   let mut bad := 0
   let mut funcs := 0
   let mut syms : Array (String × Nat × Nat) := #[]
+  let mut tags : Array (String × String) := #[]
   let mut mains := 0
   for path in objs do
     match Ryo.Obj.readImageObject (← IO.FS.readBinFile path) with
@@ -61,6 +73,7 @@ def run (objs : List String) (registry : Option String) : IO UInt32 := do
       bad := bad + r.mismatches.size
       funcs := funcs + r.funcs
       syms := syms.push (r.symbol, r.crateHash, r.cguHash)
+      if let some t := r.tag then tags := tags.push (path, t)
       if let some m := r.main then
         mains := mains + 1
         let what := match m.func with
@@ -76,6 +89,10 @@ def run (objs : List String) (registry : Option String) : IO UInt32 := do
       let out := checkRegistry e
       for m in out do IO.println s!"{path}: {m}"
       bad := bad + out.size
+      if let .ok t := objectTag e then
+        let out := checkTags t tags
+        for m in out do IO.println m
+        bad := bad + out.size
   let link := checkLink syms mains
   for m in link do IO.println m
   bad := bad + link.size

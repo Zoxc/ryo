@@ -11,20 +11,19 @@ forms with encode, decode and semantics:
   be compared with Rust's byte for byte;
 - the JIT entry prefix (`vm/jit/src/install.rs`, `JIT_ENTRY_PREFIX`):
   `lea r11, [rip + code]; mov [rsp], r11; ret`;
-- the registry constructor (`backend/src/objfile.rs`, `add_registry_ctor`): ELF
-  `lea rdi, [rip + __start_ryo_images]; lea rsi, [rip + __stop_ryo_images]; jmp ryo_vm_register`,
-  PE `lea rcx, [rip + .ryo$a]; lea rdx, [rip + .ryo$z]; jmp ryo_vm_register` or
-  `jmp [rip + __imp_…]`: `ryo_vm_register(start, end)` with the bounds of the link unit's
-  registration entries. Stale: the writer's constructor is now `register(start, end, anchor)`,
-  a third `lea` (ELF `lea rdx`, PE `lea r8`) against the registry anchor, with ABI-tagged names
-  (`ryo_images_<tag>`, `ryo_vm_register_<tag>`), and PE has no import-slot form any more
-  (`lean/PENDING.md`, "Several ryo runtimes"); `XRef` has no anchor yet;
+- the registry constructor (`backend/src/objfile.rs`, `add_registry_ctor`): ELF and Mach-O
+  `lea rdi, [rip + start]; lea rsi, [rip + stop]; lea rdx, [rip + anchor]; jmp ryo_vm_register`,
+  PE `lea rcx, [rip + start]; lea rdx, [rip + stop]; lea r8, [rip + anchor]; jmp
+  ryo_vm_register`: `ryo_vm_register(start, end, anchor)` with the bounds of the link unit's
+  registration entries (ELF `__start_ryo_images_<tag>`/`__stop_…`, PE the `.ryo$<tag>a`/`z`
+  markers, Mach-O `section$start$__DATA$__ryo_<tag10>`/`end`) and its registry anchor
+  (`__ryo_registry_anchor_<tag>`), `ryo_vm_register` being `ryo_vm_register_<tag>` mangled;
 - the trip stubs (`encode.rs`, the counter stubs): these are `Item`s already
   (`lea r11, [rip + record]`, `mov eax, n`, `call [r11 + 8|16]`, `jmp` back), so `entryStub` and
   `headStub` are lists of items, decoded by `decodeItem`.
 
-The references of these forms that `Ref` doesn't name (the entry list's bounds,
-`ryo_vm_register`, its import slot) are `XRef`s. The decoder works as `decodeItem` does: parse a candidate, then
+The references of these forms that `Ref` doesn't name (the entry list's bounds, the anchor,
+`ryo_vm_register`) are `XRef`s. The decoder works as `decodeItem` does: parse a candidate, then
 check that it re-encodes to the bytes (outside its relocated fields) with exactly its
 relocations.
 -/
@@ -41,14 +40,14 @@ open Lean
 inductive XRef
   | ref (r : Ref)
   /-- The start of the link unit's registration entries, the registry constructor's first
-  argument (ELF `__start_ryo_images`, PE the `.ryo$a` marker). -/
+  argument (ELF `__start_ryo_images_<tag>`, PE the `.ryo$<tag>a` marker). -/
   | entriesStart
-  /-- Their end, its second (ELF `__stop_ryo_images`, PE the `.ryo$z` marker). -/
+  /-- Their end, its second (ELF `__stop_ryo_images_<tag>`, PE the `.ryo$<tag>z` marker). -/
   | entriesEnd
-  /-- `ryo_vm_register`. -/
+  /-- The registry anchor `__ryo_registry_anchor_<tag>`, its third. -/
+  | anchor
+  /-- `ryo_vm_register_<tag>`. -/
   | vmRegister
-  /-- `__imp_ryo_vm_register`, its import slot (PE, `ryo_rt` in a DLL). -/
-  | vmRegisterImp
 deriving DecidableEq, Repr, Inhabited, ToJson, FromJson
 
 structure XReloc where
@@ -84,8 +83,6 @@ inductive XItem
   | leaX (r : Reg) (to : XRef)
   /-- `jmp rel32`, relocated. -/
   | jmpX (to : XRef)
-  /-- `jmp [rip + disp32]`, relocated. -/
-  | jmpMemX (to : XRef)
   /-- `mov r11, imm64; call r11` (`49 bb imm64; 41 ff d3`): the JIT's call of a handler or the
   probe out of `rel32` reach (`Item::CallAbs`, `Mode::far_rt`). The relocated field is the
   8-byte `imm64` at +2, the reference's absolute address. -/
@@ -131,7 +128,6 @@ def encode (x : XItem) (pos : BitVec 32) : List UInt8 × List XReloc :=
   | leaX r to =>
     reloc [byte (0x48 ||| (if r.ext then 4 else 0)), 0x8d, byte (0x05 ||| r.low <<< 3)] to
   | jmpX to => reloc [0xe9] to
-  | jmpMemX to => reloc [0xff, 0x25] to
   | callAbs to =>
     ([0x49, 0xbb] ++ List.replicate 8 0 ++ [0x41, 0xff, 0xd3], [⟨pos.toNat + 2, to⟩])
 
@@ -250,11 +246,6 @@ def candidate (c : XCursor) : Option XItem := do
     match ← c.field 1 5 with
     | .inl to => pure (.jmpX to)
     | .inr t => pure (.jmpRel t)
-  else if b0 == 0xff then do
-    if (← g 1) != 0x25 then none
-    match ← c.field 2 6 with
-    | .inl to => pure (.jmpMemX to)
-    | .inr _ => none
   else do
     let (ext, op) ← if b0 == 0x41 then (fun op => (8, op)) <$> g 1 else some (0, b0)
     if 0xb8 ≤ op && op ≤ 0xbf then
@@ -397,15 +388,12 @@ where
 at position 12): `lea r11, [rip + code]; mov [rsp], r11; ret`. -/
 def jitEntryPrefix : List XItem := [.leaR11 12, .movRspR11, .item .ret]
 
-/-- The registry constructor (`add_registry_ctor`) as it was before the ABI tag:
-`ryo_vm_register(start, end)` with the entry list's bounds, ELF or PE, `ryo_vm_register`
-through its import slot (PE, `register_import`, since removed). The current one also passes
-the anchor (see the module doc). -/
-def registryCtor (pe registerImport : Bool) : List XItem :=
-  if pe then
-    [.leaX .rcx .entriesStart, .leaX .rdx .entriesEnd,
-      if registerImport then .jmpMemX .vmRegisterImp else .jmpX .vmRegister]
-  else [.leaX .rdi .entriesStart, .leaX .rsi .entriesEnd, .jmpX .vmRegister]
+/-- The registry constructor (`add_registry_ctor`): `ryo_vm_register(start, end, anchor)` with
+the entry list's bounds and the registry anchor, in the SysV (ELF, Mach-O) or Win64 (`pe`)
+argument registers, as a tail jump. -/
+def registryCtor (pe : Bool) : List XItem :=
+  if pe then [.leaX .rcx .entriesStart, .leaX .rdx .entriesEnd, .leaX .r8 .anchor, .jmpX .vmRegister]
+  else [.leaX .rdi .entriesStart, .leaX .rsi .entriesEnd, .leaX .rdx .anchor, .jmpX .vmRegister]
 
 /-- A function's entry counter stub (`encode.rs`): the record into `r11`, `call [r11 + 8]`
 (`JIT_ENTRY_SLOT`), `jmp` back after the check. -/
@@ -451,7 +439,6 @@ def XItem.exec (ctx : XCtx) (x : XItem) (s : State) : Except Fault State :=
   | .movRspR11 => pure (s0.setMem s0.rsp 8 (s0.reg .r11).toNat)
   | .leaX r to => pure (s0.setReg r (ctx.addrOf to))
   | .jmpX to => pure (s0.jump (ctx.addrOf to))
-  | .jmpMemX to => pure (s0.jump (s0.mem.read64 (ctx.addrOf to)))
   | .callAbs to =>
     let s1 := s0.setReg .r11 (ctx.addrOf to)
     pure ((s1.push next).jump (ctx.addrOf to))

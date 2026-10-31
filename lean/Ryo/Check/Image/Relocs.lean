@@ -1,14 +1,21 @@
 /-
 Ryo.Check.Image.Relocs — the relocations of an image object (aot.md §C4: "Relocations",
-"Symbol slots", "JIT records", "Image header", the anchor and `__ryo_main` slots), against
-the writer's mapping (`ImageWriter::finish_encoded`, `objfile.rs` `write_image`).
+"Symbol slots", "JIT records", "Image header", the anchor field and the `__ryo_main` slot),
+against the writer's mapping (`ImageWriter::finish_encoded`, `objfile.rs` `write_image`).
+
+**The ABI tag.** The object's names carry the ABI tag of the ryo build that wrote it
+(design/build.md#the-abi-tag): its registration section is `ryo_images_<tag>`, and that tag
+(`objectTag`) is the one the other checks hold it to: the header's `abi` is its FNV-1a hash,
+the anchor is `__ryo_registry_anchor_<tag>`, and the runtime symbols are `<name>_<tag>`
+(`ryo_h_<op>_<tag>`, `ryo_hf_<op>_<tag>` in the frame-pointer handler set,
+`ryo_probe_stack_<tag>`, the trips; `checkRtTags`).
 
 **Text.** Every relocated field the decoder meets must carry a relocation of the kind its form
 needs, and no relocation may be anywhere else. The decoder of record (`DecodeObj.decodeFunc`)
 reads the code linked at made-up addresses, which says nothing about where relocations were;
 so each function is decoded a second time from its unlinked bytes with `Fields.relocs`, the
 object's relocations as `ImageObject.refOf` maps them (`R_X86_64_PLT32` with addend −4 against
-`ryo_h_<op>` or `ryo_probe_stack`; `R_X86_64_PC32` into the symbol slots, the code constants,
+a handler `ryo_h_<op>_<tag>` or `ryo_probe_stack_<tag>`; `R_X86_64_PC32` into the symbol slots, the code constants,
 the pool, the data area or the function's JIT record; anything else is a
 mismatch). Here a handler call's opcode is its relocation's symbol; in the linked program
 (Rust's `decode_linked`, since "JIT: Handler opcodes in the instruction list", ff3b0cf) a
@@ -32,7 +39,8 @@ are 0 in the object (RELA: the addend is in the relocation), never `int3`. Reloc
 outside every function, overlapping ones and ones in no image section are mismatches.
 
 **Read-only section**: the header's `data` and `text` fields (`R_X86_64_64` to the start of
-the writable and text sections), the symbol slots (exactly one `R_X86_64_64` + 0 each, against
+the writable and text sections) and its `anchor` field (`R_X86_64_64` + 0 against the undefined
+`__ryo_registry_anchor_<tag>`, which the registry stub defines), the symbol slots (exactly one `R_X86_64_64` + 0 each, against
 a symbol, its `SYM_INDIRECT` flag clear: ELF), and pool pointers (`R_X86_64_64` at 8-aligned
 pool offsets, against one of the image's symbols, or into the pool or the data area); nothing
 else. The header's constant relocation table (`const_relocs`) is exactly the pool offsets of
@@ -42,29 +50,22 @@ check (`Ryo/Check/Image/Pool.lean`).
 **Writable section**: the JIT records (with counters, one per function): `ctr_e` =
 `-JIT_ENTRY_THRESHOLD` (at 0), `ctr_l` = `-JIT_THRESHOLD` (at `JIT_LOOP_CTR`), `func` its
 index, every other byte 0; `entry` and `osr` relocated
-(`R_X86_64_64` + 0) against `ryo_jit_trip_entry` and `ryo_jit_trip_osr`, `header` against the
+(`R_X86_64_64` + 0) against `ryo_jit_trip_entry_<tag>` and `ryo_jit_trip_osr_<tag>`, `header` against the
 image's header; data-area pointers as the pool's (and at most one relocation per offset,
 which the pool gets from `const_relocs`).
 
 **Header**: the image symbol is `__ryo_image_<stable_crate_id>_<cgu_hash>` (each as 16 hex
-digits), `crate_hash` folds the id, the sections are where and as large as the header says
-(the read-only one RELRO; the text exactly `text_size` bytes).
-**Anchor**: one `R_X86_64_64` + 0 against `__ryo_registry_anchor`, the only content of an
-8-byte RELRO section. **Registration entry**: one 8-byte `ryo_images` section
+digits), `crate_hash` folds the id, `abi` hashes the tag, the sections are where and as large
+as the header says (the read-only one RELRO; the text exactly `text_size` bytes).
+**Anchor**: the object's one relocation against `__ryo_registry_anchor_<tag>` is the header's
+`anchor` field's (which pulls the stub into the link and which registration compares with the
+stub's anchor). **Registration entry**: one 8-byte `ryo_images_<tag>` section
 (`SHF_ALLOC | SHF_WRITE | SHF_GNU_RETAIN`), its one `R_X86_64_64` + 0 field against the start
 of the read-only section (the header), which the registry stub's constructor passes to
-`ryo_vm_register` with the other objects' (`Ryo/Check/Image/Registry.lean`). **`__ryo_main`**: at most one, an 8-byte slot with one `R_X86_64_64` + 0
+`ryo_vm_register_<tag>` with the other objects' (`Ryo/Check/Image/Registry.lean`). **`__ryo_main`**: at most one, an 8-byte slot with one `R_X86_64_64` + 0
 against a symbol, which, if this object defines it, is one of its functions; a
 `.data.rel.ro.ryo_main` section that doesn't hold it is a mismatch. Which function it must be
 (`main`'s instance) needs the dump.
-
-**Stale.** This describes, and the checks implement, the image object as it was before the ABI
-tag ("Rt: ABI tag, private runtime per module, run-time merge", `lean/PENDING.md`): the
-writer now relocates the header's `anchor` field (offset 160) against
-`__ryo_registry_anchor_<tag>` instead of writing an anchor slot section, the registration
-section is `ryo_images_<tag>`, and the runtime symbols carry the tag. So these checks reject
-current objects (`checkRoRelocs` on the anchor field, `checkAnchor`, `checkEntry`, the trip
-names) until that update.
 -/
 import Ryo.Check.Image.Common
 
@@ -179,7 +180,7 @@ def allocTarget (o : ImageObject) (names : Array (Option String)) (r : Rela) : O
       else if s.shndx == o.data.index && within o.dataBase 0 dataEnd then none
       else some s!"against `{o.elf.symbolName s}` + {r.addend}, neither the pool nor the data area"
 
-def checkRoRelocs (o : ImageObject) : Array String := Id.run do
+def checkRoRelocs (o : ImageObject) (tag : String) : Array String := Id.run do
   let h := o.image.header
   let mut out : Array String := #[]
   let names := slotNames o
@@ -200,6 +201,9 @@ def checkRoRelocs (o : ImageObject) : Array String := Id.run do
       let (want, what) := if off == 24 then (o.data, "data") else (o.text, "text")
       if !(isSection && sym.any (·.shndx == want.index) && r.addend == 0) then
         out := out.push s!"header `{what}`: {t}, not the start of `{want.name}`"
+    else if off == headerAnchorOff then
+      let ok := sym.any fun s => !s.defined && s.type != Elf.STT_SECTION && s.name == anchorName tag
+      if !(ok && r.addend == 0) then out := out.push s!"header `anchor`: {t}, not {anchorName tag} + 0"
     else if h.symbols.off ≤ off && off < h.symbols.off + 8 * h.symbols.count then
       let k := (off - h.symbols.off) / 8
       if (off - h.symbols.off) % 8 != 0 then
@@ -212,7 +216,7 @@ def checkRoRelocs (o : ImageObject) : Array String := Id.run do
       if off % 8 != 0 then out := out.push s!"pool: {t} at a pool offset that isn't 8-aligned"
       if let some e := allocTarget o names r then out := out.push s!"pool: {t}: {e}"
     else
-      out := out.push s!"read-only: {t} at image offset {off}: not the header's data/text, a symbol slot or a pool pointer"
+      out := out.push s!"read-only: {t} at image offset {off}: not the header's data/text/anchor, a symbol slot or a pool pointer"
   -- The constant relocation table: the pool pointers' offsets, as the writer sorts them.
   let poolOffs := (o.roRelocs.filter fun r => r.type == .abs64 && r.offset ≥ o.roBase + h.consts.off
     && r.offset + 8 ≤ o.roBase + h.consts.off + h.consts.count).map (·.offset - o.roBase - h.consts.off)
@@ -234,7 +238,7 @@ def checkRoRelocs (o : ImageObject) : Array String := Id.run do
       else seen := seen.insert n k
   return out
 
-def checkDataRelocs (o : ImageObject) : Array String := Id.run do
+def checkDataRelocs (o : ImageObject) (tag : String) : Array String := Id.run do
   let h := o.image.header
   let mut out : Array String := #[]
   let names := slotNames o
@@ -258,11 +262,11 @@ def checkDataRelocs (o : ImageObject) : Array String := Id.run do
       let fld := (off - recs.off) % 64
       seen := seen.insert (k, fld) (seen.getD (k, fld) 0 + 1)
       let named (base : String) : Bool :=
-        sym.any fun s => s.type != Elf.STT_SECTION && !s.defined && isRtSymbol base s.name && r.addend == 0
+        sym.any fun s => s.type != Elf.STT_SECTION && !s.defined && isRtSymbol (tagged base tag) s.name && r.addend == 0
       if fld == jitEntrySlot then
-        if !named tripEntryName then out := out.push s!"JIT record {k}: entry: {t}, not {tripEntryName}"
+        if !named tripEntryName then out := out.push s!"JIT record {k}: entry: {t}, not {tagged tripEntryName tag}"
       else if fld == jitOsrSlot then
-        if !named tripOsrName then out := out.push s!"JIT record {k}: osr: {t}, not {tripOsrName}"
+        if !named tripOsrName then out := out.push s!"JIT record {k}: osr: {t}, not {tagged tripOsrName tag}"
       else if fld == jitHeaderOff then
         let ok := sym.any fun s => s.type == Elf.STT_SECTION && s.shndx == o.ro.index &&
           (s.value : Int) + r.addend == o.roBase
@@ -292,15 +296,38 @@ def checkDataRelocs (o : ImageObject) : Array String := Id.run do
       out := out.push s!"JIT record {k}: nonzero bytes besides the counters and func"
   return out
 
-/-! ## Header, sections, the anchor, `__ryo_main` -/
+/-! ## The tag, the header, sections, the anchor, `__ryo_main` -/
 
-def checkHeader (o : ImageObject) : Array String := Id.run do
+/-- The runtime symbols the text calls carry the object's tag: every handler (`ryo_h_<op>`,
+or `ryo_hf_<op>` in the frame-pointer handler set) and the probe, as `refOf` reads them (which
+takes any tag). -/
+def checkRtTags (o : ImageObject) (tag : String) : Array String := Id.run do
+  let fp := o.image.mode.rbpSet
+  let pre := if fp then "ryo_hf_" else "ryo_h_"
+  let mut out : Array String := #[]
+  let mut seen : Std.HashMap Nat Unit := {}
+  for r in o.textRelocs do
+    if seen.contains r.sym then continue
+    seen := seen.insert r.sym ()
+    let some s := relSymbol o.elf r | continue
+    if s.defined then continue
+    let want := match ImageObject.handlerOf? s.name fp with
+      | some op => some (tagged (pre ++ op.info.name) tag)
+      | none => if ImageObject.isProbe s.name then some (tagged ImageObject.probeName tag) else none
+    if let some w := want then
+      if !isRtSymbol w s.name then out := out.push s!"text: `{s.name}` isn't `{w}` (the object's ABI tag)"
+  return out
+
+def checkHeader (o : ImageObject) (tag : String) : Array String := Id.run do
   let h := o.image.header
   let mut out : Array String := #[]
   let want := imageSymbol h.stableCrateId h.cguHash
   if o.symbol != want then out := out.push s!"header: image symbol `{o.symbol}`, stable_crate_id and cgu_hash say `{want}`"
   if h.crateHash != crateHash h.stableCrateId then
     out := out.push s!"header: crate_hash {hex h.crateHash}, stable_crate_id folds to {hex (crateHash h.stableCrateId)}"
+  if h.abi != abiHash tag then
+    out := out.push s!"header: abi {hex h.abi}, the ABI tag `{tag}` hashes to {hex (abiHash tag)}"
+  if h.anchor != 0 then out := out.push s!"header: anchor {hex h.anchor}, not 0 (it is relocated)"
   if o.roBase != 0 || o.dataBase != 0 || o.textBase != 0 then
     out := out.push s!"header: the image doesn't start its sections (read-only at {o.roBase}, writable at {o.dataBase}, text at {o.textBase})"
   if o.ro.size != o.roBase + h.size then
@@ -330,20 +357,21 @@ def slotSection (e : Elf) (s : Section) : Except String Symbol := do
   if sym.type == Elf.STT_SECTION then throw s!"`{s.name}`: against a section"
   pure sym
 
-/-- The registration entry: the one `ryo_images` section, 8 bytes, retained writable data,
+/-- The registration entry: the `ryo_images_<tag>` section, 8 bytes, retained writable data,
 with one `R_X86_64_64` + 0 field against the start of the image's header. -/
-def checkEntry (o : ImageObject) : Array String := Id.run do
+def checkEntry (o : ImageObject) (tag : String) : Array String := Id.run do
   let e := o.elf
-  let some s := match (e.sections.filter (·.name == entriesSection)).toList with
+  let name := entriesSection tag
+  let some s := match (e.sections.filter (·.name == name)).toList with
       | [s] => some s
       | _ => none
-    | #[s!"entry: {(e.sections.filter (·.name == entriesSection)).size} `{entriesSection}` sections, not 1"]
+    | #[s!"entry: {(e.sections.filter (·.name == name)).size} `{name}` sections, not 1"]
   let mut out : Array String := #[]
   let want := Elf.SHF_ALLOC ||| Elf.SHF_WRITE ||| Elf.SHF_GNU_RETAIN
   if s.flags &&& (want ||| Elf.SHF_EXECINSTR) != want then
-    out := out.push s!"entry: `{entriesSection}` flags {s.flags}, not SHF_ALLOC | SHF_WRITE | SHF_GNU_RETAIN"
+    out := out.push s!"entry: `{name}` flags {s.flags}, not SHF_ALLOC | SHF_WRITE | SHF_GNU_RETAIN"
   if s.size != 8 || !allBytes (e.data s) 0 8 0 then
-    out := out.push s!"entry: `{entriesSection}` isn't 8 zero bytes ({s.size} bytes)"
+    out := out.push s!"entry: `{name}` isn't 8 zero bytes ({s.size} bytes)"
   match (e.relocsOf s.index).toList with
   | [r] =>
     let ok := r.offset == 0 && r.type == .abs64 && (relSymbol e r).any fun t =>
@@ -358,21 +386,23 @@ structure MainSlot where
   name : String
   func : Option Nat
 
-def checkAnchor (o : ImageObject) : Array String := Id.run do
+/-- The anchor: the object's only relocation against `__ryo_registry_anchor_<tag>` is the
+header's `anchor` field's (`checkRoRelocs` checks its form), and the object doesn't define it
+(the registry stub does). -/
+def checkAnchor (o : ImageObject) (tag : String) : Array String := Id.run do
   let e := o.elf
+  let name := anchorName tag
+  let mut out : Array String := #[]
+  if e.symbols.any fun s => s.name == name && s.defined then
+    out := out.push s!"anchor: `{name}` is defined in the image object"
   let refs := e.relas.flatMap fun rs => (rs.relocs.filter fun r =>
-    (relSymbol e r).any (·.name == anchorName)).map (rs.target, ·)
+    (relSymbol e r).any (·.name == name)).map (rs.target, ·)
   match refs.toList with
-  | [(sec, _)] =>
-    let some s := e.section? sec | return #["anchor: bad section"]
-    match slotSection e s with
-    | .error m => #[s!"anchor: {m}"]
-    | .ok sym =>
-      if sym.defined then #[s!"anchor: `{anchorName}` is defined in the image object"]
-      else if sec == o.ro.index || sec == o.data.index || sec == o.text.index then
-        #[s!"anchor: the slot is in an image section"]
-      else #[]
-  | l => #[s!"anchor: {l.length} relocations against `{anchorName}`"]
+  | [(sec, r)] =>
+    if sec != o.ro.index || r.offset != o.roBase + headerAnchorOff then
+      out := out.push s!"anchor: {relaText e r} isn't the header's `anchor` field"
+  | l => out := out.push s!"anchor: {l.length} relocations against `{name}`, not 1"
+  return out
 
 /-- `__ryo_main`, if the object has one: mismatches, and what it names. -/
 def checkMain (o : ImageObject) : Array String × Option MainSlot := Id.run do
@@ -397,15 +427,15 @@ def checkMain (o : ImageObject) : Array String × Option MainSlot := Id.run do
   | l => (#[s!"{mainSlotName}: {l.length} symbols"], none)
 
 /-- Relocation sections against sections that aren't the image's, its unwind tables, the
-anchor and `__ryo_main` slots, or the registration entry. -/
-def checkOtherRelocs (o : ImageObject) : Array String := Id.run do
+`__ryo_main` slot, or the registration entry. -/
+def checkOtherRelocs (o : ImageObject) (tag : String) : Array String := Id.run do
   let e := o.elf
   let mut out : Array String := #[]
   for rs in e.relas do
     let some s := e.section? rs.target | continue
     let known := rs.target == o.ro.index || rs.target == o.data.index || rs.target == o.text.index
       || s.name == ".eh_frame" || s.name.startsWith ".gcc_except_table"
-      || s.name == ".data.rel.ro.ryo_anchor" || s.name == entriesSection
+      || s.name == entriesSection tag
       -- The `__ryo_main` slot only where the symbol is (`checkMain` checks it there).
       || (s.name == ".data.rel.ro.ryo_main" &&
         e.symbols.any fun m => m.name == mainSlotName && m.defined && m.shndx == rs.target)

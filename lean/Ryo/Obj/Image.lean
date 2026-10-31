@@ -8,11 +8,11 @@ text sections its header's `data` and `text` fields are relocated against. Ports
 (`vm/bytecode/src/image/mod.rs`) over the object's bytes, and gathers each function's inputs
 to `asm::decode_reduced` (`Ryo.Obj.FuncInputs`).
 
-Layouts are `repr(C)` (`Header` 152 bytes here, `FuncEntry` 36, `CallSiteEntry` 12,
-`FixupEntry` 16). Rust's `Header` has since grown to 168 bytes, with `abi` (at 152) and
-`anchor` (at 160, relocated against the registry anchor) after `cgu_hash`, which this port
-doesn't read yet (`lean/PENDING.md`, "Several ryo runtimes"). Each function's scopes, dropped stores and branch targets are in its
-instruction list (`Ryo.Obj.List`), a run of the instruction-list bytes.
+Layouts are `repr(C)` (`Header` 168 bytes, `FuncEntry` 36, `CallSiteEntry` 12, `FixupEntry`
+16; `image_layouts_are_pinned`). The header ends with `cgu_hash` (at 144), `abi` (152) and
+`anchor` (160, relocated against the registry anchor, which `Ryo/Check/Image/Relocs.lean`
+checks). Each function's scopes, dropped stores and branch targets are in its instruction list
+(`Ryo.Obj.List`), a run of the instruction-list bytes.
 -/
 import Std.Data.HashMap
 import Ryo.Obj.Elf
@@ -45,7 +45,8 @@ def FUNC_COLD : Nat := 4
 def FUNC_INLINE_HINT : Nat := 8
 def FUNC_FLAGS : Nat := FUNC_INLINE_ALWAYS ||| FUNC_INLINE_NEVER ||| FUNC_COLD ||| FUNC_INLINE_HINT
 
-def headerSize : Nat := 152
+/-- `size_of::<Header>()`. -/
+def headerSize : Nat := 168
 
 /-- `image::Span`: offset and element count. -/
 structure Span where
@@ -85,7 +86,16 @@ structure Header where
   /-- `image::cgu_hash` of the codegen unit's name: with `crateHash`, the image's identity in
   the registry. -/
   cguHash : Nat
+  /-- `ryo_bytecode::ABI` of the build that wrote the image: 64-bit FNV-1a of its ABI tag.
+  Registration rejects another build's images. -/
+  abi : Nat
+  /-- The link unit's registry anchor (relocated against `__ryo_registry_anchor_<tag>`; 0 in
+  the unlinked bytes): a runtime registers only the images of its own stub's anchor. -/
+  anchor : Nat
   deriving Repr, Inhabited
+
+/-- `offset_of!(Header, anchor)`. -/
+def headerAnchorOff : Nat := 160
 
 /-- `image::FuncEntry`. -/
 structure FuncEntry where
@@ -167,7 +177,8 @@ def readHeader (b : ByteArray) : Header :=
     codeConsts := span! b 56, fixups := span! b 64, symFlags := span! b 72,
     funcFlags := span! b 80, symbols := span! b 88, consts := span! b 96, lists := span! b 104,
     callSites := span! b 112, mode := u32! b 120, pad := u32! b 124,
-    jitRecords := span! b 128, constRelocs := span! b 136, cguHash := u64! b 144 }
+    jitRecords := span! b 128, constRelocs := span! b 136, cguHash := u64! b 144,
+    abi := u64! b 152, anchor := u64! b headerAnchorOff }
 
 /-- `cast`'s checks: `span.count` elements of `size` bytes at `span.off` lie in `len` bytes,
 and `span.off` is a multiple of `align` (the section start is 8-aligned). -/

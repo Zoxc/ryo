@@ -307,28 +307,27 @@ def callAbs : Except String Unit := do
   let resolve := fun a => if a == probeAt then some (XRef.ref .probe) else none
   expectEq "linked" (decodeX { code := linked, pos := 7, fields := .linked 0x1000 resolve }) (some (x, 13))
 
-/-- `objfile.rs`: the ELF and PE registry constructors' bytes and relocations. -/
+/-- `objfile.rs` `add_registry_ctor`: the ELF (and Mach-O) and PE registry constructors' bytes
+and relocations, as the writer's `code` arrays and relocation offsets have them. -/
 def registry : Except String Unit := do
-  let (bs, rs) := encodeXItems (registryCtor false false)
-  expectEq "elf" (hex bs) "488d3d00000000488d3500000000e900000000"
-  expectEq "elf relocs" rs [⟨3, .entriesStart⟩, ⟨10, .entriesEnd⟩, ⟨15, .vmRegister⟩]
-  let (bs, rs) := encodeXItems (registryCtor true false)
-  expectEq "pe" (hex bs) "488d0d00000000488d1500000000e900000000"
-  expectEq "pe relocs" rs [⟨3, .entriesStart⟩, ⟨10, .entriesEnd⟩, ⟨15, .vmRegister⟩]
-  let (bs, rs) := encodeXItems (registryCtor true true)
-  expectEq "pe import" (hex bs) "488d0d00000000488d1500000000ff2500000000"
-  expectEq "pe import relocs" rs [⟨3, .entriesStart⟩, ⟨10, .entriesEnd⟩, ⟨16, .vmRegisterImp⟩]
-  for (pe, imp) in [(false, false), (true, false), (true, true)] do
-    let xs := registryCtor pe imp
+  let (bs, rs) := encodeXItems (registryCtor false)
+  expectEq "elf" (hex bs) "488d3d00000000488d3500000000488d1500000000e900000000"
+  expectEq "elf relocs" rs [⟨3, .entriesStart⟩, ⟨10, .entriesEnd⟩, ⟨17, .anchor⟩, ⟨22, .vmRegister⟩]
+  let (bs, rs) := encodeXItems (registryCtor true)
+  expectEq "pe" (hex bs) "488d0d00000000488d15000000004c8d0500000000e900000000"
+  expectEq "pe relocs" rs [⟨3, .entriesStart⟩, ⟨10, .entriesEnd⟩, ⟨17, .anchor⟩, ⟨22, .vmRegister⟩]
+  for pe in [false, true] do
+    let xs := registryCtor pe
     let (bs, rs) := encodeXItems xs
     let code := bs.toArray
     let f := XFields.relocs rs.toArray
-    let got := do
-      let (a, n) ← decodeX { code, pos := 0, fields := f }
-      let (b, m) ← decodeX { code, pos := n, fields := f }
-      let (c, _) ← decodeX { code, pos := n + m, fields := f }
-      pure [a, b, c]
-    expectEq "decode" got (some xs)
+    let rec go (pos : Nat) (fuel : Nat) : Option (List XItem) :=
+      match fuel with
+      | 0 => some []
+      | fuel + 1 => if pos ≥ code.size then some [] else do
+        let (x, n) ← decodeX { code, pos, fields := f }
+        pure (x :: (← go (pos + n) fuel))
+    expectEq "decode" (go 0 code.size) (some xs)
 
 /-- The counter stubs (`encode.rs`), as items: `tests/image.rs` checks the same bytes. -/
 def stubs : Except String Unit := do
