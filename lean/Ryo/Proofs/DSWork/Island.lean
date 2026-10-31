@@ -388,9 +388,10 @@ theorem island_allocs' (H : Hyps S) {s s1 : R.RState} {x : X86.State} (hf : Fram
   exact island_allocsOff_foldlM _ hrsp hfpF hwin (H.frameBounds.scopesIn s.pc) h0 hsc
 
 set_option maxRecDepth 100000 in
-/-- A template leaves the code, the rodata and the link slots alone. Proof idea: unfold
-`IslandMayWrite`: below `rsp ≤ x0.rsp` (`ctr_rsp_le`-style from `FrameFacts`) the code, rodata
-are not (`CodeApart`), the link slots are above `rsp`; a `Lend` extent is in the window
+/-- A template leaves the code, the rodata and the link slots alone. The proof unfolds
+`IslandMayWrite`: its stack writes lie below `rsp + shadow` (`rsp = fp - F`, `hf.rsp`; on PE
+the shadow space `[fp - F, fp - F + 32)`), where the code and rodata are not (`CodeApart`), and
+the link slots are above that bound since `shadow ≤ F` (`hF32` on PE); a `Lend` extent is in the window
 (`FrameBounds.scopes`), the code and rodata are not (`CodeApart`'s window clause, `fpAddr_eq`),
 the link slots in none (`LinkPrivate`); a live allocation of `s1`: the code and rodata are in
 none (`CodeApart`: the allocations of `s1` are `s`'s or the scopes', in the window), the link
@@ -565,8 +566,8 @@ set_option maxHeartbeats 1000000 in
 `DecodeLink.link_island`'s reads and `opsAt_of_opsArray`; on PE the `nop` after the call,
 `NopRead`). On PE the template's 32-byte shadow space at the frame's bottom,
 `[fp - F, fp - F + 32)`, lies below the link slots (`32 ≤ F`) and holds no initialized private
-byte after the scopes (the frame separation with the lower bound `-F + 32`), which
-`Island.FrameSep.islandApart` and `island_kept'` need (`hshadow`, `H.peShadow`). -/
+byte after the scopes (the frame separation with the lower bound `-F + 32`) (`hshadow`,
+`H.peShadow`): `Island.FrameSep.islandApart` needs both, `island_kept'` only `32 ≤ F`. -/
 theorem bodySim_island (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (H : Hyps S) {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
     (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
