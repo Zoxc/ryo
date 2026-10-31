@@ -119,7 +119,9 @@ deriving DecidableEq, Repr, Inhabited
 
 def ArgReg.word (a : ArgReg) : Nat := u32 (a.size ||| (if a.xmm then 32 else 0) ||| (a.index <<< 8))
 
-/-- `ArgReg::of`. -/
+/-- `ArgReg::of`. Convention-independent: on PE it still takes integer indices 4 and 5 (which
+`intArg` turns into `rax`) and xmm indices 4 to 7, which Rust's encoders reject since dbb3619
+(`asm::pe_regs_ok`; `lean/PENDING.md`). -/
 def ArgReg.of? (r : Nat) (exact : Bool) : Option ArgReg :=
   let a : ArgReg := ⟨r &&& 0x20 != 0, r &&& 0x1f, r >>> 8⟩
   let int := if exact then 1 ≤ a.size && a.size ≤ 8
@@ -130,7 +132,7 @@ def ArgReg.of? (r : Nat) (exact : Bool) : Option ArgReg :=
 
 /-! ### Fixed sequences -/
 
-/-- `int_arg`: `rdi rsi rdx rcx r8 r9`, PE `rcx rdx r8 r9`. -/
+/-- `int_arg`: `rdi rsi rdx rcx r8 r9`, PE `rcx rdx r8 r9`; `rax` past them. -/
 def intArg (pe : Bool) (i : Nat) : Reg :=
   if pe then [Reg.rcx, .rdx, .r8, .r9].getD i .rax else [Reg.rdi, .rsi, .rdx, .rcx, .r8, .r9].getD i .rax
 
