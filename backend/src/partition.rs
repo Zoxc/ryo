@@ -538,7 +538,11 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
     fn lower(&mut self, entry: Option<Instance<'tcx>>) -> (Vec<CguImage>, Vec<Fresh<'tcx>>) {
         let tcx = self.tcx;
         let settings = image_settings(tcx, self.rt, self.mode, self.switches);
-        let reuse = tcx.dep_graph.is_fully_enabled() && !tcx.sess.opts.unstable_opts.disable_incr_comp_backend_caching && !self.switches.dumps_any();
+        // `RYO_ASM_CHECK` checks code as it is encoded: a reused image would go unchecked.
+        let reuse = tcx.dep_graph.is_fully_enabled()
+            && !tcx.sess.opts.unstable_opts.disable_incr_comp_backend_caching
+            && !self.switches.dumps_any()
+            && !self.switches.asm_check;
         let cx = ImageCx { tcx, rt: self.rt, mode: self.mode, switches: self.switches, entry, settings: &settings, reuse };
         let parts: Vec<ImagePart<'tcx>> = {
             let _t = tcx.prof.generic_activity("ryo_lower");

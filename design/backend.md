@@ -334,8 +334,8 @@ depends on changed (`partition.rs`, `image_part`; the side data and work product
   previous session's list into the metadata. So with VM code the override reads the
   forever-red dep node (as rustc's `create_def` does) and reruns every session; it is cheap,
   and an unchanged result keeps its dependents green.
-- Not reused: with `RYO_DUMP`, `RYO_DUMP_CODE` or `RYO_DUMP_LEAN` (their output covers the
-  images built), and under `-Zdisable-incr-comp-backend-caching`. `RYO_STATS` prints
+- Not reused: with `RYO_DUMP`, `RYO_DUMP_CODE`, `RYO_DUMP_NATIVE` or `RYO_DUMP_LEAN` (their
+  output covers the images built), with `RYO_ASM_CHECK` (it checks the images built), and under `-Zdisable-incr-comp-backend-caching`. `RYO_STATS` prints
   `ryo: <n> of <m> images reused`; the `incremental` check rebuilds each revision unchanged
   and expects every image reused and the same executable.
 
@@ -509,7 +509,8 @@ Environment variables read by the backend (and `y test`):
 - `RYO_NO_VM` keeps every function native.
 - `RYO_ASM_CHECK` reads every function's machine code back to the reduced set
   (`asm::decode_reduced`), encodes it again (`asm::encode_reduced`) and panics unless it is
-  the same, with the same side data ([vm.md](vm.md#reduced-instructions)).
+  the same, with the same side data ([vm.md](vm.md#reduced-instructions)). It turns image
+  reuse off.
 - `RYO_ASM_ALIGN=0` turns off the 16-byte alignment of loop heads
   ([vm.md](vm.md#machine-code)).
 - `RYO_BACKEND_MARKER` prints `ryo backend: init` from `init` and `ryo backend: partition`
