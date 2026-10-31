@@ -77,7 +77,8 @@ hypothesis fails: those calls aren't covered).
   saved registers restored as `ArgRet.ret_step`'s epilogue does.
 
 **Hypotheses** beyond the shape: `rsp = fp - F` in the body (`hsp`; `RRel` doesn't carry it; for
-the tail call, as `ret_step`, only without a frame pointer), no byte the relations read on the
+the tail call, as `ret_step`, only without a frame pointer and on PE, whose epilogue starts with
+`add rsp, F`, with `F + 8 < 2^31`), no byte the relations read on the
 stack below `rsp` (`Handler.StackApart`: initialized private bytes and live allocations) nor
 where the callee may write unless it's in the outgoing area (`CallApart`: initialized private
 bytes; both from `FrameSep`, `FrameSep.stackApart`/`FrameSep.callApart`), the symbol slots off the stack (`SymsApart`, for the push),
@@ -846,8 +847,10 @@ theorem argBytes_length (pe : Bool) (y : X86.State) (r : R.Reg) :
   cases r <;> simp [argBytes, R.Reg.width, leEncode_length]
 
 open Ryo.Proofs.ArgRet in
-/-- The argument loads against `argRegs`: memory unchanged, only the convention's integer argument
-registers and `r11` changed, each listed register relating, the others kept. -/
+/-- The argument loads against `argRegs`: memory unchanged, among the integer registers only the
+convention's argument registers and `r11` changed, each listed register relating, the others
+kept. The loads also write the `xmm` argument registers (`movss`/`movsd`/`movups`,
+`movd xmm, r11`), which this doesn't state. -/
 theorem exec_params (ctx : Ctx) (pe : Bool) {st : OpSem.State} {x0 : X86.State} (hr : Rel st x0) :
     ∀ (ws : List (BitVec 32)) (regs : R.Regs) (its : List Item) (y : X86.State),
       R.argRegs st ws = .ok regs → paramItems pe ws = some its → y.mem = x0.mem →
@@ -1377,7 +1380,8 @@ theorem call_unwind (ctx : Ctx) {c : R.Code} {s : R.RState} {x1 x' : X86.State}
 /-! ### Tail calls -/
 
 /-- A tail call: the loads, the epilogue and the jump reach the callee's entry related to R's
-`Exit.tailCall` (see the module comment). Without a frame pointer `hsp` gives `rsp = fp - F`. -/
+`Exit.tailCall` (see the module comment). Without a frame pointer and on PE (whose epilogue is
+`add rsp, F; pop rbp`) `hsp` gives `rsp = fp - F` and `F + 8 < 2^31`. -/
 theorem tail_call_step (ctx : Ctx) {c : R.Code} {s : R.RState} {x : X86.State}
     {ch : OpSem.Choice} {op : Reduced.Opcode} {w : Bool} {f : Full.Opcode} {fo : R.Opnd Nat}
     {ws : List (BitVec 32)} {items : List Item} {fin : R.Final}
