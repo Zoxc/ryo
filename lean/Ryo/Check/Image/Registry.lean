@@ -19,6 +19,11 @@ aot.md §C4 "Registry object"), the same for every crate, and the link-level che
   `ryo_vm_register` rejects), and the link has at most one `__ryo_main`.
 
 ELF only (the PE and Mach-O stubs are out of scope).
+
+**Stale.** This is the stub as it was before the ABI tag (`lean/PENDING.md`, "Several ryo
+runtimes"): the writer now names `__ryo_registry_anchor_<tag>`, `ryo_images_<tag>` and
+`ryo_vm_register_<tag>` (mangled), and its constructor has a third `lea rdx, [rip + anchor]`
+(26 bytes, four relocations), so `checkRegistry` rejects current stubs until that update.
 -/
 import Ryo.Check.Image.Common
 import Ryo.X86.Extra

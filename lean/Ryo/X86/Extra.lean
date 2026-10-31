@@ -15,7 +15,10 @@ forms with encode, decode and semantics:
   `lea rdi, [rip + __start_ryo_images]; lea rsi, [rip + __stop_ryo_images]; jmp ryo_vm_register`,
   PE `lea rcx, [rip + .ryo$a]; lea rdx, [rip + .ryo$z]; jmp ryo_vm_register` or
   `jmp [rip + __imp_…]`: `ryo_vm_register(start, end)` with the bounds of the link unit's
-  registration entries;
+  registration entries. Stale: the writer's constructor is now `register(start, end, anchor)`,
+  a third `lea` (ELF `lea rdx`, PE `lea r8`) against the registry anchor, with ABI-tagged names
+  (`ryo_images_<tag>`, `ryo_vm_register_<tag>`), and PE has no import-slot form any more
+  (`lean/PENDING.md`, "Several ryo runtimes"); `XRef` has no anchor yet;
 - the trip stubs (`encode.rs`, the counter stubs): these are `Item`s already
   (`lea r11, [rip + record]`, `mov eax, n`, `call [r11 + 8|16]`, `jmp` back), so `entryStub` and
   `headStub` are lists of items, decoded by `decodeItem`.
@@ -394,9 +397,10 @@ where
 at position 12): `lea r11, [rip + code]; mov [rsp], r11; ret`. -/
 def jitEntryPrefix : List XItem := [.leaR11 12, .movRspR11, .item .ret]
 
-/-- The registry constructor (`add_registry_ctor`): `ryo_vm_register(start, end)` with the
-entry list's bounds, ELF or PE, `ryo_vm_register` through its import slot (PE,
-`register_import`). -/
+/-- The registry constructor (`add_registry_ctor`) as it was before the ABI tag:
+`ryo_vm_register(start, end)` with the entry list's bounds, ELF or PE, `ryo_vm_register`
+through its import slot (PE, `register_import`, since removed). The current one also passes
+the anchor (see the module doc). -/
 def registryCtor (pe registerImport : Bool) : List XItem :=
   if pe then
     [.leaX .rcx .entriesStart, .leaX .rdx .entriesEnd,

@@ -12,14 +12,17 @@ namespace Ryo.Check.Image
 
 open Ryo.Obj Ryo.Vm Ryo.Vm.R
 
-/-- `ryo_rt`'s symbols the image objects reference (`objfile.rs`), before mangling. -/
+/-- The symbols the image objects reference (`objfile.rs`), before mangling: `ryo_rt`'s
+trips and `ryo_vm_register`, the registry stub's anchor and the binary's `__ryo_main` slot.
+Untagged: the writer now appends the ABI tag (`<name>_<tag>`) to all of them but
+`__ryo_main`, which these checks don't follow yet (`lean/PENDING.md`, "Several ryo runtimes"). -/
 def tripEntryName : String := "ryo_jit_trip_entry"
 def tripOsrName : String := "ryo_jit_trip_osr"
 def anchorName : String := "__ryo_registry_anchor"
 def mainSlotName : String := "__ryo_main"
 def registerName : String := "ryo_vm_register"
-/-- The ELF section of the registration entries (`objfile.rs` `ELF_ENTRIES`), and the bounds
-the linker defines for it. -/
+/-- The ELF section of the registration entries (`objfile.rs` `elf_entries`, now
+`ryo_images_<tag>`), and the bounds the linker defines for it. -/
 def entriesSection : String := "ryo_images"
 def entriesStartName : String := "__start_" ++ entriesSection
 def entriesStopName : String := "__stop_" ++ entriesSection
