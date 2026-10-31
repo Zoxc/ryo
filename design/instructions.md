@@ -702,8 +702,8 @@ jcc t                      ; e, l, b; inverted with !
 
 #### `br.eq`, `br.lt.{s,u}`, `br.gt.{s,u}` `.imm.wN a, imm, t`
 
-(and `!`.) The same with a constant right operand, and `SwitchInt` on one value
-(`br.eq.imm`).
+(and `!`.) The same with a constant right operand, and `SwitchInt` on one value, or on two
+at `w8`–`w64` (`br.eq.imm` per value).
 
 Inline at `w8`–`w64`: `cmp [fp + a], imm; jcc t` (a 64-bit immediate that doesn't fit goes
 through `rcx`, as in the compares).
@@ -713,10 +713,11 @@ At `w128` both compare-branch families are handler calls.
 #### `switch.dense.wN` and `switch.sparse.wN`
 
 `switch.dense.wN s, base, t_default, n, t_0 … t_{n-1}` is a jump table on `s - base`, for
-a `SwitchInt` whose values span at most 1024 and at most twice the case count plus 4.
+a `SwitchInt` of three or more values (two or more at `w128`) whose values span at most
+1024 and at most twice the case count plus 4.
 
 `switch.sparse.wN s, t_default, n, (v_i, t_i)…` is the other `SwitchInt`s of more than one
-value, the values sorted (unsigned); the handler scans linearly for `n ≤ 4` and searches
+value (more than two below `w128`), the values sorted (unsigned); the handler scans linearly for `n ≤ 4` and searches
 binary above.
 
 Handlers `ryo_h_SwitchDenseW8` … and `ryo_h_SwitchSparseW8` … (`switch_dense`,

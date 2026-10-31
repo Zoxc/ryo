@@ -63,8 +63,9 @@ pub enum Fused<'tcx> {
 /// A niche switch with at most this many tested arms branches on the tag with `br.eq.imm`.
 const NICHE_TESTS_MAX: usize = 4;
 
-/// A switch whose values span (`hi - lo + 1`) at most this many, and at most
-/// `2 * cases + 4`, uses a jump table (`switch.dense`).
+/// A switch of three or more values (two or more at `w128`; fewer are `br.eq.imm`s) whose
+/// values span (`hi - lo + 1`) at most this many, and at most `2 * cases + 4`, uses a jump
+/// table (`switch.dense`).
 const DENSE_MAX_SPAN: u128 = 1024;
 
 impl<'a, 'tcx> FnCx<'a, 'tcx> {
