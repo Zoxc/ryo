@@ -334,7 +334,8 @@ fn cargo_root() -> Result<PathBuf, String> {
 }
 
 /// cargo's `install.root` config as seen from the checkout (`install.root = "<path>" #
-/// <file>`); a relative path is relative to the directory holding the file's `.cargo/`.
+/// <file>`, or a TOML literal string `'<path>'` when the path needs escaping, as any Windows
+/// path does); a relative path is relative to the directory holding the file's `.cargo/`.
 fn config_install_root() -> Option<PathBuf> {
     let out = capture(
         cmd("cargo").args(["-Zunstable-options", "config", "get", "--show-origin", "install.root"]).current_dir(root()).env("RUSTC_BOOTSTRAP", "1"),
@@ -343,7 +344,9 @@ fn config_install_root() -> Option<PathBuf> {
     .filter(|o| o.status.success())?;
     let rest = out.stdout.trim().strip_prefix("install.root = ")?;
     let (value, origin) = rest.rsplit_once(" # ").unwrap_or((rest, ""));
-    let path = PathBuf::from(unquote(value.trim())?);
+    let value = value.trim();
+    let literal = value.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')).map(str::to_owned);
+    let path = PathBuf::from(literal.or_else(|| unquote(value))?);
     if path.is_relative()
         && let Some(base) = Path::new(origin.trim()).parent().and_then(Path::parent)
     {
@@ -546,9 +549,14 @@ impl InstallPlan {
             } else {
                 p(&mut s, format!("  0. Replace ryo {prev}"));
             }
-            for t in &self.remove_targets {
-                p(&mut s, format!("     - remove target {t} from toolchain {} (added by ryo, no longer needed)", self.toolchain));
-            }
+        } else if !self.remove_targets.is_empty() {
+            p(&mut s, "  0. At the end, clean up after an earlier install".to_owned());
+        }
+        // From the manifest, so also without a `current` version (an install that failed early).
+        for t in &self.remove_targets {
+            p(&mut s, format!("     - remove target {t} from toolchain {} (added by ryo, no longer needed)", self.toolchain));
+        }
+        if self.previous_version.is_some() || !self.remove_targets.is_empty() {
             s.push('\n');
         }
         for r in &self.old_toolchains {
