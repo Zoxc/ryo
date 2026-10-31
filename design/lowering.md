@@ -122,7 +122,7 @@ so a MIR change in a toolchain bump is a compile error. The tables below follow 
 - `_0` (the return value) is a normal slot.
 - **Temporaries** of the statement being lowered go below the locals, and are freed between
   statements, which marks them dead for the assembler (`Asm::dead`). So does the read of a
-  local that nothing reads again (`frame::dead_after_read`).
+  local that nothing reads again (`uses::LocalUses::dead_after_read`).
 - **Exception slot**: functions with cleanup or terminate actions, or an `UnwindResume`, have
   one 8-byte slot where landing pads store the exception object ([Unwinding](#unwinding)).
 - **Outgoing area**: the stack arguments of the calls a function makes, and island
