@@ -127,7 +127,7 @@ pub fn run(f: &mut Func, mem: Option<&dyn ConstMem>) {
     dse::dse(f);
     simplify::simplify(f);
     // `simplify` may have aliased the parameter a load's base was to a constant address.
-    if copies::copies(f) || mem.is_some_and(|_| lvn::const_loads(f)) {
+    if copies::copies(f) || mem.is_some_and(|m| lvn::const_loads(f, m)) {
         lvn::lvn(f, mem);
     }
     fold::fold(f);

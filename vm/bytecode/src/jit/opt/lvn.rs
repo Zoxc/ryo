@@ -463,11 +463,17 @@ fn const_at(f: &Func, p: Value, off: i32) -> Option<ConstAt> {
     }
 }
 
-/// Whether a load of `f` reads a constant address (that value numbering may fold).
-pub(super) fn const_loads(f: &Func) -> bool {
+/// Whether a load of `f` reads a constant address `mem` can serve (that value numbering may
+/// fold: [`fold_const_load`]).
+pub(super) fn const_loads(f: &Func, mem: &dyn ConstMem) -> bool {
     f.layout.iter().flat_map(|b| &f.blocks[b.idx()].insts).any(|&i| {
         let id = &f.insts[i.idx()];
-        matches!(id.op, Op::Load(_, off) if const_at(f, id.args[0], off).is_some())
+        let reads = |off: i32, w: u8| const_at(f, id.args[0], off).is_some_and(|a| mem.read(a, w).is_some());
+        match id.op {
+            Op::Load(16, off) => reads(off, 8) && off.checked_add(8).is_some_and(|o| reads(o, 8)),
+            Op::Load(w @ (1 | 2 | 4 | 8), off) => reads(off, w),
+            _ => false,
+        }
     })
 }
 
