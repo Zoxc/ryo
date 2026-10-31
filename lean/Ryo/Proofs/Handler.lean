@@ -11,8 +11,9 @@ shape's control flow) implements R's step of that instruction (`Ryo.Vm.R.Sem.ste
   `mov dword [rsp + 32], imm`).
 - `exec_setup`: a setup of register arguments only (`args.length ≤ (handlerRegs pe).length`)
   puts each argument's value (`argVal`: `rbp`, `rax`, the immediate, `ρ`'s address of the
-  argument, `Linked`) in its register (`ArgsIn`), and changes only those registers, the flags
-  and `rip`. (PE's stack argument, the `atomic.cxchg` handlers', writes the frame's bottom: its
+  argument, `Linked`) in its register (`ArgsIn`), keeps memory, the `xmm`s and every register
+  outside the six SysV argument registers (`X86.argRegs`, also on PE, where `setup_exec` gives
+  the stronger fact), and moves `rip` past the items. (PE's stack argument, the `atomic.cxchg` handlers', writes the frame's bottom: its
   step is open.)
 - `HandlerContract`: what a handler call does, as a trusted assumption on an abstract return
   relation `Ret h x x'` (`x` just after `call h`, at `h`'s linked entry, `AtHandler`; `x'`
@@ -22,7 +23,10 @@ shape's control flow) implements R's step of that instruction (`Ryo.Vm.R.Sem.ste
   choices with the relations (`HRel`: `Rel` and `MemRel`) kept, the control result in
   `rax`/`al` (`CtlIn`), `rsp` popped, the callee-saved registers kept, and x86 memory changed
   only at the frame's write ranges, in live allocations, in runtime-owned bytes and on the
-  stack below `rsp`.
+  stack below `rsp`. On PE that last part is too strong: a Win64 handler may also write its
+  32-byte home space and stack argument above its return address (`[rsp + 8, rsp + 48)` at its
+  entry), which `MayWrite` leaves out (`Island.IslandMayWrite` widens its bound by `shadow`);
+  widening it here is open.
 - `StackApart` (no initialized private frame byte and no live allocation byte on the stack
   below `rsp`, where the call pushes): `StackApart.rel` keeps `Rel` and `MemRel` across a
   change confined to that stack; `FrameSep.stackApart` derives it from the frame separation;
@@ -30,7 +34,8 @@ shape's control flow) implements R's step of that instruction (`Ryo.Vm.R.Sem.ste
   the stack below `rsp` is non-empty and the byte at `rsp - 1` is private.
 - `handler_op_sound`: from `HRel st x`, the setup and the call reach the state after the
   instruction, related to `opSem`'s. `br_tail`: a `br` handler's tail (`test al, al; jz/jnz t`)
-  branches exactly when `Then.succ` takes it (not yet composed with the setup and the call).
+  branches exactly when `Then.succ` takes it (composed with the setup and the call in
+  `Shapes.lean`, `handler_step_br`).
 
 The x86 side is item lists run in order (`execItems`, with the call's return through `Ret`),
 not fetched from memory: the composition into `decode_sound` places them at their positions.
@@ -392,8 +397,9 @@ def AllocsApart (lo : BitVec 64) (st : OpSem.State) (x : X86.State) : Prop :=
 
 /-- No byte the relations read is on the stack below `rsp` (where the call pushes): no
 initialized private frame byte (an `Uninit` one relates to any x86 byte), no live allocation's
-byte (`AllocsApart`; escaped frame bytes are allocation bytes). Over every private byte, as it
-was first stated, it was false whenever `[lo, rsp)` is non-empty (`stackApart_all_false`). -/
+byte (`AllocsApart`; escaped frame bytes are allocation bytes). Over every byte `byteAt` reads,
+as it was first stated (`StackApartAll`), it was false whenever `[lo, rsp)` is non-empty and the
+byte at `rsp - 1` is private (`stackApart_all_false`). -/
 def StackApart (lo : BitVec 64) (st : OpSem.State) (x : X86.State) : Prop :=
   (∀ o : Int, -2 ^ 63 ≤ o → o < 2 ^ 63 → st.escapedAt o = none → st.frame o ≠ .uninit →
     ¬ InStack lo x.rsp (fpAddr x o)) ∧
