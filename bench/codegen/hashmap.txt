@@ -3001,35 +3001,31 @@ fn hashbrown::raw::RawTable::<(u64, u64)>::erase (frame 64, args 0, ret 0)
 L0:
     call $0, fn0, 0, [4294967288, 8, 4294967264, 264]
     imm.w8 $-49, 0
-    br! $-49, L4
-    jmp L3
+    br! $-49, L3
+    jmp L2
 L1:
     mov.w64 $-40, $-32
+    jmp L7
 L2:
-    call.sym $0, sym1, 0, [4294967256, 8]
-    jmp L8
-L3:
     unreachable
-L4:
+L3:
     mov.w64 $-48, $-16
     mov.w64 $-40, $-48
     imm.w8 $-49, 0
-    br! $-49, L7
-    jmp L6
-L5:
+    br! $-49, L6
+    jmp L5
+L4:
     jmp L1
-L6:
+L5:
     unreachable
-L7:
+L6:
     imm.w64 $-56, 18446744073709551615
     ptr.index $-32, $-40, $-56, 16
-    jmp L5
-L8:
+    jmp L4
+L7:
     ret $0, 0
   cleanup L0 -> continue
-  cleanup L2 -> continue
   fn0 = hashbrown::raw::RawTable::<(u64, u64)>::erase_no_drop
-  sym1 = std::ptr::drop_glue::<(u64, u64)> - shim(None)
 
 fn hashbrown::raw::RawTable::<(u64, u64)>::erase_no_drop (frame 96, args 0, ret 0)
     arg $-8, 8
@@ -5150,27 +5146,27 @@ L4:
     mov.w64 $-312, $-24
     ; escape align 8 $-304, 56 bytes
     addr $-320, $-280
+    mov.w64 $-560, $-320
     load.w64 $-592, [$-312 + 0]
     load.w64 $-584, [$-312 + 8]
     load.w64 $-576, [$-312 + 16]
     load.w64 $-568, [$-312 + 24]
-    load.w64 $-624, [$-320 + 0]
-    load.w64 $-616, [$-320 + 8]
-    load.w64 $-608, [$-320 + 16]
-    load.w64 $-600, [$-320 + 24]
+    load.w64 $-624, [$-560 + 0]
+    load.w64 $-616, [$-560 + 8]
+    load.w64 $-608, [$-560 + 16]
+    load.w64 $-600, [$-560 + 24]
     mov.w64 $-632, $-312
     store.w64 [$-632 + 0], $-624
     store.w64 [$-632 + 8], $-616
     store.w64 [$-632 + 16], $-608
     store.w64 [$-632 + 24], $-600
-    mov.w64 $-640, $-320
-    store.w64 [$-640 + 0], $-592
-    store.w64 [$-640 + 8], $-584
-    store.w64 [$-640 + 16], $-576
-    store.w64 [$-640 + 24], $-568
+    store.w64 [$-560 + 0], $-592
+    store.w64 [$-560 + 8], $-584
+    store.w64 [$-560 + 16], $-576
+    store.w64 [$-560 + 24], $-568
     jmp L18
 L5:
-    ; end $-640, 88 bytes
+    ; end $-632, 80 bytes
     ; escape align 8 $-304, 56 bytes
     addr $-384, $-280
 L6:

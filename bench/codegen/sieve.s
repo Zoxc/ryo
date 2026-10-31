@@ -1403,9 +1403,6 @@ L0:
     mov     rdx,[rdx+10h]
     mov     [rsp+8],rax
     mov     [rsp+10h],rdx
-    mov     rdi,[rsp+8]
-    mov     rsi,[rsp+10h]
-    call    qword ptr [sym0]
     add     rsp,38h
     ret
 L1:

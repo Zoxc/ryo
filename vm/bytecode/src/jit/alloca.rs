@@ -143,8 +143,8 @@ fn forward<S: Clone>(code: &Code, entry: S, mut run: impl FnMut(usize, &mut S, &
 const NONE: u16 = u16::MAX;
 const CONFLICT: u16 = u16::MAX - 1;
 
-pub fn analyze(code: &Code, frame_size: u32) -> Result<Frame, Unsupported> {
-    let mut fb = bytes(code, frame_size)?;
+pub fn analyze(code: &Code, frame_size: u32, pe: bool) -> Result<Frame, Unsupported> {
+    let mut fb = bytes(code, frame_size, pe)?;
     let (mut allocas, lay) = classify(&mut fb);
     let (shapes, wshape, mut res) = reaching_shapes(code, &lay, &mut allocas)?;
     let (mut vars, var_of) = vars(&shapes, &lay, &allocas);
@@ -185,8 +185,11 @@ impl Of {
 }
 
 /// The frame's bytes from the accesses and scopes of `code`.
-fn bytes(code: &Code, frame_size: u32) -> Result<FrameBytes, Unsupported> {
+fn bytes(code: &Code, frame_size: u32, pe: bool) -> Result<FrameBytes, Unsupported> {
     let f = frame_size as i64;
+    // Where an island's argument block starts: the bottom of the outgoing area, past the
+    // shadow space on PE (abi.rs).
+    let arg_block = -f + if pe { 32 } else { 0 };
     // The bytes: `[-F, hi)`, `hi` past the incoming arguments accessed.
     let mut hi = RET_AREA;
     for i in &code.insns {
@@ -264,9 +267,11 @@ fn bytes(code: &Code, frame_size: u32) -> Result<FrameBytes, Unsupported> {
                         read[b] = true;
                         opaque[b] = true
                     }
+                    // An island reads its operands, but for its argument block, which (like a
+                    // call's stack arguments) belongs to the outgoing area.
                     How::Block => {
                         opaque[b] = true;
-                        read[b] |= !island
+                        read[b] |= !(island && a.off as i64 == arg_block)
                     }
                     How::BlockWrite => opaque[b] = true,
                     How::Write => {}

@@ -6,7 +6,8 @@
 //! Widths `w` are operand sizes in bytes (1, 2, 4 or 8). Byte forms take a REX prefix whenever
 //! a byte register is spl/bpl/sil/dil, so they never mean ah/ch/dh/bh. The SSE2 forms for
 //! vectors take `xmm` registers by number; their packed operations are register to register
-//! only (a legacy SSE memory operand must be aligned), loads and stores `movdqu`.
+//! only (a legacy SSE memory operand must be aligned), loads and stores `movdqu`, but
+//! for the frame's 16-byte-aligned spill slots, which use `movdqa`.
 
 use alloc::vec::Vec;
 

@@ -333,9 +333,9 @@ fn cut_copies(insns: &mut [RInsn], mem: Option<&dyn super::opt::ConstMem>) {
     let mut whole: BTreeSet<i32> = BTreeSet::new();
     let mut copies = Vec::new();
     for (i, ri) in insns.iter().enumerate() {
+        // A copy's only access yet is the read of its pointer slot, if it has one.
         if let Kind::Copy { .. } = ri.kind {
             copies.push(i);
-            continue;
         }
         for a in &ri.accs {
             if matches!(a.how, How::Read | How::Write | How::Update) && matches!(a.size, 1 | 2 | 4 | 8 | 16) {

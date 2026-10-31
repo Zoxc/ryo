@@ -635,7 +635,8 @@ pub enum Term {
     },
 }
 
-/// Immediate dominators by block, `None` for the roots and unreachable blocks.
+/// Immediate dominators by block, `None` for the roots, unreachable blocks and blocks whose
+/// immediate dominator is the virtual root above the roots ([`Func::idoms`]).
 #[derive(Clone)]
 pub struct Idoms(pub Vec<Option<Block>>);
 
@@ -795,7 +796,8 @@ pub enum BlockKind {
     Body,
     /// The OSR entry of AOT loop head `n` ([`crate::asm::Decoded::heads`]): no predecessors.
     Osr(u32),
-    /// A landing pad stub, one per call site.
+    /// A landing pad stub, one per call site (inlining makes the copied calls that unwind out
+    /// of the callee share the inlined call's).
     Stub,
 }
 
@@ -805,7 +807,7 @@ pub struct BlockData {
     pub insts: Vec<Inst>,
     pub term: Term,
     /// The predecessors, each with the index of its edge here ([`Term::edges`]).
-    pub preds: Vec<(Block, u16)>,
+    pub preds: Vec<(Block, u32)>,
     pub kind: BlockKind,
     /// The AOT loop head this block starts at, if any.
     pub head: Option<u32>,
@@ -896,7 +898,7 @@ impl Func {
         for b in live {
             let t = core::mem::replace(&mut self.blocks[b.idx()].term, Term::None);
             for (k, e) in t.edges().enumerate() {
-                self.blocks[e.to.idx()].preds.push((b, k as u16));
+                self.blocks[e.to.idx()].preds.push((b, k as u32));
             }
             self.blocks[b.idx()].term = t;
         }
@@ -1037,7 +1039,7 @@ impl Func {
     /// Sets the terminator of `b` and records it as its successors' predecessor.
     pub fn terminate(&mut self, b: Block, t: Term) {
         for (k, e) in t.edges().enumerate() {
-            self.blocks[e.to.idx()].preds.push((b, k as u16));
+            self.blocks[e.to.idx()].preds.push((b, k as u32));
         }
         self.blocks[b.idx()].term = t;
     }
@@ -1138,7 +1140,9 @@ impl Func {
     }
 
     /// The immediate dominators (Cooper, Harvey, Kennedy), with a virtual root above the
-    /// roots ([`Func::is_root`]): `None` for those and for unreachable blocks.
+    /// roots ([`Func::is_root`]): `None` for those, for unreachable blocks and for blocks only the
+    /// virtual root dominates (reached from two roots, as a loop head from the entry and an
+    /// OSR entry).
     pub fn idoms(&self, rpo: &[Block]) -> Idoms {
         self.idoms_by(rpo, |_| true)
     }
@@ -1274,6 +1278,12 @@ impl Func {
                 if ws.len() != id.args.len() {
                     return Err(format!("{i} in {b}: {} arguments, wants {}", id.args.len(), ws.len()));
                 }
+                // Of the outgoing area, an island names only its argument block (alloca::bytes).
+                if let Op::Island(x) = &id.op
+                    && x.ops.iter().any(|s| matches!(*s, SlotRef::Alloca(a, off) if self.allocas[a.idx()].kind == AllocaKind::Outgoing && off != if self.pe { 32 } else { 0 }))
+                {
+                    return Err(format!("{i} in {b}: an island operand in the outgoing area that isn't its argument block"));
+                }
                 for (&a, &w) in id.args.iter().zip(&ws) {
                     check(a, b, k as u32 + 1, w)?;
                 }
@@ -1295,24 +1305,27 @@ impl Func {
             if matches!(bd.term, Term::None) {
                 return Err(format!("{b} has no terminator"));
             }
-            // `BrCmp` and tail calls read at known widths, the rest at least a byte.
-            let tws: Vec<u8> = match &bd.term {
-                Term::BrCmp { w, .. } => alloc::vec![*w, *w],
+            // `BrCmp`, switches and tail calls read at known widths, the rest at least a byte.
+            let tws: Option<Vec<u8>> = match &bd.term {
+                Term::BrCmp { w, .. } => Some(alloc::vec![*w, *w]),
+                Term::Switch { .. } => Some(alloc::vec![8]),
                 Term::TailCall { call, .. } => {
                     let mut v: Vec<u8> = Vec::new();
                     if call.target == CallTarget::Ptr {
                         v.push(8);
                     }
                     v.extend(call.regs.iter().map(|r| r.size.min(8) as u8));
-                    v
+                    Some(v)
                 }
-                _ => Vec::new(),
+                _ => None,
             };
-            if !tws.is_empty() && tws.len() != bd.term.uses().count() {
+            if let Some(tws) = &tws
+                && tws.len() != bd.term.uses().count()
+            {
                 return Err(format!("{b}: {} terminator operands, wants {}", bd.term.uses().count(), tws.len()));
             }
             for (k, u) in bd.term.uses().enumerate() {
-                check(u, b, end, tws.get(k).copied().unwrap_or(1))?;
+                check(u, b, end, tws.as_ref().and_then(|t| t.get(k).copied()).unwrap_or(1))?;
             }
             if let Term::BrOvf { .. } = bd.term
                 && !matches!(bd.insts.last().map(|i| &self.insts[i.idx()].op), Some(Op::Ovf(..)))

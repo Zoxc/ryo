@@ -1,4 +1,4 @@
-//! OSR-transparent loop facts (design/jit.md, "OSR-transparent facts"): every cyclic head
+//! OSR-transparent loop facts (design/jit.md, "OSR-transparent constants"): every cyclic head
 //! has its OSR entry as an extra predecessor, whose arguments are `OsrLoad`s of the AOT
 //! frame. A forward analysis may leave those edges out: what holds of a head's parameters
 //! on every normal edge holds when the head is entered by OSR too, as the AOT frame holds
@@ -35,12 +35,12 @@ pub fn osr_landing(f: &Func, b: Block) -> bool {
 }
 
 /// `b`'s predecessors but its OSR entry, each with the index of its edge into `b`.
-pub fn normal_preds(f: &Func, b: Block) -> impl Iterator<Item = (Block, u16)> + '_ {
+pub fn normal_preds(f: &Func, b: Block) -> impl Iterator<Item = (Block, u32)> + '_ {
     f.blocks[b.idx()].preds.iter().copied().filter(move |&(p, _)| !osr_edge(f, p))
 }
 
 /// The argument edge `k` of `p` passes for parameter `n` of its target, resolved.
-pub fn edge_arg(f: &Func, p: Block, k: u16, n: usize) -> Value {
+pub fn edge_arg(f: &Func, p: Block, k: u32, n: usize) -> Value {
     f.resolve(f.blocks[p.idx()].term.edge(k as usize).args[n])
 }
 

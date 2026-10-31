@@ -20,10 +20,10 @@
 //!   to the pool are UB, so nothing kills these.
 //!
 //! What may write what: a store through a pointer may write any other pointer's bytes and
-//! the escaped (or pinned) allocas, never the others; a store to an alloca only its own
-//! bytes; a handler the allocas its operands name and, if it touches memory, what a pointer
-//! store may; a call every escaped alloca, the outgoing area and anything through a
-//! pointer; an island anything. Replaced values become aliases, resolved at the end.
+//! the escaped (or pinned) allocas, never the others; a store to an alloca its own
+//! bytes, and if the alloca is escaped or pinned what pointers may reach; a handler the
+//! allocas its operands name and, if it touches memory, what a pointer store may; a call
+//! every escaped or pinned alloca, the outgoing area and anything through a pointer; an island anything. Replaced values become aliases, resolved at the end.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -468,10 +468,23 @@ fn const_at(f: &Func, p: Value, off: i32) -> Option<ConstAt> {
 pub(super) fn const_loads(f: &Func, mem: &dyn ConstMem) -> bool {
     f.layout.iter().flat_map(|b| &f.blocks[b.idx()].insts).any(|&i| {
         let id = &f.insts[i.idx()];
-        let reads = |off: i32, w: u8| const_at(f, id.args[0], off).is_some_and(|a| mem.read(a, w).is_some());
-        match id.op {
-            Op::Load(16, off) => reads(off, 8) && off.checked_add(8).is_some_and(|o| reads(o, 8)),
-            Op::Load(w @ (1 | 2 | 4 | 8), off) => reads(off, w),
+        let Op::Load(w, off) = id.op else { return false };
+        // The base and offset `fold_addr` leaves.
+        let (p, off) = match f.def(f.resolve(id.args[0])) {
+            ValueDef::Inst(d, 0) => match f.insts[d.idx()].op {
+                Op::PtrAdd(c) => match (off as i64).checked_add(c).and_then(|k| i32::try_from(k).ok()) {
+                    Some(k) => (f.insts[d.idx()].args[0], k),
+                    None => (id.args[0], off),
+                },
+                _ => (id.args[0], off),
+            },
+            _ => (id.args[0], off),
+        };
+        let read = |off: i32, w: u8| const_at(f, f.resolve(p), off).and_then(|a| mem.read(a, w));
+        match w {
+            // Only plain halves fold.
+            16 => [Some(off), off.checked_add(8)].into_iter().all(|o| matches!(o.and_then(|o| read(o, 8)), Some(PoolRead::Bits(_)))),
+            1 | 2 | 4 | 8 => read(off, w).is_some(),
             _ => false,
         }
     })

@@ -382,7 +382,9 @@ handlers. Each is:
   one modulo 16 (so every byte keeps its alignment);
 - **outgoing**: the longest run from the frame's bottom of bytes nothing reads and no
   pointer reaches (the stack arguments the calls read, and island argument blocks), kept at
-  the JIT frame's bottom;
+  the JIT frame's bottom. An island operand reads its bytes, but for one at the argument
+  block's place (`fp - F`, `fp - F + 32` on PE), so no other island operand is outgoing
+  (`Func::verify` checks), and an inlined callee's stack arguments can't clobber one;
 - **incoming**: positive offsets, the caller's argument area, never moved. Its fields that
   are only read (whole, not overlapping) are variables too, loaded at the entry.
 

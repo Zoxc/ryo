@@ -332,7 +332,7 @@ impl Walk {
     }
 
     /// The facts the edge `k` of `p`'s terminator brings.
-    fn edge_facts(&mut self, f: &Func, p: Block, k: u16) {
+    fn edge_facts(&mut self, f: &Func, p: Block, k: u32) {
         let taken = k == 0;
         match f.blocks[p.idx()].term {
             Term::BrCmp { cc, w, a, b, .. } => self.assume(f, if taken { cc } else { cc.negate() }, w, a, b),

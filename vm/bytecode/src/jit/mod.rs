@@ -268,6 +268,6 @@ fn built(d: &crate::asm::Decoded, mode: crate::asm::Mode, mem: Option<&dyn opt::
         return Err(Unsupported("mode"));
     }
     let code = decode::decode(d, mode, mem)?;
-    let fr = alloca::analyze(&code, d.frame_size)?;
+    let fr = alloca::analyze(&code, d.frame_size, mode.pe)?;
     build::build(&code, &fr, d.frame_size, mode)
 }

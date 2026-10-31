@@ -664,11 +664,7 @@ fn <std::vec::Vec<bool> as std::ops::Drop>::drop (frame 48, args 0, ret 0)
     mov.w64 $-16, $-40
     mov.w64 $-40, $-24
     mov.w64 $-32, $-16
-L0:
-    call.sym $0, sym0, 0, [4294967256, 8, 4294967264, 264]
     ret $0, 0
-  cleanup L0 -> continue
-  sym0 = std::ptr::drop_glue::<[bool]> - shim(None)
 
 fn <std::vec::Vec<bool> as std::ops::Index<usize>>::index (frame 96, args 0, ret 8) [hint]
     arg $-16, 8

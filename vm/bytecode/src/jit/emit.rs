@@ -2336,6 +2336,14 @@ fn osr_code(f: &Func, al: &Alloc, mode: Mode, fr: &Frame, lab: &[u32], post_at: 
             }
         }
         regs.sort_by_key(|&(r, _)| r == R::Rdx);
+        // Without a frame pointer the CFA moves back to `rsp` (`fp - low`) before `rdx`, which
+        // the rule above names, may get a parameter.
+        let dwarf = !fp && !mode.pe;
+        if dwarf {
+            let mut v = Vec::new();
+            cfa::def_cfa(&mut v, cfa::RSP, low + 16);
+            cfi.push((w.code.len() as u32, v));
+        }
         for (r, s) in regs {
             w.load_src(r, s);
         }
@@ -2346,6 +2354,9 @@ fn osr_code(f: &Func, al: &Alloc, mode: Mode, fr: &Frame, lab: &[u32], post_at: 
         } else {
             // `rsp` is `fp - low`.
             w.lea(R::Rsp, mem_of(R::Rsp, (low - f_jit) as i32));
+            if dwarf {
+                cfi.push((w.code.len() as u32, cfa_offset(f_jit + 16)));
+            }
         }
         osr::jmp_landing(&mut w.code, if mode.pe { post_at } else { post_at.next_multiple_of(16) }, lab[head.idx()]);
     }

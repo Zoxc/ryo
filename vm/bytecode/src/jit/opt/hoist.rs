@@ -188,7 +188,7 @@ fn runs(f: &Func, an: &Analysis, l: &Loop, b: Block) -> bool {
 
 /// A new block with `h`'s parameters that `edges` (into `h`) go to instead, jumping on to `h`
 /// with them.
-fn split_edges(f: &mut Func, h: Block, edges: &[(Block, u16)]) -> Block {
+fn split_edges(f: &mut Func, h: Block, edges: &[(Block, u32)]) -> Block {
     let p = f.block(BlockKind::Body);
     let ws: Vec<u8> = f.blocks[h.idx()].params.iter().map(|&v| f.w(v)).collect();
     let args: Vec<Value> = ws.iter().map(|&w| f.param(p, w)).collect();
@@ -209,7 +209,7 @@ fn jmp_args(f: &Func, b: Block) -> &[Value] {
 fn licm(f: &mut Func, an: &Analysis, l: &Loop) -> bool {
     let h = l.head;
     let osr = f.blocks[h.idx()].preds.iter().map(|&(p, _)| p).find(|&p| osr_edge(f, p));
-    let entries: Vec<(Block, u16)> = normal_preds(f, h).filter(|&(p, _)| !l.body[p.idx()]).collect();
+    let entries: Vec<(Block, u32)> = normal_preds(f, h).filter(|&(p, _)| !l.body[p.idx()]).collect();
     if entries.is_empty() {
         return false;
     }
@@ -335,20 +335,31 @@ fn licm(f: &mut Func, an: &Analysis, l: &Loop) -> bool {
     // that runs once would pay for a new one, a callee-saved register's save and restore say).
     // A candidate that doesn't move keeps its operands live in the loop: until nothing more
     // stays.
+    // Each freed operand's register goes to one cheap candidate (`claimed`).
     let moved: Vec<bool> = loop {
+        let mut claimed = alloc::vec![false; f.values.len()];
         let moved: Vec<bool> = cand
             .iter()
             .map(|&i| {
                 let id = &f.insts[i.idx()];
-                let every = || l.latches.iter().all(|&p| an.ndom.dominates(id.block, p));
-                let frees = || {
-                    id.args.iter().any(|&a| match f.def(a) {
-                        ValueDef::Inst(j, _) => !used[a.idx()] && !outside[a.idx()] && class(f, &f.insts[j.idx()].op) != Some(Class::Remat),
-                        ValueDef::Param(..) => !used[a.idx()] && !outside[a.idx()],
-                        _ => false,
-                    })
-                };
-                id.results().any(|r| used[r.idx()]) && (expensive(&id.op) || (!has_call && every() && frees()))
+                if !id.results().any(|r| used[r.idx()]) {
+                    return false;
+                }
+                if expensive(&id.op) {
+                    return true;
+                }
+                if has_call || !l.latches.iter().all(|&p| an.ndom.dominates(id.block, p)) {
+                    return false;
+                }
+                let freed = id.args.iter().copied().find(|&a| {
+                    !claimed[a.idx()]
+                        && match f.def(a) {
+                            ValueDef::Inst(j, _) => !used[a.idx()] && !outside[a.idx()] && class(f, &f.insts[j.idx()].op) != Some(Class::Remat),
+                            ValueDef::Param(..) => !used[a.idx()] && !outside[a.idx()],
+                            _ => false,
+                        }
+                });
+                freed.inspect(|a| claimed[a.idx()] = true).is_some()
             })
             .collect();
         let mut more = false;
@@ -427,7 +438,19 @@ fn licm(f: &mut Func, an: &Analysis, l: &Loop) -> bool {
             let mut xs = Vec::with_capacity(args.len());
             for &a in &args {
                 let x = match f.def(a) {
-                    ValueDef::Param(p, n) if p == h && (n as usize) < nparams => jmp_args(f, cb)[n as usize],
+                    ValueDef::Param(p, n) if p == h && (n as usize) < nparams => {
+                        // In a new preheader, what every entry passes, if it's one value: not
+                        // the preheader's parameter, which an outer loop couldn't hoist past.
+                        let one = |f: &Func| {
+                            let mut vs = entries.iter().map(|&(e, k)| f.blocks[e.idx()].term.edge(k as usize).args[n as usize]);
+                            let v = vs.next()?;
+                            vs.all(|x| x == v).then_some(v)
+                        };
+                        match (new_pre && cb == pre).then(|| one(f)).flatten() {
+                            Some(v) => v,
+                            None => jmp_args(f, cb)[n as usize],
+                        }
+                    }
                     ValueDef::Inst(j, _) if in_loop(f, a) && !is_cand[a.idx()] => {
                         // An address, recomputed here.
                         match map[c].iter().find(|m| m.0 == a) {

@@ -33,7 +33,13 @@ struct P<'a> {
     /// A field needed a parameter on a landing pad stub, whose edges move nothing (a stub of
     /// several invokes, after inlining): its alloca can't be promoted.
     stuck: Option<AllocaId>,
+    /// How deep [`P::at_start`] recurses: past [`MAX_DEPTH`] the alloca is left out like a
+    /// stuck one, as a stack overflow on the JIT thread wouldn't unwind.
+    depth: u32,
 }
+
+/// How deep [`P::at_start`] may recurse through predecessors (a few frames each).
+const MAX_DEPTH: u32 = 1000;
 
 impl P<'_> {
     fn at_end(&mut self, b: Block, field: u32) -> Value {
@@ -47,6 +53,18 @@ impl P<'_> {
         if let Some(&v) = self.entry.get(&(b.0, field)) {
             return v;
         }
+        let (a, _, w) = self.fields[field as usize];
+        if self.depth >= MAX_DEPTH || self.stuck.is_some() {
+            self.stuck.get_or_insert(a);
+            return self.f.value(ValueDef::Undef, w);
+        }
+        self.depth += 1;
+        let v = self.at_start_preds(b, field);
+        self.depth -= 1;
+        v
+    }
+
+    fn at_start_preds(&mut self, b: Block, field: u32) -> Value {
         let (a, off, w) = self.fields[field as usize];
         let preds: Vec<Block> = self.f.blocks[b.idx()].preds.iter().map(|p| p.0).collect();
         let v = match (self.f.blocks[b.idx()].kind, preds.len()) {
@@ -100,7 +118,7 @@ pub fn promote(f: &mut Func) -> bool {
     }
 }
 
-/// [`promote`] of the allocas `ok` allows, or the alloca that got stuck at a stub.
+/// [`promote`] of the allocas `ok` allows, or the alloca that got stuck at a stub (or too deep).
 fn try_promote(f: &mut Func, mut ok: Vec<bool>) -> Result<bool, AllocaId> {
     let na = f.allocas.len();
     let mut live: Vec<Block> = f.live_blocks();
@@ -191,7 +209,7 @@ fn try_promote(f: &mut Func, mut ok: Vec<bool>) -> Result<bool, AllocaId> {
             }
         }
     }
-    let mut p = P { f, fields, last, entry: BTreeMap::new(), params: Vec::new(), osr_loads: Vec::new(), stuck: None };
+    let mut p = P { f, fields, last, entry: BTreeMap::new(), params: Vec::new(), osr_loads: Vec::new(), stuck: None, depth: 0 };
     let mut dead: Vec<Inst> = Vec::new();
     for &b in &live {
         let mut cur: BTreeMap<u32, Value> = BTreeMap::new();

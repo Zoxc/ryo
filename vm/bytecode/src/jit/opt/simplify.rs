@@ -443,8 +443,8 @@ fn merge_blocks(f: &mut Func) -> bool {
             for k in 0..t.edges().len() {
                 let to = t.edge(k).to.idx();
                 for pr in f.blocks[to].preds.iter_mut() {
-                    if *pr == (Block(s as u32), k as u16) {
-                        *pr = (Block(b as u32), k as u16);
+                    if *pr == (Block(s as u32), k as u32) {
+                        *pr = (Block(b as u32), k as u32);
                     }
                 }
             }

@@ -304,31 +304,19 @@ fn <std::hint::select_unpredictable::DropOnPanic<*const (u32, u32)> as std::ops:
     arg $-8, 8
     load.w64 $-16, [$-8 + 0]
     mov.w64 $-24, $-16
-L0:
-    call.sym $0, sym0, 0, [4294967272, 8]
     ret $0, 0
-  cleanup L0 -> continue
-  sym0 = std::ptr::drop_glue::<*const (u32, u32)> - shim(None)
 
 fn <std::hint::select_unpredictable::DropOnPanic<*const u32> as std::ops::Drop>::drop (frame 32, args 0, ret 0)
     arg $-8, 8
     load.w64 $-16, [$-8 + 0]
     mov.w64 $-24, $-16
-L0:
-    call.sym $0, sym0, 0, [4294967272, 8]
     ret $0, 0
-  cleanup L0 -> continue
-  sym0 = std::ptr::drop_glue::<*const u32> - shim(None)
 
 fn <std::hint::select_unpredictable::DropOnPanic<*mut u32> as std::ops::Drop>::drop (frame 32, args 0, ret 0)
     arg $-8, 8
     load.w64 $-16, [$-8 + 0]
     mov.w64 $-24, $-16
-L0:
-    call.sym $0, sym0, 0, [4294967272, 8]
     ret $0, 0
-  cleanup L0 -> continue
-  sym0 = std::ptr::drop_glue::<*mut u32> - shim(None)
 
 fn <std::iter::Enumerate<I> as std::iter::Iterator>::fold::enumerate::<&u32, u64, {closure@bench/sort.rs:46:37: 46:51}>::{closure#0} (frame 144, args 0, ret 8)
     arg $-16, 8
@@ -1227,11 +1215,7 @@ fn <std::vec::Vec<(u32, u32)> as std::ops::Drop>::drop (frame 48, args 0, ret 0)
     mov.w64 $-16, $-40
     mov.w64 $-40, $-24
     mov.w64 $-32, $-16
-L0:
-    call.sym $0, sym0, 0, [4294967256, 8, 4294967264, 264]
     ret $0, 0
-  cleanup L0 -> continue
-  sym0 = std::ptr::drop_glue::<[(u32, u32)]> - shim(None)
 
 fn <std::vec::Vec<(u32, u32)> as std::ops::Index<usize>>::index (frame 96, args 0, ret 8) [hint]
     arg $-16, 8
@@ -1471,11 +1455,7 @@ fn <std::vec::Vec<u32> as std::ops::Drop>::drop (frame 48, args 0, ret 0)
     mov.w64 $-16, $-40
     mov.w64 $-40, $-24
     mov.w64 $-32, $-16
-L0:
-    call.sym $0, sym0, 0, [4294967256, 8, 4294967264, 264]
     ret $0, 0
-  cleanup L0 -> continue
-  sym0 = std::ptr::drop_glue::<[u32]> - shim(None)
 
 fn <std::vec::Vec<u32> as std::vec::spec_extend::SpecExtend<&u32, std::slice::Iter<'_, u32>>>::spec_extend (frame 64, args 0, ret 0)
     arg $-8, 8
@@ -9890,23 +9870,20 @@ fn std::hint::select_unpredictable::<*const (u32, u32)> (frame 176, args 0, ret 
     island sym1, [4294967120, 4294967240]
     mov.w64 $-112, $-104
     mov.w64 $-120, $-56
+    jmp L3
 L0:
-    call.sym $0, sym2, 0, [4294967176, 8]
-    jmp L5
-L1:
     ; lend $-176, 0 bytes
     ; lend $-56, 0 bytes
-    island sym3, [4294967120, 4294967240]
-    jmp L6
-L2:
+    island sym2, [4294967120, 4294967240]
+    jmp L4
+L1:
     resume $-64
-L3:
     ; escape align 8 $-112, 8 bytes
     addr $-144, $-112
-L4:
-    call $0, fn4, 0, [4294967152, 8]
-    jmp L2
-L5:
+L2:
+    call $0, fn3, 0, [4294967152, 8]
+    jmp L1
+L3:
     mov.w64 $-120, $-112
     mov.w64 $-128, $-72
     mov.w64 $-136, $-80
@@ -9915,33 +9892,28 @@ L5:
     mov.w64 $-160, $-136
     ; lend $-176, 24 bytes
     ; lend $-120, 8 bytes
-    island sym5, [4294967120, 4294967176]
-    jmp L1
-L6:
+    island sym4, [4294967120, 4294967176]
+    jmp L0
+L4:
     mov.w64 $-8, $-120
     ; end $-112, 8 bytes
     ; end $-80, 8 bytes
     ; end $-72, 8 bytes
     ret $-8, 8
-L7:
-    call.sym $0, sym6, 0, []
+L5:
+    call.sym $0, sym5, 0, []
     unreachable
-L8:
+L6:
     lpad $-64
-    jmp L3
-L9:
-    lpad $-64
-    jmp L7
-  cleanup L0 -> L8
-  cleanup L2 -> continue
-  cleanup L4 -> L9 (catch)
+    jmp L5
+  cleanup L1 -> continue
+  cleanup L2 -> L6 (catch)
   sym0 = island ryo_island_call[FnDef(DefId(2:38987 ~ core[efd5]::intrinsics::select_unpredictable), Binder { value: [*mut *const (u32, u32)], bound_vars: [] }), (bool, *mut *const (u32, u32), *mut *const (u32, u32)), *mut *const (u32, u32)]
   sym1 = island ryo_island_call[FnDef(DefId(2:38987 ~ core[efd5]::intrinsics::select_unpredictable), Binder { value: [*mut *const (u32, u32)], bound_vars: [] }), (bool, *mut *const (u32, u32), *mut *const (u32, u32)), *mut *const (u32, u32)]
-  sym2 = std::ptr::drop_glue::<*const (u32, u32)> - shim(None)
-  sym3 = island ryo_island_call[FnDef(DefId(2:2127 ~ core[efd5]::intrinsics::assert_inhabited), Binder { value: [*const (u32, u32)], bound_vars: [] }), (), ()]
-  fn4 = std::ptr::drop_glue::<std::hint::select_unpredictable::DropOnPanic<*const (u32, u32)>> - shim(Some(std::hint::select_unpredictable::DropOnPanic<*const (u32, u32)>))
-  sym5 = island ryo_island_call[FnDef(DefId(2:38987 ~ core[efd5]::intrinsics::select_unpredictable), Binder { value: [std::mem::MaybeUninit<*const (u32, u32)>], bound_vars: [] }), (bool, std::mem::MaybeUninit<*const (u32, u32)>, std::mem::MaybeUninit<*const (u32, u32)>), std::mem::MaybeUninit<*const (u32, u32)>]
-  sym6 = core::panicking::panic_in_cleanup
+  sym2 = island ryo_island_call[FnDef(DefId(2:2127 ~ core[efd5]::intrinsics::assert_inhabited), Binder { value: [*const (u32, u32)], bound_vars: [] }), (), ()]
+  fn3 = std::ptr::drop_glue::<std::hint::select_unpredictable::DropOnPanic<*const (u32, u32)>> - shim(Some(std::hint::select_unpredictable::DropOnPanic<*const (u32, u32)>))
+  sym4 = island ryo_island_call[FnDef(DefId(2:38987 ~ core[efd5]::intrinsics::select_unpredictable), Binder { value: [std::mem::MaybeUninit<*const (u32, u32)>], bound_vars: [] }), (bool, std::mem::MaybeUninit<*const (u32, u32)>, std::mem::MaybeUninit<*const (u32, u32)>), std::mem::MaybeUninit<*const (u32, u32)>]
+  sym5 = core::panicking::panic_in_cleanup
 
 fn std::hint::select_unpredictable::<*const u32> (frame 176, args 0, ret 8) [always]
     arg $-9, 1
@@ -9974,23 +9946,20 @@ fn std::hint::select_unpredictable::<*const u32> (frame 176, args 0, ret 8) [alw
     island sym1, [4294967120, 4294967240]
     mov.w64 $-112, $-104
     mov.w64 $-120, $-56
+    jmp L3
 L0:
-    call.sym $0, sym2, 0, [4294967176, 8]
-    jmp L5
-L1:
     ; lend $-176, 0 bytes
     ; lend $-56, 0 bytes
-    island sym3, [4294967120, 4294967240]
-    jmp L6
-L2:
+    island sym2, [4294967120, 4294967240]
+    jmp L4
+L1:
     resume $-64
-L3:
     ; escape align 8 $-112, 8 bytes
     addr $-144, $-112
-L4:
-    call $0, fn4, 0, [4294967152, 8]
-    jmp L2
-L5:
+L2:
+    call $0, fn3, 0, [4294967152, 8]
+    jmp L1
+L3:
     mov.w64 $-120, $-112
     mov.w64 $-128, $-72
     mov.w64 $-136, $-80
@@ -9999,33 +9968,28 @@ L5:
     mov.w64 $-160, $-136
     ; lend $-176, 24 bytes
     ; lend $-120, 8 bytes
-    island sym5, [4294967120, 4294967176]
-    jmp L1
-L6:
+    island sym4, [4294967120, 4294967176]
+    jmp L0
+L4:
     mov.w64 $-8, $-120
     ; end $-112, 8 bytes
     ; end $-80, 8 bytes
     ; end $-72, 8 bytes
     ret $-8, 8
-L7:
-    call.sym $0, sym6, 0, []
+L5:
+    call.sym $0, sym5, 0, []
     unreachable
-L8:
+L6:
     lpad $-64
-    jmp L3
-L9:
-    lpad $-64
-    jmp L7
-  cleanup L0 -> L8
-  cleanup L2 -> continue
-  cleanup L4 -> L9 (catch)
+    jmp L5
+  cleanup L1 -> continue
+  cleanup L2 -> L6 (catch)
   sym0 = island ryo_island_call[FnDef(DefId(2:38987 ~ core[efd5]::intrinsics::select_unpredictable), Binder { value: [*mut *const u32], bound_vars: [] }), (bool, *mut *const u32, *mut *const u32), *mut *const u32]
   sym1 = island ryo_island_call[FnDef(DefId(2:38987 ~ core[efd5]::intrinsics::select_unpredictable), Binder { value: [*mut *const u32], bound_vars: [] }), (bool, *mut *const u32, *mut *const u32), *mut *const u32]
-  sym2 = std::ptr::drop_glue::<*const u32> - shim(None)
-  sym3 = island ryo_island_call[FnDef(DefId(2:2127 ~ core[efd5]::intrinsics::assert_inhabited), Binder { value: [*const u32], bound_vars: [] }), (), ()]
-  fn4 = std::ptr::drop_glue::<std::hint::select_unpredictable::DropOnPanic<*const u32>> - shim(Some(std::hint::select_unpredictable::DropOnPanic<*const u32>))
-  sym5 = island ryo_island_call[FnDef(DefId(2:38987 ~ core[efd5]::intrinsics::select_unpredictable), Binder { value: [std::mem::MaybeUninit<*const u32>], bound_vars: [] }), (bool, std::mem::MaybeUninit<*const u32>, std::mem::MaybeUninit<*const u32>), std::mem::MaybeUninit<*const u32>]
-  sym6 = core::panicking::panic_in_cleanup
+  sym2 = island ryo_island_call[FnDef(DefId(2:2127 ~ core[efd5]::intrinsics::assert_inhabited), Binder { value: [*const u32], bound_vars: [] }), (), ()]
+  fn3 = std::ptr::drop_glue::<std::hint::select_unpredictable::DropOnPanic<*const u32>> - shim(Some(std::hint::select_unpredictable::DropOnPanic<*const u32>))
+  sym4 = island ryo_island_call[FnDef(DefId(2:38987 ~ core[efd5]::intrinsics::select_unpredictable), Binder { value: [std::mem::MaybeUninit<*const u32>], bound_vars: [] }), (bool, std::mem::MaybeUninit<*const u32>, std::mem::MaybeUninit<*const u32>), std::mem::MaybeUninit<*const u32>]
+  sym5 = core::panicking::panic_in_cleanup
 
 fn std::hint::select_unpredictable::<*mut u32> (frame 176, args 0, ret 8) [always]
     arg $-9, 1
@@ -10058,23 +10022,20 @@ fn std::hint::select_unpredictable::<*mut u32> (frame 176, args 0, ret 8) [alway
     island sym1, [4294967120, 4294967240]
     mov.w64 $-112, $-104
     mov.w64 $-120, $-56
+    jmp L3
 L0:
-    call.sym $0, sym2, 0, [4294967176, 8]
-    jmp L5
-L1:
     ; lend $-176, 0 bytes
     ; lend $-56, 0 bytes
-    island sym3, [4294967120, 4294967240]
-    jmp L6
-L2:
+    island sym2, [4294967120, 4294967240]
+    jmp L4
+L1:
     resume $-64
-L3:
     ; escape align 8 $-112, 8 bytes
     addr $-144, $-112
-L4:
-    call $0, fn4, 0, [4294967152, 8]
-    jmp L2
-L5:
+L2:
+    call $0, fn3, 0, [4294967152, 8]
+    jmp L1
+L3:
     mov.w64 $-120, $-112
     mov.w64 $-128, $-72
     mov.w64 $-136, $-80
@@ -10083,33 +10044,28 @@ L5:
     mov.w64 $-160, $-136
     ; lend $-176, 24 bytes
     ; lend $-120, 8 bytes
-    island sym5, [4294967120, 4294967176]
-    jmp L1
-L6:
+    island sym4, [4294967120, 4294967176]
+    jmp L0
+L4:
     mov.w64 $-8, $-120
     ; end $-112, 8 bytes
     ; end $-80, 8 bytes
     ; end $-72, 8 bytes
     ret $-8, 8
-L7:
-    call.sym $0, sym6, 0, []
+L5:
+    call.sym $0, sym5, 0, []
     unreachable
-L8:
+L6:
     lpad $-64
-    jmp L3
-L9:
-    lpad $-64
-    jmp L7
-  cleanup L0 -> L8
-  cleanup L2 -> continue
-  cleanup L4 -> L9 (catch)
+    jmp L5
+  cleanup L1 -> continue
+  cleanup L2 -> L6 (catch)
   sym0 = island ryo_island_call[FnDef(DefId(2:38987 ~ core[efd5]::intrinsics::select_unpredictable), Binder { value: [*mut *mut u32], bound_vars: [] }), (bool, *mut *mut u32, *mut *mut u32), *mut *mut u32]
   sym1 = island ryo_island_call[FnDef(DefId(2:38987 ~ core[efd5]::intrinsics::select_unpredictable), Binder { value: [*mut *mut u32], bound_vars: [] }), (bool, *mut *mut u32, *mut *mut u32), *mut *mut u32]
-  sym2 = std::ptr::drop_glue::<*mut u32> - shim(None)
-  sym3 = island ryo_island_call[FnDef(DefId(2:2127 ~ core[efd5]::intrinsics::assert_inhabited), Binder { value: [*mut u32], bound_vars: [] }), (), ()]
-  fn4 = std::ptr::drop_glue::<std::hint::select_unpredictable::DropOnPanic<*mut u32>> - shim(Some(std::hint::select_unpredictable::DropOnPanic<*mut u32>))
-  sym5 = island ryo_island_call[FnDef(DefId(2:38987 ~ core[efd5]::intrinsics::select_unpredictable), Binder { value: [std::mem::MaybeUninit<*mut u32>], bound_vars: [] }), (bool, std::mem::MaybeUninit<*mut u32>, std::mem::MaybeUninit<*mut u32>), std::mem::MaybeUninit<*mut u32>]
-  sym6 = core::panicking::panic_in_cleanup
+  sym2 = island ryo_island_call[FnDef(DefId(2:2127 ~ core[efd5]::intrinsics::assert_inhabited), Binder { value: [*mut u32], bound_vars: [] }), (), ()]
+  fn3 = std::ptr::drop_glue::<std::hint::select_unpredictable::DropOnPanic<*mut u32>> - shim(Some(std::hint::select_unpredictable::DropOnPanic<*mut u32>))
+  sym4 = island ryo_island_call[FnDef(DefId(2:38987 ~ core[efd5]::intrinsics::select_unpredictable), Binder { value: [std::mem::MaybeUninit<*mut u32>], bound_vars: [] }), (bool, std::mem::MaybeUninit<*mut u32>, std::mem::MaybeUninit<*mut u32>), std::mem::MaybeUninit<*mut u32>]
+  sym5 = core::panicking::panic_in_cleanup
 
 fn std::intrinsics::cold_path (frame 0, args 0, ret 0) [cold]
     ret $0, 0
@@ -11867,11 +11823,7 @@ fn std::vec::Vec::<u32>::clear (frame 48, args 0, ret 0) [hint]
     store.w64 [$-8 + 16], $-48
     mov.w64 $-40, $-24
     mov.w64 $-32, $-16
-L0:
-    call.sym $0, sym0, 0, [4294967256, 8, 4294967264, 264]
     ret $0, 0
-  cleanup L0 -> continue
-  sym0 = std::ptr::drop_glue::<[u32]> - shim(None)
 
 fn std::vec::Vec::<u32>::extend_from_slice (frame 112, args 0, ret 0)
     arg $-8, 8

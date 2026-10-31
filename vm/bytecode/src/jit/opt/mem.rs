@@ -6,8 +6,9 @@
 //!   aliasable alloca ([`Alloca::aliasable`]) may be, but not other bytes through the same pointer.
 //! - An alloca store writes its own bytes, and what pointers may reach if the alloca is
 //!   aliasable.
-//! - A handler call writes the allocas it names, and if it touches memory
-//!   ([`touches_memory`]) every pointer and aliasable alloca.
+//! - A handler call writes the allocas it names (and what pointers may reach if one of them
+//!   is aliasable), and if it touches memory ([`touches_memory`]) every pointer and aliasable
+//!   alloca.
 //! - A call writes every pointer and aliasable alloca, and the allocas that aren't memory or
 //!   incoming (they live in registers or slots a call may clobber).
 //! - An island or an instruction of unknown effect writes everything; pure operations and
@@ -50,7 +51,7 @@ pub fn may_write(f: &Func, i: Inst, l: Loc, w: u8) -> bool {
             let memory = touches_memory(h);
             match l {
                 Loc::A(b, _) => h.allocas().any(|a| a == b) || (memory && aliasable(f, b)),
-                Loc::P(..) => memory,
+                Loc::P(..) => memory || h.allocas().any(|a| aliasable(f, a)),
             }
         }
         Op::Call(_) => match l {

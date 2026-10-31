@@ -618,7 +618,8 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
         let clob = cross[v];
         let cross = clob & CALL != 0;
         if f.values[v].w == 16 {
-            // Across a call: memory (no `xmm` register survives one).
+            // Across a call: memory (no vector is kept in an `xmm` register across one, not even
+            // the callee-saved xmm6-xmm15 on PE).
             if cross {
                 loc[v] = Loc::Spill(spills);
                 spills += 2;

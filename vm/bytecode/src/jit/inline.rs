@@ -56,7 +56,7 @@ impl VmFunc {
 
 /// What the inliner needs from the JIT.
 ///
-/// The unit's IR names functions, symbols, constants, data and site caches of the root's
+/// The unit's IR names functions, symbols, constants, data and code constants of the root's
 /// image (or the JIT's call forms, [`Env::retarget`]); a callee of another image is
 /// [`rebase`]d into those terms before it is explored.
 pub trait Env {
@@ -74,8 +74,7 @@ pub trait Env {
     /// through a call slot, directly, or through `r11`), or a call of the root itself. For
     /// the root's image, `None` keeps `t`, as for the root's calls of itself.
     fn retarget(&mut self, img: ImageId, t: CallTarget) -> Option<CallTarget>;
-    /// The address of `r` (a constant, data area offset, symbol slot, site cache slot or code
-    /// constant) of image `img`, and for a symbol the value its slot holds (filled before any
+    /// The address of `r` (a constant, data area offset, symbol slot or code constant) of image `img`, and for a symbol the value its slot holds (filled before any
     /// VM code runs, and never again).
     fn addr(&self, img: ImageId, r: Ref) -> Option<u64>;
     fn sym_value(&self, img: ImageId, s: Sym) -> Option<u64>;
@@ -170,7 +169,7 @@ fn apply_devirt(f: &mut Func, sites: &[(Block, Option<Inst>, CallTarget)]) -> Ve
 }
 
 /// `c`, a function of image `img`, in the terms of the root's image (design/jit.md,
-/// "Inlining", across images): its constants', data's and site caches' addresses become constants, its
+/// "Inlining", across images): its constants' and data's addresses become constants, its
 /// symbols' values constants (loaded through for an indirect one), its calls and islands the
 /// JIT's call forms of their targets, a call through a symbol's pointer (PE) a call of the
 /// loaded pointer, and code constant arguments (sparse switch cases) their addresses in the
@@ -451,8 +450,8 @@ fn derived(g: &Func, roots: &[Value]) -> Vec<bool> {
 /// The accesses through the pointers `d` ([`derived`]) in `g`, by block weight, if nothing
 /// but loads, stores (as their address) and VM calls uses them: then promotion could make
 /// them values once the memory they point at is the caller's and the calls are inlined.
-/// `None` if they escape any other way.
-fn promotable_accesses(g: &Func, sh: Option<&Shape>, d: &[bool]) -> Option<f64> {
+/// `None` if they escape any other way, a native call say. `g` is in the root's image's terms.
+fn promotable_accesses(g: &Func, sh: Option<&Shape>, d: &[bool], env: &mut dyn Env) -> Option<f64> {
     let is = |v: Value| d[g.resolve(v).idx()];
     let mut n = 0.0;
     for &b in &g.layout {
@@ -471,7 +470,7 @@ fn promotable_accesses(g: &Func, sh: Option<&Shape>, d: &[bool]) -> Option<f64> 
                         return None;
                     }
                 }
-                Op::Call(c) if matches!(c.target, CallTarget::Func(_)) => {}
+                Op::Call(c) if env.callee(c.target).is_some() => {}
                 _ if id.args.iter().any(|&v| is(v)) => return None,
                 _ => {}
             }
@@ -540,7 +539,7 @@ impl Tree<'_> {
     /// Whether the pointer `v` of node `k`'s IR `g` points into a memory alloca of the root or
     /// an inlined ancestor that only loads, stores and VM calls reach ([`promotable_accesses`]),
     /// following entry parameters up to the call sites that pass them.
-    fn local_alloca(&self, memo: &mut BTreeMap<(usize, u32), bool>, mut k: usize, mut v: Value) -> bool {
+    fn local_alloca(&self, memo: &mut BTreeMap<(usize, u32), bool>, mut k: usize, mut v: Value, env: &mut dyn Env) -> bool {
         loop {
             let g = self.ir(k);
             v = g.resolve(v);
@@ -558,7 +557,7 @@ impl Tree<'_> {
                                 .filter(|&j| matches!(g.insts[j].op, Op::AllocaAddr(b, _) if b == a) && g.insts[j].nres == 1)
                                 .map(|j| g.result(Inst(j as u32)))
                                 .collect();
-                            promotable_accesses(g, None, &derived(g, &addrs)).is_some()
+                            promotable_accesses(g, None, &derived(g, &addrs), env).is_some()
                         };
                         memo.insert((k, a.0), ok);
                         return ok;
@@ -587,7 +586,17 @@ impl Tree<'_> {
     /// reach ([`local_alloca`]) leaves the callee's accesses through it (by block weight) to
     /// promotion once inlined, each a memory access saved. Callee parameters that escape any
     /// other way (a handler, a store of the pointer, a return) get nothing.
-    fn promotion(&self, memo: &mut BTreeMap<(usize, u32), bool>, parent: usize, site: Inst, call: &Call, c: &Func, sh: &Shape) -> f64 {
+    #[allow(clippy::too_many_arguments)]
+    fn promotion(
+        &self,
+        memo: &mut BTreeMap<(usize, u32), bool>,
+        parent: usize,
+        site: Inst,
+        call: &Call,
+        c: &Func,
+        sh: &Shape,
+        env: &mut dyn Env,
+    ) -> f64 {
         let Some(entry) = c.entry() else { return 0.0 };
         let pf = self.ir(parent);
         let mut total = 0.0;
@@ -596,11 +605,11 @@ impl Tree<'_> {
                 continue;
             }
             let Some(ai) = call.arg_for(r) else { continue };
-            if !self.local_alloca(memo, parent, pf.insts[site.idx()].args[ai]) {
+            if !self.local_alloca(memo, parent, pf.insts[site.idx()].args[ai], env) {
                 continue;
             }
             let param = c.blocks[entry].params[n];
-            total += promotable_accesses(c, Some(sh), &derived(c, &[param])).unwrap_or(0.0);
+            total += promotable_accesses(c, Some(sh), &derived(c, &[param]), env).unwrap_or(0.0);
         }
         total
     }
@@ -873,7 +882,7 @@ fn explore<'a>(
             }
             continue;
         }
-        let promoted = tree.promotion(&mut promo_memo, parent, site, &call, &c, &sh);
+        let promoted = tree.promotion(&mut promo_memo, parent, site, &call, &c, &sh, env);
         expanded += k_cost;
         let frame = c.allocas.iter().filter(|a| matches!(a.kind, AllocaKind::Memory | AllocaKind::Outgoing)).map(|a| a.size).sum();
         let k = tree.nodes.len();
@@ -1294,9 +1303,11 @@ pub fn splice(f: &mut Func, call: Inst, c: &Func) {
         f.blocks[cur.idx()].term = t;
     }
     f.blocks[b.idx()].term = Term::Jmp(Edge::to(bmap[entry].unwrap()));
-    // The call's own landing pad stub, if no copied call unwinds to it.
+    // The call's own landing pad stub, if no copied call unwinds to it and no other invoke
+    // shares it (the copies of an earlier round's splice do).
     if let Some(s) = old_stub
         && invokes == 0
+        && !f.blocks.iter().any(|bd| matches!(&bd.term, Term::Invoke { pad, .. } if pad.to == s))
     {
         let sd = &mut f.blocks[s.idx()];
         sd.kind = BlockKind::Body;
@@ -1339,7 +1350,8 @@ pub fn retarget(f: &mut Func, env: &mut dyn Env) {
     }
 }
 
-/// `2^x` for the budget, without `std` (`x` between 0 and about 10).
+/// `2^x` for the budget, without `std` (`x` from 0, unbounded: past 60 it gives about `2^60`,
+/// a bar no unit reaches anyway).
 fn libm_exp2(x: f64) -> f64 {
     let n = x as i32;
     let f = x - n as f64;
