@@ -20,6 +20,11 @@ use crate::reduced::Arg;
 
 const NO: u32 = u32::MAX;
 
+/// How deep [`B::read_var`] may recurse through blocks with several predecessors (each level
+/// a few frames on the JIT thread's stack): past it the function is unsupported, as a stack
+/// overflow wouldn't unwind. Chains of single-predecessor blocks are walked without recursing.
+const MAX_DEPTH: u32 = 1000;
+
 struct B<'a> {
     code: &'a Code,
     fr: &'a Frame,
@@ -36,6 +41,9 @@ struct B<'a> {
     layout: Vec<Block>,
     scratch: u32,
     mode: crate::asm::Mode,
+    /// [`B::read_var`]'s recursion depth, and whether it went past [`MAX_DEPTH`].
+    depth: u32,
+    deep: bool,
 }
 
 #[derive(Default)]
@@ -100,9 +108,30 @@ impl<'a> B<'a> {
     }
 
     fn read_var(&mut self, var: u32, b: Block) -> Value {
-        if let Some(d) = *self.def_slot(b, var) {
-            return self.f.resolve(d);
+        // Up sealed blocks with one predecessor and no definition, without recursing (calls
+        // with a landing pad make long chains of them): each gets the value read above it.
+        let mut chain = Vec::new();
+        let mut b = b;
+        let v = loop {
+            if let Some(d) = *self.def_slot(b, var) {
+                break self.f.resolve(d);
+            }
+            if self.blocks[b.idx()].sealed && self.f.blocks[b.idx()].preds.len() == 1 {
+                chain.push(b);
+                b = self.f.blocks[b.idx()].preds[0].0;
+                continue;
+            }
+            break self.read_var_here(var, b);
+        };
+        for c in chain {
+            self.write_var(var, c, v);
         }
+        v
+    }
+
+    /// [`B::read_var`] in `b`, which has no definition of `var` and isn't a sealed block with
+    /// one predecessor.
+    fn read_var_here(&mut self, var: u32, b: Block) -> Value {
         let w = self.fr.vars[var as usize].w;
         let v = if !self.blocks[b.idx()].sealed {
             let p = self.new_param(b, var);
@@ -129,11 +158,18 @@ impl<'a> B<'a> {
                     }
                     _ => self.undef(w),
                 },
-                1 => self.read_var(var, self.f.blocks[b.idx()].preds[0].0),
+                1 => unreachable!("walked by read_var"),
+                _ if self.depth >= MAX_DEPTH => {
+                    self.deep = true;
+                    self.undef(w)
+                }
                 _ => {
                     let p = self.new_param(b, var);
                     self.write_var(var, b, p);
-                    self.add_operands(var, p)
+                    self.depth += 1;
+                    let v = self.add_operands(var, p);
+                    self.depth -= 1;
+                    v
                 }
             }
         };
@@ -163,7 +199,21 @@ impl<'a> B<'a> {
         self.try_remove_trivial(p)
     }
 
+    /// Makes `p` an alias if it is trivial, and then its users that turn out trivial too (with
+    /// a work list: such cascades can be long). What `p` stands for.
     fn try_remove_trivial(&mut self, p: Value) -> Value {
+        let mut work = Vec::new();
+        let v = self.remove_trivial(p, &mut work);
+        while let Some(u) = work.pop() {
+            if matches!(self.f.def(u), ValueDef::Param(..)) {
+                self.remove_trivial(u, &mut work);
+            }
+        }
+        v
+    }
+
+    /// One step of [`B::try_remove_trivial`]: `p`'s users to re-examine go to `work`.
+    fn remove_trivial(&mut self, p: Value, work: &mut Vec<Value>) -> Value {
         let mut same: Option<Value> = None;
         for k in 0..self.phi(p).row.len() {
             let v = self.phi(p).row[k];
@@ -187,11 +237,7 @@ impl<'a> B<'a> {
         if let Some(Some(s)) = self.phis.get_mut(same.idx()) {
             s.users.extend(users.iter().copied().filter(|&u| u != p));
         }
-        for u in users {
-            if u != p && matches!(self.f.def(u), ValueDef::Param(..)) {
-                self.try_remove_trivial(u);
-            }
-        }
+        work.extend(users.into_iter().filter(|&u| u != p));
         same
     }
 
@@ -352,6 +398,8 @@ impl<'a> B<'a> {
             layout: Vec::new(),
             scratch: 0,
             mode,
+            depth: 0,
+            deep: false,
         };
         s.entry = s.new_block(BlockKind::Entry, 0);
         Ok(s)
@@ -798,6 +846,9 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
         if !s.blocks[b].sealed {
             s.seal(Block(b as u32));
         }
+    }
+    if s.deep {
+        return Err(Unsupported("SSA construction too deep"));
     }
     s.write_edge_args();
     s.f.resolve_aliases();
