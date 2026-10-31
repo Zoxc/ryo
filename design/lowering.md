@@ -111,7 +111,8 @@ so a MIR change in a toolchain bump is a compile error. The tables below follow 
   space. Locals whose storage ranges don't overlap share bytes
   (`frame.rs`): a forward dataflow over every CFG edge (unwind edges included) gives the
   locals that may be storage-live at each block entry, and a local conflicts with every local
-  that may be live at one of its `StorageLive`s. Locals are then placed first-fit, as
+  that may be live at one of its `StorageLive`s or `StorageDead`s (a `StorageDead` of a dead
+  local is a no-op in MIR, but its `storage_end` would end a live partner's bytes). Locals are then placed first-fit, as
   close to `fp` as they can go without overlapping a conflicting local. `_0`, the arguments and locals
   without a `StorageLive` keep slots of their own, and so does every local of a body with
   more than 4096 locals (the conflict matrix is quadratic). At `-O0` rustc strips storage

@@ -344,12 +344,13 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
 }
 
 /// Slot sharing (design/lowering.md#frame-slots): two locals with storage markers may share
-/// bytes if neither is storage-live where the other's storage starts. Storage liveness is
+/// bytes if neither is storage-live where the other's storage starts or ends (a `StorageDead`
+/// of a dead local is a no-op in MIR, but its `storage_end` covers the bytes). Storage liveness is
 /// "maybe live" over every CFG edge, unwind edges included, so this over-approximates.
 struct Sharing {
     /// Locals other than `_0` and the arguments that have a `StorageLive`.
     shareable: DenseBitSet<Local>,
-    /// `conflicts[b]` holds `a` if `a` may be live where `b`'s storage starts.
+    /// `conflicts[b]` holds `a` if `a` may be live where `b`'s storage starts or ends.
     conflicts: BitMatrix<Local, Local>,
 }
 
@@ -461,16 +462,17 @@ fn alloc_below(end: &mut u32, size: u32, align: u32) -> Result<u32, NeedsNative>
     Ok(slot(-(*end as i32)))
 }
 
-/// Applies the `StorageLive`/`StorageDead` statements to `live`, calling `on_live(l, live)`
-/// before each `StorageLive(l)`.
-fn storage_effects(stmts: &[rustc_middle::mir::Statement<'_>], live: &mut DenseBitSet<Local>, mut on_live: impl FnMut(Local, &DenseBitSet<Local>)) {
+/// Applies the `StorageLive`/`StorageDead` statements to `live`, calling `on_marker(l, live)`
+/// before each `StorageLive(l)` and `StorageDead(l)`.
+fn storage_effects(stmts: &[rustc_middle::mir::Statement<'_>], live: &mut DenseBitSet<Local>, mut on_marker: impl FnMut(Local, &DenseBitSet<Local>)) {
     for stmt in stmts {
         match stmt.kind {
             StatementKind::StorageLive(l) => {
-                on_live(l, live);
+                on_marker(l, live);
                 live.insert(l);
             }
             StatementKind::StorageDead(l) => {
+                on_marker(l, live);
                 live.remove(l);
             }
             _ => {}
