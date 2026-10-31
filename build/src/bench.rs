@@ -1,5 +1,6 @@
 //! `y bench` (design/build.md#test-and-bench): each program under `bench/` is compiled
-//! and run with every [`Column`], timing both, and the results are printed as tables.
+//! and run with every [`Column`], timing both (or, under [`Metric::Cachegrind`], counting
+//! one run), and the results are printed as tables.
 //!
 //! Timing uses hyperfine if it is on `PATH`, and otherwise a built-in timer (one warmup run,
 //! then `runs` timed runs, mean and standard deviation of the wall time).
@@ -111,8 +112,8 @@ pub struct Options {
 }
 
 impl Default for Options {
-    /// The default columns: LLVM -O0 and -O1 and ryo as it runs by default (no cg_clif, so
-    /// no `build-clif` needed).
+    /// No columns picked, so [`columns`] uses the default ones: LLVM -O0 and -O1 and ryo as
+    /// it runs by default (no cg_clif, so no `build-clif` needed).
     fn default() -> Self {
         Options { runs: DEFAULT_RUNS, llvm: Vec::new(), clif: Vec::new(), ryo: Vec::new(), metric: Metric::Time, self_profile: None }
     }
@@ -160,7 +161,8 @@ pub fn parse_options(args: &[&str]) -> Result<Options, String> {
     Ok(o)
 }
 
-/// The columns `o` selects; the first is the reference whose output the others must match.
+/// The columns `o` selects. The first is the baseline of the ratio tables; the first column
+/// that runs a program is the reference whose output the others must match.
 /// Without `--llvm`, `--clif` or `--ryo`, the default columns.
 fn columns(o: &Options) -> Vec<Column> {
     let with = |compiler: Compiler, name: &str, level: OptLevel| {
@@ -178,7 +180,8 @@ fn columns(o: &Options) -> Vec<Column> {
 }
 
 /// The column `name` running ryo in `mode`. The default `ryo` column is `jit`: the JIT's
-/// settings there are the runtime's defaults.
+/// settings there are the runtime's defaults, except that cachegrind runs compile
+/// synchronously (`RYO_JIT_SYNC=1`).
 fn ryo_column(mode: RyoMode, metric: Metric, name: String) -> Column {
     let env = match (mode, metric) {
         (RyoMode::Aot, _) => vec![("RYO_JIT", "off")],
@@ -286,10 +289,23 @@ impl Clock {
 
 /// `mean` and `stddev` of the first entry of the `results` array in hyperfine's
 /// `--export-json` output. A minimal scan, not a JSON parser (`y` has no dependencies).
-/// `stddev` is `null` for a single run.
+/// `stddev` is `null` for a single run. The scan skips the `command` string (which can hold
+/// any character) and stops at the first `]` after it, before the `times` array.
 fn parse_hyperfine(json: &str) -> Option<Stats> {
     let start = json.find("\"results\"")?;
-    let json = &json[start..];
+    let mut json = &json[start..];
+    if let Some(i) = json.find("\"command\"") {
+        // Skip the key, then the string value, honouring `\` escapes.
+        let rest = &json[i + "\"command\"".len()..];
+        let open = rest.find('"')?;
+        let mut escaped = false;
+        let close = rest[open + 1..].find(|ch| {
+            let end = ch == '"' && !escaped;
+            escaped = ch == '\\' && !escaped;
+            end
+        })?;
+        json = &rest[open + 1 + close + 1..];
+    }
     let json = &json[..json.find(']').unwrap_or(json.len())];
     fn number(json: &str, key: &str) -> Option<f64> {
         let rest = &json[json.find(&format!("\"{key}\":"))? + key.len() + 3..];
@@ -411,7 +427,15 @@ pub fn run(opts: &Options) -> Result<(), String> {
                 let base: HashMap<&str, Option<u64>> = rows.iter().map(|(p, c)| (*p, c[0].ir.as_ref().map(get))).collect();
                 let ratio_rows: Vec<(&str, Vec<Option<String>>)> = rows
                     .iter()
-                    .map(|(p, cells)| (*p, cells.iter().map(|c| Some(format!("{:.2}x", get(c.ir.as_ref()?) as f64 / base[p]? as f64))).collect()))
+                    .map(|(p, cells)| {
+                        let ratio = |c: &Cell| match (c.ir.as_ref(), base[p]) {
+                            (None, _) => None,
+                            // The cell's counts are in the tables above; there is just no baseline.
+                            (Some(_), None) => Some("-".to_owned()),
+                            (Some(n), Some(b)) => Some(format!("{:.2}x", get(n) as f64 / b as f64)),
+                        };
+                        (*p, cells.iter().map(ratio).collect())
+                    })
                     .collect();
                 print!("{}", grid(&title, &header, &ratio_rows));
             }
@@ -535,6 +559,9 @@ mod tests {
         let json = "{\n  \"results\": [\n    {\n      \"mean\": 1.5e-3,\n      \"stddev\": null,\n";
         assert_eq!(parse_hyperfine(json), Some(Stats { mean: 1.5e-3, stddev: 0.0 }));
         assert_eq!(parse_hyperfine("{}"), None);
+        // `]`, quotes and keys inside the command don't end the scan.
+        let json = r#"{"results":[{"command":"/a[1]/x \"mean\": 9 \\","mean":0.5,"stddev":0.25,"times":[0.5]}]}"#;
+        assert_eq!(parse_hyperfine(json), Some(Stats { mean: 0.5, stddev: 0.25 }));
         // Keys outside `results` don't count.
         assert_eq!(parse_hyperfine(r#"{"mean":1,"results":[]}"#), None);
     }

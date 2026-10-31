@@ -295,7 +295,8 @@ This gives a third backend, built from the same toolchain, to compare against.
   missing; `y test --clif` builds cg_clif too.
   `--llvm O0,O2n,..`, `--clif [O0,O3,..]` and `--ryo aot,jit` pick the columns instead (`n`:
   with `-Cdebug-assertions=off`, which turns off overflow checks too; ryo `aot` runs with `RYO_JIT=off`, `jit` with `RYO_JIT_OPT=ssa`); the first column is the
-  output reference and the baseline of the ratio tables. A bare `--clif` is `-O0`. cg_clif
+  baseline of the ratio tables (`-` where it failed), and the first column that runs a
+  program is its output reference. A bare `--clif` is `-O0`. cg_clif
   maps `-O0` to Cranelift's `opt_level=none` and every other level (`-O1`..`-O3`, `s`, `z`)
   to `speed_and_size` (`rustc_codegen_cranelift/src/lib.rs`), so its `-O1`..`-O3` differ
   only in what rustc does before codegen (its MIR passes); that still matters, e.g. sieve
