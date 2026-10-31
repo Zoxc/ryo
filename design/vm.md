@@ -633,9 +633,9 @@ offsets in the function, and the function's LSDA, the ELF one.
   (`catch (...)` doesn't take SEH). At a pc without a call site a C++ exception aborts, as on
   ELF. Cleanup sites do nothing: if nothing catches, the process ends without unwinding,
   as natively.
-- **Unwind phase**: at a cleanup call site, but in the unwind's target frame, and for every
-  exception (a C++ catch's unwind is `STATUS_UNWIND_CONSOLIDATE`'s, an `__except`'s
-  `STATUS_UNWIND`), the handler calls the landing pad on the current stack, below the
+- **Unwind phase**: at a cleanup call site, but not in the unwind's target frame, and only
+  for C++ exceptions (a C++ catch's unwind is `STATUS_UNWIND_CONSOLIDATE`'s;
+  `seh::is_cxx_unwind`), the handler calls the landing pad on the current stack, below the
   unwinder's frames, as the funclets of cg_llvm's code are called. The trampoline
   `ryo_seh_call_pad` (assembly with SEH directives) saves its own nonvolatile registers,
   loads the VM frame's from the `CONTEXT` the unwinder unwound into it (`rbp` its `fp`, and
@@ -645,7 +645,9 @@ offsets in the function, and the function's LSDA, the ELF one.
   frame, still delivering the original exception. So there is one search and one unwind
   per exception, however many VM frames and pads; nothing is copied, re-raised or caught on
   the way, and the panic count, the hook, `__except` filters and foreign exceptions behave as
-  through native frames.
+  through native frames. As in LLVM's code for rustc (`__CxxFrameHandler3` with `/EHs`), an
+  SEH exception (an `__except`'s `STATUS_UNWIND`, `longjmp`) unwinds the frame without its
+  cleanups.
 - **Pad region**: on PE the lowering emits the cleanup blocks last
   ([lowering.md](lowering.md#unwinding)): the body, its terminate stubs, then the cleanup
   landing pads, the cleanup blocks and their own terminate stubs (`Asm::begin_region`; the
@@ -660,9 +662,10 @@ offsets in the function, and the function's LSDA, the ELF one.
   heads have neither counter checks nor padding, and `resume x` is `add rsp, 40; ret`
   (`ryo_h_Resume` only serves cleanup code without a cleanup landing pad, which no unwind
   reaches). Nothing branches across the region's start (`EncodeError::BadRegion`). A panic
-  in a pad's drop hits the drop call's `Terminate` site in the region: the handler unwinds
-  to the region's terminate stub, below the trampoline, which aborts through
-  `panic_in_cleanup` after the drop's own frames unwound.
+  in a pad's drop hits the drop call's `Terminate` site in the region: in the search phase
+  the handler terminates the process at once (`sys::terminate`, without unwinding or a
+  message), as MSVC's `__FrameUnwindFilter` does, rather than going through
+  `panic_in_cleanup` as on ELF.
 - **Epilogues**: the unwinder calls no handler for a frame whose pc is in an epilogue, which
   it recognizes by the code at the pc. So on PE a call with a landing pad that ends its
   instruction (one storing no result, an island in the region) is followed by a `nop`: its
