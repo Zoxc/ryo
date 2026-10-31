@@ -34,17 +34,27 @@ use super::symbols::{self, local_stable_crate_id, static_symbol};
 /// which `is_defined_upstream_static` answers from. Query providers are plain fns with no
 /// per-session slot to reach (rustc_codegen_cranelift overrides no queries, so it
 /// keeps all its state in the backend struct and `OngoingCodegen`). It is keyed on the
-/// session's `GlobalCtxt` address, so a second session in the same process is a fatal error
-/// instead of reading stale values.
+/// session's number ([`new_session`]), so a second session in the same process is a fatal
+/// error instead of reading stale values. (Not on the `GlobalCtxt`'s address:
+/// `rustc_interface` keeps it on the stack, where the next session's may land.)
 struct SessionCell<T>(OnceLock<(usize, T)>);
+
+/// The number of sessions [`new_session`] has seen in this process.
+static SESSIONS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Starts a session (`CodegenBackend::init`): values [`SessionCell`]s hold from an earlier
+/// one become unreadable.
+pub fn new_session() {
+    SESSIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
 
 impl<T> SessionCell<T> {
     const fn new() -> Self {
         SessionCell(OnceLock::new())
     }
 
-    fn key(tcx: TyCtxt<'_>) -> usize {
-        std::ptr::from_ref::<rustc_middle::ty::GlobalCtxt<'_>>(*tcx) as usize
+    fn key(_tcx: TyCtxt<'_>) -> usize {
+        SESSIONS.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     fn check<'a>(tcx: TyCtxt<'_>, (key, v): &'a (usize, T)) -> &'a T {

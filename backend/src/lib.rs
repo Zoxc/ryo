@@ -159,6 +159,7 @@ impl CodegenBackend for RyoBackend {
     }
 
     fn init(&self, sess: &Session) {
+        partition::new_session();
         if self.switches.marker {
             eprintln!("{INIT_MARKER}");
         }
