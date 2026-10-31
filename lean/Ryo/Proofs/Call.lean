@@ -336,8 +336,9 @@ theorem exec_jmpRaxOf (ctx : Ctx) (w : Bool) (x : X86.State) :
   · exact exec_jmpRaxW ctx x
 
 /-- The epilogue alone (a tail call's: no `ret`): `rsp = fp + 8`, where the caller's return
-address is; the saved `rbp` restored as in `ArgRet.exec_epilogue`; nothing else changed but
-the flags. -/
+address is; with a frame pointer or on PE the saved `rbp` restored as in
+`ArgRet.exec_epilogue`, else `rbp` kept; memory, `xmm` and the other integer registers
+unchanged (`rip` and the flags change; `rip` isn't stated). -/
 theorem exec_epilogue_only (ctx : Ctx) (F : Nat) (m : Ryo.Obj.Mode) (y : X86.State)
     (hsp : m.pe = true ∨ m.framePointer = false →
       y.rsp = y.reg .rbp - BitVec.ofNat 64 F ∧ F + 8 < 2 ^ 31) :
@@ -849,8 +850,9 @@ theorem argBytes_length (pe : Bool) (y : X86.State) (r : R.Reg) :
 open Ryo.Proofs.ArgRet in
 /-- The argument loads against `argRegs`: memory unchanged, among the integer registers only the
 convention's argument registers and `r11` changed, each listed register relating, the others
-kept. The loads also write the `xmm` argument registers (`movss`/`movsd`/`movups`,
-`movd xmm, r11`), which this doesn't state. -/
+kept, the same for the convention's `xmm` argument registers (`movss`/`movsd`/`movups`,
+`movd xmm, r11`). Nothing is stated about the other `xmm` registers (`xmm8`-`xmm15`, on PE
+`xmm4`-`xmm15`, which a PE load into `xmm4`-`xmm7` would write). -/
 theorem exec_params (ctx : Ctx) (pe : Bool) {st : OpSem.State} {x0 : X86.State} (hr : Rel st x0) :
     ∀ (ws : List (BitVec 32)) (regs : R.Regs) (its : List Item) (y : X86.State),
       R.argRegs st ws = .ok regs → paramItems pe ws = some its → y.mem = x0.mem →

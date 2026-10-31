@@ -415,7 +415,8 @@ macro "ovf_close" : tactic =>
        simp [h0, h1])
     | rfl)
 
-/-- `ovf_close`, for `mul.ovf`: also the products and the overflow checks. -/
+/-- `ovf_close`, for `mul.ovf`: the register goal also for `rdx` (register 2), which the
+wider forms clobber. The products and the overflow checks are closed before it. -/
 macro "mulOvf_close" : tactic =>
   `(tactic| first
     | with_reducible rfl

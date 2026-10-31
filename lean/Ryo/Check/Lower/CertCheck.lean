@@ -585,15 +585,26 @@ def checkObject (prog : Program) (cert : Cert) (o : ImageObject) : Report := Id.
   return rep
 
 /-- For `ryo-lean dead` with a certificate: per function of `o` the facts its certificate
-check gives (`Cert.facts`; none for a function without a certificate, not decoded, or whose
-check fails), and the islands' templates by symbol. -/
+check gives (`Cert.facts`; none for a function without exactly one certificate, not decoded,
+or whose check fails, nor for any function when `checkObject` rejects the object's certificate
+image), and the islands' templates by symbol. -/
 def deadFacts (prog : Program) (cert : Cert) (o : ImageObject) :
     (Nat → Frame.Facts) × (String → Option String) :=
   let c := Ctx.make prog cert o
   let decs := decodeAll o
+  -- `checkObject`'s object-level failures withhold every function's facts: not exactly one
+  -- certificate image, or its functions in another order.
+  let ims := cert.imagesOf o
+  let fs := cert.functionsOf o
+  let names := o.funcs.map (o.funcName ·.codeOff)
+  let objOk := ims.size == 1 && (orderError ((ims[0]?.map (·.cgu)).getD "") (fs.map (·.1)) names).isNone
+  let count : HashMap String Nat := fs.foldl (init := {}) fun m (s, _) => m.insert s (m.getD s 0 + 1)
   let facts : Array Frame.Facts := (Array.range o.funcs.size).map fun i => Id.run do
-    let some fc := c.certs[o.funcName o.funcs[i]!.codeOff]? | return {}
-    let some (Except.ok d) := decs[i]?.map (·.decoded) | return {}
+    if !objOk then return {}
+    let name := names[i]!
+    if count.getD name 0 != 1 then return {}
+    let some fc := c.certs[name]? | return {}
+    let some (Except.ok _, Except.ok d) := decs[i]?.map fun x => (x.inputs, x.decoded) | return {}
     let fr := checkFunc c i d fc
     return if fr.errors.isEmpty then Cert.facts fr else {}
   (fun i => facts[i]?.getD {}, (c.islands[·]?))

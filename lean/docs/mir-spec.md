@@ -144,7 +144,7 @@ Modules (namespace `Ryo.Spec`), with the MiniRust source each one ports:
 | `Ryo/Spec/Lang/WellFormed.lean` | `lang/well-formed.md` (types/layouts part) | `WfTy`, `WfValue` |
 | `Ryo/Spec/Mir/Syntax.lean` | `lang/syntax.md` (replaced), rustc `mir/syntax.rs` | the MIR AST (§A.5), `Body`, `Program`, `InstanceId`, `Global` (const and static allocations with relocations), `VTable` as an allocation (D29). `deriving Repr, BEq, Inhabited, Lean.FromJson, Lean.ToJson` (hand-write instances where deriving fails on nested/mutual types) |
 | `Ryo/Spec/Mir/WellFormed.lean` | `lang/well-formed.md` (expr/fn/program part) | local/block indices in range, operand types match, rvalues typed against their destination up to shape (rustc's `visit_rvalue`), `SwitchInt` on integer/bool/char, unwind-action well-formedness (cleanup blocks only reached by unwinding), `always_storage_live_locals` |
-| `Ryo/Spec/Mir/State.lean` | `lang/machine.md` | `Frame`, `State`, `Event`, `CallReturn` (`ret` / `unwind`), global address maps |
+| `Ryo/Spec/Mir/State.lean` | `lang/machine.md` | `Frame`, `State`, `Event`, `Cont`, `ExtResult` (`ret` / `unwind`), `Final`, `Oracle`, `SemM`, global address maps |
 | `Ryo/Spec/Mir/Place.lean` | `lang/step/expressions.md` § Place Expressions | `evalPlace` with every projection, including `Index` bounds UB, `Subslice`/`ConstantIndex from_end`, `Deref` of wide pointers, unsized-tail field offsets rounded up from the vtable's alignment (cg_ssa's `project_field`) |
 | `Ryo/Spec/Mir/Operand.lean` | `lang/step/expressions.md` § Constants, Load | `evalOperand` (`Copy`/`Move` = typed load, D12), `evalConst` (scalars, `ConstValue::Slice`/indirect, D7, D24), `RuntimeChecks` (D23) |
 | `Ryo/Spec/Mir/Ops.lean` | `lang/step/operators.md` | `evalBinOp` (D10), `evalUnOp`, pointer compares (D10), `Offset` |
@@ -156,11 +156,11 @@ Modules (namespace `Ryo.Spec`), with the MiniRust source each one ports:
 | `Ryo/Spec/Mir/Terminator.lean` | `lang/step/terminators.md` | `Goto`, `SwitchInt`, `Return`, `Unreachable`, `Drop` (D19), `Assert` (D19), dispatch to Call/Unwind |
 | `Ryo/Spec/Mir/Intrinsics.lean` | `lang/step/intrinsics.md` | the D20 set, each with rustc's UB conditions |
 | `Ryo/Spec/Mir/External.lean` | none (MiniRust programs are closed) | the environment interface (§A.6): `callExternal`: built-in shims (`__rust_alloc`, `__rust_dealloc`, `__rust_realloc`, `write`, `exit`, `abort`), other symbols go to the oracle's environment |
-| `Ryo/Spec/Mir/Step.lean` | `lang/machine.md` (`step`) | `step : Program → State → M (Option Event)` |
+| `Ryo/Spec/Mir/Step.lean` | `lang/machine.md` (`step`) | `step : SemM Unit` (the program is in the state; events go to `State.events`) |
 | `Ryo/Spec/Mir/Behavior.lean` | none | traces, `Behavior` (`terminates`, `diverges`, `goesWrong (ub)`, `aborts`), `Refines` (with D25), angelic handling (§A.4) |
 | `Ryo/Spec/Mir/Interp.lean` | MiniRust's `minirun` | `run (fuel) (oracle) : Program → Except Outcome (List Event × Int)` |
 | `Ryo/Spec/Mir/Builder.lean` | `tooling/miniutil/src/build` | a small DSL to write MIR programs in Lean for tests |
-| `Ryo/Spec/Mir/Json.lean` | none | dump schema. The derived `FromJson` instances are the schema. The backend writer (`RYO_DUMP_LEAN`) comes in M1b |
+| `Ryo/Spec/Mir/Json.lean` | none | dump schema. The derived `FromJson` instances are the schema. The backend writer is `RYO_DUMP_LEAN` (`backend/src/dump_lean.rs`) |
 | `Ryo/Spec/Theorems/*.lean` | `representation.md` § Generic properties | `encode_length`, `decode_encode` for well-formed values, `decode_mono` (if the less-defined bytes decode, the more-defined ones decode to a more-defined value), `encode_decode_le` (re-encoding a decoded value is less defined than the bytes); `store_load` is ryo's own (MiniRust states no store-then-load law) |
 | `RyoTest/*.lean` | `tooling/minitest/src/tests/*.rs` | ports of: `int`, `bool`, `align`, `zst`, `locals`, `switch`, `call`, `return_`, `unreachable`, `assume`, `null`, `ptr`, `ptr_offset`, `ptr_offset_from`, `negative_index`, `expose`, `uninit_read`, `no_preserve_padding`, `no_preserve_prov`, `dereferenceable`, `packed`, `enum_discriminant`, `enum_downcast`, `enum_representation`, `wide_ptr`, `slice`, `unsized_struct`, `compute_size`, `compute_align`, `trait_object` (adapted to D29), `unwinding`, `catch_unwind`, `raw_eq`, `place_mention`. Skip `data_race`, `concurrency`, `locks`, `spawn_join`, `atomic*` beyond single-thread, `heap_intrinsics` (heap is external here), `print`, `calling_convention` (redo for D14) |
 

@@ -231,7 +231,8 @@ def baseCandidate (c : Cursor) : Option Item := do
       pure (.setReg r v)
     else none
 where
-  /-- The forms without a REX prefix (other than `push rbp`, `xor` and `mov r32, imm32`). -/
+  /-- The forms without a REX prefix (other than `push rbp`, `pop rbp`, `xor` and `mov r32,
+  imm32`). -/
   baseNoRex (c : Cursor) (op : UInt8) : Option Item := do
     let g := c.get
     match op with

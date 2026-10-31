@@ -24,12 +24,13 @@ Values (§C0.3): moves, copies, loads and stores move abstract bytes (provenance
 memory operand's slot) decode as pointers (`decode_ptr`), and `ptr.add`/`ptr.index`/`addr*`
 write pointers with provenance. Accesses through pointers are L0 memory accesses
 (`Ryo/Spec/Mem`): unaligned except atomics and `addr.sym`'s slot reads, needing a live
-allocation's provenance, or an exposed allocation for a pointer without one.
+allocation's provenance, else an exposed allocation containing the range (also for a pointer
+whose own allocation doesn't contain it: `State.resolve`).
 
 UB: reading `Uninit` as an integer or pointer; division by zero and `MIN / -1`
 (`unchecked_div`/`_rem`); `memcpy` of overlapping ranges; an access through a pointer outside
 a live allocation (or a store into an immutable one, which a compare-exchange makes even when it
-fails); `addr` of a frame offset that is neither
+fails); a misaligned atomic or `addr.sym` slot read; `addr` of a frame offset that is neither
 in nor at the end of an escaped object nor a zero-sized object (`State.addrOf`).
 Shifts and rotations mask the amount (`wrapping_sh*`), so they have no UB.
 

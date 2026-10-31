@@ -3,11 +3,12 @@ Ryo.Spec.Mir.Json — the dump format.
 
 Ports: none. The derived `Lean.ToJson`/`Lean.FromJson` instances of `Ryo.Spec.Mir.Syntax`
 (and of the types and constants it contains) *are* the schema: a dump is `toJson program`.
-The backend writer (`RYO_DUMP_LEAN`) is milestone M1b.
+The backend writer is `RYO_DUMP_LEAN` (`backend/src/dump_lean.rs`).
 
-Conventions of the derived encoding: constructors with arguments are objects
-`{"ctor": {"field": ...}}`, constructors without arguments are strings `"ctor"`, structures are
-objects, `Option` is `null` or the value, `Align` is its byte count.
+Conventions of the derived encoding: constructors with named arguments are objects
+`{"ctor": {"field": ...}}`, with one unnamed argument `{"ctor": value}`, with several
+`{"ctor": [..]}`; constructors without arguments are strings `"ctor"`, structures are
+objects, pairs are 2-element arrays `[a, b]`, `Option` is `null` or the value, `Align` is its byte count.
 -/
 import Ryo.Spec.Mir.Syntax
 import Ryo.Spec.Lang.Values

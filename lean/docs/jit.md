@@ -46,7 +46,7 @@ pipeline.
 `ryo_jit_trip_entry` / `ryo_jit_trip_osr`, called from the stubs with `r11` = record:
 
 - either return to the stub's continuation with every register but `rax`, `r11` and the flags
-  preserved, the stack as found, and memory changed only in runtime-owned areas (records,
+  preserved (the loop-head trip only the callee-saved ones: nothing else is live at a head), the stack as found, and memory changed only in runtime-owned areas (records,
   queue, code memory)
 - or (`Done`) transfer to code that satisfies `FnSim` for the same R function: entry, or
   head `N`. For JIT code that is exactly what a validated compilation provides

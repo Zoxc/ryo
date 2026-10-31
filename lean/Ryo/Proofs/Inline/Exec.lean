@@ -1,6 +1,7 @@
 /-
 Ryo.Proofs.Inline.Exec — running the items of an inline sequence (`Ryo.X86.Exec`): simp lemmas
-for the state's observables after each update, the effect of a frame load and store, and
+for the state's observables after each update, the effective address of a frame operand and the effect of a store
+(`exec_ld`, a load's, is in `LaterDiv.lean`), and
 how a store keeps the frame relation (`rel_store`).
 -/
 import Ryo.Proofs.Inline.Rel

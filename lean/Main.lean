@@ -9,7 +9,9 @@
                                            the result to stderr (prefixed `ryo-lean: `), and the
                                            exit status is the program's: 0 when `main`
                                            returns, `c` for `exit(c)`, 134 for `abort`, 3 for
-                                           UB, 4 for anything else (ill-formed, out of fuel, ..)
+                                           UB, 4 for anything else (ill-formed, out of fuel, ..);
+                                           a last stderr line `ryo-lean: outcome: program`
+                                           (or `ub`, `other`) tells them apart
   ryo-lean example <name> [out.json]       write one of the built-in example programs
   ryo-lean obj <file.o>                    print the image of an image object: header, symbol
                                            slots, functions and their code's relocations
@@ -124,12 +126,15 @@ def runFile (path : String) (fuel : Nat) (stdout : Bool := false) : IO UInt32 :=
         log s!"event: write({fd}, {repr (String.fromUTF8? ⟨bytes.toArray⟩)})"
   log s!"{describeResult r} after {r.steps} steps"
   if stdout then
-    pure (match r.result with
-      | .ok (.returned _) => 0
-      | .error (.exit c) => UInt32.ofNat (c % 256).toNat
-      | .error .abort => 134
-      | .error (.ub _) => 3
-      | _ => 4)
+    -- The statuses overlap (`exit(3)` is UB's 3): say on stderr whether the program chose it.
+    let (code, how) := match r.result with
+      | .ok (.returned _) => (0, "program")
+      | .error (.exit c) => (UInt32.ofNat (c % 256).toNat, "program")
+      | .error .abort => (134, "program")
+      | .error (.ub _) => (3, "ub")
+      | _ => (4, "other")
+    log s!"outcome: {how}"
+    pure code
   else
     pure (match r.result with
       | .ok (.returned _) => 0
@@ -173,7 +178,7 @@ def checkPool (dump : String) (objs : List String) (verbose : Bool) : IO UInt32 
   let p : Program ← IO.ofExcept (fromJson? j)
   let mut status : UInt32 := 0
   for path in objs do
-    match Ryo.Obj.readImageObject (← IO.FS.readBinFile path) with
+    match (← Ryo.Check.Image.readBytes path) >>= Ryo.Obj.readImageObject with
     | .ok o =>
       let r := Ryo.Check.Image.Pool.checkObject p o
       for l in r.render path verbose do IO.println l
@@ -191,7 +196,7 @@ def checkCert (dump certPath : String) (objs : List String) (verbose : Bool) : I
   let mut status : UInt32 := 0
   let mut read : Array (String × Ryo.Obj.ImageObject) := #[]
   for path in objs do
-    match Ryo.Obj.readImageObject (← IO.FS.readBinFile path) with
+    match (← Ryo.Check.Image.readBytes path) >>= Ryo.Obj.readImageObject with
     | .ok o => read := read.push (path, o)
     | .error e =>
       IO.println s!"cert-check {path}: error: {e}"
@@ -279,6 +284,11 @@ def rrun (args : List String) : IO UInt32 := do
       else m.insert sym ((fc.locals.filter (·.size == 0)).toList.map (·.off))
     Ryo.Vm.R.cli rest (fun sym => zs.getD sym [])
 
+/-- The usage message; exit status 2. -/
+def usage : IO UInt32 := do
+  IO.eprintln "usage: ryo-lean run <program.json> [--fuel N] [--stdout]\n       ryo-lean example <name> [out.json]\n       ryo-lean obj <file.o>\n       ryo-lean elf <file.o>\n       ryo-lean decode <inputs.json | file.o>\n       ryo-lean dead <file.o> [<dump.json> <cert.json>]\n       ryo-lean ehframe|lsda <file.o>\n       ryo-lean check-pool <dump.json> <file.o>... [-v]\n       ryo-lean check-cert <dump.json> <cert.json> <image.o>... [-v]\n       ryo-lean check-image <image.o>... [--registry <registry.o>]\n       ryo-lean exec-item\n       ryo-lean opsem\n       ryo-lean effects [<out.rs>]\n       ryo-lean rrun <image.o> <fn>|--all [<int>...] [--fuel N] [--unwind <text>] [--cert <cert.json>]"
+  pure 2
+
 def main (args : List String) : IO UInt32 := do
   match args with
   | "check-image" :: rest => Ryo.Check.Image.cli rest
@@ -287,17 +297,26 @@ def main (args : List String) : IO UInt32 := do
   | ["dead", path] => deadObj path
   | ["dead", path, dump, cert] => deadObj path (some (dump, cert))
   | "check-pool" :: dump :: objs@(_ :: _) =>
-    checkPool dump (objs.filter (· != "-v")) (objs.contains "-v")
+    match objs.filter (· != "-v") with
+    | [] => usage
+    | paths => checkPool dump paths (objs.contains "-v")
   | "check-cert" :: dump :: cert :: objs@(_ :: _) =>
-    checkCert dump cert (objs.filter (· != "-v")) (objs.contains "-v")
+    match objs.filter (· != "-v") with
+    | [] => usage
+    | paths => checkCert dump cert paths (objs.contains "-v")
   | ["ehframe", path] => ehframeFile path
   | ["lsda", path] => lsdaObj path
   | ["decode", path] => if path.endsWith ".json" then decodeFile path else decodeObj path
   | ["run", path] => runFile path 10000000
-  | ["run", path, "--fuel", n] => runFile path n.toNat!
+  | ["run", path, "--fuel", n] =>
+    match n.toNat? with
+    | some n => runFile path n
+    | none => IO.eprintln s!"--fuel needs a number, not `{n}`"; pure 2
   | ["run", path, "--stdout"] => runFile path 10000000 true
   | ["run", path, "--fuel", n, "--stdout"] | ["run", path, "--stdout", "--fuel", n] =>
-    runFile path n.toNat! true
+    match n.toNat? with
+    | some n => runFile path n true
+    | none => IO.eprintln s!"--fuel needs a number, not `{n}`"; pure 2
   | ["example", name] | ["example", name, _] =>
     match Ryo.Examples.byName name with
     | some p =>
@@ -313,6 +332,4 @@ def main (args : List String) : IO UInt32 := do
   | ["opsem"] => Ryo.Vm.OpSem.Json.main
   | "effects" :: rest => Ryo.Vm.OpSem.JitEffects.main rest
   | "rrun" :: rest => rrun rest
-  | _ =>
-    IO.eprintln "usage: ryo-lean run <program.json> [--fuel N] [--stdout]\n       ryo-lean example <name> [out.json]\n       ryo-lean obj <file.o>\n       ryo-lean elf <file.o>\n       ryo-lean decode <inputs.json | file.o>\n       ryo-lean dead <file.o> [<dump.json> <cert.json>]\n       ryo-lean ehframe|lsda <file.o>\n       ryo-lean check-pool <dump.json> <file.o>... [-v]\n       ryo-lean check-cert <dump.json> <cert.json> <image.o>... [-v]\n       ryo-lean check-image <image.o>... [--registry <registry.o>]\n       ryo-lean exec-item\n       ryo-lean opsem\n       ryo-lean effects [<out.rs>]\n       ryo-lean rrun <image.o> <fn>|--all [<int>...] [--fuel N] [--unwind <text>] [--cert <cert.json>]"
-    pure 2
+  | _ => usage

@@ -25,7 +25,7 @@ theorem island_ofFull {op : Reduced.Opcode}
   have e : (Reduced.Opcode.ofFull .island).bind Reduced.Opcode.full = some .island := by rfl
   rw [h] at e; exact e
 
-/-- R errors that are not `noBehavior`. -/
+/-- `m` doesn't fail with `noBehavior` (it succeeds or fails with another error). -/
 def island_NoNB {α : Type} (m : M α) : Prop := ∀ msg, m ≠ .error (.noBehavior msg)
 
 theorem island_noNB_bind {α β : Type} {m : M α} {f : α → M β} (h : island_NoNB m)
@@ -204,7 +204,7 @@ theorem island_site_read {fr : Vm.Frame} {c c' : Cursor} {isl ops : Nat} {site :
     obtain ⟨he, rfl⟩ := pure_ok h
     cases he
     refine ⟨rfl, ?_⟩
-    simp only [Island.islandRegs, hpe, Bool.false_eq_true, ↓reduceIte, Frame.fp] at d1 ⊢
+    simp only [Island.islandRegs, Bool.false_eq_true, ↓reduceIte, Frame.fp] at d1 ⊢
     rw [e1] at d2
     exact d1.trans' d2
 
@@ -398,7 +398,7 @@ none (`CodeApart`: the allocations of `s1` are `s`'s or the scopes', in the wind
 slots are private (`LinkPrivate`), so in none (`FrameOwn` after the scopes); runtime-owned: not
 the code or rodata (`CodeApart`), not the window (`EnvApart.window`). The relocated fields are
 code bytes (`RelocsIn`). -/
-theorem island_kept' (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+theorem island_kept' (_hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (H : Hyps S) {s s1 : R.RState} {x : X86.State} (hf : FrameInv S s x)
     (hci : CacheInv (S.used s.pc) x)
     (hsc : (S.c.scopesAt s.pc).foldlM R.applyScope s = .ok s1) (b : BitVec 64)

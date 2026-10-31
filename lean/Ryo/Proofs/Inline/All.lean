@@ -1,6 +1,6 @@
 /-
-Ryo.Proofs.Inline.All — every inline class but `load`, `store` and the rip-relative addresses
-implements `opSem`: the classes of `Ryo/Proofs/Inline.lean` (`inline_soundC`), and the later ones
+Ryo.Proofs.Inline.All — every inline class but `load`, `store`, the rip-relative addresses and
+the immediate rotates (which no opcode has) implements `opSem`: the classes of `Ryo/Proofs/Inline.lean` (`inline_soundC`), and the later ones
 (`laterClass`: `Later.lean`'s variable shifts and rotates, `bswap`, `cmp3`; `LaterDiv.lean`'s
 `div` and `count`). `div` also changes `rdx` (`clobbers`). `load` and `store` are proved under
 more hypotheses in `Inline/Mem.lean` (`sound_load`, `sound_store`), the rip-relative addresses

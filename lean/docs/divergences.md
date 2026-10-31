@@ -100,7 +100,10 @@ the same loop (`__powitf2`), `f16` is promoted to `f32` and rounded back (`Float
 LLVM legalizes `f16` on x86-64). No host float code is left in the semantics. Remaining
 difference: LLVM *constant-folds* `powi` with constant operands using the host `pow`, so a
 program whose `powi` operands are all compile-time constants may get the correctly rounded
-result instead. Tests `R3/powi_loop` (against the loop on hardware `Float`/`Float32`) and
+result instead. And for `f16` with a constant exponent (non-constant base), LLVM's inline
+expansion is a tree of `f16` multiplications, each promoted to `f32` and rounded back to
+`f16`, so it rounds to `f16` after every step where `Float.powiF16` rounds once; ryo (which
+calls `powif32(x as f32, k) as f16`) matches the model, plain rustc may not. Tests `R3/powi_loop` (against the loop on hardware `Float`/`Float32`) and
 `R3/powi`.
 
 **R4. `fmuladd`.** `evalIntrinsic "fma" | "fmuladd"` (Mir/Intrinsics.lean:373) always

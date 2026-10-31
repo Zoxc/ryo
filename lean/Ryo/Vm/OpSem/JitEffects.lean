@@ -77,8 +77,9 @@ def isFence (op : Full.Opcode) : Bool :=
 def jitEffects (op : Full.Opcode) (fp : Footprint) : Except String Effects := do
   let opnds ← op.info.operands.mapM fun o =>
     if o.kind == .slot || o.kind == .mem then opndEffect fp o.name else pure none
-  -- Every name the footprint uses is a frame operand (`RyoTest/OpSem.lean`'s
-  -- `footprint-names`), so nothing is dropped above.
+  -- Every name in the footprint's reads, writes and addresses (all `opndEffect` looks at) is
+  -- a frame operand (`RyoTest/OpSem.lean`'s `footprint-names`), so nothing is dropped above;
+  -- the derefs' other names are covered by `memory` below.
   let fromFrame : PtrSrc → Bool
     | .slot _ | .mem _ => true
     | .addr _ | .loaded _ => false

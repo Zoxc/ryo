@@ -28,9 +28,9 @@ cache emits it (aot.md §C2 "Register cache", "Inline steps"; milestone M3 `deco
   `Full.all.all kindOk = true` and `shapeOk`; `RyoProofs/InlineOk.lean` proves the former
   (`all_kindOk`, a slow `decide`), giving `inlineOps_ok`, `inlineOps_ext` and
   `inline_step_cached_ops` (the step for `(f, cls) ∈ inlineOps`). `soundC_of`: `SoundC` for
-  the classes of `inline_soundC` (all but `load`, `store`, the rip-relative addresses, which
-  have only `Sound` with `Private`/`SoundG` with `Globals`, the immediate rotates and the later
-  classes); `inline_soundC_all` (`Inline/All.lean`) adds the later classes (`laterClass`).
+  the classes of `inline_soundC` (all but `load` and `store`, which are proved under more
+  hypotheses (`sound_load`, `sound_store`), the rip-relative addresses, which have only `SoundG`
+  with `Globals`, the immediate rotates and the later classes); `inline_soundC_all` (`Inline/All.lean`) adds the later classes (`laterClass`).
 
 Left as hypotheses: `SoundC cls` (so `load`, `store`, `addrConst`, `addrSym`, `addrSymInd` are
 not covered; `inline_soundC_all` gives it for the other inline classes); the link from the decoder's candidate to R's operands: `inlineInsn` accepts `cand`

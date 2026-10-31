@@ -32,7 +32,7 @@ One request per line on stdin, one result per line on stdout:
 The result: `{"ok": {"control": "next" | {"branch": b} | {"index": i}, "frame": [...],
 "allocs": [[...], ...]}, "reads": [[off, len], ...], "writes": [[off, len], ...]}` with the
 frame bytes from `base` (as many as given) and each allocation's bytes, or `{"stop": "ub" |
-"abort" | "unreachable" | "unsupported" | "ill_formed" | "no_behavior", "msg": m, "reads": …,
+"abort" | "unsupported" | "ill_formed" | "no_behavior", "msg": m, "reads": …,
 "writes": …}`. `reads`/`writes` are the footprint's frame ranges. A line that doesn't parse
 gives `{"error": m}`.
 -/
@@ -175,10 +175,14 @@ def respond (r : Request) : Json :=
       | .next => "next"
       | .branch b => Json.mkObj [("branch", toJson b)]
       | .index i => Json.mkObj [("index", toJson i)]
-    let frame := (List.range r.frameLen).map fun (i : Nat) =>
-      byteJson (match st.byteAt (r.base + (i : Int)) with
-        | .ok b => b
-        | .error _ => .uninit)
+    -- A frame byte that can't be read (an escaped object past its allocation) is an
+    -- ill-formed state, not `Uninit`.
+    match (List.range r.frameLen).mapM fun (i : Nat) => st.byteAt (r.base + (i : Int)) with
+    | .error s =>
+      let (k, m) := stopJson s
+      Json.mkObj ([("stop", toJson k), ("msg", toJson m)] ++ fpFields)
+    | .ok bytes =>
+    let frame := bytes.map byteJson
     let allocs := st.mem.allocs.toList.map fun a => Json.arr (a.data.map byteJson)
     Json.mkObj ([("ok", Json.mkObj [("control", ctl), ("frame", .arr frame.toArray),
       ("allocs", .arr allocs.toArray)])] ++ fpFields)

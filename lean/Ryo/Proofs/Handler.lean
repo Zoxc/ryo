@@ -110,7 +110,7 @@ theorem setupItems_regs {mode : Ryo.Obj.Mode} {args : List R.Arg}
     (h : args.length ≤ (handlerRegs mode.pe).length) :
     setupItems mode args = (args.zip (handlerRegs mode.pe)).mapM fun (a, r) => argItem mode r a := by
   unfold setupItems
-  rw [if_pos (Nat.le_trans h (handlerRegs_le_positions mode.pe))]
+  rw [ite_eq_left (Nat.le_trans h (handlerRegs_le_positions mode.pe))]
   have := mapM_zipIdx_regs mode args 0 (by simpa using h)
   simpa using this
 

@@ -15,6 +15,8 @@ Checked:
 - place projections type-check (deref of pointers, fields in range, index locals of type
   `usize`, downcasts in range);
 - `SwitchInt` operands are integers, `bool` or `char`;
+- `CopyNonOverlapping`'s source and destination are pointers and its count an integer; a
+  `fnPtr` callee is a pointer and a virtual one has a receiver (calls and tail calls);
 - cleanup-block discipline: unwind edges go to cleanup blocks, normal edges stay within the
   same kind of block (cleanup → cleanup, normal → normal), `UnwindResume` only in cleanup
   blocks, and calls in cleanup blocks do not use `UnwindAction::{Continue, Cleanup}`;
@@ -49,9 +51,31 @@ def localTy (b : Body) (l : Local) : WfM Ty :=
   | some t => pure t
   | none => throw s!"local _{l} out of range"
 
+/-- The metadata kind with the trait name erased: `dyn` names are not compared (rustc renders
+them with lifetimes and auto traits, and upcasts and `dyn A + Send → dyn A` keep the vtable
+kind). -/
+def metaClass : PointerMetaKind → Nat
+  | .none => 0
+  | .elementCount => 1
+  | .vtablePointer _ => 2
+
+/-- The metadata kind of a pointer *to* `t`. -/
+def tyMetaClass (t : Ty) : Nat := metaClass t.metaKind
+
+def ptrMetaClass (p : PtrType) : Nat := metaClass p.metaKind
+
+/-- The metadata kind a value of pointer type `t` carries (0 for non-pointers). -/
+def ptrTyMetaClass : Ty → Nat
+  | .ptr p _ => ptrMetaClass p
+  | _ => 0
+
 def projTy (b : Body) (ty : Ty) : ProjElem → WfM Ty
   | .deref pointee => do
-    let .ptr _ _ := ty | throw "Deref of a non-pointer type"
+    let .ptr pt _ := ty | throw "Deref of a non-pointer type"
+    if pt matches .fnPtr | .vtablePtr _ then throw "Deref of a fn or vtable pointer"
+    -- `projectPlace` sizes the pointee by the pointer's metadata.
+    ensure (tyMetaClass pointee == ptrMetaClass pt)
+      "Deref: the pointee's metadata kind differs from the pointer's"
     pure pointee
   | .field f _ =>
     match ty with
@@ -141,24 +165,6 @@ def tyKind : Ty → String
   | .enum .. => "enum"
   | .traitObject _ => "dyn type"
   | .opaqueBytes .. => "opaque bytes"
-
-/-- The metadata kind with the trait name erased: `dyn` names are not compared (rustc renders
-them with lifetimes and auto traits, and upcasts and `dyn A + Send → dyn A` keep the vtable
-kind). -/
-def metaClass : PointerMetaKind → Nat
-  | .none => 0
-  | .elementCount => 1
-  | .vtablePointer _ => 2
-
-/-- The metadata kind of a pointer *to* `t`. -/
-def tyMetaClass (t : Ty) : Nat := metaClass t.metaKind
-
-def ptrMetaClass (p : PtrType) : Nat := metaClass p.metaKind
-
-/-- The metadata kind a value of pointer type `t` carries (0 for non-pointers). -/
-def ptrTyMetaClass : Ty → Nat
-  | .ptr p _ => ptrMetaClass p
-  | _ => 0
 
 /-- Same shape: what any two `Ty`s of the same Rust type (up to regions) share. Fields are not
 compared recursively (sizes and the constructor suffice to catch shape errors, and nested
@@ -264,11 +270,14 @@ def checkBinOp (op : BinOp) (a b dest : Ty) : WfM Unit := do
     both (fun x => isIntLike x || isRawPtr x || isFnPtr x)
       "a bool, char, integer, raw pointer or fn pointer"
     -- `Ordering` (a fieldless `i8` enum), or one like it: variants with the discriminants
-    -- -1, 0 and 1, as `orderingValue` needs; the semantics also accepts a plain integer.
+    -- -1, 0 and 1 (the first such variant fieldless), as `orderingValue` needs; the
+    -- semantics also accepts a plain signed integer.
     let orderingLike := match dest with
-      | .int .. => true
+      | .int t _ => t.signed
       | .enum vs discrTy .. =>
-        [-1, 0, 1].all fun (d : Int) => vs.any fun v => discrTy.bringInBounds v.discr == d
+        [-1, 0, 1].all fun (d : Int) =>
+          (vs.find? fun v => discrTy.bringInBounds v.discr == d).any fun v =>
+            (v.fields matches .tuple [] _ none)
       | _ => false
     ensure orderingLike
       s!"BinaryOp Cmp: result assigned to a place of type {tyKind dest}, expected Ordering"
@@ -468,9 +477,9 @@ def checkStatement (b : Body) : Statement → WfM Unit
     | .bool => pure ()
     | _ => throw "Assume of a non-bool"
   | .copyNonOverlapping s d c => do
-    let _ ← operandTy b s
-    let _ ← operandTy b d
-    let _ ← operandTy b c
+    ensure (isPtr (← operandTy b s)) "CopyNonOverlapping: src is not a pointer"
+    ensure (isPtr (← operandTy b d)) "CopyNonOverlapping: dst is not a pointer"
+    ensure (isInt (← operandTy b c)) "CopyNonOverlapping: count is not an integer"
   | .placeMention p => do let _ ← placeTy b p
   | .nop _ => pure ()
 
@@ -521,7 +530,7 @@ def checkTerminator (b : Body) (nInst : Nat) (cleanup : Bool) : Terminator → W
   | .call f args dest target unwind loc _ => do
     match f with
     | .inst i => ensure (i < nInst) "Call: instance out of range"
-    | .fnPtr o => do let _ ← operandTy b o
+    | .fnPtr o => do ensure (isPtr (← operandTy b o)) "Call through a non-pointer"
     | .virtual _ => ensure (!args.isEmpty) "virtual call without a receiver"
     args.forM fun o => do let _ ← operandTy b o
     checkCallerLoc b loc
@@ -531,8 +540,8 @@ def checkTerminator (b : Body) (nInst : Nat) (cleanup : Bool) : Terminator → W
   | .tailCall f args loc _ => do
     match f with
     | .inst i => ensure (i < nInst) "TailCall: instance out of range"
-    | .fnPtr o => do let _ ← operandTy b o
-    | .virtual _ => pure ()
+    | .fnPtr o => do ensure (isPtr (← operandTy b o)) "TailCall through a non-pointer"
+    | .virtual _ => ensure (!args.isEmpty) "virtual tail call without a receiver"
     args.forM fun o => do let _ ← operandTy b o
     checkCallerLoc b loc
   | .assert c _ msg target unwind => do

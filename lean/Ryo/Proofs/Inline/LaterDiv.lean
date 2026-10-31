@@ -232,7 +232,7 @@ theorem exec_bsr (ctx : Ctx) (w : W) (reg : Reg) (rm : Rm) (s : Ryo.X86.State) :
   | rfl
   | simp only [Item.exec, rmW_jump, X86S.reg_jump, pure, Except.pure]
 
-/-- `bsf` of zero: the register keeps its value (but maybe its upper half at 32 bits,
+/-- `bsf` of zero: the register keeps its value (but its upper half maybe cleared at 32 bits,
 `Ctx.bsZero`), `ZF` is set. -/
 theorem exec_bsf_z (ctx : Ctx) (w : W) (reg : Reg) (rm : Rm) (s : Ryo.X86.State)
     (hv : s.rmW w rm = 0) :
@@ -240,7 +240,7 @@ theorem exec_bsf_z (ctx : Ctx) (w : W) (reg : Reg) (rm : Rm) (s : Ryo.X86.State)
       .ok (((s.jump (s.rip + BitVec.ofNat 64 (Item.bsf w reg rm).size)).setReg reg
         (ctx.bsZero w (s.reg reg))).setFlags { zf := some true }) := by
   have h0 : ((0 : BitVec w.bits) == 0) = true := beq_self_eq_true _
-  rw [exec_bsf, hv, if_pos h0, h0]
+  rw [exec_bsf, hv, ite_eq_left h0, h0]
 
 theorem exec_bsf_nz (ctx : Ctx) (w : W) (reg : Reg) (rm : Rm) (s : Ryo.X86.State)
     {v : BitVec w.bits} (hv : s.rmW w rm = v) (h0 : v ≠ 0) :
@@ -249,7 +249,7 @@ theorem exec_bsf_nz (ctx : Ctx) (w : W) (reg : Reg) (rm : Rm) (s : Ryo.X86.State
         (BitVec.ofNat w.bits (lowestSet v))).setFlags { zf := some false }) := by
   have hb : (v == 0) = false := beq_eq_false_iff_ne.2 h0
   have hb' : ¬((v == 0) = true) := by rw [hb]; decide
-  rw [exec_bsf, hv, if_neg hb', hb]
+  rw [exec_bsf, hv, ite_eq_right hb', hb]
 
 theorem exec_bsr_z (ctx : Ctx) (w : W) (reg : Reg) (rm : Rm) (s : Ryo.X86.State)
     (hv : s.rmW w rm = 0) :
@@ -257,7 +257,7 @@ theorem exec_bsr_z (ctx : Ctx) (w : W) (reg : Reg) (rm : Rm) (s : Ryo.X86.State)
       .ok (((s.jump (s.rip + BitVec.ofNat 64 (Item.bsr w reg rm).size)).setReg reg
         (ctx.bsZero w (s.reg reg))).setFlags { zf := some true }) := by
   have h0 : ((0 : BitVec w.bits) == 0) = true := beq_self_eq_true _
-  rw [exec_bsr, hv, if_pos h0, h0]
+  rw [exec_bsr, hv, ite_eq_left h0, h0]
 
 theorem exec_bsr_nz (ctx : Ctx) (w : W) (reg : Reg) (rm : Rm) (s : Ryo.X86.State)
     {v : BitVec w.bits} (hv : s.rmW w rm = v) (h0 : v ≠ 0) :
@@ -266,7 +266,7 @@ theorem exec_bsr_nz (ctx : Ctx) (w : W) (reg : Reg) (rm : Rm) (s : Ryo.X86.State
         (BitVec.ofNat w.bits (highestSet v))).setFlags { zf := some false }) := by
   have hb : (v == 0) = false := beq_eq_false_iff_ne.2 h0
   have hb' : ¬((v == 0) = true) := by rw [hb]; decide
-  rw [exec_bsr, hv, if_neg hb', hb]
+  rw [exec_bsr, hv, ite_eq_right hb', hb]
 
 /-- `cmovz` with `ZF` known. -/
 theorem exec_cmovz (ctx : Ctx) (w : W) (reg : Reg) (rm : Rm) (s : Ryo.X86.State) {b : Bool}
@@ -293,7 +293,7 @@ theorem exec_orImm (ctx : Ctx) (r : Reg) (imm : BitVec 32) (s : Ryo.X86.State) :
 theorem setForm_beq (v : BitVec 64) (h : v ≠ 0) : (setForm v == 0) = false := by
   have h' : ¬((v == 0) = true) := by simpa using h
   unfold setForm
-  rw [if_neg h']
+  rw [ite_eq_right h']
   split <;> (try split) <;> rfl
 
 /-! ### What a run of items leaves unchanged -/
@@ -347,7 +347,7 @@ theorem facts_div (s : Ryo.X86.State) (i : Item) (w : W) (q r : BitVec w.bits) :
     simp at hj
     have h2 : ¬j = Reg.idx .rdx := by rw [idx_rdx]; exact hj.2.2
     have h0 : ¬j = Reg.idx .rax := by rw [idx_rax]; exact hj.1
-    rw [X86S.regs_setFlags, regs_setRegW, if_neg h2, regs_setRegW, if_neg h0, X86S.regs_jump]
+    rw [X86S.regs_setFlags, regs_setRegW, ite_eq_right h2, regs_setRegW, ite_eq_right h0, X86S.regs_jump]
   · rw [X86S.xmm_setFlags, xmm_setRegW, xmm_setRegW, X86S.xmm_jump]
   · rw [X86S.rip_setFlags, rip_setRegW, rip_setRegW, X86S.rip_jump]
 
@@ -477,9 +477,9 @@ theorem divF_u {n : Nat} (a b : BitVec n) (hb : b ≠ 0) :
   have hlt : a.toNat / b.toNat < 2 ^ n := Nat.lt_of_le_of_lt (Nat.div_le_self _ _) a.isLt
   have h0 : (0 : BitVec n).toNat = 0 := by simp
   unfold divF
-  rw [if_neg hb', if_neg (show ¬(false = true) by decide)]
+  rw [ite_eq_right hb', ite_eq_right (show ¬(false = true) by decide)]
   simp only [h0, Nat.zero_mul, Nat.zero_add]
-  rw [if_pos hlt, BitVec.udiv_def, BitVec.umod_def]
+  rw [ite_eq_left hlt, BitVec.udiv_def, BitVec.umod_def]
 
 /-- Signed `div` of `hi:a`, `hi` the sign extension of `a`, by a non-zero `b`, not `MIN / -1`. -/
 theorem divF_s {n : Nat} (hi a b : BitVec n) (hb : b ≠ 0)
@@ -492,9 +492,9 @@ theorem divF_s {n : Nat} (hi a b : BitVec n) (hb : b ≠ 0)
   have h2 : (a.sdiv b).toInt < 2 ^ (n - 1) := BitVec.toInt_lt
   have hb' : ¬((b == 0) = true) := by simpa using hb
   unfold divF
-  rw [if_neg hb', if_pos (show true = true from rfl)]
+  rw [ite_eq_right hb', ite_eq_left (show true = true from rfl)]
   simp only [hext, hq, hr, BitVec.ofInt_toInt]
-  rw [if_pos ⟨h1, h2⟩]
+  rw [ite_eq_left ⟨h1, h2⟩]
 
 theorem hi_ext32 (a : BitVec 32) : ((a.sshiftRight 31) ++ a).toInt = a.toInt := by
   have h : a.sshiftRight 31 ++ a = a.signExtend 64 := by bv_decide
@@ -666,7 +666,7 @@ theorem body_divN (ctx : Ctx) (x : Ryo.X86.State) (sg : Bool) (w : W) (hw : w = 
       Facts [0, 1, 2] x s1 [Item.ld w sg .rax (M.frame a)] ∧
       s1.reg .rax = (if sg then A.signExtend 32 else A.setWidth 32).setWidth 64 := by
     refine ⟨_, exec_ld ctx w sg .rax (M.frame a) x, by ld_fone, ?_⟩
-    rw [X86S.reg_setReg, if_pos rfl, ldVal_bw hw, hA]
+    rw [X86S.reg_setReg, ite_eq_left rfl, ldVal_bw hw, hA]
   refine chain e1 f1 ?_
   have hm1 : s1.mem = x.mem := f1.mem
   have hb1 : s1.reg .rbp = x.reg .rbp := f1.rbp (by decide)
@@ -674,8 +674,8 @@ theorem body_divN (ctx : Ctx) (x : Ryo.X86.State) (sg : Bool) (w : W) (hw : w = 
       Facts [0, 1, 2] s1 s2 [Item.ld w sg .rcx (M.frame b)] ∧ s2.reg .rax = s1.reg .rax ∧
       s2.reg .rcx = (if sg then B.signExtend 32 else B.setWidth 32).setWidth 64 := by
     refine ⟨_, exec_ld ctx w sg .rcx (M.frame b) s1, by ld_fone, ?_, ?_⟩
-    · rw [X86S.reg_setReg, if_neg ax_cx, X86S.reg_jump]
-    · rw [X86S.reg_setReg, if_pos rfl, ldVal_bw hw, memW_frame_congr hm1 hb1, hB]
+    · rw [X86S.reg_setReg, ite_eq_right ax_cx, X86S.reg_jump]
+    · rw [X86S.reg_setReg, ite_eq_left rfl, ldVal_bw hw, memW_frame_congr hm1 hb1, hB]
   refine chain e2 f2 ?_
   have lo : s2.regW .d .rax = (if sg then A.signExtend 32 else A.setWidth 32) := by
     show (s2.reg .rax).setWidth 32 = _
@@ -685,7 +685,7 @@ theorem body_divN (ctx : Ctx) (x : Ryo.X86.State) (sg : Bool) (w : W) (hw : w = 
     rw [v2c, BitVec.setWidth_setWidth_of_le _ (by decide), BitVec.setWidth_eq]
   cases sg
   · -- `xor edx, edx`, `div ecx`
-    rw [if_neg (show ¬(false = true) by decide)] at lo bv
+    rw [ite_eq_right (show ¬(false = true) by decide)] at lo bv
     obtain ⟨s3, e3, f3, v3a, v3c, v3d⟩ : ∃ s3, (Item.setReg .rdx 0).exec ctx s2 = .ok s3 ∧
         Facts [0, 1, 2] s2 s3 [Item.setReg .rdx 0] ∧ s3.regW .d .rax = A.setWidth 32 ∧
         s3.regW .d .rcx = B.setWidth 32 ∧ s3.regW .d .rdx = 0 := by
@@ -710,7 +710,7 @@ theorem body_divN (ctx : Ctx) (x : Ryo.X86.State) (sg : Bool) (w : W) (hw : w = 
         exact (BitVec.setWidth_setWidth_of_le _ h64).trans (umod_zext h32 A B)
     exact chain e4 f4 (chain_nil ⟨v4a, v4d⟩)
   · -- `cdq`, `idiv ecx`
-    rw [if_pos (show true = true from rfl)] at lo bv
+    rw [ite_eq_left (show true = true from rfl)] at lo bv
     obtain ⟨s3, e3, f3, v3a, v3c, v3d⟩ : ∃ s3, (Item.cdq .d).exec ctx s2 = .ok s3 ∧
         Facts [0, 1, 2] s2 s3 [Item.cdq .d] ∧ s3.regW .d .rax = A.signExtend 32 ∧
         s3.regW .d .rcx = B.signExtend 32 ∧
@@ -765,9 +765,9 @@ theorem fin_div (sg rem : Bool) (w : W) {ctx : Ctx} {op : Full.Opcode}
   obtain ⟨y, hy, hf, hq, hrm⟩ := key
   refine end_store (by decide) hr hw hlen hwr hy hf ?_
   cases rem
-  · rw [if_neg (show ¬(false = true) by decide), hq]
+  · rw [ite_eq_right (show ¬(false = true) by decide), hq]
     exact hx
-  · rw [if_pos (show true = true from rfl), hrm]
+  · rw [ite_eq_left (show true = true from rfl), hrm]
     exact hx
 
 /-! ### `cttz`, `ctlz` -/
@@ -945,7 +945,7 @@ theorem body_tzW (ctx : Ctx) (x : Ryo.X86.State) (w : W) (hw : w = .d ∨ w = .q
         s3.flags.zf = some true ∧
         s3.rmW .d (.reg .rcx) = (BitVec.ofNat 64 w.bits).setWidth W.d.bits := by
       refine ⟨_, exec_setReg ctx .rcx _ s2, by ld_fone, ?_, ?_⟩
-      · rw [X86S.flags_setFlags, if_neg hF]
+      · rw [X86S.flags_setFlags, ite_eq_right hF]
         exact z2
       · rw [rmW_reg, regW_setFlags, regW_setReg_self]
     refine chain e3 f3 ?_
@@ -954,7 +954,7 @@ theorem body_tzW (ctx : Ctx) (x : Ryo.X86.State) (w : W) (hw : w = .d ∨ w = .q
         (s4.regW .d .rax).toNat = w.bits := by
       refine ⟨_, exec_cmovz ctx .d .rax (.reg .rcx) s3 z3, by ld_fone, ?_⟩
       simp only [State.setRegW]
-      rw [regW_setReg_self, back64, if_pos trivial, c3,
+      rw [regW_setReg_self, back64, ite_eq_left trivial, c3,
         BitVec.toNat_setWidth, BitVec.toNat_ofNat]
       rcases hw with rfl | rfl <;> decide
     exact chain e4 f4 (chain_nil (by rw [v4, tz_zero h0]))
@@ -974,7 +974,7 @@ theorem body_tzW (ctx : Ctx) (x : Ryo.X86.State) (w : W) (hw : w = .d ∨ w = .q
         Facts [0, 1] s2 s3 [Item.setReg .rcx (BitVec.ofNat 64 w.bits)] ∧
         s3.flags.zf = some false ∧ s3.regW .d .rax = s2.regW .d .rax := by
       refine ⟨_, exec_setReg ctx .rcx _ s2, by ld_fone, ?_, ?_⟩
-      · rw [X86S.flags_setFlags, if_neg hF]
+      · rw [X86S.flags_setFlags, ite_eq_right hF]
         exact z2
       · rw [regW_setFlags, regW_other ax_cx, regW_jump]
     refine chain e3 f3 ?_
@@ -984,7 +984,7 @@ theorem body_tzW (ctx : Ctx) (x : Ryo.X86.State) (w : W) (hw : w = .d ∨ w = .q
       refine ⟨_, exec_cmovz ctx .d .rax (.reg .rcx) s3 z3, by ld_fone, ?_⟩
       simp only [State.setRegW]
       rw [regW_setReg_self, back64]
-      first | rw [if_neg not_false] | rw [if_neg (show ¬(false = true) by decide)]
+      first | rw [ite_eq_right not_false] | rw [ite_eq_right (show ¬(false = true) by decide)]
     exact chain e4 f4 (chain_nil (by rw [v4, v3, v2, tz_lowest h0]))
 
 /-- `cttz` at 8 and 16 bits: `or` of the guard bit, then `bsf`. -/
@@ -1001,7 +1001,7 @@ theorem body_tzN (ctx : Ctx) (x : Ryo.X86.State) (w : W) (hw : w = .b ∨ w = .w
       Facts [0, 1] x s1 [Item.ld w false .rax (M.frame a)] ∧
       s1.reg .rax = (A.setWidth 32).setWidth 64 := by
     refine ⟨_, exec_ld ctx w false .rax (M.frame a) x, by ld_fone, ?_⟩
-    rw [X86S.reg_setReg, if_pos rfl, ldVal_bw hw, hA]
+    rw [X86S.reg_setReg, ite_eq_left rfl, ldVal_bw hw, hA]
     rfl
   refine chain e1 f1 ?_
   obtain ⟨s2, e2, f2, v2⟩ : ∃ s2,
@@ -1066,7 +1066,7 @@ theorem body_lz (ctx : Ctx) (x : Ryo.X86.State) (w : W) (a : BitVec 32) :
         s3.flags.zf = some true ∧
         s3.rmW .d (.reg .rcx) = (BitVec.ofNat 64 (2 * w.bits - 1)).setWidth W.d.bits := by
       refine ⟨_, exec_setReg ctx .rcx _ s2, by ld_fone, ?_, ?_⟩
-      · rw [X86S.flags_setFlags, if_neg hF]
+      · rw [X86S.flags_setFlags, ite_eq_right hF]
         exact z2
       · rw [rmW_reg, regW_setFlags, regW_setReg_self]
     refine chain e3 f3 ?_
@@ -1075,7 +1075,7 @@ theorem body_lz (ctx : Ctx) (x : Ryo.X86.State) (w : W) (a : BitVec 32) :
         s4.reg .rax = ((BitVec.ofNat 64 (2 * w.bits - 1)).setWidth W.d.bits).setWidth 64 := by
       refine ⟨_, exec_cmovz ctx .d .rax (.reg .rcx) s3 z3, by ld_fone, ?_⟩
       simp only [State.setRegW]
-      rw [X86S.reg_setReg, if_pos rfl, if_pos trivial, c3]
+      rw [X86S.reg_setReg, ite_eq_left rfl, ite_eq_left trivial, c3]
     refine chain e4 f4 ?_
     obtain ⟨s5, e5, f5, v5⟩ : ∃ s5,
         (Item.aluImm .xor .d (.reg .rax) (BitVec.ofNat 32 (w.bits - 1))).exec ctx s4 = .ok s5 ∧
@@ -1084,7 +1084,7 @@ theorem body_lz (ctx : Ctx) (x : Ryo.X86.State) (w : W) (a : BitVec 32) :
       refine ⟨_, exec_xorImm ctx .rax _ s4, by ld_fone, ?_⟩
       rw [regW_setReg_self, toNat_back32, v4]
       cases w <;> decide
-    exact chain e5 f5 (chain_nil (by rw [v5, Ryo.Vm.OpSem.leadingZeros, if_pos h0]))
+    exact chain e5 f5 (chain_nil (by rw [v5, Ryo.Vm.OpSem.leadingZeros, ite_eq_left h0]))
   · -- `bsr` gives `log2`; `cmovz` keeps it; `xor` with `n - 1` is `n - 1 - log2`
     have hv0 : s1.rmW (bwOf w) (.reg .rax) ≠ 0 := by
       intro h
@@ -1111,7 +1111,7 @@ theorem body_lz (ctx : Ctx) (x : Ryo.X86.State) (w : W) (a : BitVec 32) :
         Facts [0, 1] s2 s3 [Item.setReg .rcx (BitVec.ofNat 64 (2 * w.bits - 1))] ∧
         s3.flags.zf = some false ∧ s3.regW .d .rax = s2.regW .d .rax := by
       refine ⟨_, exec_setReg ctx .rcx _ s2, by ld_fone, ?_, ?_⟩
-      · rw [X86S.flags_setFlags, if_neg hF]
+      · rw [X86S.flags_setFlags, ite_eq_right hF]
         exact z2
       · rw [regW_setFlags, regW_other ax_cx, regW_jump]
     refine chain e3 f3 ?_
@@ -1120,8 +1120,8 @@ theorem body_lz (ctx : Ctx) (x : Ryo.X86.State) (w : W) (a : BitVec 32) :
         s4.reg .rax = (s3.regW .d .rax).setWidth 64 := by
       refine ⟨_, exec_cmovz ctx .d .rax (.reg .rcx) s3 z3, by ld_fone, ?_⟩
       simp only [State.setRegW]
-      rw [X86S.reg_setReg, if_pos rfl]
-      first | rw [if_neg not_false] | rw [if_neg (show ¬(false = true) by decide)]
+      rw [X86S.reg_setReg, ite_eq_left rfl]
+      first | rw [ite_eq_right not_false] | rw [ite_eq_right (show ¬(false = true) by decide)]
     refine chain e4 f4 ?_
     obtain ⟨s5, e5, f5, v5⟩ : ∃ s5,
         (Item.aluImm .xor .d (.reg .rax) (BitVec.ofNat 32 (w.bits - 1))).exec ctx s4 = .ok s5 ∧
@@ -1134,7 +1134,7 @@ theorem body_lz (ctx : Ctx) (x : Ryo.X86.State) (w : W) (a : BitVec 32) :
         BitVec.toNat_ofNat, BitVec.setWidth_setWidth_of_le _ (show 32 ≤ 64 by decide),
         BitVec.toNat_setWidth, v3, v2, Nat.mod_eq_of_lt h4, Nat.mod_eq_of_lt h5]
     exact chain e5 f5 (chain_nil (by
-      rw [v5, Ryo.Vm.OpSem.leadingZeros, if_neg h0, xor_mask w _ hlt]))
+      rw [v5, Ryo.Vm.OpSem.leadingZeros, ite_eq_right h0, xor_mask w _ hlt]))
 
 theorem body_count (ctx : Ctx) (x : Ryo.X86.State) (lz : Bool) (w : W) (a : BitVec 32) :
     ∃ y, execItems ctx ([.ld w false .rax (M.frame a)] ++ countBody lz w) x = .ok y ∧
@@ -1215,11 +1215,11 @@ theorem intCount_ok (lz : Bool) {n : Nat} (a : BitVec n) {k : Nat}
   cases lz
   · have e : intCount "trailing_zeros" a = .ok (Ryo.Vm.OpSem.trailingZeros a) := by
       simp [intCount, pure, Except.pure]
-    rw [if_neg (show ¬(false = true) by decide), e] at h
+    rw [ite_eq_right (show ¬(false = true) by decide), e] at h
     exact (Except.ok.inj h).symm
   · have e : intCount "leading_zeros" a = .ok (Ryo.Vm.OpSem.leadingZeros a) := by
       simp [intCount, pure, Except.pure]
-    rw [if_pos (show true = true from rfl), e] at h
+    rw [ite_eq_left (show true = true from rfl), e] at h
     exact (Except.ok.inj h).symm
 
 end Ld

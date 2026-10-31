@@ -105,8 +105,8 @@ operands, so they are layout-relative already.
 a provenance-less pointer at the int→ptr cast (`with_exposed_provenance` picks an exposed
 allocation, angelically) and drop provenance at ptr→int casts and transmutes. R can't do
 either: exposure and transmutes are moves, so R keeps the pointer's provenance where L0 has
-an integer, and the JIT's LVN identities (`x + 0 → x`, `x & -1 → x`, `x | 0 → x`, a
-same-width extension) return the pointer where R's result was an integer. With strict
+an integer, and the JIT's LVN identities (such as `x + 0 → x`, `x & -1 → x`, `x | 0 → x`,
+`x * 1 → x`, a same-width extension) return the pointer where R's result was an integer. With strict
 resolution (the pointer's own provenance or UB) that extra provenance could *add* UB: L0
 casts the address back, picks the exposed `B` the address lies in, and accesses it, where R
 still holds `A`'s provenance and would be out of bounds. With the fallback, provenance only

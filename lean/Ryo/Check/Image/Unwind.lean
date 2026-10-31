@@ -18,8 +18,8 @@ new `rsp`, `mov rbp, rsp` makes `rbp` the CFA's register, `sub rsp, n` moves an 
 by `n`; the stack probe's call and `mov eax, n` change nothing. The state after the prologue
 holds for the rest of the code (the body, its loop heads' counter stubs, jump tables) except:
 
-- the entry's counter stub (the target of the entry check's `js`), which runs before the
-  prologue, with the state at the `js`;
+- the entry's counter stub (the target of the entry check's `jns`), which runs before the
+  prologue, with the state at the `jns`;
 - epilogues: the decoder accepts them only as the epilogue item directly followed by `ret` or
   by a tail call's jump (`jmp func`, `jmp rax`), so no call (no unwind point) lies between the
   frame's release and leaving the function, and the FDE gives

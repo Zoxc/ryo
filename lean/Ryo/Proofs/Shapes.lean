@@ -1,6 +1,7 @@
 /-
-Ryo.Proofs.Shapes — one R step of each non-inline shape against its canonical x86 items
-(aot.md §C2 "Shapes", toward M3 `decode_sound`): R's `step` (the scopes, then `stepView`:
+Ryo.Proofs.Shapes — one R step of the non-inline shapes `op`/`lpad`, `br`,
+`trap`, `jmp` and `unreachable` against their canonical x86 items (the others: `Switch.lean`,
+`ArgRet.lean`, `Call.lean`, `Island.lean`; aot.md §C2 "Shapes", toward M3 `decode_sound`): R's `step` (the scopes, then `stepView`:
 `view`/`unpack`, `opSem`, `Then.succ`; or `jmp`) and the items `DecodeReduced.insn` accepts for
 it (`thenSeq`'s tails), composing `Handler.handler_op_sound` / `br_tail` with the scopes
 (`rrel_scopes`, `memRel_foldlM`).

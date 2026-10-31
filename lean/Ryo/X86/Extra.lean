@@ -149,7 +149,8 @@ def encodeXItems (items : List XItem) (pos : Nat := 0) : List UInt8 × List XRel
 
 /-- What the `rel32` fields of the extra forms refer to: relocations (sorted by position), or,
 in linked code at `addr`, the references by address (any other target is a position in the
-same code). -/
+same code). Also `callAbs`'s `imm64` field (`XCursor.field64`), which must be resolved: by a
+relocation at `+2`, or in linked code by a reference (never a position). -/
 inductive XFields
   | relocs (rs : Array XReloc)
   | linked (addr : BitVec 64) (resolve : BitVec 64 → Option XRef)

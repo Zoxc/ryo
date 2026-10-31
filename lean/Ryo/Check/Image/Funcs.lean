@@ -29,8 +29,9 @@ decoded code:
   1/2/4/8 bytes; an sret function returns the pointer as one 8-byte part, from the slot its
   `arg` of the first integer register stored); a valid register kind's parts fit in
   `ret_size`, which is at most 16 (0 for kind 0); a call of an image function collects the
-  callee's `ret_kind` (0 for sret); a tail call's callee has the caller's `ret_kind` and at
-  most its `arg_size` (the callee's stack arguments go over the caller's incoming ones);
+  callee's `ret_kind` (0 for sret); a tail call's callee has the caller's `ret_kind` and
+  `arg_size` (the callee's stack arguments go over the caller's incoming ones, and the
+  outgoing area is taken back at the original callee's `arg_size`);
   `arg_size` is a multiple of 16 and every
   frame access in the incoming argument area (from `fp + 16` on) starts inside its
   `arg_size` bytes (frame accesses as `Ryo.Vm.Frame.effects` gives them). That `arg_size` is

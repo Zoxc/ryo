@@ -5,11 +5,11 @@ RyoTest.Inline — the link between `Asm.inlineOps` and the inline-sequence theo
 of that shape, cover it. Proved as `inlineOps_shape` in the slow library `RyoProofs`
 (`RyoProofs/InlineOps.lean`); this test checks it in the default `lake test`.
 
-`later`: the sequences of the classes the theorems don't cover yet (`laterClass`: variable
-shifts and rotates, `div`/`rem`, `cttz`/`ctlz`, `cmp3`, `bswap`) run by `Item.exec` on frame
+`later`: the sequences of the classes inlined later (`laterClass`: variable shifts and rotates, `div`/`rem`, `cttz`/`ctlz`, `cmp3`, `bswap`) run by `Item.exec` on frame
 slots with garbage above their width, against the handlers' Rust methods (`wrapping_shl`,
 `rotate_left`, `unchecked_div`, `trailing_zeros`, `cmp`, `swap_bytes`, …) at every inline
-width, on both kinds of processor for `bsf`/`bsr` of zero (`Ctx.bsZeroClears`).
+width, on both kinds of processor for `bsf`/`bsr` of zero (`Ctx.bsZeroClears`): a cross-check
+of their theorems (`Ryo/Proofs/Inline/Later.lean`, `LaterDiv.lean`).
 -/
 import RyoTest.Harness
 import Ryo.Proofs.Inline.Shape

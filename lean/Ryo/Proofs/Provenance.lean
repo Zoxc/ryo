@@ -1,9 +1,9 @@
 /-
-Ryo.Proofs.Provenance — extra provenance never adds UB in R (reduced.md §C0.3, "Resolution").
+Ryo.Proofs.Provenance — extra provenance never adds UB in R (reduced.md §C0.3, "Resolution time").
 
 R keeps provenance where Rust drops it: `expose_provenance` and ptr↔int transmutes lower to
-moves, so the slot keeps the pointer's bytes; the JIT's LVN identities (`x + 0 → x`,
-`x & -1 → x`, `x | 0 → x`, a same-width extension) return the pointer where R's result was an
+moves, so the slot keeps the pointer's bytes; the JIT's LVN identities (such as `x + 0 → x`,
+`x & -1 → x`, `x | 0 → x`, `x * 1 → x`, a same-width extension) return the pointer where R's result was an
 integer. L0, as MiniRust, resolves a provenance-less pointer at the int→ptr cast (an angelic
 choice among the exposed allocations). R resolves at the access (`Ryo.Vm.OpSem.State.resolve`): the
 pointer's own provenance if its live allocation contains the range, else the exposed live
@@ -15,10 +15,11 @@ allocation that does. With that fallback:
 - `decodePtr_mono`, `decodeBits_mono`: bytes with more provenance (`bytesLeDefined`) decode to
   the same integer and to a pointer with at least the provenance.
 - `intBytes_le`: an integer result equal to its operand's value (the LVN identities) is
-  `≤def` the operand's bytes; `lvn_add_zero`, `lvn_and_ones`, `lvn_or_zero`.
+  `≤def` the operand's bytes; `lvn_add_zero`, `lvn_and_ones`, `lvn_or_zero`, `lvn_ext_same` (the others whose result is
+  the operand are as direct).
 - `drop_exposed_mono`, `drop_exposed_store`: the converse for an exposed provenance: the bare
   address accesses what the pointer does (folding a pointer to an integer constant).
-- `use_mono`: put together, reading a pointer from `q`'s bytes and accessing through it
+- `use_mono`: put together, reading a pointer from `q`'s bytes and loading through it
   succeeds with the same result from bytes `≤def`-above them.
 
 The memory hypothesis is `LiveDisjoint` (live allocations don't overlap), which `escape`
@@ -332,8 +333,9 @@ theorem lvn_ext_same {w v : Nat} (h : v < 2 ^ w) :
 
 /-- **Keeping provenance is a refinement** for a pointer read back from bytes: where R reads a
 pointer from bytes `a` (an integer result, or bytes without the provenance Rust dropped) and
-accesses through it, reading it from bytes `b` with at least that provenance (the JIT's
-identity result, the VM's move of a pointer's bytes) accesses the same. -/
+loads through it, reading it from bytes `b` with at least that provenance (the JIT's
+identity result, the VM's move of a pointer's bytes) loads the same (stores and `checkDeref`
+would follow likewise from `store_mono`, `checkDeref_mono`). -/
 theorem use_mono {st : Ryo.Vm.OpSem.State} {a b : List AbstractByte} {q : ThinPointer} {n : Nat}
     {al : Align} {bs : List AbstractByte} (hd : LiveDisjoint st.mem)
     (hab : bytesLeDefined a b = true) (hq : decodePtr a = some q) (h : st.load q n al = .ok bs) :
@@ -448,9 +450,10 @@ theorem escape_liveDisjoint {s s' : Ryo.Vm.R.RState} {off : Int} {size align : N
 
 /-! ### Immutable allocations and folded loads -/
 
-/-- A store leaves every immutable allocation as it was (a store into one is UB): the
-constant pool, the code constants and the symbol slots keep the bytes they had before VM
-code ran. -/
+/-- A store leaves every immutable allocation as it was (a store into one is UB). This is
+one step only: that the constant pool, the code constants and the symbol slots keep the
+image's bytes over a whole run would also need the other memory changes (`writeFrame`,
+freeing, environment answers) to keep them, which is not proved. -/
 theorem store_immutable {st : Ryo.Vm.OpSem.State} {p : ThinPointer} {bs : List AbstractByte}
     {al : Align} {mem' : Memory} {id : AllocId} {a : Allocation}
     (h : st.store st.mem p bs al = .ok mem') (ha : st.mem.get? id = some a)
@@ -484,13 +487,14 @@ theorem store_immutable {st : Ryo.Vm.OpSem.State} {p : ThinPointer} {bs : List A
 
 /-- **Folding a load of a relocated field**: where an allocation holds a pointer `t`'s bytes
 (a pool or data field with an `R_X86_64_64` relocation, as `Image.world` writes it), a load
-of those 8 bytes through a pointer into it reads `t`, provenance included, so the load may
+of those 8 bytes through a pointer into it (whatever its provenance, none included: a
+`rebase`d constant or a symbol slot's value) reads `t`, provenance included, so the load may
 fold to `t` (a `RefAddr` of the target); folding it to the bare address also needs `t`'s
-provenance exposed (`drop_exposed_mono`). With the allocation immutable (`store_immutable`),
-the bytes are those of the image. -/
+provenance exposed (`drop_exposed_mono`). That the bytes are still those of the image
+is assumed: `store_immutable` covers stores only, not a whole run. -/
 theorem fold_load_reloc {st : Ryo.Vm.OpSem.State} {p t : ThinPointer} {id : AllocId}
     {a : Allocation} {off : Nat} {bs : List AbstractByte} (hd : LiveDisjoint st.mem)
-    (hp : p.prov = some id) (ha : st.mem.get? id = some a) (hl : a.live = true)
+    (ha : st.mem.get? id = some a) (hl : a.live = true)
     (hoff : p.addr = a.addr + off) (hb : (a.data.extract off (off + 8)).toList = encodePtr t)
     (ht : t.addr < 2 ^ 64) (h : st.load p 8 = .ok bs) : decodePtr bs = some t := by
   obtain ⟨j, b, hg, hlb, h1, h2, rfl⟩ := load_ok (by decide) h

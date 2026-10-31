@@ -132,7 +132,7 @@ def variantTagWf (vs : List Variant) (discrTy : IntType) (tag : TagInfo) (idx : 
 
 mutual
 
-/-- `Type::check_wf` (as a Boolean; `Ty.wfMsg` explains failures). -/
+/-- `Type::check_wf` (as a Boolean). -/
 def Ty.wf : Ty → Bool
   | .int t r => t.wf && r.wf t.size
   | .bool | .char | .fnDef _ | .traitObject _ => true
@@ -185,8 +185,9 @@ mutual
 
 /-- The shape part of `check_value`. Weaker than its memory-independent part: besides pointer
 dereferenceability (which needs memory), it skips the pointer checks (`checkPtr`'s address
-limit, non-null and alignment for safe pointers, `checkPtrMetadata`'s slice length and vtable
-address bounds) and, for an enum with `EnumRepr.single i`, that the variant is `i`. So a
+limit, non-null, alignment, inhabited pointee and `ISIZE_MAX` size bound for safe pointers,
+`checkPtrMetadata`'s slice length and vtable address bounds, the vtable's validity): for a
+pointer it checks only the address's range and the metadata's kind and, for an enum with `EnumRepr.single i`, that the variant is `i`. So a
 `WfValue` need not encode. -/
 def Value.wfShape : Value → Ty → Bool
   | .int i, .int t r => t.canRepresent i && r.contains (t.toBits i)

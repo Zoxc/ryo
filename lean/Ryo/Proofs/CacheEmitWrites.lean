@@ -321,7 +321,7 @@ theorem sequence_writes_frame {T : Type} {cls : Class} {ops : List (R.Opnd T)} {
 
 theorem rbp_setReg (s : X86.State) {r : Reg} (h : r ≠ .rbp) (v : BitVec 64) :
     (s.setReg r v).reg .rbp = s.reg .rbp := by
-  rw [reg_setReg', if_neg (fun e => h (idx_inj e).symm)]
+  rw [reg_setReg', ite_eq_right (fun e => h (idx_inj e).symm)]
 
 theorem rbp_setRegW (s : X86.State) {r : Reg} (h : r ≠ .rbp) (w : W) (v : BitVec w.bits) :
     (s.setRegW w r v).reg .rbp = s.reg .rbp := by

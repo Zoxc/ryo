@@ -30,7 +30,8 @@ inductive ArgLoc
 deriving DecidableEq, Repr, Inhabited
 
 /-- `sig::ArgPlan`: per input its pieces, and the size of the stack argument area (a multiple
-of 16, on PE at least the 32 bytes of shadow space). -/
+of 16, on PE at least the 32 bytes of shadow space, as `argPlan` computes it; 0 in the
+certificate's hand-built plans of `virtualDrop` and `threadLocal` calls). -/
 structure ArgPlan where
   locs : List (List ArgLoc)
   stackSize : Nat

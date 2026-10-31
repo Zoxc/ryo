@@ -459,10 +459,10 @@ def StubsLinked (S : Setup) : Prop :=
         .branch .always t long] q
 
 /-- Open: the environment runs from the states just after a call of a handler, a callee, an
-island or a trip (`Env.out`), and those are outside the function's body (so `Reach` can't take
-an environment step where code runs). -/
+island or a trip (`Env.out`). (Not also that those are outside the function's body: the
+premises quantify over arbitrary states, so a trip "state" whose `rip` is in the body exists
+and the two together would be unsatisfiable.) -/
 structure EnvOutside (S : Setup) : Prop where
-  body : ∀ x, S.E.out x → ∀ p, S.start 0 ≤ p → p < S.body.code.size → x.rip ≠ addrAt S.ctx p
   handler : ∀ h x, Handler.AtHandler S.ctx h x → S.E.out x
   call : ∀ cal regs sp stack w x, EntryAt S.ctx S.c.mode.pe cal regs sp stack w x → S.E.out x
   island : ∀ isl fp ops st w x, Island.IslandAt S.ctx S.c.mode.pe isl fp ops st w x → S.E.out x
@@ -510,7 +510,7 @@ structure EnvApart (S : Setup) : Prop where
     ¬ InStack S.lo S.x0.rsp (S.ctx.addrOf .record + BitVec.ofNat 64 16 + BitVec.ofNat 64 j)
 
 /-- Open (checkable): the leading `arg`s. Each reads an argument register of the convention
-(the decoder takes `xmm4`–`xmm7` on PE too) and no two read the same register (`arg_store`
+(the decoder takes `xmm4`–`xmm7` and integer indices 4 and 5 on PE too) and no two read the same register (`arg_store`
 may clobber the register it stores); no branch target is a leading `arg` (the registers there
 would be those of the branch; landing pads are `lpad`s, `pad_not_leadArg`, and loop heads are
 targets). The decoder could reject each (the backend stores each incoming register once,

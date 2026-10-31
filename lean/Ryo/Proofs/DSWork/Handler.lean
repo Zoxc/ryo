@@ -903,8 +903,6 @@ theorem hdl_dec2 {c : Cursor} {p q : Nat} {i j : Item} (h : Dec c p [i, j] q) :
 theorem hdl_switch_regs {ctx : Ctx} {tb : BitVec 32} {x y : X86.State}
     (h : execItems ctx (Switch.switchItems tb) x = .ok y) (i : Fin 16) (h0 : i ≠ 0) (h1 : i ≠ 1) :
     y.regs i = x.regs i := by
-  have hr0 : i ≠ Reg.rax.idx := h0
-  have hr1 : i ≠ Reg.rcx.idx := h1
   simp only [Switch.switchItems] at h
   rw [X86.execItems_cons] at h
   obtain ⟨y1, e1, h⟩ := except_bind_ok h
@@ -920,7 +918,7 @@ theorem hdl_switch_regs {ctx : Ctx} {tb : BitVec 32} {x y : X86.State}
   cases Switch.except_ok_inj e3
   cases Switch.except_ok_inj e2
   cases Switch.except_ok_inj e1
-  simp [State.setReg, State.jump, State.setFlags, hr0, hr1, h0, h1]
+  simp [State.setReg, State.jump, State.setFlags, h0, h1]
 
 /-- The next instruction is not a leading `arg` when this one isn't an `arg`. -/
 theorem hdl_next_notLead (hD : Decodes S code relocs rodata callSites dropped scopes mode)
@@ -1053,7 +1051,7 @@ continues at the item after the call with `opSem`'s result for a choice, its con
 return registers, and `FrameInv` of R's state after for any successor past the leading `arg`s
 (the frame writes in the window, `FrameBounds.handler`; the code, rodata and link slots kept,
 `hdl_kept`). -/
-theorem hdl_call_reach (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+theorem hdl_call_reach (_hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (H : Hyps S)
     {Q : X86.State → Prop} {s s1 : R.RState} {x : X86.State} {p n : Nat}
     {h : Full.Opcode} {args : List R.Arg} {t : R.Then Nat} {vals : Operands} {items : List Item}
@@ -1230,8 +1228,8 @@ theorem hdl_br (H : Hyps S) {k pT j pc : Nat} {q : Proto} {c3 : Cursor} {s s1 : 
         exact hdl_testAl_straight S.ctx) x') hex
   rcases Bool.eq_false_or_eq_true (b != (cond == Cond.z)) with hbn | hbn
   · -- Taken: to the target.
-    rw [if_pos hbn] at hpc
-    rw [if_pos hbn] at hrip2
+    rw [ite_eq_left hbn] at hpc
+    rw [ite_eq_left hbn] at hrip2
     rw [← hpc] at hstep
     have hnlj : ¬ LeadArg S j := H.argsOk.untargeted k hlt _ htg j hj
     have hfj := (hFI j hnlj).congr hregs hxmm hmem
@@ -1244,8 +1242,8 @@ theorem hdl_br (H : Hyps S) {k pT j pc : Nat} {q : Proto} {c3 : Cursor} {s s1 : 
       exact CacheInv.emptyPe _ _
   · -- Not taken: falling through.
     have hnb : ¬ ((b != (cond == Cond.z)) = true) := by simp [hbn]
-    rw [if_neg hnb] at hpc
-    rw [if_neg hnb] at hrip2
+    rw [ite_eq_right hnb] at hpc
+    rw [ite_eq_right hnb] at hrip2
     rw [← hpc] at hstep
     have hripC : x''.rip = addrAt S.ctx c3.pos := by
       (rw [hrip2, hrip, addrAt_add', hqT]) <;>
@@ -1388,7 +1386,7 @@ theorem handler_general' (hD : Decodes S code relocs rodata callSites dropped sc
     subst ht0
     exact (hdl_succ_trap hpc).elim
 
-/-- `bodySim_handler`: `resume` by `handler_resume'`, every other handler call by
+/-- `bodySim_handler'`: `resume` by `handler_resume'`, every other handler call by
 `handler_general'` (`noArg_insn`, `InsnRead.handler` as in `link_handler`; `handler_rside` for
 the R side under `RSafe`; `hdl_call_reach` for the setup, `call h` and the return under
 `H.handler` and `SepAcross.handler`; then the shape's tail: `hdl_fallthrough` for `op`/`lpad`,

@@ -8,7 +8,7 @@ rule `reg + offset`, the saved registers' rules), as `readelf --debug-dump=frame
 shows it. It reads what ryo emits and rejects the rest:
 
 - 32-bit entries only (no `0xffffffff` extended length); a zero length ends the section;
-- CIE version 1, augmentation `z` followed by any of `P`, `L`, `R` (or empty);
+- CIE version 1, augmentation `z` followed by any of `P`, `L`, `R` (`R` required, see below);
 - pointer encodings `DW_EH_PE_pcrel | DW_EH_PE_sdata4` (`0x1b`), and for the personality
   also with `DW_EH_PE_indirect` (`0x9b`); a CIE without `R` (absolute 8-byte pointers) rejects,
   and so does the Mach-O images' form (`EhPointers::Abs8`: `pcrel | absptr`, `0x10`, 8-byte
@@ -89,7 +89,8 @@ structure Fde where
   pcRange : Nat
   /-- Present iff the CIE has `L`. -/
   lsda : Option PtrField
-  /-- At least one row; the first at 0 (the CIE's initial rules); ascending. -/
+  /-- At least one row; the first at 0 (the CIE's initial rules, after the instructions
+  before the first advance); ascending. -/
   rows : Array Row
   deriving Repr, Inhabited
 

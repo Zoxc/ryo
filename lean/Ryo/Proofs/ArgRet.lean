@@ -33,9 +33,9 @@ the epilogue and `ret` (`exec_epilogue`): `rsp = fp + 16`, `rip` the return addr
 `[fp + 8]`, memory unchanged; with a frame pointer or PE the saved `rbp` from `[fp]`; of the
 integer registers only `rax rdx r11 rsp rbp` change (also the flags, and `xmm0`/`xmm1` for xmm
 parts, which the theorem doesn't state). The incoming area relates to the x86 bytes at
-`fp + 16`. All three modes are handled; without a frame pointer (`add rsp, F + 8`) and on PE
-(`add rsp, F; pop rbp`) the hypothesis `hsp` gives `rsp = fp - F` (the frame's
-`lea reg, [rsp + F]` is `fp`), which `RRel` doesn't carry.
+`fp + 16` (when `16 + argSize ≤ 2^63`). All three modes are handled; without a frame pointer
+(`add rsp, F + 8`) and on PE (`add rsp, F; pop rbp`) the hypothesis `hsp` gives `rsp = fp - F`
+(the frame's `lea reg, [rsp + F]` is `fp`), which `RRel` doesn't carry, and `F + 8 < 2^31`.
 That `[fp]` and `[fp + 8]` hold the caller's `rbp` and return address is the caller's side (the
 statements give the values in terms of the memory there).
 
@@ -1119,9 +1119,9 @@ return registers, zero-extended, the incoming area read, and the function's end)
 `retLoads k src ++ epilogue F mode ++ [ret]`: the x86 return registers relate to R's (`RetRel`),
 memory is unchanged, `rsp` is the frame's `fp + 16` (the caller's, past the return address)
 and `rip` the return address at `fp + 8`; with a frame pointer (or PE) the saved `rbp` is
-restored from `[fp]`. Without a frame pointer and on PE, `hsp` gives `rsp = fp - F` (`F` the
-frame size: `lea reg, [rsp + F]` is `fp`; PE's epilogue is `add rsp, F; pop rbp`). Of the integer
-registers only `rax`, `rdx`, `r11`, `rsp` and `rbp` change (the flags, and `xmm0`/`xmm1` for
+restored from `[fp]`. Without a frame pointer and on PE, `hsp` gives `rsp = fp - F` and `F + 8 < 2^31` (`F` the
+frame size: `lea reg, [rsp + F]` is `fp`; PE's epilogue is `add rsp, F; pop rbp`). The incoming area relates when
+`16 + c.argSize ≤ 2^63`. Of the integer registers only `rax`, `rdx`, `r11`, `rsp` and `rbp` change (the flags, and `xmm0`/`xmm1` for
 xmm parts, change too; not stated here). -/
 theorem ret_step (ctx : Ctx) (F : Nat) {c : R.Code} {s : R.RState} {x : X86.State}
     {ch : OpSem.Choice} {op : Reduced.Opcode} {src : BitVec 32} {k : BitVec 64}

@@ -54,6 +54,11 @@ def checkObject (o : ImageObject) : ObjectResult :=
   { symbol := o.symbol, crateHash := o.image.header.crateHash, cguHash := o.image.header.cguHash,
     funcs := o.funcs.size, tag, mismatches, main }
 
+/-- The bytes of the file at `path`, or the error reading it, so that a missing or unreadable
+path is reported like an unparsable one instead of aborting the run. -/
+def readBytes (path : String) : IO (Except String ByteArray) := do
+  try pure (.ok (← IO.FS.readBinFile path)) catch e => pure (.error (toString e))
+
 /-- `ryo-lean check-image`: checks the image objects `objs` and the registry object, prints
 each mismatch (prefixed with its object), notes, and a summary; 1 on any mismatch. -/
 def run (objs : List String) (registry : Option String) : IO UInt32 := do
@@ -63,7 +68,7 @@ def run (objs : List String) (registry : Option String) : IO UInt32 := do
   let mut tags : Array (String × String) := #[]
   let mut mains := 0
   for path in objs do
-    match Ryo.Obj.readImageObject (← IO.FS.readBinFile path) with
+    match (← readBytes path) >>= Ryo.Obj.readImageObject with
     | .error e =>
       IO.println s!"{path}: can't read the image object: {e}"
       bad := bad + 1
@@ -81,7 +86,7 @@ def run (objs : List String) (registry : Option String) : IO UInt32 := do
           | none => "undefined here"
         IO.println s!"{path}: note: {mainSlotName} names `{m.name}` ({what})"
   if let some path := registry then
-    match Ryo.Obj.readElf (← IO.FS.readBinFile path) with
+    match (← readBytes path) >>= Ryo.Obj.readElf with
     | .error e =>
       IO.println s!"{path}: can't read the registry object: {e}"
       bad := bad + 1

@@ -10,7 +10,8 @@ Ports: none (MiniRust leaves `Nondet` abstract). Implements mir-spec §A.4:
 - `Refines tgt src`: every target behavior is a source behavior (diverging ones up to
   stuttering, `Behavior.equiv`: the same limit trace, whatever step each event comes at), or
   the source goes wrong after a prefix of the target's trace, or (D25) the target overflows
-  its stack after a prefix of some source behavior's trace.
+  its stack after a prefix of some source behavior's trace (unreachable for now: `runN` runs
+  both programs with a stack that cannot overflow, so `Behaviors` has no `stackOverflow`).
 
 The environment (mir-spec §A.6): external calls not covered by the shims
 (`Ryo.Spec.Mir.External`) are run by the oracle (`Oracle.env`). Behaviors and refinement are
@@ -82,7 +83,8 @@ inductive Behavior where
   | exits (trace : List Event) (code : Int)
   | aborts (trace : List Event)
   | goesWrong (trace : List Event) (msg : String)
-  /-- D25 (only targets have it: sources run with an unbounded stack). -/
+  /-- D25 (meant for targets with a real stack bound; `runN` never produces it, for sources or
+targets). -/
   | stackOverflow (trace : List Event)
   /-- A run that never ends; `traceAt n` is the trace after `n` steps. -/
   | diverges (traceAt : Nat → List Event)

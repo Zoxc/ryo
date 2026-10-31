@@ -138,7 +138,7 @@ inductive ImageError where
   | badList (i : Nat)
   | badCallSite (i : Nat)
   | badData
-  /-- A constant relocation (index) is out of the pool, misaligned or out of order. -/
+  /-- A constant relocation (index) is out of the pool or out of order. -/
   | badConstReloc (i : Nat)
   deriving Repr, DecidableEq, Inhabited
 
@@ -570,7 +570,7 @@ private def hex (n : Nat) : String :=
   "0x" ++ s
 
 /-- The image summary `ryo-lean obj` prints, line by line. The Rust reference printer
-(`scripts/lean-decode-ref`, `--summary`) prints the same text:
+(`scripts/lean-decode-ref summary`) prints the same text:
 
 ```
 image <symbol>

@@ -1,7 +1,8 @@
 /-
 Ryo.Proofs.Inline.Later — the inline classes added after `Ryo/Proofs/Inline.lean`'s theorems
-(`laterClass`): the variable shifts and rotates (`shiftVar`), `bswap` and `cmp3`, against
-`opSem`. All three only change `rax`, `rcx` and the flags (`cl` holds the shift count, the
+(`laterClass`): here the variable shifts and rotates (`shiftVar`), `bswap` and `cmp3`, against
+`opSem` (`div` and `count` are in `LaterDiv.lean`; `div` also changes `rdx`, so it is only
+`SoundX`). These three only change `rax`, `rcx` and the flags (`cl` holds the shift count, the
 `setcc cl` of `cmp3`), so they are `Sound`.
 
 - `shiftVar`: the operand in `eax`/`rax` (sign-extended to 32 bits for an 8 or 16-bit `sar`),

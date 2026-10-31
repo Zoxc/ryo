@@ -6,8 +6,10 @@ the dump decide them without knowing which instance each function is:
 - **`__ryo_main`.** The backend writes the slot exactly when the entry function is one of the
   image's functions (`partition.rs`: `main_symbol`), so: if the object has the slot, its
   relocation names the symbol of the dump's start instance (`Program.start`, `main`); if it
-  hasn't, no image function has that symbol. `Relocs.checkMain` has checked the slot's shape
-  and that a symbol it names that this object defines is one of the image's functions.
+  hasn't, no image function has that symbol. A slot `Relocs.checkMain` can't resolve
+  (undefined, several, a bad relocation) is reported with its mismatches; the other shape
+  checks (and that a symbol it names that this object defines is one of the image's
+  functions) are `check-image`'s.
 - **Function symbols.** An image function whose symbol is a dumped instance's is not an
   intrinsic instance (the image compiles MIR bodies). It may be `ext`: the dump writes
   `drop_in_place::<dyn Trait>` and `ThreadLocal` shims as `ext` though the image compiles
@@ -60,15 +62,18 @@ def check (prog : Program) (o : ImageObject) : Report := Id.run do
       if ins.kind matches .intrinsic .. then
         rep := { rep with errors := rep.errors.push s!"func {i} `{n}` is a dumped intrinsic instance" }
   -- `__ryo_main`.
-  let (_, slot) := checkMain o
+  let (mainErrs, slot) := checkMain o
   match slot with
+  | none =>
+    -- A broken slot (undefined, unresolvable, several): its mismatches, not "no slot".
+    if !mainErrs.isEmpty then
+      rep := { rep with errors := rep.errors ++ mainErrs }
+    else if names.contains startSym then
+      rep := { rep with errors := rep.errors.push s!"the entry instance `{startSym}` is an image function, but there is no {mainSlotName}" }
   | some m =>
     rep := { rep with main := some m.name }
     if m.name != startSym then
       rep := { rep with errors := rep.errors.push s!"{mainSlotName} names `{m.name}`, the dump's entry instance is `{startSym}`" }
-  | none =>
-    if names.contains startSym then
-      rep := { rep with errors := rep.errors.push s!"the entry instance `{startSym}` is an image function, but there is no {mainSlotName}" }
   -- Symbol slots.
   for s in [0:o.image.header.symbols.count] do
     let .ok n := o.slotName s | continue

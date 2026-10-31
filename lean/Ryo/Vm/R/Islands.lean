@@ -31,8 +31,8 @@ calls `FnCx::island` with the operands in this order):
   `fmaf32/64` (3), whose templates no lowering emits now; the `volatile_*` wrappers, which
   are emitted, aren't in it (so they read every operand, which is sound).
 
-Any other name, or an operand list of another length than the template's, reads every operand
-(`roles` is `none`).
+Any other name reads every operand (`roles` is `none`), and so does an operand list of another
+length than the template's (`role` checks the length).
 -/
 
 namespace Ryo.Vm.R.Islands

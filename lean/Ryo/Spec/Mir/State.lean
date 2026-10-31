@@ -1,8 +1,10 @@
 /-
 Ryo.Spec.Mir.State — the abstract machine state and the semantics monad.
 
-Ports: MiniRust `lang/machine.md` (`Machine`, `StackFrame`, `StackPopAction`, `Thread`,
-`fn_from_ptr`, `vtable_from_ptr`, `compute_size`, `compute_align`).
+Ports: MiniRust `lang/machine.md` (`Machine`, `StackFrame`, `StackPopAction`, `Thread`).
+Its `fn_from_ptr` is in `Operand.lean`, `compute_size`/`compute_align` are
+`computeSizeAndAlign` (`Ryo/Spec/Lang/Representation.lean`), and vtables are read by
+`vtableSizeAlign` there.
 
 Differences:
 - D17: one thread; no thread list, locks, data-race tracking.

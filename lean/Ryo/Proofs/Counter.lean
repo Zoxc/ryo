@@ -20,8 +20,8 @@ call [r11 + 8|16]; jmp back`), where `back` is the position right after the chec
 - `counter_noop`: from `x` at the check, either way (fall-through, or taken + stub + trip
   return) the program reaches `after` in a state that `Agree`s with `x`: `rsp`, the
   callee-saved registers, and memory outside `Owned ∪ [lo, x.rsp)`. Caller-saved registers
-  (`rax` and `r11` are written by the stub; the trip keeps the rest, which isn't assumed
-  here), the flags and the `xmm`s may differ. The frame relation (`Ryo.Proofs.Inline.Rel`) reads only `rbp` and frame
+  (`rax` and `r11` are written by the stub; the entry trip keeps the rest, the loop-head
+  trip doesn't, and neither is assumed here), the flags and the `xmm`s may differ. The frame relation (`Ryo.Proofs.Inline.Rel`) reads only `rbp` and frame
   memory, which is at or above `rsp` (no live data below `rsp`: at the entry the frame isn't
   set up yet, at a loop head the frame lies above `rsp`), so it is kept.
 
@@ -31,8 +31,9 @@ state `s` just after `call [r11 + d]` (return address pushed, `rip` at the calle
 the callee-saved registers of `s`, and memory of `s` outside `Owned` (runtime-owned: the
 records with their counters, the queue, code memory) and outside the stack below the caller's
 `rsp` (`[lo, s.rsp + 8)`), given that stack has room for the return address
-(`lo + 8 ≤ s.rsp + 8`). jit.md's contract (every register but `rax`, `r11` and the flags
-kept) implies the register part; the return (`ret_rip`, `ret_rsp`) and memory (`ret_mem`)
+(`lo + 8 ≤ s.rsp + 8`). jit.md's contract (the callee-saved registers kept; the entry trip
+keeps every register but `rax`, `r11` and the flags, the loop-head trip only those live at a
+head) implies the register part; the return (`ret_rip`, `ret_rsp`) and memory (`ret_mem`)
 parts are assumed beyond what jit.md states. Its other outcome (`Done`: transfer to JIT code, which never returns
 here) is not covered: it is a property of the transfer target (`FnSim`), not of this code.
 The counter bytes must be in `Owned` (`counter_noop`'s `hOwn`).

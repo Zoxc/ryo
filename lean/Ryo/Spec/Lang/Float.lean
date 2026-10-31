@@ -278,7 +278,8 @@ termination_by b
 decreasing_by omega
 
 /-- `powi` as compiler-rt's `__powisf2`/`__powidf2`/`__powitf2` compute it (and LLVM's inline
-expansion for a constant exponent, which multiplies in the same order): repeated squaring
+expansion for a constant exponent, which multiplies in the same order; not for `f16`, see
+`powiF16`): repeated squaring
 with one rounding per multiplication, then `1 / r` for a negative exponent. `powi(x, 0)` is
 `1` even for NaN `x`. A NaN arising in the loop can only be (a quieted) `x` or a fresh NaN,
 so its candidates are `nanCandidates f [x]`. -/
@@ -288,7 +289,8 @@ def powi (f : FloatTy) (x : Nat) (k : Int) : FRes :=
   | some r => if k < 0 then div f (one f) r else .ok r
 
 /-- `powi` on `f16`: LLVM promotes `f16` to `f32` (exactly), calls `__powisf2` and rounds
-the result back. -/
+the result back. Not LLVM's inline expansion for a constant exponent, which rounds to `f16`
+after every multiplication (divergences.md R3). -/
 def powiF16 (x : Nat) (k : Int) : FRes :=
   match convert .f16 .f32 x with
   | .nan _ => if k = 0 then .ok (one .f16) else nanOf .f16 [x]

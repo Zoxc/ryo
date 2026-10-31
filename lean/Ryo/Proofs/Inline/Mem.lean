@@ -402,11 +402,11 @@ theorem post_store {st : OpSem.State} {mem' : Memory} {x x' : X86.State} {id : A
       have hd := storeData_get? hb i
       rw [Array.getElem?_eq_getElem (by rw [storeData_size]; exact hi)] at hd
       by_cases hin : off ≤ i ∧ i < off + bs.length
-      · rw [if_pos hin, List.getElem?_eq_getElem (by omega), Option.some.injEq] at hd
+      · rw [ite_eq_left hin, List.getElem?_eq_getElem (by omega), Option.some.injEq] at hd
         rw [hd, show a.addr + i = a.addr + off + (i - off) by omega,
           BitVec.ofNat_add (a.addr + off) (i - off), write_at _ _ _ _ _ hn (by omega)]
         exact hx.getElem _ _ _
-      · rw [if_neg hin, Array.getElem?_eq_getElem hi, Option.some.injEq] at hd
+      · rw [ite_eq_right hin, Array.getElem?_eq_getElem hi, Option.some.injEq] at hd
         rw [hd, X86.Mem.write_other]
         · exact hm _ _ hg hlv i hi
         · apply Nat.not_lt.1

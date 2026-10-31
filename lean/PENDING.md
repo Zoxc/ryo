@@ -67,3 +67,20 @@ remove it once a Lean session has handled it.
 
 - JIT `Ext` of `Undef` (Commit: "JIT: Extend Undef to zero in the emitter", a3544703): a
   widening `Ext` of an `Undef` operand now writes 0 to the destination instead of nothing.
+
+- Decoder canonical forms (Commit: "Image: Decode only canonical call args, tail jumps and
+  arg stores"): `DecodeReduced.lean` already mirrors it (`paramsOk`, PE-only `jmpRaxW`, no
+  early `none` after `movd r11d, xmm`). `argInsn_none`'s second case can no longer happen, so
+  it and `NoArg` (about 60 uses, `Proofs/NoArgCursor.lean`) can be simplified to `c' = c`.
+
+- Lean dump call convention (Commit: "Backend: Fix lowering bugs and the Lean dump's call
+  convention"): the dump takes the convention from rustc's `CanonAbi` (`rust`, `c`, `other
+  "<CanonAbi>"`; `rustCall` stays separate). The `CallConv` doc in
+  `Ryo/Spec/Mir/Syntax.lean` still says "rustc `ExternAbi`". Unsize casts between equal
+  types (after region erasure) dump as `upcast none`.
+
+- `Item::map_regs` (8cedd067) maps mov, movd and sse items; the Lean cache model and proofs
+  don't have those cases yet.
+
+- `ryo_probe_stack` (Commit: "Rt: Fix JIT diagnostics, probe_stack and registry sort"): the
+  last probe is exact (no page below the frame); only relevant if the Lean side describes it.

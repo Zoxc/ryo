@@ -44,8 +44,8 @@ stores, the `arg` flags, `Indexed`), the window end `K`, the state `x0` at the f
 
 **Per instruction** (§4). `InsnSim` at `k` splits into the prologue of the iteration (the
 padding's `nop`s, `reach_padding`; the counter check, `reach_counter`) and the body
-(`BodySim`), one lemma per shape the decoder reads (`bodySim_arg`, `bodySim_call`,
-`bodySim_inline`, `bodySim_handler`, `bodySim_ret`, `bodySim_unreachable`, `bodySim_jmp`,
+(`BodySim`), one lemma per shape the decoder reads (`bodySim_arg`, `bodySim_call'`,
+`bodySim_inline`, `bodySim_handler'`, `bodySim_ret`, `bodySim_unreachable`, `bodySim_jmp`,
 `bodySim_island`, `bodySim_dense`), dispatched by `bodySim_of_read` over `ProtoRead`/`InsnRead`.
 Proved helpers: decoded branches are canonical (`branch_canonical`), every iteration starts at a
 relocation boundary (`boundary_start`), R's scopes never stop with `noBehavior` (`noNB_scopes`);
@@ -59,7 +59,7 @@ from `FrameBounds.writesOff`).
 **Files.** `DecodeSound/Basic.lean`: §1–§3 and §4's helpers, `bodySim_unreachable`,
 `bodySim_jmp`, `reach_padding`, `boundary_start`. `DSWork/Boundary.lean`: the decoder facts.
 `DSWork/{Arg,Ret,Island,Counter,Call,Handler}.lean`: `bodySim_arg`, `bodySim_ret`,
-`bodySim_island`, `reach_counter`, `bodySim_call'`, `bodySim_handler'`. This file: the open bodies, the dispatch, `insnSim_main`, §5.
+`bodySim_island`, `reach_counter`, `bodySim_call'`, `bodySim_handler'`. This file: the inline and dense-switch bodies (`bodySim_inline`, `bodySim_dense`), the dispatch, `insnSim_main`, §5.
 
 **`decode_sound`** (§5): from `decodeReduced … = .ok d`, `read_instructions_prologue`,
 `instructions_read` and `iters_indexed` give the layout; `reducedOf_insns` the instructions; then
@@ -104,8 +104,7 @@ discharged later:
   runtime-owned, live allocations neither runtime-owned nor below `rsp`, the symbol slots and
   the JIT record off the stack), `stackSizes` (`StackSizes`: the callees' stack areas, fitting
   the frame, from the image), `codeApart` (`CodeApart`: nothing the function or its environment writes is code or
-  rodata), `envOutside` (`EnvOutside`: the environment's entries are `Env.out` states, outside
-  the function's body);
+  rodata), `envOutside` (`EnvOutside`: the environment's entries are `Env.out` states);
 - facts of the decoder and linker not yet exposed: `deadStore` (`DeadStoreSim`: the steps of
   dropped stores), `inlineMemKept` (`InlineMemKept`: an inline instruction other than `store`
   with private writes keeps the rest of memory), `cacheCleared` (`CacheCleared`: the cache is empty at branch targets and
@@ -156,7 +155,8 @@ Proved in `DSWork/*.lean`: `bodySim_arg` (Arg), `bodySim_ret` (Ret), `bodySim_is
 `reach_counter` (Counter), `bodySim_call'` (Call), `bodySim_handler'` (Handler),
 `bodySim_inline'` (Inline, under `Hyps`' `cacheRegsOk`, `inlinePrivate`, `inlineMemKept`, and
 the proved `inlineClsOk` and `InlineBelowLink`, `inlineBelowLink_of`);
-`bodySim_unreachable`, `bodySim_jmp` in `DecodeSound/Basic.lean`. -/
+`bodySim_unreachable`, `bodySim_jmp` in `DecodeSound/Basic.lean`. Here: `bodySim_inline`
+and `bodySim_dense`. -/
 
 /-- An inline sequence without a dropped store: `DSWork/Inline.lean`'s `bodySim_inline'`, its
 extra hypotheses from `Hyps` (`cacheRegsOk`, `inlinePrivate`, `inlineMemKept`, `inlineClsOk`)

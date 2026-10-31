@@ -117,8 +117,8 @@ theorem idx_bv {k : Nat} (d : BitVec k) (hk : k ≤ 64) (n : BitVec 64) :
       if d.setWidth 64 < n then d.setWidth 64 else n := by
   have hlt : d.setWidth 64 < n ↔ d.toNat < n.toNat := by rw [BitVec.lt_def, toNat_zext d hk]
   by_cases h : d.toNat < n.toNat
-  · rw [if_pos h, if_pos (hlt.2 h), BitVec.ofNat_toNat]
-  · rw [if_neg h, if_neg (fun h' => h (hlt.1 h')), BitVec.ofNat_toNat, BitVec.setWidth_eq]
+  · rw [ite_eq_left h, ite_eq_left (hlt.2 h), BitVec.ofNat_toNat]
+  · rw [ite_eq_right h, ite_eq_right (fun h' => h (hlt.1 h')), BitVec.ofNat_toNat, BitVec.setWidth_eq]
 
 /-! ### Each stage -/
 

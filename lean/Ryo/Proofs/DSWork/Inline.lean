@@ -188,7 +188,8 @@ theorem inline_cop6 {cls : Class} (a b c d e f : String) (l : List String)
     (h : classOfParts (a :: b :: c :: d :: e :: f :: l) = some cls) :
     inline_okC cls := by inline_cop_tac
 
-/-- The inline classes: no `ovf` but `add`/`sub`, no sign extension from 64 bits. -/
+/-- The inline classes: no `ovf` but `add`/`sub`, no sign extension from 64 bits, no immediate
+rotate. -/
 theorem inline_classOfParts (ps : List String) {cls : Class} (h : classOfParts ps = some cls) :
     (∀ op s w, cls = .ovf op s w → op = .add ∨ op = .sub) ∧ (∀ b, cls ≠ .ext .q b true) ∧
       (∀ sh w, cls = .shiftImm sh w → sh.isShift = true) := by
@@ -1646,7 +1647,7 @@ theorem inline_not_leadArg' (hD : Decodes S code relocs rodata callSites dropped
   · exact H.argsOk.untargeted k hP.lt _ (htg _ hx) _ rfl
 
 set_option maxRecDepth 100000 in
-/-- `bodySim_inline` (`inline_run'`, `inline_progress'`, `branch_canonical`), with the frame
+/-- `bodySim_inline'` (`inline_run'`, `inline_progress'`, `branch_canonical`), with the frame
 writes off the link slots (`InlineBelowLink`). -/
 theorem bodySim_inline' (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (H : Hyps S) (hbl : InlineBelowLink S)

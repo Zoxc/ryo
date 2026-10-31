@@ -66,14 +66,14 @@ What each instruction reads (`gen`) and writes for sure (`kill`), and what that 
   size); not the image, since no image check ties an sret callee's `ret_size` to its return
   type (`Check.Image.Funcs` checks `ret_size` only for kinds returned in registers).
 - **Islands** read the extents of the `Lend` scopes before them (`asm::ScopeKind::Lend`, one
-  per operand of a nonzero size, recorded by the lowering with the size its template
+  per operand, of 0 bytes for a zero-sized one, recorded by the lowering with the size its template
   accesses there), may write them (no kill: they are clobbered), and make a pointer access
   (they take `fp` and may call anything). This assumes the island contract: an island's
   template accesses each operand only within its `Lend` extent, and other frame bytes only
   through pointers to escaped objects; C1' checks the extents against the template
   (aot.md §C1, "Islands"; reduced.md §C0.1). An operand without a `Lend` has an empty
-  extent: the encoder skips a `Lend` only for a zero-sized operand (`Asm::lend` in
-  `asm/encode.rs`: `if size != 0`), and C1' checks every operand's extent, "no `Lend` means
+  extent: the encoder records one for every operand (`Asm::lend` in `asm/encode.rs`), so
+  that happens only in code it didn't write, and C1' checks every operand's extent, "no `Lend` means
   size 0" included, against the contract. With the island's template known
   (`Facts.islandTemplate`, from its symbol), the contract's operand roles
   (`Ryo.Vm.R.Islands`, trusted like the extents) refine this per `Lend`: one that only
@@ -202,7 +202,7 @@ def mayHaveStackArgs (pe : Bool) (ws : List (BitVec 32)) : Bool :=
 
 /-- How an island of template `template` (if known), its operand slots being `ws`, accesses
 the `Lend` extent of `n` bytes at `off`. A `Lend` belongs to an operand at its offset (the
-lowering records one per operand of a nonzero size, at the operand's slot), but which one,
+lowering records one per operand, at the operand's slot), but which one,
 when several share the offset, the scope table doesn't say; so the extent is read unless the
 contract (`Islands.role`) says no operand there is read, written for sure (on the
 fall-through) if it says each of them is written whole, and else clobbered. An extent at no
@@ -220,7 +220,7 @@ def islandAccess (template : Option String) (ws : List (BitVec 32)) (off : BitVe
 /-- `frame::native`: the frame operands of a native instruction. A call reads every byte if it
 may have stack arguments (`mayHaveStackArgs`; `Flow.of` narrows that to the stack-argument
 area when it knows the callee's extent). An island reads the extents `lends` (the `Lend`
-scopes before it: offset, size; an operand without one is zero-sized) but those of operands
+scopes before it: offset, size; an operand without one is taken as zero-sized) but those of operands
 its template's contract says it doesn't read, which it writes or clobbers (`islandAccess`),
 and makes a pointer access. -/
 def native (op : Reduced.Opcode) (ops : List (Opnd Nat)) (pe : Bool := false)
@@ -414,7 +414,8 @@ abbrev Ranges := List (Nat × Nat)
 
 def Ranges.bits (rs : Ranges) : Nat := rs.foldl (fun b (lo, hi) => b ||| bitsOf lo hi) 0
 
-/-- Each instruction's successors (fall-through and branch targets) and landing pads. -/
+/-- Each instruction's successors (fall-through, except after a `jmp`, `ret`, tail call or
+trap, and branch targets) and landing pads. -/
 def flow (d : Decoded) : Array (List Nat) × Array (List Nat) := Id.run do
   let n := d.insns.size
   let mut succ : Array (List Nat) := #[]
@@ -425,7 +426,8 @@ def flow (d : Decoded) : Array (List Nat) × Array (List Nat) := Id.run do
   for h : k in [0:n] do
     let (next, ts) : Bool × List Nat := match d.insns[k] with
       | .native op ops =>
-        (!(op.info.shape == .jmp || op.info.shape == .ret || op.info.shape == .tailCall),
+        (!(op.info.shape == .jmp || op.info.shape == .ret || op.info.shape == .tailCall ||
+            op.info.shape == .trap),
           ops.flatMap Opnd.targetsOf)
       | .handler h _ t =>
         (h.info.shape == .op || h.info.shape == .br || h.info.shape == .lpad, t.targets)

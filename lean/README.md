@@ -91,9 +91,11 @@ Main.lean                          exe `ryo-lean`: `run <program.json>`, `exampl
                                    `ehframe <file.o>`, `lsda <file.o>`,
                                    `check-pool <dump.json> <file.o>...`, `check-cert`,
                                    `check-image`,
-                                   `exec-item`, `opsem`
+                                   `exec-item`, `opsem`, `effects`, `rrun`
 Ryo.lean                           imports the spec, the generated tables, the x86 model,
-                                   the object readers and the examples
+                                   the object readers, the examples, the decoder, the
+                                   frame, the image and certificate checks, OpSem, the R
+                                   model and the `Ryo.Proofs.*` modules
 Ryo/Spec.lean                      imports every spec module
 Ryo/Spec/Prelude/                  Basic (Size, Align, IntType, FloatTy), Target (x86-64),
                                    Outcome, Nondet (Choice, MonadChoice)

@@ -126,7 +126,7 @@ theorem inline_sound_rip (c : Class) (hc : ripAddr c = true) : SoundG c := by
 theorem inline_soundG (c : Class) (hc : frameOnly c = true ∨ ripAddr c = true) : SoundG c :=
   hc.elim (fun h => (inline_sound c h).soundG) (inline_sound_rip c)
 
-/-- The overflow classes: `add.ovf`/`sub.ovf` (the only `ovf` classes, `Class.ofName`) and
+/-- The overflow classes: `add.ovf`/`sub.ovf` (the only `ovf` classes, `classOfParts`) and
 `mul.ovf`. -/
 def ovfClass : Class → Bool
   | .ovf .add .. | .ovf .sub .. | .mulOvf .. => true

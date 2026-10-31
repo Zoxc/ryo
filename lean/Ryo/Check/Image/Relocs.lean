@@ -41,7 +41,7 @@ outside every function, overlapping ones and ones in no image section are mismat
 **Read-only section**: the header's `data` and `text` fields (`R_X86_64_64` to the start of
 the writable and text sections) and its `anchor` field (`R_X86_64_64` + 0 against the undefined
 `__ryo_registry_anchor_<tag>`, which the registry stub defines), the symbol slots (exactly one `R_X86_64_64` + 0 each, against
-a symbol, its `SYM_INDIRECT` flag clear: ELF), and pool pointers (`R_X86_64_64` at any pool
+a symbol, its `SYM_INDIRECT` flag clear and no fixups: ELF), and pool pointers (`R_X86_64_64` at any pool
 offset, unaligned in packed constants, against one of the image's symbols, or into the pool or
 the data area); nothing else. The header's constant relocation table (`const_relocs`) is exactly the pool offsets of
 the pool pointers, in order. That a pool pointer is the allocation's provenance is the pool
@@ -161,9 +161,11 @@ def checkTextRelocs (o : ImageObject) (ds : Array FuncDecoding) : Array String :
 def slotNames (o : ImageObject) : Array (Option String) :=
   (Array.range o.image.header.symbols.count).map fun i => (o.slotName i).toOption
 
-/-- Whether `r`, a pointer inside a pool or data-area allocation, has a target the writer can
-give one (`finish_encoded`'s `map`): one of the image's symbols, or the pool or the data area
-(up to one past their ends). The reason if not. -/
+/-- Whether `r`, a pointer inside a pool or data-area allocation, has a target the writer
+gives one (`finish_encoded`'s `map`): one of the image's symbols, or the pool or the data area
+(up to one past their ends). The reason if not. The writer only bounds the target
+allocation's base; a constant pointer whose CTFE offset leaves its allocation (`wrapping_sub`
+etc.) can land outside these ranges and is rejected here though the object is correct. -/
 def allocTarget (o : ImageObject) (names : Array (Option String)) (r : Rela) : Option String :=
   let h := o.image.header
   match relSymbol o.elf r with
@@ -229,6 +231,9 @@ def checkRoRelocs (o : ImageObject) (tag : String) : Array String := Id.run do
       out := out.push s!"symbol slot {k}: {slotCount[k]!} relocations"
     if flags[k]?.getD 0 != 0 then
       out := out.push s!"symbol slot {k}: flags {flags[k]?.getD 0} (SYM_INDIRECT is PE-only)"
+  -- Registration applies fixups on any format; the writer emits them for `SYM_INDIRECT` only.
+  if h.fixups.count != 0 then
+    out := out.push s!"fixups: {h.fixups.count} entries (fixups are PE-only)"
   -- Each name once.
   let mut seen : Std.HashMap String Nat := {}
   for k in [0:names.size] do

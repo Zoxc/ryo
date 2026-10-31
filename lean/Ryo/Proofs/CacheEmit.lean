@@ -22,8 +22,9 @@ open Ryo.Spec Ryo.Vm Ryo.Vm.OpSem Ryo.X86 Ryo.Vm.Asm Ryo.Proofs.Inline Ryo.Proof
 
 /-! ### What `emit` outputs: canonical items, and their memory writes (for the fetch) -/
 
-/-- The classes whose items are all `Item.wf`: no immediate rotate (`shiftImm` takes shifts
-only), no 8-bit `bswap`, no `setcc` on `always`. Every inline opcode's class is one
+/-- The classes whose items are all `Item.wf` (`sequence_wf` proves the stronger `wfAny`): no immediate rotate
+(`shiftImm` takes shifts only), no 8-bit `bswap`, no `setcc` on `always`, no sign extension
+from 32 or 64 bits to less than 64 (a sign-extending load is 8 or 16 bits). Every inline opcode's class is one
 (`inlineOps_clsOk`, `RyoProofs/InlineOk.lean`). -/
 def clsOk : Class → Bool
   | .shiftImm sh _ => sh.isShift

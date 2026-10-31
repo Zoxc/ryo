@@ -386,8 +386,8 @@ follows the decoder's structure:
   their operands at `opSem`'s footprints ([reduced.md](reduced.md) §C0.5); calls read their
   argument list, and if the convention allows stack arguments (argument registers ran out)
   the callee's stack-argument extent of the outgoing area, or every byte where it isn't
-  known; islands read their operands' `Lend` extents (none for a zero-sized
-  operand, for which the encoder records no `Lend`) and, taking `fp` and calling anything,
+  known; islands read their operands' `Lend` extents (the encoder records one
+  for every operand, of 0 bytes for a zero-sized one) and, taking `fp` and calling anything,
   make a pointer access, assuming the island
   contract's operand footprint is the `Lend` extent (C1' checks it against the template,
   §C1 "Islands"; [reduced.md](reduced.md) §C0.1); pointer accesses read the objects that may be

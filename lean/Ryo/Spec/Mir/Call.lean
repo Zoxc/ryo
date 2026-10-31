@@ -48,17 +48,19 @@ def unfoldTransparent : Nat → Ty → Ty
         else t
       | _ => t
     | .enum [v0, v1] _ (.multiple ⟨_, _, _, .niche _ _ _ 0⟩) size _ =>
-      let payload (v : Variant) : Option Ty :=
+      -- `some (some ft)`: one non-1-ZST field `ft` at offset 0; `some none`: only 1-ZSTs;
+      -- `none`: anything else (the other variant must carry no data, as in `unfold_npo`).
+      let payload (v : Variant) : Option (Option Ty) :=
         match v.fields with
         | .tuple fs _ none =>
           match fs.filter (fun (_, ft) => !Ty.is1Zst ft) with
-          | [(0, ft)] => some ft
-          | [] => none
+          | [(0, ft)] => some (some ft)
+          | [] => some none
           | _ => none
         | _ => none
       let p := match payload v0, payload v1 with
-        | some a, none => some a
-        | none, some b => some b
+        | some (some a), some none => some a
+        | some none, some (some b) => some b
         | _, _ => none
       match p with
       | some pt =>

@@ -191,16 +191,18 @@ def localCheck (c : Ctx) (n : Node) : Except String (Array Node) := do
     for j in [0:8] do covered := covered.insert (off + j)
     let at_ := b + off
     let some pr := P.relocs[at_]? | throw s!"g{gi} at {b}: no relocation at offset {off} (pool {at_}) for its pointer to {repr r.target} + {r.addend}"
+    -- The dump's addend is the pointer's offset as a `u64`; ELF's `r_addend` is signed.
+    let ra := toSigned 64 r.addend
     match r.target, pr with
     | .fn i, .sym name a =>
       let want := c.prog.symbol i
-      unless name == want && a == r.addend do
-        throw s!"g{gi} at {b}: offset {off} relocated against {pr}, expected instance {i} `{want}` + {r.addend}"
+      unless name == want && a == ra do
+        throw s!"g{gi} at {b}: offset {off} relocated against {pr}, expected instance {i} `{want}` + {ra}"
     | .alloc t, .pool tgt =>
       let some tg := c.globals[t]? | throw s!"g{gi}: pointer to missing global {t}"
       if tg.pooled then
-        let b' := tgt - r.addend
-        if b' < 0 then throw s!"g{gi} at {b}: offset {off} points at pool {tgt}, before g{t}'s copy could start (addend {r.addend})"
+        let b' := tgt - ra
+        if b' < 0 then throw s!"g{gi} at {b}: offset {off} points at pool {tgt}, before g{t}'s copy could start (addend {ra})"
         demands := demands.push (t, b'.toNat)
       else throw s!"g{gi} at {b}: offset {off} points into the pool, expected the {kindName tg.kind} g{t}'s symbol"
     | .alloc t, .sym name a =>
@@ -208,8 +210,8 @@ def localCheck (c : Ctx) (n : Node) : Except String (Array Node) := do
       if tg.pooled then throw s!"g{gi} at {b}: offset {off} relocated against {pr}, expected pool copy of {kindName tg.kind} g{t}"
       let some want := tg.symbol
         | throw s!"g{gi} at {b}: offset {off} relocated against {pr}; the dump has no symbol for the {kindName tg.kind} g{t}"
-      unless name == want && a == r.addend do
-        throw s!"g{gi} at {b}: offset {off} relocated against {pr}, expected the {kindName tg.kind} g{t}'s `{want}` + {r.addend}"
+      unless name == want && a == ra do
+        throw s!"g{gi} at {b}: offset {off} relocated against {pr}, expected the {kindName tg.kind} g{t}'s `{want}` + {ra}"
     | t, pr => throw s!"g{gi} at {b}: offset {off} relocated as {pr}, expected a pointer to {repr t} + {r.addend}"
   -- No other relocation overlaps the copy (one starting up to 7 bytes before it would).
   for p in [b - (if g.size == 0 then 0 else min b 7) : b + g.size] do
@@ -370,7 +372,8 @@ def vtableShape (c : Ctx) (gi : Nat) : Option String := Id.run do
       match r.target with
       | .fn _ => pure ()
       | .alloc t =>
-        if o == 0 || !(c.globals[t]?.any fun t => t.kind matches .vtable _) then
+        if o == 0 then return some s!"word 0 points at g{t}, not a function or null"
+        if !(c.globals[t]?.any fun t => t.kind matches .vtable _) then
           return some s!"word {o / 8} points at g{t}, not a function or vtable"
       | .typeId => return some s!"type id at word {o / 8}"
     | none =>
@@ -459,7 +462,7 @@ def poolOf (o : ImageObject) : PoolView := Id.run do
           else .other s!"R_X86_64_64 against section `{o.elf.symbolName s}` + {r.addend}"
         else .sym (o.elf.symbolName s) r.addend
     relocs := relocs.insert (r.offset - start) pr
-  return { bytes, relocs, start, secAlign := o.ro.addralign }
+  return { bytes, relocs, start, secAlign := max o.ro.addralign 1 }
 
 /-- Why the pool's section isn't read-only or RELRO, if it isn't. -/
 def sectionProblem (o : ImageObject) : Option String :=

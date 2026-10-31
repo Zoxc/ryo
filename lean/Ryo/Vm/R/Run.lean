@@ -14,7 +14,8 @@ the callee's R code (`Program.invoke`), and an image object as such a program
   calls of image functions with the callee's `arg_size` as the stack size and, for an sret
   callee (`ret_kind = RET_SRET`), its `ret_size` as the destination's size (the image's
   claim; C1' is to check it against the return type). The world: the constant pool and the
-  code constants as one immutable allocation each, the data area (statics) as a mutable one,
+  code constants as one immutable allocation each, the data area (the PE fixup area: constants pointing at DLL imports;
+  empty on ELF) as a mutable one,
   the symbol slots, at the made-up addresses of `DecodeObj`;
   pointers between them (the read-only and data sections' `R_X86_64_64` relocations into
   those parts) carry their allocation's provenance, others (to symbols) are left as the
@@ -23,8 +24,7 @@ the callee's R code (`Program.invoke`), and an image object as such a program
   gives for it (a native static or function, another image's part), else a made-up address
   outside every allocation (`Image.symAddr`; `Image.world`). Every allocation of the world is
   exposed (`worldWith_exposed`), so integers reach them as pointers do (`rebase`'s
-  constants, a slot's value). One allocation per part, not per constant (D7's copies) or
-  static: R is then more defined than L0 across entries, which a refinement allows (L0's
+  constants, a slot's value). One allocation per part, not per constant (D7's copies): R is then more defined than L0 across entries, which a refinement allows (L0's
   globals map into the parts at offsets, reduced.md §C0.7), and a load of a relocated pool
   field reads the pointer a `RefAddr` of its target makes (`Ryo.Proofs.Provenance`). Each function's
   zero-sized frame objects (`Code.zeroSized`) come from outside, by symbol: `rrun --cert`
@@ -305,9 +305,13 @@ the text is answered by unwinding (exception object `0xe0`): landing pads run. W
 (which `Main.lean` reads, passing `zeroSized`), each function's zero-sized frame objects are its
 certificate's locals of size 0 (`Code.zeroSized`). -/
 def cli (args : List String) (zeroSized : String → List Int := fun _ => []) : IO UInt32 := do
-  let (fuel, args) := match args.idxOf? "--fuel" with
-    | some i => ((args[i + 1]?.bind String.toNat?).getD 100000, args.take i ++ args.drop (i + 2))
-    | none => (100000, args)
+  let mut fuel := 100000
+  let mut rest := args
+  if let some i := rest.idxOf? "--fuel" then
+    let some n := rest[i + 1]?.bind String.toNat? | IO.eprintln "--fuel needs a number"; return 2
+    fuel := n
+    rest := rest.take i ++ rest.drop (i + 2)
+  let args := rest
   let (unwind, args) := match args.idxOf? "--unwind" with
     | some i => (args[i + 1]?, args.take i ++ args.drop (i + 2))
     | none => (none, args)
@@ -315,10 +319,19 @@ def cli (args : List String) (zeroSized : String → List Int := fun _ => []) : 
     | IO.eprintln "usage: ryo-lean rrun <image.o> <function>|--all [<int>...] [--fuel N] [--unwind <text>] [--cert <cert.json>]"; return 2
   let o ← IO.ofExcept (Ryo.Obj.readImageObject (← IO.FS.readBinFile path))
   let names := o.funcs.map fun f => o.funcName f.codeOff
+  let (p, w) := imageProgram o zeroSized
+  -- `--unwind <text>`: external calls of symbols whose name contains it unwind (exception 0xe0).
+  let p := match unwind with
+    | none => p
+    | some t => { p with ext := fun q => match q.ext with
+      | .call (.sym s) .. =>
+        if ((Callee.sym s).text o).splitOn t |>.length |> (· > 1) then
+          some (pure { result := .unwind ⟨0xe0, none⟩, world := q.world })
+        else none
+      | _ => none }
   if fn == "--all" then
     -- Every function, on the arguments given: one line each.
     let some vs := ints.mapM String.toInt? | IO.eprintln "arguments must be integers"; return 2
-    let (p, w) := imageProgram o zeroSized
     for h : f in [0:names.size] do
       let r := match p.run f (Regs.ofInts (vs.map fun v => (BitVec.ofInt 64 v).toNat)) w fuel with
         | .ok fin => fin.text
@@ -330,16 +343,6 @@ def cli (args : List String) (zeroSized : String → List Int := fun _ => []) : 
     | IO.eprintln s!"no function `{fn}`"; return 2
   let some vs := ints.mapM String.toInt?
     | IO.eprintln "arguments must be integers"; return 2
-  let (p, w) := imageProgram o zeroSized
-  -- `--unwind <text>`: external calls of symbols whose name contains it unwind (exception 0xe0).
-  let p := match unwind with
-    | none => p
-    | some t => { p with ext := fun q => match q.ext with
-      | .call (.sym s) .. =>
-        if ((Callee.sym s).text o).splitOn t |>.length |> (· > 1) then
-          some (pure { result := .unwind ⟨0xe0, none⟩, world := q.world })
-        else none
-      | _ => none }
   IO.println s!"fn{f} {names[f]?.getD "?"}"
   match p.run f (Regs.ofInts (vs.map fun v => (BitVec.ofInt 64 v).toNat)) w fuel with
   | .ok fin =>

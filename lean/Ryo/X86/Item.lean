@@ -22,10 +22,11 @@ namespace Ryo.X86
 open Lean
 
 instance (n : Nat) : ToJson (BitVec n) := ⟨fun b => toJson b.toNat⟩
-/-- JSON: a number, negative ones taken modulo `2 ^ n` (so signed displacements read naturally). -/
+/-- JSON: a number in `[-2 ^ (n - 1), 2 ^ n)`, negative ones taken modulo `2 ^ n` (so signed
+displacements read naturally). -/
 instance (n : Nat) : FromJson (BitVec n) := ⟨fun j => do
   let i : Int ← fromJson? j
-  if i < -(2 ^ n : Int) ∨ i ≥ 2 ^ n then throw s!"{i} out of range for BitVec {n}"
+  if i < -(2 ^ (n - 1) : Int) ∨ i ≥ 2 ^ n then throw s!"{i} out of range for BitVec {n}"
   pure (BitVec.ofInt n i)⟩
 
 instance : ToJson UInt8 := ⟨fun b => toJson b.toNat⟩

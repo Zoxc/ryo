@@ -5,7 +5,7 @@ Ryo.Proofs.Island — the shape `island isl, ops` (aot.md §C2 "Shapes", toward 
 the `Lend` extents) against the items `DecodeReduced.islandCall` accepts.
 
 **Items** (`islandPre`): `fp` into the first argument register (`fpItem`: `mov rdi,
-rbp`, or `lea` of `[rbp + 0]` without a frame pointer; PE `rcx`), `lea rsi, [rip + ops]` (PE
+rbp`; PE `rcx`), `lea rsi, [rip + ops]` (PE
 `rdx`; `ops` the rodata offset of the operand array: a `u32` count at `ops - 4`, then one `i32`
 slot per operand, `DecodeReduced.opsArray`), `call [rip + isl]`; nothing after it. The call leaves `rsp` alone:
 on PE every frame reserves its callees' 32-byte shadow space at its own bottom.
@@ -45,14 +45,17 @@ template writes must not count (for islands, `Safe` is where the trust that the 
   `unwindAt`.
 
 **Hypotheses** beyond the shape: `rsp = fp - F` (`hsp`, which `island_query` takes but its
-proof doesn't use), the stack has room (`hlo`), the operand
+proof doesn't use), `MemRel` before the call (`hm`, which `island_return` and `island_unwind`
+take but don't use), the stack has room (`hlo`), the operand
 array is in memory as the decoder read it (`hro`, the rodata relocation) and off the stack
 (`hroA`), the symbol slots off the stack (`Call.SymsApart`), no initialized private frame byte
 or live allocation byte on the stack below `rsp` (`Handler.StackApart`), no initialized
 private frame byte where the template may write unless it's in a `Lend` extent
 (`IslandApart`; from `FrameSep` by `FrameSep.islandApart`).
 
-**Not modeled**: as for calls, unwinding past this frame; and the templates' functional
+**Not modeled**: frames without a frame pointer, where the encoder emits `lea rdi, [rsp + F]`
+(which the decoder reads as `[rbp + 0]`) and `rbp` is the caller's: these theorems execute
+`lea rdi, [rbp + 0]` under `rbp = fp`; as for calls, unwinding past this frame; and the templates' functional
 contracts.
 -/
 import Ryo.Proofs.Call
@@ -281,11 +284,11 @@ theorem island_query (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.State}
       hmemS _ (hsym isl _ (List.mem_cons_self ..) i hi))]
   · show x1.regs _ = _
     have hne1' : ¬ (islandRegs c.mode.pe).1.idx = 4 := hne1
-    rw [hreg, if_neg hne1, if_neg hne12, if_pos rfl]; exact hr.rbp
+    rw [hreg, ite_eq_right hne1, ite_eq_right hne12, ite_eq_left rfl]; exact hr.rbp
   · show OpsAt x1.mem (x1.regs _) _
     rw [hreg]
     have hne2' : ¬ (islandRegs c.mode.pe).2.idx = 4 := hne2
-    rw [if_neg hne2, if_pos rfl]
+    rw [ite_eq_right hne2, ite_eq_left rfl]
     refine ⟨?_, fun i hi => ?_⟩
     · rw [IslandLemmas.readNat_congr x1.mem x.mem _ 4 (fun j hj =>
         hmemS _ (hroA j (by omega)))]
@@ -316,7 +319,7 @@ theorem island_return (ctx : Ctx) {c : R.Code} {s : R.RState} {x1 x' : X86.State
     (hi : c.d.insns[s.pc]? = some (.native op [.sym isl, .words ws]))
     (hf : op.full = some f) (hsh : f.info.shape = .island)
     (he : IslandAt ctx c.mode.pe isl s.fp (ws.map (·.toInt)) s.st s.world x1)
-    (hr : RRel s x1) (hm : MemRel s.st x1)
+    (hr : RRel s x1) (_hm : MemRel s.st x1)
     (hlends : ∀ l ∈ c.lendsAt s.pc, -2 ^ 62 < l.1 ∧ l.1 + l.2 < 2 ^ 62)
     (hsafe : Safe ⟨.island isl (c.islandTemplate s.pc) s.fp (ws.map (·.toInt)) (c.lendsAt s.pc),
       s.world⟩)
@@ -397,7 +400,7 @@ theorem island_unwind (ctx : Ctx) {c : R.Code} {s : R.RState} {x1 x' : X86.State
     (hi : c.d.insns[s.pc]? = some (.native op [.sym isl, .words ws]))
     (hf : op.full = some f) (hsh : f.info.shape = .island)
     (he : IslandAt ctx c.mode.pe isl s.fp (ws.map (·.toInt)) s.st s.world x1)
-    (hr : RRel s x1) (hm : MemRel s.st x1)
+    (hr : RRel s x1) (_hm : MemRel s.st x1)
     (hlends : ∀ l ∈ c.lendsAt s.pc, -2 ^ 62 < l.1 ∧ l.1 + l.2 < 2 ^ 62)
     (hsafe : Safe ⟨.island isl (c.islandTemplate s.pc) s.fp (ws.map (·.toInt)) (c.lendsAt s.pc),
       s.world⟩)
