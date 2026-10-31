@@ -22,8 +22,8 @@ pub enum How {
     Update,
     /// Its address is taken (an `addr`, an argument passed by address).
     Addr,
-    /// Read or written as a block of bytes: never promoted (handlers with lengths,
-    /// `mov.w128`, island operands).
+    /// Read or written as a block of bytes: never promoted (handlers with lengths, island
+    /// operands).
     Block,
     /// Only written as a block of bytes (a block copy's destination, a `w128` result): never
     /// promoted, but not a read (the outgoing argument area is written this way).
@@ -44,8 +44,8 @@ pub struct Acc {
 pub enum Kind {
     /// `d = s` (`w` up to 8): accesses `s` read, `d` write.
     Mov(u8),
-    /// A small block copy (`copy`, `zero`, `load.copy`, `store.copy`, `mov.w128`,
-    /// `load.w128`, `store.w128` of up to [`MAX_COPY`] bytes), done as `pieces` (offsets in
+    /// A small block copy (`copy`, `zero`, `const` with a pool, `load.copy`, `store.copy`,
+    /// `mov.w128`, `load.w128`, `store.w128` of up to [`MAX_COPY`] bytes), done as `pieces` (offsets in
     /// the block, widths: 1 to 8, or 16 over a vector) of plain loads and stores: every piece is read before any is
     /// written, so overlap is exact. Accesses: the pointer slot (with a `Mem` side) read,
     /// then a frame source's pieces read, then a frame destination's pieces written.
