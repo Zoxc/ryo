@@ -93,7 +93,10 @@ def evalCast (k : CastKind) (v : Value × Ty) (dst : Ty) : SemM Value := do
     match val with
     | .ptr p => do
       modify fun s => { s with intptr := s.intptr.expose p.thin }
-      pure (.int p.thin.addr)
+      -- The address at the destination type (cg_ssa's truncating `ptrtoint`): `p as u8` too.
+      match dst with
+      | .int t _ => pure (.int (t.bringInBounds p.thin.addr))
+      | _ => pure (.int p.thin.addr)
     | _ => throwIllFormed "PointerExposeProvenance of a non-pointer"
   | .pointerWithExposedProvenance => do
     let i ← intLike val
