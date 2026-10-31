@@ -7,15 +7,27 @@ Ports: none (MiniRust leaves `Nondet` abstract). Implements mir-spec §A.4:
   answers, every angelic alternative also goes wrong (MiniRust's `predict`);
 - runs that end in `noBehavior` (a daemonic answer violated its constraint), `illFormed` or out
   of fuel are not behaviors;
-- `Refines tgt src`: every target behavior is a source behavior, or the source goes wrong
-  after a prefix of the target's trace, or (D25) the target overflows its stack after a prefix
-  of some source behavior's trace.
+- `Refines tgt src`: every target behavior is a source behavior (diverging ones up to
+  stuttering, `Behavior.equiv`: the same limit trace, whatever step each event comes at), or
+  the source goes wrong after a prefix of the target's trace, or (D25) the target overflows
+  its stack after a prefix of some source behavior's trace.
 
 The environment (mir-spec §A.6): external calls not covered by the shims
 (`Ryo.Spec.Mir.External`) are run by the oracle (`Oracle.env`). Behaviors and refinement are
 relative to an `ExtSpec`, CompCert's `extcall` contract: only oracles whose environment
-`respects` it count. The environment is not angelic: `sameDaemonic` oracles share it.
-`ExtSpec.none` allows no environment call, leaving the shims only (the interpreter's view).
+`respects` it count. Within one program the environment is not angelic: `sameDaemonic`
+oracles share it. `ExtSpec.none` allows no environment call, leaving the shims only (the
+interpreter's view).
+
+Known limits of `Refines` (no proof uses it yet):
+- The source picks its own oracle, environment included, and traces record an external
+  call's arguments and result but not the memory it writes. So for an `ExtSpec` other than
+  `none`, a target that ignores what a callee wrote refines a source that reads it: matching
+  the two programs' environments needs more than `Oracle.env`, which is indexed by the
+  choice count (daemonic choices included).
+- Values in behaviors carry provenance as allocation indices (`Memory.allocate`), compared
+  exactly: a target that makes more or fewer allocations before a pointer reaches an event
+  or the result doesn't refine its source (CompCert compares up to a memory injection).
 -/
 import Ryo.Spec.Mir.Interp
 
@@ -106,15 +118,26 @@ where
     | .stackOverflow t, .stackOverflow t' => t = t'
     | _, _ => False
 
+/-- The same behavior up to stuttering: finite ones as `RunsTo.sameShape` compares them,
+diverging ones with the same limit trace (each one's traces are prefixes of the other's). -/
+def Behavior.equiv : Behavior → Behavior → Prop
+  | .diverges t, .diverges s => (∀ n, ∃ m, t n <+: s m) ∧ (∀ m, ∃ n, s m <+: t n)
+  | b, b' => RunsTo.sameShape b b'
+
 def Behavior.isGoesWrong : Behavior → Bool
   | .goesWrong .. => true
   | _ => false
 
 /-- The behaviors of a program in environments allowed by `spec` (mir-spec §A.4, §A.6): UB
-only counts if no angelic choice avoids it. `Behaviors .none` are the shim-only behaviors. -/
+only counts if no angelic choice avoids it. An alternative whose run has no behavior (it
+ends in `noBehavior`: an invalid angelic answer, such as an `exposedProv` allocation that was
+never exposed, which MiniRust's `predict` never gives) avoids nothing. `Behaviors .none` are
+the shim-only behaviors. -/
 def Behaviors (spec : ExtSpec) (p : Program) (args : List (Value × Ty)) (b : Behavior) : Prop :=
   ∃ o, o.respects spec ∧ RunsTo p args o b ∧
-    (b.isGoesWrong → ∀ o', o'.sameDaemonic o → ∃ tr m, RunsTo p args o' (.goesWrong tr m))
+    (b.isGoesWrong → ∀ o', o'.sameDaemonic o →
+      (∃ tr m, RunsTo p args o' (.goesWrong tr m)) ∨
+      ∃ n msg, (runN o' p args n).result = .error (.noBehavior msg))
 
 /-- `tr` is a prefix of the behavior's trace. -/
 def Behavior.hasPrefix (tr : List Event) : Behavior → Prop
@@ -125,7 +148,7 @@ def Behavior.hasPrefix (tr : List Event) : Behavior → Prop
 /-- Refinement in environments allowed by `spec` (mir-spec §A.4, D25). -/
 def Refines (spec : ExtSpec) (tgt src : Program) (args : List (Value × Ty)) : Prop :=
   ∀ b, Behaviors spec tgt args b →
-    Behaviors spec src args b ∨
+    (∃ b', Behaviors spec src args b' ∧ b'.equiv b) ∨
     (∃ tr m, Behaviors spec src args (.goesWrong tr m) ∧ b.hasPrefix tr) ∨
     (∃ tr, (match b with | .stackOverflow t => t = tr | _ => False) ∧
       ∃ b', Behaviors spec src args b' ∧ b'.hasPrefix tr)
