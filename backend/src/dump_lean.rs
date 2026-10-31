@@ -8,15 +8,20 @@
 //! instance's args), layouts from `layout_of`, resolutions from `Instance::expect_resolve` &
 //! co., constants from const evaluation, vtables from `vtable_allocation`, ABIs from
 //! `fn_abi_of_instance`/`fn_abi_of_fn_ptr`. It calls rustc's queries directly and shares no
-//! code with the lowering (`lower/`), so a lowering bug can't hide itself in the dump.
+//! code with the lowering (`lower/`), so a lowering bug can't hide itself in the dump, except
+//! two vtable helpers: `lower::vtable_alloc` (a vtable's allocation) and `lower::upcast_entry`
+//! (the supertrait vtable slot of an upcast), which both follow cg_ssa's `unsized_info`; a bug
+//! in them shows in the dump too.
 //!
 //! Instances: every instance reachable from the user's `main` through calls, fn pointers
 //! (reify, closure coercions), drop glue, vtable entries, `Assert` panic lang items, the
 //! `UnwindTerminate` lang items, `panic_nounwind` (called by `assert_inhabited` & co.) and
 //! function pointers in constants. A body when MIR is available, `intrinsic name tyArgs` for
 //! rustc intrinsics (the instance's generic args: types as `intrinsic_ty_arg`, other args as
-//! `null`), `ext` otherwise (foreign items, upstream functions without MIR, LLVM intrinsics, virtual
-//! calls' instances). Drop glue of `dyn Trait` is `ext` too: rustc's shim body for it only
+//! `null`; always, even where the backend calls the intrinsic's fallback body instead, which
+//! lean/docs/assumptions.md §4 asks for but the dump doesn't do yet), `ext` otherwise
+//! (foreign items, upstream functions without MIR, LLVM intrinsics, virtual calls'
+//! instances). Drop glue of `dyn Trait` is `ext` too: rustc's shim body for it only
 //! drops `*self` again (codegen turns that into a call of the vtable's drop entry, skipped
 //! when it is null). So are thread-local shims, although rustc builds MIR for them: the
 //! interpreter rejects a program when it calls one.
