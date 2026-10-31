@@ -35,13 +35,14 @@ commands:
                                build the backend, the sysroot and the wrappers into dist/;
                                also install std and ryo_rt for each target T
   build-clif                   build cg_clif from the toolchain's rustc-dev sources
-  test [--clif] [--full | --only jit|backend|lean|std|rt | --no-changed]
-       [--program NAME]... [--variant NAME]...
+  test [--clif] [--full | --only jit|backend|lean|std|rt | --no-changed
+        | [--program NAME]... [--variant NAME]...]
                                the fast suite plus the tests the changed paths select
                                (design/build.md#fast-suite-and-changed-path-selection);
                                `--full` runs everything and needs the ryo sysroot;
                                `--program`/`--variant` run only those corpus entries;
-                               `--no-changed` only the fixed fast set
+                               `--no-changed` only the fixed fast set; these four
+                               modes exclude each other
   test --cross T               cross-build and link (not run) the corpus for target T, e.g.
                                x86_64-pc-windows-msvc or x86_64-apple-darwin; needs
                                `build --target T` first
