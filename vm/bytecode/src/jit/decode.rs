@@ -894,9 +894,15 @@ fn form_blocks(insns: &[RInsn], heads: &[u32]) -> Result<(Vec<RBlock>, Vec<u32>)
         }
         blocks[b].succ = succ;
     }
-    // An `lpad` is reached only by unwinding.
-    for (b, bl) in blocks.iter().enumerate() {
-        if insns[bl.start as usize].kind == Kind::Lpad && bl.preds.iter().any(|&p| blocks[p as usize].pad != Some(b as u32)) {
+    // An `lpad` is reached only by unwinding: not at the entry, nor by a normal edge (the
+    // first `succ` of a block are its normal ones, its pad edge comes last).
+    let lpad = |b: u32| insns[blocks[b as usize].start as usize].kind == Kind::Lpad;
+    if !blocks.is_empty() && lpad(0) {
+        return Err(Unsupported("an lpad reached without unwinding"));
+    }
+    for bl in &blocks {
+        let normal = bl.succ.len() - bl.pad.is_some() as usize;
+        if bl.succ[..normal].iter().any(|&s| lpad(s)) {
             return Err(Unsupported("an lpad reached without unwinding"));
         }
     }
