@@ -659,19 +659,19 @@ fn validate_rejects_bad_tables() {
     let fe = |h: &Header, i: usize, field: usize| h.functions.off as usize + i * size_of::<FuncEntry>() + field;
     // Code past the end.
     assert_eq!(validate_edited(&obj, |r, h| put32(r, fe(h, 2, offset_of!(FuncEntry, code_len)), 1000)), Err(ImageError::BadFunction(2)));
-    // Fixups: unaligned, out of range, bad symbol.
+    // Fixups: out of range, bad symbol (unaligned is fine: packed constants).
     let fx = |h: &Header| h.fixups.off as usize;
-    assert_eq!(validate_edited(&obj, |r, h| put32(r, fx(h), 17)), Err(ImageError::BadFixup(0)));
     assert_eq!(validate_edited(&obj, |r, h| put32(r, fx(h), 4096)), Err(ImageError::BadFixup(0)));
     assert_eq!(validate_edited(&obj, |r, h| put32(r, fx(h) + 4, 5)), Err(ImageError::BadFixup(0)));
     // Unknown symbol flag bits.
     assert_eq!(validate_edited(&obj, |r, h| r[h.sym_flags.off as usize + 2] = 0x80), Err(ImageError::BadSymbolFlags(2)));
     // Unknown function flag bits.
     assert_eq!(validate_edited(&obj, |r, h| r[h.func_flags.off as usize + 1] = 0x10), Err(ImageError::BadFuncFlags(1)));
-    // Constant relocations: out of order (overlapping), misaligned, past the pool.
+    // Constant relocations: out of order (overlapping), past the pool; unaligned is fine.
     let cr = |h: &Header, i: usize| h.const_relocs.off as usize + 4 * i;
     assert_eq!(validate_edited(&obj, |r, h| put32(r, cr(h, 1), 0)), Err(ImageError::BadConstReloc(1)));
-    assert_eq!(validate_edited(&obj, |r, h| put32(r, cr(h, 0), 1)), Err(ImageError::BadConstReloc(0)));
+    assert_eq!(validate_edited(&obj, |r, h| put32(r, cr(h, 0), 1)), Ok(()));
+    assert_eq!(validate_edited(&obj, |r, h| put32(r, cr(h, 1), 9)), Err(ImageError::BadConstReloc(1)));
     assert_eq!(validate_edited(&obj, |r, h| put32(r, cr(h, 1), h.consts.count - 4)), Err(ImageError::BadConstReloc(1)));
     assert_eq!(validate_edited(&obj, |_, _| ()), Ok(()));
 }
@@ -702,11 +702,22 @@ fn const_relocs_match_object() {
 
 #[test]
 fn writer_rejects_bad_alloc_relocs() {
-    // Unaligned pointer in a constant.
+    // A pointer past its constant's end.
     let mut w = ImageWriter::new(1);
     let s = w.symbol("x", 0);
-    w.add_const(&[0; 16], 8, &[AllocReloc { offset: 4, target: AllocTarget::Symbol(s), addend: 0 }]);
+    w.add_const(&[0; 16], 8, &[AllocReloc { offset: 12, target: AllocTarget::Symbol(s), addend: 0 }]);
     assert_eq!(w.finish(ELF).unwrap_err(), WriteError::AllocReloc);
+    // An unaligned one (a packed constant) is fine, in the relocation table at its offset.
+    let mut w = ImageWriter::new(1);
+    let s = w.symbol("x", 0);
+    w.add_const(&[0; 3], 1, &[]);
+    w.add_const(&[0; 9], 1, &[AllocReloc { offset: 1, target: AllocTarget::Symbol(s), addend: 0 }]);
+    let obj = w.finish(ELF).unwrap();
+    let b = Buf::new(&obj.rodata, 8);
+    let img = Image::parse(b.bytes()).unwrap();
+    assert_eq!(img.validate(), Ok(()));
+    assert_eq!(img.const_relocs(), &[4]);
+    assert_eq!(img.const_reloc_at(4, 8), Some(true));
     // A fixup and a relocation at the same place.
     let mut w = ImageWriter::new(1);
     let s = w.symbol("x", SYM_INDIRECT);

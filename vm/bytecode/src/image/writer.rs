@@ -653,11 +653,7 @@ impl ImageWriter {
         let nsyms = self.symbols.len() as u32;
         let mut fixups = Vec::with_capacity(self.fixups.len());
         for x in &self.fixups {
-            if x.sym.0 >= nsyms
-                || self.symbols[x.sym.0 as usize].flags & SYM_INDIRECT == 0
-                || x.offset % 8 != 0
-                || x.offset as usize + 8 > self.data.len()
-            {
+            if x.sym.0 >= nsyms || self.symbols[x.sym.0 as usize].flags & SYM_INDIRECT == 0 || x.offset as usize + 8 > self.data.len() {
                 return Err(WriteError::AllocReloc);
             }
             fixups.push(FixupEntry { offset: x.offset, sym: x.sym.0, addend: x.addend });
@@ -806,9 +802,10 @@ impl ImageWriter {
     }
 
     /// The relocation of a pointer at `r.offset` in an allocation of `len` bytes placed at
-    /// `base` in `section`.
+    /// `base` in `section`. The pointer may be unaligned (a packed constant): the linker's
+    /// absolute relocations and every reader take it at any offset.
     fn alloc_reloc(&self, h: &Header, r: &AllocReloc, section: Section, base: usize, len: usize) -> Result<Reloc, WriteError> {
-        if r.offset as usize + 8 > len || (base + r.offset as usize) % 8 != 0 {
+        if r.offset as usize + 8 > len {
             return Err(WriteError::AllocReloc);
         }
         let (target, addend) = match r.target {

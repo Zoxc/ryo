@@ -412,8 +412,8 @@ pub struct Header {
     /// The [`JitRecord`]s: their byte offset in the writable section (64-aligned) and count
     /// (the function count with [`Mode::counters`], else 0).
     pub jit_records: Span,
-    /// `[u32]`, strictly increasing: the offset in the constant pool of every 8-byte field
-    /// the linker relocates (a pointer to a symbol, the pool or the data area). The JIT reads
+    /// `[u32]`, strictly increasing, 8 apart at least: the offset in the constant pool of
+    /// every 8-byte field the linker relocates, at any alignment (packed constants) (a pointer to a symbol, the pool or the data area). The JIT reads
     /// it to tell pointer fields from integers when it folds loads from the pool.
     pub const_relocs: Span,
     /// Identifies the image among its crate's: a hash of rustc's codegen unit name
@@ -553,7 +553,7 @@ impl Cleanup {
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FixupEntry {
-    /// Byte offset in the writable section (8-aligned).
+    /// Byte offset in the writable section (any alignment: packed constants).
     pub offset: u32,
     pub sym: u32,
     pub addend: i64,
@@ -588,7 +588,7 @@ pub enum ImageError {
     BadCallSite(u32),
     /// The writable section layout (JIT records) is inconsistent, or `Header::pad` isn't 0.
     BadData,
-    /// A constant relocation (index) is out of the pool, misaligned or out of order.
+    /// A constant relocation (index) is out of the pool or out of order.
     BadConstReloc(u32),
 }
 
@@ -730,7 +730,7 @@ impl<'a> Image<'a> {
             }
         }
         for (i, x) in self.fixups().iter().enumerate() {
-            if x.sym >= self.header.symbols.count || x.offset % 8 != 0 || x.offset as u64 + 8 > self.fixup_area_len() as u64 {
+            if x.sym >= self.header.symbols.count || x.offset as u64 + 8 > self.fixup_area_len() as u64 {
                 return Err(ImageError::BadFixup(i as u32));
             }
         }
@@ -744,11 +744,10 @@ impl<'a> Image<'a> {
                 return Err(ImageError::BadFuncFlags(i as u32));
             }
         }
-        // Each field 8-aligned in the section, inside the pool, after the one before.
+        // Each field inside the pool, after the one before.
         let mut next = 0u64;
         for (i, &o) in self.const_relocs().iter().enumerate() {
-            let at = self.header.consts.off as u64 + o as u64;
-            if (o as u64) < next || at % 8 != 0 || o as u64 + 8 > self.header.consts.count as u64 {
+            if (o as u64) < next || o as u64 + 8 > self.header.consts.count as u64 {
                 return Err(ImageError::BadConstReloc(i as u32));
             }
             next = o as u64 + 8;
@@ -946,7 +945,7 @@ impl<'a> Image<'a> {
             unsafe {
                 let target = *(slot as usize as *const u64);
                 let at = self.data_ptr().add(x.offset as usize).cast::<u64>();
-                at.write(target.wrapping_add(x.addend as u64));
+                at.write_unaligned(target.wrapping_add(x.addend as u64));
             }
         }
     }
