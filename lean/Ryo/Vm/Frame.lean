@@ -2,7 +2,8 @@
 Ryo.Vm.Frame — frame accesses of R code and the dead-store check aot.md §C2 asks of the Lean
 decoder: the Rust decoder trusts the encoder's list of dropped stores; `droppedNotDead` checks
 each by a backward liveness over the decoded code, and `decodeChecked` decodes only code whose
-dropped stores it shows dead (and whose frame ranges lie in the frame, `decodeBounded`).
+dropped stores it shows dead (and whose frame ranges, the writes, lie in the frame,
+`decodeBounded`; reads aren't bounded).
 
 A dropped store is dead if none of its bytes is live after its instruction, along the
 instruction's successors (fall-through, branch targets, its landing pad): no path reads a byte

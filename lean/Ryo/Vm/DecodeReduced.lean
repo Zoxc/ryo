@@ -14,7 +14,7 @@ registers set in order, and recovers every operand, the frame size and the unwin
 - the `arg`s at the start, calls and tail calls (argument loads, call, result stores),
   islands, `ret`, `jmp`, and every handler call as `handler h args then`, its argument
   registers read from `rdi` on (on PE the Win64 positions `rcx, rdx, r8, r9` and the stack,
-  `Asm.handlerPos`) (`fp`, the exception object, an immediate or an address), then
+  `Asm.handlerRegs`, `Asm.handlerPositions`) (`fp`, the exception object, an immediate or an address), then
   its shape's control flow (a branch on `al`, a jump table, `ud2`); a `switch.dense.w8-w64`
   whose index computation (`Asm.denseIndex`) stands in for the call, read as that handler call
   (`denseSwitch`); `unreachable`, a bare `ud2`;
@@ -42,8 +42,9 @@ for the instruction loop), which they never exhaust: every element read is at le
 Beyond Rust (aot.md §C2): the Rust decoder trusts the list of dropped stores; the Lean one
 checks their deadness by a backward liveness over the decoded code, `Ryo.Vm.Frame.decodeChecked`
 (`decodeReducedWith` and `Frame.droppedNotDead`). `decodeReduced` itself trusts the list, as
-Rust does, so that the two can be diffed. Likewise `decodeBounded` checks that every frame access
-lies in the frame (`Decoded.boundsOk`, see "Frame bounds"), which Rust's decoder doesn't.
+Rust does, so that the two can be diffed. Likewise `decodeBounded` checks that every frame write
+(and `ret`'s source, a call's result slot, the scopes) lies in the frame (`Decoded.boundsOk`, see
+"Frame bounds"), which Rust's decoder doesn't; frame reads aren't bounded.
 
 `Inputs` is the JSON form of one function's decoder inputs, read by `ryo-lean decode` and by the
 test vectors:
@@ -1020,8 +1021,11 @@ def read (ro : ByteArray) (callSites : Array CallSite) (dropped : List DroppedSt
   let scopes := scopes.map fun sc => ((ipos.filter (· < sc.codeOffset)).size, sc)
   return { protos, frameSize, actions, scopes, heads }
 
-/-- The R form of a function read (`reduced_of`, with `reduced::words`'s loop heads: with `pe`,
-none from the first cleanup landing pad on, the pad region). -/
+/-- The R form of a function read (`decode.rs`'s `words_of`, with `reduce::words`). The loop
+heads are recomputed from the code here, as `reduce.rs`'s `loop_heads` does: with `pe`, none
+from the first cleanup landing pad on, the pad region. (Rust's `words_of` passes
+`reduce::words` the read's heads instead, `decode.rs`'s `loop_heads`; their Lean port, which
+gives the same heads, is `ReadResult.heads`, unused here.) -/
 def reducedOf (r : ReadResult) (pe : Bool) : Except AsmError Decoded := do
   let ipos := r.protos.map (·.pos)
   let index (at_ b : Nat) : Except AsmError Nat := match rustBinarySearch ipos b with
@@ -1253,7 +1257,7 @@ def refOfString (s : String) : Except String Ref := do
 
 def i32OfJson (j : Json) : Except String (BitVec 32) := do
   let i : Int ← fromJson? j
-  if i < -(2 ^ 31 : Int) ∨ i ≥ 2 ^ 32 then throw s!"{i} out of range for i32"
+  if i < -(2 ^ 31 : Int) ∨ i ≥ 2 ^ 31 then throw s!"{i} out of range for i32"
   pure (BitVec.ofInt 32 i)
 
 /-- One function's decoder inputs (see the module comment for the JSON form). -/
