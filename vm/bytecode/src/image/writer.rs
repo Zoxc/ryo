@@ -351,6 +351,18 @@ pub fn validate_code(code: &[u32], lim: &CodeLimits<'_>) -> Result<Vec<bool>, (u
                 _ => {}
             }
         }
+        // `const` copies `len` bytes from `k`, `fill` reads `elem_size`: within the pool.
+        let read_len = match op {
+            Opcode::Const => Some("len"),
+            Opcode::Fill => Some("elem_size"),
+            _ => None,
+        };
+        if let Some(len) = read_len {
+            let word = |name: &str| info.operand_words(&words[1..]).find(|(o, _)| o.name == name).map_or(0, |(_, w)| w[0] as u64);
+            if word("k") + word(len) > lim.consts as u64 {
+                return fail(CodeError::ConstOutOfRange);
+            }
+        }
     }
     Ok(starts)
 }
