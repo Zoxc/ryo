@@ -28,7 +28,8 @@ allocation's provenance, or an exposed allocation for a pointer without one.
 
 UB: reading `Uninit` as an integer or pointer; division by zero and `MIN / -1`
 (`unchecked_div`/`_rem`); `memcpy` of overlapping ranges; an access through a pointer outside
-a live allocation (or a store into an immutable one); `addr` of a frame offset that is neither
+a live allocation (or a store into an immutable one, which a compare-exchange makes even when it
+fails); `addr` of a frame offset that is neither
 in nor at the end of an escaped object nor a zero-sized object (`State.addrOf`).
 Shifts and rotations mask the amount (`wrapping_sh*`), so they have no UB.
 
@@ -333,7 +334,10 @@ def kindSem (k : HandlerKind) (ps : List String) (e : Env) : M Out := do
     let cur ← asNat (← st.load p n a)
     if e.ch.spurious && !weak then throw (.noBehavior "a strong compare-exchange failed spuriously")
     let ok := cur == expected && !e.ch.spurious
-    let mem ← if ok then st.store st.mem p (intBytes n new) a else pure st.mem
+    -- A failed one stores too, the value it read: `lock cmpxchg` always writes its
+    -- destination, so faults on immutable memory.
+    let mem ← if ok then st.store st.mem p (intBytes n new) a
+      else do let _ ← st.store st.mem p (intBytes n cur) a; pure st.mem
     pure { mem, writes := [("d", intBytes n cur), ("o", boolByte ok)] }
   | .aload_ptr =>
     let v ← asPtr (← st.load (← e.ptr "p") 8 Target.PTR_ALIGN)
@@ -369,7 +373,8 @@ def kindSem (k : HandlerKind) (ps : List String) (e : Env) : M Out := do
     if e.ch.spurious && !weak then throw (.noBehavior "a strong compare-exchange failed spuriously")
     -- Pointers compare by address, as the machine's `cmpxchg` does.
     let ok := cur.addr == expected.addr && !e.ch.spurious
-    let mem ← if ok then st.store st.mem p (encodePtr new) Target.PTR_ALIGN else pure st.mem
+    let mem ← if ok then st.store st.mem p (encodePtr new) Target.PTR_ALIGN
+      else do let _ ← st.store st.mem p (encodePtr cur) Target.PTR_ALIGN; pure st.mem
     pure { mem, writes := [("d", encodePtr cur), ("o", boolByte ok)] }
   | .fence | .compiler_fence => pure (out e [])
   | .br => pure (out e [] (.branch ((← e.int "s") != 0)))

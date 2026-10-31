@@ -13,7 +13,8 @@ symbolic in the operand values:
   pointer in a slot, a memory operand, an address operand, or the pointer an address operand
   points to (`addr.sym.ind`), with an extent, read/write/read-modify-write, and whether the
   access is aligned (atomics). A memory extent is an upper bound where the handler may stop
-  early (`switch.sparse`'s search, a failed compare-exchange's store).
+  early (`switch.sparse`'s search, a failed compare-exchange's store, which only writes back
+what it read, though `opSem` still requires the memory mutable).
 - `flow`: fall through, branch on the returned `bool`, jump through a table on the returned
   index, or not return.
 
