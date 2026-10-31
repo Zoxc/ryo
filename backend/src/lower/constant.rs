@@ -148,7 +148,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
 
     /// Checks that the merge pass can put `id` (and everything it points at) in the pool.
     pub fn check_alloc(&self, id: AllocId) -> Result<(), NeedsNative> {
-        check_alloc(self.tcx, id, &mut FxHashSet::default())
+        check_alloc(self.tcx, id, &mut FxHashSet::default(), &mut FxHashSet::default())
     }
 }
 
@@ -216,19 +216,27 @@ pub fn needs_fixup(tcx: TyCtxt<'_>, id: AllocId) -> bool {
     alloc.inner().provenance().ptrs().values().any(|prov| is_import(tcx, &tcx.global_alloc(prov.alloc_id())))
 }
 
-fn check_alloc(tcx: TyCtxt<'_>, id: AllocId, seen: &mut FxHashSet<AllocId>) -> Result<(), NeedsNative> {
-    if !seen.insert(id) {
+/// `done` holds the allocations checked, `path` those being checked: the merge pass copies
+/// an allocation after what it points at (`Pool::target`), so a cycle (possible with
+/// `const_allocate` + `const_make_global`) stays native.
+fn check_alloc(tcx: TyCtxt<'_>, id: AllocId, done: &mut FxHashSet<AllocId>, path: &mut FxHashSet<AllocId>) -> Result<(), NeedsNative> {
+    if done.contains(&id) {
         return Ok(());
+    }
+    if !path.insert(id) {
+        return native("a constant whose allocations point at each other in a cycle");
     }
     match tcx.global_alloc(id) {
         GlobalAlloc::Memory(alloc) => {
             for prov in alloc.inner().provenance().ptrs().values() {
-                check_alloc(tcx, prov.alloc_id(), seen)?;
+                check_alloc(tcx, prov.alloc_id(), done, path)?;
             }
-            Ok(())
         }
-        GlobalAlloc::VTable(ty, dyn_ty) => check_alloc(tcx, vtable_alloc(tcx, ty, dyn_ty), seen),
-        GlobalAlloc::Function { .. } | GlobalAlloc::TypeId { .. } => Ok(()),
-        GlobalAlloc::Static(def_id) => check_static(tcx, def_id),
+        GlobalAlloc::VTable(ty, dyn_ty) => check_alloc(tcx, vtable_alloc(tcx, ty, dyn_ty), done, path)?,
+        GlobalAlloc::Function { .. } | GlobalAlloc::TypeId { .. } => {}
+        GlobalAlloc::Static(def_id) => check_static(tcx, def_id)?,
     }
+    path.remove(&id);
+    done.insert(id);
+    Ok(())
 }
