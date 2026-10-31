@@ -40,7 +40,8 @@
 //!   splats, handler calls, `RefAddr`s through two loads) always move. A cheap one moves only
 //!   if it runs on every iteration, no call is laid out within the loop (one that would make
 //!   the value live across it, in a callee-saved register or a spill slot), and it takes the
-//!   register of an operand nothing else in the loop uses: then it costs the loop no register
+//!   register of an operand nothing else in the loop uses, nor an exit edge or code after the
+//!   loop (which keep it live across the loop): then it costs the loop no register
 //!   (a loop that runs once would pay for a new one). Cheap operations a moved one needs are
 //!   copied out with it, and stay where they are for their other uses.
 
@@ -307,6 +308,27 @@ fn licm(f: &mut Func, an: &Analysis, l: &Loop) -> bool {
             }
         }
     }
+    // The values live in the loop for code after it: passed on an exit edge or used outside
+    // the loop where it is laid out or after it (the intervals are hulls in the layout). A
+    // hoisted value can't take such an operand's register for free, and a candidate such a
+    // use keeps is not a dead copy.
+    let mut outside = alloc::vec![false; f.values.len()];
+    for (k, &b) in f.layout.iter().enumerate() {
+        let bd = &f.blocks[b.idx()];
+        let inside = l.body[b.idx()];
+        if !inside && k < lo {
+            continue;
+        }
+        if !inside {
+            for &i in &bd.insts {
+                f.insts[i.idx()].args.iter().for_each(|a| outside[a.idx()] = true);
+            }
+            bd.term.uses().for_each(|a| outside[a.idx()] = true);
+        }
+        for e in bd.term.edges().filter(|e| !inside || !l.body[e.to.idx()]) {
+            e.args.iter().for_each(|a| outside[a.idx()] = true);
+        }
+    }
     // Moved (the loop uses the hoisted value), or copied (only hoisted ones do). A cheap one
     // only if it ran on every iteration, the loop has no call, and it takes the register of an
     // operand that nothing else in the loop needs: it then costs no register there (a loop
@@ -321,8 +343,8 @@ fn licm(f: &mut Func, an: &Analysis, l: &Loop) -> bool {
                 let every = || l.latches.iter().all(|&p| an.ndom.dominates(id.block, p));
                 let frees = || {
                     id.args.iter().any(|&a| match f.def(a) {
-                        ValueDef::Inst(j, _) => !used[a.idx()] && class(f, &f.insts[j.idx()].op) != Some(Class::Remat),
-                        ValueDef::Param(..) => !used[a.idx()],
+                        ValueDef::Inst(j, _) => !used[a.idx()] && !outside[a.idx()] && class(f, &f.insts[j.idx()].op) != Some(Class::Remat),
+                        ValueDef::Param(..) => !used[a.idx()] && !outside[a.idx()],
                         _ => false,
                     })
                 };
@@ -332,8 +354,9 @@ fn licm(f: &mut Func, an: &Analysis, l: &Loop) -> bool {
         let mut more = false;
         for (&i, _) in cand.iter().zip(&moved).filter(|x| !*x.1) {
             let id = &f.insts[i.idx()];
-            // One the loop doesn't use stays only as a dead copy.
-            if !id.results().any(|r| used[r.idx()]) {
+            // One nothing uses stays only as a dead copy (one only code after the loop uses
+            // stays live in it).
+            if !id.results().any(|r| used[r.idx()] || outside[r.idx()]) {
                 continue;
             }
             for &a in &id.args {

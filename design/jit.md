@@ -533,7 +533,7 @@ innermost first, so a value invariant in several levels leaves each in turn.
   loop uses it (not one only an exit or a cold path uses). The expensive ones (divisions,
   `vsplat`, effect-free handler calls, `RefAddr ind`) always move; a cheap one only if it
   runs on every iteration, no call is laid out within the loop (but in blocks that end in a
-  trap), and it takes the register of an operand that nothing else in the loop uses, so it
+  trap), and it takes the register of an operand that nothing else in the loop uses (nor an exit edge or code after the loop), so it
   costs the loop no register (a loop that runs once would pay for a new one: a callee-saved
   register's save and restore in a hashmap probe, say). Cheap operations feeding a moved one
   are copied out with it, the originals left for their other uses.
