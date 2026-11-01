@@ -142,6 +142,20 @@ fn upstream_monomorphizations<'tcx>(tcx: TyCtxt<'tcx>, (): ()) -> exports::Upstr
     exports::upstream_monomorphizations(tcx, (originals().upstream_monomorphizations)(tcx, ()))
 }
 
+/// Whether cg_llvm has nothing to do: no native CGU (the allocator shim is never its,
+/// `alloc_shim.rs`), and no output but the linked one (and metadata, dep info), which cg_ssa's
+/// `produce_final_output_artifacts` would otherwise handle.
+fn no_llvm_work(tcx: TyCtxt<'_>) -> bool {
+    partition::results(tcx).is_some()
+        && tcx.collect_and_partition_mono_items(()).codegen_units.is_empty()
+        && tcx.sess.opts.output_types.keys().all(|t| matches!(t, OutputType::Exe | OutputType::Metadata | OutputType::DepInfo))
+}
+
+/// rustc's `allocator_kind`, which our override hides from cg_ssa.
+pub(crate) fn original_allocator_kind(tcx: TyCtxt<'_>) -> Option<rustc_ast::expand::allocator::AllocatorKind> {
+    (originals().allocator_kind)(tcx, ())
+}
+
 fn allocator_kind(tcx: TyCtxt<'_>, (): ()) -> Option<rustc_ast::expand::allocator::AllocatorKind> {
     alloc_shim::allocator_kind(tcx, (originals().allocator_kind)(tcx, ()))
 }
@@ -277,10 +291,12 @@ impl CodegenBackend for RyoBackend {
         if let Some(results) = results {
             dump_lean::dump(tcx, &self.switches, results);
         }
-        let allocator = alloc_shim::write(tcx, (originals().allocator_kind)(tcx, ()));
+        let allocator = alloc_shim::write(tcx, original_allocator_kind(tcx));
         drop(ryo_t);
-        // The native CGUs (step 4), compiled by cg_llvm as usual.
-        let llvm = self.llvm.codegen_crate(tcx);
+        // The native CGUs (step 4), compiled by cg_llvm as usual. Without any, cg_ssa's
+        // codegen (`start_async_codegen`: the coordinator, cg_llvm's target machine factory)
+        // has nothing to do, so it doesn't run (design/backend.md#pipeline, step 4).
+        let llvm = (!no_llvm_work(tcx)).then(|| self.llvm.codegen_crate(tcx));
         Box::new(RyoOngoingCodegen { llvm, images, allocator })
     }
 
@@ -294,7 +310,10 @@ impl CodegenBackend for RyoBackend {
     ) -> (CompiledModules, WorkProductMap) {
         let ongoing = ongoing_codegen.downcast::<RyoOngoingCodegen>().expect("expected RyoOngoingCodegen from RyoBackend::codegen_crate");
         // cg_llvm downcasts this to its own `OngoingCodegen` (`rustc_codegen_llvm/src/lib.rs:407-410`).
-        let (mut modules, mut work_products) = self.llvm.join_codegen(ongoing.llvm, sess, incr_comp_session, outputs, crate_info);
+        let (mut modules, mut work_products) = match ongoing.llvm {
+            Some(llvm) => self.llvm.join_codegen(llvm, sess, incr_comp_session, outputs, crate_info),
+            None => (CompiledModules { modules: Vec::new(), allocator_module: None }, WorkProductMap::default()),
+        };
         // The images, so `link_rlib` and the object list include them
         // (design/backend.md#pipeline step 5), and their work products: saved now (cg_ssa saves
         // only its own modules', inside cg_llvm's join), or the previous session's kept, before
@@ -539,9 +558,10 @@ fn binary_format(f: &rustc_target::spec::BinaryFormat) -> object::BinaryFormat {
 /// What `codegen_crate` returns: cg_llvm's ongoing codegen, plus the image objects
 /// (design/backend.md#pipeline step 5).
 struct RyoOngoingCodegen {
-    llvm: Box<dyn Any>,
+    /// cg_llvm's, unless it had nothing to do ([`no_llvm_work`]).
+    llvm: Option<Box<dyn Any>>,
     images: Vec<OngoingImage>,
-    /// Our allocator shim, if cg_llvm writes none ([`alloc_shim`]).
+    /// Our allocator shim ([`alloc_shim`]), where cg_ssa would have asked cg_llvm for one.
     allocator: Option<rustc_codegen_ssa::CompiledModule>,
 }
 

@@ -88,6 +88,21 @@ L3:
   sym5 = std::fmt::DebugTuple::<'_, '_>::field
   sym6 = std::fmt::DebugTuple::<'_, '_>::finish
 
+fn <C main of main> (frame 64, args 0, ret 4)
+    arg $-8, 4
+    arg $-16, 264
+    addr.sym $-32, sym0
+    sext.w32.w64 $-40, $-8
+    mov.w64 $-48, $-16
+    imm.w8 $-49, 0
+L0:
+    call $-24, fn1, 8, [4294967264, 8, 4294967256, 264, 4294967248, 520, 4294967247, 769]
+    trunc.w64.w32 $-4, $-24
+    ret $-4, 4
+  cleanup L0 -> continue (nounwind)
+  sym0 = main
+  fn1 = std::rt::lang_start::<()>
+
 fn <[u32] as std::fmt::Debug>::fmt (frame 160, args 0, ret 1)
     arg $-24, 8
     arg $-16, 264
@@ -9854,21 +9869,6 @@ L47:
   fn43 = <std::vec::Vec<u32> as std::ops::Deref>::deref
   k44 = const allocation + 0
   fn45 = core::slice::<impl [u32]>::copy_from_slice
-
-fn ryo_rt::entry::c_main::<fn() {main}, (), 0> (frame 64, args 0, ret 4)
-    arg $-8, 4
-    arg $-16, 264
-    addr.sym $-32, sym0
-    sext.w32.w64 $-40, $-8
-    mov.w64 $-48, $-16
-    imm.w8 $-49, 0
-L0:
-    call $-24, fn1, 8, [4294967264, 8, 4294967256, 264, 4294967248, 520, 4294967247, 769]
-    trunc.w64.w32 $-4, $-24
-    ret $-4, 4
-  cleanup L0 -> continue (nounwind)
-  sym0 = main
-  fn1 = std::rt::lang_start::<()>
 
 fn std::array::iter::iter_inner::PolymorphicIter::<[std::mem::MaybeUninit<usize>]>::next (frame 192, args 0, ret 16) [hint]
     arg $-32, 8

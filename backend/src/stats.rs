@@ -37,7 +37,7 @@ fn coverage<'a, 'tcx>(fresh: &[Fresh<'tcx>], failed: &'a [(Instance<'tcx>, Needs
     let mut templates: BTreeMap<String, (usize, usize)> = BTreeMap::new();
     let mut seen = FxHashSet::default();
     for v in fresh.iter().flat_map(|f| f.vm.iter()) {
-        if !seen.insert(v.instance) {
+        if v.wrapper || !seen.insert(v.instance) {
             continue;
         }
         n_vm += 1;

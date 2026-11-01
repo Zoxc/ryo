@@ -333,7 +333,7 @@ impl<'tcx> Dumper<'tcx> {
 
     fn body(&mut self, inst: Instance<'tcx>) -> J {
         let tcx = self.tcx;
-        let generic = crate::lower::fn_body(tcx, inst);
+        let generic = tcx.instance_mir(inst.def);
         let body: mir::Body<'tcx> =
             inst.instantiate_mir_and_normalize_erasing_regions(tcx, self.typing_env(), ty::EarlyBinder::bind(tcx, generic.clone()));
         let locals: Vec<J> = body.local_decls.iter().map(|d| self.ty(d.ty)).collect();

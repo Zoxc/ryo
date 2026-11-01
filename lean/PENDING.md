@@ -3,6 +3,13 @@
 Rust-side changes that the Lean model or proofs don't reflect yet. Add an entry per change;
 remove it once a Lean session has handled it.
 
+- C `main` without a template (Commit: "Backend: C main and allocator shim without templates"):
+  `ryo_rt::entry` (`c_main`, diagnostic item `ryo_c_main`) is gone. The C `main` is built by
+  the backend with no instance: an image function named `target.entry_name`, C ABI
+  `(c_int, *const *const u8) -> c_int`, lowered from a synthesized MIR body; `RYO_DUMP_LEAN`
+  has no certificate for it and its dump name is `<C main of {entry fn}>`. If the Lean side
+  expects a certificate per image function, it should accept this one without.
+
 - C `main` as a VM function, no `__ryo_main` (Commit: "Backend: No cg_llvm module for fib"):
   the entry wrapper is a C-ABI VM function of the entry fn's image (symbol `main`, `External`,
   default visibility), the instance `ryo_rt::entry::c_main::<M, T, SIGPIPE>` lowered from a

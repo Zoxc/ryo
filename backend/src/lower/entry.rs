@@ -1,16 +1,16 @@
-//! The C `main` of a binary whose entry fn is a VM function (design/stubs.md#program-entry-main):
-//! a VM function the backend adds to the entry fn's image, lowered from a MIR body it builds
-//! itself, as cg_ssa's `maybe_create_entry_wrapper` builds its LLVM function:
+//! The C `main` of a binary whose entry fn is a VM function (design/stubs.md#program-entry-main),
+//! built by the backend as cg_ssa's `maybe_create_entry_wrapper` builds its LLVM function: a
+//! function of the target's entry signature (`main(argc: c_int, argv) -> c_int`, C ABI) under
+//! `target.entry_name`, which calls `lang_start::<T>` with the entry fn:
 //!
 //! ```text
-//! extern "C" fn main(argc: c_int, argv: *const *const c_char) -> c_int {
-//!     lang_start::<T>(entry_fn as fn() -> T, argc as isize, argv as *const *const u8, SIGPIPE) as c_int
+//! extern "C" fn main(argc: c_int, argv: *const *const u8) -> c_int {
+//!     lang_start::<T>(entry_fn as fn() -> T, argc as isize, argv, SIGPIPE) as c_int
 //! }
 //! ```
 //!
-//! Its instance is `ryo_rt::entry::c_main::<M, T, SIGPIPE>`: `M` the entry fn's `FnDef` type,
-//! `T` its return type, `SIGPIPE` the `on_broken_pipe` setting. The template gives it a
-//! `DefId`, its C signature and its symbol (`main`, `symbols.rs`); its own body is never used.
+//! It is no rustc instance: the image adds it as a function of its own ([`EntryWrapper`] in the
+//! partition), lowered from the MIR body [`body`] builds, with the signature [`c_sig`].
 
 use rustc_hir::attrs::lang_items::LangItem;
 use rustc_index::IndexVec;
@@ -23,33 +23,29 @@ use rustc_middle::ty::adjustment::PointerCoercion;
 use rustc_middle::ty::{self, Instance, Ty, TyCtxt, TypingEnv};
 use rustc_span::{DUMMY_SP, Spanned};
 
-use crate::rt::RtItems;
-
-/// The entry wrapper's instance for the entry fn `main` with `sigpipe`.
-pub fn wrapper<'tcx>(tcx: TyCtxt<'tcx>, rt: RtItems, main: Instance<'tcx>, sigpipe: u8) -> Instance<'tcx> {
-    let typing_env = TypingEnv::fully_monomorphized();
-    let sig = tcx.fn_sig(main.def_id()).instantiate_identity().skip_norm_wip();
-    let main_ret = tcx.normalize_erasing_late_bound_regions(typing_env, sig).output();
-    let main_ty = Ty::new_fn_def(tcx, main.def_id(), ty::Binder::dummy(main.args));
-    let sigpipe = ty::Const::from_bits(tcx, u128::from(sigpipe), typing_env, tcx.types.u8);
-    Instance::new_raw(rt.c_main, tcx.mk_args(&[main_ty.into(), main_ret.into(), sigpipe.into()]))
+/// The C signature of `main` cg_ssa declares (`create_entry_fn`): `(c_int, *const *const u8)
+/// -> c_int`, C ABI.
+pub fn c_sig<'tcx>(tcx: TyCtxt<'tcx>) -> ty::PolyFnSig<'tcx> {
+    let c_int = match tcx.sess.target.c_int_width {
+        16 => tcx.types.i16,
+        32 => tcx.types.i32,
+        64 => tcx.types.i64,
+        w => bug(&format!("c_int width {w}")),
+    };
+    let argv = Ty::new_imm_ptr(tcx, Ty::new_imm_ptr(tcx, tcx.types.u8));
+    let kind = ty::FnSigKind::default().set_abi(rustc_abi::ExternAbi::C { unwind: false });
+    ty::Binder::dummy(tcx.mk_fn_sig([c_int, argv], c_int, kind))
 }
 
-/// Whether `instance` is an entry wrapper ([`wrapper`]).
-pub fn is_wrapper(tcx: TyCtxt<'_>, instance: Instance<'_>) -> bool {
-    matches!(instance.def, ty::InstanceKind::Item(def_id) if crate::rt::is_c_main(tcx, def_id))
-}
-
-/// The MIR body of the entry wrapper `instance`, monomorphic.
-pub fn body<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> &'tcx Body<'tcx> {
+/// The MIR body of the entry wrapper of the entry fn `main` with `sigpipe`, monomorphic.
+pub fn body<'tcx>(tcx: TyCtxt<'tcx>, main: Instance<'tcx>, sigpipe: u8) -> &'tcx Body<'tcx> {
     let typing_env = TypingEnv::fully_monomorphized();
     let span = DUMMY_SP;
     let source_info = SourceInfo::outermost(span);
-    let main_ty = instance.args.type_at(0);
-    let main_ret = instance.args.type_at(1);
-    let sigpipe = instance.args.const_at(2).to_leaf().to_u8();
-
-    let c_sig = tcx.normalize_erasing_late_bound_regions(typing_env, tcx.fn_sig(instance.def_id()).instantiate(tcx, instance.args).skip_norm_wip());
+    let main_ty = Ty::new_fn_def(tcx, main.def_id(), ty::Binder::dummy(main.args));
+    let main_sig = tcx.fn_sig(main.def_id()).instantiate_identity().skip_norm_wip();
+    let main_ret = tcx.normalize_erasing_late_bound_regions(typing_env, main_sig).output();
+    let c_sig = c_sig(tcx).skip_binder();
     let start_def = tcx.require_lang_item(LangItem::Start, span);
     let start_args = [ty::GenericArg::from(main_ret)];
     let start_sig = tcx.normalize_erasing_late_bound_regions(typing_env, tcx.fn_sig(start_def).instantiate(tcx, &start_args).skip_norm_wip());
@@ -99,18 +95,8 @@ pub fn body<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> &'tcx Body<'tc
         ),
     ]);
     let scope = SourceScopeData { span, parent_scope: None, inlined: None, inlined_parent_scope: None, local_data: ClearCrossCrate::Clear };
-    let mut body = Body::new(
-        MirSource::item(instance.def_id()),
-        blocks,
-        IndexVec::from_elem_n(scope, 1),
-        locals,
-        IndexVec::new(),
-        2,
-        Vec::new(),
-        span,
-        None,
-        None,
-    );
+    let mut body =
+        Body::new(MirSource::item(main.def_id()), blocks, IndexVec::from_elem_n(scope, 1), locals, IndexVec::new(), 2, Vec::new(), span, None, None);
     body.set_required_consts(Vec::new());
     tcx.arena.alloc(body)
 }

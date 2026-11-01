@@ -12,6 +12,38 @@ L1:
     call    qword ptr [r11+8]
     jmp     L0
 
+fn <C main of main>
+    inc     qword ptr [jit_record]
+    jns     L1
+L0:
+    sub     rsp,48h
+    mov     [rsp+38h],edi
+    mov     [rsp+30h],rsi
+    mov     rax,[sym0]
+    mov     [rsp+20h],rax
+    mov     edx,[rsp+38h]
+    shl     rdx,20h
+    sar     rdx,20h
+    mov     [rsp+18h],rdx
+    mov     rsi,[rsp+30h]
+    mov     [rsp+10h],rsi
+    mov     byte ptr [rsp+0Fh],0
+    mov     rdi,[rsp+20h]
+    mov     rsi,[rsp+18h]
+    mov     rdx,[rsp+10h]
+    movzx   ecx,byte ptr [rsp+0Fh]
+    call    fn1
+    mov     [rsp+28h],rax
+    mov     rax,[rsp+28h]
+    mov     [rsp+3Ch],eax
+    mov     eax,[rsp+3Ch]
+    add     rsp,48h
+    ret
+L1:
+    lea     r11,[jit_record]
+    call    qword ptr [r11+8]
+    jmp     L0
+
 fn <alloc::raw_vec::RawVec<bool> as std::ops::Drop>::drop
     inc     qword ptr [jit_record]
     jns     L1
@@ -2097,38 +2129,6 @@ L0:
     movzx   eax,byte ptr [rax]
     mov     [rsp+3Fh],al
     movzx   eax,byte ptr [rsp+3Fh]
-    add     rsp,48h
-    ret
-L1:
-    lea     r11,[jit_record]
-    call    qword ptr [r11+8]
-    jmp     L0
-
-fn ryo_rt::entry::c_main::<fn() {main}, (), 0>
-    inc     qword ptr [jit_record]
-    jns     L1
-L0:
-    sub     rsp,48h
-    mov     [rsp+38h],edi
-    mov     [rsp+30h],rsi
-    mov     rax,[sym0]
-    mov     [rsp+20h],rax
-    mov     edx,[rsp+38h]
-    shl     rdx,20h
-    sar     rdx,20h
-    mov     [rsp+18h],rdx
-    mov     rsi,[rsp+30h]
-    mov     [rsp+10h],rsi
-    mov     byte ptr [rsp+0Fh],0
-    mov     rdi,[rsp+20h]
-    mov     rsi,[rsp+18h]
-    mov     rdx,[rsp+10h]
-    movzx   ecx,byte ptr [rsp+0Fh]
-    call    fn1
-    mov     [rsp+28h],rax
-    mov     rax,[rsp+28h]
-    mov     [rsp+3Ch],eax
-    mov     eax,[rsp+3Ch]
     add     rsp,48h
     ret
 L1:

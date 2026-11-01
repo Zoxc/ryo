@@ -1,7 +1,7 @@
 //! The `RYO_DUMP` and `RYO_DUMP_CODE` debug dumps of the image's VM functions.
 
 use rustc_data_structures::fx::FxHashMap;
-use rustc_middle::ty::{Instance, TyCtxt};
+use rustc_middle::ty::TyCtxt;
 use ryo_bytecode::asm::{self, Ref};
 use ryo_bytecode::full::{Const, Data, Func, Sym};
 use ryo_bytecode::image::Cleanup;
@@ -16,9 +16,14 @@ pub(super) fn write(tcx: TyCtxt<'_>, var: &str, path: impl AsRef<std::path::Path
     std::fs::write(path, text).unwrap_or_else(|e| tcx.dcx().fatal(format!("ryo: {var}: writing {}: {e}", path.display())));
 }
 
+/// A VM function's name in the dumps: its path; for the C `main`, `<C main of {entry fn}>`.
+pub(super) fn label(v: &VmFn<'_>) -> String {
+    if v.wrapper { format!("<C main of {}>", path(v.instance)) } else { path(v.instance) }
+}
+
 /// `vm`'s functions with their paths, sorted by path.
 fn sorted_by_path<'a, 'tcx>(vm: &'a [VmFn<'tcx>]) -> Vec<(String, &'a VmFn<'tcx>)> {
-    let mut fns: Vec<_> = vm.iter().map(|v| (path(v.instance), v)).collect();
+    let mut fns: Vec<_> = vm.iter().map(|v| (label(v), v)).collect();
     fns.sort_by(|a, b| a.0.cmp(&b.0));
     fns
 }
@@ -31,7 +36,7 @@ pub(super) fn vm_text<'tcx>(tcx: TyCtxt<'tcx>, vm: &[VmFn<'tcx>], mode: asm::Mod
     for (name, v) in sorted_by_path(vm) {
         let l = &v.lowered;
         let c = &l.code;
-        let flags = func_flags_suffix(symbols::func_flags(tcx, v.instance));
+        let flags = if v.wrapper { String::new() } else { func_flags_suffix(symbols::func_flags(tcx, v.instance)) };
         writeln!(out, "fn {name} (frame {}, args {}, ret {}){flags}", l.frame_size, l.arg_size, l.ret_size).unwrap();
         match asm::decode(&c, mode) {
             Ok(d) => dump_labeled(&mut out, &d.words, &d.cleanup, &d.scopes),
@@ -67,7 +72,7 @@ pub(super) fn code_text<'tcx>(tcx: TyCtxt<'tcx>, vm: &[VmFn<'tcx>], mode: asm::M
     let mut out = String::new();
     for (name, v) in sorted_by_path(vm) {
         let c = &v.lowered.code;
-        let flags = func_flags_suffix(symbols::func_flags(tcx, v.instance));
+        let flags = if v.wrapper { String::new() } else { func_flags_suffix(symbols::func_flags(tcx, v.instance)) };
         writeln!(out, "fn {name}{flags}").unwrap();
         out.push_str("code ");
         for b in &c.code {
@@ -96,9 +101,9 @@ pub(super) fn code_text<'tcx>(tcx: TyCtxt<'tcx>, vm: &[VmFn<'tcx>], mode: asm::M
 /// Appends the merge's `RYO_DUMP_CODE` names for image function `i` ([`code_text`]): the
 /// function's line, and one line per reference of its `relocs`, given each local reference's
 /// image index `vals`.
-pub(super) fn image_names(out: &mut String, i: usize, instance: Instance<'_>, relocs: &[asm::Reloc], vals: &[u32]) {
+pub(super) fn image_names(out: &mut String, i: usize, name: &str, relocs: &[asm::Reloc], vals: &[u32]) {
     use std::fmt::Write;
-    writeln!(out, "image {i} {}", path(instance)).unwrap();
+    writeln!(out, "image {i} {name}").unwrap();
     let v = |i: u32| vals[i as usize];
     for r in relocs {
         let _ = match r.to {

@@ -295,7 +295,11 @@ fn needs_frame_pointer(sess: &rustc_session::Session) -> bool {
 /// A VM function: its lowering, and whether native code or the image calls it by name (then
 /// the image defines its symbol globally, with its linkage; an internal one becomes hidden).
 pub(super) struct VmFn<'tcx> {
+    /// The function's instance; for the entry wrapper ([`VmFn::wrapper`]), the entry fn's.
     pub(super) instance: Instance<'tcx>,
+    /// The C `main` ([`lower::entry`]): no rustc instance, named `target.entry_name`, never
+    /// called by the image, not in the side data.
+    pub(super) wrapper: bool,
     pub(super) data: MonoItemData,
     pub(super) lowered: LoweredFn<'tcx>,
     pub(super) global: bool,
@@ -363,9 +367,9 @@ pub(super) struct ImageCx<'a, 'tcx> {
     /// How the images' machine code is generated ([`asm_mode`]).
     pub mode: asm::Mode,
     pub switches: &'a Switches,
-    /// The entry fn, if the crate has one, and its entry wrapper, the C `main`
+    /// The entry fn, if the crate has one, and its `SIGPIPE` setting, for the C `main`
     /// ([`lower::entry`]).
-    pub entry: Option<(Instance<'tcx>, Instance<'tcx>)>,
+    pub entry: Option<(Instance<'tcx>, u8)>,
     /// The reuse fingerprint's session part ([`image_settings`]).
     pub settings: &'a str,
     /// Whether a previous session's images may be reused (and new ones saved for that).
@@ -520,10 +524,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
 
     fn run(mut self) -> (Vec<CodegenUnit<'tcx>>, Results) {
         let tcx = self.tcx;
-        let entry = tcx.entry_fn(()).map(|(def_id, EntryFnType::Main { sigpipe })| {
-            let main = Instance::mono(tcx, def_id);
-            (main, lower::entry::wrapper(tcx, self.rt, main, sigpipe))
-        });
+        let entry = tcx.entry_fn(()).map(|(def_id, EntryFnType::Main { sigpipe })| (Instance::mono(tcx, def_id), sigpipe));
         let (images, fresh) = self.lower(entry);
         // Each function once, however many CGUs hold a copy of it (`LocalCopy`).
         let mut seen = FxHashSet::default();
@@ -555,7 +556,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
 
     /// Steps 2, 3 and 5's contents, per CGU and in parallel (over CGUs, and over each one's
     /// functions): classify, lower and build the image, or reuse the previous session's.
-    fn lower(&mut self, entry: Option<(Instance<'tcx>, Instance<'tcx>)>) -> (Vec<CguImage>, Vec<Fresh<'tcx>>) {
+    fn lower(&mut self, entry: Option<(Instance<'tcx>, u8)>) -> (Vec<CguImage>, Vec<Fresh<'tcx>>) {
         let tcx = self.tcx;
         let settings = image_settings(tcx, self.rt, self.mode, self.switches);
         // `RYO_ASM_CHECK` checks code as it is encoded: a reused image would go unchecked.
@@ -681,8 +682,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
             }));
             hidden.extend(unit.hidden_added.iter().copied());
             for &(v, global) in &unit.vm.vm {
-                // The entry wrapper isn't one of rustc's items, and isn't exported.
-                let Some(&data) = unit.cgu.items().get(&MonoItem::Fn(v)) else { continue };
+                let data = unit.cgu.items()[&MonoItem::Fn(v)];
                 if global && data.linkage == Linkage::External {
                     vm_exports.push((v, data.visibility));
                 }
@@ -1017,15 +1017,8 @@ fn image_part<'tcx>(cx: ImageCx<'_, 'tcx>, cgu: &CodegenUnit<'tcx>) -> ImagePart
     if cands.is_empty() {
         return ImagePart { vm: CguVm::empty(), image: None, fresh: None };
     }
-    // Only the entry's own CGU depends on it. The entry wrapper, `External` with default
-    // visibility as cg_ssa's, joins the entry fn's candidates.
+    // Only the entry's own CGU depends on it (and gets the C `main`).
     let entry = cx.entry.filter(|(e, _)| cands.iter().any(|(i, _)| i == e));
-    if let Some((_, wrapper)) = entry {
-        let item = MonoItem::Fn(wrapper);
-        let data =
-            MonoItemData { inlined: false, linkage: Linkage::External, visibility: Visibility::Default, size_estimate: item.size_estimate(tcx) };
-        cands.push((wrapper, data));
-    }
     // A stable image order: by symbol name.
     cands.sort_by_cached_key(|(i, _)| tcx.symbol_name(*i).name);
     let build = || build_cgu(cx, entry, cgu, &cands);
@@ -1037,9 +1030,8 @@ fn image_part<'tcx>(cx: ImageCx<'_, 'tcx>, cgu: &CodegenUnit<'tcx>) -> ImagePart
     // session didn't have. The queries the lowering reads are the node's edges.
     // The entry by its symbol: an `Instance`'s `Debug` shows its `DefIndex`, which an item
     // added ahead of it changes.
-    // The wrapper by the entry fn's return type and the `SIGPIPE` setting: its symbol is
-    // always `main`.
-    let entry_key = entry.map(|(e, w)| (tcx.symbol_name(e).name, w.args.type_at(1).to_string(), w.args.const_at(2).to_leaf().to_u8()));
+    // With the `SIGPIPE` setting, which the C `main` passes on.
+    let entry_key = entry.map(|(e, sigpipe)| (tcx.symbol_name(e).name, sigpipe));
     let mut key = format!("{}\n{settings}\n{entry_key:?}\n", cgu.name());
     for (i, d) in &cands {
         let _ = writeln!(key, "{} {:?} {:?}", tcx.symbol_name(*i).name, d.linkage, d.visibility);
@@ -1053,24 +1045,27 @@ fn image_part<'tcx>(cx: ImageCx<'_, 'tcx>, cgu: &CodegenUnit<'tcx>) -> ImagePart
 }
 
 /// Classifies, lowers and builds CGU `cgu`'s image from its candidates `cands` (in image
-/// order); `entry` is the entry fn and its wrapper if they are among them.
+/// order); `entry` is the entry fn and its `SIGPIPE` setting if it is among them.
 fn build_cgu<'tcx>(
     cx: ImageCx<'_, 'tcx>,
-    entry: Option<(Instance<'tcx>, Instance<'tcx>)>,
+    entry: Option<(Instance<'tcx>, u8)>,
     cgu: &CodegenUnit<'tcx>,
     cands: &[(Instance<'tcx>, MonoItemData)],
 ) -> ImagePart<'tcx> {
     let ImageCx { tcx, rt, .. } = cx;
     let (mut ok, failed) = lower_cgu(cx, cands);
-    if let Some((main, wrapper)) = entry {
-        // A native entry fn gets cg_ssa's C `main`; a VM one needs the wrapper, which only
-        // calls `lang_start` and so lowers wherever the entry fn does.
-        if !ok.contains_key(&main) {
-            ok.remove(&wrapper);
-        } else if let Some((_, why)) = failed.iter().find(|(i, _)| *i == wrapper) {
-            tcx.dcx().fatal(format!("ryo: the C `main` wrapper stays native: {}", why.0));
-        }
-    }
+    // A native entry fn gets cg_ssa's C `main`; a VM one the backend's, which only calls
+    // `lang_start` and so lowers wherever the entry fn does. Nothing calls it, so it is
+    // lowered once the image's functions are known.
+    let wrapper = entry.filter(|(main, _)| ok.contains_key(main)).map(|(main, sigpipe)| {
+        let vm: FxHashSet<Instance<'tcx>> = ok.keys().copied().collect();
+        let lcx = LowerCx { vm: &vm, rt, mode: cx.mode, cert: false, asm_check: cx.switches.asm_check };
+        let lowered = lower::lower_entry(tcx, &lcx, main, sigpipe)
+            .unwrap_or_else(|why| tcx.dcx().fatal(format!("ryo: the C `main` wrapper can't be VM code: {}", why.0)));
+        // `External` with default visibility, as cg_ssa declares it.
+        let data = MonoItemData { inlined: false, linkage: Linkage::External, visibility: Visibility::Default, size_estimate: 0 };
+        VmFn { instance: main, wrapper: true, data, lowered, global: true }
+    });
     let mut vm: Vec<VmFn<'tcx>> = Vec::new();
     for &(instance, data) in cands {
         if let Some(lowered) = ok.remove(&instance) {
@@ -1080,9 +1075,10 @@ fn build_cgu<'tcx>(
             // `LocalCopy` copy stays local: the image refers to its own functions by their
             // local symbols, and native code to it gets a native copy (`native_ref`).
             let global = data.linkage != Linkage::Internal || unique(tcx, MonoItem::Fn(instance));
-            vm.push(VmFn { instance, data, lowered, global });
+            vm.push(VmFn { instance, wrapper: false, data, lowered, global });
         }
     }
+    vm.extend(wrapper);
     if vm.is_empty() {
         let side = CguVm::empty().save(tcx);
         return ImagePart {
@@ -1112,7 +1108,7 @@ fn build_cgu<'tcx>(
     refs.retain(|i| seen.insert(*i));
     let (image, dumps) = build_image(cx, cgu.name(), &mut vm);
     let pool = image.consts_len as usize;
-    let cgu_vm = CguVm { vm: vm.iter().map(|v| (v.instance, v.global)).collect(), islands, refs };
+    let cgu_vm = CguVm { vm: vm.iter().filter(|v| !v.wrapper).map(|v| (v.instance, v.global)).collect(), islands, refs };
     let side = cgu_vm.save(tcx);
     ImagePart {
         vm: cgu_vm,

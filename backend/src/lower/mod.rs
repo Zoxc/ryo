@@ -138,7 +138,7 @@ pub struct LowerCx<'a, 'tcx> {
 /// Lowers `instance` to bytecode, or says why it must stay native.
 pub fn lower<'tcx>(tcx: TyCtxt<'tcx>, cx: &LowerCx<'_, 'tcx>, instance: Instance<'tcx>) -> Result<LoweredFn<'tcx>, NeedsNative> {
     let sig = vm_fn_sig(tcx, instance)?;
-    let body = fn_body(tcx, instance);
+    let body = tcx.instance_mir(instance.def);
     let mut fx = FnCx::new(tcx, cx, instance, body, &sig)?;
     fx.prologue(&sig)?;
     fx.cert_prologue();
@@ -146,10 +146,21 @@ pub fn lower<'tcx>(tcx: TyCtxt<'tcx>, cx: &LowerCx<'_, 'tcx>, instance: Instance
     fx.finish(&sig)
 }
 
-/// The MIR body `instance` is lowered from: its own, or the one the backend builds for the
-/// entry wrapper ([`entry::body`]).
-pub fn fn_body<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> &'tcx Body<'tcx> {
-    if entry::is_wrapper(tcx, instance) { entry::body(tcx, instance) } else { tcx.instance_mir(instance.def) }
+/// Lowers the C `main` of the entry fn `main` ([`entry`]): no instance of its own, so the
+/// body is [`entry::body`] and the signature [`entry::c_sig`]'s. Its body is monomorphic, so
+/// `main` only serves as the instance it is instantiated with. No certificate: the Lean
+/// lowering check covers rustc's MIR bodies.
+pub fn lower_entry<'tcx>(tcx: TyCtxt<'tcx>, cx: &LowerCx<'_, 'tcx>, main: Instance<'tcx>, sigpipe: u8) -> Result<LoweredFn<'tcx>, NeedsNative> {
+    let sig = sig::fn_ptr_sig(tcx, entry::c_sig(tcx))?;
+    if let Some(why) = &sig.no_plan {
+        return native(format!("C ABI without a plan: {why}"));
+    }
+    let body = entry::body(tcx, main, sigpipe);
+    let cx = LowerCx { cert: false, ..*cx };
+    let mut fx = FnCx::new(tcx, &cx, main, body, &sig)?;
+    fx.prologue(&sig)?;
+    fx.blocks()?;
+    fx.finish(&sig)
 }
 
 /// The signature of `instance` if it can be a VM function: a Rust-ABI function whose

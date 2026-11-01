@@ -21,6 +21,8 @@ pub struct LinkInfo {
     /// For a Rust dylib: the runtime crates' exported symbols, which it doesn't export
     /// ([`crate::symbols::runtime_exports`]); empty for other crate types.
     pub runtime_exports: rustc_data_structures::fx::FxHashSet<String>,
+    /// The allocator shim's symbols to export, per crate type ([`crate::alloc_shim::exports`]).
+    pub allocator_exports: Vec<(CrateType, Vec<String>)>,
 }
 
 impl LinkInfo {
@@ -30,6 +32,7 @@ impl LinkInfo {
             macho: crate::symbols::is_macho(tcx.sess),
             register: crate::symbols::rt_symbol(tcx, objfile::REGISTER_SYMBOL),
             runtime_exports: if dylib { crate::symbols::runtime_exports(tcx) } else { Default::default() },
+            allocator_exports: crate::alloc_shim::exports(tcx, crate::original_allocator_kind(tcx)),
         }
     }
 }
@@ -39,13 +42,21 @@ pub fn link(
     info: Option<&LinkInfo>,
     sess: &Session,
     modules: CompiledModules,
-    crate_info: CrateInfo,
+    mut crate_info: CrateInfo,
     metadata: EncodedMetadata,
     outputs: &OutputFilenames,
 ) {
     // No codegen ran (e.g. `--emit=metadata`): nothing of ours to link.
     let Some(info) = info else { return llvm.link(sess, modules, crate_info, metadata, outputs) };
     let fmt = super::object_format(sess);
+    // cg_ssa listed the allocator shim's symbols with `allocator_kind`, which our override
+    // hides (`alloc_shim.rs`).
+    for (t, names) in &info.allocator_exports {
+        let list = crate_info.exported_symbols.entry(*t).or_default();
+        list.extend(
+            names.iter().map(|n| rustc_codegen_ssa::SymbolExport::new(n.clone(), rustc_middle::middle::exported_symbols::SymbolExportKind::Text)),
+        );
+    }
     let types = crate_info.crate_types.clone();
     let n = types.len();
 

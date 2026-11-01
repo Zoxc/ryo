@@ -58,8 +58,9 @@ pub(super) fn build_image<'tcx>(cx: ImageCx<'_, 'tcx>, cgu_name: Symbol, vm: &mu
     }
     let mut code_dump = switches.dump_code.as_ref().map(|_| dump::code_text(tcx, vm, mode));
     let merge_t = tcx.prof.generic_activity("ryo_merge");
-    let index: FxHashMap<Instance<'tcx>, u32> = vm.iter().enumerate().map(|(i, v)| (v.instance, i as u32)).collect();
+    let index: FxHashMap<Instance<'tcx>, u32> = vm.iter().enumerate().filter(|(_, v)| !v.wrapper).map(|(i, v)| (v.instance, i as u32)).collect();
     for (i, v) in vm.iter_mut().enumerate() {
+        let label = code_dump.is_some().then(|| dump::label(v));
         let l = &mut v.lowered;
         // Each reference's value.
         let vals: Vec<u32> = l
@@ -89,7 +90,7 @@ pub(super) fn build_image<'tcx>(cx: ImageCx<'_, 'tcx>, cgu_name: Symbol, vm: &mu
             .collect();
         let mut code = std::mem::take(&mut l.code);
         if let Some(out) = &mut code_dump {
-            dump::image_names(out, i, v.instance, &code.relocs, &vals);
+            dump::image_names(out, i, label.as_deref().unwrap_or_default(), &code.relocs, &vals);
         }
         for r in &mut code.relocs {
             let v = |i: u32| vals[i as usize];
@@ -113,7 +114,7 @@ pub(super) fn build_image<'tcx>(cx: ImageCx<'_, 'tcx>, cgu_name: Symbol, vm: &mu
             FuncSymbol { visibility, weak }
         });
         w.add_function(FunctionDef {
-            name: tcx.symbol_name(v.instance).name.to_owned(),
+            name: if v.wrapper { tcx.sess.target.entry_name.to_string() } else { tcx.symbol_name(v.instance).name.to_owned() },
             code: Vec::new(),
             frame_size: l.frame_size,
             arg_size: l.arg_size,
@@ -121,7 +122,7 @@ pub(super) fn build_image<'tcx>(cx: ImageCx<'_, 'tcx>, cgu_name: Symbol, vm: &mu
             ret_kind: l.ret_kind,
             cleanup: Vec::new(),
             symbol,
-            flags: symbols::func_flags(tcx, v.instance),
+            flags: if v.wrapper { 0 } else { symbols::func_flags(tcx, v.instance) },
         });
         encoded.push(code);
     }

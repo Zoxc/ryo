@@ -1037,8 +1037,6 @@ templates and the `main` wrapper. It is a normal Rust dependency of every ryo-bu
     entries in the PE form's Win64 convention (`vm::PE_MODE`, `pe_handler`), which the JIT
     gets through `RtApi::pe_handlers`, runs PE code on Linux.
 - **`island`**: the island templates ([stubs.md](stubs.md#templates)).
-- **`entry`**: `c_main`, the template whose instances the backend lowers as the C `main`
-  wrapper, a VM function ([stubs.md](stubs.md#program-entry-main)).
 
 ### Rules
 

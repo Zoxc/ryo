@@ -79,6 +79,5 @@ macro_rules! xmm6_15 {
 #[macro_use(tagged)]
 extern crate ryo_bytecode;
 
-pub mod entry;
 pub mod island;
 pub mod vm;

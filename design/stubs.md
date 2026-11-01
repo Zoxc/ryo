@@ -176,26 +176,27 @@ the entry fn is a VM function in the image instead, so the backend adds the wrap
 same image as a VM function of its own (`backend/src/lower/entry.rs`):
 
 ```rust
-extern "C" fn main(argc: c_int, argv: *const *const c_char) -> c_int {
-    lang_start::<T>(entry_fn as fn() -> T, argc as isize, argv as *const *const u8, SIGPIPE) as c_int
+extern "C" fn main(argc: c_int, argv: *const *const u8) -> c_int {
+    lang_start::<T>(entry_fn as fn() -> T, argc as isize, argv, SIGPIPE) as c_int
 }
 ```
 
-- Its instance is `ryo_rt::entry::c_main::<M, T, SIGPIPE>` (`M` the entry fn's `FnDef`
-  type, `T` its return type, `SIGPIPE` = `EntryFnType::Main { sigpipe }`, as cg_ssa passes
-  it). The template gives the instance a `DefId`, its C signature and, through the
-  `symbol_name` override, the symbol `main` (`target.entry_name`, also right for MSVC); its
-  own body (an abort) is never compiled.
-- The backend lowers it from a MIR body it builds itself rather than the template's: a
-  reify of the entry fn, the two casts, the call of `lang_start::<T>` (the `start` lang item
-  resolved as cg_ssa does, `require_lang_item(LangItem::Start)` + `Instance::expect_resolve`
-  with `[T]`, `rustc_codegen_ssa/src/base.rs:566-583`) and the cast of its result. `lang_start`
-  is private in std, but the backend names it directly; the call is a `call` if `lang_start`
-  is a VM function of the image, a `call.sym` otherwise. The call doesn't unwind
+- As cg_ssa's `create_entry_fn`, the backend makes the function itself: no instance, no
+  template. Its signature is the target's entry signature, `(c_int, *const *const u8) ->
+  c_int` with the C ABI (`entry::c_sig`, `c_int` per `target.c_int_width`); its symbol is
+  `target.entry_name` (also right for MSVC); it is global with default visibility, as cg_ssa
+  declares it. `T` is the entry fn's return type and `SIGPIPE` is `EntryFnType::Main {
+  sigpipe }`, as cg_ssa passes them.
+- The backend lowers it from a MIR body it builds (`entry::body`): a reify of the entry fn,
+  the cast of `argc`, the call of `lang_start::<T>` (the `start` lang item resolved as cg_ssa
+  does, `require_lang_item(LangItem::Start)` + `Instance::expect_resolve` with `[T]`,
+  `rustc_codegen_ssa/src/base.rs:566-583`) and the cast of its result. The call is a `call`
+  if `lang_start` is a VM function of the image, a `call.sym` otherwise, and doesn't unwind
   (`lang_start` catches `main`'s panics; cg_ssa's wrapper is `nounwind` too).
-- It is a C-ABI VM function like any `extern "C"` fn (design/backend.md#pipeline, step 2),
-  a candidate of the entry fn's CGU with `External` linkage and default visibility. It
-  isn't one of rustc's mono items, so the native CGU never has it, and it isn't exported.
+- It is a function of the entry fn's image like the others (`VmFn::wrapper`), added after
+  the CGU's functions are lowered: nothing calls it. It isn't one of rustc's mono items, so
+  it isn't in the side data, the native CGU or the export lists, and has no Lean
+  certificate (the dumps name it `<C main of {entry fn}>`).
 - If the entry fn stays native, so does the C `main`: the wrapper is dropped and cg_ssa
   emits its own. The wrapper failing to lower while the entry fn is VM code is a fatal error.
 - `#[no_main]` crates and `-Zcrate-attr=no_main` skip this, exactly like cg_ssa.

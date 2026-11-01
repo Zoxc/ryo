@@ -2,6 +2,21 @@ fn <() as std::process::Termination>::report (frame 16, args 0, ret 1) [hint]
     imm.w8 $-1, 0
     ret $-1, 1
 
+fn <C main of main> (frame 64, args 0, ret 4)
+    arg $-8, 4
+    arg $-16, 264
+    addr.sym $-32, sym0
+    sext.w32.w64 $-40, $-8
+    mov.w64 $-48, $-16
+    imm.w8 $-49, 0
+L0:
+    call $-24, fn1, 8, [4294967264, 8, 4294967256, 264, 4294967248, 520, 4294967247, 769]
+    trunc.w64.w32 $-4, $-24
+    ret $-4, 4
+  cleanup L0 -> continue (nounwind)
+  sym0 = main
+  fn1 = std::rt::lang_start::<()>
+
 fn <fn() as std::ops::FnOnce<()>>::call_once - shim(fn()) (frame 16, args 0, ret 0)
     arg $-8, 8
 L0:
@@ -157,21 +172,6 @@ L5:
   k4 = const allocation + 0
   fn5 = std::fmt::Arguments::<'_>::new::<15, 2>
   sym6 = std::io::_print
-
-fn ryo_rt::entry::c_main::<fn() {main}, (), 0> (frame 64, args 0, ret 4)
-    arg $-8, 4
-    arg $-16, 264
-    addr.sym $-32, sym0
-    sext.w32.w64 $-40, $-8
-    mov.w64 $-48, $-16
-    imm.w8 $-49, 0
-L0:
-    call $-24, fn1, 8, [4294967264, 8, 4294967256, 264, 4294967248, 520, 4294967247, 769]
-    trunc.w64.w32 $-4, $-24
-    ret $-4, 4
-  cleanup L0 -> continue (nounwind)
-  sym0 = main
-  fn1 = std::rt::lang_start::<()>
 
 fn std::fmt::Arguments::<'_>::new::<15, 2> (frame 48, args 0, ret 16) [hint]
     arg $-24, 8
