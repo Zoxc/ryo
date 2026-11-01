@@ -113,10 +113,12 @@ pub(super) fn backtrace(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), 
     // On PE the frames of functions with internal linkage, VM or native (`inner`, `outer`,
     // `__rust_try`), are named after the nearest external symbol before them: the PDB lists
     // only external symbols, and neither VM code nor a build without `-g` has CodeView
-    // records (design/platforms.md). Reaching `lang_start_internal` shows that the walk got
-    // through.
+    // records (design/platforms.md). Reaching `lang_start_internal` in the guard's full
+    // backtrace shows that the walk got through; the panic hook's short backtrace stops at
+    // `__rust_begin_short_backtrace` once that frame is named correctly, so it can't be
+    // required there.
     let (want, in_drop_want): (&[&str], &[&str]) = if MSVC {
-        (&["deep 7", "vm_backtrace::main", "std::rt::lang_start_internal"], &["std::rt::lang_start_internal"])
+        (&["deep 7", "vm_backtrace::main"], &["vm_backtrace::main", "std::rt::lang_start_internal"])
     } else {
         (&["vm_backtrace::inner", "vm_backtrace::outer", "__rust_try", "vm_backtrace::main"], &["vm_backtrace::outer", "vm_backtrace::main"])
     };
