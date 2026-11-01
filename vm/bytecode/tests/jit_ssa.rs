@@ -1368,3 +1368,31 @@ fn inline_chains() {
     got.sort_by_key(|c| c[1].1);
     assert_eq!(got, vec![vec![(Some(g), cd.ipos[0]), (None, rd.ipos[0])], vec![(Some(g), cd.ipos[0]), (None, rd.ipos[1])]]);
 }
+
+/// `ptr::read`'s checks on a frame address: it isn't null, and its low 4 bits are its frame
+/// offset's (`fp` is 16-aligned), so the null and the alignment checks fold and their panic
+/// paths go; masks wider than 16 bytes stay.
+#[test]
+fn frame_address_null_and_alignment_checks_fold() {
+    // Slot at `fp - 40`: 8-aligned. Null check, then `& 7 == 0`.
+    let v = vec![
+        arg(-8, 0),
+        Insn::Addr { d: Slot(-24), s: Slot(-40) },
+        Insn::BrEqImmW64 { a: Slot(-24), imm: 0, neg: F, t: Target(4) },
+        Insn::Unreachable {},
+        Insn::AndImmW64 { d: Slot(-48), a: Slot(-24), imm: 7 },
+        Insn::BrEqImmW64 { a: Slot(-48), imm: 0, neg: T, t: Target(7) },
+        Insn::Unreachable {},
+        Insn::Ret { s: Slot(-8), k: 8 },
+    ];
+    let f = opt(ir(&decoded(&v, 48, &[(1, -40, 8, ScopeKind::Escape { align: 8 })])));
+    assert!(f.layout.iter().all(|b| !matches!(f.blocks[b.idx()].term, Term::Trap)), "{f}");
+    assert!(!live_ops(&f).iter().any(|o| matches!(o, Op::Bin(..) | Op::Cmp(..))), "{f}");
+    // `fp - 36`: the low 3 bits are 4; the bits above 15 are unknown.
+    for (imm, want) in [(7, Some(4)), (3, Some(0)), (15, Some(12)), (31, None)] {
+        let v =
+            vec![Insn::Addr { d: Slot(-24), s: Slot(-36) }, Insn::AndImmW64 { d: Slot(-48), a: Slot(-24), imm }, Insn::Ret { s: Slot(-48), k: 8 }];
+        let f = opt(ir(&decoded(&v, 48, &[(0, -36, 4, ScopeKind::Escape { align: 4 })])));
+        assert_eq!(ret_const(&f), want, "{imm}\n{f}");
+    }
+}

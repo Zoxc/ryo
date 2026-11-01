@@ -551,10 +551,6 @@ fn core::slice::<impl [u32]>::swap
     jne     L4
     test    rax,rax
     je      L4
-    test    r9,3
-    jne     L4
-    test    r9,r9
-    je      L4
     cmp     rax,r9
     jae     L0
     mov     rbx,r9
@@ -579,10 +575,6 @@ L1:
     mov     r9d,[rdi]
     mov     [rax],r9d
     lea     rax,[rsp+0Ch]
-    test    rax,3
-    jne     L6
-    test    rax,rax
-    je      L6
     test    rdi,3
     jne     L6
     cmp     rax,rdi
@@ -652,10 +644,6 @@ fn core::slice::<impl [u32]>::swap_unchecked
     jne     L5
     test    rax,rax
     je      L5
-    test    rcx,3
-    jne     L5
-    test    rcx,rcx
-    je      L5
     cmp     rax,rcx
     jae     L0
     mov     rdx,rcx
@@ -680,10 +668,6 @@ L1:
     mov     ecx,[rdi]
     mov     [rax],ecx
     lea     rax,[rsp+0Ch]
-    test    rax,3
-    jne     L7
-    test    rax,rax
-    je      L7
     test    rdi,3
     jne     L7
     cmp     rax,rdi
@@ -1686,10 +1670,6 @@ L3:
     mov     r8,r10
     jmp     L1
 L4:
-    test    rsi,3
-    jne     L10
-    test    rsi,rsi
-    je      L10
     test    rdx,3
     jne     L10
     cmp     rsi,rdx
@@ -3169,10 +3149,6 @@ fn core::slice::sort::shared::smallsort::sort13_optimal::<u32, for<'a, 'b> fn(&'
     mov     eax,[rbp]
     mov     [rbx+4],eax
     lea     rax,[rsp+0B0h]
-    test    rax,3
-    jne     L13
-    test    rax,rax
-    je      L13
     test    r14,3
     jne     L13
     test    r14,r14
@@ -3283,10 +3259,6 @@ L1:
     mov     eax,[rbp]
     mov     [rbx+0Ch],eax
     lea     rax,[rsp+130h]
-    test    rax,3
-    jne     L15
-    test    rax,rax
-    je      L15
     test    qword ptr [rsp+30h],3
     jne     L15
     mov     r11,[rsp+30h]
@@ -3394,10 +3366,6 @@ L3:
     mov     eax,[r14]
     mov     [rbx+1Ch],eax
     lea     rax,[rsp+1B0h]
-    test    rax,3
-    jne     L17
-    test    rax,rax
-    je      L17
     test    r15,3
     jne     L17
     test    r15,r15
@@ -3504,10 +3472,6 @@ L5:
     mov     eax,[rbp]
     mov     [rbx+24h],eax
     lea     rax,[rsp+230h]
-    test    rax,3
-    jne     L19
-    test    rax,rax
-    je      L19
     test    r14,3
     jne     L19
     test    r14,r14
@@ -3614,10 +3578,6 @@ L7:
     mov     eax,[rbp]
     mov     [rbx+2Ch],eax
     lea     rax,[rsp+2B0h]
-    test    rax,3
-    jne     L21
-    test    rax,rax
-    je      L21
     test    r14,3
     jne     L21
     test    r14,r14
@@ -3725,10 +3685,6 @@ L9:
     mov     eax,[r15]
     mov     [rbx+10h],eax
     lea     rax,[rsp+330h]
-    test    rax,3
-    jne     L23
-    test    rax,rax
-    je      L23
     test    qword ptr [rsp+30h],3
     jne     L23
     cmp     rax,[rsp+30h]
@@ -4099,10 +4055,6 @@ fn core::slice::sort::shared::smallsort::sort9_optimal::<u32, for<'a, 'b> fn(&'a
     mov     eax,[rbp]
     mov     [rbx+4],eax
     lea     rax,[rsp+0C0h]
-    test    rax,3
-    jne     L15
-    test    rax,rax
-    je      L15
     test    r14,3
     jne     L15
     test    r14,r14
@@ -4214,10 +4166,6 @@ L1:
     mov     eax,[r12]
     mov     [rbx+8],eax
     lea     rax,[rsp+140h]
-    test    rax,3
-    jne     L17
-    test    rax,rax
-    je      L17
     test    rbp,3
     jne     L17
     test    rbp,rbp
@@ -4324,10 +4272,6 @@ L3:
     mov     eax,[r15]
     mov     [rbx+10h],eax
     lea     rax,[rsp+1C0h]
-    test    rax,3
-    jne     L19
-    test    rax,rax
-    je      L19
     test    r13,3
     jne     L19
     test    r13,r13
@@ -4430,10 +4374,6 @@ L5:
     mov     eax,[rbp]
     mov     [rbx],eax
     lea     rax,[rsp+240h]
-    test    rax,3
-    jne     L21
-    test    rax,rax
-    je      L21
     test    r14,3
     jne     L21
     cmp     rax,r14
@@ -4535,10 +4475,6 @@ L7:
     mov     eax,[r15]
     mov     [rbx+8],eax
     lea     rax,[rsp+2C0h]
-    test    rax,3
-    jne     L23
-    test    rax,rax
-    je      L23
     test    r12,3
     jne     L23
     cmp     rax,r12
@@ -4641,10 +4577,6 @@ L9:
     mov     eax,[r15]
     mov     [rbx+0Ch],eax
     lea     rax,[rsp+340h]
-    test    rax,3
-    jne     L25
-    test    rax,rax
-    je      L25
     test    r13,3
     jne     L25
     cmp     rax,r13
@@ -4786,10 +4718,6 @@ L11:
     mov     eax,[r13]
     mov     [rbx],eax
     lea     rax,[rsp+3C0h]
-    test    rax,3
-    jne     L27
-    test    rax,rax
-    je      L27
     test    qword ptr [rsp+30h],3
     jne     L27
     cmp     rax,[rsp+30h]
@@ -5068,10 +4996,6 @@ fn core::slice::sort::shared::smallsort::swap_if_less::<u32, for<'a, 'b> fn(&'a 
     mov     eax,[r14]
     mov     [rbx],eax
     lea     rax,[rsp+0A0h]
-    test    rax,3
-    jne     L3
-    test    rax,rax
-    je      L3
     test    r12,3
     jne     L3
     test    r12,r12
@@ -7748,9 +7672,6 @@ L11:
     call    image.fn155
     test    al,al
     je      L68
-    lea     rax,[rsp+5Ch]
-    test    rax,rax
-    je      L68
     mov     rdi,rbp
     mov     esi,4
     call    image.fn155
@@ -7941,10 +7862,6 @@ L25:
     jne     L75
     test    rbx,rbx
     je      L75
-    test    rdx,3
-    jne     L75
-    test    rdx,rdx
-    je      L75
     cmp     rbx,rdx
     jae     L26
     mov     rsi,rdx
@@ -7969,10 +7886,6 @@ L27:
     mov     edx,[rax]
     mov     [rbx],edx
     lea     rdx,[rsp+0ECh]
-    test    rdx,3
-    jne     L77
-    test    rdx,rdx
-    je      L77
     test    rax,3
     jne     L77
     cmp     rdx,rax
@@ -8188,10 +8101,6 @@ L41:
     lea     rdx,[rsp+11Ch]
     test    rbx,3
     jne     L86
-    test    rdx,3
-    jne     L86
-    test    rdx,rdx
-    je      L86
     cmp     rbx,rdx
     jae     L42
     mov     rsi,rdx
@@ -8216,10 +8125,6 @@ L43:
     mov     edx,[rcx]
     mov     [rbx],edx
     lea     rdx,[rsp+11Ch]
-    test    rdx,3
-    jne     L88
-    test    rdx,rdx
-    je      L88
     test    rcx,3
     jne     L88
     cmp     rdx,rcx
@@ -8263,10 +8168,6 @@ L46:
     jne     L90
     test    rbx,rbx
     je      L90
-    test    rcx,3
-    jne     L90
-    test    rcx,rcx
-    je      L90
     cmp     rbx,rcx
     jae     L47
     mov     rdx,rcx
@@ -8291,10 +8192,6 @@ L48:
     mov     ecx,[rax]
     mov     [rbx],ecx
     lea     rcx,[rsp+12Ch]
-    test    rcx,3
-    jne     L92
-    test    rcx,rcx
-    je      L92
     test    rax,3
     jne     L92
     cmp     rcx,rax
@@ -8507,10 +8404,6 @@ L62:
     lea     rdx,[rsp+15Ch]
     test    rbx,3
     jne     L101
-    test    rdx,3
-    jne     L101
-    test    rdx,rdx
-    je      L101
     cmp     rbx,rdx
     jae     L63
     mov     rsi,rdx
@@ -8535,10 +8428,6 @@ L64:
     mov     edx,[rcx]
     mov     [rbx],edx
     lea     rdx,[rsp+15Ch]
-    test    rdx,3
-    jne     L103
-    test    rdx,rdx
-    je      L103
     test    rcx,3
     jne     L103
     cmp     rdx,rcx
@@ -9058,10 +8947,6 @@ L3:
     jne     L29
     test    r9,r9
     je      L29
-    test    r14,3
-    jne     L29
-    test    r14,r14
-    je      L29
     cmp     r9,r14
     jae     L4
     mov     r15,r14
@@ -9086,10 +8971,6 @@ L5:
     mov     r14d,[r8]
     mov     [r9],r14d
     lea     r9,[rsp+4Ch]
-    test    r9,3
-    jne     L31
-    test    r9,r9
-    je      L31
     test    r8,3
     jne     L31
     cmp     r9,r8

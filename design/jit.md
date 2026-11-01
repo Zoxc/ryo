@@ -438,7 +438,13 @@ identities find new constants, at most three rounds. Then the folds (`opt::fold`
 instruction selection relies on: a compare used only by the following branch becomes a
 `brcmp`, an overflow op (`add`/`sub`/`mul.ovf`) whose flag only the branch ending its block
 reads becomes a `br ovf` on the flags it leaves, and loads and stores through an `AllocaAddr` or a `PtrAdd` take its alloca or
-constant into their address. Then `opt::checks` (check elimination) and `opt::hoist`,
+constant into their address. Then `opt::checks` (check elimination: compares the dominating
+branches and value ranges decide, and frame-address facts: an `AllocaAddr` of a memory or
+incoming alloca is never null in bounds, nor a `RefAddr` of a constant, data area or function,
+and its low 4 bits are its AOT frame offset's, since `fp` is 16-aligned in both frames and
+memory allocas move only by multiples of 16; `PtrAdd`/`PtrIndex` keep the low bits their
+constant or stride leave known; so `ptr::read`/`write`'s null checks and `& (align - 1)`
+alignment checks of frame addresses fold) and `opt::hoist`,
 [loop-invariant code motion](#loop-invariant-code-motion). Last, `opt::dce` marks and sweeps: a value is live when an
 effect, a terminator or a live value reads it, and a parameter's edge arguments only when the
 parameter is live, so pure instructions without live results and dead parameters (dead

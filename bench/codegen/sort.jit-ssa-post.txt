@@ -1359,10 +1359,9 @@ b16(): ; Body
 b17(): ; Body
     trap
 b18(): ; Body
-    br Eq.w8 v6, 0x0 ? b34() : b19()
+    br Eq.w8 v6, 0x0 ? b34() : b25()
 b19(): ; Body
-    v13:8 = Bin(And, 8) (v8, 0x3)
-    br Eq.w8 v13, 0x0 ? b24() : b34()
+    trap
 b20(): ; Body
     trap
 b21(): ; Body
@@ -1372,7 +1371,7 @@ b22(): ; Body
 b23(): ; Body
     trap
 b24(): ; Body
-    br Eq.w8 v8, 0x0 ? b34() : b25()
+    trap
 b25(): ; Body
     br LtU.w8 v6, v8 ? b27() : b28()
 b26(): ; Body
@@ -1436,8 +1435,7 @@ b50(): ; Body
     v31:4 = Load(4, 0) (v7)
     Store(4, 0) (v6, v31)
     v32:8 = AllocaAddr(AllocaId(25), 0) ()
-    v34:8 = Bin(And, 8) (v32, 0x3)
-    br Eq.w8 v34, 0x0 ? b62() : b78()
+    jmp b63()
 b51(): ; Body
     trap
 b52(): ; Body cold
@@ -1464,7 +1462,7 @@ b60(): ; Body
 b61(): ; Body
     trap
 b62(): ; Body
-    br Eq.w8 v32, 0x0 ? b78() : b63()
+    trap
 b63(): ; Body
     v37:8 = Bin(And, 8) (v7, 0x3)
     br Eq.w8 v37, 0x0 ? b69() : b78()
@@ -1785,10 +1783,9 @@ b8(): ; Body
 b9(): ; Body
     trap
 b10(): ; Body
-    br Eq.w8 v9, 0x0 ? b26() : b11()
+    br Eq.w8 v9, 0x0 ? b26() : b17()
 b11(): ; Body
-    v17:8 = Bin(And, 8) (v12, 0x3)
-    br Eq.w8 v17, 0x0 ? b16() : b26()
+    trap
 b12(): ; Body
     trap
 b13(): ; Body
@@ -1798,7 +1795,7 @@ b14(): ; Body
 b15(): ; Body
     trap
 b16(): ; Body
-    br Eq.w8 v12, 0x0 ? b26() : b17()
+    trap
 b17(): ; Body
     br LtU.w8 v9, v12 ? b19() : b20()
 b18(): ; Body
@@ -1862,8 +1859,7 @@ b42(): ; Body
     v35:4 = Load(4, 0) (v11)
     Store(4, 0) (v9, v35)
     v36:8 = AllocaAddr(AllocaId(18), 0) ()
-    v38:8 = Bin(And, 8) (v36, 0x3)
-    br Eq.w8 v38, 0x0 ? b54() : b70()
+    jmp b55()
 b43(): ; Body
     trap
 b44(): ; Body cold
@@ -1890,7 +1886,7 @@ b52(): ; Body
 b53(): ; Body
     trap
 b54(): ; Body
-    br Eq.w8 v36, 0x0 ? b70() : b55()
+    trap
 b55(): ; Body
     v41:8 = Bin(And, 8) (v11, 0x3)
     br Eq.w8 v41, 0x0 ? b61() : b70()
@@ -4318,7 +4314,7 @@ b36(): ; Body
 b37(): ; Body
     v42:4 = Load(4, 0) (v25)
     Store(4, 0) (v121, v42)
-    br Eq.w8 v25, v9 ? b53() : b91()
+    br Eq.w8 v25, v9 ? b66() : b91()
 b38(): ; Body
     trap
 b39(): ; Body cold
@@ -4353,8 +4349,7 @@ b51(): ; Body
 b52(): ; Body
     jmp b17(v46, v25)
 b53(): ; Body
-    v66:8 = Bin(And, 8) (v24, 0x3)
-    br Eq.w8 v66, 0x0 ? b64() : b84()
+    trap
 b54(): ; Body
     trap
 b55(): ; Body
@@ -4376,7 +4371,7 @@ b62(): ; Body
 b63(): ; Body
     trap
 b64(): ; Body
-    br Eq.w8 v24, 0x0 ? b84() : b66()
+    trap
 b65(): ; Body
     trap
 b66(): ; Body
@@ -4442,7 +4437,7 @@ b91(): ; Body
     v46:8 = PtrAdd(-4) (v25)
     v51:4 = ALoad(AllocaId(21), 0, 4) ()
     v52:4 = Load(4, -4) (v25)
-    br LtU.w4 v51, v52 ? b52() : b53()
+    br LtU.w4 v51, v52 ? b52() : b66()
 
 fn core::slice::sort::shared::smallsort::merge_down::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
 a0: $-152, 8 bytes, Promoted
@@ -8266,8 +8261,8 @@ b27(): ; Body
     v126:4 = Load(4, 0) (v107)
     Store(4, 16) (v0, v126)
     v127:8 = AllocaAddr(AllocaId(17), 0) ()
-    v129:8 = Bin(And, 8) (v127, 0x3)
-    br Eq.w8 v129, 0x0 ? b39() : b55()
+    v132:8 = Bin(And, 8) (v355, 0x3)
+    br Eq.w8 v132, 0x0 ? b46() : b55()
 b28(): ; Body
     trap
 b29(): ; Body cold
@@ -8294,10 +8289,9 @@ b37(): ; Body
 b38(): ; Body
     trap
 b39(): ; Body
-    br Eq.w8 v127, 0x0 ? b55() : b40()
+    trap
 b40(): ; Body
-    v132:8 = Bin(And, 8) (v355, 0x3)
-    br Eq.w8 v132, 0x0 ? b46() : b55()
+    trap
 b41(): ; Body
     trap
 b42(): ; Body
@@ -8421,8 +8415,8 @@ b83(): ; Body
     v191:4 = Load(4, 0) (v172)
     Store(4, 44) (v0, v191)
     v192:8 = AllocaAddr(AllocaId(209), 0) ()
-    v194:8 = Bin(And, 8) (v192, 0x3)
-    br Eq.w8 v194, 0x0 ? b95() : b111()
+    v197:8 = Bin(And, 8) (v160, 0x3)
+    br Eq.w8 v197, 0x0 ? b101() : b111()
 b84(): ; Body
     trap
 b85(): ; Body cold
@@ -8449,10 +8443,9 @@ b93(): ; Body
 b94(): ; Body
     trap
 b95(): ; Body
-    br Eq.w8 v192, 0x0 ? b111() : b96()
+    trap
 b96(): ; Body
-    v197:8 = Bin(And, 8) (v160, 0x3)
-    br Eq.w8 v197, 0x0 ? b101() : b111()
+    trap
 b97(): ; Body
     trap
 b98(): ; Body
@@ -8608,8 +8601,8 @@ b139(): ; Body
     v256:4 = Load(4, 0) (v237)
     Store(4, 36) (v0, v256)
     v257:8 = AllocaAddr(AllocaId(400), 0) ()
-    v259:8 = Bin(And, 8) (v257, 0x3)
-    br Eq.w8 v259, 0x0 ? b151() : b167()
+    v262:8 = Bin(And, 8) (v225, 0x3)
+    br Eq.w8 v262, 0x0 ? b157() : b167()
 b140(): ; Body
     trap
 b141(): ; Body cold
@@ -8636,10 +8629,9 @@ b149(): ; Body
 b150(): ; Body
     trap
 b151(): ; Body
-    br Eq.w8 v257, 0x0 ? b167() : b152()
+    trap
 b152(): ; Body
-    v262:8 = Bin(And, 8) (v225, 0x3)
-    br Eq.w8 v262, 0x0 ? b157() : b167()
+    trap
 b153(): ; Body
     trap
 b154(): ; Body
@@ -8796,8 +8788,8 @@ b195(): ; Body
     v321:4 = Load(4, 0) (v302)
     Store(4, 28) (v0, v321)
     v322:8 = AllocaAddr(AllocaId(591), 0) ()
-    v324:8 = Bin(And, 8) (v322, 0x3)
-    br Eq.w8 v324, 0x0 ? b207() : b223()
+    v327:8 = Bin(And, 8) (v290, 0x3)
+    br Eq.w8 v327, 0x0 ? b213() : b223()
 b196(): ; Body
     trap
 b197(): ; Body cold
@@ -8824,10 +8816,9 @@ b205(): ; Body
 b206(): ; Body
     trap
 b207(): ; Body
-    br Eq.w8 v322, 0x0 ? b223() : b208()
+    trap
 b208(): ; Body
-    v327:8 = Bin(And, 8) (v290, 0x3)
-    br Eq.w8 v327, 0x0 ? b213() : b223()
+    trap
 b209(): ; Body
     trap
 b210(): ; Body
@@ -8984,8 +8975,8 @@ b251(): ; Body
     v386:4 = Load(4, 0) (v367)
     Store(4, 12) (v0, v386)
     v387:8 = AllocaAddr(AllocaId(782), 0) ()
-    v389:8 = Bin(And, 8) (v387, 0x3)
-    br Eq.w8 v389, 0x0 ? b263() : b279()
+    v392:8 = Bin(And, 8) (v355, 0x3)
+    br Eq.w8 v392, 0x0 ? b269() : b279()
 b252(): ; Body
     trap
 b253(): ; Body cold
@@ -9012,10 +9003,9 @@ b261(): ; Body
 b262(): ; Body
     trap
 b263(): ; Body
-    br Eq.w8 v387, 0x0 ? b279() : b264()
+    trap
 b264(): ; Body
-    v392:8 = Bin(And, 8) (v355, 0x3)
-    br Eq.w8 v392, 0x0 ? b269() : b279()
+    trap
 b265(): ; Body
     trap
 b266(): ; Body
@@ -9172,8 +9162,8 @@ b307(): ; Body
     v451:4 = Load(4, 0) (v432)
     Store(4, 4) (v0, v451)
     v452:8 = AllocaAddr(AllocaId(973), 0) ()
-    v454:8 = Bin(And, 8) (v452, 0x3)
-    br Eq.w8 v454, 0x0 ? b319() : b335()
+    v457:8 = Bin(And, 8) (v420, 0x3)
+    br Eq.w8 v457, 0x0 ? b325() : b335()
 b308(): ; Body
     trap
 b309(): ; Body cold
@@ -9200,10 +9190,9 @@ b317(): ; Body
 b318(): ; Body
     trap
 b319(): ; Body
-    br Eq.w8 v452, 0x0 ? b335() : b320()
+    trap
 b320(): ; Body
-    v457:8 = Bin(And, 8) (v420, 0x3)
-    br Eq.w8 v457, 0x0 ? b325() : b335()
+    trap
 b321(): ; Body
     trap
 b322(): ; Body
@@ -10776,8 +10765,8 @@ b27(): ; Body
     v85:4 = Load(4, 0) (v66)
     Store(4, 0) (v0, v85)
     v86:8 = AllocaAddr(AllocaId(17), 0) ()
-    v88:8 = Bin(And, 8) (v86, 0x3)
-    br Eq.w8 v88, 0x0 ? b39() : b55()
+    v91:8 = Bin(And, 8) (v443, 0x3)
+    br Eq.w8 v91, 0x0 ? b46() : b55()
 b28(): ; Body
     trap
 b29(): ; Body cold
@@ -10804,10 +10793,9 @@ b37(): ; Body
 b38(): ; Body
     trap
 b39(): ; Body
-    br Eq.w8 v86, 0x0 ? b55() : b40()
+    trap
 b40(): ; Body
-    v91:8 = Bin(And, 8) (v443, 0x3)
-    br Eq.w8 v91, 0x0 ? b46() : b55()
+    trap
 b41(): ; Body
     trap
 b42(): ; Body
@@ -10913,8 +10901,8 @@ b83(): ; Body
     v150:4 = Load(4, 0) (v131)
     Store(4, 12) (v0, v150)
     v151:8 = AllocaAddr(AllocaId(209), 0) ()
-    v153:8 = Bin(And, 8) (v151, 0x3)
-    br Eq.w8 v153, 0x0 ? b95() : b111()
+    v156:8 = Bin(And, 8) (v314, 0x3)
+    br Eq.w8 v156, 0x0 ? b102() : b111()
 b84(): ; Body
     trap
 b85(): ; Body cold
@@ -10941,10 +10929,9 @@ b93(): ; Body
 b94(): ; Body
     trap
 b95(): ; Body
-    br Eq.w8 v151, 0x0 ? b111() : b96()
+    trap
 b96(): ; Body
-    v156:8 = Bin(And, 8) (v314, 0x3)
-    br Eq.w8 v156, 0x0 ? b102() : b111()
+    trap
 b97(): ; Body
     trap
 b98(): ; Body
@@ -11107,8 +11094,8 @@ b139(): ; Body
     v215:4 = Load(4, 0) (v196)
     Store(4, 8) (v0, v215)
     v216:8 = AllocaAddr(AllocaId(400), 0) ()
-    v218:8 = Bin(And, 8) (v216, 0x3)
-    br Eq.w8 v218, 0x0 ? b151() : b167()
+    v221:8 = Bin(And, 8) (v313, 0x3)
+    br Eq.w8 v221, 0x0 ? b158() : b167()
 b140(): ; Body
     trap
 b141(): ; Body cold
@@ -11135,10 +11122,9 @@ b149(): ; Body
 b150(): ; Body
     trap
 b151(): ; Body
-    br Eq.w8 v216, 0x0 ? b167() : b152()
+    trap
 b152(): ; Body
-    v221:8 = Bin(And, 8) (v313, 0x3)
-    br Eq.w8 v221, 0x0 ? b158() : b167()
+    trap
 b153(): ; Body
     trap
 b154(): ; Body
@@ -11294,8 +11280,8 @@ b195(): ; Body
     v280:4 = Load(4, 0) (v261)
     Store(4, 0) (v0, v280)
     v281:8 = AllocaAddr(AllocaId(591), 0) ()
-    v283:8 = Bin(And, 8) (v281, 0x3)
-    br Eq.w8 v283, 0x0 ? b207() : b223()
+    v286:8 = Bin(And, 8) (v444, 0x3)
+    br Eq.w8 v286, 0x0 ? b214() : b223()
 b196(): ; Body
     trap
 b197(): ; Body cold
@@ -11322,10 +11308,9 @@ b205(): ; Body
 b206(): ; Body
     trap
 b207(): ; Body
-    br Eq.w8 v281, 0x0 ? b223() : b208()
+    trap
 b208(): ; Body
-    v286:8 = Bin(And, 8) (v444, 0x3)
-    br Eq.w8 v286, 0x0 ? b214() : b223()
+    trap
 b209(): ; Body
     trap
 b210(): ; Body
@@ -11480,8 +11465,8 @@ b251(): ; Body
     v345:4 = Load(4, 0) (v326)
     Store(4, 16) (v0, v345)
     v346:8 = AllocaAddr(AllocaId(782), 0) ()
-    v348:8 = Bin(And, 8) (v346, 0x3)
-    br Eq.w8 v348, 0x0 ? b263() : b279()
+    v351:8 = Bin(And, 8) (v314, 0x3)
+    br Eq.w8 v351, 0x0 ? b269() : b279()
 b252(): ; Body
     trap
 b253(): ; Body cold
@@ -11508,10 +11493,9 @@ b261(): ; Body
 b262(): ; Body
     trap
 b263(): ; Body
-    br Eq.w8 v346, 0x0 ? b279() : b264()
+    trap
 b264(): ; Body
-    v351:8 = Bin(And, 8) (v314, 0x3)
-    br Eq.w8 v351, 0x0 ? b269() : b279()
+    trap
 b265(): ; Body
     trap
 b266(): ; Body
@@ -11666,8 +11650,8 @@ b307(): ; Body
     v410:4 = Load(4, 0) (v391)
     Store(4, 8) (v0, v410)
     v411:8 = AllocaAddr(AllocaId(973), 0) ()
-    v413:8 = Bin(And, 8) (v411, 0x3)
-    br Eq.w8 v413, 0x0 ? b319() : b335()
+    v416:8 = Bin(And, 8) (v379, 0x3)
+    br Eq.w8 v416, 0x0 ? b325() : b335()
 b308(): ; Body
     trap
 b309(): ; Body cold
@@ -11694,10 +11678,9 @@ b317(): ; Body
 b318(): ; Body
     trap
 b319(): ; Body
-    br Eq.w8 v411, 0x0 ? b335() : b320()
+    trap
 b320(): ; Body
-    v416:8 = Bin(And, 8) (v379, 0x3)
-    br Eq.w8 v416, 0x0 ? b325() : b335()
+    trap
 b321(): ; Body
     trap
 b322(): ; Body
@@ -11854,8 +11837,8 @@ b363(): ; Body
     v475:4 = Load(4, 0) (v456)
     Store(4, 4) (v0, v475)
     v476:8 = AllocaAddr(AllocaId(1164), 0) ()
-    v478:8 = Bin(And, 8) (v476, 0x3)
-    br Eq.w8 v478, 0x0 ? b375() : b391()
+    v481:8 = Bin(And, 8) (v444, 0x3)
+    br Eq.w8 v481, 0x0 ? b381() : b391()
 b364(): ; Body
     trap
 b365(): ; Body cold
@@ -11882,10 +11865,9 @@ b373(): ; Body
 b374(): ; Body
     trap
 b375(): ; Body
-    br Eq.w8 v476, 0x0 ? b391() : b376()
+    trap
 b376(): ; Body
-    v481:8 = Bin(And, 8) (v444, 0x3)
-    br Eq.w8 v481, 0x0 ? b381() : b391()
+    trap
 b377(): ; Body
     trap
 b378(): ; Body
@@ -12249,8 +12231,8 @@ b1(): ; Body
     trap
 b2(): ; Body head 0
     v11:8 = AllocaAddr(AllocaId(9), 0) ()
-    v28:8 = Bin(And, 8) (v11, 0x3)
-    br Eq.w8 v28, 0x0 ? b16() : b32()
+    v31:8 = Bin(And, 8) (v5, 0x3)
+    br Eq.w8 v31, 0x0 ? b22() : b32()
 b3(): ; Body
     trap
 b4(): ; Body
@@ -12278,10 +12260,9 @@ b14(): ; Body
 b15(): ; Body
     trap
 b16(): ; Body
-    br Eq.w8 v11, 0x0 ? b32() : b17()
+    trap
 b17(): ; Body
-    v31:8 = Bin(And, 8) (v5, 0x3)
-    br Eq.w8 v31, 0x0 ? b22() : b32()
+    trap
 b18(): ; Body
     trap
 b19(): ; Body
@@ -22087,10 +22068,9 @@ b104(): ; Body
 b105(): ; Body
     trap
 b106(): ; Body
-    br Eq.w8 v5, 0x0 ? b122() : b107()
+    br Eq.w8 v5, 0x0 ? b122() : b113()
 b107(): ; Body
-    v142:8 = Bin(And, 8) (v137, 0x3)
-    br Eq.w8 v142, 0x0 ? b112() : b122()
+    trap
 b108(): ; Body
     trap
 b109(): ; Body
@@ -22100,7 +22080,7 @@ b110(): ; Body
 b111(): ; Body
     trap
 b112(): ; Body
-    br Eq.w8 v137, 0x0 ? b122() : b113()
+    trap
 b113(): ; Body
     br LtU.w8 v5, v137 ? b115() : b116()
 b114(): ; Body
@@ -22164,8 +22144,8 @@ b138(): ; Body
     v160:4 = Load(4, 0) (v136)
     Store(4, 0) (v5, v160)
     v161:8 = AllocaAddr(AllocaId(1214), 0) ()
-    v163:8 = Bin(And, 8) (v161, 0x3)
-    br Eq.w8 v163, 0x0 ? b150() : b166()
+    v166:8 = Bin(And, 8) (v136, 0x3)
+    br Eq.w8 v166, 0x0 ? b157() : b166()
 b139(): ; Body
     trap
 b140(): ; Body cold
@@ -22192,10 +22172,9 @@ b148(): ; Body
 b149(): ; Body
     trap
 b150(): ; Body
-    br Eq.w8 v161, 0x0 ? b166() : b151()
+    trap
 b151(): ; Body
-    v166:8 = Bin(And, 8) (v136, 0x3)
-    br Eq.w8 v166, 0x0 ? b157() : b166()
+    trap
 b152(): ; Body
     trap
 b153(): ; Body
@@ -22769,7 +22748,7 @@ b377(): ; Body
     v355:8 = PtrIndex(4) (v5, v347)
     v356:8 = AllocaAddr(AllocaId(331), 0) ()
     v358:8 = Bin(And, 8) (v5, 0x3)
-    br Eq.w8 v358, 0x0 ? b387() : b402()
+    br Eq.w8 v358, 0x0 ? b393() : b402()
 b378(): ; Body
     trap
 b379(): ; Body
@@ -22789,8 +22768,7 @@ b385(): ; Body
 b386(): ; Body
     trap
 b387(): ; Body
-    v361:8 = Bin(And, 8) (v356, 0x3)
-    br Eq.w8 v361, 0x0 ? b392() : b402()
+    trap
 b388(): ; Body
     trap
 b389(): ; Body
@@ -22800,7 +22778,7 @@ b390(): ; Body
 b391(): ; Body
     trap
 b392(): ; Body
-    br Eq.w8 v356, 0x0 ? b402() : b393()
+    trap
 b393(): ; Body
     br LtU.w8 v5, v356 ? b395() : b396()
 b394(): ; Body
@@ -22864,8 +22842,8 @@ b418(): ; Body
     v379:4 = Load(4, 0) (v355)
     Store(4, 0) (v5, v379)
     v380:8 = AllocaAddr(AllocaId(331), 0) ()
-    v382:8 = Bin(And, 8) (v380, 0x3)
-    br Eq.w8 v382, 0x0 ? b430() : b446()
+    v385:8 = Bin(And, 8) (v355, 0x3)
+    br Eq.w8 v385, 0x0 ? b437() : b446()
 b419(): ; Body
     trap
 b420(): ; Body cold
@@ -22892,10 +22870,9 @@ b428(): ; Body
 b429(): ; Body
     trap
 b430(): ; Body
-    br Eq.w8 v380, 0x0 ? b446() : b431()
+    trap
 b431(): ; Body
-    v385:8 = Bin(And, 8) (v355, 0x3)
-    br Eq.w8 v385, 0x0 ? b437() : b446()
+    trap
 b432(): ; Body
     trap
 b433(): ; Body
@@ -22987,10 +22964,9 @@ b471(): ; Body
 b472(): ; Body
     trap
 b473(): ; Body
-    br Eq.w8 v5, 0x0 ? b489() : b474()
+    br Eq.w8 v5, 0x0 ? b489() : b480()
 b474(): ; Body
-    v541:8 = Bin(And, 8) (v536, 0x3)
-    br Eq.w8 v541, 0x0 ? b479() : b489()
+    trap
 b475(): ; Body
     trap
 b476(): ; Body
@@ -23000,7 +22976,7 @@ b477(): ; Body
 b478(): ; Body
     trap
 b479(): ; Body
-    br Eq.w8 v536, 0x0 ? b489() : b480()
+    trap
 b480(): ; Body
     br LtU.w8 v5, v536 ? b482() : b483()
 b481(): ; Body
@@ -23064,8 +23040,8 @@ b505(): ; Body
     v559:4 = Load(4, 0) (v17)
     Store(4, 0) (v5, v559)
     v560:8 = AllocaAddr(AllocaId(2385), 0) ()
-    v562:8 = Bin(And, 8) (v560, 0x3)
-    br Eq.w8 v562, 0x0 ? b517() : b533()
+    v565:8 = Bin(And, 8) (v17, 0x3)
+    br Eq.w8 v565, 0x0 ? b524() : b533()
 b506(): ; Body
     trap
 b507(): ; Body cold
@@ -23092,10 +23068,9 @@ b515(): ; Body
 b516(): ; Body
     trap
 b517(): ; Body
-    br Eq.w8 v560, 0x0 ? b533() : b518()
+    trap
 b518(): ; Body
-    v565:8 = Bin(And, 8) (v17, 0x3)
-    br Eq.w8 v565, 0x0 ? b524() : b533()
+    trap
 b519(): ; Body
     trap
 b520(): ; Body
@@ -23684,7 +23659,7 @@ b750(): ; Body
     v763:8 = PtrIndex(4) (v5, v755)
     v764:8 = AllocaAddr(AllocaId(1478), 0) ()
     v766:8 = Bin(And, 8) (v5, 0x3)
-    br Eq.w8 v766, 0x0 ? b760() : b775()
+    br Eq.w8 v766, 0x0 ? b766() : b775()
 b751(): ; Body
     trap
 b752(): ; Body
@@ -23704,8 +23679,7 @@ b758(): ; Body
 b759(): ; Body
     trap
 b760(): ; Body
-    v769:8 = Bin(And, 8) (v764, 0x3)
-    br Eq.w8 v769, 0x0 ? b765() : b775()
+    trap
 b761(): ; Body
     trap
 b762(): ; Body
@@ -23715,7 +23689,7 @@ b763(): ; Body
 b764(): ; Body
     trap
 b765(): ; Body
-    br Eq.w8 v764, 0x0 ? b775() : b766()
+    trap
 b766(): ; Body
     br LtU.w8 v5, v764 ? b768() : b769()
 b767(): ; Body
@@ -23779,8 +23753,8 @@ b791(): ; Body
     v787:4 = Load(4, 0) (v763)
     Store(4, 0) (v5, v787)
     v788:8 = AllocaAddr(AllocaId(1478), 0) ()
-    v790:8 = Bin(And, 8) (v788, 0x3)
-    br Eq.w8 v790, 0x0 ? b803() : b819()
+    v793:8 = Bin(And, 8) (v763, 0x3)
+    br Eq.w8 v793, 0x0 ? b810() : b819()
 b792(): ; Body
     trap
 b793(): ; Body cold
@@ -23807,10 +23781,9 @@ b801(): ; Body
 b802(): ; Body
     trap
 b803(): ; Body
-    br Eq.w8 v788, 0x0 ? b819() : b804()
+    trap
 b804(): ; Body
-    v793:8 = Bin(And, 8) (v763, 0x3)
-    br Eq.w8 v793, 0x0 ? b810() : b819()
+    trap
 b805(): ; Body
     trap
 b806(): ; Body
@@ -24219,10 +24192,9 @@ b969(): ; Body
 b970(): ; Body
     trap
 b971(): ; Body
-    br v1105 ? b972() : b985()
+    br v1105 ? b974() : b985()
 b972(): ; Body
-    v1411:8 = AllocaAddr(AllocaId(2881), 0) ()
-    br Eq.w8 v1411, 0x0 ? b985() : b974()
+    trap
 b973(): ; Body
     trap
 b974(): ; Body
@@ -24235,8 +24207,8 @@ b976(): ; Body
 b977(): ; Body
     trap
 b978(): ; Body
-    v1412:8 = AllocaAddr(AllocaId(2881), 0) ()
-    v1107:1 = Call(Call { target: image.fn185.slot, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }, ArgReg { xmm: false, size: 8, index: 3, sext: false }], parts: [RetPart { xmm: false, size: 1, off: 0 }], site: Pad { catch: true } }) (v1412, v1064, 0x4, 0x1)
+    v1411:8 = AllocaAddr(AllocaId(2881), 0) ()
+    v1107:1 = Call(Call { target: image.fn185.slot, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }, ArgReg { xmm: false, size: 8, index: 3, sext: false }], parts: [RetPart { xmm: false, size: 1, off: 0 }], site: Pad { catch: true } }) (v1411, v1064, 0x4, 0x1)
     invoke -> b979() unwind b983()
 b979(): ; Body
     br v1107 ? b980() : b985()
@@ -24296,14 +24268,14 @@ b999(): ; Body
     v1114:8 = AllocaAddr(AllocaId(2807), 0) ()
     v1115:8 = RefAddr(image.k2208, false) ()
     Call(Call { target: image.fn187, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }, ArgReg { xmm: false, size: 8, index: 3, sext: false }, ArgReg { xmm: false, size: 8, index: 4, sext: false }], parts: [], site: Nounwind }) (v5, 0x4, 0x4, v6, v1115)
-    v1413:8 = AllocaAddr(AllocaId(2807), 0) ()
-    Call(Call { target: image.fn78.slot, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }, ArgReg { xmm: false, size: 8, index: 3, sext: false }], parts: [], site: Continue }) (v5, v6, v1413, v8)
+    v1412:8 = AllocaAddr(AllocaId(2807), 0) ()
+    Call(Call { target: image.fn78.slot, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }, ArgReg { xmm: false, size: 8, index: 3, sext: false }], parts: [], site: Continue }) (v5, v6, v1412, v8)
     v1116:8 = RefAddr(image.k2232, false) ()
-    v1414:8 = AllocaAddr(AllocaId(2807), 0) ()
-    Call(Call { target: image.fn180, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }, ArgReg { xmm: false, size: 8, index: 3, sext: false }, ArgReg { xmm: false, size: 8, index: 4, sext: false }, ArgReg { xmm: false, size: 8, index: 5, sext: false }], parts: [], site: Nounwind }) (v1414, v5, 0x4, 0x4, v6, v1116)
+    v1413:8 = AllocaAddr(AllocaId(2807), 0) ()
+    Call(Call { target: image.fn180, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }, ArgReg { xmm: false, size: 8, index: 3, sext: false }, ArgReg { xmm: false, size: 8, index: 4, sext: false }, ArgReg { xmm: false, size: 8, index: 5, sext: false }], parts: [], site: Nounwind }) (v1413, v5, 0x4, 0x4, v6, v1116)
     v1117:8 = Bin(Mul, 8) (v6, 0x4)
-    v1415:8 = AllocaAddr(AllocaId(2807), 0) ()
-    hcall.reg memcpy [(Fp, [None, None]), (Imm(4294967024), [Some(Scratch(0)), None]), (Imm(4294967016), [Some(Scratch(8)), None]), (Imm(4294966976), [Some(Scratch(16)), None])] outs 0 (v5, v1415, v1117)
+    v1414:8 = AllocaAddr(AllocaId(2807), 0) ()
+    hcall.reg memcpy [(Fp, [None, None]), (Imm(4294967024), [Some(Scratch(0)), None]), (Imm(4294967016), [Some(Scratch(8)), None]), (Imm(4294966976), [Some(Scratch(16)), None])] outs 0 (v5, v1414, v1117)
     jmp b17()
 b1000(): ; Body
     trap
@@ -25648,10 +25620,9 @@ b80(): ; Body
 b81(): ; Body
     trap
 b82(): ; Body
-    br Eq.w8 v119, 0x0 ? b98() : b83()
+    br Eq.w8 v119, 0x0 ? b98() : b89()
 b83(): ; Body
-    v126:8 = Bin(And, 8) (v121, 0x3)
-    br Eq.w8 v126, 0x0 ? b88() : b98()
+    trap
 b84(): ; Body
     trap
 b85(): ; Body
@@ -25661,7 +25632,7 @@ b86(): ; Body
 b87(): ; Body
     trap
 b88(): ; Body
-    br Eq.w8 v121, 0x0 ? b98() : b89()
+    trap
 b89(): ; Body
     br LtU.w8 v119, v121 ? b91() : b92()
 b90(): ; Body
@@ -25725,8 +25696,8 @@ b114(): ; Body
     v144:4 = Load(4, 0) (v23)
     Store(4, 0) (v119, v144)
     v145:8 = AllocaAddr(AllocaId(152), 0) ()
-    v147:8 = Bin(And, 8) (v145, 0x3)
-    br Eq.w8 v147, 0x0 ? b126() : b142()
+    v150:8 = Bin(And, 8) (v23, 0x3)
+    br Eq.w8 v150, 0x0 ? b133() : b142()
 b115(): ; Body
     trap
 b116(): ; Body cold
@@ -25753,10 +25724,9 @@ b124(): ; Body
 b125(): ; Body
     trap
 b126(): ; Body
-    br Eq.w8 v145, 0x0 ? b142() : b127()
+    trap
 b127(): ; Body
-    v150:8 = Bin(And, 8) (v23, 0x3)
-    br Eq.w8 v150, 0x0 ? b133() : b142()
+    trap
 b128(): ; Body
     trap
 b129(): ; Body

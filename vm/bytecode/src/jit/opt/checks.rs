@@ -3,7 +3,8 @@
 //! constants, extensions, masks and non-wrapping arithmetic:
 //! - an [`Op::Ovf`] that can't overflow becomes a plain [`Op::Bin`], its flag the constant
 //!   0, and a [`Term::BrOvf`] on it a jump to its no-overflow edge;
-//! - a compare or a compare-branch the facts decide becomes a constant or a jump.
+//! - a compare or a compare-branch the facts decide becomes a constant or a jump;
+//! - a mask of a frame address's low bits ([`frame_bits`]) becomes a constant.
 //!
 //! A fact comes from the edge into a block with that one predecessor, which then holds in
 //! all the blocks it dominates: every path to them takes that edge, and the values in it are
@@ -14,6 +15,7 @@
 
 use alloc::vec::Vec;
 
+use crate::asm::Ref;
 use crate::jit::ir::*;
 
 /// A value's possible low `w` bytes: unsigned and signed intervals, both holding.
@@ -126,6 +128,14 @@ impl Walk {
             return r;
         }
         let ValueDef::Inst(i, n) = def else { return r };
+        // A frame or image address is never null, nor are its low bytes when its known low
+        // bits aren't all zero.
+        if n == 0
+            && let Some(a) = addr_facts(f, v, DEPTH)
+            && (a.nonnull && w == 8 || a.bits != 0)
+        {
+            r = r.meet(Range::unsigned(1, mask(u64::MAX, w), w), w);
+        }
         let id = &f.insts[i.idx()];
         let d = match (&id.op, n) {
             (Op::Cmp(..), 0) | (Op::Ovf(..), 1) => Some(Range::unsigned(0, 1, w)),
@@ -349,6 +359,59 @@ impl Walk {
     }
 }
 
+/// What is known of an address from its provenance.
+#[derive(Clone, Copy, Debug)]
+pub struct AddrFacts {
+    /// Its low `known` bits are `bits`.
+    pub known: u32,
+    pub bits: u64,
+    /// It is never 0.
+    pub nonnull: bool,
+}
+
+/// The facts on the address `v` (depth: how deep to look through `PtrAdd`/`PtrIndex`):
+/// - an [`Op::AllocaAddr`] of a memory or incoming alloca is `fp` plus an offset congruent
+///   to the AOT one modulo 16 (`emit::layout` keeps that; pinned and incoming ones keep the
+///   offset), and `fp` is 16-aligned (design/vm.md, "Frames": in the JIT frame too, OSR
+///   entries don't move it): its low 4 bits are `aot_off + k`'s. In bounds it isn't null
+///   (the stack is nowhere near 0);
+/// - an [`Op::RefAddr`] of a constant, data area or function (not a slot's value) isn't null;
+/// - `p + k` has `p`'s known low bits plus `k`'s; `p + i * s` those of `p` below `s`'s
+///   lowest set bit. Neither is non-null (they may wrap).
+pub fn addr_facts(f: &Func, v: Value, depth: u32) -> Option<AddrFacts> {
+    let i = f.def_inst(v)?;
+    let id = &f.insts[i.idx()];
+    match id.op {
+        Op::AllocaAddr(a, k) => {
+            let al = &f.allocas[a.idx()];
+            if !matches!(al.kind, AllocaKind::Memory | AllocaKind::Incoming) {
+                return None;
+            }
+            let bits = (al.aot_off as i64 + k as i64) as u64 & 15;
+            Some(AddrFacts { known: 4, bits, nonnull: (0..=al.size as i64).contains(&(k as i64)) })
+        }
+        Op::RefAddr(Ref::Const(_) | Ref::Data(_) | Ref::Func(_), false) => Some(AddrFacts { known: 0, bits: 0, nonnull: true }),
+        Op::PtrAdd(k) if depth > 0 => {
+            let p = addr_facts(f, id.args[0], depth - 1)?;
+            let m = (1u64 << p.known) - 1;
+            Some(AddrFacts { known: p.known, bits: p.bits.wrapping_add(k as u64) & m, nonnull: false })
+        }
+        Op::PtrIndex(s) if depth > 0 => {
+            let p = addr_facts(f, id.args[0], depth - 1)?;
+            let known = p.known.min(s.trailing_zeros());
+            Some(AddrFacts { known, bits: p.bits & ((1u64 << known) - 1), nonnull: false })
+        }
+        _ => None,
+    }
+}
+
+/// `a & c` where `c` covers only known low bits of the address `a`: those bits.
+fn masked_addr(f: &Func, a: Value, c: Value, w: u8) -> Option<u64> {
+    let c = f.const_at(c, w)?;
+    let k = addr_facts(f, a, DEPTH)?;
+    (k.known < 64 && c >> k.known == 0).then_some(k.bits & c)
+}
+
 /// `a cc b` as `a' < b'` (`strict`) or `a' <= b'`: `(a', b', strict)`, `None` for `==`/`!=`.
 fn as_lt(cc: Cc, a: Value, b: Value) -> Option<(Value, Value, bool)> {
     match cc {
@@ -422,14 +485,21 @@ fn block(f: &mut Func, w: &mut Walk, b: Block) -> bool {
                     f.values[v.idx()].def = ValueDef::Const(r as u64);
                 }
             }
+            Op::Bin(BinOp::And, aw) if aw <= 8 => {
+                if let Some(r) = masked_addr(f, args[0], args[1], aw).or_else(|| masked_addr(f, args[1], args[0], aw)) {
+                    let v = Value(f.insts[i.idx()].res);
+                    f.values[v.idx()].def = ValueDef::Const(r);
+                }
+            }
             _ => {}
         }
     }
-    // Compares made constants leave their blocks.
+    // Compares and masks made constants leave their blocks.
     let (insts, values) = (&f.insts, &f.values);
-    f.blocks[b.idx()]
-        .insts
-        .retain(|&i| !(matches!(insts[i.idx()].op, Op::Cmp(..)) && matches!(values[insts[i.idx()].res as usize].def, ValueDef::Const(_))));
+    f.blocks[b.idx()].insts.retain(|&i| {
+        !(matches!(insts[i.idx()].op, Op::Cmp(..) | Op::Bin(BinOp::And, 1..=8))
+            && matches!(values[insts[i.idx()].res as usize].def, ValueDef::Const(_)))
+    });
     let k = match &f.blocks[b.idx()].term {
         Term::BrOvf { .. } if !matches!(f.blocks[b.idx()].insts.last().map(|&i| &f.insts[i.idx()].op), Some(Op::Ovf(..))) => Some(1),
         Term::BrCmp { cc, w: cw, a, b: bb, .. } => w.decide(f, *cc, *cw, *a, *bb).map(|r| !r as usize),

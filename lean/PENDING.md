@@ -219,3 +219,11 @@ remove it once a Lean session has handled it.
   and `headerSize` don't read yet. Optional, §8 of the design: carry the locations as
   labels of decoded calls, and the JIT's per-call chains (`InstData::loc`, `Func::chains`,
   `Output::calls`) through the per-step checkers.
+
+- Frame-address facts (Commit: "JIT SSA: Fold null and alignment checks of frame addresses"):
+  `opt::checks` folds compares and `and`-masks using `checks::addr_facts`: an `AllocaAddr`
+  of a memory or incoming alloca has low 4 bits `(aot_off + k) mod 16` and is non-null for
+  `k` in `0..=size`; a `RefAddr` of a constant, data area or function is non-null;
+  `PtrAdd`/`PtrIndex` keep known low bits. It relies on `fp` being 16-aligned and the JIT
+  frame layout placing memory allocas congruent to their AOT offset mod 16. A Lean model of
+  check elimination (if any) needs these facts as assumptions on the frame.
