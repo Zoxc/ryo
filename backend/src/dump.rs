@@ -181,6 +181,7 @@ fn dump_labeled(out: &mut String, words: &[u32], cleanup: &[ryo_bytecode::image:
     for e in cleanup {
         let to = match e.action() {
             Cleanup::Continue => "continue".to_owned(),
+            Cleanup::Nounwind => "continue (nounwind)".to_owned(),
             Cleanup::Pad(p, true) => format!("{} (catch)", name(p as usize)),
             Cleanup::Pad(p, false) => name(p as usize),
         };

@@ -414,7 +414,11 @@ by its code offset, which the encoder turns into the function's LSDA call-site t
   `Continue` entry, so an exception that leaves the callee anyway (a foreign one, or a panic
   past a Rust callee's cleanup, whose own terminate pad aborts in the cleanup phase) passes
   the search phase through the frame; in one with landing pads no entry (LLVM's gap), so
-  unwinding out of it terminates there.
+  unwinding out of it terminates there. The `Continue` entry is a `NOUNWIND` one
+  (`asm::Unwind::Nounwind`; a call site without a pad whose `catch` bit is set, written to
+  the LSDA as a plain continue one), so that the JIT can tell it from a call that may unwind:
+  inlined into a function with landing pads it gets no entry there either, as LLVM's inliner
+  keeps such calls `nounwind` ([jit.md](jit.md#inlining)).
 
 - **Landing pads**: one per distinct destination, after the blocks and terminate stubs:
   `lpad x` (which stores the exception object in the function's exception slot `x`), then a

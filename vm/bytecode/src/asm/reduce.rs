@@ -273,6 +273,7 @@ pub fn reduce(
         let (pad, catch) = match e.action() {
             Cleanup::Pad(p, catch) => (Some(idx(p).map_err(|_| EncodeError::BadCleanup(e.offset))? as usize), catch),
             Cleanup::Continue => (None, false),
+            Cleanup::Nounwind => (None, true),
         };
         out.push((at, pad, catch));
     }
@@ -385,6 +386,7 @@ fn cleanup_actions(cleanup: &[CleanupEntry], starts: &[u32], insns: &[reduced::I
         }
         action[i] = Some(match e.action() {
             Cleanup::Continue => Unwind::Continue,
+            Cleanup::Nounwind => Unwind::Nounwind,
             Cleanup::Pad(p, catch) => {
                 let p = idx(p).map_err(|_| bad)?;
                 if insns[p].full_opcode() != Opcode::Lpad {

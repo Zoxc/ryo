@@ -169,7 +169,7 @@ L14:
   cleanup L3 -> continue
   cleanup L7 -> continue
   cleanup L10 -> continue
-  cleanup L12 -> continue
+  cleanup L12 -> continue (nounwind)
   cleanup L14 -> continue
   fn0 = <usize as std::cmp::Ord>::min
   fn1 = <core::hash::sip::Sip13Rounds as core::hash::sip::Sip>::c_rounds
@@ -620,7 +620,7 @@ L1:
     ret $0, 0
 L2:
     jmp L1
-  cleanup L0 -> continue
+  cleanup L0 -> continue (nounwind)
   sym0 = alloc::alloc::__rust_dealloc
 
 fn <std::collections::HashMap<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>> as std::default::Default>::default (frame 112, args 0, ret 32) [hint]
@@ -996,7 +996,7 @@ L0:
 L1:
     add.w32 $-4, $-8, $-20
     ret $-4, 4
-  cleanup L0 -> continue
+  cleanup L0 -> continue (nounwind)
   k0 = const allocation + 0
   fn1 = core::num::<impl u32>::unchecked_add::precondition_check
 
@@ -1030,7 +1030,7 @@ L0:
 L1:
     add.w64 $-8, $-16, $-32
     ret $-8, 8
-  cleanup L0 -> continue
+  cleanup L0 -> continue (nounwind)
   k0 = const allocation + 0
   fn1 = core::num::<impl u64>::unchecked_add::precondition_check
 
@@ -1108,8 +1108,8 @@ L11:
     mov.w64 $-128, $-136
     jmp L8
   cleanup L0 -> continue
-  cleanup L5 -> continue
-  cleanup L9 -> continue
+  cleanup L5 -> continue (nounwind)
+  cleanup L9 -> continue (nounwind)
   k0 = const allocation + 0
   fn1 = alloc::raw_vec::RawVecInner::with_capacity_in
   k2 = const allocation + 0
@@ -1215,7 +1215,7 @@ L0:
 L1:
     call.sym $0, sym2, 0, [4294967240, 8, 4294967248, 264, 4294967175, 513, 4294967160, 776]
     unreachable
-  cleanup L1 -> continue
+  cleanup L1 -> continue (nounwind)
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
@@ -1447,7 +1447,7 @@ L9:
     ret $-16, 526344
   cleanup L0 -> continue
   cleanup L2 -> continue
-  cleanup L8 -> continue
+  cleanup L8 -> continue (nounwind)
   sym0 = alloc::raw_vec::RawVecInner::try_allocate_in
   sym1 = alloc::raw_vec::handle_error
   k2 = const allocation + 0
@@ -1667,9 +1667,9 @@ L11:
     or.w64 $-8, $-8, $-104
     add.imm.w64 $-88, $-88, 1
     jmp L2
-  cleanup L4 -> continue
-  cleanup L7 -> continue
-  cleanup L10 -> continue
+  cleanup L4 -> continue (nounwind)
+  cleanup L7 -> continue (nounwind)
+  cleanup L10 -> continue (nounwind)
   k0 = const allocation + 0
   fn1 = std::ptr::copy_nonoverlapping::precondition_check
   k2 = const allocation + 0
@@ -1705,7 +1705,7 @@ L0:
     unreachable
 L1:
     ret $0, 0
-  cleanup L0 -> continue
+  cleanup L0 -> continue (nounwind)
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
@@ -1738,7 +1738,7 @@ L0:
     unreachable
 L1:
     ret $0, 0
-  cleanup L0 -> continue
+  cleanup L0 -> continue (nounwind)
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
@@ -1785,7 +1785,7 @@ L0:
     unreachable
 L1:
     ret $0, 0
-  cleanup L0 -> continue
+  cleanup L0 -> continue (nounwind)
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
@@ -1821,7 +1821,7 @@ L2:
 L3:
     le.u.w64 $-1, $-88, $-48
     ret $-1, 1
-  cleanup L0 -> continue
+  cleanup L0 -> continue (nounwind)
   k0 = const allocation + 0
   sym1 = core::panicking::panic_nounwind
 
@@ -6380,13 +6380,13 @@ L17:
     mov.w128 $-136, $-152
     mov.w128 $-16, $-136
     jmp L4
-  cleanup L1 -> continue
-  cleanup L2 -> continue
-  cleanup L6 -> continue
-  cleanup L9 -> continue
-  cleanup L11 -> continue
-  cleanup L14 -> continue
-  cleanup L16 -> continue
+  cleanup L1 -> continue (nounwind)
+  cleanup L2 -> continue (nounwind)
+  cleanup L6 -> continue (nounwind)
+  cleanup L9 -> continue (nounwind)
+  cleanup L11 -> continue (nounwind)
+  cleanup L14 -> continue (nounwind)
+  cleanup L16 -> continue (nounwind)
   sym0 = alloc::alloc::__rust_no_alloc_shim_is_unstable_v2
   sym1 = alloc::alloc::__rust_no_alloc_shim_is_unstable_v2
   k2 = const allocation + 0
@@ -6999,7 +6999,7 @@ L7:
     mov.w128 $-72, $-104
     jmp L3
   cleanup L4 -> continue
-  cleanup L6 -> continue
+  cleanup L6 -> continue (nounwind)
   k0 = const allocation + 0
   fn1 = std::option::Option::<&str>::map_or_else::<std::string::String, {closure@std::fmt::format::{closure#0}}, for<'a> fn(&'a str) -> <str as std::borrow::ToOwned>::Owned {<str as std::borrow::ToOwned>::to_owned}>
   k2 = const allocation + 0
@@ -7043,7 +7043,7 @@ L0:
     unreachable
 L1:
     ret $0, 0
-  cleanup L0 -> continue
+  cleanup L0 -> continue (nounwind)
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
@@ -7348,7 +7348,7 @@ L6:
     load.w64 $-48, [$-24 + 8]
     br.gt.u.imm.w64 $-48, 0, L0
     jmp L1
-  cleanup L5 -> continue
+  cleanup L5 -> continue (nounwind)
   k0 = const allocation + 0
   k1 = const allocation + 0
   fn2 = std::num::NonZero::<T>::new_unchecked::precondition_check
@@ -7394,7 +7394,7 @@ fn std::num::NonZero::<T>::new_unchecked::precondition_check (frame 112, args 0,
 L0:
     call.sym $0, sym2, 0, [4294967264, 8, 4294967272, 264, 4294967199, 513, 4294967184, 776]
     unreachable
-  cleanup L0 -> continue
+  cleanup L0 -> continue (nounwind)
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
@@ -7474,7 +7474,7 @@ L0:
     unreachable
 L1:
     ret $0, 0
-  cleanup L0 -> continue
+  cleanup L0 -> continue (nounwind)
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
@@ -7538,7 +7538,7 @@ L1:
     mul.imm.w64 $-48, $-24, 1
     memcpy $-16, $-8, $-48
     ret $0, 0
-  cleanup L0 -> continue
+  cleanup L0 -> continue (nounwind)
   k0 = const allocation + 0
   fn1 = std::ptr::copy_nonoverlapping::precondition_check
 
@@ -7867,7 +7867,7 @@ L5:
     br.eq.imm.w64 $-56, 0, L4
     jmp L2
     unreachable
-  cleanup L0 -> continue
+  cleanup L0 -> continue (nounwind)
   cleanup L3 -> continue
   fn0 = std::ptr::swap_nonoverlapping::precondition_check
   fn1 = std::ptr::swap_nonoverlapping_bytes
@@ -8046,7 +8046,7 @@ L6:
 L7:
     call $0, fn2, 0, [4294967192, 8, 4294967176, 264]
     jmp L1
-  cleanup L5 -> continue
+  cleanup L5 -> continue (nounwind)
   cleanup L7 -> continue
   k0 = const allocation + 0
   fn1 = core::num::<impl usize>::unchecked_add::precondition_check
@@ -8265,7 +8265,7 @@ L0:
 L1:
     call.sym $0, sym2, 0, [4294967240, 8, 4294967248, 264, 4294967175, 513, 4294967160, 776]
     unreachable
-  cleanup L1 -> continue
+  cleanup L1 -> continue (nounwind)
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt

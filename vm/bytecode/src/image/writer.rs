@@ -376,7 +376,7 @@ fn check_function(i: u32, f: &mut FunctionDef, lim: &CodeLimits<'_>) -> Result<(
         let call = op_at(e.offset).is_some_and(Opcode::may_unwind);
         let pad = match e.action() {
             Cleanup::Pad(p, _) => op_at(p) == Some(Opcode::Lpad),
-            Cleanup::Continue => true,
+            Cleanup::Continue | Cleanup::Nounwind => true,
         };
         if !call || !pad || (j > 0 && f.cleanup[j - 1].offset == e.offset) {
             return Err(WriteError::Cleanup(i));
@@ -891,10 +891,7 @@ impl From<&CallSite> for CallSiteEntry {
 
 impl From<&CallSiteEntry> for CallSite {
     fn from(c: &CallSiteEntry) -> CallSite {
-        let (pad, catch) = match c.action() {
-            Cleanup::Pad(p, catch) => (Some(p), catch),
-            Cleanup::Continue => (None, false),
-        };
+        let (pad, catch) = c.action().parts();
         CallSite { start: c.start, len: c.len, pad, catch }
     }
 }

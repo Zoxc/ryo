@@ -227,6 +227,11 @@ pub enum Site {
     None,
     /// To the caller.
     Continue,
+    /// It can't unwind, but as in a cg_llvm function without an LSDA it is a continue entry
+    /// if the function has no landing pads, and no call site (the unwinder aborts) if it has
+    /// one (design/jit.md#inlining): the emitter decides. Inlining keeps it as is, rather than
+    /// giving it the call's action as `Continue`.
+    Nounwind,
     /// To the landing pad: the block ends in [`Term::Invoke`].
     Pad { catch: bool },
 }

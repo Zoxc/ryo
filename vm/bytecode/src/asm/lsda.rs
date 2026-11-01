@@ -29,8 +29,17 @@ pub struct CallSite {
     pub len: u32,
     pub pad: Option<u32>,
     /// The landing pad catches every exception, rather than being a cleanup
-    /// ([`crate::image::CATCH`]).
+    /// ([`crate::image::CATCH`]). Without a landing pad: the call can't unwind, and has the
+    /// continue entry of a function without landing pads ([`crate::image::NOUNWIND`]); the
+    /// LSDA writes it as a plain continue one.
     pub catch: bool,
+}
+
+impl CallSite {
+    /// Whether its landing pad catches (action 1 in the LSDA).
+    pub fn catches(&self) -> bool {
+        self.catch && self.pad.is_some()
+    }
 }
 
 /// The LSDA of a function with these call sites (sorted by position).
@@ -41,13 +50,13 @@ pub fn write(sites: &[CallSite]) -> Vec<u8> {
         uleb(&mut table, s.start);
         uleb(&mut table, s.len);
         uleb(&mut table, s.pad.unwrap_or(0));
-        uleb(&mut table, s.catch as u32);
+        uleb(&mut table, s.catches() as u32);
     }
     let mut out = Vec::with_capacity(table.len() + 8);
     out.extend_from_slice(&[0xff, 0xff, 0x01]);
     uleb(&mut out, table.len() as u32);
     out.extend_from_slice(&table);
-    if sites.iter().any(|s| s.catch) {
+    if sites.iter().any(CallSite::catches) {
         out.extend_from_slice(&[1, 0]);
     }
     out

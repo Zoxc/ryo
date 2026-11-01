@@ -625,7 +625,7 @@ L6:
 L7:
     call.sym $0, sym4, 0, [4294967176, 8, 4294967184, 264, 4294967168, 520]
     unreachable
-  cleanup L4 -> continue
+  cleanup L4 -> continue (nounwind)
   cleanup L7 -> continue
   k0 = const allocation + 0
   fn1 = std::ptr::const_ptr::<impl *const T>::offset_from_unsigned::precondition_check
@@ -644,7 +644,7 @@ L0:
     call $0, fn1, 0, [4294967279, 1, 4294967264, 264]
 L1:
     ret $0, 0
-  cleanup L0 -> continue
+  cleanup L0 -> continue (nounwind)
   k0 = const allocation + 0
   fn1 = std::hint::assert_unchecked::precondition_check
 
@@ -724,7 +724,7 @@ L0:
 L1:
     sub.w64 $-8, $-16, $-24
     ret $-8, 8
-  cleanup L0 -> continue
+  cleanup L0 -> continue (nounwind)
   k0 = const allocation + 0
   fn1 = core::num::<impl usize>::unchecked_sub::precondition_check
 
@@ -851,7 +851,7 @@ L9:
     ret $-16, 526344
   cleanup L0 -> continue
   cleanup L2 -> continue
-  cleanup L8 -> continue
+  cleanup L8 -> continue (nounwind)
   sym0 = alloc::raw_vec::RawVecInner::try_allocate_in
   sym1 = alloc::raw_vec::handle_error
   k2 = const allocation + 0
@@ -901,7 +901,7 @@ L0:
     unreachable
 L1:
     ret $0, 0
-  cleanup L0 -> continue
+  cleanup L0 -> continue (nounwind)
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
@@ -936,7 +936,7 @@ L0:
     unreachable
 L1:
     ret $0, 0
-  cleanup L0 -> continue
+  cleanup L0 -> continue (nounwind)
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
@@ -1319,7 +1319,7 @@ L0:
     unreachable
 L1:
     ret $0, 0
-  cleanup L0 -> continue
+  cleanup L0 -> continue (nounwind)
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
@@ -1453,7 +1453,7 @@ L0:
 L1:
     call.sym $0, sym2, 0, [4294967240, 8, 4294967248, 264, 4294967175, 513, 4294967160, 776]
     unreachable
-  cleanup L1 -> continue
+  cleanup L1 -> continue (nounwind)
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt

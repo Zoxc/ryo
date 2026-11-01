@@ -456,6 +456,9 @@ pub struct InsnId(pub u32);
 pub enum Unwind {
     /// Out of the frame, to the caller.
     Continue,
+    /// As `Continue`, for an instruction that can't unwind in a function without landing
+    /// pads ([`crate::image::NOUNWIND`]).
+    Nounwind,
     /// To the landing pad (an `lpad`) at the label; `catch` if it catches every exception
     /// ([`crate::image::CATCH`]).
     Pad { pad: Label, catch: bool },
@@ -742,6 +745,7 @@ pub fn encode(code: &[u32], frame_size: u32, cleanup: &[CleanupEntry], scopes: &
         }
         action[i] = Some(match e.action() {
             Cleanup::Continue => Unwind::Continue,
+            Cleanup::Nounwind => Unwind::Nounwind,
             Cleanup::Pad(p, catch) => {
                 let p = idx(p).map_err(|_| EncodeError::BadCleanup(e.offset))?;
                 if starts[p].1 != Opcode::Lpad {
@@ -1436,6 +1440,7 @@ impl Asm {
                         item,
                         site: a.map(|a| match a {
                             Unwind::Continue => (None, false),
+                            Unwind::Nounwind => (None, true),
                             Unwind::Pad { catch, .. } => (Some(usize::MAX), catch),
                         }),
                     }

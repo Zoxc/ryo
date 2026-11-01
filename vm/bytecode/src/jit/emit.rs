@@ -881,6 +881,8 @@ impl<'a> E<'a> {
         match site {
             Site::None => {}
             Site::Continue => self.sites.push(PendingSite { at, len, pad: None, catch: false }),
+            // Kept or dropped once all sites are known ([`emit`]).
+            Site::Nounwind => self.sites.push(PendingSite { at, len, pad: None, catch: true }),
             Site::Pad { catch } => self.sites.push(PendingSite { at, len, pad: Some(pad.expect("a pad")), catch }),
         }
     }
@@ -2183,8 +2185,14 @@ pub fn emit(f: &Func, al: &Alloc, uses: &[u32], mode: Mode, code_consts: &[u8], 
     let E { a, rodata, sites, cfi, fr, .. } = e;
     // The marks' pieces, to positions.
     let l = a.finish();
-    let mut call_sites: Vec<CallSite> =
-        sites.iter().map(|s| CallSite { start: l.at(s.at), len: s.len, pad: s.pad.map(|p| l.labels[p as usize]), catch: s.catch }).collect();
+    // Calls that can't unwind: as cg_llvm, a continue entry in a function without landing
+    // pads (no LSDA there), none (a gap: the unwinder aborts) in one with them.
+    let has_pads = sites.iter().any(|s| s.pad.is_some());
+    let mut call_sites: Vec<CallSite> = sites
+        .iter()
+        .filter(|s| !(has_pads && s.pad.is_none() && s.catch))
+        .map(|s| CallSite { start: l.at(s.at), len: s.len, pad: s.pad.map(|p| l.labels[p as usize]), catch: s.catch })
+        .collect();
     call_sites.sort_by_key(|c| c.start);
     let cfi = cfi.into_iter().map(|(m, v)| (l.at(m), v)).collect();
     let (osr, osr_at, post) = match f.osr.is_empty() {

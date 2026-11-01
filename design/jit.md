@@ -638,7 +638,8 @@ head stays for the preheader and its OSR entry, which still lands there.
   `r10` to break cycles; a conditional edge with moves goes through a stub after its block.
 - **Unwinding**: the body's FDE rows are the CFA after the prologue (and without a frame
   pointer after each push) and a `DW_CFA_offset` per saved register; the LSDA's call sites are the calls with a landing pad (to their
-  pad stub) or a `Continue` entry, as in AOT code. Values live into a pad live across the
+  pad stub) or a `Continue` entry, as in AOT code, and the `Nounwind` calls as `Continue`
+  ones if no call has a landing pad (else they have none, [inlining](#inlining)). Values live into a pad live across the
   call, so they are in callee-saved registers or the frame, which the unwinder restores.
 
 ### Register entries
@@ -768,7 +769,14 @@ the units that inline it.
   call's register size), its returns jumps to a continuation block whose parameters are
   the call's results. A copied call that unwinds to its caller takes the site's action:
   none, to the caller, or the site's landing pad, as an invoke to the site's stub (which
-  then has several invokes). The callee's own landing pads stay; its loop heads become
+  then has several invokes). A call that can't unwind but has the continue entry of a
+  function without landing pads (`Site::Nounwind`, from the AOT code's `NOUNWIND` call
+  sites, [lowering.md](lowering.md#unwinding)) keeps it: as LLVM's inliner keeps such calls
+  `nounwind`, the emitter makes it a continue entry only if the unit ends up without landing
+  pads (no LSDA there in cg_llvm), and no call site otherwise, so that unwinding out of it
+  terminates there (`std::terminate` for C++ through the PE handler) instead of running the
+  caller's cleanup. The same holds at a `Nounwind` site, whose callee's continuing calls
+  become `Nounwind` too. The callee's own landing pads stay; its loop heads become
   ordinary blocks, without OSR entries, and OSR entries convert only the root's allocas.
 - **Promotion** (`opt::promote`, on every unit): a memory alloca that isn't pinned, whose
   address nothing takes any more, that no handler or island names, and whose accesses are

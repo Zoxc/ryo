@@ -92,7 +92,7 @@ b12(): ; Body
     jmp b2()
 b13(): ; Body
     v78:8 = RefAddr(k4, false) ()
-    Call(Call { target: fn5, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }, ArgReg { xmm: false, size: 8, index: 3, sext: false }, ArgReg { xmm: false, size: 8, index: 4, sext: false }, ArgReg { xmm: false, size: 8, index: 5, sext: false }], parts: [], site: Continue }) (v46, v47, 0x1, 0x1, 0x8, v78)
+    Call(Call { target: fn5, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }, ArgReg { xmm: false, size: 8, index: 3, sext: false }, ArgReg { xmm: false, size: 8, index: 4, sext: false }, ArgReg { xmm: false, size: 8, index: 5, sext: false }], parts: [], site: Nounwind }) (v46, v47, 0x1, 0x1, 0x8, v78)
     jmp b14()
 b14(): ; Body
     v80:8 = Load(8, 0) (v46)
@@ -616,7 +616,7 @@ b9(v30:8): ; Body head 2
     ret 0x8 (v30)
 b10(): ; Body
     v34:8 = RefAddr(k0, false) ()
-    Call(Call { target: fn1, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }, ArgReg { xmm: false, size: 8, index: 3, sext: false }, ArgReg { xmm: false, size: 8, index: 4, sext: false }, ArgReg { xmm: false, size: 8, index: 5, sext: false }], parts: [], site: Continue }) (v10, v11, 0x1, 0x1, 0x4, v34)
+    Call(Call { target: fn1, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }, ArgReg { xmm: false, size: 8, index: 3, sext: false }, ArgReg { xmm: false, size: 8, index: 4, sext: false }, ArgReg { xmm: false, size: 8, index: 5, sext: false }], parts: [], site: Nounwind }) (v10, v11, 0x1, 0x1, 0x4, v34)
     jmp b11()
 b11(): ; Body
     v36:4 = Load(4, 0) (v10)
@@ -627,7 +627,7 @@ b11(): ; Body
     jmp b3(v42, v39)
 b12(): ; Body
     v50:8 = RefAddr(k2, false) ()
-    Call(Call { target: fn1, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }, ArgReg { xmm: false, size: 8, index: 3, sext: false }, ArgReg { xmm: false, size: 8, index: 4, sext: false }, ArgReg { xmm: false, size: 8, index: 5, sext: false }], parts: [], site: Continue }) (v22, v23, 0x1, 0x1, 0x2, v50)
+    Call(Call { target: fn1, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }, ArgReg { xmm: false, size: 8, index: 3, sext: false }, ArgReg { xmm: false, size: 8, index: 4, sext: false }, ArgReg { xmm: false, size: 8, index: 5, sext: false }], parts: [], site: Nounwind }) (v22, v23, 0x1, 0x1, 0x2, v50)
     jmp b13()
 b13(): ; Body
     v52:2 = Load(2, 0) (v22)
@@ -641,7 +641,7 @@ b13(): ; Body
     jmp b6(v64, v62)
 b14(): ; Body
     v69:8 = RefAddr(k4, false) ()
-    Call(Call { target: fn5, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }], parts: [], site: Continue }) (v28, v1, v69)
+    Call(Call { target: fn5, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }], parts: [], site: Nounwind }) (v28, v1, v69)
     jmp b15()
 b15(): ; Body
     v72:1 = Cmp(LtU, 8) (v28, v1)
@@ -695,7 +695,7 @@ b0(v0:8, v1:8, v2:8, v3:8): ; Entry
     br v5 ? b1() : b2()
 b1(): ; Body
     v6:8 = RefAddr(k0, false) ()
-    Call(Call { target: sym1, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }], parts: [], site: Continue }) (v6, 0x3d)
+    Call(Call { target: sym1, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }], parts: [], site: Nounwind }) (v6, 0x3d)
     trap
 b2(): ; Body
     br LtU.w8 v0, v1 ? b3() : b4()

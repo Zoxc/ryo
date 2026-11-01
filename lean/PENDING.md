@@ -161,3 +161,13 @@ remove it once a Lean session has handled it.
   `C` callees, now get a `Continue` cleanup entry (`FnCx::unwind_entry`) instead of none when
   the body has no landing pad (no `Cleanup`/`Terminate` action), as a cg_llvm frame without
   an LSDA; with landing pads they still get none. The model's call-site/cleanup-entry rules need the change.
+
+- `NOUNWIND` cleanup entries ("JIT: Keep inlined nounwind calls terminating", follow-up to
+  "Backend: Let exceptions pass through VM frames without landing pads"): the `Continue`
+  entries of `Unreachable` calls in bodies without landing pads are now `image::NOUNWIND`
+  (`u32::MAX - 1`, `Cleanup::Nounwind`, `asm::Unwind::Nounwind`; in `asm::CallSite` a call
+  site without a pad with `catch` set, written to the LSDA as action 0, pad 0). The
+  pad-word/cleanup-entry decoding (`Cleanup::from_word`/`to_word`), the encoder's and
+  decoder's action tables and the call-site round trip need the extra value; the LSDA is
+  unchanged. The JIT's inliner keeps such calls `Site::Nounwind`, which the emitter turns
+  into a continue entry only when the unit has no landing pad (else no call site).

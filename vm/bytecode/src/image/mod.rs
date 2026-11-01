@@ -103,6 +103,12 @@ pub const FUNC_FLAGS: u8 = FUNC_INLINE_ALWAYS | FUNC_INLINE_NEVER | FUNC_COLD | 
 /// writer's function definitions; images carry LSDAs instead).
 pub const CONTINUE: u32 = u32::MAX;
 
+/// `CleanupEntry::target` of a call that can't unwind (MIR's `UnwindAction::Unreachable`, a
+/// `C` callee) in a function without landing pads: a continue entry, as cg_llvm's frame
+/// without an LSDA, that the JIT's inliner doesn't give the caller's action
+/// (design/jit.md#inlining). Has [`CATCH`] set, so no pad offset is ever this.
+pub const NOUNWIND: u32 = u32::MAX - 1;
+
 /// Set in `CleanupEntry::target` (with a landing pad) when the landing pad catches every
 /// exception instead of being a cleanup: a `Terminate` action, whose pad must be found by
 /// the unwinder's search phase even if nothing up the stack catches the panic.
@@ -481,7 +487,7 @@ pub struct CallSiteEntry {
     /// Length in bytes.
     pub len: u32,
     /// Byte offset of the landing pad in the function's code, with [`CATCH`] for a
-    /// catch-all one, or [`CONTINUE`].
+    /// catch-all one, or [`CONTINUE`] or [`NOUNWIND`].
     pub pad: u32,
 }
 
@@ -500,7 +506,7 @@ pub struct CleanupEntry {
     /// Word offset of the call-like instruction, from the function start.
     pub offset: u32,
     /// Word offset of its landing pad (an `lpad` instruction), with [`CATCH`] for a
-    /// catch-all one, or [`CONTINUE`].
+    /// catch-all one, or [`CONTINUE`] or [`NOUNWIND`].
     pub target: u32,
 }
 
@@ -513,6 +519,8 @@ pub enum Cleanup {
     Pad(u32, bool),
     /// Leave the frame, and continue in the caller.
     Continue,
+    /// As `Continue`, for a call that can't unwind ([`NOUNWIND`]).
+    Nounwind,
 }
 
 impl CleanupEntry {
@@ -522,28 +530,44 @@ impl CleanupEntry {
 }
 
 impl Cleanup {
-    /// The landing pad `pad` (catching if `catch`), or `Continue` if there is none.
+    /// The landing pad `pad` (catching if `catch`), or if there is none `Continue`, or
+    /// `Nounwind` with `catch` (`asm::CallSite::catch`).
     pub const fn new(pad: Option<u32>, catch: bool) -> Cleanup {
         match pad {
             Some(p) => Cleanup::Pad(p, catch),
+            None if catch => Cleanup::Nounwind,
             None => Cleanup::Continue,
         }
     }
 
+    /// The landing pad and whether it catches, as [`Cleanup::new`] takes them.
+    pub const fn parts(self) -> (Option<u32>, bool) {
+        match self {
+            Cleanup::Pad(p, catch) => (Some(p), catch),
+            Cleanup::Continue => (None, false),
+            Cleanup::Nounwind => (None, true),
+        }
+    }
+
     /// The action a packed pad word says ([`CleanupEntry::target`], [`CallSiteEntry::pad`]):
-    /// [`CONTINUE`], or the pad's offset with [`CATCH`] for a catch-all one.
+    /// [`CONTINUE`], [`NOUNWIND`], or the pad's offset with [`CATCH`] for a catch-all one.
     pub const fn from_word(w: u32) -> Cleanup {
-        if w == CONTINUE { Cleanup::Continue } else { Cleanup::Pad(w & !CATCH, w & CATCH != 0) }
+        match w {
+            CONTINUE => Cleanup::Continue,
+            NOUNWIND => Cleanup::Nounwind,
+            _ => Cleanup::Pad(w & !CATCH, w & CATCH != 0),
+        }
     }
 
     /// The packed pad word of the action ([`Cleanup::from_word`]).
     pub const fn to_word(self) -> u32 {
         match self {
             Cleanup::Pad(p, catch) => {
-                debug_assert!(p & CATCH == 0 && p | CATCH != CONTINUE, "pad offset too large");
+                debug_assert!(p & CATCH == 0 && p | CATCH < NOUNWIND, "pad offset too large");
                 p | if catch { CATCH } else { 0 }
             }
             Cleanup::Continue => CONTINUE,
+            Cleanup::Nounwind => NOUNWIND,
         }
     }
 }
@@ -719,7 +743,7 @@ impl<'a> Image<'a> {
             for (j, c) in self.call_sites(i).iter().enumerate() {
                 let pad_ok = match c.action() {
                     Cleanup::Pad(p, _) => p < f.code_len,
-                    Cleanup::Continue => true,
+                    Cleanup::Continue | Cleanup::Nounwind => true,
                 };
                 let end = c.start as u64 + c.len as u64;
                 let sorted = c.start as u64 >= prev;

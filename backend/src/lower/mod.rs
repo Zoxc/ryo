@@ -231,6 +231,10 @@ pub fn vm_fn_sig<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> Result<Ab
 enum UnwindTo {
     /// Out of the frame, to the caller.
     Continue,
+    /// As `Continue`, for an instruction that can't unwind in a body without landing pads
+    /// ([`FnCx::unwind_entry`]), marked so that the JIT's inliner keeps it from unwinding to
+    /// a caller's landing pad.
+    Nounwind,
     /// Through a landing pad ([`FnCx::unwind_targets`]) to this block.
     Block(BasicBlock),
     /// Through a landing pad to the function's stub calling the reason's lang item
@@ -449,6 +453,10 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     self.asm.set_unwind(id, Unwind::Continue);
                     continue;
                 }
+                UnwindTo::Nounwind => {
+                    self.asm.set_unwind(id, Unwind::Nounwind);
+                    continue;
+                }
                 UnwindTo::Block(bb) => (self.block_label(bb), false),
                 // As cg_llvm's terminate pads: a catch-all, so it runs even when nothing up
                 // the stack catches.
@@ -590,12 +598,14 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// `Continue` entry, so an exception that leaves the callee anyway (a foreign one, or a
     /// panic past a Rust callee's cleanup, whose own terminate pad then aborts in the cleanup
     /// phase) passes the search phase through the frame; in one with landing pads no entry,
-    /// a gap in LLVM's table, where the personality terminates.
+    /// a gap in LLVM's table, where the personality terminates. The continue entry is a
+    /// `Nounwind` one: inlined by the JIT into a caller with landing pads it gets none either,
+    /// as LLVM's inliner keeps such calls `nounwind`.
     pub fn unwind_entry(&mut self, at: InsnId, unwind: rustc_middle::mir::UnwindAction) {
         use rustc_middle::mir::UnwindAction;
         match unwind {
             UnwindAction::Continue => self.cleanup.push((at, UnwindTo::Continue)),
-            UnwindAction::Unreachable if !self.has_pads => self.cleanup.push((at, UnwindTo::Continue)),
+            UnwindAction::Unreachable if !self.has_pads => self.cleanup.push((at, UnwindTo::Nounwind)),
             UnwindAction::Unreachable => {}
             UnwindAction::Cleanup(bb) => self.cleanup.push((at, UnwindTo::Block(bb))),
             UnwindAction::Terminate(reason) => self.cleanup.push((at, UnwindTo::Terminate(reason))),

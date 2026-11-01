@@ -453,7 +453,7 @@ fn unwind_actions(protos: &[Proto], ipos: &[u32], call_sites: &[CallSite], rs: u
             match site_at(call_sites, s) {
                 Some(cs) if cs.len == l => {
                     used += 1;
-                    if action.is_some_and(|a| a != (cs.pad, cs.catch)) || (cs.catch && cs.pad.is_none()) {
+                    if action.is_some_and(|a| a != (cs.pad, cs.catch)) {
                         return Err(err(s, "call sites of one instruction disagree"));
                     }
                     action = Some((cs.pad, cs.catch));

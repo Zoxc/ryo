@@ -614,6 +614,9 @@ panic runtime, as through native frames. The image carries the unwind informatio
     LSDA there) as Continue, so a panic or foreign exception leaving such a callee anyway
     isn't stopped in the search phase here (a Rust callee's own terminate pad aborts in the
     cleanup phase); in one with landing pads no call site, so unwinding out of it aborts.
+    The continue entry is marked (`image::NOUNWIND` in the image's call-site records, the
+    `catch` bit of a call site without a pad; the LSDA has a plain continue one), so that
+    the JIT keeps it from unwinding to the landing pad of a caller it is inlined into.
 - **Landing pads**: the lowering emits one `lpad x; jmp bb` stub per distinct unwind
   destination. The personality enters it with the exception object in `rax`, `rsp` at
   `fp - F` (and `rbp` restored); `ryo_h_Lpad` stores the object in the function's

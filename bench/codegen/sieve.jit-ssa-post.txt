@@ -193,7 +193,7 @@ b41(): ; Body
     br Eq.w8 v61, v63 ? b11() : b31()
 b42(): ; Body cold
     v92:8 = RefAddr(image.k1218, false) ()
-    Call(Call { target: image.sym14, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 1, index: 2, sext: false }, ArgReg { xmm: false, size: 8, index: 3, sext: false }], parts: [], site: None }) (v92, 0x175, 0x0, v58)
+    Call(Call { target: image.sym14, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 1, index: 2, sext: false }, ArgReg { xmm: false, size: 8, index: 3, sext: false }], parts: [], site: Nounwind }) (v92, 0x175, 0x0, v58)
     trap
 b43(): ; Body
     trap
@@ -204,7 +204,7 @@ b45(): ; Body
     jmp b22()
 b46(): ; Body cold
     v96:8 = RefAddr(image.k1017, false) ()
-    Call(Call { target: image.sym14, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 1, index: 2, sext: false }, ArgReg { xmm: false, size: 8, index: 3, sext: false }], parts: [], site: None }) (v96, 0x193, 0x0, v40)
+    Call(Call { target: image.sym14, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 1, index: 2, sext: false }, ArgReg { xmm: false, size: 8, index: 3, sext: false }], parts: [], site: Nounwind }) (v96, 0x193, 0x0, v40)
     trap
 
 fn <std::vec::Vec<bool> as std::ops::IndexMut<usize>>::index_mut
@@ -264,7 +264,7 @@ b0(v0:8, v1:8, v2:8): ; Entry
     br ovf ? b1() : b2()
 b1(): ; Body cold
     v5:8 = RefAddr(k0, false) ()
-    Call(Call { target: sym2, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 1, index: 2, sext: false }, ArgReg { xmm: false, size: 8, index: 3, sext: false }], parts: [], site: Continue }) (v5, 0x175, 0x0, v2)
+    Call(Call { target: sym2, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 1, index: 2, sext: false }, ArgReg { xmm: false, size: 8, index: 3, sext: false }], parts: [], site: Nounwind }) (v5, 0x175, 0x0, v2)
     trap
 b2(): ; Body
     ret 0x0 ()
@@ -719,8 +719,8 @@ b90(): ; Body
     invoke -> b100() unwind b113()
 b91(): ; Body cold
     v108:8 = RefAddr(image.k1590, false) ()
-    Call(Call { target: image.sym14, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 1, index: 2, sext: false }, ArgReg { xmm: false, size: 8, index: 3, sext: false }], parts: [], site: Pad { catch: false } }) (v108, 0x1bb, 0x0, v107)
-    invoke -> - unwind b102()
+    Call(Call { target: image.sym14, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 1, index: 2, sext: false }, ArgReg { xmm: false, size: 8, index: 3, sext: false }], parts: [], site: Nounwind }) (v108, 0x1bb, 0x0, v107)
+    trap
 b92(): ; Body
     trap
 b93(): ; Body

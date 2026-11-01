@@ -10,7 +10,7 @@ use super::effects::{Effect, effects};
 use super::ir::BinOp;
 use crate::asm::{self, ARG_ADDR, ArgReg, Decoded, Mode, RET_SRET, RetPart, ScopeKind};
 use crate::full::{self, Func as FuncIdx, OperandKind, Shape, Sym};
-use crate::image::{CATCH, CONTINUE};
+use crate::image::{CATCH, CONTINUE, NOUNWIND};
 use crate::reduced::{self, Arg, Insn};
 
 /// How an instruction touches a frame byte range.
@@ -172,6 +172,9 @@ pub enum Unwind {
     /// It can't (no call site).
     None,
     Continue,
+    /// It can't, but has a continue entry, as a call in a function without landing pads
+    /// ([`NOUNWIND`]).
+    Nounwind,
     /// To the `lpad` at this instruction index.
     Pad {
         pad: u32,
@@ -822,6 +825,8 @@ fn decode_insns(d: &Decoded, mode: Mode, mem: Option<&dyn super::opt::ConstMem>)
         }
         insns[i].unwind = if e.target == CONTINUE {
             Unwind::Continue
+        } else if e.target == NOUNWIND {
+            Unwind::Nounwind
         } else {
             let p = idx(e.target & !CATCH)?;
             if insns[p as usize].kind != Kind::Lpad {

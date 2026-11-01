@@ -206,7 +206,7 @@ b1(): ; Body
     v7:8 = RefAddr(k0, false) ()
     v10:8 = Bin(Shl, 8) (0xba, 0x1)
     v12:8 = Bin(Or, 8) (v10, 0x1)
-    Call(Call { target: sym2, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 1, index: 2, sext: false }, ArgReg { xmm: false, size: 8, index: 3, sext: false }], parts: [], site: Continue }) (v5, v12, 0x0, v2)
+    Call(Call { target: sym2, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 1, index: 2, sext: false }, ArgReg { xmm: false, size: 8, index: 3, sext: false }], parts: [], site: Nounwind }) (v5, v12, 0x0, v2)
     trap
 b2(): ; Body
     ret 0x0 ()

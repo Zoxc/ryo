@@ -129,6 +129,23 @@ extern "C-unwind" fn throw_all(x: u64) -> u64 {
     panic!("_Unwind_RaiseException returned");
 }
 
+/// The `_Unwind_RaiseException` result when the search phase stops at a frame that can't
+/// unwind (the personality's terminate verdict).
+const URC_FATAL_PHASE1_ERROR: u64 = 3;
+
+/// Native: `try_throw(x)` raises a foreign exception for `x == 7` and, if that returns (the
+/// search phase found a frame where unwinding terminates), deletes it and returns
+/// `9000 + code`; else returns `x`.
+extern "C-unwind" fn try_throw(x: u64) -> u64 {
+    if x == 7 {
+        let e = Box::into_raw(Box::new(Exc { class: u64::from_be_bytes(*b"TESTEXC\0"), cleanup: exc_cleanup, private: [0; 2] }));
+        let code = unsafe { _Unwind_RaiseException(e) };
+        unsafe { _Unwind_DeleteException(e) };
+        return 9000 + code as u64;
+    }
+    x
+}
+
 extern "C" fn delete_exc(e: *mut Exc) {
     unsafe { _Unwind_DeleteException(e) }
 }
@@ -142,6 +159,7 @@ fn syms() -> Vec<(&'static str, usize)> {
         ("throw", throw as *const () as usize),
         ("delete_exc", delete_exc as *const () as usize),
         ("throw_all", throw_all as *const () as usize),
+        ("try_throw", try_throw as *const () as usize),
         ("isl", isl_mul10_add7 as *const () as usize),
     ]
 }
@@ -1010,6 +1028,74 @@ fn inline_two_unwinding_calls_into_one_pad() {
         assert_eq!(state(&img, g), JIT_COLD, "g inlined");
     }
     check_stats(before, 1);
+}
+
+/// A callee's call that can't unwind ([`NOUNWIND`]: a continue entry in a function without
+/// landing pads) stays one that can't when inlined, as LLVM's inliner keeps it `nounwind`:
+/// inlined at a site with a catching pad (`f`) it gets no call site, so the search phase
+/// stops there (the personality's terminate verdict) instead of finding `f`'s pad; inlined
+/// into a function without pads (`g`, not inlined into `h`) it stays a continue entry, so
+/// `h`'s pad catches.
+#[test]
+fn inline_nounwind_call() {
+    let (_g, before) = start();
+    let mut w = ImageWriter::new(unique_scid());
+    let s_try = w.symbol("try_throw", 0);
+    let s_throw = w.symbol("throw", 0);
+    let s_del = w.symbol("delete_exc", 0);
+    // leaf(x): ret try_throw(x) + 1, the call nounwind. x@-8, r@-16.
+    let mut a = Asm::new();
+    a.i(arg(-8, 0));
+    let ls = a.i(Insn::CallSym { d: Slot(-16), sym: s_try, k: 8, a: List::from_words(&regs(&[-8])) });
+    a.i(Insn::AddImmW64 { d: Slot(-16), a: Slot(-16), imm: 1 });
+    a.ret(Slot(-16), 8);
+    let mut ld = FunctionDef { flags: FUNC_INLINE_ALWAYS, ..func(a.done(), 16, 0, 8) };
+    ld.cleanup = vec![CleanupEntry { offset: ls, target: NOUNWIND }];
+    let leaf = w.add_function(ld);
+    // `catching(g)(x)`: r = callee(x); ret r + throw(0); catching pad around both: delete;
+    // ret 1000. `throw(0)` keeps the pad: without a call that unwinds to it, it would go
+    // (and the function have no pads). x@16; r@-8, exc@-16, z@-24.
+    let catching = |w: &mut ImageWriter, callee: Func| {
+        let mut a = Asm::new();
+        let site = a.i(Insn::Call { d: Slot(-8), f: callee, k: 8, a: List::from_words(&regs(&[16])) });
+        a.i(Insn::ImmW64 { d: Slot(-24), imm: 0 });
+        let s2 = a.i(Insn::CallSym { d: Slot(-24), sym: s_throw, k: 8, a: List::from_words(&regs(&[-24])) });
+        a.i(Insn::AddW64 { d: Slot(-8), a: Slot(-8), b: Slot(-24) });
+        a.ret(Slot(-8), 8);
+        let pad = a.i(Insn::Lpad { x: Slot(-16) });
+        a.i(Insn::CallSym { d: Slot(0), sym: s_del, k: 0, a: List::from_words(&regs(&[-16])) });
+        a.i(Insn::ImmW64 { d: Slot(-8), imm: 1000 });
+        a.ret(Slot(-8), 8);
+        let mut fd = func(a.done(), 32, 8, 8);
+        fd.cleanup = vec![CleanupEntry { offset: site, target: pad | CATCH }, CleanupEntry { offset: s2, target: pad | CATCH }];
+        w.add_function(fd)
+    };
+    let f = catching(&mut w, leaf);
+    // g(x): ret leaf(x), no pad, never inlined. x@-8, r@-16.
+    let mut a = Asm::new();
+    a.i(arg(-8, 0));
+    let gs = a.i(Insn::Call { d: Slot(-16), f: leaf, k: 8, a: List::from_words(&regs(&[-8])) });
+    a.ret(Slot(-16), 8);
+    let mut gd = FunctionDef { flags: FUNC_INLINE_NEVER, ..func(a.done(), 16, 0, 8) };
+    gd.cleanup = vec![CleanupEntry { offset: gs, target: CONTINUE }];
+    let g = w.add_function(gd);
+    let h = catching(&mut w, g);
+    let img = build(w, &syms());
+
+    let reencode = std::env::var("RYO_JIT_OPT").is_ok_and(|o| o == "reencode");
+    for round in 0..3 {
+        assert_eq!(ok::<_, u64>(img.id(f), (5u64,)), 6, "round {round}");
+        assert_eq!(ok::<_, u64>(img.id(h), (5u64,)), 6, "round {round}");
+        // Re-encoded, `f` still calls `leaf`, whose frame has the continue entry.
+        let want = if reencode { 1000 } else { 9000 + URC_FATAL_PHASE1_ERROR + 1 };
+        assert_eq!(ok::<_, u64>(img.id(f), (7u64,)), want, "round {round}: through f's inlined leaf");
+        assert_eq!(ok::<_, u64>(img.id(h), (7u64,)), 1000, "round {round}: through g's inlined leaf");
+    }
+    if !reencode {
+        assert_eq!(state(&img, leaf), JIT_COLD, "leaf inlined");
+    }
+    // f, g and h.
+    check_stats(before, 3);
 }
 
 /// A call in code that an earlier splice made unreachable: `leaf` has no call that unwinds,

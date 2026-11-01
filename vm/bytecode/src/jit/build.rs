@@ -507,6 +507,7 @@ impl<'a> B<'a> {
         let site = match ri.unwind {
             Unwind::None => Site::None,
             Unwind::Continue => Site::Continue,
+            Unwind::Nounwind => Site::Nounwind,
             Unwind::Pad { catch, .. } => Site::Pad { catch },
         };
         match &ri.kind {

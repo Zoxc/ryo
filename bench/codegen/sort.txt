@@ -169,7 +169,7 @@ L1:
     mul.imm.w64 $-56, $-32, 8
     memcpy $-24, $-16, $-56
     ret $0, 0
-  cleanup L0 -> continue
+  cleanup L0 -> continue (nounwind)
   k0 = const allocation + 0
   fn1 = std::ptr::copy_nonoverlapping::precondition_check
 
@@ -191,7 +191,7 @@ L1:
     mul.imm.w64 $-56, $-32, 4
     memcpy $-24, $-16, $-56
     ret $0, 0
-  cleanup L0 -> continue
+  cleanup L0 -> continue (nounwind)
   k0 = const allocation + 0
   fn1 = std::ptr::copy_nonoverlapping::precondition_check
 
@@ -246,9 +246,9 @@ L8:
     mul.imm.w64 $-80, $-32, 8
     memcpy $-48, $-40, $-80
     ret $0, 0
-  cleanup L2 -> continue
+  cleanup L2 -> continue (nounwind)
   cleanup L5 -> continue
-  cleanup L7 -> continue
+  cleanup L7 -> continue (nounwind)
   k0 = const allocation + 0
   fn1 = std::ptr::const_ptr::<impl *const T>::offset_from_unsigned::precondition_check
   k2 = const allocation + 0
@@ -276,7 +276,7 @@ L1:
     load.w32 $-64, [$-24 + 0]
     store.w32 [$-32 + 0], $-64
     ret $0, 0
-  cleanup L0 -> continue
+  cleanup L0 -> continue (nounwind)
   k0 = const allocation + 0
   fn1 = std::ptr::copy_nonoverlapping::precondition_check
 
@@ -656,7 +656,7 @@ L0:
 L1:
     call.sym $0, sym2, 0, [4294967232, 8, 4294967240, 264, 4294967167, 513, 4294967152, 776]
     unreachable
-  cleanup L1 -> continue
+  cleanup L1 -> continue (nounwind)
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
@@ -1185,7 +1185,7 @@ L6:
 L7:
     call.sym $0, sym4, 0, [4294967176, 8, 4294967184, 264, 4294967168, 520]
     unreachable
-  cleanup L4 -> continue
+  cleanup L4 -> continue (nounwind)
   cleanup L7 -> continue
   k0 = const allocation + 0
   fn1 = std::ptr::const_ptr::<impl *const T>::offset_from_unsigned::precondition_check
@@ -1792,8 +1792,8 @@ L11:
     mov.w64 $-128, $-136
     jmp L8
   cleanup L0 -> continue
-  cleanup L5 -> continue
-  cleanup L9 -> continue
+  cleanup L5 -> continue (nounwind)
+  cleanup L9 -> continue (nounwind)
   k0 = const allocation + 0
   fn1 = alloc::raw_vec::RawVecInner::with_capacity_in
   k2 = const allocation + 0
@@ -1880,7 +1880,7 @@ L0:
 L1:
     add.w64 $-8, $-16, $-24
     ret $-8, 8
-  cleanup L0 -> continue
+  cleanup L0 -> continue (nounwind)
   k0 = const allocation + 0
   fn1 = core::num::<impl usize>::unchecked_add::precondition_check
 
@@ -1949,7 +1949,7 @@ L0:
 L1:
     call.sym $0, sym2, 0, [4294967240, 8, 4294967248, 264, 4294967175, 513, 4294967160, 776]
     unreachable
-  cleanup L1 -> continue
+  cleanup L1 -> continue (nounwind)
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
@@ -2100,7 +2100,7 @@ L9:
     ret $-16, 526344
   cleanup L0 -> continue
   cleanup L2 -> continue
-  cleanup L8 -> continue
+  cleanup L8 -> continue (nounwind)
   sym0 = alloc::raw_vec::RawVecInner::try_allocate_in
   sym1 = alloc::raw_vec::handle_error
   k2 = const allocation + 0
@@ -2264,7 +2264,7 @@ L0:
     unreachable
 L1:
     ret $0, 0
-  cleanup L0 -> continue
+  cleanup L0 -> continue (nounwind)
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
@@ -2299,7 +2299,7 @@ L0:
     unreachable
 L1:
     ret $0, 0
-  cleanup L0 -> continue
+  cleanup L0 -> continue (nounwind)
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
@@ -2386,8 +2386,8 @@ L9:
 L10:
     call $0, fn4, 0, [4294967256, 8, 4294967264, 264, 4294967240, 520, 4294967248, 776, 4294967200, 1032]
     jmp L0
-  cleanup L2 -> continue
-  cleanup L8 -> continue
+  cleanup L2 -> continue (nounwind)
+  cleanup L8 -> continue (nounwind)
   cleanup L10 -> continue
   k0 = const allocation + 0
   fn1 = std::slice::from_raw_parts_mut::precondition_check
@@ -2497,9 +2497,9 @@ L5:
     mov.w128 $-16, $-128
     store.copy [$-80 + 0], $-32, 32
     ret $-80, 8
-  cleanup L0 -> continue
-  cleanup L2 -> continue
-  cleanup L4 -> continue
+  cleanup L0 -> continue (nounwind)
+  cleanup L2 -> continue (nounwind)
+  cleanup L4 -> continue (nounwind)
   fn0 = core::slice::<impl [T]>::split_at_mut_unchecked::precondition_check
   fn1 = std::slice::from_raw_parts_mut::precondition_check
   fn2 = std::slice::from_raw_parts_mut::precondition_check
@@ -2688,7 +2688,7 @@ L0:
 L1:
     call.sym $0, sym2, 0, [4294967240, 8, 4294967248, 264, 4294967175, 513, 4294967160, 776]
     unreachable
-  cleanup L1 -> continue
+  cleanup L1 -> continue (nounwind)
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
@@ -2721,7 +2721,7 @@ L0:
 L1:
     call.sym $0, sym2, 0, [4294967232, 8, 4294967240, 264, 4294967167, 513, 4294967152, 776]
     unreachable
-  cleanup L1 -> continue
+  cleanup L1 -> continue (nounwind)
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
@@ -2804,8 +2804,8 @@ L9:
 L10:
     call $0, fn4, 0, [4294967256, 8, 4294967264, 264, 4294967240, 520, 4294967248, 776, 4294967200, 1032]
     jmp L0
-  cleanup L2 -> continue
-  cleanup L8 -> continue
+  cleanup L2 -> continue (nounwind)
+  cleanup L8 -> continue (nounwind)
   cleanup L10 -> continue
   k0 = const allocation + 0
   fn1 = std::slice::from_raw_parts_mut::precondition_check
@@ -2925,9 +2925,9 @@ L5:
     mov.w128 $-16, $-128
     store.copy [$-80 + 0], $-32, 32
     ret $-80, 8
-  cleanup L0 -> continue
-  cleanup L2 -> continue
-  cleanup L4 -> continue
+  cleanup L0 -> continue (nounwind)
+  cleanup L2 -> continue (nounwind)
+  cleanup L4 -> continue (nounwind)
   fn0 = core::slice::<impl [T]>::split_at_mut_unchecked::precondition_check
   fn1 = std::slice::from_raw_parts_mut::precondition_check
   fn2 = std::slice::from_raw_parts_mut::precondition_check
@@ -2983,7 +2983,7 @@ L1:
 L2:
     call $0, fn1, 0, [4294967248, 8, 4294967240, 264]
     ret $0, 0
-  cleanup L0 -> continue
+  cleanup L0 -> continue (nounwind)
   cleanup L2 -> continue
   fn0 = core::slice::<impl [T]>::swap_unchecked::precondition_check
   fn1 = std::ptr::swap::<u32>
@@ -3022,7 +3022,7 @@ L3:
     memcpy $-96, $-88, $-128
     ret $0, 0
   cleanup L0 -> continue
-  cleanup L2 -> continue
+  cleanup L2 -> continue (nounwind)
   sym0 = core::slice::copy_from_slice_impl::len_mismatch_fail
   k1 = const allocation + 0
   fn2 = std::ptr::copy_nonoverlapping::precondition_check
@@ -3203,14 +3203,14 @@ L27:
 L28:
     call $-59, fn14, 1, [4294967256, 8, 4294967216, 264, 4294967224, 520]
     jmp L7
-  cleanup L12 -> continue
-  cleanup L14 -> continue
+  cleanup L12 -> continue (nounwind)
+  cleanup L14 -> continue (nounwind)
   cleanup L16 -> continue
-  cleanup L18 -> continue
-  cleanup L20 -> continue
+  cleanup L18 -> continue (nounwind)
+  cleanup L20 -> continue (nounwind)
   cleanup L22 -> continue
-  cleanup L24 -> continue
-  cleanup L26 -> continue
+  cleanup L24 -> continue (nounwind)
+  cleanup L26 -> continue (nounwind)
   cleanup L28 -> continue
   k0 = const allocation + 0
   fn1 = <usize as std::slice::SliceIndex<[T]>>::get_unchecked::precondition_check
@@ -3355,14 +3355,14 @@ L27:
 L28:
     call $-59, fn14, 1, [4294967256, 8, 4294967216, 264, 4294967224, 520]
     jmp L7
-  cleanup L12 -> continue
-  cleanup L14 -> continue
+  cleanup L12 -> continue (nounwind)
+  cleanup L14 -> continue (nounwind)
   cleanup L16 -> continue
-  cleanup L18 -> continue
-  cleanup L20 -> continue
+  cleanup L18 -> continue (nounwind)
+  cleanup L20 -> continue (nounwind)
   cleanup L22 -> continue
-  cleanup L24 -> continue
-  cleanup L26 -> continue
+  cleanup L24 -> continue (nounwind)
+  cleanup L26 -> continue (nounwind)
   cleanup L28 -> continue
   k0 = const allocation + 0
   fn1 = <usize as std::slice::SliceIndex<[T]>>::get_unchecked::precondition_check
@@ -3474,11 +3474,11 @@ L18:
     ret $-8, 8
   cleanup L1 -> continue
   cleanup L2 -> continue
-  cleanup L6 -> continue
+  cleanup L6 -> continue (nounwind)
   cleanup L9 -> continue
-  cleanup L12 -> continue
+  cleanup L12 -> continue (nounwind)
   cleanup L15 -> continue
-  cleanup L17 -> continue
+  cleanup L17 -> continue (nounwind)
   fn0 = core::slice::sort::shared::pivot::median3::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
   fn1 = core::slice::sort::shared::pivot::median3_rec::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
   k2 = const allocation + 0
@@ -3588,11 +3588,11 @@ L18:
     ret $-8, 8
   cleanup L1 -> continue
   cleanup L2 -> continue
-  cleanup L6 -> continue
+  cleanup L6 -> continue (nounwind)
   cleanup L9 -> continue
-  cleanup L12 -> continue
+  cleanup L12 -> continue (nounwind)
   cleanup L15 -> continue
-  cleanup L17 -> continue
+  cleanup L17 -> continue (nounwind)
   fn0 = core::slice::sort::shared::pivot::median3::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
   fn1 = core::slice::sort::shared::pivot::median3_rec::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
   k2 = const allocation + 0
@@ -3907,9 +3907,9 @@ L20:
     jmp L7
   cleanup L2 -> continue
   cleanup L9 -> continue
-  cleanup L14 -> continue
+  cleanup L14 -> continue (nounwind)
   cleanup L16 -> continue
-  cleanup L19 -> continue
+  cleanup L19 -> continue (nounwind)
   fn0 = core::slice::sort::shared::smallsort::merge_down::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
   sym1 = core::slice::sort::shared::smallsort::panic_on_ord_violation
   k2 = const allocation + 0
@@ -4049,9 +4049,9 @@ L20:
     jmp L7
   cleanup L2 -> continue
   cleanup L9 -> continue
-  cleanup L14 -> continue
+  cleanup L14 -> continue (nounwind)
   cleanup L16 -> continue
-  cleanup L19 -> continue
+  cleanup L19 -> continue (nounwind)
   fn0 = core::slice::sort::shared::smallsort::merge_down::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
   sym1 = core::slice::sort::shared::smallsort::panic_on_ord_violation
   k2 = const allocation + 0
@@ -4447,7 +4447,7 @@ L7:
     ptr.index $-96, $-48, $-128, 8
     jmp L5
   cleanup L0 -> continue
-  cleanup L3 -> continue
+  cleanup L3 -> continue (nounwind)
   fn0 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
   k1 = const allocation + 0
   fn2 = std::ptr::copy_nonoverlapping::precondition_check
@@ -4514,7 +4514,7 @@ L7:
     ptr.index $-96, $-48, $-128, 4
     jmp L5
   cleanup L0 -> continue
-  cleanup L3 -> continue
+  cleanup L3 -> continue (nounwind)
   fn0 = <for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt} as std::ops::FnMut<(&u32, &u32)>>::call_mut - shim(for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt})
   k1 = const allocation + 0
   fn2 = std::ptr::copy_nonoverlapping::precondition_check
@@ -4569,7 +4569,7 @@ L4:
     store.copy [$-80 + 0], $-24, 24
     ret $-80, 8
   cleanup L0 -> continue
-  cleanup L3 -> continue
+  cleanup L3 -> continue (nounwind)
   fn0 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
   k1 = const allocation + 0
   fn2 = std::ptr::copy_nonoverlapping::precondition_check
@@ -4622,7 +4622,7 @@ L4:
     store.copy [$-80 + 0], $-24, 24
     ret $-80, 8
   cleanup L0 -> continue
-  cleanup L3 -> continue
+  cleanup L3 -> continue (nounwind)
   fn0 = <for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt} as std::ops::FnMut<(&u32, &u32)>>::call_mut - shim(for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt})
   k1 = const allocation + 0
   fn2 = std::ptr::copy_nonoverlapping::precondition_check
@@ -4656,7 +4656,7 @@ L3:
 L4:
     call $0, fn2, 0, [4294967280, 8, 4294967288, 264, 4294967256, 520, 4294967264, 776, 4294967272, 1032]
     jmp L0
-  cleanup L2 -> continue
+  cleanup L2 -> continue (nounwind)
   cleanup L4 -> continue
   k0 = const allocation + 0
   fn1 = std::slice::from_raw_parts_mut::precondition_check
@@ -5407,11 +5407,11 @@ L27:
   cleanup L5 -> continue
   cleanup L7 -> continue
   cleanup L10 -> continue
-  cleanup L16 -> continue
-  cleanup L19 -> continue
-  cleanup L22 -> continue
+  cleanup L16 -> continue (nounwind)
+  cleanup L19 -> continue (nounwind)
+  cleanup L22 -> continue (nounwind)
   cleanup L24 -> continue
-  cleanup L26 -> continue
+  cleanup L26 -> continue (nounwind)
   fn0 = core::slice::sort::shared::smallsort::sort13_optimal::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
   fn1 = core::slice::sort::shared::smallsort::sort9_optimal::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
   fn2 = core::slice::sort::shared::smallsort::insertion_sort_shift_left::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
@@ -5858,10 +5858,10 @@ L20:
   cleanup L10 -> continue
   cleanup L11 -> continue
   cleanup L12 -> continue
-  cleanup L13 -> continue
-  cleanup L15 -> continue
-  cleanup L17 -> continue
-  cleanup L19 -> continue
+  cleanup L13 -> continue (nounwind)
+  cleanup L15 -> continue (nounwind)
+  cleanup L17 -> continue (nounwind)
+  cleanup L19 -> continue (nounwind)
   fn0 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
   fn1 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
   fn2 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
@@ -6026,10 +6026,10 @@ L20:
   cleanup L10 -> continue
   cleanup L11 -> continue
   cleanup L12 -> continue
-  cleanup L13 -> continue
-  cleanup L15 -> continue
-  cleanup L17 -> continue
-  cleanup L19 -> continue
+  cleanup L13 -> continue (nounwind)
+  cleanup L15 -> continue (nounwind)
+  cleanup L17 -> continue (nounwind)
+  cleanup L19 -> continue (nounwind)
   fn0 = <for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt} as std::ops::FnMut<(&u32, &u32)>>::call_mut - shim(for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt})
   fn1 = <for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt} as std::ops::FnMut<(&u32, &u32)>>::call_mut - shim(for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt})
   fn2 = <for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt} as std::ops::FnMut<(&u32, &u32)>>::call_mut - shim(for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt})
@@ -6091,7 +6091,7 @@ L6:
     jmp L2
   cleanup L0 -> continue
   cleanup L1 -> continue
-  cleanup L4 -> continue
+  cleanup L4 -> continue (nounwind)
   cleanup L6 -> continue
   fn0 = core::slice::sort::shared::smallsort::sort4_stable::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
   fn1 = core::slice::sort::shared::smallsort::sort4_stable::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
@@ -6138,7 +6138,7 @@ L6:
     jmp L2
   cleanup L0 -> continue
   cleanup L1 -> continue
-  cleanup L4 -> continue
+  cleanup L4 -> continue (nounwind)
   cleanup L6 -> continue
   fn0 = core::slice::sort::shared::smallsort::sort4_stable::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
   fn1 = core::slice::sort::shared::smallsort::sort4_stable::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>
@@ -6373,8 +6373,8 @@ L10:
   cleanup L0 -> continue
   cleanup L1 -> continue
   cleanup L2 -> continue
-  cleanup L6 -> continue
-  cleanup L9 -> continue
+  cleanup L6 -> continue (nounwind)
+  cleanup L9 -> continue (nounwind)
   fn0 = <for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt} as std::ops::FnMut<(&u32, &u32)>>::call_mut - shim(for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt})
   fn1 = std::hint::select_unpredictable::<*mut u32>
   fn2 = std::hint::select_unpredictable::<*mut u32>
@@ -6417,7 +6417,7 @@ L3:
     mov.w64 $-8, $-72
     ret $-16, 526344
   cleanup L0 -> continue
-  cleanup L2 -> continue
+  cleanup L2 -> continue (nounwind)
   k0 = const allocation + 0
   sym1 = core::panicking::panic_const::panic_const_div_by_zero
   k2 = const allocation + 0
@@ -6847,7 +6847,7 @@ L31:
   cleanup L18 -> continue
   cleanup L24 -> continue
   cleanup L26 -> continue
-  cleanup L29 -> continue
+  cleanup L29 -> continue (nounwind)
   cleanup L31 -> continue
   k0 = const allocation + 0
   sym1 = core::panicking::panic_const::panic_const_div_by_zero
@@ -7161,7 +7161,7 @@ L19:
     br.eq.w64 $-72, $-16, L5
     jmp L4
   cleanup L14 -> continue
-  cleanup L18 -> continue
+  cleanup L18 -> continue (nounwind)
   fn0 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
   k1 = const allocation + 0
   fn2 = std::ptr::copy_nonoverlapping::precondition_check
@@ -7225,7 +7225,7 @@ L7:
     store.w64 [$-8 + 16], $-96
     jmp L0
   cleanup L1 -> continue
-  cleanup L6 -> continue
+  cleanup L6 -> continue (nounwind)
   fn0 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
   k1 = const allocation + 0
   fn2 = std::ptr::copy_nonoverlapping::precondition_check
@@ -7402,7 +7402,7 @@ L8:
     ptr.index $-40, $-48, $-64, 8
     store.w64 [$-16 + 8], $-40
     ret $-8, 8
-  cleanup L7 -> continue
+  cleanup L7 -> continue (nounwind)
   k0 = const allocation + 0
   fn1 = std::ptr::copy_nonoverlapping::precondition_check
 
@@ -7835,7 +7835,7 @@ L39:
     store.w32 [$-304 + 0], $-336
     store.w32 [$-304 + 4], $-332
     jmp L22
-  cleanup L2 -> continue
+  cleanup L2 -> continue (nounwind)
   cleanup L4 -> continue
   cleanup L5 -> continue
   cleanup L6 -> continue
@@ -7848,10 +7848,10 @@ L39:
   cleanup L15 -> continue
   cleanup L17 -> continue
   cleanup L19 -> continue
-  cleanup L28 -> continue
-  cleanup L31 -> continue
-  cleanup L36 -> continue
-  cleanup L38 -> continue
+  cleanup L28 -> continue (nounwind)
+  cleanup L31 -> continue (nounwind)
+  cleanup L36 -> continue (nounwind)
+  cleanup L38 -> continue (nounwind)
   sym0 = island ryo_island_call[FnDef(DefId(2:2308 ~ core[efd5]::intrinsics::saturating_sub), Binder { value: [usize], bound_vars: [] }), (usize, usize), usize]
   fn1 = core::slice::sort::stable::quicksort::quicksort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>::{closure#0}
   fn2 = core::slice::sort::stable::quicksort::PartitionState::<(u32, u32)>::partition_one
@@ -8099,7 +8099,7 @@ L39:
     store.w32 [$-304 + 0], $-336
     store.w32 [$-304 + 4], $-332
     jmp L22
-  cleanup L2 -> continue
+  cleanup L2 -> continue (nounwind)
   cleanup L4 -> continue
   cleanup L5 -> continue
   cleanup L6 -> continue
@@ -8112,10 +8112,10 @@ L39:
   cleanup L15 -> continue
   cleanup L17 -> continue
   cleanup L19 -> continue
-  cleanup L28 -> continue
-  cleanup L31 -> continue
-  cleanup L36 -> continue
-  cleanup L38 -> continue
+  cleanup L28 -> continue (nounwind)
+  cleanup L31 -> continue (nounwind)
+  cleanup L36 -> continue (nounwind)
+  cleanup L38 -> continue (nounwind)
   sym0 = island ryo_island_call[FnDef(DefId(2:2308 ~ core[efd5]::intrinsics::saturating_sub), Binder { value: [usize], bound_vars: [] }), (usize, usize), usize]
   fn1 = std::slice::<impl [(u32, u32)]>::sort_by_key::<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}
   fn2 = core::slice::sort::stable::quicksort::PartitionState::<(u32, u32)>::partition_one
@@ -8234,7 +8234,7 @@ L22:
     jmp L19
   cleanup L3 -> continue
   cleanup L4 -> continue
-  cleanup L9 -> continue
+  cleanup L9 -> continue (nounwind)
   cleanup L13 -> continue
   cleanup L15 -> continue
   cleanup L18 -> continue
@@ -8344,7 +8344,7 @@ L14:
     unreachable
   cleanup L2 -> continue
   cleanup L6 -> continue
-  cleanup L9 -> continue
+  cleanup L9 -> continue (nounwind)
   cleanup L12 -> continue
   fn0 = <for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt} as std::ops::FnMut<(&u32, &u32)>>::call_mut - shim(for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt})
   fn1 = <for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt} as std::ops::FnMut<(&u32, &u32)>>::call_mut - shim(for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt})
@@ -8736,8 +8736,8 @@ L8:
     store.w64 [$-16 + 16], $-80
     ret $0, 0
   cleanup L0 -> continue
-  cleanup L4 -> continue
-  cleanup L7 -> continue
+  cleanup L4 -> continue (nounwind)
+  cleanup L7 -> continue (nounwind)
   fn0 = <for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt} as std::ops::FnMut<(&u32, &u32)>>::call_mut - shim(for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt})
   k1 = const allocation + 0
   fn2 = std::ptr::copy::precondition_check
@@ -8942,8 +8942,8 @@ L8:
     store.w64 [$-16 + 16], $-80
     ret $0, 0
   cleanup L0 -> continue
-  cleanup L4 -> continue
-  cleanup L7 -> continue
+  cleanup L4 -> continue (nounwind)
+  cleanup L7 -> continue (nounwind)
   fn0 = core::slice::sort::unstable::quicksort::quicksort::<u32, for<'a, 'b> fn(&'a u32, &'b u32) -> bool {<u32 as std::cmp::PartialOrd>::lt}>::{closure#0}
   k1 = const allocation + 0
   fn2 = std::ptr::copy::precondition_check
@@ -9188,7 +9188,7 @@ L2:
 L3:
     le.u.w64 $-1, $-88, $-48
     ret $-1, 1
-  cleanup L0 -> continue
+  cleanup L0 -> continue (nounwind)
   k0 = const allocation + 0
   sym1 = core::panicking::panic_nounwind
 
@@ -9913,9 +9913,9 @@ L8:
     mov.w64 $-8, $-96
     imm.w64 $-16, 1
     jmp L4
-  cleanup L2 -> continue
-  cleanup L6 -> continue
-  cleanup L8 -> continue
+  cleanup L2 -> continue (nounwind)
+  cleanup L6 -> continue (nounwind)
+  cleanup L8 -> continue (nounwind)
   k0 = const allocation + 0
   k1 = const allocation + 0
   fn2 = core::num::<impl usize>::unchecked_add::precondition_check
@@ -10023,7 +10023,7 @@ L0:
     unreachable
 L1:
     ret $0, 0
-  cleanup L0 -> continue
+  cleanup L0 -> continue (nounwind)
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
@@ -10559,7 +10559,7 @@ L0:
 L1:
     call.sym $0, sym2, 0, [4294967240, 8, 4294967248, 264, 4294967175, 513, 4294967160, 776]
     unreachable
-  cleanup L1 -> continue
+  cleanup L1 -> continue (nounwind)
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
@@ -11043,9 +11043,9 @@ L9:
     store.w32 [$-16 + 0], $-96
     ; end $-52, 4 bytes
     ret $0, 0
-  cleanup L0 -> continue
-  cleanup L5 -> continue
-  cleanup L8 -> continue
+  cleanup L0 -> continue (nounwind)
+  cleanup L5 -> continue (nounwind)
+  cleanup L8 -> continue (nounwind)
   k0 = const allocation + 0
   fn1 = std::ptr::copy_nonoverlapping::precondition_check
   k2 = const allocation + 0
@@ -11123,7 +11123,7 @@ L5:
     br.eq.imm.w64 $-56, 0, L4
     jmp L2
     unreachable
-  cleanup L0 -> continue
+  cleanup L0 -> continue (nounwind)
   cleanup L3 -> continue
   fn0 = std::ptr::swap_nonoverlapping::precondition_check
   fn1 = std::ptr::swap_nonoverlapping_bytes
@@ -11162,7 +11162,7 @@ L5:
     br.eq.imm.w64 $-56, 0, L4
     jmp L2
     unreachable
-  cleanup L0 -> continue
+  cleanup L0 -> continue (nounwind)
   cleanup L3 -> continue
   fn0 = std::ptr::swap_nonoverlapping::precondition_check
   fn1 = std::ptr::swap_nonoverlapping_bytes
@@ -11341,7 +11341,7 @@ L6:
 L7:
     call $0, fn2, 0, [4294967192, 8, 4294967176, 264]
     jmp L1
-  cleanup L5 -> continue
+  cleanup L5 -> continue (nounwind)
   cleanup L7 -> continue
   k0 = const allocation + 0
   fn1 = core::num::<impl usize>::unchecked_add::precondition_check
@@ -11528,7 +11528,7 @@ L5:
     mov.w64 $-16, $-80
     mov.w64 $-8, $-72
     ret $-16, 526344
-  cleanup L4 -> continue
+  cleanup L4 -> continue (nounwind)
   k0 = const allocation + 0
   fn1 = std::slice::from_raw_parts_mut::precondition_check
 
@@ -11606,9 +11606,9 @@ L10:
     mov.w64 $-16, $-64
     mov.w64 $-8, $-56
     ret $-16, 526344
-  cleanup L4 -> continue
+  cleanup L4 -> continue (nounwind)
   cleanup L7 -> continue
-  cleanup L9 -> continue
+  cleanup L9 -> continue (nounwind)
   k0 = const allocation + 0
   fn1 = std::ptr::const_ptr::<impl *const T>::offset_from_unsigned::precondition_check
   k2 = const allocation + 0
@@ -11985,7 +11985,7 @@ L0:
 L1:
     call.sym $0, sym2, 0, [4294967240, 8, 4294967248, 264, 4294967175, 513, 4294967160, 776]
     unreachable
-  cleanup L1 -> continue
+  cleanup L1 -> continue (nounwind)
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
@@ -12025,7 +12025,7 @@ L4:
     memcpy $-64, $-56, $-88
     jmp L1
   cleanup L0 -> continue
-  cleanup L3 -> continue
+  cleanup L3 -> continue (nounwind)
   fn0 = std::vec::Vec::<u32>::reserve
   k1 = const allocation + 0
   fn2 = std::ptr::copy_nonoverlapping::precondition_check
