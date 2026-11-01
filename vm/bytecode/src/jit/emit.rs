@@ -200,7 +200,9 @@ impl X86 {
 /// An ABI register holding a value of `size` bytes: a general-purpose one or `xmm<n>`.
 #[derive(Clone, Copy)]
 enum AbiReg {
-    G(R, u32),
+    /// A general-purpose register, the value's size, and whether a narrow value is
+    /// sign-extended to 32 bits instead of zero-extended ([`asm::ArgReg::sext`]).
+    G(R, u32, bool),
     X(u8, u32),
 }
 
@@ -215,7 +217,7 @@ fn ret_regs(parts: &[RetPart]) -> Vec<AbiReg> {
                 AbiReg::X(x - 1, p.size)
             } else {
                 g += 1;
-                AbiReg::G(R::RETS[g - 1], p.size)
+                AbiReg::G(R::RETS[g - 1], p.size, false)
             }
         })
         .collect()
@@ -1067,7 +1069,9 @@ impl<'a> E<'a> {
 
     /// The registers of a call's arguments (or a function's parameters).
     fn arg_regs(&self, regs: &[asm::ArgReg]) -> Vec<AbiReg> {
-        regs.iter().map(|r| if r.xmm { AbiReg::X(r.index as u8, r.size) } else { AbiReg::G(int_arg(self.mode.pe, r.index), r.size) }).collect()
+        regs.iter()
+            .map(|r| if r.xmm { AbiReg::X(r.index as u8, r.size) } else { AbiReg::G(int_arg(self.mode.pe, r.index), r.size, r.sext) })
+            .collect()
     }
 
     /// Moves values into ABI registers (call arguments or return parts): `xmm` ones first
@@ -1082,7 +1086,7 @@ impl<'a> E<'a> {
         }
         let mut ms = Vec::new();
         for (&r, &v) in regs.iter().zip(vals) {
-            if let AbiReg::G(g, _) = r {
+            if let AbiReg::G(g, ..) = r {
                 ms.push((Rm::R(g), self.src(v)));
             }
         }
@@ -1091,10 +1095,12 @@ impl<'a> E<'a> {
         }
         self.moves(ms);
         // Narrow integers zero-extended, as the AOT code loads them: native callees may rely
-        // on it (`zeroext`).
+        // on it (`zeroext`); or sign-extended to 32 bits (`signext`).
         for (&r, &v) in regs.iter().zip(vals) {
-            if let AbiReg::G(g, size) = r {
-                if size < 8 && self.zext(v) > size as u8 {
+            if let AbiReg::G(g, size, sext) = r {
+                if sext && size < 4 {
+                    self.a.x().movsx(g, size as u8, Rm::R(g));
+                } else if size < 8 && self.zext(v) > size as u8 {
                     self.a.x().movzx(g, size as u8, Rm::R(g));
                 }
             }
@@ -1106,7 +1112,7 @@ impl<'a> E<'a> {
     fn from_abi(&mut self, regs: &[AbiReg], vals: &[Value]) {
         let mut ms = Vec::new();
         for (&r, &v) in regs.iter().zip(vals) {
-            if let (AbiReg::G(g, _), Some(d)) = (r, self.dst(v)) {
+            if let (AbiReg::G(g, ..), Some(d)) = (r, self.dst(v)) {
                 ms.push((d, Src::R(g)));
             }
         }

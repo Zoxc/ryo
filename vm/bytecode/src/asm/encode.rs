@@ -431,6 +431,10 @@ pub(super) fn param_load(s: i32, w: u32, pe: bool) -> Vec<Item> {
     let mut out = Vec::new();
     // An xmm argument has no integer register: its index may be past the last one.
     let r = if a.xmm { F16_TMP } else { int_arg(pe, a.index) };
+    if a.sext {
+        out.push(Item::Ld { w: width(a.size), sx: true, dst: r, m });
+        return out;
+    }
     reg_load(a.xmm, a.size, r, a.index as u8, m, &mut out);
     out
 }

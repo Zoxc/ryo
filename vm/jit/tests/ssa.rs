@@ -384,8 +384,8 @@ fn sse_arguments_and_results() {
     let mut w = ImageWriter::new(unique_scid());
     let s_ret = w.symbol("ret_addr", 0);
     let s_mix = w.symbol("mix", 0);
-    let x8 = |i| ArgReg { xmm: true, size: 8, index: i }.word();
-    let x4 = |i| ArgReg { xmm: true, size: 4, index: i }.word();
+    let x8 = |i| ArgReg { xmm: true, size: 8, index: i, sext: false }.word();
+    let x4 = |i| ArgReg { xmm: true, size: 4, index: i, sext: false }.word();
     let k_ff = ret_kind(&[RetPart { xmm: true, size: 8, off: 0 }, RetPart { xmm: true, size: 8, off: 8 }]);
     let k_if = ret_kind(&[RetPart { xmm: false, size: 8, off: 0 }, RetPart { xmm: true, size: 8, off: 8 }]);
     let k_f = ret_kind(&[RetPart { xmm: true, size: 8, off: 0 }]);

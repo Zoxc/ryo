@@ -84,3 +84,22 @@ remove it once a Lean session has handled it.
 
 - `ryo_probe_stack` (Commit: "Rt: Fix JIT diagnostics, probe_stack and registry sort"): the
   last probe is exact (no page below the frame); only relevant if the Lean side describes it.
+
+- SysV C-ABI calls (commit "Backend: Call SysV extern \"C\" functions directly"): calls of non-unwinding `extern "C"`
+  functions (symbols and fn pointers) are direct `call.sym`/`call.sym.ind`/`call.ptr` on SysV
+  when `sig.rs` builds a plan, else the `call_cN` island as before (always on PE). New in the
+  plan and certificate (`plan_json`): `ArgLoc::StackByval {at, size, align}` (JSON
+  `{"stackByval", "size", "align"}`) for `Indirect { on_stack: true }` (the whole value copied
+  to `at`, aligned to `max(8, pointee_align)`, no register); `Cast` pieces with an 8-byte
+  prefix unit at 0 and one rest unit at 8, each integer (1-8 bytes) or float (4/8 bytes, an
+  8-byte `xmm` unit may hold two `f32`s); `ArgReg.sext` (bit 7 of the register word,
+  `asm::ARG_SEXT`, call argument lists only, 1-/2-byte integers: `movsx r32, byte/word
+  [slot]`; `ArgReg::of(_, true)` rejects it), JSON `"sext": true` inside `"reg"` only when
+  set; `ArgLoc::Stack.ext` (JSON `"ext": "zext"|"sext"` only when set): C's extension of a
+  1-/2-byte stack argument, emitted as `zext`/`sext.w{8,16}.w64` into the outgoing slot
+  instead of a `mov`. C calls get no call-site entry (they can't unwind). `dump_lean.rs`'s
+  `scalars` now cover those `Cast` shapes and carry `"sext": true` for `signext` scalars
+  under 4 bytes. The Lean plan computation (`Ryo/Check/Lower/Plan.lean`), the cert reader
+  (`Cert.lean`), the arg-list word decoding (`ArgReg`, the reduced decoder's `movsx` loads)
+  and the ABI convention lemmas need the C shapes; definitions of `extern "C"` fns stay
+  native.

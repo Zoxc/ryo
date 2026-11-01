@@ -107,7 +107,7 @@ fn arguments_and_results() {
         a.i(arg(-8 - 8 * i as i32, i));
     }
     for i in 0..8 {
-        a.i(Insn::Arg { d: Slot(-56 - 8 * i as i32), r: ArgReg { xmm: true, size: 8, index: i }.word() });
+        a.i(Insn::Arg { d: Slot(-56 - 8 * i as i32), r: ArgReg { xmm: true, size: 8, index: i, sext: false }.word() });
     }
     a.i(Insn::CallSym { d: Slot(-136), sym: s_ret, k: 8, a: List::from_words(&[]) });
     let mut srcs: Vec<i32> = (1..6).map(|i| -8 - 8 * i).collect();
@@ -1557,7 +1557,7 @@ fn pe_numeric_args() {
     // p[0..6] and returns x.
     let mut a = Asm::new();
     a.i(arg(-8, 0));
-    a.i(Insn::Arg { d: Slot(-16), r: ArgReg { xmm: true, size: 2, index: 1 }.word() });
+    a.i(Insn::Arg { d: Slot(-16), r: ArgReg { xmm: true, size: 2, index: 1, sext: false }.word() });
     a.i(arg(-24, 2));
     a.i(arg(-32, 3));
     let hi = Slot(48);

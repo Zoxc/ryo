@@ -162,7 +162,7 @@ fn canonical_return(op: Opcode, w: &mut Vec<u32>, rng: &mut Rng, n: usize) {
     if op == Opcode::Arg {
         let xmm = rng.below(2) == 0;
         let size = if xmm { [2, 4, 8, 16][rng.below(4) as usize] } else { 1 + rng.below(8) as u32 };
-        w[operand_word(op, "r")] = asm::ArgReg { xmm, size, index: rng.below(4) as u32 }.word();
+        w[operand_word(op, "r")] = asm::ArgReg { xmm, size, index: rng.below(4) as u32, sext: false }.word();
         return;
     }
     let call = matches!(op, Opcode::Call | Opcode::CallSym | Opcode::CallSymInd | Opcode::CallPtr);
@@ -175,7 +175,7 @@ fn canonical_return(op: Opcode, w: &mut Vec<u32>, rng: &mut Rng, n: usize) {
             let (xmm, index) = regs.remove(rng.below(regs.len() as u64) as usize);
             let size = if xmm { [2, 4, 8, 16][rng.below(4) as usize] } else { [1, 2, 4, 8][rng.below(4) as usize] };
             let addr = !xmm && rng.below(3) == 0;
-            let r = asm::ArgReg { xmm, size: if addr { 8 } else { size }, index }.word();
+            let r = asm::ArgReg { xmm, size: if addr { 8 } else { size }, index, sext: false }.word();
             w.extend([rng.next() as u32, if addr { r | asm::ARG_ADDR } else { r }]);
         }
     }

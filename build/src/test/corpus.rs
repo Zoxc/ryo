@@ -255,6 +255,35 @@ pub(crate) const CORPUS: &[Program] = &[
             "f128s::vm_to_native", "wide_split::vm", "wide_split::vm_to_native", "floats_late::vm", "floats_late::vm_to_native",
         ],
     ),
+    // The C ABI sweep: VM calls of native `extern "C"` functions.
+    single!(
+        "c_abi",
+        vm: &[
+            "main", "libc_calls", "ext::direct", "ext::ptr", "ext_wide::direct", "ext_wide::ptr", "ret_i8::direct",
+            "ret_i8::ptr", "ret_u16::direct", "ret_u16::ptr", "ret_bool::direct", "ret_bool::ptr", "floats::direct",
+            "floats::ptr", "ret_f64::direct", "ret_f64::ptr", "wide::direct", "wide::ptr", "f2::direct", "f2::ptr",
+            "di::direct", "di::ptr", "ifd::direct", "ifd::ptr", "s12::direct", "s12::ptr", "f3::direct", "f3::ptr",
+            "s16::direct", "s16::ptr", "d2::direct", "d2::ptr", "bytes::direct", "bytes::ptr", "s24::direct",
+            "s24::ptr", "s32::direct", "s32::ptr", "byval_mix::direct", "byval_mix::ptr", "byval_align::direct",
+            "byval_align::ptr", "spill::direct", "spill::ptr", "all_or_nothing_int::direct", "all_or_nothing_int::ptr",
+            "all_or_nothing_sse::direct", "all_or_nothing_sse::ptr", "all_or_nothing_mixed::direct",
+            "all_or_nothing_mixed::ptr", "wide_late::direct", "wide_late::ptr", "unit_ret::direct", "unit_ret::ptr",
+        ],
+        native: &[
+            "ext::callee", "ext::native_caller", "ext_wide::callee", "ext_wide::native_caller", "ret_i8::callee",
+            "ret_i8::native_caller", "ret_u16::callee", "ret_u16::native_caller", "ret_bool::callee",
+            "ret_bool::native_caller", "floats::callee", "floats::native_caller", "ret_f64::callee",
+            "ret_f64::native_caller", "wide::callee", "wide::native_caller", "f2::callee", "f2::native_caller",
+            "di::callee", "di::native_caller", "ifd::callee", "ifd::native_caller", "s12::callee", "s12::native_caller",
+            "f3::callee", "f3::native_caller", "s16::callee", "s16::native_caller", "d2::callee", "d2::native_caller",
+            "bytes::callee", "bytes::native_caller", "s24::callee", "s24::native_caller", "s32::callee",
+            "s32::native_caller", "byval_mix::callee", "byval_mix::native_caller", "byval_align::callee",
+            "byval_align::native_caller", "spill::callee", "spill::native_caller", "all_or_nothing_int::callee",
+            "all_or_nothing_int::native_caller", "all_or_nothing_sse::callee", "all_or_nothing_sse::native_caller",
+            "all_or_nothing_mixed::callee", "all_or_nothing_mixed::native_caller", "wide_late::callee",
+            "wide_late::native_caller", "unit_ret::callee", "unit_ret::native_caller",
+        ],
+    ),
     single!(
         "vm_tail",
         vm: &["main", "count", "even", "odd", "big", "big2", "via_ptr", "to_upstream", "to_native", "virt", "panicky"]

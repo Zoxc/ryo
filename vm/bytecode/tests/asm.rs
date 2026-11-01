@@ -147,7 +147,7 @@ fn canonical_return(op: Opcode, w: &mut Vec<u32>, rng: &mut Rng, n: usize) {
     if op == Opcode::Arg {
         let xmm = rng.below(2) == 0;
         let size = if xmm { [2, 4, 8, 16][rng.below(4) as usize] } else { 1 + rng.below(8) as u32 };
-        w[operand_word(op, "r")] = asm::ArgReg { xmm, size, index: rng.below(4) as u32 }.word();
+        w[operand_word(op, "r")] = asm::ArgReg { xmm, size, index: rng.below(4) as u32, sext: false }.word();
         return;
     }
     let call = matches!(op, Opcode::Call | Opcode::CallSym | Opcode::CallSymInd | Opcode::CallPtr);
@@ -161,7 +161,7 @@ fn canonical_return(op: Opcode, w: &mut Vec<u32>, rng: &mut Rng, n: usize) {
             let (xmm, index) = regs.remove(rng.below(regs.len() as u64) as usize);
             let size = if xmm { [2, 4, 8, 16][rng.below(4) as usize] } else { [1, 2, 4, 8][rng.below(4) as usize] };
             let addr = !xmm && rng.below(3) == 0;
-            let r = asm::ArgReg { xmm, size: if addr { 8 } else { size }, index }.word();
+            let r = asm::ArgReg { xmm, size: if addr { 8 } else { size }, index, sext: false }.word();
             w.extend([rng.next() as u32, if addr { r | asm::ARG_ADDR } else { r }]);
         }
     }
@@ -1081,7 +1081,7 @@ fn decoders_survive_mutations() {
 fn rejects_sse_argument_loads_off_the_frame() {
     let m = Mode { fp_arg: false, frame_pointer: true, align_loops: false, pe: false, counters: false, far_rt: false };
     let k = asm::ret_kind(&[asm::RetPart { xmm: false, size: 8, off: 0 }]);
-    let w = asm::ArgReg { xmm: true, size: 8, index: 0 }.word();
+    let w = asm::ArgReg { xmm: true, size: 8, index: 0, sext: false }.word();
     let f = Fn {
         insns: vec![vec![Opcode::Call as u32, -16i32 as u32, 0, k, 2, -8i32 as u32, w], vec![Opcode::Abort as u32]],
         targets: Vec::new(),
@@ -1095,4 +1095,32 @@ fn rejects_sse_argument_loads_off_the_frame() {
     let mutated = asm::Encoded { code, ..enc.clone() };
     assert!(asm::decode(&mutated, m).is_err());
     assert!(asm::decode_reduced(&mutated, m).is_err());
+}
+
+/// A call's sign-extending argument loads (`asm::ARG_SEXT`, the C ABI's `signext`) encode as
+/// `movsx` and decode back to the same argument list; only 1- and 2-byte integer loads take it.
+#[test]
+fn sign_extending_argument_loads() {
+    let m = Mode { fp_arg: false, frame_pointer: true, align_loops: false, pe: false, counters: false, far_rt: false };
+    let b = asm::ArgReg { xmm: false, size: 1, index: 0, sext: true }.word();
+    let w = asm::ArgReg { xmm: false, size: 2, index: 1, sext: true }.word();
+    let z = asm::ArgReg { xmm: false, size: 1, index: 2, sext: false }.word();
+    assert_eq!(b & asm::ARG_SEXT, asm::ARG_SEXT);
+    let f = Fn {
+        insns: vec![vec![Opcode::Call as u32, 0, 0, 0, 6, -8i32 as u32, b, -16i32 as u32, w, -24i32 as u32, z], vec![Opcode::Abort as u32]],
+        targets: Vec::new(),
+        unwind: Vec::new(),
+    };
+    let enc = check(&f, 32, m, "call");
+    // `movsx edi, byte [rbp - 8]` (0f be 7d f8), `movsx esi, word [rbp - 16]` (0f bf 75 f0) and
+    // `movzx edx, byte [rbp - 24]` (0f b6 55 e8).
+    for p in [[0x0f, 0xbe, 0x7d, 0xf8], [0x0f, 0xbf, 0x75, 0xf0], [0x0f, 0xb6, 0x55, 0xe8]] {
+        assert!(enc.code.windows(4).any(|c| c == p), "{p:02x?} in {:02x?}", enc.code);
+    }
+    for (xmm, size) in [(false, 4), (false, 8), (true, 2), (true, 8)] {
+        let r = asm::ArgReg { xmm, size, index: 0, sext: true }.word();
+        assert!(asm::param_reg(r).is_none(), "sext {size}-byte xmm={xmm}");
+    }
+    assert!(asm::ArgReg::of(b, true).is_none(), "an `arg` doesn't extend");
+    assert!(asm::param_reg(b | asm::ARG_ADDR).is_none());
 }

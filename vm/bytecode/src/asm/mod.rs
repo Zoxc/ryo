@@ -538,26 +538,38 @@ pub const ARG_ADDR: u32 = 1 << 6;
 
 /// An `arg`'s register `r`: bits 0–4 the size it stores (1 to 8 bytes of an integer register,
 /// 2, 4, 8 or 16 of an SSE one; in a call's argument list ([`params_ok`]) the size it loads,
-/// integers 1, 2, 4 or 8), bit 5 an SSE register, bits 8–15 the register's
+/// integers 1, 2, 4 or 8), bit 5 an SSE register, bit 7 ([`ARG_SEXT`], call argument lists
+/// only, 1- or 2-byte integers) a sign-extending load, bits 8–15 the register's
 /// index among the convention's argument registers of its class: `rdi rsi rdx rcx r8 r9`
 /// (PE: `rcx rdx r8 r9`) and `xmm0`–`xmm7` (PE: `xmm0`–`xmm3`).
+///
+/// A call loads a 1- or 2-byte integer zero-extended to the whole register (`movzx`), or with
+/// `sext` sign-extended to 32 bits (`movsx`, the upper half zero): the C ABI's `zeroext` and
+/// `signext` arguments.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ArgReg {
     pub xmm: bool,
     pub size: u32,
     pub index: u32,
+    pub sext: bool,
 }
+
+/// In a call's argument list ([`params_ok`]): the 1- or 2-byte integer is loaded
+/// sign-extended to 32 bits ([`ArgReg`]).
+pub const ARG_SEXT: u32 = 1 << 7;
 
 impl ArgReg {
     pub const fn word(self) -> u32 {
-        self.size | (self.xmm as u32) << 5 | self.index << 8
+        self.size | (self.xmm as u32) << 5 | (self.sext as u32) << 7 | self.index << 8
     }
 
-    /// The register of the word `r`, if valid: `exact` for an `arg`'s store sizes.
+    /// The register of the word `r`, if valid: `exact` for an `arg`'s store sizes (no
+    /// [`ARG_SEXT`]).
     pub fn of(r: u32, exact: bool) -> Option<ArgReg> {
-        let a = ArgReg { xmm: r & 0x20 != 0, size: r & 0x1f, index: r >> 8 };
+        let a = ArgReg { xmm: r & 0x20 != 0, size: r & 0x1f, index: r >> 8, sext: r & ARG_SEXT != 0 };
         let int = if exact { (1..=8).contains(&a.size) } else { matches!(a.size, 1 | 2 | 4 | 8) };
         let ok = if a.xmm { matches!(a.size, 2 | 4 | 8 | 16) && a.index < 8 } else { int && a.index < 6 };
-        (ok && r & 0xc0 == 0 && a.word() == r).then_some(a)
+        let sext_ok = !a.sext || !exact && !a.xmm && matches!(a.size, 1 | 2);
+        (ok && sext_ok && r & ARG_ADDR == 0 && a.word() == r).then_some(a)
     }
 }

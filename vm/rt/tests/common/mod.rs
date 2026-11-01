@@ -73,7 +73,7 @@ impl Asm {
     /// size other than 0, 1, 2, 4, 8 and 16 bytes ([`Asm::ret`]).
     pub fn sret(&mut self, at: Slot) -> u32 {
         self.sret = Some(at);
-        self.i(Insn::Arg { d: at, r: ryo_bytecode::asm::ArgReg { xmm: false, size: 8, index: 0 }.word() })
+        self.i(Insn::Arg { d: at, r: ryo_bytecode::asm::ArgReg { xmm: false, size: 8, index: 0, sext: false }.word() })
     }
     /// `ret` of the `len` bytes at `s`: in `rax` (and `rdx`), or for another size through the
     /// sret pointer ([`Asm::sret`]). Returns the position of the first instruction.
@@ -459,14 +459,14 @@ pub fn call<A, R>(e: Entry, args: A) -> Result<R, Box<dyn Any + Send>> {
 pub fn regs(slots: &[i32]) -> Vec<u32> {
     let mut a = Vec::new();
     for (i, &s) in slots.iter().enumerate() {
-        a.extend([s as u32, ryo_bytecode::asm::ArgReg { xmm: false, size: 8, index: i as u32 }.word()]);
+        a.extend([s as u32, ryo_bytecode::asm::ArgReg { xmm: false, size: 8, index: i as u32, sext: false }.word()]);
     }
     a
 }
 
 /// `arg`: the integer argument register `i` to slot `d`.
 pub fn arg(d: i32, i: u32) -> Insn<'static> {
-    Insn::Arg { d: Slot(d), r: ryo_bytecode::asm::ArgReg { xmm: false, size: 8, index: i }.word() }
+    Insn::Arg { d: Slot(d), r: ryo_bytecode::asm::ArgReg { xmm: false, size: 8, index: i, sext: false }.word() }
 }
 
 pub fn ok<A, R>(id: Entry, args: A) -> R {

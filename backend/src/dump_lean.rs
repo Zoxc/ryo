@@ -392,23 +392,39 @@ impl<'tcx> Dumper<'tcx> {
             PassMode::Indirect { meta_attrs: None, on_stack, .. } => ("indirect", if *on_stack { "on_stack".to_owned() } else { String::new() }),
             PassMode::Indirect { meta_attrs: Some(_), .. } => ("indirectUnsized", String::new()),
         };
-        // The LLVM-level scalars of a `Direct` scalar, a `Pair` and an integer `Cast` without
-        // prefix (the Rust ABI's small aggregates): class, size and offset in the value, which
-        // the Lean side assigns to registers and stack slots as the platform convention says.
-        let scalar = |s: &Scalar, off: u64| {
+        // The LLVM-level scalars of a `Direct` scalar, a `Pair` and a `Cast` of the shapes
+        // x86-64 produces (the Rust ABI's integer for a small aggregate; SysV C's optional
+        // 8-byte prefix unit and one rest unit after it, integer or float): class, size and
+        // offset in the value, which the Lean side assigns to registers and stack slots as the
+        // platform convention says. `sext`, only when set: a `signext` integer under 4 bytes.
+        let scalar = |s: &Scalar, off: u64, attrs: &rustc_target::callconv::ArgAttributes| {
             let float = matches!(s.primitive(), Primitive::Float(_));
-            obj(vec![("float", J::Bool(float)), ("size", num(s.size(&self.cx).bytes())), ("off", num(off))])
+            let size = s.size(&self.cx).bytes();
+            let mut o = vec![("float", J::Bool(float)), ("size", num(size)), ("off", num(off))];
+            if attrs.arg_ext == rustc_target::callconv::ArgExtension::Sext && size < 4 {
+                o.push(("sext", J::Bool(true)));
+            }
+            obj(o)
+        };
+        let unit = |r: &rustc_abi::Reg, off: u64| {
+            let float = match r.kind {
+                rustc_abi::RegKind::Integer if (1..=8).contains(&r.size.bytes()) => false,
+                rustc_abi::RegKind::Float if matches!(r.size.bytes(), 4 | 8) => true,
+                _ => return None,
+            };
+            Some(obj(vec![("float", J::Bool(float)), ("size", num(r.size.bytes())), ("off", num(off))]))
         };
         let scalars = match (&a.mode, a.layout.backend_repr) {
-            (PassMode::Direct(_), BackendRepr::Scalar(s)) => Some(vec![scalar(&s, 0)]),
-            (PassMode::Pair(..), BackendRepr::ScalarPair { a, b, b_offset }) => Some(vec![scalar(&a, 0), scalar(&b, b_offset.bytes())]),
+            (PassMode::Direct(at), BackendRepr::Scalar(s)) => Some(vec![scalar(&s, 0, at)]),
+            (PassMode::Pair(aa, ba), BackendRepr::ScalarPair { a, b, b_offset }) => Some(vec![scalar(&a, 0, aa), scalar(&b, b_offset.bytes(), ba)]),
             (PassMode::Cast { cast, pad_i32: false }, _)
-                if cast.prefix.is_empty()
+                if cast.prefix.len() <= 1
+                    && cast.prefix.first().is_none_or(|p| p.size.bytes() == 8)
                     && cast.rest_offset.is_none()
-                    && cast.rest.unit.kind == rustc_abi::RegKind::Integer
                     && cast.rest.total == cast.rest.unit.size =>
             {
-                Some(vec![obj(vec![("float", J::Bool(false)), ("size", num(cast.rest.total.bytes())), ("off", num(0))])])
+                let rest_off = if cast.prefix.is_empty() { 0 } else { 8 };
+                cast.prefix.first().map(|p| unit(p, 0)).into_iter().chain([unit(&cast.rest.unit, rest_off)]).collect::<Option<Vec<_>>>()
             }
             _ => None,
         };

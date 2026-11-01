@@ -43,11 +43,11 @@ fn compile(insns: &[Insn<'_>], frame: u32, scopes: &[(usize, i32, u32, ScopeKind
 }
 
 fn arg(d: i32, i: u32) -> Insn<'static> {
-    Insn::Arg { d: Slot(d), r: ArgReg { xmm: false, size: 8, index: i }.word() }
+    Insn::Arg { d: Slot(d), r: ArgReg { xmm: false, size: 8, index: i, sext: false }.word() }
 }
 
 fn param(s: i32, i: u32) -> [u32; 2] {
-    [s as u32, ArgReg { xmm: false, size: 8, index: i }.word()]
+    [s as u32, ArgReg { xmm: false, size: 8, index: i, sext: false }.word()]
 }
 
 /// The callee-saved registers of Win64 (x86 numbers): `rbx rbp rsi rdi r12`–`r15`.

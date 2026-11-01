@@ -609,7 +609,7 @@ fn dead_stores_match_handlers_in() {
         }
         let mut a = rasm::Asm::new(ENC);
         let sret = rasm::Opnd::Slot(-80);
-        a.insn(Opcode::Arg, &[sret.clone(), rasm::Opnd::Imm(ryo_bytecode::asm::ArgReg { xmm: false, size: 8, index: 0 }.word() as u64)]);
+        a.insn(Opcode::Arg, &[sret.clone(), rasm::Opnd::Imm(ryo_bytecode::asm::ArgReg { xmm: false, size: 8, index: 0, sext: false }.word() as u64)]);
         // Scratch and results start zeroed, as on the handlers' frame.
         a.insn(Opcode::Zero, &[rasm::Opnd::Slot(SCR), rasm::Opnd::Imm(64)]);
         for (i, (op, vals)) in run.iter().enumerate() {

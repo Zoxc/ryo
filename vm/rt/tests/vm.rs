@@ -428,7 +428,7 @@ fn calls_and_tail_calls() {
     a.i(Insn::ImmW64 { d: Slot(-48), imm: 0 });
     a.i(Insn::MovW64 { d: Slot(-80), s: Slot(16) });
     // An sret callee: the destination's address in `rdi`.
-    let sret = [-40i32 as u32, ryo_bytecode::asm::ArgReg { xmm: false, size: 8, index: 0 }.word() | ryo_bytecode::asm::ARG_ADDR];
+    let sret = [-40i32 as u32, ryo_bytecode::asm::ArgReg { xmm: false, size: 8, index: 0, sext: false }.word() | ryo_bytecode::asm::ARG_ADDR];
     a.i(Insn::Call { d: Slot(0), f: triple, k: 0, a: List::from_words(&sret) });
     a.ret(Slot(-48), 32);
     let call_triple = w.add_function(func(a.done(), 80, 8, 32));
@@ -1044,7 +1044,7 @@ fn jit_trips() {
         a.i(arg(-8 - 8 * i as i32, i));
     }
     for i in 0..8 {
-        a.i(Insn::Arg { d: Slot(-56 - 8 * i as i32), r: ArgReg { xmm: true, size: 8, index: i }.word() });
+        a.i(Insn::Arg { d: Slot(-56 - 8 * i as i32), r: ArgReg { xmm: true, size: 8, index: i, sext: false }.word() });
     }
     let mut srcs: Vec<i32> = (1..6).map(|i| -8 - 8 * i).collect();
     srcs.extend((0..8).map(|i| -56 - 8 * i));

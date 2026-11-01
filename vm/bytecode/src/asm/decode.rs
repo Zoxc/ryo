@@ -901,17 +901,17 @@ fn params(c: &mut Cursor<'_>, mode: Mode) -> Vec<u32> {
     loop {
         let at = c.pos;
         let (s, w) = match c.item() {
-            Ok(Item::Ld { w, sx: false, dst, m }) if m.base == Reg::Rbp && int_index(dst, mode).is_some() => {
-                (m.disp, ArgReg { xmm: false, size: w.bytes(), index: int_index(dst, mode).unwrap() }.word())
+            Ok(Item::Ld { w, sx, dst, m }) if m.base == Reg::Rbp && int_index(dst, mode).is_some() && (!sx || w.bytes() <= 2) => {
+                (m.disp, ArgReg { xmm: false, size: w.bytes(), index: int_index(dst, mode).unwrap(), sext: sx }.word())
             }
             Ok(Item::LeaM { dst, m }) if m.base == Reg::Rbp && int_index(dst, mode).is_some() => {
-                (m.disp, ArgReg { xmm: false, size: 8, index: int_index(dst, mode).unwrap() }.word() | ARG_ADDR)
+                (m.disp, ArgReg { xmm: false, size: 8, index: int_index(dst, mode).unwrap(), sext: false }.word() | ARG_ADDR)
             }
             Ok(Item::Sse { st: false, size, x, m }) if m.base == Reg::Rbp => {
-                (m.disp, ArgReg { xmm: true, size: size as u32, index: x as u32 }.word())
+                (m.disp, ArgReg { xmm: true, size: size as u32, index: x as u32, sext: false }.word())
             }
             Ok(Item::Ld { w: super::x86::W::W, sx: false, dst: F16_TMP, m }) if m.base == Reg::Rbp => match c.item() {
-                Ok(Item::Movd { to_xmm: true, x, r: F16_TMP }) => (m.disp, ArgReg { xmm: true, size: 2, index: x as u32 }.word()),
+                Ok(Item::Movd { to_xmm: true, x, r: F16_TMP }) => (m.disp, ArgReg { xmm: true, size: 2, index: x as u32, sext: false }.word()),
                 _ => {
                     c.pos = at;
                     return out;
@@ -1016,11 +1016,11 @@ fn arg(c: &mut Cursor<'_>, mode: Mode) -> Option<Proto> {
                     }
                 }
             }
-            (int_index(src, mode).map(|index| ArgReg { xmm: false, size, index }), m)
+            (int_index(src, mode).map(|index| ArgReg { xmm: false, size, index, sext: false }), m)
         }
-        Item::Sse { st: true, size, x, m } => (Some(ArgReg { xmm: true, size: size as u32, index: x as u32 }), m),
+        Item::Sse { st: true, size, x, m } => (Some(ArgReg { xmm: true, size: size as u32, index: x as u32, sext: false }), m),
         Item::Movd { to_xmm: false, x, r: F16_TMP } => match c.item() {
-            Ok(Item::St { m, .. }) => (Some(ArgReg { xmm: true, size: 2, index: x as u32 }), m),
+            Ok(Item::St { m, .. }) => (Some(ArgReg { xmm: true, size: 2, index: x as u32, sext: false }), m),
             _ => (None, M::frame(0)),
         },
         _ => (None, M::frame(0)),

@@ -4,10 +4,10 @@
 //! ([`ArgPlan`]); and the argument block, the layout of their tuple, which the island
 //! templates take.
 
-use rustc_abi::{BackendRepr, CanonAbi, Primitive, RegKind, Scalar};
+use rustc_abi::{BackendRepr, CanonAbi, Primitive, Reg, RegKind, Scalar};
 use rustc_middle::ty::layout::TyAndLayout;
 use rustc_middle::ty::{self, Instance, Ty, TyCtxt, TypingEnv};
-use rustc_target::callconv::{ArgAbi, FnAbi, PassMode};
+use rustc_target::callconv::{ArgAbi, ArgAttributes, ArgExtension, CastTarget, FnAbi, PassMode};
 use ryo_bytecode::abi::{self, ArgField};
 use ryo_bytecode::asm::{self, ArgReg, RET_SRET, RetPart};
 
@@ -18,7 +18,8 @@ use super::{LayoutCx, NeedsNative, layout_error, native};
 pub enum CallConv {
     /// `Rust` / `rust-call`: direct calls, and the `call` template.
     Rust,
-    /// `extern "C"` that can't unwind: `call_cN`.
+    /// `extern "C"` that can't unwind: direct calls on SysV where the [`ArgPlan`] covers the
+    /// signature, else `call_cN`.
     C,
 }
 
@@ -55,8 +56,13 @@ pub enum ArgLoc {
     /// position).
     Reg { reg: ArgReg, off: u32 },
     /// The `size` bytes at `off` of the value, `at` bytes into the stack argument area (the
-    /// caller's `rsp`, the callee's `fp + 16`; on PE after 32 bytes of shadow space).
-    Stack { at: u32, off: u32, size: u32 },
+    /// caller's `rsp`, the callee's `fp + 16`; on PE after 32 bytes of shadow space). C ABI
+    /// only: `ext` zero- or sign-extends a 1- or 2-byte integer to the whole slot (`zeroext`,
+    /// `signext`); otherwise the slot's other bytes are unspecified.
+    Stack { at: u32, off: u32, size: u32, ext: ArgExtension },
+    /// A C-ABI `Indirect { on_stack: true }` input (LLVM's `byval`): the whole value, `size`
+    /// bytes, copied to `at` in the stack argument area, aligned to `align` (at least 8).
+    StackByval { at: u32, size: u32, align: u32 },
     /// An `Indirect` input: a pointer to the value, in an integer argument register.
     PtrReg(u32),
     /// The same, on the stack.
@@ -157,11 +163,20 @@ fn from_fn_abi<'tcx>(
     if fn_abi.ret.layout.align.abi.bytes() > u64::from(abi::FRAME_ALIGN) {
         return native("return value aligned above 16");
     }
-    let (ret_kind, plan) = if conv == CallConv::Rust {
-        let k = ret_kind(tcx, &fn_abi.ret)?;
-        (k, Some(arg_plan(tcx, fn_abi, k == RET_SRET)?))
-    } else {
-        (0, None)
+    let (ret_kind, plan) = match conv {
+        CallConv::Rust => {
+            let k = ret_kind(tcx, &fn_abi.ret)?;
+            (k, Some(arg_plan(tcx, fn_abi, k == RET_SRET, false)?))
+        }
+        // SysV C: direct calls where every input and the return have a shape the VM passes;
+        // otherwise (and on Win64, for now) only the `call_cN` island calls it.
+        CallConv::C if !crate::symbols::is_pe(tcx) => {
+            match ret_kind(tcx, &fn_abi.ret).and_then(|k| Ok((k, arg_plan(tcx, fn_abi, k == RET_SRET, true)?))) {
+                Ok((k, p)) => (k, Some(p)),
+                Err(_) => (0, None),
+            }
+        }
+        CallConv::C => (0, None),
     };
     Ok(AbiSig { inputs, output: fn_abi.ret.layout, fields, block_size, conv, caller_location, rust_call: false, ret_kind, plan })
 }
@@ -197,35 +212,69 @@ pub fn arg_block<'tcx>(tcx: TyCtxt<'tcx>, inputs: &[Ty<'tcx>]) -> Result<(Vec<Ar
     Ok((fields, size))
 }
 
-/// One register-sized piece of a value passed in registers: a scalar, or the Rust ABI's
-/// integer for a small aggregate.
+/// One register-sized piece of a value passed in registers: a scalar, or a unit of a
+/// `Cast`.
 #[derive(Clone, Copy)]
 struct Piece {
     float: bool,
     size: u32,
     off: u32,
+    /// A 1- or 2-byte integer argument the caller extends to 32 bits (`zeroext`, `signext`;
+    /// in a register, `zeroext` needs nothing: the call loads narrow integers zero-extended).
+    ext: ArgExtension,
 }
 
 /// The pieces of `arg` when its `PassMode` passes it in registers as LLVM lowers it on x86-64:
-/// a `Direct` scalar, the two scalars of a `Pair`, or a `Cast` to one integer of at most 8
-/// bytes (the Rust ABI's small aggregates). `None` for every other mode.
+/// a `Direct` scalar, the two scalars of a `Pair`, or a `Cast` of the shapes rustc's x86-64
+/// classifiers produce ([`cast_pieces`]). `None` for every other mode.
 fn reg_pieces<'tcx>(tcx: TyCtxt<'tcx>, arg: &ArgAbi<'tcx, Ty<'tcx>>) -> Option<Vec<Piece>> {
     let cx = LayoutCx(tcx);
-    let scalar = |s: Scalar, off: u32| Piece { float: matches!(s.primitive(), Primitive::Float(_)), size: s.size(&cx).bytes() as u32, off };
+    let scalar = |s: Scalar, off: u32, attrs: &ArgAttributes| {
+        let size = s.size(&cx).bytes() as u32;
+        let float = matches!(s.primitive(), Primitive::Float(_));
+        let ext = if float || size >= 4 { ArgExtension::None } else { attrs.arg_ext };
+        Piece { float, size, off, ext }
+    };
     match (&arg.mode, arg.layout.backend_repr) {
-        (PassMode::Direct(_), BackendRepr::Scalar(s)) => Some(vec![scalar(s, 0)]),
-        (PassMode::Pair(..), BackendRepr::ScalarPair { a, b, b_offset }) => Some(vec![scalar(a, 0), scalar(b, b_offset.bytes() as u32)]),
-        (PassMode::Cast { cast, pad_i32: false }, _)
-            if cast.prefix.is_empty()
-                && cast.rest_offset.is_none()
-                && cast.rest.unit.kind == RegKind::Integer
-                && cast.rest.total == cast.rest.unit.size
-                && cast.rest.total.bytes() <= 8 =>
-        {
-            Some(vec![Piece { float: false, size: cast.rest.total.bytes() as u32, off: 0 }])
+        (PassMode::Direct(attrs), BackendRepr::Scalar(s)) => Some(vec![scalar(s, 0, attrs)]),
+        (PassMode::Pair(a_attrs, b_attrs), BackendRepr::ScalarPair { a, b, b_offset }) => {
+            Some(vec![scalar(a, 0, a_attrs), scalar(b, b_offset.bytes() as u32, b_attrs)])
         }
+        (PassMode::Cast { cast, pad_i32: false }, _) => cast_pieces(cast),
         _ => None,
     }
+}
+
+/// The units of a `Cast` that x86-64 passes as separate registers: the Rust ABI's one integer
+/// of at most 8 bytes, and SysV C's eightbytes (`rustc_target` `x86_64.rs` `cast_target`): an
+/// optional 8-byte prefix unit at 0 and one rest unit after it, each an integer (of the
+/// remaining size if under 8 bytes: a 12-byte struct's tail is 4 bytes) or a 4- or 8-byte float
+/// (an 8-byte `xmm` unit may hold two `f32`s). `None` for other shapes (vectors, multi-unit
+/// rests, `rest_offset`).
+fn cast_pieces(cast: &CastTarget) -> Option<Vec<Piece>> {
+    let unit = |r: &Reg, off: u32| -> Option<Piece> {
+        let size = r.size.bytes() as u32;
+        match r.kind {
+            RegKind::Integer if (1..=8).contains(&size) => Some(Piece { float: false, size, off, ext: ArgExtension::None }),
+            RegKind::Float if matches!(size, 4 | 8) => Some(Piece { float: true, size, off, ext: ArgExtension::None }),
+            _ => None,
+        }
+    };
+    if cast.rest_offset.is_some() || cast.rest.total != cast.rest.unit.size || cast.prefix.len() > 1 {
+        return None;
+    }
+    let mut out = Vec::new();
+    let mut off = 0;
+    if let Some(p) = cast.prefix.first() {
+        // The rest starts at the next eightbyte.
+        if p.size.bytes() != 8 {
+            return None;
+        }
+        out.push(unit(p, 0)?);
+        off = 8;
+    }
+    out.push(unit(&cast.rest.unit, off)?);
+    Some(out)
 }
 
 /// The return kind of `ret` ([`ryo_bytecode::asm::RET_SRET`]): its `PassMode` as LLVM lowers
@@ -251,7 +300,7 @@ fn ret_kind<'tcx>(tcx: TyCtxt<'tcx>, ret: &ArgAbi<'tcx, Ty<'tcx>>) -> Result<u32
         return Ok(RET_SRET);
     }
     let mut parts = Vec::new();
-    for Piece { float, size, off } in pieces {
+    for Piece { float, size, off, .. } in pieces {
         if !float && size == 16 {
             parts.extend([RetPart { xmm: false, size: 8, off }, RetPart { xmm: false, size: 8, off: off + 8 }]);
         } else {
@@ -273,8 +322,10 @@ fn ret_kind<'tcx>(tcx: TyCtxt<'tcx>, ret: &ArgAbi<'tcx, Ty<'tcx>>) -> Result<u32
 /// (16-aligned for 16-byte values). On Win64 each argument takes the next position: `rcx rdx
 /// r8 r9` or `xmm0`–`xmm3` by class, then 8-byte stack slots after the shadow space; an `i128`
 /// takes two positions, an `f128` is passed by reference (as LLVM 23 lowers them for the Rust
-/// ABI on x86_64-pc-windows-msvc). An sret return takes the first integer register.
-fn arg_plan<'tcx>(tcx: TyCtxt<'tcx>, fn_abi: &FnAbi<'tcx, Ty<'tcx>>, sret: bool) -> Result<ArgPlan, NeedsNative> {
+/// ABI on x86_64-pc-windows-msvc). An sret return takes the first integer register. With `c`
+/// (SysV C), also `Indirect { on_stack: true }` (`byval`) and integer extension
+/// ([`ArgLoc::Stack`], [`ArgReg`]).
+fn arg_plan<'tcx>(tcx: TyCtxt<'tcx>, fn_abi: &FnAbi<'tcx, Ty<'tcx>>, sret: bool, c: bool) -> Result<ArgPlan, NeedsNative> {
     let pe = crate::symbols::is_pe(tcx);
     struct State {
         pe: bool,
@@ -305,35 +356,35 @@ fn arg_plan<'tcx>(tcx: TyCtxt<'tcx>, fn_abi: &FnAbi<'tcx, Ty<'tcx>>, sret: bool)
             r
         }
         /// A scalar of `size` bytes at `off`: the next register of the class, else a stack slot.
-        fn reg_or_stack(&mut self, xmm: bool, size: u32, off: u32, out: &mut Vec<ArgLoc>) {
+        fn reg_or_stack(&mut self, xmm: bool, size: u32, off: u32, ext: ArgExtension, out: &mut Vec<ArgLoc>) {
             match self.next_reg(xmm) {
-                Some(index) => out.push(ArgLoc::Reg { reg: ArgReg { xmm, size, index }, off }),
+                Some(index) => out.push(ArgLoc::Reg { reg: ArgReg { xmm, size, index, sext: ext == ArgExtension::Sext }, off }),
                 None => {
                     let at = self.stack(size.max(8));
-                    out.push(ArgLoc::Stack { at, off, size });
+                    out.push(ArgLoc::Stack { at, off, size, ext });
                 }
             }
         }
         /// An integer of `size` bytes (1 to 8, or 16 for `i128`) at `off`.
-        fn int(&mut self, size: u32, off: u32, out: &mut Vec<ArgLoc>) {
+        fn int(&mut self, size: u32, off: u32, ext: ArgExtension, out: &mut Vec<ArgLoc>) {
             if self.pe && size == 16 {
                 // Win64 (Rust ABI): an `i128` is two 8-byte arguments, low half first, each
                 // taking the next position, so it can straddle `r9` and the stack.
-                self.int(8, off, out);
-                self.int(8, off + 8, out);
+                self.int(8, off, ArgExtension::None, out);
+                self.int(8, off + 8, ArgExtension::None, out);
             } else if !self.pe && size == 16 {
                 // SysV: two registers at once, or the stack (the rest staying free).
                 if self.gpr <= 4 {
                     for k in 0..2 {
-                        out.push(ArgLoc::Reg { reg: ArgReg { xmm: false, size: 8, index: self.gpr }, off: off + 8 * k });
+                        out.push(ArgLoc::Reg { reg: ArgReg { xmm: false, size: 8, index: self.gpr, sext: false }, off: off + 8 * k });
                         self.gpr += 1;
                     }
                 } else {
                     let at = self.stack(16);
-                    out.push(ArgLoc::Stack { at, off, size: 16 });
+                    out.push(ArgLoc::Stack { at, off, size: 16, ext: ArgExtension::None });
                 }
             } else {
-                self.reg_or_stack(false, size, off, out);
+                self.reg_or_stack(false, size, off, ext, out);
             }
         }
         /// A float of `size` bytes at `off`.
@@ -343,7 +394,7 @@ fn arg_plan<'tcx>(tcx: TyCtxt<'tcx>, fn_abi: &FnAbi<'tcx, Ty<'tcx>>, sret: bool)
             if self.pe && size == 16 {
                 self.ptr(out);
             } else {
-                self.reg_or_stack(true, size, off, out);
+                self.reg_or_stack(true, size, off, ArgExtension::None, out);
             }
         }
         /// An `Indirect` input's pointer.
@@ -368,6 +419,20 @@ fn arg_plan<'tcx>(tcx: TyCtxt<'tcx>, fn_abi: &FnAbi<'tcx, Ty<'tcx>>, sret: bool)
         match arg.mode {
             PassMode::Ignore => {}
             PassMode::Indirect { meta_attrs: None, on_stack: false, .. } => st.ptr(&mut out),
+            // SysV C's `byval`: the value in the stack area, 8-aligned or more (LLVM's
+            // `byval` slot; rustc only makes aggregates that don't fit in the registers left
+            // `on_stack`, so the registers stay free).
+            PassMode::Indirect { meta_attrs: None, on_stack: true, attrs } if c && !pe => {
+                let size = arg.layout.size.bytes();
+                let align = attrs.pointee_align.map_or(8, |a| a.bytes()).max(8);
+                if size > u64::from(u32::MAX / 2) || align > u64::from(abi::FRAME_ALIGN) {
+                    return native("byval argument too large or aligned above 16");
+                }
+                let (size, align) = (size as u32, align as u32);
+                let at = st.stack.next_multiple_of(align);
+                st.stack = at + size.next_multiple_of(8);
+                out.push(ArgLoc::StackByval { at, size, align });
+            }
             _ => {
                 let Some(pieces) = reg_pieces(tcx, arg) else {
                     return native(format!("argument passed as {:?} ({:?})", arg.mode, arg.layout.backend_repr));
@@ -376,8 +441,13 @@ fn arg_plan<'tcx>(tcx: TyCtxt<'tcx>, fn_abi: &FnAbi<'tcx, Ty<'tcx>>, sret: bool)
                 if pe && pieces.len() > 1 && pieces.iter().any(|p| p.float && p.size == 16) {
                     return native("f128 in a pair argument on Win64");
                 }
-                for Piece { float, size, off } in pieces {
-                    if float { st.float(size, off, &mut out) } else { st.int(size, off, &mut out) }
+                // SysV C: rustc's classifier counts registers per aggregate, and gives one that
+                // doesn't fit entirely `on_stack`; scalars and Rust-ABI pieces go one by one.
+                for Piece { float, size, off, ext } in pieces {
+                    // Extension is C's (the Rust ABI's `zeroext` `bool` needs none: loaded
+                    // zero-extended in a register, its byte alone on the stack).
+                    let ext = if c { ext } else { ArgExtension::None };
+                    if float { st.float(size, off, &mut out) } else { st.int(size, off, ext, &mut out) }
                 }
             }
         }

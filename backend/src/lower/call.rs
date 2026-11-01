@@ -23,6 +23,7 @@ use rustc_abi::{BackendRepr, ExternAbi};
 use rustc_middle::mir::{BasicBlock, Operand, Place, SourceInfo, UnwindAction};
 use rustc_middle::ty::{self, GenericArg, Instance, InstanceKind, Ty, TypingEnv};
 use rustc_span::Spanned;
+use rustc_target::callconv::ArgExtension;
 use ryo_bytecode::abi::HEADER_SIZE;
 use ryo_bytecode::asm::{ARG_ADDR, ArgReg, RET_SRET, RetPart, ret_kind, ret_parts};
 use ryo_bytecode::full::Opcode;
@@ -99,10 +100,12 @@ enum Target<'tcx> {
 }
 
 impl<'tcx> Target<'tcx> {
-    /// A call of `callee`, whose calling convention is `conv`.
-    fn of(conv: CallConv, callee: Callee<'tcx>) -> Self {
-        match conv {
+    /// A call of `callee` with signature `sig`: direct for the Rust ABI, and for the C ABI
+    /// where the signature has a plan (SysV, shapes the VM passes), else the island.
+    fn of(sig: &AbiSig<'tcx>, callee: Callee<'tcx>) -> Self {
+        match sig.conv {
             CallConv::Rust => Target::Direct(callee),
+            CallConv::C if sig.plan.is_some() => Target::Direct(callee),
             CallConv::C => Target::CIsland(callee),
         }
     }
@@ -249,7 +252,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             let k = vtable_off(idx)?;
             self.op(Opcode::LoadW64, &[f, vtable, k]);
             args[0] = ArgSrc::Slot(data);
-            (Target::of(sig.conv, Callee::Ptr(f)), sig)
+            (Target::of(&sig, Callee::Ptr(f)), sig)
         } else {
             let has_symbol = !matches!(callee.def, InstanceKind::Intrinsic(_));
             let vm = self.cx.vm.contains(&callee);
@@ -266,7 +269,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 }
                 Some(sig) => {
                     let sig = sig?;
-                    (Target::of(sig.conv, Callee::Sym(callee)), sig)
+                    (Target::of(&sig, Callee::Sym(callee)), sig)
                 }
                 None => unreachable!("a callee without a symbol is a template call"),
             }
@@ -278,7 +281,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     fn ptr_target(&mut self, func: &Operand<'tcx>, fty: Ty<'tcx>) -> Result<(Target<'tcx>, AbiSig<'tcx>), NeedsNative> {
         let sig = fn_ptr_sig(self.tcx, fty.fn_sig(self.tcx))?;
         let (p, _) = self.operand_slot(func)?;
-        Ok((Target::of(sig.conv, Callee::Ptr(p)), sig))
+        Ok((Target::of(&sig, Callee::Ptr(p)), sig))
     }
 
     /// The receiver of a virtual call: the slots holding its data pointer and its vtable, and
@@ -351,7 +354,11 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 let a = self.pass_args(sig, homes, Some(d), false)?;
                 let (op, f, kind) = self.call_op(callee, false);
                 let at = self.call_insn(op, &[rd, f, k], &a, kind, sig);
-                self.unwind_entry(at, cont.unwind);
+                // A C callee can't unwind (cg_ssa makes the call `nounwind`): no call-site
+                // entry, so an exception out of it terminates.
+                if sig.conv == CallConv::Rust {
+                    self.unwind_entry(at, cont.unwind);
+                }
             }
         }
         self.finish_call(cont, d, after)
@@ -403,7 +410,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     fn pass_args(&mut self, sig: &AbiSig<'tcx>, homes: &[u32], d: Option<u32>, tail: bool) -> Result<Vec<u32>, NeedsNative> {
         let Some(plan) = &sig.plan else { return native("a call without a calling convention") };
         let mut a = Vec::new();
-        let gpr = |index| ArgReg { xmm: false, size: 8, index }.word();
+        let gpr = |index| ArgReg { xmm: false, size: 8, index, sext: false }.word();
         if sig.ret_kind == RET_SRET {
             match (tail, self.frame.sret) {
                 (false, _) => a.extend([d.expect("call destination"), gpr(0) | ARG_ADDR]),
@@ -413,7 +420,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         }
         // A stack piece's slot: the outgoing area at `rsp`, or the incoming one at `fp + 16`.
         // In the PE pad region `rsp` isn't `fp - F`, where the outgoing area is.
-        if self.in_region && plan.locs.iter().flatten().any(|l| matches!(l, ArgLoc::Stack { .. } | ArgLoc::PtrStack(_))) {
+        if self.in_region && plan.locs.iter().flatten().any(|l| matches!(l, ArgLoc::Stack { .. } | ArgLoc::StackByval { .. } | ArgLoc::PtrStack(_))) {
             return native("a call with stack arguments in PE cleanup code");
         }
         let stack = |at: u32| if tail { frame::slot((HEADER_SIZE + at) as i32) } else { frame::out_slot(at) };
@@ -433,7 +440,25 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                         let size = if reg.xmm { reg.size } else { reg.size.next_power_of_two() };
                         a.extend([home + off, ArgReg { size, ..reg }.word()]);
                     }
-                    ArgLoc::Stack { at, off, size } => self.mov(stack(at), home + off, size),
+                    ArgLoc::Stack { at, off, size, ext } => {
+                        // C's `zeroext`/`signext` of a small integer on the stack: the whole slot.
+                        let widen = match (ext, size) {
+                            (ArgExtension::Zext, 1) => Some(Opcode::ZextW8W64),
+                            (ArgExtension::Zext, 2) => Some(Opcode::ZextW16W64),
+                            (ArgExtension::Sext, 1) => Some(Opcode::SextW8W64),
+                            (ArgExtension::Sext, 2) => Some(Opcode::SextW16W64),
+                            _ => None,
+                        };
+                        match widen {
+                            Some(op) => {
+                                self.op(op, &[stack(at), home + off]);
+                            }
+                            None => self.mov(stack(at), home + off, size),
+                        }
+                    }
+                    // The whole value, as LLVM copies a `byval` argument (for a tail call over
+                    // the function's own incoming area, as `Stack`).
+                    ArgLoc::StackByval { at, size, .. } => self.mov(stack(at), home, size),
                     ArgLoc::PtrReg(index) if tail => {
                         let p = incoming_ptr(self)?;
                         a.extend([p, gpr(index)]);
@@ -502,6 +527,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             }
         };
         let Target::Direct(callee) = target else { return native("tail call of a non-Rust ABI") };
+        if sig.conv != CallConv::Rust {
+            return native("tail call of a non-Rust ABI");
+        }
         // `become` requires matching signatures.
         let ret = self.frame.locals[rustc_middle::mir::RETURN_PLACE].layout;
         if ret.size != sig.output.size || sig.ret_kind != self.ret_kind {
@@ -724,7 +752,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let ptr = self.temp8();
         self.addr_into(ptr, pv.loc, pv.base)?;
         // `unsafe fn(*mut ())`: the pointer in the first integer register.
-        let reg = ArgReg { xmm: false, size: 8, index: 0 };
+        let reg = ArgReg { xmm: false, size: 8, index: 0, sext: false };
         let at = self.op(Opcode::CallPtr, &[0, f, 0, ptr, reg.word()]);
         let plan = ArgPlan { locs: vec![vec![ArgLoc::Reg { reg, off: 0 }]], stack_size: 0 };
         self.cert_call(at, CallKind::VirtualDrop, Some(&plan), 0, 0);

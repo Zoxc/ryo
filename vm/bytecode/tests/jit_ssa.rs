@@ -53,14 +53,14 @@ fn ir(d: &Decoded) -> ryo_bytecode::jit::ir::Func {
 }
 
 fn arg(d: i32, i: u32) -> Insn<'static> {
-    Insn::Arg { d: Slot(d), r: ArgReg { xmm: false, size: 8, index: i }.word() }
+    Insn::Arg { d: Slot(d), r: ArgReg { xmm: false, size: 8, index: i, sext: false }.word() }
 }
 
 #[test]
 fn arguments_promoted() {
     let mut v = vec![arg(-8, 0), arg(-16, 1)];
     for i in 0..2 {
-        v.push(Insn::Arg { d: Slot(-24 - 8 * i), r: ArgReg { xmm: true, size: 8, index: i as u32 }.word() });
+        v.push(Insn::Arg { d: Slot(-24 - 8 * i), r: ArgReg { xmm: true, size: 8, index: i as u32, sext: false }.word() });
     }
     v.push(Insn::AddW64 { d: Slot(-48), a: Slot(-8), b: Slot(-16) });
     v.push(Insn::AddW64 { d: Slot(-48), a: Slot(-48), b: Slot(-24) });
@@ -254,7 +254,7 @@ fn value_numbering() {
 /// scan keeps them in caller-saved registers and saves no callee-saved one.
 #[test]
 fn cold_blocks_last() {
-    let r = |s: i32| [s as u32, ArgReg { xmm: false, size: 8, index: 0 }.word()];
+    let r = |s: i32| [s as u32, ArgReg { xmm: false, size: 8, index: 0, sext: false }.word()];
     let (a1, a2) = (r(-8), r(-40));
     let v = vec![
         arg(-8, 0),
@@ -965,7 +965,7 @@ fn halves_reassembled() {
     let b = f.block(BlockKind::Entry);
     f.layout.push(b);
     let p = f.param(b, 8);
-    f.entry_regs.push(ArgReg { xmm: false, size: 8, index: 0 });
+    f.entry_regs.push(ArgReg { xmm: false, size: 8, index: 0, sext: false });
     let v = |f: &mut F, i: Inst| f.result(i);
     let lo = f.inst(b, Op::Load(8, 0), vec![p], &[8]);
     let hi = f.inst(b, Op::Load(8, 8), vec![p], &[8]);
@@ -1006,7 +1006,7 @@ fn extension_identities() {
         let b = f.block(BlockKind::Entry);
         f.layout.push(b);
         let p = f.param(b, inner.0);
-        f.entry_regs.push(ArgReg { xmm: false, size: 8, index: 0 });
+        f.entry_regs.push(ArgReg { xmm: false, size: 8, index: 0, sext: false });
         let e = f.inst(b, Op::Ext { from: inner.0, to: inner.1, sx: false }, vec![p], &[inner.1]);
         let e = f.result(e);
         let t = f.inst(b, Op::Ext { from: outer.0, to: outer.1, sx: false }, vec![e], &[outer.1]);
@@ -1164,7 +1164,8 @@ fn licm_across_a_call() {
     let c = f.inst(b1, Op::Cmp(Cc::LtU, 8), vec![i, s], &[1]);
     let c = f.result(c);
     f.terminate(b1, Term::Br { cond: c, t: Edge::to(b2), f: Edge::to(b3) });
-    let call = Call { target: CallTarget::Sym(Sym(0)), regs: vec![ArgReg { xmm: false, size: 8, index: 0 }], parts: vec![], site: Site::None };
+    let call =
+        Call { target: CallTarget::Sym(Sym(0)), regs: vec![ArgReg { xmm: false, size: 8, index: 0, sext: false }], parts: vec![], site: Site::None };
     f.inst(b2, Op::Call(Box::new(call)), vec![q], &[]);
     let i2 = f.inst(b2, Op::Bin(BinOp::Add, 8), vec![i, one], &[8]);
     let i2 = f.result(i2);
@@ -1283,7 +1284,7 @@ fn pair_load_wrapped_offsets() {
     let b = f.block(BlockKind::Entry);
     f.layout.push(b);
     let p = f.param(b, 8);
-    f.entry_regs.push(ArgReg { xmm: false, size: 8, index: 0 });
+    f.entry_regs.push(ArgReg { xmm: false, size: 8, index: 0, sext: false });
     let x = f.inst(b, Op::Load(8, i32::MAX - 3), vec![p], &[8]);
     let y = f.inst(b, Op::Load(8, i32::MIN + 4), vec![p], &[8]);
     let (x, y) = (f.result(x), f.result(y));

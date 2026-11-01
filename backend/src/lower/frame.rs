@@ -321,14 +321,14 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             fx.op(Opcode::Arg, &[d, r.word()]);
         };
         if let Some(p) = self.frame.sret {
-            arg(self, p, ArgReg { xmm: false, size: 8, index: 0 });
+            arg(self, p, ArgReg { xmm: false, size: 8, index: 0, sext: false });
         }
         for (i, locs) in plan.locs.iter().enumerate() {
             for &l in locs {
                 match l {
                     ArgLoc::Reg { reg, off } => arg(self, self.frame.arg_homes[i] + off, reg),
-                    ArgLoc::PtrReg(index) => arg(self, self.frame.arg_ptrs[i].unwrap(), ArgReg { xmm: false, size: 8, index }),
-                    ArgLoc::Stack { .. } | ArgLoc::PtrStack(_) => {}
+                    ArgLoc::PtrReg(index) => arg(self, self.frame.arg_ptrs[i].unwrap(), ArgReg { xmm: false, size: 8, index, sext: false }),
+                    ArgLoc::Stack { .. } | ArgLoc::StackByval { .. } | ArgLoc::PtrStack(_) => {}
                 }
             }
         }
@@ -337,7 +337,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         for (i, locs) in plan.locs.iter().enumerate() {
             for &l in locs {
                 match l {
-                    ArgLoc::Stack { at, off, size } => self.mov(self.frame.arg_homes[i] + off, incoming(at), size),
+                    ArgLoc::Stack { at, off, size, .. } => self.mov(self.frame.arg_homes[i] + off, incoming(at), size),
+                    ArgLoc::StackByval { at, size, .. } => self.mov(self.frame.arg_homes[i], incoming(at), size),
                     ArgLoc::PtrStack(at) => self.mov(self.frame.arg_ptrs[i].unwrap(), incoming(at), 8),
                     ArgLoc::Reg { .. } | ArgLoc::PtrReg(_) => {}
                 }

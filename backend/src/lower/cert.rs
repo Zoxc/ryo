@@ -12,6 +12,7 @@
 //! [`LowerCx::cert`]: super::LowerCx::cert
 
 use rustc_middle::mir::{Local, UnwindTerminateReason};
+use rustc_target::callconv::ArgExtension;
 use ryo_bytecode::asm::InsnId;
 
 use super::super::json::{J, num, obj, opt, tag};
@@ -245,14 +246,29 @@ fn terminate_reason(r: UnwindTerminateReason) -> &'static str {
 }
 
 /// An [`ArgPlan`]: `{"stackSize", "locs"}`, each input's pieces as `{"reg": {xmm, size,
-/// index}, "off"}`, `{"stack", "off", "size"}`, `{"ptrReg"}` or `{"ptrStack"}`.
+/// index[, sext]}, "off"}` (`sext` only when set), `{"stack", "off", "size"[, "ext"]}` (`"zext"`
+/// or `"sext"`, only when set),
+/// `{"stackByval", "size", "align"}`, `{"ptrReg"}` or `{"ptrStack"}`.
 fn plan_json(plan: Option<&ArgPlan>) -> J {
     let Some(p) = plan else { return J::Null };
     let loc = |l: &ArgLoc| match *l {
         ArgLoc::Reg { reg, off } => {
-            obj(vec![("reg", obj(vec![("xmm", J::Bool(reg.xmm)), ("size", num(reg.size)), ("index", num(reg.index))])), ("off", num(off))])
+            let mut r = vec![("xmm", J::Bool(reg.xmm)), ("size", num(reg.size)), ("index", num(reg.index))];
+            if reg.sext {
+                r.push(("sext", J::Bool(true)));
+            }
+            obj(vec![("reg", obj(r)), ("off", num(off))])
         }
-        ArgLoc::Stack { at, off, size } => obj(vec![("stack", num(at)), ("off", num(off)), ("size", num(size))]),
+        ArgLoc::StackByval { at, size, align } => obj(vec![("stackByval", num(at)), ("size", num(size)), ("align", num(align))]),
+        ArgLoc::Stack { at, off, size, ext } => {
+            let mut o = vec![("stack", num(at)), ("off", num(off)), ("size", num(size))];
+            match ext {
+                ArgExtension::None => {}
+                ArgExtension::Zext => o.push(("ext", J::Str("zext".into()))),
+                ArgExtension::Sext => o.push(("ext", J::Str("sext".into()))),
+            }
+            obj(o)
+        }
         ArgLoc::PtrReg(i) => obj(vec![("ptrReg", num(i))]),
         ArgLoc::PtrStack(at) => obj(vec![("ptrStack", num(at))]),
     };
