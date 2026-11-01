@@ -406,13 +406,17 @@ impl<'tcx> Dumper<'tcx> {
             }
             obj(o)
         };
+        // An SSE unit past the value's end (`{f16}`'s `f64`) is cut to the value's 2 bytes,
+        // other such units refused, as `sig.rs` `cast_pieces` does.
         let unit = |r: &rustc_abi::Reg, off: u64| {
-            let float = match r.kind {
-                rustc_abi::RegKind::Integer if (1..=8).contains(&r.size.bytes()) => false,
-                rustc_abi::RegKind::Float if matches!(r.size.bytes(), 4 | 8) => true,
+            let left = a.layout.size.bytes().saturating_sub(off);
+            let (float, size) = match r.kind {
+                rustc_abi::RegKind::Integer if (1..=8).contains(&r.size.bytes()) => (false, r.size.bytes()),
+                rustc_abi::RegKind::Float if matches!(r.size.bytes(), 4 | 8) && r.size.bytes() <= left => (true, r.size.bytes()),
+                rustc_abi::RegKind::Float if r.size.bytes() == 8 && left == 2 => (true, 2),
                 _ => return None,
             };
-            Some(obj(vec![("float", J::Bool(float)), ("size", num(r.size.bytes())), ("off", num(off))]))
+            Some(obj(vec![("float", J::Bool(float)), ("size", num(size)), ("off", num(off))]))
         };
         let scalars = match (&a.mode, a.layout.backend_repr) {
             (PassMode::Direct(at), BackendRepr::Scalar(s)) => Some(vec![scalar(&s, 0, at)]),

@@ -268,6 +268,7 @@ pub(crate) const CORPUS: &[Program] = &[
             "byval_align::ptr", "spill::direct", "spill::ptr", "all_or_nothing_int::direct", "all_or_nothing_int::ptr",
             "all_or_nothing_sse::direct", "all_or_nothing_sse::ptr", "all_or_nothing_mixed::direct",
             "all_or_nothing_mixed::ptr", "wide_late::direct", "wide_late::ptr", "unit_ret::direct", "unit_ret::ptr",
+            "around", "h1::direct", "h1::ptr", "h1_ret::direct", "h1_ret::ptr", "h3::direct", "h3::ptr", "h3_ret::direct", "h3_ret::ptr", "h5_ret::direct", "h5_ret::ptr", "b11::direct", "b11::ptr", "s10::direct", "s10::ptr", "b3::direct", "b3::ptr", "s64::direct", "s64::ptr",
         ],
         native: &[
             "ext::callee", "ext::native_caller", "ext_wide::callee", "ext_wide::native_caller", "ret_i8::callee",
@@ -282,6 +283,7 @@ pub(crate) const CORPUS: &[Program] = &[
             "all_or_nothing_int::native_caller", "all_or_nothing_sse::callee", "all_or_nothing_sse::native_caller",
             "all_or_nothing_mixed::callee", "all_or_nothing_mixed::native_caller", "wide_late::callee",
             "wide_late::native_caller", "unit_ret::callee", "unit_ret::native_caller",
+            "h1::callee", "h1::native_caller", "h1_ret::callee", "h1_ret::native_caller", "h3::callee", "h3::native_caller", "h3_ret::callee", "h3_ret::native_caller", "h5_ret::callee", "h5_ret::native_caller", "b11::callee", "b11::native_caller", "s10::callee", "s10::native_caller", "b3::callee", "b3::native_caller", "s64::callee", "s64::native_caller",
         ],
     ),
     single!(

@@ -5,6 +5,7 @@
 //! tail), `byval` aggregates, returns in mixed registers and sret, and the all-or-nothing rule
 //! for aggregates that don't fit in the registers left. On Win64 the same calls go through the
 //! `call_cN` island; the output is diffed against plain rustc either way.
+#![feature(f16)]
 use std::arch::asm;
 use std::hint::black_box;
 
@@ -137,6 +138,61 @@ struct Bytes {
     b: i16,
 }
 
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+struct H1 {
+    a: f16,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+struct H3 {
+    a: [f16; 3],
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+struct H5 {
+    a: f32,
+    b: f32,
+    c: f16,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+struct B11 {
+    a: [u8; 11],
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+struct S10 {
+    a: u32,
+    b: u32,
+    c: u16,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+struct B3 {
+    a: [u8; 3],
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+struct S64 {
+    a: [u64; 8],
+}
+
+/// A returned value with neighbours that an oversized store would clobber.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+struct Around<T> {
+    v: T,
+    tail: [u8; 7],
+}
+
 case!(ext(a: u8 = 0xfe, b: i8 = -7, c: u16 = 0xfffe, d: i16 = -300, e: bool = true) -> i64 {
     a as i64 + b as i64 * 3 + c as i64 * 5 + d as i64 * 7 + e as i64 * 11
 });
@@ -190,6 +246,31 @@ case!(unit_ret(a: u32 = 1) -> () {
     black_box(a);
 });
 
+case!(h1(a: H1 = H1 { a: 1.5 }, b: f16 = 2.0) -> H1 { H1 { a: a.a * b } });
+case!(h1_ret(a: f32 = 1.5) -> H1 { H1 { a: a as f16 } });
+case!(h3(a: H3 = H3 { a: [1.0, 2.0, 3.0] }) -> f32 { a.a[0] as f32 + a.a[1] as f32 * 2.0 + a.a[2] as f32 * 3.0 });
+case!(h3_ret(a: f32 = 1.5) -> H3 { H3 { a: [a as f16, 2.0, 3.0] } });
+case!(h5_ret(a: f32 = 1.5) -> H5 { H5 { a, b: 2.0, c: 3.0 } });
+case!(b11(a: B11 = B11 { a: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] }) -> B11 { let mut b = a; b.a.reverse(); b });
+case!(s10(a: S10 = S10 { a: 1, b: 2, c: 3 }) -> S10 { S10 { a: a.c as u32, b: a.a, c: a.b as u16 } });
+case!(b3(a: B3 = B3 { a: [1, 2, 3] }) -> B3 { B3 { a: [a.a[2], a.a[0], a.a[1]] } });
+case!(s64(a: u8 = 1, b: S64 = S64 { a: [1, 2, 3, 4, 5, 6, 7, 8] }, c: i16 = -3) -> u64 { h(&b.a) ^ a as u64 ^ c as u64 });
+
+/// Returns stored into a field directly: only the value's bytes may change.
+#[inline(never)]
+fn around() -> (Around<H1>, Around<H3>, Around<B3>, Around<S10>) {
+    let tail = [1, 2, 3, 4, 5, 6, 7];
+    let mut a = Around { v: H1 { a: 0.0 }, tail };
+    a.v = h1_ret::callee(black_box(2.5));
+    let mut b = Around { v: H3 { a: [0.0; 3] }, tail };
+    b.v = h3_ret::callee(black_box(2.5));
+    let mut c = Around { v: B3 { a: [0; 3] }, tail };
+    c.v = b3::callee(black_box(B3 { a: [4, 5, 6] }));
+    let mut d = Around { v: S10 { a: 0, b: 0, c: 0 }, tail };
+    d.v = s10::callee(black_box(S10 { a: 4, b: 5, c: 6 }));
+    (a, b, c, d)
+}
+
 /// Calls of libc functions (`extern "C"` callees from another library).
 #[inline(never)]
 fn libc_calls() -> (i32, usize, i32) {
@@ -229,5 +310,9 @@ fn main() {
     all_or_nothing_mixed::run();
     wide_late::run();
     unit_ret::run();
+    for f in [h1::run, h1_ret::run, h3::run, h3_ret::run, h5_ret::run, b11::run, s10::run, b3::run, s64::run] {
+        f();
+    }
+    println!("around: {:?}", around());
     println!("libc: {:?}", libc_calls());
 }

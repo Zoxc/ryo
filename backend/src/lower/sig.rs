@@ -240,7 +240,7 @@ fn reg_pieces<'tcx>(tcx: TyCtxt<'tcx>, arg: &ArgAbi<'tcx, Ty<'tcx>>) -> Option<V
         (PassMode::Pair(a_attrs, b_attrs), BackendRepr::ScalarPair { a, b, b_offset }) => {
             Some(vec![scalar(a, 0, a_attrs), scalar(b, b_offset.bytes() as u32, b_attrs)])
         }
-        (PassMode::Cast { cast, pad_i32: false }, _) => cast_pieces(cast),
+        (PassMode::Cast { cast, pad_i32: false }, _) => cast_pieces(cast, arg.layout.size.bytes()),
         _ => None,
     }
 }
@@ -251,12 +251,19 @@ fn reg_pieces<'tcx>(tcx: TyCtxt<'tcx>, arg: &ArgAbi<'tcx, Ty<'tcx>>) -> Option<V
 /// remaining size if under 8 bytes: a 12-byte struct's tail is 4 bytes) or a 4- or 8-byte float
 /// (an 8-byte `xmm` unit may hold two `f32`s). `None` for other shapes (vectors, multi-unit
 /// rests, `rest_offset`).
-fn cast_pieces(cast: &CastTarget) -> Option<Vec<Piece>> {
+///
+/// An SSE eightbyte that isn't 4 bytes is an `f64` unit whatever the value's size, so `{f16}`
+/// or the tail of `{f32, f32, f16}` is an 8-byte unit past the value's end (`value_size`):
+/// such a unit is cut to the value's 2 bytes (an `f16`-sized `xmm` piece), refused for other
+/// sizes, so a return doesn't store past the value.
+fn cast_pieces(cast: &CastTarget, value_size: u64) -> Option<Vec<Piece>> {
     let unit = |r: &Reg, off: u32| -> Option<Piece> {
         let size = r.size.bytes() as u32;
+        let left = value_size.saturating_sub(u64::from(off));
         match r.kind {
             RegKind::Integer if (1..=8).contains(&size) => Some(Piece { float: false, size, off, ext: ArgExtension::None }),
-            RegKind::Float if matches!(size, 4 | 8) => Some(Piece { float: true, size, off, ext: ArgExtension::None }),
+            RegKind::Float if matches!(size, 4 | 8) && u64::from(size) <= left => Some(Piece { float: true, size, off, ext: ArgExtension::None }),
+            RegKind::Float if size == 8 && left == 2 => Some(Piece { float: true, size: 2, off, ext: ArgExtension::None }),
             _ => None,
         }
     };

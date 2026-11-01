@@ -103,3 +103,9 @@ remove it once a Lean session has handled it.
   (`Cert.lean`), the arg-list word decoding (`ArgReg`, the reduced decoder's `movsx` loads)
   and the ABI convention lemmas need the C shapes; definitions of `extern "C"` fns stay
   native.
+- SysV C `Cast` SSE units past the value's end (follow-up to "Backend: Call SysV extern \"C\"
+  functions directly"): rustc makes every SSE eightbyte that isn't 4 bytes an `f64` unit, so
+  `{f16}` or the tail of `{f32, f32, f16}` is an 8-byte unit beyond the value. `sig.rs`
+  `cast_pieces` (and `dump_lean.rs` `scalars`) now cut such a unit to 2 bytes when 2 are left
+  (an `f16`-sized `xmm` piece) and refuse other sizes (e.g. `{[f16; 3]}`, island), so a return
+  no longer stores 8 bytes into a 2-byte value. The Lean plan computation needs the same rule.
