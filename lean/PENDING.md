@@ -147,3 +147,9 @@ remove it once a Lean session has handled it.
   register of the same position (an extra list pair from the same slot, 8 bytes). The asm
   model's call-list registers and the ABI lemmas need `ARG_RAX` and the duplicated pairs; the
   certificate's plan doesn't list them.
+
+- `UnwindAction::Unreachable` call sites (follow-up to "Backend: C-unwind and variadic C calls
+  in VM code"): calls and islands with MIR's `Unreachable`, and direct calls of non-unwinding
+  `C` callees, now get a `Continue` cleanup entry (`FnCx::unwind_entry`) instead of none when
+  the body has no landing pad (no `Cleanup`/`Terminate` action), as a cg_llvm frame without
+  an LSDA; with landing pads they still get none. The model's call-site/cleanup-entry rules need the change.

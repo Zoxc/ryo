@@ -247,6 +247,9 @@ pub struct FnCx<'a, 'tcx> {
     /// (call-like instruction, where unwinding out of it goes). Instructions without an entry
     /// can't unwind.
     cleanup: Vec<(InsnId, UnwindTo)>,
+    /// Whether the body has a landing pad (an `UnwindAction::Cleanup` or `Terminate`), so
+    /// cg_llvm gives it an LSDA ([`FnCx::unwind_entry`]).
+    has_pads: bool,
     /// Each block's label.
     block_labels: Vec<Label>,
     /// Reused operand buffer of [`FnCx::op`].
@@ -304,6 +307,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             asm,
             relocs: Vec::new(),
             cleanup: Vec::new(),
+            has_pads: body.basic_blocks.iter().any(|b| {
+                matches!(b.terminator().unwind(), Some(rustc_middle::mir::UnwindAction::Cleanup(_) | rustc_middle::mir::UnwindAction::Terminate(_)))
+            }),
             block_labels,
             scratch: Vec::new(),
             max_outgoing: 0,
@@ -576,15 +582,20 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     }
 
     /// Records the unwind action of the call-like instruction `at`
-    /// (design/lowering.md#unwinding). `Unreachable` records nothing: the instruction can't
-    /// unwind.
+    /// (design/lowering.md#unwinding). `Unreachable` (the instruction can't unwind) matches
+    /// cg_llvm's call-site table: in a function without landing pads (no LSDA there) a
+    /// `Continue` entry, so an exception that leaves the callee anyway (a foreign one, or a
+    /// panic past a Rust callee's cleanup, whose own terminate pad then aborts in the cleanup
+    /// phase) passes the search phase through the frame; in one with landing pads no entry,
+    /// a gap in LLVM's table, where the personality terminates.
     pub fn unwind_entry(&mut self, at: InsnId, unwind: rustc_middle::mir::UnwindAction) {
         use rustc_middle::mir::UnwindAction;
         match unwind {
             UnwindAction::Continue => self.cleanup.push((at, UnwindTo::Continue)),
+            UnwindAction::Unreachable if !self.has_pads => self.cleanup.push((at, UnwindTo::Continue)),
+            UnwindAction::Unreachable => {}
             UnwindAction::Cleanup(bb) => self.cleanup.push((at, UnwindTo::Block(bb))),
             UnwindAction::Terminate(reason) => self.cleanup.push((at, UnwindTo::Terminate(reason))),
-            UnwindAction::Unreachable => {}
         }
     }
 

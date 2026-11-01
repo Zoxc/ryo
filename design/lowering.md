@@ -407,8 +407,12 @@ by its code offset, which the encoder turns into the function's LSDA call-site t
   after the function's blocks that calls the reason's lang item (`panic_cannot_unwind`,
   `panic_in_cleanup`), like cg_ssa's terminate block, so the message and the panic hook run
   as natively. One stub per reason the function uses.
-- `UnwindAction::Unreachable` → no entry: the call is no call site, and unwinding out of it
-  aborts.
+- `UnwindAction::Unreachable` (and a `C` callee, `nounwind` in cg_ssa) → as cg_llvm's
+  call-site table: in a function without landing pads (which has no LSDA there) a
+  `Continue` entry, so an exception that leaves the callee anyway (a foreign one, or a panic
+  past a Rust callee's cleanup, whose own terminate pad aborts in the cleanup phase) passes
+  the search phase through the frame; in one with landing pads no entry (LLVM's gap), so
+  unwinding out of it terminates there.
 
 - **Landing pads**: one per distinct destination, after the blocks and terminate stubs:
   `lpad x` (which stores the exception object in the function's exception slot `x`), then a

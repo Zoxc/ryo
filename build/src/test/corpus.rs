@@ -530,7 +530,7 @@ pub(crate) const CORPUS: &[Program] = &[
         name: "vm_cxx",
         crates: &[krate("vcx", "vm_cxx/lib.rs", CrateKind::Staticlib)],
         vm: &["outer", "mid", "step", "with_catcher", "<Catcher as std::ops::Drop>::drop", "vcx_through", "vcx_catcher"],
-        native: &["native", "vcx_terminate"],
+        native: &["native"],
         c_main: Some("vm_cxx/through.cpp"),
         foreign_unwind: true,
         ..PROGRAM
@@ -538,7 +538,7 @@ pub(crate) const CORPUS: &[Program] = &[
     Program {
         name: "vm_cxx_terminate",
         crates: &[krate("vcx", "vm_cxx/lib.rs", CrateKind::Staticlib)],
-        vm: &["nounwind", "mid"],
+        vm: &["nounwind", "mid", "vcx_terminate"],
         c_main: Some("vm_cxx/terminate.cpp"),
         foreign_unwind: true,
         ..PROGRAM

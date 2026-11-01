@@ -591,7 +591,7 @@ L0:
     mov.w64 $-80, $-64
     mov.w64 $-88, $-56
     imm.w8 $-105, 1
-    br! $-105, L4
+    br! $-105, L5
     jmp L3
 L1:
     mov.w64 $-56, $-40
@@ -607,24 +607,26 @@ L3:
     mov.w64 $-96, $-56
     mov.w64 $-104, $-64
     addr.const $-112, k0
-    call $0, fn1, 0, [4294967200, 8, 4294967192, 264, 4294967184, 520]
 L4:
+    call $0, fn1, 0, [4294967200, 8, 4294967192, 264, 4294967184, 520]
+L5:
     imm.w64 $-112, 0
     lt.u.imm.w64 $-89, $-112, 1
-    br! $-89, L5
+    br! $-89, L6
     imm.w64 $-112, 1
     le.u.imm.w64 $-90, $-112, 9223372036854775807
-    br! $-90, L5
+    br! $-90, L6
     sub.w64 $-40, $-88, $-80
     jmp L2
-L5:
+L6:
     addr.const $-120, k2
     imm.w64 $-112, 73
     addr.const $-128, k3
-L6:
+L7:
     call.sym $0, sym4, 0, [4294967176, 8, 4294967184, 264, 4294967168, 520]
     unreachable
-  cleanup L6 -> continue
+  cleanup L4 -> continue
+  cleanup L7 -> continue
   k0 = const allocation + 0
   fn1 = std::ptr::const_ptr::<impl *const T>::offset_from_unsigned::precondition_check
   k2 = const allocation + 0
@@ -636,11 +638,13 @@ fn <std::slice::Iter<'_, bool> as std::iter::adapters::filter::SpecAssumeCount>:
     arg $-16, 264
     le.u.w64 $-17, $-8, $-16
     imm.w8 $-18, 1
-    br! $-18, L0
+    br! $-18, L1
     addr.const $-32, k0
-    call $0, fn1, 0, [4294967279, 1, 4294967264, 264]
 L0:
+    call $0, fn1, 0, [4294967279, 1, 4294967264, 264]
+L1:
     ret $0, 0
+  cleanup L0 -> continue
   k0 = const allocation + 0
   fn1 = std::hint::assert_unchecked::precondition_check
 
@@ -713,12 +717,14 @@ fn <usize as std::iter::Step>::backward_unchecked (frame 32, args 0, ret 8) [hin
     arg $-16, 8
     arg $-24, 264
     imm.w8 $-25, 1
-    br! $-25, L0
+    br! $-25, L1
     addr.const $-32, k0
-    call $0, fn1, 0, [4294967280, 8, 4294967272, 264, 4294967264, 520]
 L0:
+    call $0, fn1, 0, [4294967280, 8, 4294967272, 264, 4294967264, 520]
+L1:
     sub.w64 $-8, $-16, $-24
     ret $-8, 8
+  cleanup L0 -> continue
   k0 = const allocation + 0
   fn1 = core::num::<impl usize>::unchecked_sub::precondition_check
 
@@ -827,7 +833,7 @@ L4:
     lt.u.w64 $-90, $-104, $-24
     xor.imm.w8 $-89, $-90, 1
     imm.w8 $-129, 1
-    br! $-129, L8
+    br! $-129, L9
     jmp L7
 L5:
     imm.w64 $-112, 18446744073709551615
@@ -838,12 +844,14 @@ L6:
     jmp L4
 L7:
     addr.const $-136, k2
-    call $0, fn3, 0, [4294967207, 1, 4294967160, 264]
 L8:
+    call $0, fn3, 0, [4294967207, 1, 4294967160, 264]
+L9:
     ; end $-88, 24 bytes
     ret $-16, 526344
   cleanup L0 -> continue
   cleanup L2 -> continue
+  cleanup L8 -> continue
   sym0 = alloc::raw_vec::RawVecInner::try_allocate_in
   sym1 = alloc::raw_vec::handle_error
   k2 = const allocation + 0
@@ -871,7 +879,7 @@ fn core::num::<impl usize>::unchecked_add::precondition_check (frame 144, args 0
     mov.w64 $-72, $-16
     add.ovf.u.w64 $-56, $-48, $-64, $-72
     mov.w8 $-33, $-48
-    br! $-33, L0
+    br! $-33, L1
     addr.const $-32, k0
     imm.w64 $-24, 186
     mov.w64 $-88, $-32
@@ -888,10 +896,12 @@ fn core::num::<impl usize>::unchecked_add::precondition_check (frame 144, args 0
     mov.w64 $-48, $-72
     imm.w8 $-121, 0
     mov.w64 $-136, $-120
+L0:
     call.sym $0, sym2, 0, [4294967240, 8, 4294967248, 264, 4294967175, 513, 4294967160, 776]
     unreachable
-L0:
+L1:
     ret $0, 0
+  cleanup L0 -> continue
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
@@ -904,7 +914,7 @@ fn core::num::<impl usize>::unchecked_sub::precondition_check (frame 144, args 0
     mov.w64 $-72, $-16
     sub.ovf.u.w64 $-56, $-48, $-64, $-72
     mov.w8 $-33, $-48
-    br! $-33, L0
+    br! $-33, L1
     addr.const $-32, k0
     imm.w64 $-24, 186
     mov.w64 $-88, $-32
@@ -921,10 +931,12 @@ fn core::num::<impl usize>::unchecked_sub::precondition_check (frame 144, args 0
     mov.w64 $-48, $-72
     imm.w8 $-121, 0
     mov.w64 $-136, $-120
+L0:
     call.sym $0, sym2, 0, [4294967240, 8, 4294967248, 264, 4294967175, 513, 4294967160, 776]
     unreachable
-L0:
+L1:
     ret $0, 0
+  cleanup L0 -> continue
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
@@ -1285,7 +1297,7 @@ fn std::fmt::Arguments::<'_>::new::<39, 3> (frame 48, args 0, ret 16) [hint]
 fn std::hint::assert_unchecked::precondition_check (frame 128, args 0, ret 0) [hint]
     arg $-1, 1
     arg $-104, 264
-    br $-1, L0
+    br $-1, L1
     addr.const $-24, k0
     imm.w64 $-16, 221
     mov.w64 $-72, $-24
@@ -1302,10 +1314,12 @@ fn std::hint::assert_unchecked::precondition_check (frame 128, args 0, ret 0) [h
     mov.w64 $-32, $-56
     imm.w8 $-105, 0
     mov.w64 $-120, $-104
+L0:
     call.sym $0, sym2, 0, [4294967256, 8, 4294967264, 264, 4294967191, 513, 4294967176, 776]
     unreachable
-L0:
+L1:
     ret $0, 0
+  cleanup L0 -> continue
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
@@ -1436,8 +1450,10 @@ L0:
     mov.w64 $-48, $-72
     imm.w8 $-121, 0
     mov.w64 $-136, $-120
+L1:
     call.sym $0, sym2, 0, [4294967240, 8, 4294967248, 264, 4294967175, 513, 4294967160, 776]
     unreachable
+  cleanup L1 -> continue
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt

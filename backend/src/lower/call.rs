@@ -376,11 +376,10 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     return native("C-variadic call through a pointer on SysV");
                 }
                 let at = self.call_insn(op, &[rd, f, k], &a, kind, sig);
-                // A `C` callee can't unwind (cg_ssa makes the call `nounwind`): no call-site
-                // entry, so an exception out of it terminates. `C-unwind` ones can.
-                if sig.conv == CallConv::Rust || sig.c_unwind {
-                    self.unwind_entry(at, cont.unwind);
-                }
+                // A `C` callee can't unwind (cg_ssa makes the call `nounwind`): as for MIR's
+                // `Unreachable` ([`FnCx::unwind_entry`]). `C-unwind` ones can.
+                let can_unwind = sig.conv == CallConv::Rust || sig.c_unwind;
+                self.unwind_entry(at, if can_unwind { cont.unwind } else { rustc_middle::mir::UnwindAction::Unreachable });
             }
         }
         self.finish_call(cont, d, after)

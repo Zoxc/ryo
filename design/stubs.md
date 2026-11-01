@@ -145,8 +145,9 @@ These make the containing function native ([backend.md](backend.md#pipeline), st
 Templates don't catch, and the VM doesn't either: a panic in an island unwinds natively out
 of it into the calling VM frame, whose LSDA sends it to the frame's landing pad or on to its
 caller ([vm.md](vm.md#unwinding)). Whether an island call is a call site at all follows the
-MIR unwind action ([lowering.md](lowering.md#unwinding)): islands that can't unwind, and
-calls with `UnwindAction::Unreachable`, are none, so unwinding out of them aborts.
+MIR unwind action ([lowering.md](lowering.md#unwinding)): islands that can't unwind are
+none, so unwinding out of them aborts; `UnwindAction::Unreachable` is a `Continue` entry in a
+function without landing pads and none in one with, as cg_llvm.
 
 ## VM functions as native functions
 

@@ -546,7 +546,8 @@ The calls (`call`, `call.sym`, `call.sym.ind`, `call.ptr`), `tail_call`, `ret`, 
   to it.
 - **C calls**: `extern "C"` and `extern "C-unwind"` callees use the same sequence with the C
   `PassMode`s (`byval` stack copies, `zeroext`/`signext` loads, `asm::ARG_SEXT`); only a
-  `C-unwind` call is a call site. A C-variadic call's plan covers the fixed and the
+  `C-unwind` call unwinds to its MIR action (a `C` one's is that of
+  `UnwindAction::Unreachable`). A C-variadic call's plan covers the fixed and the
   variadic arguments (rustc's `FnAbi` for the call). On SysV its list also loads `al`, an
   upper bound of the `xmm` registers used, from a byte temporary: the integer register
   index `asm::ARG_RAX`, only for `call` and `call.sym` (the others have their callee in
@@ -608,7 +609,10 @@ panic runtime, as through native frames. The image carries the unwind informatio
     as a catch without reading a type table), so the search phase stops there even if nothing
     up the stack catches. Its stub jumps to the function's terminate stub, which calls the
     reason's lang item ([lowering.md](lowering.md#unwinding)).
-  - **Unreachable**: no call site, so unwinding out of it aborts, as for a `nounwind` call.
+  - **Unreachable** (and `C` callees): as cg_llvm, in a function without landing pads (no
+    LSDA there) as Continue, so a panic or foreign exception leaving such a callee anyway
+    isn't stopped in the search phase here (a Rust callee's own terminate pad aborts in the
+    cleanup phase); in one with landing pads no call site, so unwinding out of it aborts.
 - **Landing pads**: the lowering emits one `lpad x; jmp bb` stub per distinct unwind
   destination. The personality enters it with the exception object in `rax`, `rsp` at
   `fp - F` (and `rbp` restored); `ryo_h_Lpad` stores the object in the function's

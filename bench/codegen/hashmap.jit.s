@@ -5816,6 +5816,8 @@ L32:
     jmp     L36
     mov     r12,rax
     jmp     L36
+    mov     r12,rax
+    jmp     L36
 L33:
     lea     rdi,[k19]
     mov     [rsp+1A8h],rdi
@@ -6799,6 +6801,7 @@ L10:
     mov     esi,3Dh
     call    image.sym39
     ud2
+    jmp     L14
     jmp     L14
     jmp     L14
 L11:

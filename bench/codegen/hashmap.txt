@@ -122,7 +122,7 @@ L5:
     addr $-104, $-80
     mov.w64 $-96, $-104
     imm.w8 $-121, 1
-    br! $-121, L12
+    br! $-121, L13
     jmp L11
 L6:
     ; end $-80, 8 bytes
@@ -151,8 +151,9 @@ L11:
     imm.w64 $-136, 1
     imm.w64 $-144, 8
     addr.const $-152, k4
-    call $0, fn5, 0, [4294967184, 8, 4294967176, 264, 4294967168, 520, 4294967160, 776, 4294967152, 1032, 4294967144, 1288]
 L12:
+    call $0, fn5, 0, [4294967184, 8, 4294967176, 264, 4294967168, 520, 4294967160, 776, 4294967152, 1032, 4294967144, 1288]
+L13:
     load.w64 $-128, [$-88 + 0]
     store.w64 [$-96 + 0], $-128
     mov.w64 $-40, $-80
@@ -161,14 +162,15 @@ L12:
     xor.w64 $-144, $-128, $-40
     store.w64 [$-8 + 24], $-144
     mov.w64 $-80, $-8
-L13:
+L14:
     call $0, fn6, 0, [4294967216, 8]
     jmp L6
   cleanup L0 -> continue
   cleanup L3 -> continue
   cleanup L7 -> continue
   cleanup L10 -> continue
-  cleanup L13 -> continue
+  cleanup L12 -> continue
+  cleanup L14 -> continue
   fn0 = <usize as std::cmp::Ord>::min
   fn1 = <core::hash::sip::Sip13Rounds as core::hash::sip::Sip>::c_rounds
   fn2 = core::hash::sip::u8to64_le
@@ -609,14 +611,16 @@ fn <std::alloc::Global as std::alloc::Allocator>::deallocate (frame 80, args 0, 
     arg $-32, 520
     arg $-24, 776
     mov.w64 $-64, $-24
-    br.eq.imm.w64 $-64, 0, L0
+    br.eq.imm.w64 $-64, 0, L1
     mov.w64 $-72, $-32
-    call.sym $0, sym0, 0, [4294967280, 8, 4294967232, 264, 4294967224, 520]
-    jmp L1
 L0:
-    ret $0, 0
+    call.sym $0, sym0, 0, [4294967280, 8, 4294967232, 264, 4294967224, 520]
+    jmp L2
 L1:
-    jmp L0
+    ret $0, 0
+L2:
+    jmp L1
+  cleanup L0 -> continue
   sym0 = alloc::alloc::__rust_dealloc
 
 fn <std::collections::HashMap<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>> as std::default::Default>::default (frame 112, args 0, ret 32) [hint]
@@ -985,12 +989,14 @@ fn <u32 as std::iter::Step>::forward_unchecked (frame 32, args 0, ret 4) [hint]
     arg $-16, 264
     trunc.w64.w32 $-20, $-16
     imm.w8 $-21, 1
-    br! $-21, L0
+    br! $-21, L1
     addr.const $-32, k0
-    call $0, fn1, 0, [4294967288, 4, 4294967276, 260, 4294967264, 520]
 L0:
+    call $0, fn1, 0, [4294967288, 4, 4294967276, 260, 4294967264, 520]
+L1:
     add.w32 $-4, $-8, $-20
     ret $-4, 4
+  cleanup L0 -> continue
   k0 = const allocation + 0
   fn1 = core::num::<impl u32>::unchecked_add::precondition_check
 
@@ -1017,12 +1023,14 @@ fn <u64 as std::iter::Step>::forward_unchecked (frame 48, args 0, ret 8) [hint]
     arg $-24, 264
     mov.w64 $-32, $-24
     imm.w8 $-33, 1
-    br! $-33, L0
+    br! $-33, L1
     addr.const $-40, k0
-    call $0, fn1, 0, [4294967280, 8, 4294967264, 264, 4294967256, 520]
 L0:
+    call $0, fn1, 0, [4294967280, 8, 4294967264, 264, 4294967256, 520]
+L1:
     add.w64 $-8, $-16, $-32
     ret $-8, 8
+  cleanup L0 -> continue
   k0 = const allocation + 0
   fn1 = core::num::<impl u64>::unchecked_add::precondition_check
 
@@ -1058,7 +1066,7 @@ L1:
     mov.w64 $-80, $-16
     mov.w64 $-136, $-80
     imm.w8 $-153, 1
-    br! $-153, L5
+    br! $-153, L6
     jmp L4
 L2:
     store.copy [$-104 + 0], $-24, 24
@@ -1075,29 +1083,33 @@ L4:
     imm.w64 $-160, 1
     imm.w64 $-168, 1
     addr.const $-176, k2
-    call $0, fn3, 0, [4294967152, 8, 4294967144, 264, 4294967136, 520, 4294967128, 776, 4294967184, 1032, 4294967120, 1288]
 L5:
+    call $0, fn3, 0, [4294967152, 8, 4294967144, 264, 4294967136, 520, 4294967128, 776, 4294967184, 1032, 4294967120, 1288]
+L6:
     mul.imm.w64 $-160, $-112, 1
     memcpy $-136, $-128, $-160
     imm.w8 $-153, 1
-    br! $-153, L6
+    br! $-153, L7
     imm.w64 $-160, 1
-    br.eq.imm.w64 $-160, 0, L8
-    jmp L9
-L6:
+    br.eq.imm.w64 $-160, 0, L10
+    jmp L11
+L7:
     mov.w64 $-8, $-112
     jmp L2
-L7:
-    addr.const $-160, k4
-    call $0, fn5, 0, [4294967184, 8, 4294967168, 264, 4294967136, 520]
-    jmp L6
 L8:
-    unreachable
+    addr.const $-160, k4
 L9:
+    call $0, fn5, 0, [4294967184, 8, 4294967168, 264, 4294967136, 520]
+    jmp L7
+L10:
+    unreachable
+L11:
     mov.w64 $-136, $-24
     mov.w64 $-128, $-136
-    jmp L7
+    jmp L8
   cleanup L0 -> continue
+  cleanup L5 -> continue
+  cleanup L9 -> continue
   k0 = const allocation + 0
   fn1 = alloc::raw_vec::RawVecInner::with_capacity_in
   k2 = const allocation + 0
@@ -1200,8 +1212,10 @@ L0:
     mov.w64 $-48, $-72
     imm.w8 $-121, 0
     mov.w64 $-136, $-120
+L1:
     call.sym $0, sym2, 0, [4294967240, 8, 4294967248, 264, 4294967175, 513, 4294967160, 776]
     unreachable
+  cleanup L1 -> continue
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
@@ -1415,7 +1429,7 @@ L4:
     lt.u.w64 $-90, $-104, $-24
     xor.imm.w8 $-89, $-90, 1
     imm.w8 $-129, 1
-    br! $-129, L8
+    br! $-129, L9
     jmp L7
 L5:
     imm.w64 $-112, 18446744073709551615
@@ -1426,12 +1440,14 @@ L6:
     jmp L4
 L7:
     addr.const $-136, k2
-    call $0, fn3, 0, [4294967207, 1, 4294967160, 264]
 L8:
+    call $0, fn3, 0, [4294967207, 1, 4294967160, 264]
+L9:
     ; end $-88, 24 bytes
     ret $-16, 526344
   cleanup L0 -> continue
   cleanup L2 -> continue
+  cleanup L8 -> continue
   sym0 = alloc::raw_vec::RawVecInner::try_allocate_in
   sym1 = alloc::raw_vec::handle_error
   k2 = const allocation + 0
@@ -1565,7 +1581,7 @@ fn core::hash::sip::u8to64_le (frame 192, args 0, ret 8) [hint]
     addr $-120, $-96
     mov.w64 $-112, $-120
     imm.w8 $-153, 1
-    br! $-153, L4
+    br! $-153, L5
     jmp L3
 L0:
     mov.w64 $-112, $-88
@@ -1582,16 +1598,16 @@ L0:
     addr $-136, $-92
     mov.w64 $-128, $-136
     imm.w8 $-153, 1
-    br! $-153, L6
-    jmp L5
+    br! $-153, L8
+    jmp L6
 L1:
     mov.w64 $-104, $-88
     br.lt.u.w64! $-104, $-40, L2
     mov.w64 $-128, $-88
     add.w64 $-120, $-32, $-128
     imm.w8 $-153, 1
-    br! $-153, L8
-    jmp L7
+    br! $-153, L11
+    jmp L9
 L2:
     ret $-8, 8
 L3:
@@ -1601,8 +1617,9 @@ L3:
     imm.w64 $-168, 1
     imm.w64 $-176, 4
     addr.const $-184, k0
-    call $0, fn1, 0, [4294967168, 8, 4294967160, 264, 4294967136, 520, 4294967128, 776, 4294967120, 1032, 4294967112, 1288]
 L4:
+    call $0, fn1, 0, [4294967168, 8, 4294967160, 264, 4294967136, 520, 4294967128, 776, 4294967120, 1032, 4294967112, 1288]
+L5:
     load.w32 $-160, [$-104 + 0]
     store.w32 [$-112 + 0], $-160
     mov.w32 $-44, $-96
@@ -1610,15 +1627,16 @@ L4:
     zext.w32.w64 $-8, $-44
     add.imm.w64 $-88, $-88, 4
     jmp L0
-L5:
+L6:
     mov.w64 $-144, $-120
     mov.w64 $-152, $-136
     imm.w64 $-160, 1
     imm.w64 $-168, 1
     imm.w64 $-176, 2
     addr.const $-184, k2
+L7:
     call $0, fn3, 0, [4294967152, 8, 4294967144, 264, 4294967136, 520, 4294967128, 776, 4294967120, 1032, 4294967112, 1288]
-L6:
+L8:
     load.w16 $-160, [$-120 + 0]
     store.w16 [$-128 + 0], $-160
     mov.w16 $-46, $-92
@@ -1630,11 +1648,12 @@ L6:
     or.w64 $-8, $-8, $-104
     add.imm.w64 $-88, $-88, 2
     jmp L1
-L7:
+L9:
     mov.w64 $-128, $-16
     addr.const $-160, k4
+L10:
     call $0, fn5, 0, [4294967176, 8, 4294967168, 264, 4294967136, 520]
-L8:
+L11:
     mov.w64 $-128, $-16
     lt.u.w64 $-91, $-120, $-128
     ; end $-91, 1 bytes
@@ -1648,6 +1667,9 @@ L8:
     or.w64 $-8, $-8, $-104
     add.imm.w64 $-88, $-88, 1
     jmp L2
+  cleanup L4 -> continue
+  cleanup L7 -> continue
+  cleanup L10 -> continue
   k0 = const allocation + 0
   fn1 = std::ptr::copy_nonoverlapping::precondition_check
   k2 = const allocation + 0
@@ -1661,7 +1683,7 @@ fn core::num::<impl u32>::unchecked_add::precondition_check (frame 128, args 0, 
     arg $-112, 520
     add.ovf.u.w32 $-36, $-32, $-4, $-8
     mov.w8 $-25, $-32
-    br! $-25, L0
+    br! $-25, L1
     addr.const $-24, k0
     imm.w64 $-16, 184
     mov.w64 $-80, $-24
@@ -1678,10 +1700,12 @@ fn core::num::<impl u32>::unchecked_add::precondition_check (frame 128, args 0, 
     mov.w64 $-40, $-64
     imm.w8 $-113, 0
     mov.w64 $-128, $-112
+L0:
     call.sym $0, sym2, 0, [4294967248, 8, 4294967256, 264, 4294967183, 513, 4294967168, 776]
     unreachable
-L0:
+L1:
     ret $0, 0
+  cleanup L0 -> continue
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
@@ -1692,7 +1716,7 @@ fn core::num::<impl u64>::unchecked_add::precondition_check (frame 144, args 0, 
     arg $-120, 520
     add.ovf.u.w64 $-56, $-48, $-8, $-16
     mov.w8 $-33, $-48
-    br! $-33, L0
+    br! $-33, L1
     addr.const $-32, k0
     imm.w64 $-24, 184
     mov.w64 $-88, $-32
@@ -1709,10 +1733,12 @@ fn core::num::<impl u64>::unchecked_add::precondition_check (frame 144, args 0, 
     mov.w64 $-48, $-72
     imm.w8 $-121, 0
     mov.w64 $-136, $-120
+L0:
     call.sym $0, sym2, 0, [4294967240, 8, 4294967248, 264, 4294967175, 513, 4294967160, 776]
     unreachable
-L0:
+L1:
     ret $0, 0
+  cleanup L0 -> continue
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
@@ -1737,7 +1763,7 @@ fn core::num::<impl usize>::unchecked_add::precondition_check (frame 144, args 0
     mov.w64 $-72, $-16
     add.ovf.u.w64 $-56, $-48, $-64, $-72
     mov.w8 $-33, $-48
-    br! $-33, L0
+    br! $-33, L1
     addr.const $-32, k0
     imm.w64 $-24, 186
     mov.w64 $-88, $-32
@@ -1754,10 +1780,12 @@ fn core::num::<impl usize>::unchecked_add::precondition_check (frame 144, args 0
     mov.w64 $-48, $-72
     imm.w8 $-121, 0
     mov.w64 $-136, $-120
+L0:
     call.sym $0, sym2, 0, [4294967240, 8, 4294967248, 264, 4294967175, 513, 4294967160, 776]
     unreachable
-L0:
+L1:
     ret $0, 0
+  cleanup L0 -> continue
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
@@ -1775,23 +1803,25 @@ fn core::ub_checks::maybe_is_nonoverlapping::runtime (frame 160, args 0, ret 1) 
     mov.w64 $-88, $-120
     mov.w8 $-61, $-112
     mov.w64 $-136, $-88
-    br! $-61, L0
+    br! $-61, L1
     addr.const $-152, k0
     imm.w64 $-144, 61
+L0:
     call.sym $0, sym1, 0, [4294967144, 8, 4294967152, 264]
     unreachable
-L0:
+L1:
     mov.w64 $-96, $-136
     imm.w64 $-104, 1
     mov.w64 $-88, $-96
-    br.lt.u.w64! $-72, $-80, L1
+    br.lt.u.w64! $-72, $-80, L2
     sub.w64 $-48, $-80, $-72
-    jmp L2
-L1:
-    sub.w64 $-48, $-72, $-80
+    jmp L3
 L2:
+    sub.w64 $-48, $-72, $-80
+L3:
     le.u.w64 $-1, $-88, $-48
     ret $-1, 1
+  cleanup L0 -> continue
   k0 = const allocation + 0
   sym1 = core::panicking::panic_nounwind
 
@@ -6281,51 +6311,55 @@ L0:
     mov.w64 $-160, $-168
     imm.w64 $-152, 0
     imm.w8 $-169, 1
-    br! $-169, L6
+    br! $-169, L7
     jmp L5
 L1:
     call.sym $0, sym0, 0, []
-    jmp L7
+    jmp L8
 L2:
     call.sym $0, sym1, 0, []
-    jmp L8
+    jmp L10
 L3:
     mov.w64 $-160, $-64
     eq.imm.w64 $-145, $-160, 0
-    br! $-145, L10
-    jmp L9
+    br! $-145, L13
+    jmp L12
 L4:
     ret $-16, 526344
 L5:
     mov.w64 $-168, $-80
     addr.const $-176, k2
-    call $0, fn3, 0, [4294967128, 8, 4294967120, 264]
 L6:
+    call $0, fn3, 0, [4294967128, 8, 4294967120, 264]
+L7:
     mov.w128 $-136, $-160
     mov.w128 $-16, $-136
     jmp L4
-L7:
-    mov.w64 $-128, $-32
-    call.sym $-64, sym4, 8, [4294967176, 8, 4294967168, 264]
-    jmp L3
 L8:
     mov.w64 $-128, $-32
+L9:
+    call.sym $-64, sym4, 8, [4294967176, 8, 4294967168, 264]
+    jmp L3
+L10:
+    mov.w64 $-128, $-32
+L11:
     call.sym $-64, sym5, 8, [4294967176, 8, 4294967168, 264]
     jmp L3
-L9:
+L12:
     imm.w64 $-144, 0
     imm.w64 $-136, 0
     imm.w64 $-136, 1
     eq.imm.w64 $-137, $-136, 1
     const $-16, k6, 16
     jmp L4
-L10:
+L13:
     imm.w8 $-169, 1
-    br! $-169, L11
+    br! $-169, L15
     mov.w64 $-168, $-64
     addr.const $-176, k7
+L14:
     call $0, fn8, 0, [4294967128, 8, 4294967120, 264]
-L11:
+L15:
     mov.w64 $-160, $-64
     mov.w64 $-144, $-160
     mov.w64 $-152, $-144
@@ -6337,14 +6371,22 @@ L11:
     mov.w64 $-152, $-160
     mov.w64 $-144, $-120
     imm.w8 $-169, 1
-    br! $-169, L12
+    br! $-169, L17
     mov.w64 $-160, $-72
     addr.const $-176, k9
+L16:
     call $0, fn10, 0, [4294967136, 8, 4294967120, 264]
-L12:
+L17:
     mov.w128 $-136, $-152
     mov.w128 $-16, $-136
     jmp L4
+  cleanup L1 -> continue
+  cleanup L2 -> continue
+  cleanup L6 -> continue
+  cleanup L9 -> continue
+  cleanup L11 -> continue
+  cleanup L14 -> continue
+  cleanup L16 -> continue
   sym0 = alloc::alloc::__rust_no_alloc_shim_is_unstable_v2
   sym1 = alloc::alloc::__rust_no_alloc_shim_is_unstable_v2
   k2 = const allocation + 0
@@ -6929,7 +6971,7 @@ L1:
     mov.w64 $-88, $-128
     shr.u.imm.w64 $-136, $-80, 1
     imm.w8 $-153, 1
-    br! $-153, L6
+    br! $-153, L7
     jmp L5
 L2:
     const $-72, k0, 16
@@ -6946,8 +6988,9 @@ L5:
     imm.w64 $-160, 1
     imm.w64 $-168, 1
     addr.const $-176, k2
-    call $0, fn3, 0, [4294967152, 8, 4294967136, 264, 4294967128, 520, 4294967160, 776, 4294967120, 1032]
 L6:
+    call $0, fn3, 0, [4294967152, 8, 4294967136, 264, 4294967128, 520, 4294967160, 776, 4294967120, 1032]
+L7:
     mov.w64 $-152, $-88
     mov.w64 $-144, $-136
     mov.w64 $-120, $-152
@@ -6956,6 +6999,7 @@ L6:
     mov.w128 $-72, $-104
     jmp L3
   cleanup L4 -> continue
+  cleanup L6 -> continue
   k0 = const allocation + 0
   fn1 = std::option::Option::<&str>::map_or_else::<std::string::String, {closure@std::fmt::format::{closure#0}}, for<'a> fn(&'a str) -> <str as std::borrow::ToOwned>::Owned {<str as std::borrow::ToOwned>::to_owned}>
   k2 = const allocation + 0
@@ -6977,7 +7021,7 @@ L0:
 fn std::hint::assert_unchecked::precondition_check (frame 128, args 0, ret 0) [hint]
     arg $-1, 1
     arg $-104, 264
-    br $-1, L0
+    br $-1, L1
     addr.const $-24, k0
     imm.w64 $-16, 221
     mov.w64 $-72, $-24
@@ -6994,10 +7038,12 @@ fn std::hint::assert_unchecked::precondition_check (frame 128, args 0, ret 0) [h
     mov.w64 $-32, $-56
     imm.w8 $-105, 0
     mov.w64 $-120, $-104
+L0:
     call.sym $0, sym2, 0, [4294967256, 8, 4294967264, 264, 4294967191, 513, 4294967176, 776]
     unreachable
-L0:
+L1:
     ret $0, 0
+  cleanup L0 -> continue
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
@@ -7272,7 +7318,7 @@ fn std::iter::adapters::step_by::step_by_spec::<impl std::iter::adapters::step_b
     add.imm.w64 $-80, $-88, 1
     mov.w64 $-88, $-80
     br.eq.imm.w64 $-88, 0, L4
-    jmp L5
+    jmp L6
 L0:
     load.w64 $-64, [$-24 + 0]
     add.w64 $-72, $-64, $-40
@@ -7290,9 +7336,10 @@ L3:
     unreachable
 L4:
     addr.const $-104, k1
+L5:
     call $0, fn2, 0, [4294967192, 8]
     jmp L3
-L5:
+L6:
     mov.w64 $-72, $-88
     mov.w64 $-64, $-72
     mov.w64 $-40, $-64
@@ -7301,6 +7348,7 @@ L5:
     load.w64 $-48, [$-24 + 8]
     br.gt.u.imm.w64 $-48, 0, L0
     jmp L1
+  cleanup L5 -> continue
   k0 = const allocation + 0
   k1 = const allocation + 0
   fn2 = std::num::NonZero::<T>::new_unchecked::precondition_check
@@ -7343,8 +7391,10 @@ fn std::num::NonZero::<T>::new_unchecked::precondition_check (frame 112, args 0,
     mov.w64 $-24, $-48
     imm.w8 $-97, 0
     mov.w64 $-112, $-96
+L0:
     call.sym $0, sym2, 0, [4294967264, 8, 4294967272, 264, 4294967199, 513, 4294967184, 776]
     unreachable
+  cleanup L0 -> continue
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
@@ -7402,7 +7452,7 @@ fn std::ptr::NonNull::<T>::new_unchecked::precondition_check (frame 128, args 0,
     arg $-112, 264
     mov.w64 $-40, $-8
     eq.imm.w64 $-25, $-40, 0
-    br! $-25, L0
+    br! $-25, L1
     addr.const $-24, k0
     imm.w64 $-16, 210
     mov.w64 $-80, $-24
@@ -7419,10 +7469,12 @@ fn std::ptr::NonNull::<T>::new_unchecked::precondition_check (frame 128, args 0,
     mov.w64 $-40, $-64
     imm.w8 $-113, 0
     mov.w64 $-128, $-112
+L0:
     call.sym $0, sym2, 0, [4294967248, 8, 4294967256, 264, 4294967183, 513, 4294967168, 776]
     unreachable
-L0:
+L1:
     ret $0, 0
+  cleanup L0 -> continue
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt
@@ -7474,17 +7526,19 @@ fn std::ptr::copy_nonoverlapping::<u8> (frame 64, args 0, ret 0) [always]
     arg $-16, 264
     arg $-24, 520
     imm.w8 $-41, 1
-    br! $-41, L0
+    br! $-41, L1
     mov.w64 $-32, $-8
     mov.w64 $-40, $-16
     imm.w64 $-48, 1
     imm.w64 $-56, 1
     addr.const $-64, k0
-    call $0, fn1, 0, [4294967264, 8, 4294967256, 264, 4294967248, 520, 4294967240, 776, 4294967272, 1032, 4294967232, 1288]
 L0:
+    call $0, fn1, 0, [4294967264, 8, 4294967256, 264, 4294967248, 520, 4294967240, 776, 4294967272, 1032, 4294967232, 1288]
+L1:
     mul.imm.w64 $-48, $-24, 1
     memcpy $-16, $-8, $-48
     ret $0, 0
+  cleanup L0 -> continue
   k0 = const allocation + 0
   fn1 = std::ptr::copy_nonoverlapping::precondition_check
 
@@ -7785,34 +7839,36 @@ fn std::ptr::swap_nonoverlapping::<hashbrown::raw::RawTableInner> (frame 128, ar
     arg $-24, 520
     arg $-96, 776
     imm.w8 $-97, 1
-    br! $-97, L0
+    br! $-97, L1
     mov.w64 $-32, $-8
     mov.w64 $-40, $-16
     imm.w64 $-104, 32
     imm.w64 $-112, 8
     mov.w64 $-120, $-96
-    call $0, fn0, 0, [4294967264, 8, 4294967256, 264, 4294967192, 520, 4294967184, 776, 4294967272, 1032, 4294967176, 1288]
 L0:
+    call $0, fn0, 0, [4294967264, 8, 4294967256, 264, 4294967192, 520, 4294967184, 776, 4294967272, 1032, 4294967176, 1288]
+L1:
     mov.w64 $-40, $-8
     mov.w64 $-32, $-24
     mov.w128 $-64, $-40
     mul.imm.w64 $-48, $-56, 32
-    jmp L4
-L1:
+    jmp L5
+L2:
     mov.w64 $-64, $-56
     mov.w64 $-80, $-8
     mov.w64 $-88, $-16
-L2:
-    call $0, fn1, 0, [4294967216, 8, 4294967208, 264, 4294967232, 520]
-    jmp L3
 L3:
-    ret $0, 0
+    call $0, fn1, 0, [4294967216, 8, 4294967208, 264, 4294967232, 520]
+    jmp L4
 L4:
+    ret $0, 0
+L5:
     mov.w64 $-56, $-48
-    br.eq.imm.w64 $-56, 0, L3
-    jmp L1
+    br.eq.imm.w64 $-56, 0, L4
+    jmp L2
     unreachable
-  cleanup L2 -> continue
+  cleanup L0 -> continue
+  cleanup L3 -> continue
   fn0 = std::ptr::swap_nonoverlapping::precondition_check
   fn1 = std::ptr::swap_nonoverlapping_bytes
 
@@ -7968,15 +8024,16 @@ L1:
 L2:
     mov.w64 $-104, $-40
     imm.w8 $-129, 1
-    br! $-129, L5
+    br! $-129, L6
     jmp L4
 L3:
     ret $0, 0
 L4:
     imm.w64 $-136, 1
     addr.const $-144, k0
-    call $0, fn1, 0, [4294967192, 8, 4294967160, 264, 4294967152, 520]
 L5:
+    call $0, fn1, 0, [4294967192, 8, 4294967160, 264, 4294967152, 520]
+L6:
     add.imm.w64 $-112, $-104, 1
     mov.w64 $-40, $-112
     mov.w64 $-80, $-104
@@ -7986,10 +8043,11 @@ L5:
     mov.w64 $-104, $-112
     ptr.index $-128, $-16, $-96, 8
     mov.w64 $-120, $-128
-L6:
+L7:
     call $0, fn2, 0, [4294967192, 8, 4294967176, 264]
     jmp L1
-  cleanup L6 -> continue
+  cleanup L5 -> continue
+  cleanup L7 -> continue
   k0 = const allocation + 0
   fn1 = core::num::<impl usize>::unchecked_add::precondition_check
   fn2 = std::ptr::swap_chunk::<8>
@@ -8204,8 +8262,10 @@ L0:
     mov.w64 $-48, $-72
     imm.w8 $-121, 0
     mov.w64 $-136, $-120
+L1:
     call.sym $0, sym2, 0, [4294967240, 8, 4294967248, 264, 4294967175, 513, 4294967160, 776]
     unreachable
+  cleanup L1 -> continue
   k0 = const allocation + 0
   k1 = const allocation + 0
   sym2 = core::panicking::panic_nounwind_fmt

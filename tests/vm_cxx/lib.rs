@@ -1,7 +1,7 @@
 //! The Rust side of the C++ programs (`through.cpp`, `terminate.cpp`, `nested.cpp`), a
 //! staticlib: C++ exceptions thrown by a C++ callback unwind through VM frames (`outer`,
 //! `mid`, ...) and a native one (`native`) to a C++ `catch`. The `extern "C-unwind"` entry
-//! points are VM functions too, except `vcx_terminate` ([`vcx_terminate`]).
+//! points are VM functions too.
 #![feature(rustc_attrs)]
 #![allow(internal_features)]
 use std::hint::black_box;
@@ -115,13 +115,8 @@ pub extern "C-unwind" fn vcx_catcher(cb: Cb, n: u32) {
     with_catcher(cb, n)
 }
 
-/// Native: its call of `nounwind` can't unwind (MIR's `UnwindAction::Unreachable`), so a VM
-/// caller has no call-site entry for it and the C++ search phase would stop there
-/// (`std::terminate`) instead of passing on to `main`'s `catch`, as a cg_llvm frame without
-/// an LSDA does, and `nounwind`'s terminate block running in the cleanup phase.
 #[unsafe(no_mangle)]
 pub extern "C-unwind" fn vcx_terminate(cb: Cb, n: u32) {
-    unsafe { std::arch::asm!("") };
     nounwind(cb, n)
 }
 
