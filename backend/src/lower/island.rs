@@ -45,11 +45,6 @@ pub mod templates {
         let template = format!("ryo_island_{name}");
         rt.item(tcx, Symbol::intern(&template)).map(|_| template)
     }
-
-    /// `call_cN<A0, …, R>` (`extern "C"` through a fn pointer), N ≤ 16.
-    pub fn call_c(n: usize) -> Option<String> {
-        (n <= 16).then(|| format!("ryo_island_call_c{n}"))
-    }
 }
 
 impl<'a, 'tcx> FnCx<'a, 'tcx> {

@@ -35,10 +35,9 @@ impl Frame {
     }
 }
 
-/// The outgoing argument block (below `fp`), a destination and a fn pointer slot.
+/// The outgoing argument block (below `fp`) and a destination.
 const ARGS: u32 = -240i32 as u32;
 const DEST: u32 = 16;
-const FNP: u32 = -32i32 as u32;
 
 fn add(a: u64, b: u32) -> u64 {
     a + b as u64
@@ -74,39 +73,6 @@ fn call_closure_and_unit() {
     thread_local!(static HIT: Cell<bool> = const { Cell::new(false) });
     unsafe { island_of(&hit)(fr.fp(), ops.as_ptr()) };
     assert!(HIT.get());
-}
-
-extern "C" fn c_mix(a: u8, b: f64, c: *const u64) -> f64 {
-    a as f64 + b + unsafe { *c } as f64
-}
-
-#[repr(C)]
-#[derive(Debug, PartialEq, Clone, Copy)]
-struct Big {
-    a: u64,
-    b: u64,
-    c: u64,
-}
-
-extern "C" fn c_big(x: Big, k: u64) -> Big {
-    Big { a: x.a * k, b: x.b * k, c: x.c * k }
-}
-
-#[test]
-fn call_c() {
-    let mut fr = Frame::new();
-    let n = 100_u64;
-    fr.put(ARGS, (1_u8, 0.5_f64, &raw const n));
-    fr.put(FNP, c_mix as unsafe extern "C" fn(u8, f64, *const u64) -> f64);
-    let ops = [ARGS, DEST, FNP];
-    unsafe { call_c3::<u8, f64, *const u64, f64>(fr.fp(), ops.as_ptr()) };
-    assert_eq!(fr.get::<f64>(DEST), 101.5);
-
-    // An aggregate passed and returned indirectly.
-    fr.put(ARGS, (Big { a: 1, b: 2, c: 3 }, 2_u64));
-    fr.put(FNP, c_big as unsafe extern "C" fn(Big, u64) -> Big);
-    unsafe { call_c2::<Big, u64, Big>(fr.fp(), ops.as_ptr()) };
-    assert_eq!(fr.get::<Big>(DEST), Big { a: 2, b: 4, c: 6 });
 }
 
 #[test]
@@ -254,36 +220,6 @@ fn call_zst_in_the_middle() {
     let ops = [ARGS, DEST];
     unsafe { island_for(&f)(fr.fp(), ops.as_ptr()) };
     assert_eq!(fr.get::<u64>(DEST), 3007);
-}
-
-#[test]
-fn call_c_128_bit() {
-    extern "C" fn g(a: u8, b: u128, c: i128) -> u128 {
-        a as u128 + b + c as u128
-    }
-    let mut fr = Frame::new();
-    let ops = [ARGS, DEST, FNP];
-    fr.put::<(u8, u128, i128)>(ARGS, (1, 1 << 90, 1 << 70));
-    fr.put(FNP, g as unsafe extern "C" fn(u8, u128, i128) -> u128);
-    unsafe { call_c3::<u8, u128, i128, u128>(fr.fp(), ops.as_ptr()) };
-    assert_eq!(fr.get::<u128>(DEST), 1 + (1 << 90) + (1 << 70));
-}
-
-#[test]
-fn call_c_mixed_floats_and_ints() {
-    #[allow(clippy::too_many_arguments)]
-    extern "C" fn m(a: f32, b: i8, c: f64, d: u64, e: f32, f: i32, g: f64, h: f32, i: u16, j: f64) -> f64 {
-        a as f64 + b as f64 + c + d as f64 + e as f64 + f as f64 + g + h as f64 + i as f64 + j
-    }
-    type F = unsafe extern "C" fn(f32, i8, f64, u64, f32, i32, f64, f32, u16, f64) -> f64;
-    type A = (f32, i8, f64, u64, f32, i32, f64, f32, u16, f64);
-    let mut fr = Frame::new();
-    fr.put::<A>(ARGS, (0.5, -2, 0.25, 10, 1.5, -100, 1000.0, 0.125, 7, 1e6));
-    fr.put(FNP, m as F);
-    let ops = [ARGS, DEST, FNP];
-    unsafe { call_c10::<f32, i8, f64, u64, f32, i32, f64, f32, u16, f64, f64>(fr.fp(), ops.as_ptr()) };
-    let want = 0.5 - 2.0 + 0.25 + 10.0 + 1.5 - 100.0 + 1000.0 + 0.125 + 7.0 + 1e6;
-    assert_eq!(fr.get::<f64>(DEST), want);
 }
 
 #[test]

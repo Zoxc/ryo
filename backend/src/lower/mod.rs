@@ -217,6 +217,9 @@ pub fn vm_fn_sig<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> Result<Ab
     // its signature (SysV or Win64, shapes the VM passes); other C signatures, and every other
     // ABI, stay native (`from_fn_abi` already refuses variadic ones). A `C` body's unwinding
     // edges terminate (MIR's `UnwindAction::Terminate`), a `C-unwind` one's continue.
+    if let Some(why) = &sig.no_plan {
+        return native(format!("C ABI without a plan: {why}"));
+    }
     if sig.plan.is_none() {
         return native("non-Rust ABI without a plan");
     }

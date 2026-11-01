@@ -6,11 +6,12 @@
 //! - `call.sym sym` (`call.sym.ind` through a PE import slot): any other Rust-ABI instance
 //!   with a symbol, native or from another crate
 //! - `island call<F, Args, R>`: a safe Rust fn item without a symbol (through `FnOnce`)
-//! - `addr.sym` + `island call_cN`: a function with another ABI
 //!
-//! Fn-pointer calls and virtual calls (`InstanceKind::Virtual`, the fn pointer loaded from
-//! the receiver's vtable) are `call.ptr` (Rust ABI) or a `call_cN` island. `become` is
-//! `tail_call` / `tail_call.ptr`.
+//! `extern "C"` / `extern "C-unwind"` callees are called the same way (`call.sym`,
+//! `call.ptr`) where `sig.rs` has a plan for their signature; a call of any other C
+//! signature keeps the caller native. Fn-pointer calls and virtual calls
+//! (`InstanceKind::Virtual`, the fn pointer loaded from the receiver's vtable) are
+//! `call.ptr`. `become` is `tail_call` / `tail_call.ptr`.
 //!
 //! Arguments go where the platform calling convention says ([`super::sig::ArgPlan`]): the
 //! stack pieces are stored to the outgoing area before the call, the register pieces are
@@ -95,24 +96,23 @@ enum Target<'tcx> {
     Direct(Callee<'tcx>),
     /// `island call<F, Args, R>`: a safe Rust fn item `F` without a symbol, through `FnOnce`.
     Template(Ty<'tcx>),
-    /// A `call_cN` island on the callee's address (another ABI).
-    CIsland(Callee<'tcx>),
 }
 
 impl<'tcx> Target<'tcx> {
     /// A call of `callee` with signature `sig`: direct for the Rust ABI, and for the C ABI
-    /// where the signature has a plan (SysV or Win64, shapes the VM passes), else the island.
-    fn of(sig: &AbiSig<'tcx>, callee: Callee<'tcx>) -> Self {
-        match sig.conv {
-            CallConv::Rust => Target::Direct(callee),
-            CallConv::C if sig.plan.is_some() => Target::Direct(callee),
-            CallConv::C => Target::CIsland(callee),
+    /// where the signature has a plan (SysV or Win64, shapes the VM passes); a C call
+    /// without one keeps the caller native.
+    fn of(sig: &AbiSig<'tcx>, callee: Callee<'tcx>) -> Result<Self, NeedsNative> {
+        match (&sig.no_plan, sig.plan.is_some()) {
+            (Some(why), _) => native(format!("C call without a plan: {why}")),
+            (None, true) => Ok(Target::Direct(callee)),
+            (None, false) => native("a call without a calling convention"),
         }
     }
 
     /// Whether the call goes through an island, which takes its arguments as a block.
     fn is_island(self) -> bool {
-        matches!(self, Target::Template(_) | Target::CIsland(_))
+        matches!(self, Target::Template(_))
     }
 }
 
@@ -214,7 +214,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         self.emit_call(target, &sig, &homes, cont)
     }
 
-    /// A call through a fn pointer: `call.ptr` (Rust ABI) or a `call_cN` island.
+    /// A call through a fn pointer: `call.ptr`.
     fn indirect_call(
         &mut self,
         func: &Operand<'tcx>,
@@ -257,7 +257,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             let k = vtable_off(idx)?;
             self.op(Opcode::LoadW64, &[f, vtable, k]);
             args[0] = ArgSrc::Slot(data);
-            (Target::of(&sig, Callee::Ptr(f)), sig)
+            (Target::of(&sig, Callee::Ptr(f))?, sig)
         } else {
             let has_symbol = !matches!(callee.def, InstanceKind::Intrinsic(_));
             let vm = self.cx.vm.contains(&callee);
@@ -274,7 +274,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 }
                 Some(sig) => {
                     let sig = sig?;
-                    (Target::of(&sig, Callee::Sym(callee)), sig)
+                    (Target::of(&sig, Callee::Sym(callee))?, sig)
                 }
                 None => unreachable!("a callee without a symbol is a template call"),
             }
@@ -286,7 +286,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     fn ptr_target(&mut self, func: &Operand<'tcx>, fty: Ty<'tcx>, args: &[ArgSrc<'_, 'tcx>]) -> Result<(Target<'tcx>, AbiSig<'tcx>), NeedsNative> {
         let sig = if fty.fn_sig(self.tcx).c_variadic() { self.variadic_sig(fty, args)? } else { fn_ptr_sig(self.tcx, fty.fn_sig(self.tcx))? };
         let (p, _) = self.operand_slot(func)?;
-        Ok((Target::of(&sig, Callee::Ptr(p)), sig))
+        Ok((Target::of(&sig, Callee::Ptr(p))?, sig))
     }
 
     /// The signature of a call of the C-variadic fn of type `fty` with `args` ([`variadic_sig`]).
@@ -356,17 +356,12 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let block = frame::out_slot(self.island_block());
         let k = if sig.ret_kind == RET_SRET { 0 } else { sig.ret_kind };
         let rd = if k == 0 { 0 } else { d };
-        // The island calls' operands: the argument block, the result, and the callee.
+        // The `call` island's operands: the argument block and the result.
         let (bn, dn) = (sig.block_size, sig.output.size.bytes() as u32);
         match target {
             Target::Template(fty) => {
                 let args = [fty.into(), sig.args_tuple(tcx).into(), sig.output.ty.into()];
                 self.island(templates::CALL, &args, &[(block, bn), (d, dn)], Some(cont.unwind));
-            }
-            Target::CIsland(callee) => {
-                let p = self.callee_addr(callee);
-                let (name, args) = self.ptr_island(sig)?;
-                self.island(&name, &args, &[(block, bn), (d, dn), (p, 8)], Some(cont.unwind));
             }
             Target::Direct(callee) => {
                 let a = self.pass_args(sig, homes, Some(d), false)?;
@@ -598,19 +593,6 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let (op, f, kind) = self.call_op(callee, true);
         self.call_insn(op, &[f], &a, kind, &sig);
         Ok(())
-    }
-
-    /// The template and generic args of a `call_cN` island for `sig`.
-    fn ptr_island(&self, sig: &AbiSig<'tcx>) -> Result<(String, Vec<GenericArg<'tcx>>), NeedsNative> {
-        let n = sig.inputs.len();
-        let name = match sig.conv {
-            CallConv::C => templates::call_c(n),
-            CallConv::Rust => unreachable!("Rust-ABI calls are direct"),
-        };
-        let Some(name) = name else { return native(format!("call with {n} arguments")) };
-        let mut args: Vec<GenericArg<'tcx>> = sig.inputs.iter().map(|&t| t.into()).collect();
-        args.push(sig.output.ty.into());
-        Ok((name, args))
     }
 
     /// Whether `fty` can be called through `FnOnce` (the `call` template): a safe, Rust-ABI,

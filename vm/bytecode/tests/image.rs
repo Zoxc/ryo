@@ -163,7 +163,7 @@ fn sample() -> ImageWriter {
     let mut w = ImageWriter::new(SCID);
     let puts = w.symbol("puts", 0);
     let imp = w.symbol("some_dll_static", SYM_INDIRECT);
-    let island = w.symbol("_ZN6ryo_rt6island5call_c1", 0);
+    let island = w.symbol("_ZN6ryo_rt6island13drop_in_place", 0);
     let _other = w.symbol("_ZN4test3fooE", 0);
 
     let s1 = w.add_const(b"hello\0", 1, &[]);

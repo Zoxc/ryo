@@ -99,7 +99,7 @@ so a MIR change in a toolchain bump is a compile error. The tables below follow 
   function also keeps its destination pointer in a slot.
 - **Argument blocks** remain for island calls and for checking the inputs' sizes: the
   layout of the tuple of the ABI input types, as `tcx.layout_of` computes it
-  (`sig.rs`, `arg_block`). The `call` and `call_cN` templates read their arguments as that
+  (`sig.rs`, `arg_block`). The `call` template reads its arguments as that
   tuple. `ryo_bytecode::abi::check_arg_block` doesn't compute this layout: rustc's tuple field
   order depends on niches, not only on sizes and alignments (`(u32, u8, bool, u8)` and
   `(u32, u8, u8, u8)` differ), and changes between releases; the backend takes the
@@ -293,8 +293,10 @@ island.
      shared upstream generic) and local native functions. It doesn't matter whether the
      callee is VM code ([vm.md](vm.md#calls-and-islands)). Local copies of
      `#[inline]`/cross-crate-inlinable items are lowered locally like any other item.
-   - **`extern "C"` functions**: `addr.sym` of the callee into a slot and the `call_cN`
-     island ([stubs.md](stubs.md#templates)).
+   - **`extern "C"` / `extern "C-unwind"` functions**: `call.sym` the same way, with the C
+     `PassMode`s, where `sig.rs` has a plan for the signature; a call of any other C
+     signature keeps the function native (`C call without a plan: <why>`,
+     [vm.md](vm.md#calls-and-islands)).
    - **Safe callees without a symbol** (intrinsics without a VM lowering): the `call<F,
      Args, R>` island, for a safe, Rust-ABI fn item without `#[target_feature]` or
      `#[track_caller]`. Not in the `Fn*` shims of the fn item's own type
@@ -337,7 +339,7 @@ island.
      instance (cg_ssa's `IntrinsicResult::Fallback`; a VM function if the collector found
      it), and the rest keep the function native.
 
-   A Rust-ABI fn-pointer callee type → `call.ptr`; an `extern "C"` one → `call_cN`.
+   A fn-pointer callee type → `call.ptr` (an `extern "C"` one only with a plan, as above).
 
    **Tail calls** (`TailCall`, `become`): the arguments are staged in temporaries, their
    stack pieces stored over the function's own incoming ones, then `tail_call fn` for a VM
@@ -476,7 +478,7 @@ thread locals (`ThreadLocalRef` through the TLS shim), switches,
 asserts, drops (VM call of the glue, `drop_in_place` island, vtable drop for trait objects),
 unwinding (cleanup entries, landing pads, terminate stubs, the `catch_unwind` island) and calls in the platform convention: VM `call`, `call.sym` for everything else with a
 symbol, `call.ptr` for fn pointers and virtual calls (`dyn Fn*` included), tail calls, and
-islands (`call` for safe intrinsics without a symbol, `call_cN` for `extern "C"`), every
+the `call` island for safe intrinsics without a symbol, every
 shim kind with a body, plus the intrinsics listed in Calls.
 `#[track_caller]` functions are VM functions, and caller locations follow cg_ssa, including a
 `#[track_caller]` function's own incoming location and the `caller_location` intrinsic.

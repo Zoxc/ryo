@@ -553,7 +553,8 @@ The calls (`call`, `call.sym`, `call.sym.ind`, `call.ptr`), `tail_call`, `ret`, 
   index `asm::ARG_RAX`, only for `call` and `call.sym` (the others have their callee in
   `rax`; variadic calls through pointers stay native there). On Win64 each variadic `xmm`
   argument is also loaded into the integer register of its position. Defining variadic
-  functions stays native.
+  functions stays native. A C signature without a plan (a shape `arg_plan` or `ret_kind` refuses)
+  keeps both its callers and its definition native: there is no island for C calls.
 - **Callee side**: the prologue (`lower/frame.rs`, `prologue`) stores the argument
   registers to the inputs' home slots with `arg`s, which come first since the first handler
   call clobbers them, along with the sret pointer and `Indirect` inputs' pointers; then it

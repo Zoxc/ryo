@@ -3,6 +3,14 @@
 Rust-side changes that the Lean model or proofs don't reflect yet. Add an entry per change;
 remove it once a Lean session has handled it.
 
+- No `call_cN` islands (Commit: "Backend: Remove the call_cN island"): `ryo_rt::island` has no
+  `call_c0` … `call_c16` templates (no `ryo_island_call_cN` diagnostic items) and the backend
+  no `Target::CIsland`: an `extern "C"` call whose signature `sig.rs` has no plan for keeps
+  the caller native instead. The island role table (`Ryo/Vm/R/Islands.lean`, the
+  `call_cN` entry and its `startsWith "call_c"` parsing), its tests (`RyoTest/Frame.lean`,
+  the `call_c` cases and `rolesAre "ryo_island_call_c…"`) and `lean/docs/aot.md`'s island
+  contract list (`call_cN`: external C call through the fn-pointer slot) should drop it.
+
 - Frame-pointer handler set (Commit: "Rt: Build a frame-pointer handler set, drop fp-rbp"):
   `ryo_rt` has no `fp-rbp` feature and no `FP_ARG` / `ryo_rt_fp_arg` item. Off PE and Apple
   it builds both handler sets: `ryo_h_<Op>` (`fp` in `rdi`, `vm::MODE`) and `ryo_hf_<Op>`

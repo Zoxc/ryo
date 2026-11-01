@@ -282,7 +282,7 @@ pub(crate) const CORPUS: &[Program] = &[
             "byval_align::ptr", "spill::direct", "spill::ptr", "all_or_nothing_int::direct", "all_or_nothing_int::ptr",
             "all_or_nothing_sse::direct", "all_or_nothing_sse::ptr", "all_or_nothing_mixed::direct",
             "all_or_nothing_mixed::ptr", "wide_late::direct", "wide_late::ptr", "unit_ret::direct", "unit_ret::ptr",
-            "around", "h1::direct", "h1::ptr", "h1_ret::direct", "h1_ret::ptr", "h3::direct", "h3::ptr", "h3_ret::direct", "h3_ret::ptr", "h5_ret::direct", "h5_ret::ptr", "b11::direct", "b11::ptr", "s10::direct", "s10::ptr", "b3::direct", "b3::ptr", "s64::direct", "s64::ptr",
+            "h1::direct", "h1::ptr", "h1_ret::direct", "h1_ret::ptr", "h5_ret::direct", "h5_ret::ptr", "b11::direct", "b11::ptr", "s10::direct", "s10::ptr", "b3::direct", "b3::ptr", "s64::direct", "s64::ptr",
             "quad::direct", "quad::ptr", "quad_ret::direct", "quad_ret::ptr", "zst::direct", "zst::ptr",
             "pair::direct", "pair::ptr", "ret_i128::direct", "ret_i128::ptr",
             "ext::vm_callee", "ext::vm_direct", "ext::vm_ptr", "ext_wide::vm_callee", "ext_wide::vm_direct",
@@ -302,16 +302,20 @@ pub(crate) const CORPUS: &[Program] = &[
             "all_or_nothing_mixed::vm_callee", "all_or_nothing_mixed::vm_direct", "all_or_nothing_mixed::vm_ptr",
             "wide_late::vm_callee", "wide_late::vm_direct", "wide_late::vm_ptr", "unit_ret::vm_callee",
             "unit_ret::vm_direct", "unit_ret::vm_ptr", "h1::vm_direct", "h1::vm_ptr",
-            "h1_ret::vm_callee", "h1_ret::vm_direct", "h1_ret::vm_ptr", "h3::vm_direct", "h3::vm_ptr",
-            "h3_ret::vm_direct", "h3_ret::vm_ptr", "h5_ret::vm_callee", "h5_ret::vm_direct",
+            "h1_ret::vm_callee", "h1_ret::vm_direct", "h1_ret::vm_ptr",
+            "h5_ret::vm_callee", "h5_ret::vm_direct",
             "h5_ret::vm_ptr", "b11::vm_callee", "b11::vm_direct", "b11::vm_ptr", "s10::vm_callee", "s10::vm_direct",
             "s10::vm_ptr", "b3::vm_callee", "b3::vm_direct", "b3::vm_ptr", "s64::vm_callee", "s64::vm_direct",
             "s64::vm_ptr", "quad::vm_direct", "quad::vm_ptr", "quad_ret::vm_callee", "quad_ret::vm_direct",
             "quad_ret::vm_ptr", "zst::vm_callee", "zst::vm_direct", "zst::vm_ptr", "pair::vm_callee",
             "pair::vm_direct", "pair::vm_ptr", "ret_i128::vm_callee", "ret_i128::vm_direct", "ret_i128::vm_ptr",
         ],
-        // `[f16; 3]` is `Indirect` on Win64, an eightbyte rustc gives an `f64` unit on SysV.
-        vm_pe: &["h3::vm_callee", "h3_ret::vm_callee"],
+        // `[f16; 3]` is `Indirect` on Win64, an eightbyte rustc gives an `f64` unit on SysV,
+        // which has no plan there: its callees and their callers stay native.
+        vm_pe: &[
+            "h3::vm_callee", "h3_ret::vm_callee", "around", "h3::direct", "h3::ptr", "h3_ret::direct", "h3_ret::ptr",
+            "h3::vm_direct", "h3::vm_ptr", "h3_ret::vm_direct", "h3_ret::vm_ptr",
+        ],
         native: &[
             "ext::callee", "ext::native_caller", "ext_wide::callee", "ext_wide::native_caller", "ret_i8::callee",
             "ret_i8::native_caller", "ret_u16::callee", "ret_u16::native_caller", "ret_bool::callee",

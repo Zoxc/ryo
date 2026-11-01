@@ -7,7 +7,6 @@
 //! | Template | `ops[0]` | `ops[1]` | `ops[2]` |
 //! |---|---|---|---|
 //! | `call` | argument block (`Args`) | destination (`R`) | |
-//! | `call_cN` | argument block (`(A0, …)`) | destination (`R`) | fn pointer |
 //! | `drop_in_place` | `*mut T` (wide if `T: !Sized`) | | |
 //! | intrinsic wrappers | inputs, in order, then the destination | | |
 
@@ -45,46 +44,6 @@ pub unsafe fn call<F: FnOnce<Args, Output = R>, Args: Tuple, R>(fp: *mut u8, ops
         slot::<R>(fp, ops, 1).write(f.call_once(args));
     }
     0
-}
-
-macro_rules! call_c_families {
-    ($($c:ident ($($T:ident $a:ident),*);)*) => {$(
-        /// Call of an `unsafe extern "C" fn` with as many arguments as the tuple.
-        /// `ops`: `[args: (A0, …), dest: R, fn pointer]`.
-        ///
-        /// # Safety
-        /// The operands must hold an initialized argument block, room for an `R`, and a fn
-        /// pointer that is safe to call with these arguments.
-        #[rustc_diagnostic_item = concat!("ryo_island_", stringify!($c))]
-        pub unsafe fn $c<$($T,)* R>(fp: *mut u8, ops: *const u32) -> u32 {
-            unsafe {
-                let f = slot::<unsafe extern "C" fn($($T),*) -> R>(fp, ops, 2).read();
-                let ($($a,)*) = slot::<($($T,)*)>(fp, ops, 0).read();
-                slot::<R>(fp, ops, 1).write(f($($a),*));
-            }
-            0
-        }
-    )*};
-}
-
-call_c_families! {
-    call_c0 ();
-    call_c1 (A0 a0);
-    call_c2 (A0 a0, A1 a1);
-    call_c3 (A0 a0, A1 a1, A2 a2);
-    call_c4 (A0 a0, A1 a1, A2 a2, A3 a3);
-    call_c5 (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4);
-    call_c6 (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5);
-    call_c7 (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6);
-    call_c8 (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7);
-    call_c9 (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8);
-    call_c10 (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9);
-    call_c11 (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9, A10 a10);
-    call_c12 (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9, A10 a10, A11 a11);
-    call_c13 (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9, A10 a10, A11 a11, A12 a12);
-    call_c14 (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9, A10 a10, A11 a11, A12 a12, A13 a13);
-    call_c15 (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9, A10 a10, A11 a11, A12 a12, A13 a13, A14 a14);
-    call_c16 (A0 a0, A1 a1, A2 a2, A3 a3, A4 a4, A5 a5, A6 a6, A7 a7, A8 a8, A9 a9, A10 a10, A11 a11, A12 a12, A13 a13, A14 a14, A15 a15);
 }
 
 /// Drop glue. `ops`: `[ptr: *mut T]`, a wide pointer if `T` is unsized.

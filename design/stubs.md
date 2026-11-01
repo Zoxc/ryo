@@ -27,7 +27,7 @@ details (`fn_abi_of_instance`, `PassMode`, …) come from cg_llvm.
   the share-generics rules ([backend.md](backend.md#pipeline), "Upstream copies"), or are
   `Internal` when sharing is off.
 - **Lookup**: templates are tagged with `#[rustc_diagnostic_item = "ryo_island_call"]`,
-  `"ryo_island_call_c2"` etc., and the backend finds them through
+  `"ryo_island_drop_in_place"` etc., and the backend finds them through
   `tcx.diagnostic_items(ryo_rt_cnum)`. `get_diagnostic_item` only searches user-visible crates
   (`rustc_passes/src/diagnostic_items.rs:81`).
 
@@ -64,8 +64,6 @@ pub unsafe fn call<F: FnOnce<Args, Output = R>, Args: Tuple, R>(fp: *mut u8, ops
     unsafe { slot::<R>(fp, ops, 1).write(f.call_once(args)) };
     0
 }
-// FFI, one per arity, generic over the argument types
-pub unsafe fn call_c2<A, B, R>(fp: *mut u8, ops: *const u32) -> u32 { /* f: unsafe extern "C" fn(A, B) -> R */ }
 // intrinsics: one wrapper each, generic like the intrinsic itself
 pub unsafe fn simd_add<T>(fp: *mut u8, ops: *const u32) -> u32 { … }
 // drop glue; the operand slot holds a *mut T (wide if T is unsized)
@@ -77,7 +75,6 @@ pub unsafe fn drop_in_place<T: ?Sized>(fp: *mut u8, ops: *const u32) -> u32 { �
   | Template | `ops[0]` | `ops[1]` | `ops[2]` |
   |---|---|---|---|
   | `call` | argument block, `Args` | destination, `R` | |
-  | `call_cN` | argument block, `(A0, …, A{N-1})` in `arg_block` layout | destination, `R` | slot holding the fn pointer |
   | `drop_in_place` | slot holding the `*mut T` | | |
   | intrinsic wrappers | the inputs in order, then the destination | | |
 
@@ -98,15 +95,11 @@ pub unsafe fn drop_in_place<T: ?Sized>(fp: *mut u8, ops: *const u32) -> u32 { �
   island.
 - A non-generic template (`compare_bytes`, …) has one instance, `ryo_rt`'s own: the image
   links to it instead of adding a copy to the native CGU (it isn't codegened locally).
-- `call_cN` exist for arities 0..=16.
 - `call` is only for callees without a symbol (intrinsics the lowering calls as fn items);
   everything with a symbol is a direct `call.sym`. It relies on `FnOnce`, which is only
   implemented for safe, Rust-ABI, non-variadic fns without `#[target_feature]`
   (`rustc_type_ir/src/ty_kind.rs:1131`, `candidate_assembly.rs:591`), and isn't used for
   `#[track_caller]` callees (`Location::caller()` would point into `ryo_rt`).
-- Generic argument types are fine for FFI: the fn-pointer ABI is computed after
-  monomorphization from concrete layouts, and `improper_ctypes` doesn't apply, because the
-  island signature only has raw pointers.
 
 `#[track_caller]` native callees are no gap: they are called directly at their symbol,
 with the `&'static Location` as the last ABI input ([lowering.md](lowering.md#caller-location)).
@@ -114,8 +107,8 @@ This covers `panic_bounds_check` and the other panic lang items that `Assert` ca
 
 What becomes an island:
 
-- calls of `extern "C"` functions (FFI, local `extern "C" fn`s), and of safe callees
-  without a symbol
+- calls of safe callees without a symbol (`extern "C"` callees are called directly,
+  [vm.md](vm.md#calls-and-islands))
 - intrinsics the VM doesn't implement, SIMD operations, float ops that need libm
   (`sqrtf64`, …), unusual casts
 - drop glue of types the VM doesn't drop itself
@@ -126,15 +119,18 @@ These make the containing function native ([backend.md](backend.md#pipeline), st
 
 - inline asm
 - C-variadic calls (made directly where the VM passes them: [vm.md](vm.md#calls-and-islands))
-- foreign ABIs other than `C` (`sysv64`, `win64`, `efiapi`, `vectorcall`, …), and `C-unwind`
-  signatures without a direct-call plan. `C-unwind` in particular can't be a template: `ryo_rt` is built with `panic=unwind`, so a
+- foreign ABIs other than `C` (`sysv64`, `win64`, `efiapi`, `vectorcall`, …)
+- calls of (and bodies with) `C` / `C-unwind` signatures without a direct-call plan (`sig.rs`
+  `arg_plan`/`ret_kind` refusals: SIMD vectors, `Cast` shapes it doesn't split, returns in
+  more than two registers, `byval` aligned above 16, …); the reason is
+  `C call without a plan: <why>`. There is no C-call template: an `extern "C"` call can't
+  unwind, but `C-unwind` couldn't be one anyway: `ryo_rt` is built with `panic=unwind`, so a
   template body calling through an `extern "C-unwind"` pointer would give `ryo_rt` a
   required panic strategy of `Unwind` (`rustc_mir_transform/src/ffi_unwind_calls.rs:83-175`),
   and `panic=abort` programs would fail to link. The check looks at the template's own body
   in `ryo_rt`, not at its instances.
 - LLVM intrinsics (`InstanceKind::LlvmIntrinsic`, the `link_name = "llvm.*"` functions used
   by `std::arch`): they have no MIR and an `unadjusted` ABI
-- `call_cN` arities above 16
 - functions with unsized parameters (`unsized_fn_params`)
 - functions whose locals or arguments, including the argument block of any island call they make,
   contain a type with alignment above 16: VM frames only guarantee 16
@@ -220,8 +216,8 @@ where
   functions of other images): `call.sym` on the callee's symbol (`call.sym.ind` through
   `__imp_` on PE). The backend doesn't need to know whether upstream compiled it to
   bytecode: both are native functions of the same signature.
-- **Indirect calls** (fn pointer, `dyn` vtable): `call.ptr` for Rust-ABI pointers, the
-  `call_cN` island for `extern "C"` ones.
+- **Indirect calls** (fn pointer, `dyn` vtable): `call.ptr`, for Rust-ABI pointers and
+  for `extern "C"` ones with a direct-call plan (without one the caller stays native).
 - **Separate `ryo_rt` copies**: each cdylib or staticlib carries its own `ryo_rt`, with its
   own registry. Calls across them are plain native calls, so nothing depends on which copy
   registered the callee.

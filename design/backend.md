@@ -68,6 +68,8 @@ reuse under incremental compilation and `rt.rs` the runtime crates' identity.
      - functions with ABIs other than Rust, `C` and `C-unwind` defined in Rust
      - signatures whose arguments or return the VM can't place as LLVM does (other
        `PassMode`s, and on Win64 an `f128` in a `Pair`, [vm.md](vm.md#calls-and-islands))
+     - calls of `C` / `C-unwind` signatures without a direct-call plan (`C call without a
+       plan: <why>`, the `arg_plan`/`ret_kind` refusal): there is no C-call island
      - functions with unsized parameters
      - calls to LLVM intrinsics
      - the other template gaps ([stubs.md](stubs.md#template-gaps))

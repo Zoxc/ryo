@@ -829,8 +829,7 @@ Only at the start of a function, before the first handler call clobbers the regi
 Calls the island template at symbol slot `isl` with `fp` and the operand array, then
 continues; the template's return value is ignored.
 
-Islands are everything the VM has no instruction for: `extern "C"` callees (`call_cN`),
-safe callees without a symbol (`call`), intrinsics, 128-bit multiply and divide,
+Islands are everything the VM has no instruction for: safe callees without a symbol (`call`), intrinsics, 128-bit multiply and divide,
 `f16`/`f128`, SIMD without an instruction ([stubs.md](stubs.md#islands-vm--native)).
 
 The operand words are a code constant (offsets only; the lowering records each operand's

@@ -1,8 +1,8 @@
 //! ABI signatures (design/lowering.md#frame-slots): the inputs of `fn_abi_of_instance`, which
 //! already spreads a trailing `rust-call` tuple and appends the `&'static Location` of
 //! `#[track_caller]` functions; where the platform calling convention puts them
-//! ([`ArgPlan`]); and the argument block, the layout of their tuple, which the island
-//! templates take.
+//! ([`ArgPlan`]); and the argument block, the layout of their tuple, which the `call`
+//! template takes.
 
 use rustc_abi::{BackendRepr, CanonAbi, Primitive, Reg, RegKind, Scalar};
 use rustc_middle::ty::layout::TyAndLayout;
@@ -19,7 +19,8 @@ pub enum CallConv {
     /// `Rust` / `rust-call`: direct calls, and the `call` template.
     Rust,
     /// `extern "C"` and `extern "C-unwind"` ([`AbiSig::c_unwind`]): direct calls (SysV and
-    /// Win64) where the [`ArgPlan`] covers the signature, else `call_cN` (`C` only).
+    /// Win64) where the [`ArgPlan`] covers the signature; a caller of any other C signature
+    /// stays native ([`AbiSig::no_plan`]).
     C,
 }
 
@@ -41,11 +42,14 @@ pub struct AbiSig<'tcx> {
     /// which knows the fn type.
     pub rust_call: bool,
     /// How a VM function of this signature returns its value (a call's kind, exact sizes,
-    /// [`ryo_bytecode::asm::RET_SRET`]); 0 for signatures only islands call.
+    /// [`ryo_bytecode::asm::RET_SRET`]); 0 without a plan.
     pub ret_kind: u32,
-    /// Where each input goes in the platform calling convention; `None` for signatures only
-    /// islands call.
+    /// Where each input goes in the platform calling convention; `None` for the `call`
+    /// template's signatures and C signatures the VM doesn't pass ([`AbiSig::no_plan`]).
     pub plan: Option<ArgPlan>,
+    /// A C signature without a plan: why `arg_plan` or `ret_kind` refused it. Calls of it and
+    /// its body stay native.
+    pub no_plan: Option<String>,
     /// C ABI: the return value is a 1- or 2-byte integer the callee sign-extends to 32 bits
     /// (`signext`; `zeroext` needs nothing, `ret` loads narrow integers zero-extended).
     pub ret_sext: bool,
@@ -150,8 +154,8 @@ pub fn variadic_sig<'tcx>(tcx: TyCtxt<'tcx>, sig: ty::PolyFnSig<'tcx>, extra: &[
     let typing_env = TypingEnv::fully_monomorphized();
     let fn_abi = tcx.fn_abi_of_fn_ptr(typing_env.as_query_input((sig, tcx.mk_type_list(extra)))).map_err(fn_abi_err)?;
     let s = from_fn_abi(tcx, fn_abi, false, None, true)?;
-    if s.plan.is_none() {
-        return native("C-variadic call without a plan");
+    if let Some(why) = &s.no_plan {
+        return native(format!("C-variadic call without a plan: {why}"));
     }
     Ok(AbiSig { variadic: Some(fn_abi.fixed_count as usize), ..s })
 }
@@ -187,25 +191,21 @@ fn from_fn_abi<'tcx>(
     if fn_abi.ret.layout.align.abi.bytes() > u64::from(abi::FRAME_ALIGN) {
         return native("return value aligned above 16");
     }
-    let (ret_kind, plan) = match conv {
+    let (ret_kind, plan, no_plan) = match conv {
         CallConv::Rust => {
             let k = ret_kind(tcx, &fn_abi.ret)?;
-            (k, Some(arg_plan(tcx, fn_abi, k == RET_SRET, false)?))
+            (k, Some(arg_plan(tcx, fn_abi, k == RET_SRET, false)?), None)
         }
         // C (SysV and Win64): direct calls where every input and the return have a shape the
-        // VM passes; otherwise only the `call_cN` island calls it.
+        // VM passes; otherwise callers stay native, and the refusal is kept for their reason.
         CallConv::C => match ret_kind(tcx, &fn_abi.ret).and_then(|k| Ok((k, arg_plan(tcx, fn_abi, k == RET_SRET, true)?))) {
-            Ok((k, p)) => (k, Some(p)),
-            Err(_) => (0, None),
+            Ok((k, p)) => (k, Some(p), None),
+            Err(NeedsNative(why)) => (0, None, Some(why)),
         },
     };
     let ret_sext = conv == CallConv::C
         && matches!(fn_abi.ret.mode, PassMode::Direct(a) if a.arg_ext == ArgExtension::Sext)
         && fn_abi.ret.layout.size.bytes() < 4;
-    // The `call_cN` island calls an `extern "C"` fn pointer, which can't unwind.
-    if c_unwind && plan.is_none() {
-        return native("C-unwind signature without a plan");
-    }
     Ok(AbiSig {
         inputs,
         output: fn_abi.ret.layout,
@@ -216,6 +216,7 @@ fn from_fn_abi<'tcx>(
         rust_call: false,
         ret_kind,
         plan,
+        no_plan,
         ret_sext,
         c_unwind,
         variadic: None,
@@ -237,6 +238,7 @@ pub fn tys_sig<'tcx>(tcx: TyCtxt<'tcx>, inputs: Vec<Ty<'tcx>>, output: Ty<'tcx>)
         rust_call: false,
         ret_kind: 0,
         plan: None,
+        no_plan: None,
         ret_sext: false,
         c_unwind: false,
         variadic: None,
