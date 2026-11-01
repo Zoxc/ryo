@@ -344,7 +344,11 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     ArgLoc::Reg { .. } | ArgLoc::PtrReg(_) => {}
                 }
             }
-            if let Some(p) = self.frame.arg_ptrs[i] {
+            // A ZST (Win64 C passes them by reference) has nothing to copy; its pointer may
+            // be anything.
+            if let Some(p) = self.frame.arg_ptrs[i]
+                && sig.fields[i].size != 0
+            {
                 let size = sig.fields[i].size;
                 self.op(Opcode::LoadCopy, &[self.frame.arg_homes[i], p, 0, size]);
             }
