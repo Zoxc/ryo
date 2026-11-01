@@ -169,5 +169,8 @@ remove it once a Lean session has handled it.
   site without a pad with `catch` set, written to the LSDA as action 0, pad 0). The
   pad-word/cleanup-entry decoding (`Cleanup::from_word`/`to_word`), the encoder's and
   decoder's action tables and the call-site round trip need the extra value; the LSDA is
-  unchanged. The JIT's inliner keeps such calls `Site::Nounwind`, which the emitter turns
+  unchanged. Today `Obj/Image.lean`'s `padOk` (`c.pad % CATCH < f.codeLen`) rejects it and
+  `Obj/Unwind.lean`/`Obj/Image.lean`'s call-site conversion reads it as a catching pad at
+  `0x7ffffffe`; `scripts/lean-decode-ref` prints it the same way (`cleanup N -> 2147483646
+  catch`), so change it with the Lean decoder. The JIT's inliner keeps such calls `Site::Nounwind`, which the emitter turns
   into a continue entry only when the unit has no landing pad (else no call site).
