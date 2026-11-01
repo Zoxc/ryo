@@ -341,6 +341,22 @@ pub(crate) const CORPUS: &[Program] = &[
             "ret_i128::native_to_vm",
         ],
     ),
+    // `extern "C-unwind"`: panics through VM and native `C-unwind` frames, caught in both.
+    single!(
+        "c_abi_unwind",
+        vm: &[
+            "main", "vm_checked", "vm_through_native", "vm_c_through_native", "vm_callers",
+        ],
+        native: &["native_checked", "native_caller", "native_calls_vm", "native_callers"],
+    ),
+    // Calls of C-variadic fns (`snprintf`, a native Rust one) from VM code.
+    single!(
+        "c_abi_variadic",
+        vm: &["main", "ints", "doubles", "mixed", "many_doubles", "many_mixed", "rust_variadic", "show"],
+        // SysV's `al` and a fn pointer callee would share `rax`.
+        vm_pe: &["via_ptr"],
+        native: &["sum", "native_caller"],
+    ),
     // VM-compiled `extern "C"` functions called back from native code; ends in an abort.
     single!(
         "c_abi_def",
@@ -513,8 +529,8 @@ pub(crate) const CORPUS: &[Program] = &[
     Program {
         name: "vm_cxx",
         crates: &[krate("vcx", "vm_cxx/lib.rs", CrateKind::Staticlib)],
-        vm: &["outer", "mid", "step", "with_catcher", "<Catcher as std::ops::Drop>::drop"],
-        native: &["native"],
+        vm: &["outer", "mid", "step", "with_catcher", "<Catcher as std::ops::Drop>::drop", "vcx_through", "vcx_catcher"],
+        native: &["native", "vcx_terminate"],
         c_main: Some("vm_cxx/through.cpp"),
         foreign_unwind: true,
         ..PROGRAM
@@ -530,7 +546,7 @@ pub(crate) const CORPUS: &[Program] = &[
     Program {
         name: "vm_cxx_nested_panic",
         crates: &[krate("vcx", "vm_cxx/lib.rs", CrateKind::Staticlib)],
-        vm: &["with_bomb", "mid", "<Bomb as std::ops::Drop>::drop"],
+        vm: &["with_bomb", "mid", "<Bomb as std::ops::Drop>::drop", "vcx_bomb"],
         c_main: Some("vm_cxx/nested.cpp"),
         foreign_unwind: true,
         ..PROGRAM

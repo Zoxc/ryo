@@ -544,6 +544,15 @@ The calls (`call`, `call.sym`, `call.sym.ind`, `call.ptr`), `tail_call`, `ret`, 
   register once; `asm::ARG_ADDR` loads the slot's address instead (`Indirect` inputs, sret
   destinations). An `Indirect` input is a copy in a temporary, since the callee may write
   to it.
+- **C calls**: `extern "C"` and `extern "C-unwind"` callees use the same sequence with the C
+  `PassMode`s (`byval` stack copies, `zeroext`/`signext` loads, `asm::ARG_SEXT`); only a
+  `C-unwind` call is a call site. A C-variadic call's plan covers the fixed and the
+  variadic arguments (rustc's `FnAbi` for the call). On SysV its list also loads `al`, an
+  upper bound of the `xmm` registers used, from a byte temporary: the integer register
+  index `asm::ARG_RAX`, only for `call` and `call.sym` (the others have their callee in
+  `rax`; variadic calls through pointers stay native there). On Win64 each variadic `xmm`
+  argument is also loaded into the integer register of its position. Defining variadic
+  functions stays native.
 - **Callee side**: the prologue (`lower/frame.rs`, `prologue`) stores the argument
   registers to the inputs' home slots with `arg`s, which come first since the first handler
   call clobbers them, along with the sret pointer and `Indirect` inputs' pointers; then it

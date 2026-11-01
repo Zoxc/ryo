@@ -316,8 +316,12 @@ pub fn push_words(op: Opcode, ops: &[Opnd], words: &mut Vec<u32>) {
 
 /// The integer argument register `i` of the convention: `rdi rsi rdx rcx r8 r9`, on PE
 /// `rcx rdx r8 r9`, the same registers as a handler call's positions
-/// ([`super::handler_arg`]).
+/// ([`super::handler_arg`]); on SysV, [`super::ARG_RAX`] is `rax`.
 pub(super) fn int_arg(pe: bool, i: u32) -> Reg {
+    // A SysV variadic call's `al`.
+    if !pe && i == super::ARG_RAX {
+        return Reg::Rax;
+    }
     super::x86::handler_reg(pe, i as u8).expect("an argument register position")
 }
 

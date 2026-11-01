@@ -64,13 +64,12 @@ reuse under incremental compilation and `rt.rs` the runtime crates' identity.
      - references to Objective-C class or selector statics (`#[rustc_objc_class]`,
        `#[rustc_objc_selector]`): cg_llvm doesn't define their symbols, it uses private
        `OBJC_*_REFERENCES_` globals of its own
-     - calls to C-variadic functions
-     - functions with non-Rust ABIs defined in Rust (`extern "C" fn`): VM code follows only
-       the Rust ABI's convention
+     - calls to C-variadic functions through pointers on SysV, and definitions of them
+     - functions with ABIs other than Rust, `C` and `C-unwind` defined in Rust
      - signatures whose arguments or return the VM can't place as LLVM does (other
        `PassMode`s, and on Win64 an `f128` in a `Pair`, [vm.md](vm.md#calls-and-islands))
      - functions with unsized parameters
-     - calls to `C-unwind` functions and LLVM intrinsics
+     - calls to LLVM intrinsics
      - the other template gaps ([stubs.md](stubs.md#template-gaps))
 
      The lowering reports these as `Err(NeedsNative(reason))`.

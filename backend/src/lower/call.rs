@@ -25,7 +25,7 @@ use rustc_middle::ty::{self, GenericArg, Instance, InstanceKind, Ty, TypingEnv};
 use rustc_span::Spanned;
 use rustc_target::callconv::ArgExtension;
 use ryo_bytecode::abi::HEADER_SIZE;
-use ryo_bytecode::asm::{ARG_ADDR, ArgReg, RET_SRET, RetPart, ret_kind, ret_parts};
+use ryo_bytecode::asm::{ARG_ADDR, ARG_RAX, ArgReg, RET_SRET, RetPart, ret_kind, ret_parts};
 use ryo_bytecode::full::Opcode;
 
 use super::cert::CallKind;
@@ -33,7 +33,7 @@ use super::emit::{IntOp, Width};
 use super::frame;
 use super::island::templates;
 use super::place::{Loc, META, PTR, PlaceVal, vtable_off};
-use super::sig::{AbiSig, ArgLoc, ArgPlan, CallConv, fn_ptr_sig, tys_sig, virtual_sig};
+use super::sig::{AbiSig, ArgLoc, ArgPlan, CallConv, fn_ptr_sig, tys_sig, variadic_sig, virtual_sig};
 use super::{CodeReloc, FnCx, NeedsNative, native, no_trim};
 
 /// Where an argument comes from.
@@ -223,7 +223,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         cont: CallCont<'tcx>,
         source_info: SourceInfo,
     ) -> Result<(), NeedsNative> {
-        let (target, sig) = self.ptr_target(func, fty)?;
+        let (target, sig) = self.ptr_target(func, fty, args)?;
         let homes = self.write_args(&sig, args, source_info, target.is_island())?;
         self.emit_call(target, &sig, &homes, cont)
     }
@@ -243,7 +243,12 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let tcx = self.tcx;
         let rust_call = fty.fn_sig(tcx).abi() == ExternAbi::RustCall;
         let mut args = args.to_vec();
-        let (target, sig) = if let InstanceKind::Virtual(_, idx) = callee.def {
+        let (target, sig) = if fty.fn_sig(tcx).c_variadic() {
+            if tail {
+                return native("tail call of a C-variadic fn");
+            }
+            (Target::Direct(Callee::Sym(callee)), self.variadic_sig(fty, &args)?)
+        } else if let InstanceKind::Virtual(_, idx) = callee.def {
             let Some(&recv) = args.first() else { return native("virtual call without a receiver") };
             let (data, vtable, recv_ty) = self.receiver(recv, tail)?;
             let sig = virtual_sig(tcx, callee, recv_ty)?;
@@ -278,10 +283,23 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     }
 
     /// The target and signature of a call through the fn pointer `func` of type `fty`.
-    fn ptr_target(&mut self, func: &Operand<'tcx>, fty: Ty<'tcx>) -> Result<(Target<'tcx>, AbiSig<'tcx>), NeedsNative> {
-        let sig = fn_ptr_sig(self.tcx, fty.fn_sig(self.tcx))?;
+    fn ptr_target(&mut self, func: &Operand<'tcx>, fty: Ty<'tcx>, args: &[ArgSrc<'_, 'tcx>]) -> Result<(Target<'tcx>, AbiSig<'tcx>), NeedsNative> {
+        let sig = if fty.fn_sig(self.tcx).c_variadic() { self.variadic_sig(fty, args)? } else { fn_ptr_sig(self.tcx, fty.fn_sig(self.tcx))? };
         let (p, _) = self.operand_slot(func)?;
         Ok((Target::of(&sig, Callee::Ptr(p)), sig))
+    }
+
+    /// The signature of a call of the C-variadic fn of type `fty` with `args` ([`variadic_sig`]).
+    fn variadic_sig(&self, fty: Ty<'tcx>, args: &[ArgSrc<'_, 'tcx>]) -> Result<AbiSig<'tcx>, NeedsNative> {
+        let tcx = self.tcx;
+        let sig = fty.fn_sig(tcx);
+        let fixed = sig.skip_binder().inputs().len();
+        let mut extra = Vec::new();
+        for a in args.get(fixed..).unwrap_or_default() {
+            let ArgSrc::Operand(op) = a else { return native("C-variadic argument in a slot") };
+            extra.push(self.mono(op.ty(self.body, tcx)));
+        }
+        variadic_sig(tcx, sig, &extra)
     }
 
     /// The receiver of a virtual call: the slots holding its data pointer and its vtable, and
@@ -353,10 +371,14 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             Target::Direct(callee) => {
                 let a = self.pass_args(sig, homes, Some(d), false)?;
                 let (op, f, kind) = self.call_op(callee, false);
+                // SysV's `al` ([`asm::ARG_RAX`]) can't share `rax` with the callee's address.
+                if a.chunks(2).any(|p| ArgReg::of(p[1], false).is_some_and(|r| !r.xmm && r.index == ARG_RAX)) && !matches!(op, Opcode::CallSym) {
+                    return native("C-variadic call through a pointer on SysV");
+                }
                 let at = self.call_insn(op, &[rd, f, k], &a, kind, sig);
-                // A C callee can't unwind (cg_ssa makes the call `nounwind`): no call-site
-                // entry, so an exception out of it terminates.
-                if sig.conv == CallConv::Rust {
+                // A `C` callee can't unwind (cg_ssa makes the call `nounwind`): no call-site
+                // entry, so an exception out of it terminates. `C-unwind` ones can.
+                if sig.conv == CallConv::Rust || sig.c_unwind {
                     self.unwind_entry(at, cont.unwind);
                 }
             }
@@ -475,6 +497,32 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 }
             }
         }
+        if let Some(fixed) = sig.variadic {
+            if self.cx.mode.pe {
+                // Win64: a variadic float also goes in the integer register of its position
+                // (the callee may spill all four integer registers to read its `va_list`).
+                let mut dup = Vec::new();
+                for (i, locs) in plan.locs.iter().enumerate().skip(fixed) {
+                    for &l in locs {
+                        if let ArgLoc::Reg { reg, off } = l
+                            && reg.xmm
+                        {
+                            dup.extend([
+                                homes[i] + off,
+                                ArgReg { xmm: false, size: reg.size.max(4).next_power_of_two(), index: reg.index, sext: false }.word(),
+                            ]);
+                        }
+                    }
+                }
+                a.extend(dup);
+            } else {
+                // SysV: `al` is an upper bound of the vector registers used.
+                let n = plan.locs.iter().flatten().filter(|l| matches!(l, ArgLoc::Reg { reg, .. } if reg.xmm)).count();
+                let t = self.temp_w(Width::W8);
+                self.imm(Width::W8, t, n as u128);
+                a.extend([t, ArgReg { xmm: false, size: 1, index: ARG_RAX, sext: false }.word()]);
+            }
+        }
         if !tail {
             self.outgoing(plan.stack_size);
         }
@@ -528,7 +576,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             Resolved::Intrinsic(_) => return native("tail call of an intrinsic"),
             Resolved::Direct(callee) => self.direct_target(fty, callee, &srcs, true)?,
             Resolved::Ptr => {
-                let (t, sig) = self.ptr_target(func, fty)?;
+                let (t, sig) = self.ptr_target(func, fty, &srcs)?;
                 (t, sig, srcs)
             }
         };

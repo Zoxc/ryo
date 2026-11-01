@@ -1124,3 +1124,27 @@ fn sign_extending_argument_loads() {
     assert!(asm::ArgReg::of(b, true).is_none(), "an `arg` doesn't extend");
     assert!(asm::param_reg(b | asm::ARG_ADDR).is_none());
 }
+
+/// A SysV variadic call's `al` (`asm::ARG_RAX`): a one-byte load into `rax` (`movzx eax`) that
+/// decodes back to the same argument list, only in `call`/`call.sym` lists (the others have
+/// their callee in `rax`), never as an `arg`'s register or on PE.
+#[test]
+fn variadic_al_argument() {
+    let m = Mode { fp_arg: false, frame_pointer: true, align_loops: false, pe: false, counters: false, far_rt: false };
+    let al = asm::ArgReg { xmm: false, size: 1, index: asm::ARG_RAX, sext: false }.word();
+    let x = asm::ArgReg { xmm: true, size: 8, index: 0, sext: false }.word();
+    let call = vec![Opcode::Call as u32, 0, 0, 0, 4, -16i32 as u32, x, -8i32 as u32, al];
+    let f = Fn { insns: vec![call.clone(), vec![Opcode::Abort as u32]], targets: Vec::new(), unwind: Vec::new() };
+    let enc = check(&f, 16, m, "call");
+    // `movzx eax, byte [rbp - 8]` (0f b6 45 f8).
+    assert!(enc.code.windows(4).any(|c| c == [0x0f, 0xb6, 0x45, 0xf8]), "{:02x?}", enc.code);
+    assert!(asm::return_ok(&call));
+    assert!(!asm::pe_regs_ok(&call));
+    let ptr = vec![Opcode::CallPtr as u32, 0, -24i32 as u32, 0, 2, -8i32 as u32, al];
+    assert!(!asm::return_ok(&ptr), "al with the callee in rax");
+    assert!(asm::ArgReg::of(al, true).is_none(), "not an `arg` register");
+    for (size, sext) in [(4, false), (8, false), (1, true)] {
+        assert!(asm::param_reg(asm::ArgReg { xmm: false, size, index: asm::ARG_RAX, sext }.word()).is_none());
+    }
+    assert!(asm::param_reg(asm::ArgReg { xmm: false, size: 8, index: asm::ARG_RAX, sext: false }.word() | asm::ARG_ADDR).is_none());
+}

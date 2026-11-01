@@ -18,8 +18,8 @@ use super::{LayoutCx, NeedsNative, layout_error, native};
 pub enum CallConv {
     /// `Rust` / `rust-call`: direct calls, and the `call` template.
     Rust,
-    /// `extern "C"` that can't unwind: direct calls (SysV and Win64) where the [`ArgPlan`]
-    /// covers the signature, else `call_cN`.
+    /// `extern "C"` and `extern "C-unwind"` ([`AbiSig::c_unwind`]): direct calls (SysV and
+    /// Win64) where the [`ArgPlan`] covers the signature, else `call_cN` (`C` only).
     C,
 }
 
@@ -49,6 +49,11 @@ pub struct AbiSig<'tcx> {
     /// C ABI: the return value is a 1- or 2-byte integer the callee sign-extends to 32 bits
     /// (`signext`; `zeroext` needs nothing, `ret` loads narrow integers zero-extended).
     pub ret_sext: bool,
+    /// `extern "C-unwind"`: a call can unwind (a call-site entry, as for Rust calls).
+    pub c_unwind: bool,
+    /// A call of a C-variadic fn: the number of fixed inputs; the plan covers the variadic
+    /// ones too ([`variadic_sig`]).
+    pub variadic: Option<usize>,
 }
 
 /// Where a piece of an ABI input goes (design/vm.md, "Calls and islands").
@@ -126,7 +131,7 @@ pub fn virtual_sig<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>, receiver: 
 fn instance_sig<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>, receiver: Option<Ty<'tcx>>) -> Result<AbiSig<'tcx>, NeedsNative> {
     let typing_env = TypingEnv::fully_monomorphized();
     let fn_abi = tcx.fn_abi_of_instance_no_deduced_attrs(typing_env.as_query_input((instance, ty::List::empty()))).map_err(fn_abi_err)?;
-    from_fn_abi(tcx, fn_abi, instance.def.requires_caller_location(tcx), receiver)
+    from_fn_abi(tcx, fn_abi, instance.def.requires_caller_location(tcx), receiver, false)
 }
 
 /// The ABI signature of a call through a fn pointer of type `sig`.
@@ -134,7 +139,21 @@ pub fn fn_ptr_sig<'tcx>(tcx: TyCtxt<'tcx>, sig: ty::PolyFnSig<'tcx>) -> Result<A
     let typing_env = TypingEnv::fully_monomorphized();
     let fn_abi = tcx.fn_abi_of_fn_ptr(typing_env.as_query_input((sig, ty::List::empty()))).map_err(fn_abi_err)?;
     let rust_call = sig.abi() == rustc_abi::ExternAbi::RustCall;
-    Ok(AbiSig { rust_call, ..from_fn_abi(tcx, fn_abi, false, None)? })
+    Ok(AbiSig { rust_call, ..from_fn_abi(tcx, fn_abi, false, None, false)? })
+}
+
+/// The ABI signature of a call of the C-variadic fn (item or pointer) of type `sig` with the
+/// variadic arguments `extra` (their types after C's promotions, which Rust requires the
+/// caller to have done): rustc's `fn_abi_of_fn_ptr` with the extra arguments, as cg_ssa
+/// calls it.
+pub fn variadic_sig<'tcx>(tcx: TyCtxt<'tcx>, sig: ty::PolyFnSig<'tcx>, extra: &[Ty<'tcx>]) -> Result<AbiSig<'tcx>, NeedsNative> {
+    let typing_env = TypingEnv::fully_monomorphized();
+    let fn_abi = tcx.fn_abi_of_fn_ptr(typing_env.as_query_input((sig, tcx.mk_type_list(extra)))).map_err(fn_abi_err)?;
+    let s = from_fn_abi(tcx, fn_abi, false, None, true)?;
+    if s.plan.is_none() {
+        return native("C-variadic call without a plan");
+    }
+    Ok(AbiSig { variadic: Some(fn_abi.fixed_count as usize), ..s })
 }
 
 fn fn_abi_err(e: &ty::layout::FnAbiError<'_>) -> NeedsNative {
@@ -147,16 +166,18 @@ fn from_fn_abi<'tcx>(
     fn_abi: &rustc_target::callconv::FnAbi<'tcx, Ty<'tcx>>,
     caller_location: bool,
     receiver: Option<Ty<'tcx>>,
+    variadic_call: bool,
 ) -> Result<AbiSig<'tcx>, NeedsNative> {
-    if fn_abi.c_variadic {
+    // Defining a C-variadic fn (`va_list`) stays native; calls go through `variadic_sig`.
+    if fn_abi.c_variadic && !variadic_call {
         return native("C-variadic");
     }
     let conv = match fn_abi.conv {
         CanonAbi::Rust => CallConv::Rust,
-        CanonAbi::C if !fn_abi.can_unwind => CallConv::C,
-        CanonAbi::C => return native("C-unwind ABI"),
+        CanonAbi::C => CallConv::C,
         other => return native(format!("{other} ABI")),
     };
+    let c_unwind = conv == CallConv::C && fn_abi.can_unwind;
     let mut inputs: Vec<Ty<'tcx>> = fn_abi.args.iter().map(|a| a.layout.ty).collect();
     if let Some(r) = receiver {
         let Some(first) = inputs.first_mut() else { return native("virtual call without a receiver") };
@@ -181,7 +202,24 @@ fn from_fn_abi<'tcx>(
     let ret_sext = conv == CallConv::C
         && matches!(fn_abi.ret.mode, PassMode::Direct(a) if a.arg_ext == ArgExtension::Sext)
         && fn_abi.ret.layout.size.bytes() < 4;
-    Ok(AbiSig { inputs, output: fn_abi.ret.layout, fields, block_size, conv, caller_location, rust_call: false, ret_kind, plan, ret_sext })
+    // The `call_cN` island calls an `extern "C"` fn pointer, which can't unwind.
+    if c_unwind && plan.is_none() {
+        return native("C-unwind signature without a plan");
+    }
+    Ok(AbiSig {
+        inputs,
+        output: fn_abi.ret.layout,
+        fields,
+        block_size,
+        conv,
+        caller_location,
+        rust_call: false,
+        ret_kind,
+        plan,
+        ret_sext,
+        c_unwind,
+        variadic: None,
+    })
 }
 
 /// The signature of a Rust-ABI fn with these (non-spread) inputs: the `call` template's
@@ -200,6 +238,8 @@ pub fn tys_sig<'tcx>(tcx: TyCtxt<'tcx>, inputs: Vec<Ty<'tcx>>, output: Ty<'tcx>)
         ret_kind: 0,
         plan: None,
         ret_sext: false,
+        c_unwind: false,
+        variadic: None,
     })
 }
 

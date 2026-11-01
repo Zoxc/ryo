@@ -133,3 +133,17 @@ remove it once a Lean session has handled it.
   opaque vector unit: one 16-byte `xmm0` return part (`cast_pieces`, `dump_lean.rs`
   `scalars`); a 16-byte `Cast` unit in an argument is refused. The Lean plan computation and
   ABI convention lemmas need the Win64 C shapes.
+
+- C-unwind and variadic C calls (commit "Backend: C-unwind and variadic C calls in VM code"):
+  `extern "C-unwind"` signatures get the C plan (`AbiSig.c_unwind`); their direct calls get a
+  call-site entry like Rust calls (can unwind to the landing pad), and `C-unwind` fns are VM
+  functions with their bodies' normal unwinding (`UnwindTo::Continue`). Calls of C-variadic
+  fns (`fn_abi_of_fn_ptr` with the extra argument types, `AbiSig.variadic` = fixed count)
+  have a plan over fixed and variadic inputs, plus: on SysV a one-byte load of a temporary
+  holding the number of `xmm` argument registers used into `al`, as the new call-list integer
+  register index `asm::ARG_RAX` (6, `rax`; `movzx eax, byte [slot]`), allowed only for
+  `call`/`call.sym` (`return_ok` refuses it for `call.sym.ind`, `call.ptr` and tail calls;
+  `arg` never takes it); on Win64 each variadic `xmm` piece also loaded into the integer
+  register of the same position (an extra list pair from the same slot, 8 bytes). The asm
+  model's call-list registers and the ABI lemmas need `ARG_RAX` and the duplicated pairs; the
+  certificate's plan doesn't list them.

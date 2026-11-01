@@ -125,9 +125,9 @@ What becomes an island:
 These make the containing function native ([backend.md](backend.md#pipeline), step 2):
 
 - inline asm
-- C-variadic calls
-- foreign ABIs other than `C` (`C-unwind`, `sysv64`, `win64`, `efiapi`, `vectorcall`, …).
-  `C-unwind` in particular can't be a template: `ryo_rt` is built with `panic=unwind`, so a
+- C-variadic calls (made directly where the VM passes them: [vm.md](vm.md#calls-and-islands))
+- foreign ABIs other than `C` (`sysv64`, `win64`, `efiapi`, `vectorcall`, …), and `C-unwind`
+  signatures without a direct-call plan. `C-unwind` in particular can't be a template: `ryo_rt` is built with `panic=unwind`, so a
   template body calling through an `extern "C-unwind"` pointer would give `ryo_rt` a
   required panic strategy of `Unwind` (`rustc_mir_transform/src/ffi_unwind_calls.rs:83-175`),
   and `panic=abort` programs would fail to link. The check looks at the template's own body

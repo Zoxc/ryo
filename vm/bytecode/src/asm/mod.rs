@@ -478,12 +478,13 @@ pub fn return_ok(words: &[u32]) -> bool {
         Opcode::Arg => ArgReg::of(words[operand_word(op, "r")], true).is_some(),
         Opcode::Call | Opcode::CallSym | Opcode::CallSymInd | Opcode::CallPtr => {
             let (d, k) = (words[operand_word(op, "d")], words[operand_word(op, "k")]);
-            let a = operand_word(op, "a");
-            k != RET_SRET && k_ok(k, false) && (k != 0 || d == 0) && params_ok(&words[a + 1..][..words[a] as usize])
+            let a = &words[operand_word(op, "a") + 1..][..words[operand_word(op, "a")] as usize];
+            let rax_ok = matches!(op, Opcode::Call | Opcode::CallSym) || !uses_rax(a);
+            k != RET_SRET && k_ok(k, false) && (k != 0 || d == 0) && params_ok(a) && rax_ok
         }
         Opcode::TailCall | Opcode::TailCallPtr => {
-            let a = operand_word(op, "a");
-            params_ok(&words[a + 1..][..words[a] as usize])
+            let a = &words[operand_word(op, "a") + 1..][..words[operand_word(op, "a")] as usize];
+            params_ok(a) && !uses_rax(a)
         }
         _ => true,
     }
@@ -524,6 +525,11 @@ pub fn params_ok(a: &[u32]) -> bool {
     true
 }
 
+/// Whether the argument list `a` ([`params_ok`]) loads `al` ([`ARG_RAX`]).
+fn uses_rax(a: &[u32]) -> bool {
+    a.chunks(2).any(|p| param_reg(p[1]).is_some_and(|r| !r.xmm && r.index == ARG_RAX))
+}
+
 /// The register of an argument list entry ([`params_ok`]), if valid: [`ARG_ADDR`] gives an
 /// 8-byte integer register.
 pub fn param_reg(w: u32) -> Option<ArgReg> {
@@ -554,6 +560,12 @@ pub struct ArgReg {
     pub sext: bool,
 }
 
+/// In a SysV call's argument list ([`params_ok`]), the integer register index of `rax`,
+/// loaded one byte (`movzx eax`): a C-variadic call's `al`, an upper bound of the `xmm`
+/// argument registers used. Only for `call` and `call.sym`, whose callee isn't in `rax`
+/// ([`return_ok`]); never an `arg`'s register.
+pub const ARG_RAX: u32 = 6;
+
 /// In a call's argument list ([`params_ok`]): the 1- or 2-byte integer is loaded
 /// sign-extended to 32 bits ([`ArgReg`]).
 pub const ARG_SEXT: u32 = 1 << 7;
@@ -568,7 +580,9 @@ impl ArgReg {
     pub fn of(r: u32, exact: bool) -> Option<ArgReg> {
         let a = ArgReg { xmm: r & 0x20 != 0, size: r & 0x1f, index: r >> 8, sext: r & ARG_SEXT != 0 };
         let int = if exact { (1..=8).contains(&a.size) } else { matches!(a.size, 1 | 2 | 4 | 8) };
-        let ok = if a.xmm { matches!(a.size, 2 | 4 | 8 | 16) && a.index < 8 } else { int && a.index < 6 };
+        // `al` ([`ARG_RAX`]) only in call argument lists, as one byte.
+        let rax = !exact && a.index == ARG_RAX && a.size == 1 && !a.sext;
+        let ok = if a.xmm { matches!(a.size, 2 | 4 | 8 | 16) && a.index < 8 } else { int && (a.index < 6 || rax) };
         let sext_ok = !a.sext || !exact && !a.xmm && matches!(a.size, 1 | 2);
         (ok && sext_ok && r & ARG_ADDR == 0 && a.word() == r).then_some(a)
     }

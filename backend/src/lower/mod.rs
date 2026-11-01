@@ -213,9 +213,10 @@ pub fn vm_fn_sig<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> Result<Ab
         return native("#[target_feature] not enabled for the crate");
     }
     let sig = abi_sig(tcx, instance)?;
-    // A non-unwinding `extern "C"` fn is a VM function where `sig.rs` has a plan for its
-    // signature (SysV or Win64, shapes the VM passes); other C signatures, and every other ABI, stay
-    // native (`from_fn_abi` already refuses C-unwind and variadic ones).
+    // An `extern "C"` or `extern "C-unwind"` fn is a VM function where `sig.rs` has a plan for
+    // its signature (SysV or Win64, shapes the VM passes); other C signatures, and every other
+    // ABI, stay native (`from_fn_abi` already refuses variadic ones). A `C` body's unwinding
+    // edges terminate (MIR's `UnwindAction::Terminate`), a `C-unwind` one's continue.
     if sig.plan.is_none() {
         return native("non-Rust ABI without a plan");
     }

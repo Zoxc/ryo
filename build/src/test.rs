@@ -138,6 +138,8 @@ const FAST: &[(&str, &[&str])] = &[
     ("vm_control", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-osr", "ryo-jit-ssa-shuffle", "ryo-fp", "ryo-fp-jit-ssa"]),
     ("vm_calls", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-osr", "ryo-jit-ssa-shuffle", "ryo-cgu16", "ryo-fp", "ryo-fp-jit-ssa"]),
     ("c_abi", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-shuffle"]),
+    ("c_abi_unwind", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-osr", "ryo-fp"]),
+    ("c_abi_variadic", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-shuffle"]),
     ("c_abi_def", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-osr", "ryo-jit-ssa-shuffle"]),
     ("vm_tail", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-osr", "ryo-jit-ssa-shuffle"]),
     ("vm_cross", &["ryo", "ryo-jit-ssa", "ryo-cgu16"]),

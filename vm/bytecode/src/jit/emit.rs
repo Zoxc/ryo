@@ -2107,8 +2107,13 @@ impl<'a> E<'a> {
 }
 
 /// The integer argument register `i` of VM functions and natives: `rdi rsi rdx rcx r8 r9`,
-/// or on PE (Win64) `rcx rdx r8 r9` ([`check_pe`] rejects the others there).
+/// or on PE (Win64) `rcx rdx r8 r9` ([`check_pe`] rejects the others there); on SysV,
+/// [`asm::ARG_RAX`] (a call's `al`) is `rax`.
 pub(super) fn int_arg(pe: bool, i: u32) -> R {
+    // A SysV variadic call's `al`.
+    if !pe && i == asm::ARG_RAX {
+        return R::Rax;
+    }
     handler_arg_reg(pe, i as usize).expect("an argument register position")
 }
 
