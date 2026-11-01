@@ -263,7 +263,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             let vm = self.cx.vm.contains(&callee);
             let callee_sig = (has_symbol || vm).then(|| self.abi_sig(callee));
             match callee_sig {
-                // VM functions are Rust-ABI; a candidate with another ABI stays native.
+                // A Rust-ABI VM function is a VM `call`; a C-ABI one is called by symbol.
                 Some(Ok(sig)) if vm && sig.conv == CallConv::Rust => (Target::Direct(Callee::Vm(callee)), sig),
                 _ if !has_symbol => {
                     if tail || !self.fn_once_able(fty, callee) {

@@ -69,7 +69,7 @@ reuse under incremental compilation and `rt.rs` the runtime crates' identity.
      - signatures whose arguments or return the VM can't place as LLVM does (other
        `PassMode`s, and on Win64 an `f128` in a `Pair`, [vm.md](vm.md#calls-and-islands))
      - calls of `C` / `C-unwind` signatures without a direct-call plan (`C call without a
-       plan: <why>`, the `arg_plan`/`ret_kind` refusal): there is no C-call island
+       plan: <why>`, the `arg_plan`/`ret_kind` refusal), since no island calls C functions
      - functions with unsized parameters
      - calls to LLVM intrinsics
      - the other template gaps ([stubs.md](stubs.md#template-gaps))
@@ -77,8 +77,8 @@ reuse under incremental compilation and `rt.rs` the runtime crates' identity.
      The lowering reports these as `Err(NeedsNative(reason))`.
 
      The lowering assumes every candidate is a VM function. A function that calls a
-     candidate of its own CGU which then stays native is lowered again, with an island for
-     that call, until the set of VM functions doesn't change. A function that fails in one
+     candidate of its own CGU which then stays native is lowered again, calling it by symbol
+     (`call.sym`) instead, until the set of VM functions doesn't change. A function that fails in one
      CGU is native in all of them.
 
      Never VM: everything in a `proc-macro` crate (it keeps the proc macro's own code out of

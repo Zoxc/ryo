@@ -342,6 +342,21 @@ fn cast_pieces(cast: &CastTarget, value_size: u64) -> Option<Vec<Piece>> {
     Some(out)
 }
 
+/// `ty passed as Mode` for a native reason: the type and the `PassMode`'s kind, without
+/// the `Debug` dump of its attributes and cast units.
+fn passed_as<'tcx>(arg: &ArgAbi<'tcx, Ty<'tcx>>) -> String {
+    let mode = match arg.mode {
+        PassMode::Ignore => "Ignore",
+        PassMode::Direct(_) => "Direct",
+        PassMode::Pair(..) => "Pair",
+        PassMode::Cast { .. } => "Cast",
+        PassMode::Indirect { meta_attrs: Some(_), .. } => "Indirect (unsized)",
+        PassMode::Indirect { on_stack: true, .. } => "Indirect (on stack)",
+        PassMode::Indirect { .. } => "Indirect",
+    };
+    super::no_trim(|| format!("`{}` passed as {mode}", arg.layout.ty))
+}
+
 /// The return kind of `ret` ([`ryo_bytecode::asm::RET_SRET`]): its `PassMode` as LLVM lowers
 /// it on x86-64. `Direct` and `Pair` scalars go to the next of `rax`, `rdx` (integers and
 /// pointers; a `Direct` `i128` takes both) or `xmm0`, `xmm1` (floats); a `Cast` is one or two
@@ -353,7 +368,7 @@ fn ret_kind<'tcx>(tcx: TyCtxt<'tcx>, ret: &ArgAbi<'tcx, Ty<'tcx>>) -> Result<u32
         _ => {}
     }
     let Some(pieces) = reg_pieces(tcx, ret) else {
-        return native(format!("return passed as {:?} ({:?})", ret.mode, ret.layout.backend_repr));
+        return native(format!("return {}", passed_as(ret)));
     };
     let pe = crate::symbols::is_pe(tcx);
     let scalars = matches!(ret.mode, PassMode::Direct(_) | PassMode::Pair(..));
@@ -504,7 +519,7 @@ fn arg_plan<'tcx>(tcx: TyCtxt<'tcx>, fn_abi: &FnAbi<'tcx, Ty<'tcx>>, sret: bool,
             }
             _ => {
                 let Some(pieces) = reg_pieces(tcx, arg) else {
-                    return native(format!("argument passed as {:?} ({:?})", arg.mode, arg.layout.backend_repr));
+                    return native(format!("argument {}", passed_as(arg)));
                 };
                 // A pointer to one half of the input isn't an `ArgLoc`.
                 if pe && pieces.len() > 1 && pieces.iter().any(|p| p.float && p.size == 16) {

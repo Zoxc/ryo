@@ -1142,8 +1142,8 @@ fn neighbors<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> impl Iterator
 }
 
 /// Lowers a CGU's candidates `cands` (in parallel) until its set of VM functions is stable: a
-/// function that calls a candidate which turned out native is lowered again, with an island
-/// for that call. Only the CGU's own functions are direct callees (a VM function of another
+/// function that calls a candidate which turned out native is lowered again, calling it by
+/// symbol (`call.sym`) instead. Only the CGU's own functions are direct callees (a VM function of another
 /// CGU is called by symbol, `call.sym`, VM or not), so a CGU's classification depends on its
 /// own items alone. Returns the lowered functions and the reasons the others stay native.
 #[allow(clippy::type_complexity)]
