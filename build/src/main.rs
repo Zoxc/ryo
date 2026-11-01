@@ -31,15 +31,17 @@ const USAGE: &str = "\
 usage: ./y.sh <command>
 
 commands:
-  build [--sysroot llvm|ryo] [--target T]...
-                               build the backend, the sysroot and the wrappers into out/dist/;
-                               also install std and ryo_rt for each target T
+  build [--sysroot ryo|llvm] [--target T]...
+                               build the backend, the sysroot and the wrappers into out/dist/,
+                               and std with ryo (`--sysroot llvm`: not), which rustc-ryo then
+                               uses for the host (skipped when current); also install std and
+                               ryo_rt for each target T (LLVM std only)
   build-clif                   build cg_clif from the toolchain's rustc-dev sources
   test [--clif] [--full | --only jit|backend|lean|std|rt | --no-changed
         | [--program NAME]... [--variant NAME]...]
                                the fast suite plus the tests the changed paths select
                                (design/build.md#fast-suite-and-changed-path-selection);
-                               `--full` runs everything and needs the ryo sysroot;
+                               `--full` runs everything and needs a current ryo sysroot;
                                `--program`/`--variant` run only those corpus entries;
                                `--no-changed` only the fixed fast set; these four
                                modes exclude each other
@@ -63,7 +65,7 @@ commands:
                                `lake test` in lean/; `gen` regenerates the tables;
                                `--proofs` also builds the slow proofs (`RyoProofs`)
 {CRATES}
-  install [--target T]... [--sysroot llvm|ryo] [--no-toolchain-install] [--yes] [--dry-run]
+  install [--target T]... [--sysroot ryo|llvm] [--no-toolchain-install] [--yes] [--dry-run]
                                install ryo for use (design/install.md): the pinned toolchain via
                                rustup, a build in install/, launchers via `cargo install`;
                                prints the plan and asks first
@@ -184,6 +186,20 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    // `rustc-ryo`'s std where these don't pass `--sysroot` (design/build.md#test-and-bench):
+    // the LLVM std, so the tests' plain variants and checks, the benchmarks (measuring the
+    // program's code, as the LLVM and Cranelift columns do) and the codegen dumps don't depend
+    // on the ryo sysroot. The tests' ryo-std variants ask for it; `RYO_SYSROOT=ryo` runs the
+    // benchmarks on it. (`bench codegen` passes `--sysroot llvm`.)
+    let llvm_std = match cmd {
+        Cmd::Test(_) | Cmd::CrossTest { .. } => true,
+        Cmd::Bench(_) | Cmd::BenchCrates(_) => std::env::var_os(wrapper_common::SYSROOT_VAR).is_none(),
+        _ => false,
+    };
+    if llvm_std {
+        // SAFETY: `y` is single-threaded here.
+        unsafe { std::env::set_var(wrapper_common::SYSROOT_VAR, "llvm") };
+    }
     // `y install`/`uninstall`'s exit code for a dry run or an unconfirmed plan.
     let mut exit = ExitCode::SUCCESS;
     let result = match cmd {
@@ -225,7 +241,7 @@ mod tests {
         assert_eq!(parse(&[]), Ok(Cmd::Help));
         let build =
             |sysroot, targets: &[&str]| Ok(Cmd::Build(dist::BuildOptions { sysroot, targets: targets.iter().map(|t| t.to_string()).collect() }));
-        assert_eq!(parse(&["build"]), build(dist::Sysroot::Llvm, &[]));
+        assert_eq!(parse(&["build"]), build(dist::Sysroot::Ryo, &[]));
         assert_eq!(parse(&["build", "--sysroot", "llvm"]), build(dist::Sysroot::Llvm, &[]));
         assert_eq!(parse(&["build", "--sysroot=ryo"]), build(dist::Sysroot::Ryo, &[]));
         assert_eq!(

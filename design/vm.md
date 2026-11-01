@@ -631,7 +631,7 @@ panic runtime, as through native frames. The image carries the unwind informatio
 - **Backtraces**: frames of VM functions are named by their own symbols, defined on their
   code ([Image format](#image-format)), so `RUST_BACKTRACE=1` and profilers show them between the native frames
   (`y test`'s `backtrace` check, [build.md](build.md#test-and-bench)). With the ryo
-  sysroot and `-Cdebuginfo`, std's backtraces also give their source locations, JIT
+  sysroot (`rustc-ryo`'s default for the host, [build.md](build.md#build)) and `-Cdebuginfo`, std's backtraces also give their source locations, JIT
   frames included ([Source locations](#source-locations)).
 - **PE**: SEH, with the same LSDA and landing pads, called during the native unwind
   ([below](#pe-seh)).

@@ -20,9 +20,11 @@ pub struct BuildOptions {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum Sysroot {
-    #[default]
+    /// Only the toolchain's prebuilt std (`--sysroot llvm`).
     Llvm,
-    /// Also build std with the ryo backend into `out/dist/sysroot-ryo` (`--sysroot ryo`).
+    /// Also build std with the ryo backend into `out/dist/sysroot-ryo` (the default), which
+    /// `rustc-ryo` then uses for the host unless told otherwise ([`DEFAULT_SYSROOT_FILE`]).
+    #[default]
     Ryo,
 }
 
@@ -51,6 +53,11 @@ pub fn build(o: &BuildOptions) -> Result<(), String> {
     let dir = |var: &str, default: &str| std::env::var_os(var).map_or_else(|| crate::utils::out_dir(&root).join(default), PathBuf::from);
     build_in(&dir(DIST_DIR_VAR, "dist"), &dir(TARGET_DIR_VAR, "target"), o).map(drop)
 }
+
+/// The file in `out/dist/` that makes `rustc-ryo` default to `sysroot-ryo/` (for the targets it
+/// has), written by a `--sysroot ryo` build once that sysroot is current; any other build removes
+/// it with the rest of `out/dist/`, so a stale ryo sysroot is never the default.
+pub const DEFAULT_SYSROOT_FILE: &str = crate::wrapper_common::DEFAULT_SYSROOT_FILE;
 
 /// `y build`'s output directory instead of `out/dist/` (tests).
 pub const DIST_DIR_VAR: &str = "RYO_Y_DIST_DIR";
@@ -138,7 +145,17 @@ pub fn build_in(dist: &Path, target: &Path, o: &BuildOptions) -> Result<String, 
     let build_id = build_id(&build_files)?;
     build_wrappers(&root, &dist_bin, &info, &build_id)?;
     if o.sysroot == Sysroot::Ryo {
-        crate::sysroot::build(&info, &dist, &target, host_jit.as_ref().ok_or("no host JIT")?)?;
+        use crate::sysroot::{SysrootStatus, ryo_sysroot_status};
+        // Its inputs include the backend's contents, so an unchanged backend keeps it.
+        match ryo_sysroot_status(&info, &dist) {
+            SysrootStatus::Current => eprintln!("[y] sysroot: std with the ryo backend is up to date"),
+            _ => crate::sysroot::build(&info, &dist, &target, host_jit.as_ref().ok_or("no host JIT")?)
+                .map_err(|e| format!("{e}\n(the ryo sysroot; `--sysroot llvm` builds without it)"))?,
+        }
+        crate::utils::write(dist.join(DEFAULT_SYSROOT_FILE), "ryo\n")?;
+        for t in all.iter().filter(|t| **t != info.host) {
+            eprintln!("[y] sysroot: the ryo sysroot is host-only: `rustc-ryo --target {t}` uses the LLVM std");
+        }
     }
     eprintln!("[y] done: {}", dist.display());
     Ok(build_id)

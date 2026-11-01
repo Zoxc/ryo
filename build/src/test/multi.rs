@@ -254,7 +254,8 @@ pub(super) fn multi_version(info: &RustcInfo, root: &Path, rustc_ryo: &Path, src
     let alt_dist = alt.join("dist");
     let y = std::env::current_exe().map_err(|e| e.to_string())?;
     run(cmd(&y)
-        .arg("build")
+        // No ryo sysroot: the check links against the LLVM std.
+        .args(["build", "--sysroot", "llvm"])
         .env(crate::dist::ABI_OVERRIDE_VAR, "alt")
         .env(crate::dist::DIST_DIR_VAR, &alt_dist)
         .env(crate::dist::TARGET_DIR_VAR, alt.join("target")))?;

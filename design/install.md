@@ -67,7 +67,7 @@ with each install. All logic stays in the real wrappers.
 ## `y install`
 
 ```
-y install [--target T]... [--sysroot llvm|ryo] [--no-toolchain-install] [--yes] [--dry-run]
+y install [--target T]... [--sysroot ryo|llvm] [--no-toolchain-install] [--yes] [--dry-run]
 ```
 
 1. **Plan** (read-only): rustup's host (x86_64 only; on Apple silicon it says to rerun under
@@ -82,7 +82,12 @@ y install [--target T]... [--sysroot llvm|ryo] [--no-toolchain-install] [--yes] 
    installed and the components and targets before they are added (one rustup command can
    add some and then fail), so a later failure leaves the additions recorded. Checks `rustc +<toolchain> -vV` reports
    1.99.1.
-3. **Build** into `install/build/` and `install/target/` (`dist::build_in`).
+3. **Build** into `install/build/` and `install/target/` (`dist::build_in`), with `y build`'s
+   default: the ryo sysroot too (std built with ryo, minutes more on the first install), so
+   the installed `rustc-ryo`/`cargo-ryo` use it for the host and std's backtraces give VM
+   frames' source locations ([build.md](build.md#build)); `--sysroot llvm` installs only the
+   LLVM std. Cross targets (`--target`) always use the LLVM std. A reinstall reuses
+   `install/target/`, so an unchanged ryo sysroot isn't rebuilt.
 4. **Copy** to `install/<version>.partial/`, rename it to `install/<version>/` (an existing
    one of the same version is moved to `<version>.old` first, and back if the rename
    fails), write `install/current` and the manifest.
@@ -118,7 +123,7 @@ version = "0.3.0-41-g7654b22"
 build_id = "9f2c…"
 host = "x86_64-unknown-linux-gnu"
 targets = ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
-sysroots = ["llvm"]
+sysroots = ["llvm", "ryo"]
 cargo_root = "/home/u/.cargo"
 old_versions = []
 old_cargo_roots = []

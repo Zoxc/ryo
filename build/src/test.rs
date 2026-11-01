@@ -38,8 +38,9 @@ struct Variant {
     /// Only for programs that list VM functions. Their `vm` lists aren't checked (MIR inlining
     /// at `-O` removes some functions).
     vm_only: bool,
-    /// Built against the ryo-compiled std (`--sysroot ryo`, after `y build --sysroot ryo`).
-    /// Skipped without it.
+    /// Built against the ryo-compiled std (`--sysroot ryo`, which `y build` builds by default).
+    /// Skipped without it. The others pass none and get the LLVM std (`y test` sets
+    /// `RYO_SYSROOT=llvm`), so a ryo std bug shows only in these.
     ryo_std: bool,
     /// `-Cpanic=abort`, compared with plain rustc's output with the same flag ([`REFERENCE_ABORT`]).
     /// Programs with a Rust dylib are skipped: std's dylib unwinds.
@@ -129,10 +130,11 @@ fn variants(clif: bool) -> Vec<&'static Variant> {
 /// Every other [`CORPUS`] program is on [`FULL_ONLY`]. The ryo-std variants run only with a ryo
 /// sysroot.
 const FAST: &[(&str, &[&str])] = &[
-    ("hello", &["ryo"]),
+    // The ryo std is `rustc-ryo`'s default: the basics, a panic and its backtrace on it.
+    ("hello", &["ryo", "ryo-std"]),
     ("arith", &["ryo"]),
     ("collections", &["ryo", "ryo-std", "ryo-std-jit"]),
-    ("panics", &["ryo"]),
+    ("panics", &["ryo", "ryo-std"]),
     ("generics_traits", &["ryo"]),
     ("vm_abi", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-osr", "ryo-jit-ssa-shuffle"]),
     ("vm_control", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-osr", "ryo-jit-ssa-shuffle", "ryo-fp", "ryo-fp-jit-ssa"]),
@@ -217,7 +219,8 @@ impl Area {
 #[derive(Debug, Default, PartialEq)]
 pub struct Options {
     pub clif: bool,
-    /// Today's whole suite, plus `y lean`; fails without a ryo sysroot.
+    /// Today's whole suite, plus `y lean`; fails without a current ryo sysroot (`y build`
+    /// builds it unless `--sysroot llvm`).
     pub full: bool,
     pub only: Option<Area>,
     /// Only these programs and variants of the corpus (all of the other if one is empty).
@@ -622,8 +625,8 @@ fn ryo_sysroot_usable(info: &crate::utils::RustcInfo, root: &Path) -> Result<(),
     let dist = crate::utils::out_dir(root).join("dist");
     match ryo_sysroot_status(info, &dist) {
         SysrootStatus::Current => Ok(()),
-        SysrootStatus::Missing => Err(format!("no ryo sysroot at {} (`./y.sh build --sysroot ryo`)", dist.join(SYSROOT_DIR).display())),
-        SysrootStatus::Stale(why) => Err(format!("the ryo sysroot is stale: {why} (`./y.sh build --sysroot ryo`)")),
+        SysrootStatus::Missing => Err(format!("no ryo sysroot at {} (`./y.sh build`)", dist.join(SYSROOT_DIR).display())),
+        SysrootStatus::Stale(why) => Err(format!("the ryo sysroot is stale: {why} (`./y.sh build`)")),
     }
 }
 

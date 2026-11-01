@@ -1000,7 +1000,7 @@ fn header(info: &RustcInfo, root: &Path, opts: &Options) -> Vec<(String, String)
         ("ryo".into(), format!("{commit}{}", if dirty { " (with uncommitted changes)" } else { "" })),
         ("rustc".into(), format!("{rustc} ({}), host {}", info.toolchain, info.host)),
         ("cargo".into(), cargo),
-        ("backends".into(), "llvm: plain rustc; clif: rustc_codegen_cranelift from the toolchain's rustc-dev sources (y build-clif); ryo: out/dist/bin/rustc-ryo, default sysroot (prebuilt LLVM std)".into()),
+        ("backends".into(), "llvm: plain rustc; clif: rustc_codegen_cranelift from the toolchain's rustc-dev sources (y build-clif); ryo: out/dist/bin/rustc-ryo with the prebuilt LLVM std (RYO_SYSROOT=llvm unless set)".into()),
         ("profile".into(), "cargo dev: opt-level 0, debug-assertions and overflow-checks on, panic=unwind, no LTO, incremental off (restated for the test profile too)".into()),
         ("RUSTFLAGS".into(), format!("{RUSTFLAGS} (all crates: deps, build scripts, proc macros, leaf)")),
         ("environment".into(), "CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUST_TEST_THREADS=1 RUSTC_BOOTSTRAP=1; no target-cpu, default linker for all".into()),

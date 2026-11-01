@@ -88,10 +88,12 @@ code that calls the VM's handlers; cg_llvm compiles everything else. Start at
 
 ## `./y.sh` commands (`./y.sh --help`)
 
-- `build [--sysroot llvm|ryo] [--target T]`: backend, sysroot, wrappers into `out/dist/`.
-  `--sysroot ryo` also builds std with ryo (`out/dist/sysroot-ryo/`).
+- `build [--sysroot ryo|llvm] [--target T]`: backend, sysroot, wrappers into `out/dist/`,
+  and std built with ryo (`out/dist/sysroot-ryo/`, skipped when current), which `rustc-ryo`
+  then uses by default for the host; `--sysroot llvm` skips it (the wrappers then use the
+  LLVM std). `rustc-ryo --sysroot llvm|ryo` or `RYO_SYSROOT=llvm|ryo` pick one per run.
 - `test`: fast set plus tests selected by paths changed since the merge base with `main`;
-  `--full` (needs the ryo sysroot), `--only jit|backend|lean|std|rt`, `--no-changed`,
+  `--full` (needs a current ryo sysroot), `--only jit|backend|lean|std|rt`, `--no-changed`,
   `--clif`, `--cross T`. One program/variant: `./y.sh test --program hello --variant ryo`
   (names are file stems and variants in `build/src/test.rs`).
 - vm crates directly: `cargo test --manifest-path vm/Cargo.toml -p ryo_bytecode --test
@@ -99,10 +101,13 @@ code that calls the VM's handlers; cg_llvm compiles everything else. Start at
 - `bench [--runs N] [--llvm O0,O3] [--clif] [--ryo aot,jit] [--metric time|cachegrind] [--self-profile DIR]`
   (`.mm_profdata` per program and column, from an extra untimed compile): no
   per-program filter; use `compare-branches.py --programs fib` for one.
+  `bench`, `bench crates` and `compare-branches.py` build ryo against the LLVM std
+  (`RYO_SYSROOT=llvm` unless set); `bench codegen` and `y test`'s plain variants always do
+  (the `ryo-std*` variants use the ryo sysroot).
 - `bench codegen`: rewrites `bench/codegen/` (AOT `.txt`/`.s`, JIT `.jit.s`,
   `.jit-ssa-{pre,post}.txt`) using `out/dist/`, so `./y.sh build` first.
 - `bench crates [...]`: crates.io crates per backend, HTML report.
-- `install [--target T] [--sysroot ryo] [--yes|--dry-run]` / `uninstall`: install ryo for
+- `install [--target T] [--sysroot ryo|llvm] [--yes|--dry-run]` / `uninstall`: install ryo for
   use into the checkout's `install/` plus `cargo install --path scripts` launchers
   (`design/install.md`). Changes the real rustup and `~/.cargo/bin`: test with `--dry-run`
   or an isolated `RUSTUP_HOME`/`CARGO_HOME`.
@@ -120,6 +125,7 @@ code that calls the VM's handlers; cg_llvm compiles everything else. Start at
   miscompiles), `RYO_JIT_LICM=1` (general LICM, off by default), `RYO_JIT_ROTATE=1` (loop rotation, off by
   default), `RYO_JIT_STATS=1|2` (startup
   line and exit summary on stderr; `2` adds progress at most once a minute), `RYO_JIT_TEST_PANIC=1`, `RYO_JIT_TEST_OOM=1`.
+- Wrappers: `RYO_SYSROOT=ryo|llvm` (`rustc-ryo`'s sysroot without `--sysroot`).
 - `y test` passes its env to the corpus: `RYO_JIT_THRESHOLD=0 RYO_JIT_SYNC=1 ./y.sh test`
   runs everything through the JIT.
 - Build: `RYO_RT_FEATURES` (extra `ryo_rt` features); `RYO_LEAN_GEN=1` makes the `lean_*` tests rewrite

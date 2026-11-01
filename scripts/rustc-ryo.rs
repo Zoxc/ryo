@@ -1,4 +1,6 @@
-//! `rustc-ryo`: runs the pinned rustc with the ryo backend and the `out/dist/` sysroot.
+//! `rustc-ryo`: runs the pinned rustc with the ryo backend and a sysroot of `out/dist/`: the std
+//! built with ryo (`sysroot-ryo/`) where `y build` built one, else the LLVM std (`out/dist/`
+//! itself); `--sysroot ryo|llvm` or `RYO_SYSROOT=ryo|llvm` choose (design/build.md#build).
 //!
 //! Built by `y build` with plain rustc into `out/dist/bin/`. `RYO_TOOLCHAIN` is baked in at build
 //! time (design/build.md#the-y-build-tool).
@@ -16,7 +18,9 @@ fn main() {
     let stats = take_ryo_stats(&mut passed).unwrap_or_else(|msg| common::fail(&msg));
     let verbose_version = is_verbose_version(&passed);
     let checked = common::jit_checked();
-    let args = ryo_args(&common::dist_dir(), passed, checked).unwrap_or_else(|msg| common::fail(&msg));
+    let dist = common::dist_dir();
+    let default = default_sysroot(&dist).unwrap_or_else(|msg| common::fail(&msg));
+    let args = ryo_args(&dist, passed, checked, default).unwrap_or_else(|msg| common::fail(&msg));
     let mut cmd = common::toolchain_command("rustc");
     cmd.args(args);
     if let Some(level) = stats {
@@ -34,6 +38,8 @@ fn main() {
             let _ = writeln!(stdout, "ryo-build: {}{}", option_env!("RYO_BUILD_ID").unwrap_or("unknown"), if checked { "+jit-checked" } else { "" });
             // The ABI tag (design/build.md#the-abi-tag), set in `y build`'s environment.
             let _ = writeln!(stdout, "ryo-abi: {}", option_env!("RYO_ABI").unwrap_or("unknown"));
+            // Switching the default std (`RYO_SYSROOT`, a build with or without it) rebuilds too.
+            let _ = writeln!(stdout, "ryo-sysroot: {}", if default.ryo { "ryo" } else { "llvm" });
         }
         let _ = stdout.flush();
         let _ = std::io::stderr().write_all(&out.stderr);
@@ -42,10 +48,28 @@ fn main() {
     common::exec(cmd, "rustc")
 }
 
+/// Which sysroot a command line without `--sysroot` gets.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DefaultSysroot {
+    /// `sysroot-ryo/`, for the targets it has (the host); the LLVM std for the others.
+    pub ryo: bool,
+}
+
+/// [`common::SYSROOT_VAR`] if set, else whether `dist`'s build made its ryo sysroot the default.
+pub fn default_sysroot(dist: &Path) -> Result<DefaultSysroot, String> {
+    match std::env::var_os(common::SYSROOT_VAR).as_ref().and_then(|v| v.to_str()) {
+        None | Some("") => Ok(DefaultSysroot { ryo: dist.join(common::DEFAULT_SYSROOT_FILE).is_file() }),
+        Some("ryo") => Ok(DefaultSysroot { ryo: true }),
+        Some("llvm") => Ok(DefaultSysroot { ryo: false }),
+        Some(other) => Err(format!("{}={other}: expected `ryo` or `llvm`", common::SYSROOT_VAR)),
+    }
+}
+
 /// The full rustc command line for the user's `passed` arguments. `checked`
 /// (`RYO_JIT_CHECKED=1`, design/build.md#build): for the host (no `--target`), link the
-/// sysroot's `ryo_rt` with the checked JIT, from its `jit-checked/`.
-pub fn ryo_args(dist: &Path, passed: Vec<OsString>, checked: bool) -> Result<Vec<OsString>, String> {
+/// sysroot's `ryo_rt` with the checked JIT, from its `jit-checked/`. `default`: the sysroot
+/// without `--sysroot`; `--sysroot ryo` and `--sysroot llvm` name `dist`'s two.
+pub fn ryo_args(dist: &Path, passed: Vec<OsString>, checked: bool, default: DefaultSysroot) -> Result<Vec<OsString>, String> {
     if passed.is_empty() {
         // Show rustc's help, like plain `rustc` does.
         return Ok(passed);
@@ -54,14 +78,34 @@ pub fn ryo_args(dist: &Path, passed: Vec<OsString>, checked: bool) -> Result<Vec
     if passed.last().is_some_and(|a| a == "--sysroot") {
         return Err("`--sysroot` needs a value".to_owned());
     }
-    // `--sysroot ryo` selects the std built with ryo (`y build --sysroot ryo`).
+    // `--sysroot ryo` selects the std built with ryo (`y build`), `--sysroot llvm` the
+    // toolchain's.
+    let ryo_sysroot = dist.join("sysroot-ryo");
     let mut user_sysroot = false;
     for a in &mut passed {
         if a == "--sysroot=ryo" {
             *a = OsString::from("--sysroot=");
-            a.push(dist.join("sysroot-ryo"));
+            a.push(&ryo_sysroot);
+        } else if a == "--sysroot=llvm" {
+            *a = OsString::from("--sysroot=");
+            a.push(dist);
         }
         user_sysroot |= opt_value(a, "--sysroot=").is_some();
+    }
+    // The ryo sysroot by default, for a target it has std for (only the host: a cross target,
+    // or one it was never built for, falls back to the LLVM std).
+    if !user_sysroot && default.ryo {
+        let target = passed.iter().filter_map(|a| opt_value(a, "--target=")).last();
+        let has = match target {
+            Some(t) => ryo_sysroot.join("lib").join("rustlib").join(t).join("lib").is_dir(),
+            None => ryo_sysroot.is_dir(),
+        };
+        if has {
+            let mut a = OsString::from("--sysroot=");
+            a.push(&ryo_sysroot);
+            passed.insert(0, a);
+            user_sysroot = true;
+        }
     }
 
     let mut rt = OsString::from("force:ryo_rt");
@@ -171,6 +215,8 @@ fn checked_rt(sysroot: &Path) -> Result<PathBuf, String> {
 mod tests {
     use super::*;
 
+    const LLVM: DefaultSysroot = DefaultSysroot { ryo: false };
+
     fn args(list: &[&str]) -> Vec<OsString> {
         list.iter().map(OsString::from).collect()
     }
@@ -178,7 +224,7 @@ mod tests {
     #[test]
     fn adds_ryo_flags_around_user_args() {
         let dist = Path::new("/d");
-        let got = ryo_args(dist, args(&["foo.rs", "-Ccodegen-units=16"]), false).unwrap();
+        let got = ryo_args(dist, args(&["foo.rs", "-Ccodegen-units=16"]), false, LLVM).unwrap();
         // `join`, so the separator is right on Windows too.
         let backend = dist.join("lib").join(crate::utils::dll_name("rustc_codegen_ryo"));
         let backend = format!("-Zcodegen-backend={}", backend.display());
@@ -188,9 +234,9 @@ mod tests {
 
     #[test]
     fn keeps_user_sysroot_and_empty_args() {
-        let got = ryo_args(Path::new("/d"), args(&["--sysroot=/s", "x.rs"]), false).unwrap();
+        let got = ryo_args(Path::new("/d"), args(&["--sysroot=/s", "x.rs"]), false, LLVM).unwrap();
         assert!(!got.iter().any(|a| a == "/d"));
-        assert!(ryo_args(Path::new("/d"), vec![], false).unwrap().is_empty());
+        assert!(ryo_args(Path::new("/d"), vec![], false, LLVM).unwrap().is_empty());
     }
 
     #[test]
@@ -210,13 +256,33 @@ mod tests {
     fn ryo_sysroot() {
         let want = format!("--sysroot={}", Path::new("/d").join("sysroot-ryo").display());
         for list in [&["x.rs", "--sysroot", "ryo"][..], &["x.rs", "--sysroot=ryo"]] {
-            let got = ryo_args(Path::new("/d"), args(list), false).unwrap();
+            let got = ryo_args(Path::new("/d"), args(list), false, LLVM).unwrap();
             assert!(got.iter().any(|a| a.to_str() == Some(want.as_str())), "{got:?}");
             assert!(!got.iter().any(|a| a == "/d"));
         }
-        let got = ryo_args(Path::new("/d"), args(&["x.rs", "--sysroot", "/s"]), false).unwrap();
+        let got = ryo_args(Path::new("/d"), args(&["x.rs", "--sysroot", "/s"]), false, LLVM).unwrap();
         assert!(got.iter().any(|a| a == "--sysroot=/s"));
-        assert!(ryo_args(Path::new("/d"), args(&["x.rs", "--sysroot"]), false).is_err());
+        assert!(ryo_args(Path::new("/d"), args(&["x.rs", "--sysroot"]), false, LLVM).is_err());
+        let got = ryo_args(Path::new("/d"), args(&["x.rs", "--sysroot", "llvm"]), false, LLVM).unwrap();
+        assert!(got.iter().any(|a| a == "--sysroot=/d"), "{got:?}");
+    }
+
+    #[test]
+    fn default_ryo_sysroot_falls_back() {
+        let dir = std::env::temp_dir().join(format!("ryo-default-sysroot-{}", std::process::id()));
+        let host = dir.join("sysroot-ryo").join("lib").join("rustlib").join("h").join("lib");
+        std::fs::create_dir_all(&host).unwrap();
+        let ryo = DefaultSysroot { ryo: true };
+        let want = format!("--sysroot={}", dir.join("sysroot-ryo").display());
+        for list in [&["x.rs"][..], &["x.rs", "--target", "h"]] {
+            let got = ryo_args(&dir, args(list), false, ryo).unwrap();
+            assert!(got.iter().any(|a| a.to_str() == Some(want.as_str())), "{got:?}");
+            assert!(!got.iter().any(|a| a == &dir), "{got:?}");
+        }
+        // No std for `c` in the ryo sysroot: `out/dist/`'s.
+        let got = ryo_args(&dir, args(&["x.rs", "--target=c"]), false, ryo).unwrap();
+        assert_eq!(got[..2], args(&["--sysroot", dir.to_str().unwrap()])[..]);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

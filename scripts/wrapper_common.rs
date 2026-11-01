@@ -17,6 +17,13 @@ use std::process::Command;
 /// sets it unless the caller did.
 pub const JIT_CHECKED_VAR: &str = "RYO_JIT_CHECKED";
 
+/// The variable that picks `rustc-ryo`'s sysroot when its command line doesn't: `ryo` or `llvm`.
+pub const SYSROOT_VAR: &str = "RYO_SYSROOT";
+
+/// The file in `out/dist/` that makes its ryo sysroot (`sysroot-ryo/`) `rustc-ryo`'s default:
+/// `y build` writes it once that sysroot is current, and any build without it removes it.
+pub const DEFAULT_SYSROOT_FILE: &str = "sysroot-default";
+
 /// Where a sysroot (`out/dist/`, `out/dist/sysroot-ryo/`) keeps its host `ryo_rt` with the checked JIT,
 /// which `y build` installs and `rustc-ryo` links under [`JIT_CHECKED_VAR`].
 pub const JIT_CHECKED_DIR: &str = "jit-checked";

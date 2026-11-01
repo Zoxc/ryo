@@ -43,6 +43,8 @@ pub fn codegen() -> Result<(), String> {
                 c.env_remove(&k);
             }
         }
+        // The LLVM std, whatever `rustc-ryo`'s default: the dumps don't depend on the ryo sysroot.
+        c.args(["--sysroot", "llvm"]);
         c.args(["--edition=2024", &path_str(&src)?, "-o", &path_str(&out.join(exe_name(program)))?]);
         // One image, as the benchmarks build (`bench`'s `DEV_FLAGS`), whatever rustc's
         // default codegen units.

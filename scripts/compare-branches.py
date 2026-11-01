@@ -5,7 +5,7 @@ time) and, with `--crates` (or only, with `--only-crates`), on `y bench crates`.
 A build is a checkout with a built `out/dist/` (`./y.sh build`). Builds are given as
 `--build NAME=PATH` or `--build PATH` (name: the directory name), repeated; `--worktree REV`
 adds a build of commit REV from a `git worktree` at `out/target/compare/<REV>` in this repo
-(created if missing, reused otherwise, and `./y.sh build` run there if it has no `out/dist/`) --
+(created if missing, reused otherwise, and `./y.sh build` run there (`--sysroot llvm`) if it has no `out/dist/`) --
 the easy way to compare commits. With no builds given, the default is `--worktree main
 --build .`. The first build is the baseline: every other build gets a ratio column (its
 median / the baseline's median).
@@ -23,7 +23,8 @@ Examples:
     scripts/compare-branches.py --worktree HEAD~1 --build head=. --metric cachegrind
 
 Programs: each is compiled with each build's `out/dist/bin/rustc-ryo` with cargo's dev profile,
-except one CGU, no incremental and no debuginfo (`DEV_FLAGS`, as `y bench`), then `--flags`; every build
+except one CGU, no incremental and no debuginfo (`DEV_FLAGS`, as `y bench`), then `--flags`, and
+the LLVM std (`RYO_SYSROOT=llvm` unless set, as `y bench`); every build
 must print the same output. Samples are taken in
 rounds, one sample per build per round, the build order shuffled each round (`--seed`) so
 drift affects all alike; the first `--warmup` rounds are dropped, and a measurement stops
@@ -158,7 +159,7 @@ def ensure_built(d, name):
     if has_dist(d):
         return
     PROGRESS.log(f"[compare] {name}: no out/dist/, running ./y.sh build in {d}")
-    if subprocess.run(["./y.sh", "build"], cwd=d).returncode != 0:
+    if subprocess.run(["./y.sh", "build", "--sysroot", "llvm"], cwd=d).returncode != 0:
         sys.exit(f"{name}: ./y.sh build failed in {d}")
 
 
@@ -553,6 +554,9 @@ def main():
                    help="also compare `y bench crates` (a,b | all | default, as y's --crates)")
     p.add_argument("--only-crates", action="store_true", help="only the crates comparison")
     args = p.parse_args()
+    # The programs' std: the LLVM one, as `y bench` uses, unless set (`ryo` for the ryo
+    # sysroot). Builds made here skip the ryo sysroot.
+    os.environ.setdefault("RYO_SYSROOT", "llvm")
     if args.only_crates and args.crates is None:
         args.crates = "default"
     if args.metric == "cachegrind":

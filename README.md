@@ -46,7 +46,9 @@ pass `--yes`).
 Options:
 
 - `--target x86_64-pc-windows-msvc` (repeatable): also support cross-compiling to that target.
-- `--sysroot ryo`: also build a standard library compiled by ryo (for the host).
+- `--sysroot llvm`: skip the standard library compiled by ryo (installed by default, for the
+  host; it makes the first install take minutes longer). With it, panics' backtraces show
+  source locations of ryo-compiled code; without it, ryo uses Rust's prebuilt std.
 - `--no-toolchain-install`: fail (printing the rustup commands) instead of changing rustup.
 
 To update: `git pull && ./y.sh install`. The previous version is replaced, and toolchain
@@ -73,7 +75,7 @@ Your profile settings work as with LLVM; after updating ryo, cargo rebuilds ever
 
 | Setting | Where | Effect |
 |---|---|---|
-| `RUSTFLAGS="--sysroot ryo"` | build | Use the ryo-built std (needs `--sysroot ryo` at install) |
+| `RUSTFLAGS="--sysroot llvm"` or `RYO_SYSROOT=llvm` | build | Use Rust's prebuilt std instead of the ryo-built one (the default for the host; cross targets always use the prebuilt one) |
 | `RYO_STATS=1` | build | Print how many functions became VM code |
 | `RYO_NO_VM=1` | build | Compile everything natively (to rule ryo's VM in or out) |
 | `RYO_JIT=off` | run | Disable the JIT in the built program |
