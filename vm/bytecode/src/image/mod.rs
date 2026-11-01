@@ -432,6 +432,10 @@ pub struct Header {
     /// a runtime registers only the images linked against the anchor its stub passes
     /// (design/backend.md#pipeline).
     pub anchor: u64,
+    /// The string pool (bytes) of the instruction lists' source locations
+    /// ([`crate::asm::list::Loc`]): at each offset a LEB128 length, then the UTF-8 bytes;
+    /// offset 0 is no string. Empty without locations (design/vm.md#source-locations).
+    pub strings: Span,
 }
 
 /// The size of a symbol slot (`[u64]` at [`Header::symbols`]).
@@ -685,6 +689,7 @@ impl<'a> Image<'a> {
         cast::<u8>(bytes, header.lists, "instruction lists")?;
         cast::<CallSiteEntry>(bytes, header.call_sites, "call sites")?;
         cast::<u32>(bytes, header.const_relocs, "constant relocations")?;
+        cast::<u8>(bytes, header.strings, "strings")?;
         if header.sym_flags.count != header.symbols.count {
             return Err(ImageError::OutOfBounds("symbol flags"));
         }
@@ -821,6 +826,15 @@ impl<'a> Image<'a> {
     pub fn list(&self, func: u32) -> &'a [u8] {
         let Some(f) = self.functions().get(func as usize) else { return &[] };
         self.run(self.header.lists, f.list)
+    }
+
+    /// The string at offset `off` of the string pool ([`Header::strings`]), `None` for
+    /// offset 0 or a malformed one.
+    pub fn string(&self, off: u32) -> Option<&'a [u8]> {
+        let pool = self.part::<u8>(self.header.strings);
+        let mut r = crate::asm::leb::Reader(pool.get(off as usize..).filter(|_| off != 0)?);
+        let len = r.u32()? as usize;
+        r.0.get(..len)
     }
 
     /// Function `func`'s call sites, sorted by position (empty for an unknown function).

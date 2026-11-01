@@ -44,6 +44,12 @@ macro_rules! rt_sym {
     (jit_start) => {
         "ryo_jit_start"
     };
+    (bt_resolve) => {
+        "ryo_bt_resolve"
+    };
+    (bt_entry) => {
+        "ryo_bt_entry"
+    };
 }
 
 /// `$name` with the ABI tag as a suffix, `<name>_<tag>`: the symbol names of the runtime's

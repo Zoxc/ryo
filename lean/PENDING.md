@@ -207,3 +207,15 @@ remove it once a Lean session has handled it.
   `0x7ffffffe`; `scripts/lean-decode-ref` prints it the same way (`cleanup N -> 2147483646
   catch`), so change it with the Lean decoder. The JIT's inliner keeps such calls `Site::Nounwind`, which the emitter turns
   into a continue entry only when the unit has no landing pad (else no call site).
+
+- Source locations (Commit: "Backend: Source locations for std backtraces of VM frames"):
+  the instruction list has a modifier kind `5` (`asm::list::Loc`: `file << 1 | inlined`,
+  the line as a zigzag delta from the function's previous location's, the column, and if
+  `inlined` the name), ordered after dropped stores and before instructions at one
+  position (`ORDER_LOC`; instructions are now rank 4). `walkList`/`InsnList.read` and the
+  entry-order check (`Ryo/Obj/List.lean`, `DecodeObj.lean`) should accept and skip it (a
+  pure label: the decoders ignore it). The image header gains a last field `strings: Span`
+  (the locations' string pool, header size 176), which `Ryo/Obj/Image.lean`'s `Header`
+  and `headerSize` don't read yet. Optional, §8 of the design: carry the locations as
+  labels of decoded calls, and the JIT's per-call chains (`InstData::loc`, `Func::chains`,
+  `Output::calls`) through the per-step checkers.

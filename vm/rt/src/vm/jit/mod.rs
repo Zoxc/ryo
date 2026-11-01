@@ -705,6 +705,7 @@ fn start() -> bool {
         pe_reg_handlers,
         fp_handlers,
         fp_reg_handlers,
+        bt_publish: super::backtrace::bt_publish,
     };
     // The JIT thread runs this module's code (the sealed JIT) and reads its images for the
     // rest of the process: pin the module first.

@@ -268,7 +268,8 @@ fn check(f: &Fn, frame_size: u32, mode: Mode, what: &str) -> asm::Encoded {
     for r in reduced::Decoder::new(&red.words) {
         r.unwrap_or_else(|e| panic!("{what} {mode:?} (reduced words): {e}"));
     }
-    if red != want {
+    // `reduce` works on words: no byte positions.
+    if (asm::Decoded { ipos: Vec::new(), ..red.clone() }) != want {
         panic!("{what} {mode:?} (reduced):\n{}\n---\n{}", reduced::Disasm(&want.words), reduced::Disasm(&red.words));
     }
     // The same in one pass, with the instruction list.

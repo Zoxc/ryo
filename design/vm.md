@@ -630,7 +630,9 @@ panic runtime, as through native frames. The image carries the unwind informatio
   intrinsic does ([stubs.md](stubs.md#unwinding)).
 - **Backtraces**: frames of VM functions are named by their own symbols, defined on their
   code ([Image format](#image-format)), so `RUST_BACKTRACE=1` and profilers show them between the native frames
-  (`y test`'s `backtrace` check, [build.md](build.md#test-and-bench)).
+  (`y test`'s `backtrace` check, [build.md](build.md#test-and-bench)). With the ryo
+  sysroot and `-Cdebuginfo`, std's backtraces also give their source locations, JIT
+  frames included ([Source locations](#source-locations)).
 - **PE**: SEH, with the same LSDA and landing pads, called during the native unwind
   ([below](#pe-seh)).
 
@@ -800,6 +802,9 @@ constants       constant pool: allocations, aligned
 call sites      per function, sorted by position: code offset and length, landing pad
                 offset (with the catch bit) or none (`asm::CallSite`)
 insn lists      bytes, per function: its instruction list
+strings         the source locations' string pool: at each offset a LEB128 length,
+                then UTF-8 bytes; offset 0 is none. Empty without `-Cdebuginfo`
+                ([Source locations](#source-locations))
 ```
 
 #### Instruction list
@@ -817,9 +822,13 @@ by `v >> 1` from the previous entry's, and `v & 1` says what follows:
 - `1`, a modifier: its kind, then its fields: a branch target (`0`, where the cache is
   cleared), a dropped store (`1`: frame offset, then `log2(size) << 4 | register`), an
   escape, a storage end or an island operand (`2`, `3`, `4`, `asm::Scope`: frame offset,
-  size, and an escape's alignment). Frame offsets are zigzag-encoded.
+  size, and an escape's alignment), a source location (`5`, `asm::list::Loc`:
+  `file << 1 | inlined`, the line as a zigzag delta from the previous location's, the
+  column, and the inlined function's name if `inlined`, [Source
+  locations](#source-locations)). Frame offsets are zigzag-encoded.
 
-At one position, entries come in the order target, scopes, dropped store, instruction. The
+At one position, entries come in the order target, scopes, dropped store, locations,
+instruction. The decoders skip locations. The
 list is an index the decoder checks, never trusted over the bytes: the targets must be
 exactly where the branches go, an instruction entry must re-emit to the bytes there, a
 handler entry must be at a handler call whose target is (one of) that opcode's handlers, and
@@ -835,6 +844,57 @@ resolved fields ([Reduced instructions](#reduced-instructions)).
 
 The read-only section can live in RELRO/`.rdata`, since nothing writes to it after
 relocation.
+
+#### Source locations
+
+With `-Cdebuginfo` (line tables or more), VM frames get source locations in std's
+backtraces (`RUST_BACKTRACE`, `std::backtrace::Backtrace`), AOT and JIT, as cg_llvm's DWARF
+gives them; there is no DWARF or CodeView for VM code, and debuggers and profilers still
+see only symbols.
+
+- **Runs**: the lowering sets each statement's and terminator's `SourceInfo` as the
+  location of what it emits (`lower/loc.rs`, `Asm::set_loc`); every call among it (VM call,
+  island, handler call) starts a location run where the location differs from the last
+  run's. A run is the list entries at one position, innermost first: one per scope rustc's
+  MIR inliner folded in (the inlined function's path, with the span inside it; walked by
+  `inlined_parent_scope`), then the function's own. Spans are collapsed to their macro call
+  site, columns are bytes (none on MSVC) and file names are the embeddable names joined to
+  their working directory, as cg_llvm's debuginfo has them. A return
+  address's location is the last run at or before it. Where the counter stubs start
+  (before the PE pad region) a run with file `0` ends the body's last one. The machine code
+  doesn't change.
+- **Resolver**: `ryo_bt_resolve_<tag>` (`ryo_rt`'s `vm/backtrace.rs`, internal and
+  tagged) takes a return address minus one. In a registered image's text, it reports the
+  run of the function there; in published JIT code, the chain of AOT calls the call stands
+  for, each expanded as its AOT call's run, so a JIT frame prints as the AOT frames (and
+  JIT- and MIR-inlined frames) it came from. Frames without a run (no debuginfo, the
+  stubs, re-encoded code) report the function with no location. Lock-free and
+  allocation-free, without core's panic path.
+- **JIT chains**: decoding keeps each instruction's AOT byte position (`Decoded::ipos`).
+  Each call instruction of the SSA IR carries a chain link (`InstData::loc`,
+  `Func::chains`: the function, the AOT position, the parent link), outside its operation so
+  that value numbering ignores it. Inlining copies the callee's links under the call's
+  (`inline::splice`), so a call inlined at two sites has two chains. No pass merges,
+  drops or duplicates calls (only pure operations), so every emitted call keeps its own.
+  Emission records every call's chain by the offset of its last byte (`Output::calls`,
+  also for calls without a call site), and `install` publishes the map
+  (`jit_abi::BtRegion`, `RtApi::bt_publish`) before the code can run; OSR code makes no
+  calls.
+- **std hook**: the ryo sysroot's std is patched (`build/src/sysroot.rs`,
+  `patch_backtrace`): backtrace-rs's `resolve`/`resolve_frame` ask `ryo_bt_resolve` first
+  and fall back to the platform symbolizer (gimli, dbghelp); each reported frame becomes a
+  symbol of the same frame, innermost first, as inlined frames are, and one without a
+  name takes the symbol at its AOT address. A JIT frame's symbol address (the unwinder's
+  start of its function) becomes its root's AOT entry (`ryo_bt_entry_<tag>`), which a
+  function pointer still is, so `Backtrace::capture` trims its own frames by it as
+  natively. So the panic hook's short backtraces find
+  `__rust_{begin,end}_short_backtrace` also when they are VM or JIT code. std depends on
+  `ryo_rt` there, so the hook is always linked. With the llvm sysroot's std there is no
+  hook: AOT frames are named by their symbols (on PE, internal functions after the nearest
+  external symbol), JIT frames are unnamed.
+- Not done: names for internal functions on PE (dbghelp only sees external symbols there),
+  and a resolver across separately linked `ryo_rt` copies (a cdylib's frames in another
+  module's backtrace get names only).
 
 **Writable** (`.data.ryo_image` / `.data$ryo_image`):
 

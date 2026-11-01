@@ -1324,3 +1324,47 @@ fn verify_brcmp_width() {
     f.terminate(b1, Term::Ret { k: 0, parts: vec![] });
     assert!(f.verify().is_err(), "{f}");
 }
+
+/// The live instructions of `f` that are VM calls, in layout order.
+fn calls_of(f: &IrFunc) -> Vec<ryo_bytecode::jit::ir::Inst> {
+    f.live_blocks().iter().flat_map(|b| f.blocks[b.idx()].insts.clone()).filter(|i| matches!(f.insts[i.idx()].op, Op::Call(_))).collect()
+}
+
+/// Backtrace chains (design/vm.md#source-locations): a decoded call's chain is its AOT
+/// position; inlining a callee at two sites gives each copied call its own chain, the
+/// callee's position under the site's.
+#[test]
+fn inline_chains() {
+    use ryo_bytecode::jit::inline::{VmFunc, splice};
+    use ryo_bytecode::jit::ir::ChainLink;
+    let none = || List::from_words(&[]);
+    let cd = decoded(&[Insn::CallSym { d: Slot(-8), sym: Sym(0), k: 8, a: none() }, Insn::Ret { s: Slot(-8), k: 8 }], 16, &[]);
+    let callee = ir(&cd);
+    let rd = decoded(
+        &[
+            Insn::Call { d: Slot(-8), f: Func(1), k: 8, a: none() },
+            Insn::Call { d: Slot(-16), f: Func(1), k: 8, a: none() },
+            Insn::Ret { s: Slot(-8), k: 8 },
+        ],
+        32,
+        &[],
+    );
+    let mut f = ir(&rd);
+    let sites = calls_of(&f);
+    assert_eq!(sites.len(), 2, "{f}");
+    for (k, &s) in sites.iter().enumerate() {
+        assert_eq!(f.chain_of(f.insts[s.idx()].loc), vec![ChainLink { parent: 0, func: None, pos: rd.ipos[k] }]);
+    }
+    let g = VmFunc { img: 7, func: Func(1) };
+    for &s in &sites {
+        splice(&mut f, s, &callee, g);
+    }
+    f.verify().unwrap_or_else(|e| panic!("{e}\n{f}"));
+    let copies = calls_of(&f);
+    assert_eq!(copies.len(), 2, "{f}");
+    let locs: Vec<u32> = copies.iter().map(|i| f.insts[i.idx()].loc).collect();
+    assert_ne!(locs[0], locs[1], "disjoint chains");
+    let mut got: Vec<Vec<(Option<VmFunc>, u32)>> = locs.iter().map(|&l| f.chain_of(l).iter().map(|c| (c.func, c.pos)).collect()).collect();
+    got.sort_by_key(|c| c[1].1);
+    assert_eq!(got, vec![vec![(Some(g), cd.ipos[0]), (None, rd.ipos[0])], vec![(Some(g), cd.ipos[0]), (None, rd.ipos[1])]]);
+}

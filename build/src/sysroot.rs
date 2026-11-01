@@ -320,6 +320,7 @@ fn prepare_sources(info: &RustcInfo, root: &Path, dst: &Path) -> Result<(), Stri
     // What `RYO_RT_FEATURES` adds, as in `out/dist/`'s `ryo_rt`.
     let features: Vec<String> = crate::dist::rt_features().iter().map(|f| format!("{f:?}")).collect();
     let dep = format!("ryo_rt = {{ path = \"../ryo_rt\", features = [{}] }}\n", features.join(", "));
+    patch_backtrace(&src, dst)?;
     for krate in ["alloc", "rustc-std-workspace-core"] {
         let manifest = dst.join(krate).join("Cargo.toml");
         let text = crate::utils::read(src.join(krate).join("Cargo.toml"))?;
@@ -331,6 +332,212 @@ fn prepare_sources(info: &RustcInfo, root: &Path, dst: &Path) -> Result<(), Stri
     }
     Ok(())
 }
+
+/// Patches std's copy of backtrace-rs so that both the panic hook's backtraces and
+/// `std::backtrace::Backtrace` ask `ryo_rt` first for the frames of VM code
+/// (design/vm.md#source-locations): `resolve`/`resolve_frame` call `ryo_bt_resolve` (std
+/// depends on `ryo_rt` through `alloc`, so it is always linked), and fall back to the
+/// platform symbolizer (gimli, dbghelp) for addresses that aren't VM code. Each frame it
+/// reports becomes a symbol of its own, innermost first, as the platform symbolizer reports
+/// inlined frames; one without a name takes the symbol at its AOT address. The symbolizers'
+/// own `Symbol` becomes `ImpSymbol`, which `Symbol` wraps.
+fn patch_backtrace(src: &Path, dst: &Path) -> Result<(), String> {
+    let dir = Path::new("backtrace").join("src").join("symbolize");
+    let tag = std::env::var(crate::dist::ABI_VAR).unwrap_or_else(|_| "dev".to_owned());
+    let edit = |text: &str, from: &str, to: &str, what: &str| -> Result<String, String> {
+        if !text.contains(from) {
+            return Err(format!("rust-src {what}: no `{from}` to patch"));
+        }
+        Ok(text.replace(from, to))
+    };
+    for imp in ["gimli.rs", "dbghelp.rs", "miri.rs", "noop.rs"] {
+        let text = crate::utils::read(src.join(&dir).join(imp))?;
+        // `super::Symbol` as a whole path (not `super::SymbolName`).
+        let mut patched = String::with_capacity(text.len() + 64);
+        let mut rest = text.as_str();
+        while let Some(i) = rest.find("super::Symbol") {
+            let end = i + "super::Symbol".len();
+            let whole = !rest[end..].starts_with(|c: char| c.is_alphanumeric() || c == '_');
+            patched.push_str(&rest[..i]);
+            patched.push_str(if whole { "super::ImpSymbol" } else { "super::Symbol" });
+            rest = &rest[end..];
+        }
+        patched.push_str(rest);
+        write_if_changed(&dst.join(&dir).join(imp), &patched)?;
+    }
+    let mut text = crate::utils::read(src.join(&dir).join("mod.rs"))?;
+    text = edit(
+        &text,
+        "unsafe { imp::resolve(ResolveWhat::Address(addr), &mut cb) }",
+        "unsafe { ryo_resolve(ResolveWhat::Address(addr), &mut cb) }",
+        "mod.rs",
+    )?;
+    text = edit(
+        &text,
+        "unsafe { imp::resolve(ResolveWhat::Frame(frame), &mut cb) }",
+        "unsafe { ryo_resolve(ResolveWhat::Frame(frame), &mut cb) }",
+        "mod.rs",
+    )?;
+    text = edit(
+        &text,
+        "    inner: imp::Symbol<'static>,\n}",
+        "    inner: SymInner,\n}\n\n/// What the platform symbolizer reports.\npub struct ImpSymbol {\n    inner: imp::Symbol<'static>,\n}",
+        "mod.rs",
+    )?;
+    text.push_str(&BACKTRACE_HOOK.replace("@TAG@", &tag));
+    write_if_changed(&dst.join(&dir).join("mod.rs"), &text)?;
+    // A JIT frame's symbol address is its root's AOT entry, which `Backtrace::capture`
+    // compares with its own address to trim its frames.
+    let frame = Path::new("backtrace").join("src").join("backtrace").join("mod.rs");
+    let text = crate::utils::read(src.join(&frame))?;
+    let patched = edit(
+        &text,
+        "        self.inner.symbol_address()\n",
+        "        super::symbolize::ryo_symbol_address(self.inner.symbol_address())\n",
+        "backtrace/mod.rs",
+    )?;
+    write_if_changed(&dst.join(&frame), &patched)
+}
+
+/// Appended to backtrace-rs's `symbolize/mod.rs` by [`patch_backtrace`] (`@TAG@`: the ABI tag).
+const BACKTRACE_HOOK: &str = r#"
+// ---- ryo: VM frames from `ryo_rt` (patched in by `y build --sysroot ryo`) ----
+
+/// A symbol: the platform symbolizer's (valid during its callback), or a VM frame's.
+enum SymInner {
+    Imp(*const ImpSymbol),
+    Ryo(RyoSymbol),
+}
+
+/// A VM frame `ryo_rt` reported.
+struct RyoSymbol {
+    name: Option<crate::vec::Vec<u8>>,
+    file: Option<&'static [u8]>,
+    line: u32,
+    col: u32,
+    addr: *mut c_void,
+}
+
+impl SymInner {
+    fn imp(&self) -> Option<&imp::Symbol<'static>> {
+        match self {
+            // SAFETY: only handed out during the symbolizer's callback.
+            SymInner::Imp(s) => Some(unsafe { &(**s).inner }),
+            SymInner::Ryo(_) => None,
+        }
+    }
+    fn ryo(&self) -> Option<&RyoSymbol> {
+        match self {
+            SymInner::Ryo(r) => Some(r),
+            SymInner::Imp(_) => None,
+        }
+    }
+    fn name(&self) -> Option<SymbolName<'_>> {
+        match self.ryo() {
+            Some(r) => r.name.as_deref().map(SymbolName::new),
+            None => self.imp()?.name(),
+        }
+    }
+    fn addr(&self) -> Option<*mut c_void> {
+        match self.ryo() {
+            Some(r) => Some(r.addr),
+            None => self.imp()?.addr(),
+        }
+    }
+    fn filename_raw(&self) -> Option<BytesOrWideString<'_>> {
+        match self.ryo() {
+            Some(r) => r.file.map(BytesOrWideString::Bytes),
+            None => self.imp()?.filename_raw(),
+        }
+    }
+    fn colno(&self) -> Option<u32> {
+        match self.ryo() {
+            Some(r) => r.file.and((r.col != 0).then_some(r.col)),
+            None => self.imp()?.colno(),
+        }
+    }
+    fn lineno(&self) -> Option<u32> {
+        match self.ryo() {
+            Some(r) => r.file.map(|_| r.line),
+            None => self.imp()?.lineno(),
+        }
+    }
+    #[cfg(feature = "std")]
+    #[allow(unreachable_code)]
+    fn filename(&self) -> Option<&Path> {
+        match self.ryo() {
+            Some(r) => r.file.and_then(|f| str::from_utf8(f).ok()).map(Path::new),
+            None => self.imp()?.filename(),
+        }
+    }
+}
+
+/// `ryo_rt::vm::backtrace::RyoFrame`.
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct RyoFrame {
+    name: *const u8,
+    name_len: usize,
+    file: *const u8,
+    file_len: usize,
+    line: u32,
+    col: u32,
+    aot_pc: usize,
+}
+
+// `C-unwind` on `ryo_rt`'s side, which never unwinds.
+unsafe extern "C" {
+    #[rustc_std_internal_symbol]
+    #[link_name = "ryo_bt_resolve_@TAG@"]
+    fn ryo_bt_resolve(ip: usize, cb: extern "C" fn(*mut c_void, &RyoFrame), data: *mut c_void) -> bool;
+}
+
+unsafe extern "C" {
+    #[rustc_std_internal_symbol]
+    #[link_name = "ryo_bt_entry_@TAG@"]
+    fn ryo_bt_entry(addr: usize) -> usize;
+}
+
+/// The symbol address of a frame: for JIT code, its function's AOT entry.
+pub(crate) fn ryo_symbol_address(a: *mut c_void) -> *mut c_void {
+    // SAFETY: `ryo_bt_entry` reads only the runtime's published tables.
+    unsafe { ryo_bt_entry(a as usize) as *mut c_void }
+}
+
+/// Collects the frames `ryo_bt_resolve` reports (its callback mustn't unwind).
+extern "C" fn ryo_push(data: *mut c_void, f: &RyoFrame) {
+    // SAFETY: `data` is the `Vec` `ryo_resolve` passes.
+    unsafe { (*(data as *mut crate::vec::Vec<RyoFrame>)).push(*f) }
+}
+
+/// The symbols of `what`: `ryo_rt`'s frames if it is VM code, else the symbolizer's.
+unsafe fn ryo_resolve(what: ResolveWhat<'_>, cb: &mut dyn FnMut(&Symbol)) {
+    let ip = what.address_or_ip();
+    let mut frames: crate::vec::Vec<RyoFrame> = crate::vec::Vec::new();
+    // SAFETY: `ryo_push` takes `frames`.
+    if !ip.is_null() && unsafe { ryo_bt_resolve(ip as usize, ryo_push, (&raw mut frames).cast()) } {
+        for f in &frames {
+            // SAFETY: `ryo_rt` reports image bytes, which stay mapped.
+            let bytes = |p: *const u8, n: usize| (!p.is_null()).then(|| unsafe { core::slice::from_raw_parts(p, n) });
+            let mut name = bytes(f.name, f.name_len).map(|n| n.to_vec());
+            if name.is_none() {
+                // The function's symbol (`Address` resolves one byte before).
+                unsafe {
+                    imp::resolve(ResolveWhat::Address((f.aot_pc + 1) as *mut c_void), &mut |s: &ImpSymbol| {
+                        if name.is_none() {
+                            name = s.inner.name().map(|n| n.as_bytes().to_vec());
+                        }
+                    })
+                };
+            }
+            let file = bytes(f.file, f.file_len);
+            cb(&Symbol { inner: SymInner::Ryo(RyoSymbol { name, file, line: f.line, col: f.col, addr: f.aot_pc as *mut c_void }) });
+        }
+        return;
+    }
+    unsafe { imp::resolve(what, &mut |s: &ImpSymbol| cb(&Symbol { inner: SymInner::Imp(s) })) }
+}
+"#;
 
 /// A hash of `out/dist/`'s backend's contents (`y build` copies it fresh each time, so its
 /// modification time always changes).

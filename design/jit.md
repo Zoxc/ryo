@@ -262,8 +262,9 @@ section; its fields and the counter checks and stubs that use it are in
 - **Perf map**: with `RYO_JIT_PERFMAP=1`, a line per function in `/tmp/perf-<pid>.map`,
   named `ryo-jit:f<index>@<AOT address>`, and one for its OSR code (`...:osr`), so `perf` names JIT frames (Linux only: off on
   Windows and macOS, `sys::perfmap_path`).
-- **Backtraces**: JIT frames have no symbols, so backtraces show them unnamed (`y test`'s
-  `backtrace` check runs with `RYO_JIT=off`).
+- **Backtraces**: JIT frames have no symbols. The ryo sysroot's std names them, with
+  source locations, through the call map `install` publishes with the code
+  ([vm.md](vm.md#source-locations)); with the llvm sysroot's std they are unnamed.
 
 ## OSR
 

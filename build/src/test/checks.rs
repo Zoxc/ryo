@@ -104,7 +104,7 @@ pub(super) fn cargo_smoke(info: &crate::utils::RustcInfo, root: &Path, out: &Pat
 /// `RUST_BACKTRACE=1` through VM frames: a panic two VM calls deep, caught by
 /// `catch_unwind`, prints a backtrace naming the VM functions (by their symbols) and the
 /// native frames around them, and the cleanup and the catch still run. PE differs (see below).
-pub(super) fn backtrace(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
+pub(super) fn backtrace(rustc_ryo: &Path, src: &Path, out: &Path, ryo_sysroot: Result<(), String>) -> Result<(), String> {
     let exe = out.join(exe_name("vm_backtrace"));
     crate::utils::run(cmd(rustc_ryo).arg("--edition=2024").arg(src).arg("-o").arg(&exe))?;
     // Without the JIT, whose code has no symbols (and with `RYO_JIT_THRESHOLD=0` would run
@@ -132,6 +132,193 @@ pub(super) fn backtrace(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), 
     missing.extend(in_drop_want.iter().filter(|w| !in_drop.contains(*w)));
     if !status.success() || stdout != want_stdout || !missing.is_empty() {
         return Err(format!("{status}, missing {missing:?}\nstdout:\n{stdout}stderr:\n{stderr}"));
+    }
+    // With every frame JIT code, unnamed with this std: the walk must still get through them
+    // to `main`'s caller.
+    let Captured { status, stdout, stderr } =
+        capture(Command::new(&exe).env("RUST_BACKTRACE", "full").env("RYO_JIT_THRESHOLD", "0").env("RYO_JIT_SYNC", "1"))?;
+    let (_, in_drop) = stderr.split_once("drop backtrace:").unwrap_or((&stderr, ""));
+    if !status.success() || stdout != want_stdout || !in_drop.contains("lang_start") {
+        return Err(format!("JIT: {status}, no `lang_start` in the drop backtrace\nstdout:\n{stdout}stderr:\n{stderr}"));
+    }
+    match ryo_sysroot {
+        Ok(()) => {
+            backtrace_lines(rustc_ryo, src, out)?;
+            let inline: &[&[&str]] = &[
+                &["panic", "1"],
+                &["panic", "3"],
+                &["panic", "5"],
+                &["add", "4"],
+                &["index", "2"],
+                &["capture", "5"],
+                &["twice"],
+                &["loop"],
+                &["mir"],
+            ];
+            backtrace_oracle(rustc_ryo, &src.with_file_name("vm_backtrace_inline.rs"), out, inline)?;
+            let mixed: &[&[&str]] = &[&["island"], &["c"], &["native"], &["osr"]];
+            backtrace_oracle(rustc_ryo, &src.with_file_name("vm_backtrace_mixed.rs"), out, mixed)
+        }
+        Err(why) => {
+            eprintln!("[y] test: backtrace: skipping the ryo sysroot's source locations: {why}");
+            Ok(())
+        }
+    }
+}
+
+/// The frames of the program file `file` in each backtrace of `text` (each after a `== bt`
+/// line): the name's last segment (without a hash) and the line. Closures and `main` are
+/// left out (rustc and ryo name them differently).
+fn bt_frames(text: &str, file: &str) -> Vec<Vec<(String, String)>> {
+    let mut out = Vec::new();
+    let mut name: Option<String> = None;
+    for l in text.lines() {
+        let t = l.trim_start();
+        if t == "== bt" {
+            out.push(Vec::new());
+            name = None;
+        } else if let Some(at) = t.strip_prefix("at ") {
+            let (Some(cur), Some(n)) = (out.last_mut(), name.take()) else { continue };
+            let mut parts = at.rsplitn(3, ':');
+            let (_col, line, path) = (parts.next(), parts.next().unwrap_or(""), parts.next().unwrap_or(""));
+            // By the last path segment: the platform symbolizer names inlined frames by
+            // their DWARF names (`act`). `main` differs (ryo's entry wrapper is in the file).
+            let last = n.rsplit("::").next().unwrap_or(&n).to_owned();
+            if (path.ends_with(&format!("/{file}")) || path == file) && !n.contains("closure") && last != "main" {
+                cur.push((last, line.to_owned()));
+            }
+        } else {
+            let n = match t.split_once(": ") {
+                Some((k, n)) if k.chars().all(|c| c.is_ascii_digit()) => n,
+                _ => t,
+            };
+            let n = match n.rsplit_once("::h") {
+                Some((p, h)) if h.len() == 16 && h.chars().all(|c| c.is_ascii_hexdigit()) => p,
+                _ => n,
+            };
+            name = Some(n.to_owned());
+        }
+    }
+    out
+}
+
+/// Builds `src` with plain rustc (the oracle) and against the ryo sysroot, both at opt-level 0
+/// with MIR inlining and line tables, and runs each case of `cases` (arguments): the frames of
+/// `src` in each backtrace must be the same names and lines, in order, AOT, JIT (with
+/// shuffled frames, rotation and LICM too) and with a split threshold (hot functions JIT,
+/// cold ones AOT).
+fn backtrace_oracle(rustc_ryo: &Path, src: &Path, out: &Path, cases: &[&[&str]]) -> Result<(), String> {
+    let stem = src.file_stem().and_then(|s| s.to_str()).ok_or("a test file name")?;
+    let file = format!("{stem}.rs");
+    let flags = ["--edition=2024", "-Copt-level=0", "-Zinline-mir=yes", "-Cdebuginfo=line-tables-only"];
+    let plain = out.join(exe_name(&format!("{stem}_llvm")));
+    let ryo = out.join(exe_name(&format!("{stem}_ryo")));
+    crate::utils::run(cmd("rustc").env("RUSTC_BOOTSTRAP", "1").args(flags).arg(src).arg("-o").arg(&plain))?;
+    crate::utils::run(cmd(rustc_ryo).args(flags).args(["--sysroot", "ryo"]).arg(src).arg("-o").arg(&ryo))?;
+    let runs: [&[(&str, &str)]; 5] = [
+        &[("RYO_JIT", "off")],
+        &[("RYO_JIT_THRESHOLD", "0"), ("RYO_JIT_SYNC", "1")],
+        &[("RYO_JIT_THRESHOLD", "0"), ("RYO_JIT_SYNC", "1"), ("RYO_JIT_SHUFFLE", "1")],
+        &[("RYO_JIT_THRESHOLD", "0"), ("RYO_JIT_SYNC", "1"), ("RYO_JIT_ROTATE", "1"), ("RYO_JIT_LICM", "1")],
+        &[("RYO_JIT_THRESHOLD", "50,1000"), ("RYO_JIT_SYNC", "1")],
+    ];
+    for case in cases {
+        let Captured { stdout: want_out, stderr: want_err, .. } = capture(Command::new(&plain).args(*case))?;
+        let want = bt_frames(&want_err, &file);
+        if want.is_empty() || want.iter().any(|b| b.is_empty()) {
+            return Err(format!("{stem} {case:?}: no frames of {file} in plain rustc's backtrace\n{want_err}"));
+        }
+        for env in runs {
+            let Captured { stdout, stderr, .. } = capture(Command::new(&ryo).args(*case).envs(env.iter().copied()))?;
+            let got = bt_frames(&stderr, &file);
+            if stdout != want_out || got != want {
+                return Err(format!(
+                    "{stem} {case:?} {env:?}: frames differ from plain rustc's\nwant {:?}\ngot  {:?}\nstdout {stdout:?} (want {want_out:?})\nstderr:\n{stderr}",
+                    want, got
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The `backtrace` check's ryo sysroot part (design/vm.md#source-locations): with line
+/// tables and MIR inlining, std's backtraces give each VM frame's source location, AOT and
+/// JIT (with shuffled frames too), `helper` as an inlined frame of `outer`'s, and the panic
+/// hook's short backtrace starts and ends at its markers (VM or JIT code here).
+fn backtrace_lines(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
+    let text = crate::utils::read(src)?;
+    let line = |name: &str| text.lines().position(|l| l.ends_with(&format!("// @{name}"))).map(|i| i + 1).ok_or(format!("no `// @{name}` line"));
+    let at = |name: &str| line(name).map(|n| format!("vm_backtrace.rs:{n}:"));
+    let (l_inner, l_via, l_helper, l_mid, l_outer, l_main) = (at("inner")?, at("via")?, at("helper")?, at("mid")?, at("outer")?, at("main")?);
+    let exe = out.join(exe_name("vm_backtrace_ryo"));
+    crate::utils::run(
+        cmd(rustc_ryo).args(["--edition=2024", "--sysroot", "ryo", "-Cdebuginfo=line-tables-only", "-Zinline-mir=yes"]).arg(src).arg("-o").arg(&exe),
+    )?;
+    // In this order (each after the one before).
+    let panic_want: Vec<&str> = vec![
+        "vm_backtrace::inner",
+        &l_inner,
+        "vm_backtrace::via",
+        &l_via,
+        "vm_backtrace::helper",
+        &l_helper,
+        "vm_backtrace::mid",
+        &l_mid,
+        "vm_backtrace::outer",
+        &l_outer,
+        &l_main,
+    ];
+    let drop_want: Vec<&str> = vec!["vm_backtrace::outer", "vm_backtrace.rs:", &l_main];
+    let runs: [&[(&str, &str)]; 3] = [
+        &[("RYO_JIT", "off")],
+        &[("RYO_JIT_THRESHOLD", "0"), ("RYO_JIT_SYNC", "1")],
+        &[("RYO_JIT_THRESHOLD", "0"), ("RYO_JIT_SYNC", "1"), ("RYO_JIT_SHUFFLE", "1")],
+    ];
+    for env in runs {
+        let Captured { status, stdout, stderr } = capture(Command::new(&exe).env("RUST_BACKTRACE", "1").envs(env.iter().copied()))?;
+        let (panic, in_drop) = stderr.split_once("drop backtrace:").unwrap_or((&stderr, ""));
+        let missing = |text: &str, want: &[&str]| {
+            let mut rest = text;
+            for w in want {
+                match rest.find(w) {
+                    Some(i) => rest = &rest[i + w.len()..],
+                    None => return Some(w.to_string()),
+                }
+            }
+            None
+        };
+        // The short backtrace ends at `main`'s `__rust_begin_short_backtrace`.
+        let bad = missing(panic, &panic_want)
+            .or_else(|| missing(in_drop, &drop_want))
+            .or_else(|| panic.contains("lang_start").then(|| "no `lang_start` in the short backtrace".to_owned()));
+        if !status.success() || stdout != "guard dropped\ncaught: true\n" || bad.is_some() {
+            return Err(format!("ryo sysroot, {env:?}: {status}, missing {bad:?}\nstdout:\n{stdout}stderr:\n{stderr}"));
+        }
+    }
+    // The JIT inlines `via` into `mid`: in the full format, std prints the inlined frames of
+    // one physical frame at its address, so the two share one.
+    let Captured { stderr, .. } = capture(Command::new(&exe).env("RUST_BACKTRACE", "full").env("RYO_JIT_THRESHOLD", "0").env("RYO_JIT_SYNC", "1"))?;
+    let addr = |name: &str| {
+        stderr.lines().find_map(|l| {
+            let (a, n) = l.trim_start().split_once(": ")?.1.split_once(" - ")?;
+            // Without the crates' disambiguators (`vm_backtrace[…]::via`).
+            let mut plain = String::new();
+            let mut depth = 0;
+            for c in n.chars() {
+                match c {
+                    '[' => depth += 1,
+                    ']' => depth -= 1,
+                    _ if depth == 0 => plain.push(c),
+                    _ => {}
+                }
+            }
+            plain.starts_with(name).then(|| a.trim().to_owned())
+        })
+    };
+    let (via, mid) = (addr("vm_backtrace::via"), addr("vm_backtrace::mid"));
+    if via.is_none() || via != mid {
+        return Err(format!("JIT: `via` isn't inlined into `mid` ({via:?}, {mid:?})\n{stderr}"));
     }
     Ok(())
 }

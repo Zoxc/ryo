@@ -190,6 +190,8 @@ pub struct RInsn {
     pub succ: Vec<u32>,
     pub falls: bool,
     pub unwind: Unwind,
+    /// Its byte position in the AOT code ([`Decoded::ipos`]), `u32::MAX` if unknown.
+    pub aot_pos: u32,
 }
 
 impl RInsn {
@@ -760,7 +762,7 @@ fn insn(d: &Decoded, at: usize, lends: &[ScopeAt], mode: Mode, pool: bool) -> Re
             a.size = (-a.off) as u32;
         }
     }
-    Ok(RInsn { kind, accs, succ, falls, unwind: Unwind::None })
+    Ok(RInsn { kind, accs, succ, falls, unwind: Unwind::None, aot_pos: u32::MAX })
 }
 
 /// Decodes `d` into instructions and blocks.
@@ -802,6 +804,9 @@ fn decode_insns(d: &Decoded, mode: Mode, mem: Option<&dyn super::opt::ConstMem>)
         }
         let lends: Vec<ScopeAt> = scopes[si..].iter().take_while(|s| s.at as usize == i).filter(|s| s.kind == ScopeKind::Lend).copied().collect();
         let mut ri = insn(d, w as usize, &lends, mode, mem.is_some())?;
+        if d.ipos.len() == n {
+            ri.aot_pos = d.ipos[i];
+        }
         for s in ri.succ.iter_mut() {
             *s = if *s as usize == d.words.len() { return Err(Unsupported("falls off the end")) } else { idx(*s)? };
         }

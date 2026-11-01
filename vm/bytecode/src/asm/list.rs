@@ -15,10 +15,18 @@
 //!   - `1`, a dropped store ([`DroppedStore`]): the frame offset, then `size_log2 << 4 | reg`.
 //!   - `2`, `3`, `4`, an escape, a storage end, an island operand ([`Scope`]): the frame
 //!     offset and the size, then for an escape the alignment.
+//!   - `5`, a source location ([`Loc`]): `file << 1 | inlined`, the line as a zigzag delta
+//!     from the function's previous location's (from 0), the column, then if `inlined` the
+//!     inlined function's name. `file` and the name are offsets in the image's string pool
+//!     ([`crate::image::Header::strings`]); file `0` is "no location". The locations at one
+//!     position are a run, innermost first: the frames rustc's MIR inliner folded into the
+//!     call (each `inlined`, with its name), then the function's own. A run applies to the
+//!     code from its position to the next run's, which a backtrace resolver looks up for a
+//!     return address (design/vm.md#source-locations).
 //!
 //! Numbers are LEB128, frame offsets zigzag-encoded. At one position, the entries come in
-//! the order target, scopes, dropped stores, instructions, each kind in its order (sequences
-//! that leave no code share a position).
+//! the order target, scopes, dropped stores, locations, instructions, each kind in its order
+//! (sequences that leave no code share a position).
 //!
 //! The list is an index the decoder checks against the bytes, never trusted over them: the
 //! targets must be exactly the branch targets, each instruction entry must decode to the
@@ -86,12 +94,29 @@ const DROPPED: u64 = 1;
 const ESCAPE: u64 = 2;
 const END: u64 = 3;
 const LEND: u64 = 4;
+const LOC: u64 = 5;
 
-/// The order of the entries at one position: targets, scopes, dropped stores, instructions.
+/// The order of the entries at one position: targets, scopes, dropped stores, locations,
+/// instructions.
 const ORDER_TARGET: u8 = 0;
 const ORDER_SCOPE: u8 = 1;
 const ORDER_DROPPED: u8 = 2;
-const ORDER_INSN: u8 = 3;
+const ORDER_LOC: u8 = 3;
+const ORDER_INSN: u8 = 4;
+
+/// A source location entry at byte position `at` ([`Entry::Loc`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Loc {
+    pub at: u32,
+    /// The file name's offset in the string pool; `0`: no location (the line, column and
+    /// name are then `0`).
+    pub file: u32,
+    pub line: u32,
+    pub col: u32,
+    /// For a frame the MIR inliner folded into the call, the inlined function's name (its
+    /// offset in the string pool), else `0`.
+    pub name: u32,
+}
 
 #[cfg(feature = "alloc")]
 impl ScopeKind {
@@ -125,6 +150,13 @@ pub enum Entry {
         size: u32,
         kind: ScopeKind,
     },
+    /// A source location ([`Loc`]), its line absolute.
+    Loc {
+        file: u32,
+        line: u32,
+        col: u32,
+        name: u32,
+    },
 }
 
 impl Entry {
@@ -134,6 +166,7 @@ impl Entry {
             Entry::Target => ORDER_TARGET,
             Entry::Scope { .. } => ORDER_SCOPE,
             Entry::Dropped { .. } => ORDER_DROPPED,
+            Entry::Loc { .. } => ORDER_LOC,
             Entry::Insn { .. } => ORDER_INSN,
         }
     }
@@ -148,6 +181,8 @@ pub struct InsnList {
     pub hints: Vec<Hint>,
     pub dropped: Vec<DroppedStore>,
     pub scopes: Vec<Scope>,
+    /// Sorted by position, a run's entries in order.
+    pub locs: Vec<Loc>,
 }
 
 /// Reads the stream `bytes` of a function of `code_len` bytes, calling `f` with each entry
@@ -158,6 +193,8 @@ pub fn walk(bytes: &[u8], code_len: u32, mut f: impl FnMut(u32, Entry)) -> Optio
     let mut pos = 0u32;
     // The kind order of the last entry at `pos`.
     let mut last: Option<u8> = None;
+    // The line of the last location.
+    let mut line = 0i64;
     while !b.0.is_empty() {
         let v = b.u64()?;
         let delta = u32::try_from(v >> 1).ok()?;
@@ -194,6 +231,15 @@ pub fn walk(bytes: &[u8], code_len: u32, mut f: impl FnMut(u32, Entry)) -> Optio
                     };
                     Entry::Scope { frame_offset, size, kind }
                 }
+                LOC => {
+                    let fi = b.u64()?;
+                    let file = u32::try_from(fi >> 1).ok()?;
+                    let d = b.u64()?;
+                    line += ((d >> 1) as i64) ^ -((d & 1) as i64);
+                    let col = b.u32()?;
+                    let name = if fi & 1 != 0 { b.u32().filter(|&n| n != 0)? } else { 0 };
+                    Entry::Loc { file, line: u32::try_from(line).ok()?, col, name }
+                }
                 _ => return None,
             }
         };
@@ -211,7 +257,7 @@ pub fn walk(bytes: &[u8], code_len: u32, mut f: impl FnMut(u32, Entry)) -> Optio
 impl InsnList {
     /// Whether the list has no entries.
     pub fn is_empty(&self) -> bool {
-        self.targets.is_empty() && self.hints.is_empty() && self.dropped.is_empty() && self.scopes.is_empty()
+        self.targets.is_empty() && self.hints.is_empty() && self.dropped.is_empty() && self.scopes.is_empty() && self.locs.is_empty()
     }
 
     /// The stream.
@@ -221,10 +267,12 @@ impl InsnList {
         es.extend(self.targets.iter().enumerate().map(|(i, &t)| (t, ORDER_TARGET, i)));
         es.extend(self.scopes.iter().enumerate().map(|(i, s)| (s.code_offset, ORDER_SCOPE, i)));
         es.extend(self.dropped.iter().enumerate().map(|(i, d)| (d.at, ORDER_DROPPED, i)));
+        es.extend(self.locs.iter().enumerate().map(|(i, l)| (l.at, ORDER_LOC, i)));
         es.extend(self.hints.iter().enumerate().map(|(i, h)| (h.at, ORDER_INSN, i)));
         es.sort_unstable();
         let mut out = Vec::new();
         let mut pos = 0;
+        let mut line = 0i64;
         for (at, k, i) in es {
             let delta = (at - pos) as u64;
             pos = at;
@@ -243,6 +291,17 @@ impl InsnList {
                 put(&mut out, s.size as u64);
                 if let ScopeKind::Escape { align } = s.kind {
                     put(&mut out, align as u64);
+                }
+            } else if k == ORDER_LOC {
+                let l = &self.locs[i];
+                put(&mut out, LOC);
+                put(&mut out, (l.file as u64) << 1 | (l.name != 0) as u64);
+                let d = l.line as i64 - line;
+                line = l.line as i64;
+                put(&mut out, ((d << 1) ^ (d >> 63)) as u64);
+                put(&mut out, l.col as u64);
+                if l.name != 0 {
+                    put(&mut out, l.name as u64);
                 }
             } else if k == ORDER_DROPPED {
                 let (off, size, reg) = self.dropped[i].parts();
@@ -268,6 +327,7 @@ impl InsnList {
                 None => ok = false,
             },
             Entry::Scope { frame_offset, size, kind } => l.scopes.push(Scope { code_offset: at, frame_offset, size, kind }),
+            Entry::Loc { file, line, col, name } => l.locs.push(Loc { at, file, line, col, name }),
         })?;
         ok.then_some(l)
     }

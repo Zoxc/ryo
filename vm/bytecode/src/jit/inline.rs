@@ -1074,9 +1074,9 @@ fn select(nodes: &[Node], clusters: &[Cluster], cap: f64, p: &Params, root: VmFu
 
 /// Splices `sub` in at the call `site` of `into` and, with `check`, verifies the result,
 /// `what` naming the splice in the error.
-fn splice_checked(into: &mut Func, site: Inst, sub: &Func, check: bool, what: impl FnOnce() -> String) -> Result<(), String> {
+fn splice_checked(into: &mut Func, site: Inst, sub: &Func, g: VmFunc, check: bool, what: impl FnOnce() -> String) -> Result<(), String> {
     let before = check.then(|| alloc::format!("; callee\n{sub}\n; caller\n{into}"));
-    splice(into, site, sub);
+    splice(into, site, sub, g);
     if check {
         into.verify().map_err(|e| alloc::format!("IR after inlining {}: {e}\n{}\n; after\n{into}", what(), before.unwrap_or_default()))?;
     }
@@ -1092,7 +1092,7 @@ fn splice_accepted(f: &mut Func, nodes: &[Node], accepted: &[bool], check: bool)
             if accepted[ch] && live(&g, nodes[ch].site) {
                 let sub = build(nodes, accepted, ch, check, n)?;
                 *n += 1;
-                splice_checked(&mut g, nodes[ch].site, &sub, check, || {
+                splice_checked(&mut g, nodes[ch].site, &sub, nodes[ch].func, check, || {
                     alloc::format!("{} into {}", name(nodes[ch].func, nodes[0].func), name(nodes[k].func, nodes[0].func))
                 })?;
             }
@@ -1104,7 +1104,9 @@ fn splice_accepted(f: &mut Func, nodes: &[Node], accepted: &[bool], check: bool)
         if accepted[ch] && live(f, nodes[ch].site) {
             let sub = build(nodes, accepted, ch, check, &mut n)?;
             n += 1;
-            splice_checked(f, nodes[ch].site, &sub, check, || alloc::format!("{} into the root", name(nodes[ch].func, nodes[0].func)))?;
+            splice_checked(f, nodes[ch].site, &sub, nodes[ch].func, check, || {
+                alloc::format!("{} into the root", name(nodes[ch].func, nodes[0].func))
+            })?;
         }
     }
     Ok(n)
@@ -1117,8 +1119,23 @@ fn live(f: &Func, site: Inst) -> bool {
     f.blocks[f.insts[site.idx()].block.idx()].insts.contains(&site)
 }
 
-/// Replaces the call `call` in `f` by the body of `c`, the callee's IR.
-pub fn splice(f: &mut Func, call: Inst, c: &Func) {
+/// The chain link of `f` for the callee `c`'s link `l` (`g`'s IR) spliced at the call with
+/// chain `call_loc`: a copy, memoized in `lmap`, whose outermost link's parent is the call's
+/// (design/vm.md#source-locations). A callee instruction without one takes the call's.
+fn splice_loc(f: &mut Func, c: &Func, lmap: &mut [u32], call_loc: u32, g: VmFunc, l: u32) -> u32 {
+    let Some(k) = l.checked_sub(1).map(|k| k as usize) else { return call_loc };
+    if lmap[k] != 0 {
+        return lmap[k];
+    }
+    let n = c.chains[k];
+    let parent = if n.parent == 0 { call_loc } else { splice_loc(f, c, lmap, call_loc, g, n.parent) };
+    let id = f.chain(ChainLink { parent, func: Some(n.func.unwrap_or(g)), pos: n.pos });
+    lmap[k] = id;
+    id
+}
+
+/// Replaces the call `call` in `f` by the body of `c`, the IR of the callee `g`.
+pub fn splice(f: &mut Func, call: Inst, c: &Func, g: VmFunc) {
     let b = f.insts[call.idx()].block;
     let pos = f.blocks[b.idx()].insts.iter().position(|&i| i == call).expect("the call in its block");
     let id = f.insts[call.idx()].clone();
@@ -1208,6 +1225,8 @@ pub fn splice(f: &mut Func, call: Inst, c: &Func) {
     let mut order: Vec<Block> = Vec::new();
     let mut copied: Vec<(Inst, Inst)> = Vec::new();
     let mut invokes = 0;
+    let call_loc = id.loc;
+    let mut lmap = alloc::vec![0u32; c.chains.len()];
     for &cb in &c.layout {
         let cbd = &c.blocks[cb.idx()];
         let mut cur = bmap[cb.idx()].unwrap();
@@ -1232,6 +1251,7 @@ pub fn splice(f: &mut Func, call: Inst, c: &Func) {
             }
             let ws: Vec<u8> = cid.results().map(|r| c.w(r)).collect();
             let ni = f.inst(cur, op, Vec::new(), &ws);
+            f.insts[ni.idx()].loc = splice_loc(f, c, &mut lmap, call_loc, g, cid.loc);
             for (r, nr) in cid.results().zip(f.insts[ni.idx()].results()) {
                 vmap[r.idx()] = Some(nr);
             }

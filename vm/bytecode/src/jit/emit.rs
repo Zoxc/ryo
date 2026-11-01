@@ -25,6 +25,13 @@ pub struct Output {
     /// Island operand arrays and switch case values ([`Ref::Ro`]), 16-aligned.
     pub rodata: Vec<u8>,
     pub call_sites: Vec<CallSite>,
+    /// Every call's chain ([`super::ir::InstData::loc`], 0 for none) by the offset of its
+    /// last byte (its return address minus one), sorted: what a backtrace through the code
+    /// prints for it (design/vm.md#source-locations). Every call, also those without a call
+    /// site (a nounwind callee's panic still prints a backtrace).
+    pub calls: Vec<(u32, u32)>,
+    /// The chains [`Output::calls`] index ([`super::ir::Func::chains`]).
+    pub chains: Vec<super::ir::ChainLink>,
     /// The body's call frame instructions, by code offset (after the CIE's `CFA = rsp + 8`).
     pub cfi: Vec<(u32, Vec<u8>)>,
     /// The OSR dispatcher and entries, placed at [`Output::osr_at`].
@@ -577,6 +584,10 @@ struct E<'a> {
     rodata: Vec<u8>,
     code_consts: &'a [u8],
     sites: Vec<PendingSite>,
+    /// The calls: (mark, length, chain).
+    calls: Vec<(Mark, u32, u32)>,
+    /// The chain of the instruction being emitted.
+    cur_loc: u32,
     /// Unwind rows: (mark, instructions).
     cfi: Vec<(Mark, Vec<u8>)>,
     uses: &'a [u32],
@@ -891,6 +902,7 @@ impl<'a> E<'a> {
         let m = self.a.mark();
         emit(self.a.x());
         let len = self.a.x().pos() - m.off;
+        self.calls.push((m, len, self.cur_loc));
         self.site(m, len, site, pad);
     }
 
@@ -1165,6 +1177,7 @@ impl<'a> E<'a> {
     fn inst(&mut self, i: Inst, res: &[Value], pad: Option<u32>) -> Result<(), Unsupported> {
         let f = self.f;
         let id = &f.insts[i.idx()];
+        self.cur_loc = id.loc;
         let bd = &f.blocks[id.block.idx()];
         let fused = matches!(bd.term, Term::BrOvf { .. }) && bd.insts.last() == Some(&i);
         if id.op.pure() && !fused && res.iter().all(|r| self.uses[r.idx()] == 0) {
@@ -2226,6 +2239,8 @@ pub fn emit(f: &Func, al: &Alloc, uses: &[u32], mode: Mode, code_consts: &[u8], 
         rodata: Vec::new(),
         code_consts,
         sites: Vec::new(),
+        calls: Vec::new(),
+        cur_loc: 0,
         cfi: Vec::new(),
         uses,
         ovf_cc: None,
@@ -2241,7 +2256,7 @@ pub fn emit(f: &Func, al: &Alloc, uses: &[u32], mode: Mode, code_consts: &[u8], 
     let cold_stubs = core::mem::take(&mut e.cold_stubs);
     e.emit_stubs(cold_stubs);
     let pe_unwind = if mode.pe { crate::image::pe_unwind_codes(e.pe_prologue, e.fr.pe_fp / 16, &e.pe_ops) } else { Vec::new() };
-    let E { a, rodata, sites, cfi, fr, .. } = e;
+    let E { a, rodata, sites, cfi, fr, calls, .. } = e;
     // The marks' pieces, to positions.
     let l = a.finish();
     // Calls that can't unwind: as cg_llvm, a continue entry in a function without landing
@@ -2253,6 +2268,8 @@ pub fn emit(f: &Func, al: &Alloc, uses: &[u32], mode: Mode, code_consts: &[u8], 
         .map(|s| CallSite { start: l.at(s.at), len: s.len, pad: s.pad.map(|p| l.labels[p as usize]), catch: s.catch })
         .collect();
     call_sites.sort_by_key(|c| c.start);
+    let mut calls: Vec<(u32, u32)> = calls.iter().map(|&(m, len, loc)| (l.at(m) + len - 1, loc)).collect();
+    calls.sort_unstable();
     let cfi = cfi.into_iter().map(|(m, v)| (l.at(m), v)).collect();
     let (osr, osr_at, post) = match f.osr.is_empty() {
         true => (None, (l.code.len() as u32).next_multiple_of(16), Vec::new()),
@@ -2263,7 +2280,22 @@ pub fn emit(f: &Func, al: &Alloc, uses: &[u32], mode: Mode, code_consts: &[u8], 
     };
     let Laid { mut code, relocs, .. } = l;
     code.extend_from_slice(&post);
-    Ok(Output { code, relocs, rodata, call_sites, cfi, osr, osr_at, frame_size: fr.size, pe_unwind, dump: None, devirt: 0, inlined: 0 })
+    Ok(Output {
+        code,
+        relocs,
+        rodata,
+        call_sites,
+        calls,
+        chains: f.chains.clone(),
+        cfi,
+        osr,
+        osr_at,
+        frame_size: fr.size,
+        pe_unwind,
+        dump: None,
+        devirt: 0,
+        inlined: 0,
+    })
 }
 
 /// `DW_CFA_offset r`: `r` saved at `fp + o`, which is `CFA - 16 + o`. The offset counts in

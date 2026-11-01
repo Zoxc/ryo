@@ -36,6 +36,10 @@ pub struct Decoded {
     /// The word offsets of the loop heads (the targets of backward branches), in order: with
     /// [`Mode::counters`], loop head `n`'s counter stub passes `n` (the OSR entry it asks for).
     pub heads: Vec<u32>,
+    /// Each instruction's byte position in the machine code, in order (after a loop head's
+    /// padding): where a JIT compilation's calls came from, for backtraces
+    /// (design/vm.md#source-locations).
+    pub ipos: Vec<u32>,
 }
 
 /// Why machine code isn't the canonical form of any function: a description, and the byte
@@ -227,7 +231,9 @@ fn words_of(r: Read, full: bool) -> Result<Decoded, AsmError> {
             }
         });
     }
-    Ok(reduce::words(&insns, &cleanup, &scopes, &dropped, &heads, frame_size, full))
+    let mut d = reduce::words(&insns, &cleanup, &scopes, &dropped, &heads, frame_size, full);
+    d.ipos = ipos;
+    Ok(d)
 }
 
 /// Reads one function's machine code ([`decode`]), handler calls in the reduced form with

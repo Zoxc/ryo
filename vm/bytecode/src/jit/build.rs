@@ -503,6 +503,13 @@ impl<'a> B<'a> {
     fn lower_insn(&mut self, cur: Block, i: usize) -> Result<Flow, Unsupported> {
         let code = self.code;
         let ri = &code.insns[i];
+        // Calls carry the AOT call they came from, for backtraces.
+        self.f.cur_loc = match ri.kind {
+            Kind::Call { .. } | Kind::Island { .. } | Kind::Handler { .. } if ri.aot_pos != u32::MAX => {
+                self.f.chain(ChainLink { parent: 0, func: None, pos: ri.aot_pos })
+            }
+            _ => 0,
+        };
         let next = || s_next(code, i);
         let site = match ri.unwind {
             Unwind::None => Site::None,

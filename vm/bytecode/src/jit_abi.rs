@@ -148,7 +148,48 @@ pub struct RtApi {
     /// runtime has none (PE, Apple).
     pub fp_handlers: *const [*const (); Opcode::COUNT],
     pub fp_reg_handlers: *const [*const (); Opcode::COUNT],
+    /// Publishes the call map of installed JIT code for backtraces ([`BtRegion`]), before
+    /// the code can run. The region and its tables are the runtime's from then on, and stay
+    /// for the rest of the process. Only the JIT's thread calls it.
+    pub bt_publish: extern "C-unwind" fn(region: *mut BtRegion),
 }
+
+/// The call map of one compilation's code, for backtraces (design/vm.md#source-locations):
+/// for each call in `[start, start + len)`, by the offset of its last byte (the return
+/// address minus one), the chain of AOT positions its frame stands for, innermost first: the
+/// call in the innermost inlined callee, then the calls the inliner replaced around it,
+/// ending at the root's.
+#[repr(C)]
+pub struct BtRegion {
+    /// The next region published before this one (the runtime's list).
+    pub next: *mut BtRegion,
+    pub start: usize,
+    pub len: usize,
+    /// The root's image (its header's address) and function index: a call without an entry
+    /// is named after it.
+    pub root_img: usize,
+    pub root_func: u32,
+    /// The entries: `[offset, chain]`, sorted by offset.
+    pub npc: u32,
+    pub pcmap: *const [u32; 2],
+    pub nchain: u32,
+    pub chains: *const BtChain,
+}
+
+/// A link of a [`BtRegion`] chain: the call at byte `pos` of function `func`'s AOT code in
+/// the image with header `img`, inlined into the call `parent` ([`BT_ROOT`]: none).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BtChain {
+    pub img: usize,
+    pub func: u32,
+    pub pos: u32,
+    pub parent: u32,
+    pub pad: u32,
+}
+
+/// No parent ([`BtChain::parent`]).
+pub const BT_ROOT: u32 = u32::MAX;
 
 // SAFETY: immutable once built; the pointers are code addresses.
 unsafe impl Sync for RtApi {}

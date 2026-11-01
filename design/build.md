@@ -248,7 +248,11 @@ This gives a third backend, built from the same toolchain, to compare against.
   `tests/vm_backtrace.rs` (a panic two VM calls deep, caught by `catch_unwind`) and runs it
   with `RUST_BACKTRACE=1`: the backtrace must name the VM functions by their own
   symbols, and the native frames around them, and the cleanup
-  and the catch must still run ([vm.md](vm.md#unwinding)).
+  and the catch must still run ([vm.md](vm.md#unwinding)); with every function JIT code,
+  the walk must still get through. With a current ryo sysroot it also builds the program
+  against it with line tables and MIR inlining, and requires each frame's source location
+  in order, the MIR- and JIT-inlined frames included, AOT, JIT and with shuffled JIT frames
+  ([vm.md](vm.md#source-locations)).
 - `test` checks (`rt-core-only`) that every sysroot's `ryo_rt` rlib references no symbols
   outside `core`, `compiler_builtins`, `ryo_bytecode`, libc and the panic runtime's entry
   points, and that no call path from its code reaches core's panic machinery
@@ -350,8 +354,8 @@ This gives a third backend, built from the same toolchain, to compare against.
   for the runtime's unit tests of its JIT side.
 - The corpus runs with the environment `y test` gets, so `RYO_JIT_THRESHOLD=0
   RYO_JIT_SYNC=1 ./y.sh test` runs every VM function's JIT code from its first call
-  ([jit.md](jit.md#settings)); the `backtrace` check sets `RYO_JIT=off`, since JIT frames have
-  no symbols.
+  ([jit.md](jit.md#settings)); the `backtrace` check sets the JIT settings of each of its
+  runs itself.
 
 ### Fast suite and changed-path selection
 

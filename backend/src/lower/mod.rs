@@ -44,6 +44,7 @@ pub mod entry;
 mod frame;
 mod intrinsic;
 mod island;
+mod loc;
 mod operand;
 mod place;
 mod rvalue;
@@ -83,6 +84,8 @@ pub struct LoweredFn<'tcx> {
     pub ret_size: u32,
     /// See [`ryo_bytecode::image::FuncEntry::ret_kind`].
     pub ret_kind: u32,
+    /// The source location runs `code.locs` indexes (`-Cdebuginfo`; `loc.rs`).
+    pub locs: Vec<Vec<ryo_bytecode::image::SrcLoc>>,
 }
 
 /// Something the code refers to, which the merge pass resolves. The code names it by its
@@ -307,6 +310,8 @@ pub struct FnCx<'a, 'tcx> {
     sigs: FxHashMap<Instance<'tcx>, AbiSig<'tcx>>,
     /// [`uses::analyze`] of the body ([`FnCx::blocks`] takes the counts and dead hints).
     pub uses: uses::LocalUses,
+    /// The source locations (`loc.rs`).
+    locs: loc::Locs,
 }
 
 impl<'a, 'tcx> FnCx<'a, 'tcx> {
@@ -351,6 +356,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             in_region: false,
             sigs: FxHashMap::default(),
             uses: uses::analyze(body),
+            locs: loc::Locs::new(tcx),
         })
     }
 
@@ -414,6 +420,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             let block_dead = &dead[dead.partition_point(|d| d.0.block < bb)..dead.partition_point(|d| d.0.block <= bb)];
             let mut block_dead = block_dead.iter().peekable();
             for (i, stmt) in stmts.iter().enumerate() {
+                self.set_loc(stmt.source_info);
                 self.unit(|fx| fx.statement(stmt), Self::cert_stmt)?;
                 let here = rustc_middle::mir::Location { block: bb, statement_index: i };
                 while let Some(&&(at, local)) = block_dead.peek()
@@ -425,6 +432,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                     block_dead.next();
                 }
             }
+            self.set_loc(data.terminator().source_info);
             self.unit(|fx| fx.terminator(data.terminator()), Self::cert_term)?;
         }
         let entries = std::mem::take(&mut self.cleanup);
@@ -461,6 +469,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 self.bind(at);
                 self.next_block = None;
                 let source_info = *self.body.source_info(rustc_middle::mir::Location::START);
+                self.set_loc(source_info);
                 self.unit(|fx| fx.terminate_call(reason, source_info), |fx, start| fx.cert_stub(reason, start))?;
                 stubs.push((reason, at));
             }
@@ -510,7 +519,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let cert = self.cert_json(frame_size, sig.plan.as_ref());
         let code = std::mem::replace(&mut self.asm, Asm::new(self.cx.mode)).finish(frame_size, |s| frame::frame_offset(s, frame_size) as u32);
         if self.cx.asm_check {
-            reencode_check(&code, self.cx.mode);
+            // Locations are side data only backtraces read; decoding drops them.
+            reencode_check(&asm::Encoded { locs: Vec::new(), ..code.clone() }, self.cx.mode);
         }
         let ret = self.frame.locals[rustc_middle::mir::RETURN_PLACE];
         Ok(LoweredFn {
@@ -521,6 +531,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             ret_size: ret.layout.size.bytes() as u32,
             ret_kind: self.ret_kind,
             cert,
+            locs: self.locs.runs,
         })
     }
 

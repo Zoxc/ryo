@@ -201,6 +201,7 @@ fn sample() -> ImageWriter {
         cleanup: vec![CleanupEntry { offset: 0, target: 8 }, CleanupEntry { offset: 12, target: CONTINUE }],
         symbol: None,
         flags: FUNC_INLINE_ALWAYS | FUNC_COLD,
+        locs: Vec::new(),
     });
     let ops = [16u32, -24i32 as u32];
     let f1 = code(&[
@@ -1124,4 +1125,38 @@ fn jit_records() {
     assert_eq!(&x[..10], [1 | 0x18, 17, 3, 5, 17, 2 | (48 / 8 - 1) << 4, 13, 3, 10, 5 << 4]);
     assert_eq!(&x[infos[1]..][..4], [1, 0, 0, 0]);
     assert_eq!(&x[infos[2]..][..8], [&[1 | 0x18][..], &ryo_bytecode::image::pe_region_unwind_info()[1..]].concat());
+}
+
+/// Source locations (design/vm.md#source-locations): a call's run from `Asm::set_loc`, the
+/// end of the body's last run at the stubs, and the writer's string pool, read back.
+#[test]
+fn source_locations() {
+    for mode in [ELF, AOT] {
+        let mut a = asm::Asm::new(mode);
+        a.set_loc(1);
+        a.insn(Opcode::Abort, &[]);
+        let e = a.finish(16, |s| s);
+        assert_eq!(e.locs.len(), 2, "{mode:?}: {:?}", e.locs);
+        assert_eq!((e.locs[0].1, e.locs[1].1), (1, asm::NO_LOC));
+        let src = |line, name: Option<&str>| SrcLoc { file: "src/a.rs".into(), line, col: 5, inlined: name.map(Into::into) };
+        let mut w = ImageWriter::new(SCID);
+        w.add_function(FunctionDef {
+            name: "f0".into(),
+            frame_size: 16,
+            locs: vec![vec![], vec![src(3, Some("a::h")), src(9, None)]],
+            ..Default::default()
+        });
+        w.prepare(mode);
+        let obj = w.finish_encoded(vec![e.clone()]).unwrap();
+        let b = Buf::new(&obj.rodata, obj.rodata_align);
+        let img = Image::parse(b.bytes()).unwrap();
+        img.validate().unwrap();
+        let l = InsnList::read(img.list(0), e.code.len() as u32).unwrap();
+        let s = |o| img.string(o).unwrap_or(b"-");
+        let got: Vec<_> = l.locs.iter().map(|x| (x.at, s(x.file), x.line, x.col, s(x.name))).collect();
+        let (at, end) = (e.locs[0].0, e.locs[1].0);
+        assert_eq!(got, vec![(at, &b"src/a.rs"[..], 3, 5, &b"a::h"[..]), (at, &b"src/a.rs"[..], 9, 5, &b"-"[..]), (end, &b"-"[..], 0, 0, &b"-"[..])]);
+        assert!(at < end);
+        assert_eq!(InsnList::read(&l.write(), e.code.len() as u32), Some(l));
+    }
 }

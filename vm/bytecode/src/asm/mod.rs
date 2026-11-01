@@ -62,7 +62,7 @@ pub(crate) mod x86;
 pub use decode::{AsmError, Decoded, Resolver, decode, decode_linked, decode_reduced, decode_reduced_indexed};
 #[cfg(feature = "alloc")]
 pub use encode::{
-    Asm, DroppedStore, EncodeError, Encoded, InsnId, Label, Opnd, PROBE_FROM, Ref, Reloc, Scope, ScopeKind, Unwind, encode, operands,
+    Asm, DroppedStore, EncodeError, Encoded, InsnId, Label, NO_LOC, Opnd, PROBE_FROM, Ref, Reloc, Scope, ScopeKind, Unwind, encode, operands,
     pe_region_start, prologue_len, push_words, word_len,
 };
 #[cfg(feature = "alloc")]

@@ -594,7 +594,7 @@ impl Check {
             Check::MetadataOnly => metadata_only(rustc_ryo, &src(), out),
             Check::Dump => dump(rustc_ryo, &src(), out),
             Check::Exports => same_exports(info, rustc_ryo, &src(), out),
-            Check::Backtrace => backtrace(rustc_ryo, &src(), out),
+            Check::Backtrace => backtrace(rustc_ryo, &src(), out, ryo_sysroot_usable(info, root)),
             Check::MultiStaticlib => multi::multi_staticlib(info, rustc_ryo, &src(), out),
             Check::MultiDylib => multi::multi_dylib(info, root, rustc_ryo, &src(), out),
             Check::MultiVersion => multi::multi_version(info, root, rustc_ryo, &src(), out),

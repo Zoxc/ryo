@@ -13,6 +13,7 @@
 //! runtime"), the JIT's side (`jit`) included; its thread, which uses std, is the sealed
 //! `ryo_jit` with a std of its own (design/jit.md, "Packaging").
 
+mod backtrace;
 mod interp;
 mod jit;
 mod registry;

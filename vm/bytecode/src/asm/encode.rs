@@ -80,6 +80,12 @@ pub struct Encoded {
     /// The inline sequences the register cache emitted non-plainly, sorted by position
     /// ([`super::InsnList`]).
     pub hints: Vec<Hint>,
+    /// The source location runs ([`Asm::set_loc`]): their positions and the caller's tags,
+    /// sorted by position, at most one per position. The tag [`NO_LOC`] ends the run before
+    /// it without starting one: the counter stubs' (which aren't the code of any call).
+    /// Side data that only a backtrace reads: the decoder ignores the instruction list's
+    /// locations, which the image writer makes from these.
+    pub locs: Vec<(u32, u32)>,
     /// Where the prologue starts: after the entry's counter check with
     /// [`Mode::counters`], else 0.
     pub prologue: u32,
@@ -111,6 +117,9 @@ pub struct Scope {
 
 pub use super::list::ScopeKind;
 
+/// The location tag of no location ([`Encoded::locs`], [`Asm::set_loc`]).
+pub const NO_LOC: u32 = u32::MAX;
+
 /// A store of an inline sequence the encoder dropped: the sequence ends at `at` without it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DroppedStore {
@@ -121,7 +130,13 @@ pub struct DroppedStore {
 impl Encoded {
     /// The side data for the decoder, as the function's instruction list.
     pub fn list(&self) -> super::InsnList {
-        super::InsnList { targets: self.targets.clone(), hints: self.hints.clone(), dropped: self.dropped.clone(), scopes: self.scopes.clone() }
+        super::InsnList {
+            targets: self.targets.clone(),
+            hints: self.hints.clone(),
+            dropped: self.dropped.clone(),
+            scopes: self.scopes.clone(),
+            locs: Vec::new(),
+        }
     }
 }
 
@@ -872,6 +887,12 @@ pub struct Asm {
     /// return address can't be an epilogue's start, where the unwinder takes the frame for one
     /// being left and calls no handler for it.
     bare_calls: Vec<usize>,
+    /// The source location tag of the instructions being emitted ([`Asm::set_loc`]).
+    cur_loc: u32,
+    /// The tag of the last run started ([`NO_LOC`] at the start and in the pad region's).
+    last_loc: u32,
+    /// The runs: (piece, tag).
+    locs: Vec<(usize, u32)>,
 }
 
 /// A handler argument register's value: `fp`, the exception object (`lpad`), a constant
@@ -915,6 +936,25 @@ impl Asm {
             handler_calls: Vec::new(),
             region: None,
             bare_calls: Vec::new(),
+            cur_loc: NO_LOC,
+            last_loc: NO_LOC,
+            locs: Vec::new(),
+        }
+    }
+
+    /// Sets the source location of the instructions emitted from here on to the caller's
+    /// `tag` ([`NO_LOC`]: none). The calls among them (VM calls, islands and handler calls)
+    /// start a location run where the tag differs from the last run's ([`Encoded::locs`]):
+    /// a return address finds its call's location as the last run at or before it.
+    pub fn set_loc(&mut self, tag: u32) {
+        self.cur_loc = tag;
+    }
+
+    /// Starts a location run at the instruction being emitted, a call, if its tag is new.
+    fn loc_here(&mut self) {
+        if self.cur_loc != NO_LOC && self.cur_loc != self.last_loc {
+            self.locs.push((self.pieces.len(), self.cur_loc));
+            self.last_loc = self.cur_loc;
         }
     }
 
@@ -930,6 +970,8 @@ impl Asm {
     pub fn begin_region(&mut self) {
         debug_assert!(self.mode.pe && self.region.is_none(), "one pad region, on PE");
         self.region = Some(self.pieces.len());
+        // The region is laid out after the counter stubs, which end the body's last run.
+        self.last_loc = NO_LOC;
     }
 
     /// Whether the pad region has started.
@@ -1220,6 +1262,11 @@ impl Asm {
             }
             return id;
         }
+        if matches!(info.shape, Shape::Op | Shape::Br | Shape::Switch | Shape::Call | Shape::Island)
+            || info.shape == Shape::Trap && op != Opcode::Unreachable
+        {
+            self.loc_here();
+        }
         let named = |name: &str| &ops[info.operand_index(name).expect("operand")];
         let slot = |name: &str| match named(name) {
             Opnd::Slot(s) => *s as u32,
@@ -1327,7 +1374,7 @@ impl Asm {
     /// JIT's OSR entries land there); with counters, a loop head's is at its counter check
     /// instead, before the instruction.
     pub fn finish_labels(self, frame_size: u32, fix: impl Fn(u32) -> u32) -> (Encoded, Vec<u32>) {
-        let Asm { mode, mut pieces, labels, ro, unwind, targets, drops, seqs, handler_calls, region, bare_calls } = self;
+        let Asm { mode, mut pieces, labels, ro, unwind, targets, drops, seqs, handler_calls, region, bare_calls, locs, .. } = self;
         debug_assert!(mode.valid(), "{mode:?}");
         let target = branch_targets(&pieces, &labels);
         let sels = cache(&mut pieces, &target, mode.pe);
@@ -1386,8 +1433,11 @@ impl Asm {
         // The stubs come before the pad region (whose loop heads have no checks), its entry
         // (`sub rsp, PE_REGION_ALLOC; jmp r11`) at `region_at`.
         let (mut entry_stub, mut region_at) = (None, None);
+        // Where the counter stubs start.
+        let mut stubs_at = None;
         for (k, p) in pieces.into_iter().enumerate() {
             if region == Some(k) {
+                stubs_at = Some(l.out.len());
                 entry_stub = Some(l.stubs(mode.counters));
                 region_at = Some(l.out.len());
                 for item in pe_region_entry() {
@@ -1491,7 +1541,10 @@ impl Asm {
         }
         let entry_stub = match entry_stub {
             Some(e) => e,
-            None => l.stubs(mode.counters),
+            None => {
+                stubs_at = Some(l.out.len());
+                l.stubs(mode.counters)
+            }
         };
         let mut out = l.out;
         let region_at = region_at.unwrap_or(out.len());
@@ -1527,10 +1580,35 @@ impl Asm {
                 (op, sel)
             })
             .collect();
-        let (mut e, marks) = layout_code(out, [prologue_at, entry_stub, region_at], Marks { labels, targets, hints });
+        // The runs, and the end of the body's last one where the stubs start.
+        let mut loc_tags = Vec::with_capacity(locs.len() + 1);
+        let mut loc_at = Vec::with_capacity(locs.len() + 1);
+        let stubs_at = stubs_at.expect("stubs laid out");
+        let mut ended = locs.is_empty();
+        for &(k, tag) in &locs {
+            if !ended && region.is_some_and(|r| k >= r) {
+                loc_at.push(stubs_at);
+                loc_tags.push(NO_LOC);
+                ended = true;
+            }
+            loc_at.push(remap[k]);
+            loc_tags.push(tag);
+        }
+        if !ended {
+            loc_at.push(stubs_at);
+            loc_tags.push(NO_LOC);
+        }
+        let (mut e, marks) = layout_code(out, [prologue_at, entry_stub, region_at], Marks { labels, targets, hints, locs: loc_at });
         e.rodata = rodata.bytes;
         e.hints = marks.hints.iter().zip(hint_ops).map(|(&at, (op, sel))| Hint { at, op, sel }).collect();
         e.targets = marks.targets;
+        // Runs at one position (calls whose sequences left no code between them): the last.
+        for (at, tag) in marks.locs.into_iter().zip(loc_tags) {
+            match e.locs.last_mut() {
+                Some(l) if l.0 == at => l.1 = tag,
+                _ => e.locs.push((at, tag)),
+            }
+        }
         e.targets.sort_unstable();
         e.targets.dedup();
         (e, marks.labels)
@@ -1597,6 +1675,8 @@ struct Marks<T> {
     labels: Vec<T>,
     targets: Vec<T>,
     hints: Vec<T>,
+    /// The location runs' positions.
+    locs: Vec<T>,
 }
 
 /// Turns the storage ends that overlap no escaped object into [`Piece::Gone`]: they matter
@@ -1877,7 +1957,7 @@ fn layout_code(mut pieces: Vec<Laid>, [prologue, entry_stub, region]: [usize; 3]
     out.entry_stub = pos[entry_stub];
     out.region = pos[region];
     let at = |ms: Vec<usize>| ms.into_iter().map(|m| if m == usize::MAX { u32::MAX } else { pos[m] }).collect();
-    (out, Marks { labels: at(marks.labels), targets: at(marks.targets), hints: at(marks.hints) })
+    (out, Marks { labels: at(marks.labels), targets: at(marks.targets), hints: at(marks.hints), locs: at(marks.locs) })
 }
 
 /// The values of `op`'s handler argument positions for operands `ops`, from the first

@@ -139,6 +139,7 @@ pub fn compile(
     opt::fold::index_addr(&mut f);
     if opts.check {
         f.verify().map_err(|e| Error::Check(alloc::format!("IR: {e}")))?;
+        check_chains(&f).map_err(Error::Check)?;
     }
     if mode.pe {
         emit::check_pe(&f)?;
@@ -166,6 +167,25 @@ pub fn compile(
         out.dump = Some(dump);
     }
     Ok(out)
+}
+
+/// `RYO_JIT_CHECK`: with chains at all (decoded AOT positions), every VM call and island
+/// has one (design/vm.md#source-locations): they only come from decoded calls, and no pass
+/// makes new ones.
+#[cfg(feature = "alloc")]
+fn check_chains(f: &ir::Func) -> Result<(), alloc::string::String> {
+    if f.chains.is_empty() {
+        return Ok(());
+    }
+    for b in f.live_blocks() {
+        for &i in &f.blocks[b.idx()].insts {
+            let id = &f.insts[i.idx()];
+            if matches!(id.op, ir::Op::Call(_) | ir::Op::Island(_)) && id.loc == 0 {
+                return Err(alloc::format!("{i}: a call without a chain"));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Calls through constant pointers become direct before and after inlining (the inlined
@@ -270,5 +290,7 @@ fn built(d: &crate::asm::Decoded, mode: crate::asm::Mode, mem: Option<&dyn opt::
     }
     let code = decode::decode(d, mode, mem)?;
     let fr = alloca::analyze(&code, d.frame_size, mode.pe)?;
-    build::build(&code, &fr, d.frame_size, mode)
+    let mut f = build::build(&code, &fr, d.frame_size, mode)?;
+    f.cur_loc = 0;
+    Ok(f)
 }

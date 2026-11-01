@@ -217,6 +217,26 @@ pub fn image_at(addr: usize) -> *const u8 {
     if addr.wrapping_sub(sec.start) < sec.len { sec.header } else { ptr::null() }
 }
 
+/// The registered image whose header is at `h`.
+pub fn image(h: usize) -> Option<&'static Image<'static>> {
+    snapshot()?.images.iter().find(|i| i.bytes().as_ptr() as usize == h)
+}
+
+/// The registered image whose text holds `addr`, the function there and the offset in it.
+pub fn text_at(addr: usize) -> Option<(&'static Image<'static>, u32, u32)> {
+    let h = image_at(addr);
+    if h.is_null() {
+        return None;
+    }
+    let img = image(h as usize)?;
+    let off = addr.wrapping_sub(img.text_ptr() as usize);
+    if off >= img.header().text_size as usize {
+        return None;
+    }
+    let (func, at) = img.function_at(off as u32)?;
+    Some((img, func, at))
+}
+
 /// A heapsort: core's sorts reference its panic path (`panic_on_ord_violation`), which the
 /// runtime must not reach (design/vm.md, "No re-entry"). O(n log n) whatever the input order:
 /// the section index is rebuilt from hash order on every registration.

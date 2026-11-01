@@ -93,6 +93,10 @@ struct Gen {
     osr_at: usize,
     /// PE: where the pad region starts (`code.len()` if there is none, as for the SSA pipeline's code).
     region: usize,
+    /// The SSA pipeline's call map for backtraces ([`jit::Output::calls`], `chains`); empty
+    /// for re-encoded code, whose frames are named after the function.
+    calls: Vec<(u32, u32)>,
+    chains: Vec<jit::ir::ChainLink>,
 }
 
 /// The unwind rules of a function's body.
@@ -377,6 +381,8 @@ impl Jit {
                     osr: o.osr,
                     osr_at: o.osr_at as usize,
                     region: len,
+                    calls: o.calls,
+                    chains: o.chains,
                 };
                 self.pending.devirt = o.devirt as u64;
                 self.pending.inlined = o.inlined as u64;
@@ -406,7 +412,7 @@ impl Jit {
     /// code memory, relocation, unwind information, the perf map and the publication.
     fn install(&mut self, job: &Job<'_>, ext: &[Ext], tier: Tier, out: Gen) -> Result<(), CompileError> {
         let mode = job.mode;
-        let Gen { code: enc_code, mut relocs, rodata, call_sites, body, osr, osr_at, region } = out;
+        let Gen { code: enc_code, mut relocs, rodata, call_sites, body, osr, osr_at, region, calls, chains } = out;
         let code_len = enc_code.len();
         // The OSR code's stack probes, relocated as the body's.
         if let Some(o) = &osr {
@@ -437,8 +443,41 @@ impl Jit {
             code[thunk_at + 6..][..8].copy_from_slice(&(self.rt.seh_handler as u64).to_le_bytes());
         }
         map_and_register(&code, &eh, base, eh_base, mode)?;
+        self.publish_calls(job, jit_f, code_len, &calls, &chains);
         self.publish(job, tier, jit_f, osr.is_some().then(|| jit_f + osr_at), code_len, osr_len, ro_at + rodata.len());
         Ok(())
+    }
+
+    /// Publishes the call map of `job`'s code at `jit_f` (`code_len` bytes) for backtraces,
+    /// before the code can run (design/vm.md#source-locations): `calls` and `chains` as the
+    /// SSA pipeline gives them, the root's links naming `job`'s function. Leaked: the
+    /// runtime keeps it, as the code, for the rest of the process.
+    fn publish_calls(&self, job: &Job<'_>, jit_f: usize, code_len: usize, calls: &[(u32, u32)], chains: &[jit::ir::ChainLink]) {
+        use ryo_bytecode::jit_abi::{BT_ROOT, BtChain, BtRegion};
+        let root_img = job.img.header() as *const _ as usize;
+        let links: Vec<BtChain> = chains
+            .iter()
+            .map(|c| {
+                let (img, func) = c.func.map_or((root_img, job.func), |g| (g.img, g.func.0));
+                BtChain { img, func, pos: c.pos, parent: c.parent.checked_sub(1).unwrap_or(BT_ROOT), pad: 0 }
+            })
+            .collect();
+        let pcmap: Vec<[u32; 2]> = calls.iter().filter(|c| c.1 != 0).map(|&(at, loc)| [at, loc - 1]).collect();
+        let (npc, nchain) = (pcmap.len() as u32, links.len() as u32);
+        let pcmap: &'static [[u32; 2]] = Vec::leak(pcmap);
+        let links: &'static [BtChain] = Vec::leak(links);
+        let r = Box::leak(Box::new(BtRegion {
+            next: ptr::null_mut(),
+            start: jit_f,
+            len: code_len,
+            root_img,
+            root_func: job.func,
+            npc,
+            pcmap: pcmap.as_ptr(),
+            nchain,
+            chains: links.as_ptr(),
+        }));
+        (self.rt.bt_publish)(r);
     }
 
     /// Patches the fields `relocs` of `code`, to be at `base`, with its code constants at
@@ -907,6 +946,8 @@ fn compile_reencode(d: &asm::Decoded, words: &[u32], map: &SlotMap, img: &Image<
         osr,
         osr_at,
         region: enc.region as usize,
+        calls: Vec::new(),
+        chains: Vec::new(),
     })
 }
 

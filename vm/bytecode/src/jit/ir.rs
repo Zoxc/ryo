@@ -567,6 +567,20 @@ pub struct InstData {
     pub res: u32,
     pub nres: u8,
     pub block: Block,
+    /// The AOT call it came from, for backtraces: a [`Func::chains`] id, 0 for none.
+    /// Outside the operation, so that value numbering's keys ignore it.
+    pub loc: u32,
+}
+
+/// A link of a call's chain ([`Func::chains`]): the call at byte `pos` of `func`'s AOT code
+/// (`None`: the function the IR is of), inlined into the call `parent` (0: none). A call of
+/// the unit stands for its chain from its [`InstData::loc`] up: the frames inlined into the
+/// physical frame its return address is in (design/vm.md#source-locations).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ChainLink {
+    pub parent: u32,
+    pub func: Option<super::inline::VmFunc>,
+    pub pos: u32,
 }
 
 impl InstData {
@@ -882,6 +896,10 @@ pub struct Func {
     /// General loop-invariant code motion ([`super::opt::hoist`], `RYO_JIT_LICM`); without
     /// it only splats are hoisted.
     pub licm: bool,
+    /// The calls' chains: [`InstData::loc`] `k` is `chains[k - 1]`.
+    pub chains: Vec<ChainLink>,
+    /// The [`InstData::loc`] [`Func::new_inst`] gives new instructions.
+    pub cur_loc: u32,
 }
 
 impl Func {
@@ -987,7 +1005,7 @@ impl Func {
         for (n, &w) in ws.iter().enumerate() {
             self.value(ValueDef::Inst(i, n as u8), w);
         }
-        self.insts.push(InstData { op, args, res, nres: ws.len() as u8, block: b });
+        self.insts.push(InstData { op, args, res, nres: ws.len() as u8, block: b, loc: self.cur_loc });
         i
     }
 
@@ -995,6 +1013,22 @@ impl Func {
     pub fn result(&self, i: Inst) -> Value {
         debug_assert_eq!(self.insts[i.idx()].nres, 1);
         Value(self.insts[i.idx()].res)
+    }
+
+    /// Adds a chain link, returning its id.
+    pub fn chain(&mut self, l: ChainLink) -> u32 {
+        self.chains.push(l);
+        self.chains.len() as u32
+    }
+
+    /// The chain of `loc`, innermost first.
+    pub fn chain_of(&self, mut loc: u32) -> Vec<ChainLink> {
+        let mut v = Vec::new();
+        while let Some(&l) = loc.checked_sub(1).and_then(|k| self.chains.get(k as usize)) {
+            v.push(l);
+            loc = l.parent;
+        }
+        v
     }
 
     pub fn param(&mut self, b: Block, w: u8) -> Value {

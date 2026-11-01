@@ -123,6 +123,7 @@ pub(super) fn build_image<'tcx>(cx: ImageCx<'_, 'tcx>, cgu_name: Symbol, vm: &mu
             cleanup: Vec::new(),
             symbol,
             flags: if v.wrapper { 0 } else { symbols::func_flags(tcx, v.instance) },
+            locs: std::mem::take(&mut l.locs),
         });
         encoded.push(code);
     }

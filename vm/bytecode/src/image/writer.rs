@@ -94,6 +94,19 @@ pub struct FunctionDef {
     pub symbol: Option<FuncSymbol>,
     /// [`FUNC_INLINE_ALWAYS`] etc.: the source attributes the JIT's inliner reads.
     pub flags: u8,
+    /// The source location runs its encoded code's [`Encoded::locs`] tags index, each
+    /// innermost first (design/vm.md#source-locations).
+    pub locs: Vec<Vec<SrcLoc>>,
+}
+
+/// A source location of a [`FunctionDef::locs`] run.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SrcLoc {
+    pub file: String,
+    pub line: u32,
+    pub col: u32,
+    /// For a frame the MIR inliner folded in, the inlined function's name.
+    pub inlined: Option<String>,
 }
 
 /// How a function's symbol is defined in the image object, if it is global ([`FunctionDef`]).
@@ -613,6 +626,9 @@ impl ImageWriter {
             text: Vec::new(),
             code_consts: Vec::new(),
             lists: Vec::new(),
+            // Offset 0 is no string ([`crate::asm::list::Loc::file`]).
+            strings: vec![0],
+            string_offs: BTreeMap::new(),
             call_sites: Vec::new(),
             funcs: Vec::with_capacity(self.functions.len()),
             func_code: Vec::with_capacity(self.functions.len()),
@@ -632,7 +648,23 @@ impl ImageWriter {
             for r in &e.relocs {
                 t.code_refs.push(CodeRef { at: start + r.at, to: r.to, start, ro_base, func: i as u32 });
             }
-            let list = e.list().write();
+            let mut list = e.list();
+            for &(at, tag) in &e.locs {
+                let run = f.locs.get(tag as usize).filter(|r| tag != asm::NO_LOC && !r.is_empty());
+                let Some(run) = run else {
+                    list.locs.push(asm::list::Loc { at, file: 0, line: 0, col: 0, name: 0 });
+                    continue;
+                };
+                for l in run {
+                    let file = t.string(&l.file)?;
+                    let name = match &l.inlined {
+                        Some(n) => t.string(n)?,
+                        None => 0,
+                    };
+                    list.locs.push(asm::list::Loc { at, file, line: l.line, col: l.col, name });
+                }
+            }
+            let list = list.write();
             t.lists.extend_from_slice(&list);
             t.call_sites.extend(e.call_sites.iter().map(CallSiteEntry::from));
             t.funcs.push(FuncEntry {
@@ -707,6 +739,8 @@ impl ImageWriter {
         let consts = span(self.consts.len(), 1, self.const_align as usize)?;
         let call_sites = span(t.call_sites.len(), mem::size_of::<CallSiteEntry>(), 4)?;
         let lists = span(t.lists.len(), 1, 1)?;
+        // Without locations, no pool.
+        let strings = span(if t.strings.len() > 1 { t.strings.len() } else { 0 }, 1, 1)?;
         let mut const_reloc_offs: Vec<u32> = self.const_relocs.iter().map(|r| r.offset).collect();
         const_reloc_offs.sort_unstable();
         if const_reloc_offs.windows(2).any(|w| (w[1] as u64) < w[0] as u64 + 8) {
@@ -740,6 +774,7 @@ impl ImageWriter {
             cgu_hash: self.cgu_hash,
             abi: crate::ABI,
             anchor: 0,
+            strings,
         };
 
         let mut ro = vec![0u8; size];
@@ -756,6 +791,7 @@ impl ImageWriter {
             put(&mut ro, consts.off, &self.consts);
             put(&mut ro, call_sites.off, &t.call_sites);
             put(&mut ro, lists.off, &t.lists);
+            put(&mut ro, strings.off, &t.strings[..strings.count as usize]);
             put(&mut ro, const_relocs.off, &const_reloc_offs);
         }
         Ok((ro, header))
@@ -857,11 +893,28 @@ struct TextLayout {
     text: Vec<u8>,
     code_consts: Vec<u8>,
     lists: Vec<u8>,
+    /// The string pool ([`Header::strings`]) and its strings' offsets.
+    strings: Vec<u8>,
+    string_offs: BTreeMap<String, u32>,
     call_sites: Vec<CallSiteEntry>,
     funcs: Vec<FuncEntry>,
     func_code: Vec<FuncCode>,
     /// Resolved once the layout is known.
     code_refs: Vec<CodeRef>,
+}
+
+impl TextLayout {
+    /// The offset of `s` in the string pool, added if new.
+    fn string(&mut self, s: &str) -> Result<u32, WriteError> {
+        if let Some(&o) = self.string_offs.get(s) {
+            return Ok(o);
+        }
+        let o = to_u32(self.strings.len())?;
+        crate::asm::leb::put(&mut self.strings, s.len() as u64);
+        self.strings.extend_from_slice(s.as_bytes());
+        self.string_offs.insert(s.into(), o);
+        Ok(o)
+    }
 }
 
 /// [`ImageWriter::layout_data`]'s result.

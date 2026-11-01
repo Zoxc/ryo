@@ -194,7 +194,7 @@ pub(super) fn words(
     let scopes = scopes.iter().map(|&(i, sc)| Scope { code_offset: wpos[i], ..sc }).collect();
     let dropped = dropped.iter().map(|&i| wpos[i]).collect();
     let heads = heads.iter().map(|&i| wpos[i]).collect();
-    Decoded { words: out, frame_size, cleanup, scopes, dropped, heads }
+    Decoded { words: out, frame_size, cleanup, scopes, dropped, heads, ipos: Vec::new() }
 }
 
 /// The loop heads of `insns` with cleanup entries `cleanup` (as [`words`] takes them), in
