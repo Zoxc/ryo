@@ -21,9 +21,6 @@ pub fn image_symbol(stable_crate_id: u64, cgu_hash: u64) -> String {
     format!("__ryo_image_{stable_crate_id:016x}_{cgu_hash:016x}")
 }
 
-/// The pointer slot `ryo_rt::entry::c_main` loads the entry fn's address from.
-pub const MAIN_SLOT_SYMBOL: &str = rt_symbols::MAIN_SLOT;
-
 /// Defined (weak, or a COMDAT on PE) by every registry stub; every image object references it
 /// (its header's `anchor` field): `__ryo_registry_anchor_<tag>`, so that each ryo build's
 /// images pull that build's stub (design/build.md#the-abi-tag).
@@ -630,18 +627,12 @@ fn coff_entries(obj: &mut Object<'static>, suffix: &str) -> object::write::Secti
 
 /// The image object: the image sections, `__ryo_image_<id>_<cgu>` at the start of the
 /// read-only one, a symbol per VM function (global for those native code calls by name), its
-/// registration entry (a pointer to the header), a reference to the registry anchor, and, for
-/// binaries with a VM `main`, the `__ryo_main` slot pointing at `main_symbol`. On Mach-O also
+/// registration entry (a pointer to the header), and a reference to the registry anchor. On Mach-O also
 /// the `.eh_frame` personality's GOT reference and a `GCC_except_table<n>` symbol per LSDA.
 /// `rt_symbol` names the `ryo_rt` symbols relocations target (the handlers `ryo_h_<op>` or
 /// `ryo_hf_<op>`,
 /// `ryo_probe_stack`, the JIT trip entries and the SEH handler), as rustc mangles them.
-pub fn write_image(
-    fmt: &dyn ObjectFormat,
-    image: &ImageObject,
-    main_symbol: Option<&str>,
-    rt_symbol: &dyn Fn(&str) -> String,
-) -> Result<Vec<u8>, String> {
+pub fn write_image(fmt: &dyn ObjectFormat, image: &ImageObject, rt_symbol: &dyn Fn(&str) -> String) -> Result<Vec<u8>, String> {
     let mut obj = fmt.new_object();
     let ro = fmt.relro_section(&mut obj, "ryo_image");
     obj.append_section_data(ro, &image.rodata, image.rodata_align);
@@ -774,15 +765,6 @@ pub fn write_image(
     obj.add_relocation(ro, Relocation { offset: at, symbol: anchor, addend: 0, flags: fmt.abs64() })
         .map_err(|e| format!("registry anchor relocation: {e}"))?;
 
-    if let Some(main) = main_symbol {
-        let slot = fmt.relro_section(&mut obj, "ryo_main");
-        obj.append_section_data(slot, &[0; 8], 8);
-        fmt.hidden_global(&mut obj, &fmt.mangle(MAIN_SLOT_SYMBOL), slot, 0, 8, SymbolKind::Data);
-        let main = fmt.mangle(main);
-        let target = unknown.get(&main).copied().unwrap_or_else(|| undefined(&mut obj, &main, SymbolKind::Text));
-        obj.add_relocation(slot, Relocation { offset: 0, symbol: target, addend: 0, flags: fmt.abs64() })
-            .map_err(|e| format!("__ryo_main relocation: {e}"))?;
-    }
     let names = |s: Section| obj.section(section(s)).name().unwrap_or_default().to_owned();
     let implicit: Vec<_> = implicit.into_iter().map(|(offset, t, addend, size)| (offset, names(t), addend, size)).collect();
     let eh_name = if implicit.is_empty() { String::new() } else { names(Section::EhFrame) };
@@ -835,6 +817,40 @@ pub fn write_registry(fmt: &dyn ObjectFormat, register: &str) -> Result<Vec<u8>,
     obj.write().map_err(|e| format!("writing the registry object: {e}"))
 }
 
+/// A function of the allocator shim object ([`write_allocator_shim`]): `name` jumps to
+/// `target`, or returns at once without one.
+pub struct ShimFn {
+    pub name: String,
+    pub target: Option<String>,
+}
+
+/// The allocator shim object, in place of cg_llvm's allocator module (design/backend.md,
+/// Allocator shim): each of `fns` a global function with `visibility`, a tail jump to its
+/// target (the arguments are the target's) or a bare `ret`. Names are as rustc has them.
+pub fn write_allocator_shim(fmt: &dyn ObjectFormat, fns: &[ShimFn], visibility: SymVisibility) -> Result<Vec<u8>, String> {
+    let mut obj = fmt.new_object();
+    let text = fmt.text_section(&mut obj);
+    let mut code = Vec::new();
+    for f in fns {
+        code.resize(code.len().next_multiple_of(16), 0xcc);
+        let at = code.len() as u64;
+        match &f.target {
+            Some(target) => {
+                code.extend_from_slice(&[0xe9, 0, 0, 0, 0]); // jmp rel32
+                let symbol = undefined(&mut obj, &fmt.mangle(target), SymbolKind::Text);
+                let flags = fmt.reloc(RelocKind::Call32);
+                obj.add_relocation(text, Relocation { offset: at + 1, symbol, addend: -4, flags })
+                    .map_err(|e| format!("allocator shim relocation: {e}"))?;
+            }
+            None => code.push(0xc3), // ret
+        }
+        let size = code.len() as u64 - at;
+        fmt.global_function(&mut obj, &fmt.mangle(&f.name), text, at, size, FuncSymbol { visibility, weak: false });
+    }
+    obj.append_section_data(text, &code, 16);
+    obj.write().map_err(|e| format!("writing the allocator shim object: {e}"))
+}
+
 #[cfg(test)]
 mod tests {
     //! The Mach-O objects (and one PE/COFF object, `pe_unwind_handler`), read back with
@@ -882,7 +898,7 @@ mod tests {
 
     /// The written image object, read back.
     fn written(img: &ImageObject) -> Vec<u8> {
-        write_image(&fmt(), img, Some("main_fn"), &rt).expect("write_image")
+        write_image(&fmt(), img, &rt).expect("write_image")
     }
 
     fn section<'a>(file: &'a MachOFile64<'a, Endianness>, name: &str) -> object::read::macho::MachOSection64<'a, 'a, Endianness> {
@@ -910,7 +926,6 @@ mod tests {
             ("__TEXT", "__text"),
             ("__TEXT", "__eh_frame"),
             ("__TEXT", "__gcc_except_tab"),
-            ("__DATA", "__ryo_main"),
             ("__DATA", &macho_entries()),
         ] {
             assert!(segs.contains(&(want.0.to_owned(), want.1.to_owned())), "missing {want:?} in {segs:?}");
@@ -939,8 +954,7 @@ mod tests {
         assert_eq!(rels[0].1.flags(), RelocationFlags::MachO { r_type: macho::X86_64_RELOC_UNSIGNED, r_pcrel: false, r_length: 3 });
         let RelocationTarget::Symbol(si) = rels[0].1.target() else { panic!() };
         assert_eq!(file.symbol_by_index(si).unwrap().address(), section(&file, "__const").address());
-        assert_eq!(sym("___ryo_main").scope(), SymbolScope::Linkage);
-        for undef in ["_ext_fn", "_main_fn", &format!("_{}", anchor_symbol()), "_rust_eh_personality"] {
+        for undef in ["_ext_fn", &format!("_{}", anchor_symbol()), "_rust_eh_personality"] {
             assert!(sym(undef).is_undefined(), "{undef}");
             assert_eq!(file.symbols().filter(|s| s.name() == Ok(undef)).count(), 1, "{undef}");
         }
@@ -1034,7 +1048,7 @@ mod tests {
         w.add_function(def("g"));
         // PE handlers read `fp` from rbp (`Mode::valid`).
         let img = w.finish(Mode { pe: true, fp_arg: false, ..MODE }).expect("image");
-        let bytes = write_image(&Coff, &img, None, &rt).expect("write_image");
+        let bytes = write_image(&Coff, &img, &rt).expect("write_image");
         let file = CoffFile::<&[u8]>::parse(&*bytes).unwrap();
         let xdata = file.sections().find(|s| s.name() == Ok(".xdata")).expect(".xdata");
         let data = xdata.data().unwrap();
@@ -1143,5 +1157,39 @@ mod tests {
         let anchor = file.symbols().find(|s| s.name() == Ok(&*anchor_name)).unwrap();
         assert_eq!((anchor.scope(), anchor.is_weak()), (SymbolScope::Linkage, true));
         assert_eq!(anchor.section_index(), Some(section(&file, "__data").index()));
+    }
+
+    /// The forwarders jump to their targets; the empty function returns. ELF, PE and Mach-O.
+    #[test]
+    fn allocator_shim() {
+        let fns = [
+            ShimFn { name: "__rust_alloc".into(), target: Some("__rdl_alloc".into()) },
+            ShimFn { name: "__rust_dealloc".into(), target: Some("__rdl_dealloc".into()) },
+            ShimFn { name: "__rust_no_alloc_shim_is_unstable_v2".into(), target: None },
+        ];
+        let formats: [(&dyn ObjectFormat, &str); 3] = [(&Elf, ""), (&Coff, ""), (&fmt(), "_")];
+        for (format, prefix) in formats {
+            let bytes = write_allocator_shim(format, &fns, SymVisibility::Hidden).unwrap();
+            let file = object::File::parse(&*bytes).unwrap();
+            let text = file.sections().find(|s| s.kind() == object::SectionKind::Text).unwrap();
+            let data = text.data().unwrap();
+            let sym = |name: &str| {
+                let name = format!("{prefix}{name}");
+                file.symbols().find(|s| s.name() == Ok(&*name)).unwrap_or_else(|| panic!("no symbol {name}"))
+            };
+            let relocs: Vec<_> = text.relocations().collect();
+            assert_eq!(relocs.len(), 2);
+            for (f, target) in [("__rust_alloc", "__rdl_alloc"), ("__rust_dealloc", "__rdl_dealloc")] {
+                let at = sym(f).address() - text.address();
+                assert!(sym(f).is_global() && !sym(f).is_undefined());
+                assert_eq!(data[at as usize], 0xe9, "{f}");
+                let (_, r) = relocs.iter().find(|(o, _)| *o == at + 1).expect("jmp relocation");
+                let RelocationTarget::Symbol(si) = r.target() else { panic!() };
+                let t = file.symbol_by_index(si).unwrap();
+                assert_eq!((t.name(), t.is_undefined()), (Ok(&*format!("{prefix}{target}")), true));
+            }
+            let at = sym("__rust_no_alloc_shim_is_unstable_v2").address() - text.address();
+            assert_eq!(data[at as usize], 0xc3);
+        }
     }
 }

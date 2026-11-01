@@ -69,9 +69,6 @@ pub const TRIP_OSR: &str = rt_sym!(trip_osr);
 /// The JIT's one exported symbol (`ryo_jit`), which `ryo_rt` calls to start the JIT thread.
 pub const JIT_START: &str = rt_sym!(jit_start);
 
-/// The pointer slot `ryo_rt::entry::c_main` loads the entry fn's address from (untagged).
-pub const MAIN_SLOT: &str = "__ryo_main";
-
 /// A symbol name with an opcode: `ryo_h_AddW32`.
 #[derive(Clone, Copy, Debug)]
 pub struct OpSymbol(&'static str, Opcode);

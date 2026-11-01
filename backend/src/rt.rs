@@ -26,6 +26,11 @@ fn rt_item(tcx: TyCtxt<'_>, krate: CrateNum, name: Symbol) -> Option<DefId> {
 /// The diagnostic item name of `ryo_rt::entry::c_main`.
 pub const C_MAIN_ITEM: &str = "ryo_c_main";
 
+/// Whether `def_id` is `ryo_rt::entry::c_main`, the entry wrapper's template.
+pub fn is_c_main(tcx: TyCtxt<'_>, def_id: DefId) -> bool {
+    is_rt_crate(tcx, def_id.krate) && tcx.is_diagnostic_item(Symbol::intern(C_MAIN_ITEM), def_id)
+}
+
 /// `ryo_rt`'s crate and template items, found through its diagnostic items. `None` if
 /// `ryo_rt` isn't loaded (rustc wasn't run through `rustc-ryo`); a fatal error if it is
 /// loaded but lacks an item (a `ryo_rt` from another source version).

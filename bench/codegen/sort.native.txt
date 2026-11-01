@@ -5,7 +5,7 @@
 
 # 0 native functions, by reason
 
-# 16 island instructions in 7 of 262 VM functions, by template (instructions, functions)
+# 16 island instructions in 7 of 263 VM functions, by template (instructions, functions)
    15     6 ryo_island_call
     1     1 ryo_island_compare_bytes
 

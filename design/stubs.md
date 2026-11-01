@@ -172,41 +172,32 @@ link to it unchanged.
 
 cg_ssa only emits the C `main` wrapper if the CGU contains the entry fn's own mono item
 (`maybe_create_entry_wrapper`, `rustc_codegen_ssa/src/base.rs:508-517`). With a VM `main`,
-the entry fn is a VM function in the image instead, so the backend provides the wrapper itself, as a template
-instance:
+the entry fn is a VM function in the image instead, so the backend adds the wrapper to the
+same image as a VM function of its own (`backend/src/lower/entry.rs`):
 
 ```rust
-// vm/rt/src/entry.rs
-unsafe extern "C" {
-    // defined by the binary crate's image: the address of the entry fn
-    static __ryo_main: *const ();
-}
-// S = FnDef type of the `start` lang item (std's private `lang_start::<T>`)
-pub extern "C" fn c_main<S, T, const SIGPIPE: u8>(argc: c_int, argv: *const *const c_char) -> c_int
-where
-    S: FnOnce(fn() -> T, isize, *const *const u8, u8) -> isize,
-{
-    const { assert!(size_of::<S>() == 0) };
-    let start: S = unsafe { mem::zeroed() };
-    let main: fn() -> T = unsafe { mem::transmute(__ryo_main) };
-    start(main, argc as isize, argv as *const *const u8, SIGPIPE) as c_int
+extern "C" fn main(argc: c_int, argv: *const *const c_char) -> c_int {
+    lang_start::<T>(entry_fn as fn() -> T, argc as isize, argv as *const *const u8, SIGPIPE) as c_int
 }
 ```
 
-- A test binary can define `__ryo_main` itself.
-- `lang_start` is private in std, so the template can't name it. The backend resolves the
-  `start` lang item as cg_ssa does (`require_lang_item(LangItem::Start)` +
-  `Instance::expect_resolve` with `[T]`, `rustc_codegen_ssa/src/base.rs:566-583`), and passes
-  its `FnDef` type as `S`. A private safe fn item still implements `FnOnce`.
-- The backend instantiates `c_main::<S, T, SIGPIPE>`, with `T` = `main`'s return type and
-  `SIGPIPE` = `EntryFnType::Main { sigpipe }`, as cg_ssa passes it. It gives the instance the
-  symbol `main` (`target.entry_name`, also right for MSVC) through the `symbol_name`
-  override, and forces `External` linkage with default visibility. As an instance of an
-  upstream generic, it would otherwise be internal or hidden. It adds the instance and its
-  neighbors to the native CGU.
-- The binary crate's image defines `__ryo_main`, a pointer slot relocated against the entry
-  fn's symbol. Only binaries instantiate `c_main`, so dylibs and cdylibs never reference the
-  symbol.
+- Its instance is `ryo_rt::entry::c_main::<M, T, SIGPIPE>` (`M` the entry fn's `FnDef`
+  type, `T` its return type, `SIGPIPE` = `EntryFnType::Main { sigpipe }`, as cg_ssa passes
+  it). The template gives the instance a `DefId`, its C signature and, through the
+  `symbol_name` override, the symbol `main` (`target.entry_name`, also right for MSVC); its
+  own body (an abort) is never compiled.
+- The backend lowers it from a MIR body it builds itself rather than the template's: a
+  reify of the entry fn, the two casts, the call of `lang_start::<T>` (the `start` lang item
+  resolved as cg_ssa does, `require_lang_item(LangItem::Start)` + `Instance::expect_resolve`
+  with `[T]`, `rustc_codegen_ssa/src/base.rs:566-583`) and the cast of its result. `lang_start`
+  is private in std, but the backend names it directly; the call is a `call` if `lang_start`
+  is a VM function of the image, a `call.sym` otherwise. The call doesn't unwind
+  (`lang_start` catches `main`'s panics; cg_ssa's wrapper is `nounwind` too).
+- It is a C-ABI VM function like any `extern "C"` fn (design/backend.md#pipeline, step 2),
+  a candidate of the entry fn's CGU with `External` linkage and default visibility. It
+  isn't one of rustc's mono items, so the native CGU never has it, and it isn't exported.
+- If the entry fn stays native, so does the C `main`: the wrapper is dropped and cg_ssa
+  emits its own. The wrapper failing to lower while the entry fn is VM code is a fatal error.
 - `#[no_main]` crates and `-Zcrate-attr=no_main` skip this, exactly like cg_ssa.
 
 ## Calls between VM and native code

@@ -31,8 +31,8 @@ reuse under incremental compilation and `rt.rs` the runtime crates' identity.
      - a native function, or a stub neighbor (via `items_of_instance`)
      - the initializer of a native static: the provenance of its allocation, from
        `eval_static_initializer`, covering fn pointers and vtables in statics
-     - the entry fn and the `c_main` entry wrapper
-       ([stubs.md](stubs.md#program-entry-main))
+     - the entry wrapper, the C `main` (a VM function of the entry fn's image that
+       takes its address, [stubs.md](stubs.md#program-entry-main))
      - any vtable that the image or a native item references
      - a `sym` operand of a `global_asm!` (resolved like the collector does,
        `rustc_monomorphize/src/collector.rs:493-535`)
@@ -108,11 +108,16 @@ reuse under incremental compilation and `rt.rs` the runtime crates' identity.
    args). The merge pass deduplicates islands (same template + args → one instance), assigns
    function indices and symbols, rewrites each function's relocation targets to them,
    and adds the function to the image writer under its own symbol.
-4. **Build the native CGUs**, one per rustc CGU, with its name (kept even if empty). Each is
-   a copy of the original CGU, with its VM functions removed and the stub instances its
-   image needs (islands, and `c_main` in the CGU of the entry fn) added. Our override returns
-   exactly these CGUs, so `self.llvm.codegen_crate(tcx)` compiles only what we ask for, in
-   parallel as usual.
+4. **Build the native CGUs**, one per rustc CGU, with its name. Each is a copy of the
+   original CGU, with its VM functions removed and the stub instances its image needs
+   (islands) added. Our override returns exactly these CGUs, so `self.llvm.codegen_crate(tcx)`
+   compiles only what we ask for, in parallel as usual. A native CGU left without items is
+   dropped: cg_llvm would still make it an LLVM module and an object. (The one exception is
+   the primary CGU when the entry fn is upstream, where cg_ssa puts its C `main`.) Nothing
+   keys on the native CGU: an image's object is named after rustc's CGU, its work product
+   too, and cg_ssa only looks up the CGUs it is given. When every CGU is dropped and the
+   allocator shim is ours ([Allocator shim](#allocator-shim)), cg_llvm builds no module at
+   all (`fib`).
    - **Islands** are `External` + `Hidden`, defined by the first CGU whose image calls them
      and linked to by the others. Not `WeakODR` copies in every CGU: LLVM's function merging
      (`-Zmerge-functions=aliases` from `-O2`) makes a copy identical to another function an
@@ -202,8 +207,7 @@ reuse under incremental compilation and `rt.rs` the runtime crates' identity.
    `.data$ryo_image`, `.text$ryo_image`, `.pdata` and `.xdata`; on Mach-O `__DATA,__const`,
    `__DATA,__data`, `__TEXT,__text`, `__TEXT,__eh_frame` and `__TEXT,__gcc_except_tab`
    ([platforms.md](platforms.md)). `--emit=obj` is rejected for a crate with VM code
-   ([Unsupported options](#unsupported-options)). A binary with a VM `main` also gets `__ryo_main` in this
-   object ([stubs.md](stubs.md#program-entry-main)).
+   ([Unsupported options](#unsupported-options)).
 6. **Link** with cg_llvm's `link` (`link_binary`). The VM is part of `ryo_rt`, which links like
    any Rust dependency, so there is no native runtime library. Two additions:
    - **Registration through the linker**: each image object registers itself. It holds
@@ -311,7 +315,7 @@ depends on changed (`partition.rs`, `image_part`; the side data and work product
 - **Reuse.** If the previous session has the work product `<cgu>.ryo` (files `o`, the image
   object, and `ryo`, its side data) and `try_mark_green` marks the node green, the image
   isn't lowered: the side data (`CguVm`: the VM functions and which have global symbols, the
-  islands they call, the items they refer to, the `__ryo_main` target) is
+  islands they call, the items they refer to) is
   decoded (`persist.rs`, `Instance`s and `MonoItem`s by `DefPathHash`), the native CGUs and
   the exported-symbols queries are built from it as from a fresh image, and `codegen_crate`
   hard-links the cached object into place. A reused image is byte-identical to a fresh one.
@@ -366,8 +370,8 @@ The exported-symbols ones are in `exports.rs`, `symbol_name` in `symbols.rs`.
     (`exported_generic_symbols_provider_local`, `symbol_export.rs:398-484`), with their
     visibility. Only symbols the image actually defines are listed, since a listed instance
     without a definition leaves downstream crates with an undefined reference.
-  - The entry wrapper `c_main` (`External`, default visibility) isn't listed: only a bin
-    has it, rustc doesn't mix `bin` with other crate types, and a bin exports no generics.
+  - The entry wrapper (the `c_main` instance, `External`, default visibility) isn't listed:
+    it isn't one of rustc's mono items, only a bin has it, and a bin exports no generics.
   - Nothing else is needed for the images' references to native symbols: no LTO runs
     ([Unsupported options](#unsupported-options)), so rustc's partition decides what is
     internal, and step 4 exposes what the images need.
@@ -380,10 +384,34 @@ The exported-symbols ones are in `exports.rs`, `symbol_name` in `symbols.rs`.
   runtime's native copies instead of compiling its own instances (to VM code). A guard:
   the JIT, which instantiated std's generics (`Vec<u32>`, `[u32]`'s sorts), is now a sealed
   object with a std of its own ([jit.md](jit.md#packaging)), and the runtime is `core`-only.
-- `symbol_name` → for `c_main`, the target's `entry_name`. For local `LocalCopy` instances without an
+- `allocator_kind` → `None` where the backend writes the allocator shim itself
+  ([Allocator shim](#allocator-shim)), rustc's otherwise.
+- `symbol_name` → for the entry wrapper (`c_main` instances), the target's `entry_name`. For local `LocalCopy` instances without an
   attribute-given symbol, the default symbol plus `.ryo<StableCrateId as 16 hex digits>` (see
   Linkage). Everything else uses the
   default provider.
+
+## Allocator shim
+
+cg_ssa asks the backend for an allocator module in every final artifact that links std
+statically (`allocator_kind_for_codegen`, `rustc_codegen_ssa/src/base.rs`): `__rust_alloc` …
+forwarding to `__rdl_alloc` … (with the default allocator; a `#[global_allocator]` defines
+the `__rust_*` symbols itself), `__rust_alloc_error_handler` forwarding to
+`__rdl_alloc_error_handler` where the default handler is used, and the empty
+`__rust_no_alloc_shim_is_unstable_v2`, all mangled with `mangle_internal_symbol`
+(`allocator_shim_contents`, `rustc_codegen_llvm/src/allocator.rs`). For cg_llvm that is a
+whole LLVM module, optimized and emitted for a handful of jumps.
+
+The backend writes it instead (`alloc_shim.rs`, `objfile::write_allocator_shim`): each
+forwarder a `jmp rel32` to its target (the arguments are the target's, on SysV and Win64
+alike), the empty function a `ret`, global with the session's default visibility, as cg_llvm
+declares them. `codegen_crate` writes the object and `join_codegen` sets it as the
+`allocator_module`, so linking (and a staticlib's archive) take it as cg_llvm's. cg_ssa is
+kept from asking cg_llvm by the `allocator_kind` override answering `None`. Its other user is
+the export list of crate types that export Rust-level symbols (`dylib`, `proc-macro`:
+`exported_symbols_for_non_proc_macro`, `rustc_codegen_ssa/src/back/linker.rs`), which would
+drop the shim's symbols; for those the override returns rustc's kind and cg_llvm writes the
+shim as before. (LTO, the third user, is rejected.)
 
 ## Unsupported options
 

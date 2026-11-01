@@ -5,7 +5,7 @@
 
 # 0 native functions, by reason
 
-# 0 island instructions in 0 of 13 VM functions, by template (instructions, functions)
+# 0 island instructions in 0 of 14 VM functions, by template (instructions, functions)
 
 # native functions: [crate] instance: reason
 

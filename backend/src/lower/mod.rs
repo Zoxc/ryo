@@ -11,6 +11,7 @@
 //! |---|---|
 //! | `mod.rs` | the seam, [`FnCx`], the block loop, branch and unwind fixups, landing pads |
 //! | [`sig`] | ABI signatures and argument blocks |
+//! | [`entry`] | the MIR body of the C `main` wrapper |
 //! | [`frame`] | slot allocation: arguments, locals, temporaries, the spread-arg prologue |
 //! | [`emit`] | opcode selection by family and width, immediates |
 //! | [`place`] | places → frame slots or memory operands |
@@ -39,6 +40,7 @@ mod cast;
 mod cert;
 mod constant;
 mod emit;
+pub mod entry;
 mod frame;
 mod intrinsic;
 mod island;
@@ -136,12 +138,18 @@ pub struct LowerCx<'a, 'tcx> {
 /// Lowers `instance` to bytecode, or says why it must stay native.
 pub fn lower<'tcx>(tcx: TyCtxt<'tcx>, cx: &LowerCx<'_, 'tcx>, instance: Instance<'tcx>) -> Result<LoweredFn<'tcx>, NeedsNative> {
     let sig = vm_fn_sig(tcx, instance)?;
-    let body = tcx.instance_mir(instance.def);
+    let body = fn_body(tcx, instance);
     let mut fx = FnCx::new(tcx, cx, instance, body, &sig)?;
     fx.prologue(&sig)?;
     fx.cert_prologue();
     fx.blocks()?;
     fx.finish(&sig)
+}
+
+/// The MIR body `instance` is lowered from: its own, or the one the backend builds for the
+/// entry wrapper ([`entry::body`]).
+pub fn fn_body<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> &'tcx Body<'tcx> {
+    if entry::is_wrapper(tcx, instance) { entry::body(tcx, instance) } else { tcx.instance_mir(instance.def) }
 }
 
 /// The signature of `instance` if it can be a VM function: a Rust-ABI function whose

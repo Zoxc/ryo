@@ -113,12 +113,11 @@ pub fn local_stable_crate_id(tcx: TyCtxt<'_>) -> u64 {
     tcx.stable_crate_id(LOCAL_CRATE).as_u64()
 }
 
-/// Our `symbol_name` (design/backend.md#query-overrides): `c_main` is the target's entry name, and local copies of `LocalCopy` instances get
+/// Our `symbol_name` (design/backend.md#query-overrides): the entry wrapper (`c_main`) is the target's entry name, and local copies of `LocalCopy` instances get
 /// a crate-unique suffix (design/backend.md, Linkage).
 pub fn symbol_name<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>, original: impl FnOnce() -> ty::SymbolName<'tcx>) -> ty::SymbolName<'tcx> {
     if let InstanceKind::Item(def_id) = instance.def
-        && super::rt::is_rt_crate(tcx, def_id.krate)
-        && tcx.is_diagnostic_item(rustc_span::Symbol::intern(super::rt::C_MAIN_ITEM), def_id)
+        && super::rt::is_c_main(tcx, def_id)
     {
         return ty::SymbolName::new(tcx, &tcx.sess.target.entry_name);
     }

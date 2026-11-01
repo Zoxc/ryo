@@ -102,7 +102,7 @@ compilation, proved sound; "trusted" is assumed and tested.
 | Bytes → R | `decode_sound`: canonical sequences, inline sequences against `opSem` (`bv_decide`), the register-cache invariant, counters and stubs as no-ops | the Lean decoder accepts the bytes; dropped stores re-checked dead | handler, island, probe and trip contracts |
 | The rest of the object | — | image checks (below) | linker and loader; the unwinder's reading of CFI and LSDAs |
 | JIT | per-step checker soundness, rewrite rules, the inlining splice lemma, instruction-selection templates, the OSR entry and relocation lemmas | every step from the JIT's log (below) | publication ordering, code memory, `cpuid`, the logging path |
-| Native code | — | — | LLVM's code (native functions, islands, `c_main`), libc, the allocator, the panic runtime, under the calling convention |
+| Native code | — | — | LLVM's code (native functions, islands), libc, the allocator (and its shim's jumps), the panic runtime, under the calling convention |
 
 Not trusted: the Rust lowering, encoder and decoders, the certificates, the instruction lists
 (scopes, dropped stores, branch targets, inline sequence entries) and call-site tables, the constant pool, the function table, the relocations, the FDEs
@@ -146,7 +146,7 @@ the decoded code, or both:
   symbol slots name the callee the dump names.
 - **Unwind tables**: each FDE's rows match the decoded prologue and epilogue; LSDAs match the
   call-site table and the landing pads.
-- **Registry stub** and `__ryo_main`: each image object's registration entry, the
+- **Registry stub**: each image object's registration entry, the
   three-instruction constructor, its `.init_array` entry.
 
 A later check compares the linked executable with the objects (each image's sections equal the

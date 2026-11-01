@@ -3,6 +3,21 @@
 Rust-side changes that the Lean model or proofs don't reflect yet. Add an entry per change;
 remove it once a Lean session has handled it.
 
+- C `main` as a VM function, no `__ryo_main` (Commit: "Backend: No cg_llvm module for fib"):
+  the entry wrapper is a C-ABI VM function of the entry fn's image (symbol `main`, `External`,
+  default visibility), the instance `ryo_rt::entry::c_main::<M, T, SIGPIPE>` lowered from a
+  MIR body the backend builds (`backend/src/lower/entry.rs`: reify the entry fn, `IntToInt` /
+  `PtrToPtr` casts, `lang_start::<T>` call with unwind `Unreachable`, `IntToInt` of the
+  result); `RYO_DUMP_LEAN` dumps that body for it. Image objects no longer have the
+  `__ryo_main` slot (section `ryo_main`), and `rt_symbols::MAIN_SLOT` is gone: the image
+  checker (`Ryo/Check/Image.lean`, `Image/Dump.lean`'s `main` field and the "slot exactly when
+  the entry function is in the image" rule, `Image/Common.lean` `mainSlotName`,
+  `Image/Registry.lean`) should drop it. The allocator shim is now a separate object the
+  backend writes (`jmp` forwarders), not an LLVM module: no Lean effect unless the image
+  checker looks at it. `lean/docs/aot.md` (the `c_main` row as cg_llvm-compiled code loading
+  `__ryo_main`, the trusted-contracts list) and `lean/docs/plan.md`'s `c_main` entry should
+  describe it as a VM function checked like any other.
+
 - No `call_cN` islands (Commit: "Backend: Remove the call_cN island"): `ryo_rt::island` has no
   `call_c0` … `call_c16` templates (no `ryo_island_call_cN` diagnostic items) and the backend
   no `Target::CIsland`: an `extern "C"` call whose signature `sig.rs` has no plan for keeps

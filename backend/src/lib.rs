@@ -7,11 +7,13 @@
 //! - [`link`]: step 6, one `link_binary` per crate type with its registry object
 //! - [`dump`]: `RYO_DUMP` / `RYO_DUMP_CODE`, the VM functions as text
 //! - [`dump_lean`]: `RYO_DUMP_LEAN`, the program as the Lean MIR spec's input (lean/)
-//! - [`objfile`]: the image and registry objects, written without compiler types
+//! - [`objfile`]: the image, registry and allocator shim objects, written without compiler types
+//! - [`alloc_shim`]: the allocator shim, without cg_llvm
 #![feature(rustc_private)]
 
 // The compiler crates.
 extern crate rustc_abi;
+extern crate rustc_ast;
 extern crate rustc_codegen_llvm;
 extern crate rustc_codegen_ssa;
 extern crate rustc_crate_store;
@@ -31,6 +33,7 @@ extern crate rustc_type_ir;
 // Links the compiler's own `librustc_driver` dylib, which holds all the crates above.
 extern crate rustc_driver;
 
+mod alloc_shim;
 mod dump;
 mod dump_lean;
 mod exports;
@@ -103,6 +106,7 @@ type PartitionProvider = for<'tcx> fn(TyCtxt<'tcx>, ()) -> MonoItemPartitions<'t
 type SymbolNameProvider = for<'tcx> fn(TyCtxt<'tcx>, Instance<'tcx>) -> ty::SymbolName<'tcx>;
 type ExportedProvider = for<'tcx> fn(TyCtxt<'tcx>, LocalCrate) -> &'tcx [(ExportedSymbol<'tcx>, SymbolExportInfo)];
 type UpstreamProvider = for<'tcx> fn(TyCtxt<'tcx>, ()) -> exports::UpstreamMonos<'tcx>;
+type AllocatorKindProvider = for<'tcx> fn(TyCtxt<'tcx>, ()) -> Option<rustc_ast::expand::allocator::AllocatorKind>;
 type DylibFormatsProvider =
     for<'tcx> fn(TyCtxt<'tcx>, rustc_hir::def_id::CrateNum) -> &'tcx [(rustc_hir::def_id::CrateNum, rustc_crate_store::LinkagePreference)];
 
@@ -113,6 +117,7 @@ struct Originals {
     exported_generic_symbols: ExportedProvider,
     upstream_monomorphizations: UpstreamProvider,
     dylib_dependency_formats: DylibFormatsProvider,
+    allocator_kind: AllocatorKindProvider,
 }
 
 static ORIGINALS: OnceLock<Originals> = OnceLock::new();
@@ -135,6 +140,10 @@ fn exported_generic_symbols<'tcx>(tcx: TyCtxt<'tcx>, krate: LocalCrate) -> &'tcx
 
 fn upstream_monomorphizations<'tcx>(tcx: TyCtxt<'tcx>, (): ()) -> exports::UpstreamMonos<'tcx> {
     exports::upstream_monomorphizations(tcx, (originals().upstream_monomorphizations)(tcx, ()))
+}
+
+fn allocator_kind(tcx: TyCtxt<'_>, (): ()) -> Option<rustc_ast::expand::allocator::AllocatorKind> {
+    alloc_shim::allocator_kind(tcx, (originals().allocator_kind)(tcx, ()))
 }
 
 /// An upstream Rust dylib's dependency formats without the runtime crates (`ryo_rt`,
@@ -238,7 +247,9 @@ impl CodegenBackend for RyoBackend {
             exported_generic_symbols: q.exported_generic_symbols,
             upstream_monomorphizations: q.upstream_monomorphizations,
             dylib_dependency_formats: providers.extern_queries.dylib_dependency_formats,
+            allocator_kind: q.allocator_kind,
         });
+        q.allocator_kind = allocator_kind;
         providers.extern_queries.dylib_dependency_formats = dylib_dependency_formats;
         q.collect_and_partition_mono_items = collect_and_partition_mono_items;
         q.symbol_name = symbol_name;
@@ -266,10 +277,11 @@ impl CodegenBackend for RyoBackend {
         if let Some(results) = results {
             dump_lean::dump(tcx, &self.switches, results);
         }
+        let allocator = alloc_shim::write(tcx, (originals().allocator_kind)(tcx, ()));
         drop(ryo_t);
         // The native CGUs (step 4), compiled by cg_llvm as usual.
         let llvm = self.llvm.codegen_crate(tcx);
-        Box::new(RyoOngoingCodegen { llvm, images })
+        Box::new(RyoOngoingCodegen { llvm, images, allocator })
     }
 
     fn join_codegen(
@@ -287,6 +299,10 @@ impl CodegenBackend for RyoBackend {
         // (design/backend.md#pipeline step 5), and their work products: saved now (cg_ssa saves
         // only its own modules', inside cg_llvm's join), or the previous session's kept, before
         // rustc writes the index (design/backend.md#incremental).
+        if let Some(m) = ongoing.allocator {
+            debug_assert!(modules.allocator_module.is_none());
+            modules.allocator_module = Some(m);
+        }
         for img in ongoing.images {
             let from = incr::save_work_product(sess, incr_comp_session, img.cgu, img.path.as_deref(), img.save, &mut work_products);
             if let Some(path) = img.path {
@@ -466,7 +482,7 @@ fn write_images(tcx: TyCtxt<'_>, results: &partition::Results) -> Vec<OngoingIma
         let name = format!("{}.ryo_image", img.cgu_name);
         let image_path = tcx.output_filenames(()).temp_path_for_cgu(OutputType::Object, &name);
         let save = match &img.image {
-            partition::ImageSrc::Fresh { image, side } => write_fresh_image(tcx, &*fmt, img, image.as_ref(), side, &image_path),
+            partition::ImageSrc::Fresh { image, side } => write_fresh_image(tcx, &*fmt, image.as_ref(), side, &image_path),
             partition::ImageSrc::Reused(wp) => incr::place_reused_image(tcx, wp, &image_path),
         };
         let path = img.has_object().then_some(image_path);
@@ -479,7 +495,6 @@ fn write_images(tcx: TyCtxt<'_>, results: &partition::Results) -> Vec<OngoingIma
 fn write_fresh_image(
     tcx: TyCtxt<'_>,
     fmt: &dyn objfile::ObjectFormat,
-    img: &partition::CguImage,
     image: Option<&ryo_bytecode::image::ImageObject>,
     side: &[u8],
     image_path: &std::path::Path,
@@ -493,8 +508,7 @@ fn write_fresh_image(
     let side_path = image_path.with_extension(incr::WP_SIDE);
     write(&side_path, side);
     if let Some(image) = image {
-        let bytes = objfile::write_image(fmt, image, img.main_symbol.as_deref(), &|name: &str| symbols::rt_symbol(tcx, name))
-            .unwrap_or_else(|e| tcx.dcx().fatal(e));
+        let bytes = objfile::write_image(fmt, image, &|name: &str| symbols::rt_symbol(tcx, name)).unwrap_or_else(|e| tcx.dcx().fatal(e));
         write(image_path, &bytes);
     }
     incr::ImageSave::Fresh(side_path)
@@ -527,6 +541,8 @@ fn binary_format(f: &rustc_target::spec::BinaryFormat) -> object::BinaryFormat {
 struct RyoOngoingCodegen {
     llvm: Box<dyn Any>,
     images: Vec<OngoingImage>,
+    /// Our allocator shim, if cg_llvm writes none ([`alloc_shim`]).
+    allocator: Option<rustc_codegen_ssa::CompiledModule>,
 }
 
 /// An image object of `codegen_crate`: its CGU, module name and path (none for a CGU without

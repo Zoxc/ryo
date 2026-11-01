@@ -15,28 +15,26 @@ use super::{link, persist};
 
 /// What one CGU's image gives the native CGUs and the exported-symbols queries: its VM
 /// functions (and whether the image defines a global symbol for each), the island instances it
-/// calls, the items it refers to by symbol, and the symbol `__ryo_main` points
-/// at. A function of the CGU's own items and tracked queries alone, so it is saved with the
+/// calls and the items it refers to by symbol. A function of the CGU's own items and tracked queries alone, so it is saved with the
 /// image and read back when the image is reused (design/backend.md#incremental, `persist.rs`).
 pub(super) struct CguVm<'tcx> {
     pub(super) vm: Vec<(Instance<'tcx>, bool)>,
     pub(super) islands: Vec<Instance<'tcx>>,
     pub(super) refs: Vec<MonoItem<'tcx>>,
-    pub(super) main: Option<String>,
 }
 
-type CguVmData<'tcx> = (Vec<(Instance<'tcx>, bool)>, Vec<Instance<'tcx>>, Vec<MonoItem<'tcx>>, Option<String>);
+type CguVmData<'tcx> = (Vec<(Instance<'tcx>, bool)>, Vec<Instance<'tcx>>, Vec<MonoItem<'tcx>>);
 
 impl<'tcx> CguVm<'tcx> {
     pub(super) fn empty() -> Self {
-        CguVm { vm: Vec::new(), islands: Vec::new(), refs: Vec::new(), main: None }
+        CguVm { vm: Vec::new(), islands: Vec::new(), refs: Vec::new() }
     }
 
     /// The side data: a byte saying whether the CGU has an image object (it has VM
     /// functions), readable before the image's dep node is green, a checksum of that byte and
     /// the rest ([`CguVm::split`]), then the encoded fields.
     pub(super) fn save(&self, tcx: TyCtxt<'tcx>) -> Vec<u8> {
-        let body = persist::encode(tcx, &(&self.vm, &self.islands, &self.refs, &self.main));
+        let body = persist::encode(tcx, &(&self.vm, &self.islands, &self.refs));
         let has_object = u8::from(!self.vm.is_empty());
         let mut out = vec![has_object];
         out.extend_from_slice(&side_checksum(has_object, &body));
@@ -55,8 +53,8 @@ impl<'tcx> CguVm<'tcx> {
 
     /// Decodes the encoded fields ([`CguVm::split`]'s body).
     fn load(tcx: TyCtxt<'tcx>, body: &[u8]) -> Option<Self> {
-        let (vm, islands, refs, main): CguVmData<'tcx> = persist::decode(tcx, body)?;
-        Some(CguVm { vm, islands, refs, main })
+        let (vm, islands, refs): CguVmData<'tcx> = persist::decode(tcx, body)?;
+        Some(CguVm { vm, islands, refs })
     }
 }
 
