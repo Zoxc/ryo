@@ -136,6 +136,7 @@ pub fn compile(
     if let Some(env) = env {
         inline::retarget(&mut f, env);
     }
+    opt::fold::index_addr(&mut f);
     if opts.check {
         f.verify().map_err(|e| Error::Check(alloc::format!("IR: {e}")))?;
     }

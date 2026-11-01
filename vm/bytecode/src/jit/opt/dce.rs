@@ -3,11 +3,14 @@ use alloc::vec::Vec;
 use crate::full::Opcode;
 use crate::jit::ir::*;
 
-/// Whether `op` has no effect but its results: a pure operation, or a call of a handler's
-/// register entry ([`crate::jit::effects::RegEntry`]) that touches no memory and can't unwind:
-/// its frame operands are values then, and it only computes.
+/// Whether `op` has no effect but its results: a pure operation, a load (the VM's loads are
+/// MIR place reads, of memory valid to read, so dropping one can't remove a fault a correct
+/// program has; volatile accesses are islands), or a call of a handler's register entry
+/// ([`crate::jit::effects::RegEntry`]) that touches no memory and can't unwind: its frame
+/// operands are values then, and it only computes.
 pub(super) fn removable(op: &Op) -> bool {
     match op {
+        Op::Load(..) | Op::ALoad(..) => true,
         Op::HCall(h) => h.reg && h.site == Site::None && h.h != Opcode::Lpad && !super::mem::touches_memory(h),
         op => op.pure(),
     }

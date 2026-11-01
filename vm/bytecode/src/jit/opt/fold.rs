@@ -2,6 +2,8 @@
 //! numbering ([`super::lvn`]): compare- and overflow-branches, branches on negated booleans
 //! and on constants, and frame and constant-offset addresses.
 
+use alloc::vec::Vec;
+
 use crate::jit::ir::*;
 
 /// The folds instruction selection relies on, done on the IR (design/jit.md, "The SSA
@@ -127,5 +129,57 @@ pub fn fold_addr(f: &mut Func, i: Inst) {
             id.op = if load { Op::Load(w, k) } else { Op::Store(w, k) };
         }
         _ => {}
+    }
+}
+
+/// Address-mode fusion, run last (after the passes, which know only `Load` and `Store`): a
+/// `PtrIndex` by 1, 2, 4 or 8 all of whose uses are the addresses of scalar loads and stores
+/// in its own block becomes their `[p + i * s + k]` operand ([`Op::LoadIx`], [`Op::StoreIx`])
+/// and goes: no `lea`, and no register for the address.
+pub fn index_addr(f: &mut Func) {
+    let uses = use_counts(f);
+    for b in 0..f.blocks.len() {
+        // Per `PtrIndex` result: its address uses in this block.
+        let mut addr: Vec<(Value, u32)> = Vec::new();
+        for &i in &f.blocks[b].insts {
+            let id = &f.insts[i.idx()];
+            if matches!(id.op, Op::Load(1..=8, _) | Op::Store(1..=8, _))
+                && let p = id.args[0]
+                && let ValueDef::Inst(d, 0) = f.def(p)
+                && f.insts[d.idx()].block.idx() == b
+                && matches!(f.insts[d.idx()].op, Op::PtrIndex(1 | 2 | 4 | 8))
+                && !(matches!(id.op, Op::Store(..)) && id.args[1] == p)
+            {
+                match addr.iter_mut().find(|x| x.0 == p) {
+                    Some(x) => x.1 += 1,
+                    None => addr.push((p, 1)),
+                }
+            }
+        }
+        addr.retain(|&(p, n)| uses[p.idx()] == n);
+        if addr.is_empty() {
+            continue;
+        }
+        let mut gone = Vec::new();
+        for k in 0..f.blocks[b].insts.len() {
+            let i = f.blocks[b].insts[k];
+            let p = f.insts[i.idx()].args.first().copied();
+            let Some(p) = p.filter(|p| addr.iter().any(|x| x.0 == *p)) else { continue };
+            let ValueDef::Inst(d, 0) = f.def(p) else { unreachable!() };
+            let Op::PtrIndex(s) = f.insts[d.idx()].op else { unreachable!() };
+            let (base, idx) = (f.insts[d.idx()].args[0], f.insts[d.idx()].args[1]);
+            let id = &mut f.insts[i.idx()];
+            id.op = match id.op {
+                Op::Load(w, k) => Op::LoadIx(w, k, s as u8),
+                Op::Store(w, k) => Op::StoreIx(w, k, s as u8),
+                _ => unreachable!(),
+            };
+            id.args[0] = base;
+            id.args.insert(1, idx);
+            if !gone.contains(&d) {
+                gone.push(d);
+            }
+        }
+        f.blocks[b].insts.retain(|i| !gone.contains(i));
     }
 }

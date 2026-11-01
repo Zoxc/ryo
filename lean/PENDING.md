@@ -10,6 +10,17 @@ remove it once a Lean session has handled it.
   has no certificate for it and its dump name is `<C main of {entry fn}>`. If the Lean side
   expects a certificate per image function, it should accept this one without.
 
+- JIT SSA address modes, cold sinking, peepholes (Commit: "JIT SSA: Address modes, cold
+  sinking and branch peepholes"): new IR ops `LoadIx(w, k, s)` (args `p`, `i`) and
+  `StoreIx(w, k, s)` (args `p`, `i`, `v`), `[p + i * s + k]`, made only after the passes by
+  `opt::fold::index_addr` from `Load`/`Store` through a `PtrIndex(s)` (s 1/2/4/8) whose only
+  uses they are. `opt::dce` drops unused `Load`/`ALoad` (they no longer count as effects).
+  `opt::layout` sinks pure values used only in cold blocks into copies there and orders the
+  hot blocks in chains. Emitter: `BrCmp Eq|Ne (x & c), 0` as `test x, c` (the `and` not
+  emitted), a `Count` result taken as zero-extended (no `mov r32, r32` for its `Ext`), and a
+  conditional branch falls through to an edge stub laid right after it. `lean/docs/jit.md`'s
+  pass list (E.4, "The SSA pipeline's passes so far") should list these obligations.
+
 - C `main` as a VM function, no `__ryo_main` (Commit: "Backend: No cg_llvm module for fib"):
   the entry wrapper is a C-ABI VM function of the entry fn's image (symbol `main`, `External`,
   default visibility), the instance `ryo_rt::entry::c_main::<M, T, SIGPIPE>` lowered from a

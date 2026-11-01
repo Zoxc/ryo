@@ -54,15 +54,144 @@ pub fn layout(f: &mut Func) {
     if !cold.iter().any(|&c| c) {
         return;
     }
-    for b in f.layout.clone() {
+    for &b in &f.layout {
         f.blocks[b.idx()].cold = cold[b.idx()];
+    }
+    sink(f, &cold);
+    for b in f.layout.clone() {
         if cold[b.idx()] {
             split(f, b, &preds[b.idx()]);
         }
     }
     let (hot, cold_blocks): (Vec<Block>, Vec<Block>) = f.layout.iter().partition(|b| !cold[b.idx()]);
-    f.layout = hot;
+    f.layout = chain(f, &hot, &preds, &cold);
     f.layout.extend(cold_blocks);
+}
+
+/// The hot blocks `hot` in chains: each block is followed by a successor not yet laid out
+/// whose (hot) predecessors all are, the first of them in `hot`'s order, so a branch's hot
+/// side falls through rather than needing a `jmp`; a block no chain reaches starts one, in
+/// `hot`'s order. A loop head waits for its latch, so it is still laid out by the order and
+/// its body after it.
+fn chain(f: &Func, hot: &[Block], preds: &[Vec<Block>], cold: &[bool]) -> Vec<Block> {
+    let mut at = alloc::vec![usize::MAX; f.blocks.len()];
+    for (k, &b) in hot.iter().enumerate() {
+        at[b.idx()] = k;
+    }
+    let mut placed = alloc::vec![false; f.blocks.len()];
+    let mut out = Vec::with_capacity(hot.len());
+    for &b in hot {
+        let mut c = b;
+        while !placed[c.idx()] {
+            placed[c.idx()] = true;
+            out.push(c);
+            let succ = match f.blocks[c.idx()].term {
+                Term::Switch { .. } => None,
+                ref t => t
+                    .edges()
+                    .map(|e| e.to)
+                    .filter(|s| at[s.idx()] != usize::MAX && !placed[s.idx()])
+                    .filter(|s| preds[s.idx()].iter().all(|p| placed[p.idx()] || cold[p.idx()]))
+                    .min_by_key(|s| at[s.idx()]),
+            };
+            match succ {
+                Some(s) => c = s,
+                None => break,
+            }
+        }
+    }
+    out
+}
+
+/// Sinks the pure values all of whose uses are in cold blocks (the panic locations and
+/// arguments of failed checks) into those blocks, a copy before the first use in each, so
+/// the hot path doesn't compute them and they hold no register across it. Their operands
+/// follow when that leaves them used only there. An instruction of a cold block or an
+/// edge out of one is a use there; anything else (an OSR entry's too) keeps the value.
+fn sink(f: &mut Func, cold: &[bool]) {
+    // Each value's using blocks, once per use.
+    let mut at: Vec<Vec<Block>> = alloc::vec![Vec::new(); f.values.len()];
+    for (b, bd) in f.blocks.iter().enumerate() {
+        let b = Block(b as u32);
+        for &i in &bd.insts {
+            for &a in &f.insts[i.idx()].args {
+                at[a.idx()].push(b);
+            }
+        }
+        for u in bd.term.uses() {
+            at[u.idx()].push(b);
+        }
+        for e in bd.term.edges() {
+            for &a in &e.args {
+                at[a.idx()].push(b);
+            }
+        }
+    }
+    let cold_at = |b: Block| cold.get(b.idx()).copied().unwrap_or(false);
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for b in 0..f.blocks.len() {
+            if cold[b] {
+                continue;
+            }
+            let mut k = f.blocks[b].insts.len();
+            while k > 0 {
+                k -= 1;
+                let i = f.blocks[b].insts[k];
+                let id = &f.insts[i.idx()];
+                if !id.op.pure() || matches!(id.op, Op::Ovf(..) | Op::OsrLoad(..)) || id.nres != 1 {
+                    continue;
+                }
+                let v = f.result(i);
+                if at[v.idx()].is_empty() || !at[v.idx()].iter().all(|&u| cold_at(u)) {
+                    continue;
+                }
+                let mut to: Vec<Block> = at[v.idx()].clone();
+                to.sort_unstable_by_key(|b| b.0);
+                to.dedup();
+                let (op, args, w) = (id.op.clone(), id.args.clone(), f.w(v));
+                for &u in &to {
+                    let c = f.new_inst(u, op.clone(), args.clone(), &[w]);
+                    let cv = f.result(c);
+                    let ub = &mut f.blocks[u.idx()];
+                    let pos = match ub.insts.iter().position(|&j| f.insts[j.idx()].args.contains(&v)) {
+                        Some(p) => p,
+                        // The fused overflow op and an invoke's call stay last.
+                        None if matches!(ub.term, Term::BrOvf { .. } | Term::Invoke { .. }) => ub.insts.len() - 1,
+                        None => ub.insts.len(),
+                    };
+                    ub.insts.insert(pos, c);
+                    for &j in &ub.insts {
+                        for a in f.insts[j.idx()].args.iter_mut().filter(|a| **a == v) {
+                            *a = cv;
+                        }
+                    }
+                    let ub = &mut f.blocks[u.idx()];
+                    for a in ub.term.uses_mut().filter(|a| **a == v) {
+                        *a = cv;
+                    }
+                    for e in ub.term.edges_mut() {
+                        for a in e.args.iter_mut().filter(|a| **a == v) {
+                            *a = cv;
+                        }
+                    }
+                    for &a in &args {
+                        at[a.idx()].push(u);
+                    }
+                    at.resize(f.values.len(), Vec::new());
+                }
+                // The operands' uses here go.
+                for &a in &args {
+                    let p = at[a.idx()].iter().position(|&x| x.idx() == b).unwrap();
+                    at[a.idx()].swap_remove(p);
+                }
+                at[v.idx()].clear();
+                f.blocks[b].insts.remove(k);
+                changed = true;
+            }
+        }
+    }
 }
 
 /// Passes the values live across a call in `b` (a cold block) but defined elsewhere to `b`

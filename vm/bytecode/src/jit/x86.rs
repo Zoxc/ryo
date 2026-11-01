@@ -379,6 +379,13 @@ impl X86 {
         self.sized(w, 0x84, b.num(), true, a, &[]);
     }
 
+    /// `test a, imm` (sign-extended at 8 bytes).
+    pub fn test_imm(&mut self, w: u8, a: Rm, imm: i64) {
+        debug_assert!(w != 8 || imm as i32 as i64 == imm, "64-bit test immediate doesn't fit i32");
+        let (b, n) = imm_bytes(w, imm);
+        self.sized(w, 0xf6, 0, false, a, &b[..n.min(w as usize)]);
+    }
+
     /// `mul r/m64`: `rdx:rax = rax * src`.
     pub fn mul(&mut self, src: Rm) {
         self.insn(false, true, false, &[0xf7], 4, src, &[]);

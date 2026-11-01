@@ -441,15 +441,24 @@ constant into their address. Then `opt::checks` (check elimination) and `opt::ho
 [loop-invariant code motion](#loop-invariant-code-motion). Last, `opt::dce` marks and sweeps: a value is live when an
 effect, a terminator or a live value reads it, and a parameter's edge arguments only when the
 parameter is live, so pure instructions without live results and dead parameters (dead
-loop-carried values included, but not the entry's) go with their arguments. A handler call
+loop-carried values included, but not the entry's) go with their arguments. Unused loads go
+too: the VM's loads are MIR place reads, valid to read (volatile accesses are islands). A handler call
 through its register entry whose handler touches no memory (`effects`) and that can't unwind
 counts as pure: its frame operands are values, so it only computes its results.
 After DCE, `opt::thread` threads jumps: an edge into an empty block that only jumps on (not an
 AOT loop head, whose OSR entry lands there, and with parameters used by nothing but that
 jump) goes to the jump's target instead, a conditional edge only as far as it stays without
 arguments (one with arguments would need a stub for its moves), and the blocks left
-unreachable leave the layout. The emitter falls through to the next block in layout and
-inverts a branch whose true target is next.
+unreachable leave the layout. Then `opt::layout` marks the cold blocks, sinks the pure values
+used only in cold blocks (panic locations, a check's arguments) into them, a copy before the
+first use in each, and lays the hot blocks out in chains (a block, then its first successor
+whose hot predecessors are all laid out, so a check's hot side falls through), the cold ones
+last. After the passes, `opt::fold::index_addr` turns loads and stores through a `PtrIndex`
+by 1, 2, 4 or 8 whose only uses they are (in its block) into `LoadIx`/`StoreIx`, accessing
+`[p + i * s + k]` with no `lea`. The emitter falls through to the next block in layout (or to
+an edge's move stub placed right after the branch) and inverts a branch whose true target is
+next, tests `x & c == 0` with `test x, c` when the `and` is used only by the branch right
+after it, and knows that a `Count` result is zero-extended.
 
 ### OSR
 

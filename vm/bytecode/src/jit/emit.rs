@@ -1170,6 +1170,10 @@ impl<'a> E<'a> {
         if id.op.pure() && !fused && res.iter().all(|r| self.uses[r.idx()] == 0) {
             return Ok(());
         }
+        // The terminator tests it.
+        if self.and_test(id.block).is_some_and(|t| t.0 == i) {
+            return Ok(());
+        }
         let args = &id.args[..];
         match id.op {
             Op::Bin(op, 16) => {
@@ -1338,6 +1342,27 @@ impl<'a> E<'a> {
             Op::Store(w, k) => {
                 let rp = self.reg(args[0], S1);
                 self.store_mem(Mem::base(rp, k), w, args[1]);
+            }
+            Op::LoadIx(w, k, s) => {
+                let x = res[0];
+                let rp = self.reg(args[0], S1);
+                let ri = self.reg(args[1], S2);
+                let rd = self.work(x, &[]);
+                self.load_mem(rd, w, Mem::Base { base: rp, index: Some((ri, s)), disp: k });
+                self.put(x, rd);
+            }
+            Op::StoreIx(w, k, s) => {
+                let rp = self.reg(args[0], S1);
+                let m = match self.src(args[1]) {
+                    Src::R(ri) => Mem::Base { base: rp, index: Some((ri, s)), disp: k },
+                    // `store_mem` may need `S2` for the value: the address in `S1`.
+                    si => {
+                        self.load_src(S2, si);
+                        self.a.x().lea(S1, Mem::Base { base: rp, index: Some((S2, s)), disp: k });
+                        Mem::base(S1, 0)
+                    }
+                };
+                self.store_mem(m, w, args[2]);
             }
             Op::AStore(a, k, n) => self.astore(a, k, n, args[0]),
             Op::OsrLoad(..) => return Err(Unsupported("an OSR load outside an OSR entry")),
@@ -1711,6 +1736,8 @@ impl<'a> E<'a> {
                 Op::Bin(_, w) if w <= 4 => 4,
                 // `pmovmskb` writes a 32-bit register.
                 Op::V(VOp::Msb) => 2,
+                // `count` ends in a 32-bit op (`bsf`, `cmov`, `xor`), and the count fits a byte.
+                Op::Count { .. } => 1,
                 Op::Load(w @ (1 | 2 | 4), _) | Op::ALoad(_, _, w @ (1 | 2 | 4)) => w,
                 Op::Ext { from, to, sx: false } if to > from => from,
                 Op::Ext { from, to, .. } if to <= from => {
@@ -1887,6 +1914,31 @@ impl<'a> E<'a> {
         }
     }
 
+    /// For block `b` ending in `BrCmp Eq|Ne (x & c), 0` where the `and` is its last
+    /// instruction and the branch its only use: the `and`, `x` and `c`, which the terminator
+    /// tests with `test x, c` (the same flags), so the `and` isn't emitted. `x`'s location is
+    /// still intact then: nothing comes between.
+    fn and_test(&self, b: Block) -> Option<(Inst, Value, i64)> {
+        let f = self.f;
+        let bd = &f.blocks[b.idx()];
+        let Term::BrCmp { cc: Cc::Eq | Cc::Ne, w, a, b: z, .. } = bd.term else { return None };
+        if !matches!(self.src(z), Src::Imm(c) if mask(c, w) == 0) || self.uses[a.idx()] != 1 {
+            return None;
+        }
+        let ValueDef::Inst(i, 0) = f.def(a) else { return None };
+        let id = &f.insts[i.idx()];
+        if id.op != Op::Bin(BinOp::And, w) || bd.insts.last() != Some(&i) {
+            return None;
+        }
+        let (x, c) = match (self.src(id.args[0]), self.src(id.args[1])) {
+            (Src::R(_) | Src::M(_), Src::Imm(c)) => (id.args[0], c),
+            (Src::Imm(c), Src::R(_) | Src::M(_)) => (id.args[1], c),
+            _ => return None,
+        };
+        let c = if w == 8 { c as i64 } else { mask(c, w) as i64 };
+        (w != 8 || fits32(c)).then_some((i, x, c))
+    }
+
     /// `cmp a, b` at `w` bytes (`test a, a` for a register against 0: the same flags).
     fn compare(&mut self, a: Value, b: Value, w: u8) {
         let ra = match self.src(a) {
@@ -1969,7 +2021,7 @@ impl<'a> E<'a> {
             res.extend(f.insts[i.idx()].results());
             self.inst(i, &res, pad)?;
         }
-        self.term(&bd.term, next)
+        self.term(b, &bd.term, next)
     }
 
     /// The arguments of the entry block `b` from the ABI registers into their locations.
@@ -1980,8 +2032,10 @@ impl<'a> E<'a> {
     }
 
     /// The terminator `term` of a block laid out before `next`, and its edges' move stubs.
-    fn term(&mut self, term: &Term, next: Option<Block>) -> Result<(), Unsupported> {
-        let mut stubs = Vec::new();
+    fn term(&mut self, b: Block, term: &Term, next: Option<Block>) -> Result<(), Unsupported> {
+        let mut stubs: Vec<(u32, Edge)> = Vec::new();
+        // The label laid out next: the first stub's, else the next block's.
+        let nx = |stubs: &[(u32, Edge)]| stubs.first().map(|s| s.0).or(next.map(|b| b.0));
         match term {
             Term::None => return Err(Unsupported("an unterminated block")),
             Term::Jmp(e) => {
@@ -2007,22 +2061,25 @@ impl<'a> E<'a> {
                         return Ok(());
                     }
                 }
-                let nx = if stubs.is_empty() { next } else { None };
-                self.cond_br(X::Ne, lt, lf, nx);
+                self.cond_br(X::Ne, lt, lf, nx(&stubs));
             }
             Term::BrOvf { t, f } => {
                 let lt = self.edge_label(t, &mut stubs);
                 let lf = self.edge_label(f, &mut stubs);
                 let cc = self.ovf_cc.take().ok_or(Unsupported("an overflow branch without its op"))?;
-                let nx = if stubs.is_empty() { next } else { None };
-                self.cond_br(cc, lt, lf, nx);
+                self.cond_br(cc, lt, lf, nx(&stubs));
             }
             Term::BrCmp { cc, w, a, b: bb, t, f } => {
                 let lt = self.edge_label(t, &mut stubs);
                 let lf = self.edge_label(f, &mut stubs);
-                self.compare(*a, *bb, *w);
-                let nx = if stubs.is_empty() { next } else { None };
-                self.cond_br(xcc(*cc), lt, lf, nx);
+                match self.and_test(b) {
+                    Some((_, x, c)) => {
+                        let rm = self.rm(x, S1).expect("a defined operand");
+                        self.a.x().test_imm(*w, rm, c);
+                    }
+                    None => self.compare(*a, *bb, *w),
+                }
+                self.cond_br(xcc(*cc), lt, lf, nx(&stubs));
             }
             Term::Switch { idx, targets } => {
                 let ls: Vec<u32> = targets.iter().map(|e| self.edge_label(e, &mut stubs)).collect();
@@ -2088,10 +2145,12 @@ impl<'a> E<'a> {
         Ok(())
     }
 
-    fn cond_br(&mut self, cc: X, lt: u32, lf: u32, next: Option<Block>) {
-        if Some(lf) == next.map(|b| b.0) {
+    /// `jcc lt`, `jmp lf`, but for the one of them laid out `next` (a label), which is fallen
+    /// through to.
+    fn cond_br(&mut self, cc: X, lt: u32, lf: u32, next: Option<u32>) {
+        if Some(lf) == next {
             self.a.br(Some(cc), lt);
-        } else if Some(lt) == next.map(|b| b.0) {
+        } else if Some(lt) == next {
             self.a.br(Some(cc.negate()), lf);
         } else {
             self.a.br(Some(cc), lt);

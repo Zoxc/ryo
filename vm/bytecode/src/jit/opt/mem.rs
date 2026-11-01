@@ -37,7 +37,7 @@ pub fn may_write(f: &Func, i: Inst, l: Loc, w: u8) -> bool {
     let id = &f.insts[i.idx()];
     let over = |o: i32, n: u8, k: i32, m: u8| (k as i64) < o as i64 + n as i64 && (o as i64) < k as i64 + m as i64;
     match id.op {
-        Op::Load(..) | Op::ALoad(..) => false,
+        Op::Load(..) | Op::LoadIx(..) | Op::ALoad(..) => false,
         ref op if op.pure() => false,
         Op::Store(n, k) => match l {
             Loc::A(b, _) => aliasable(f, b),

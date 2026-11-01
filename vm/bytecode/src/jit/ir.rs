@@ -428,6 +428,11 @@ pub enum Op {
     Load(u8, i32),
     /// `[p + k] = v` (`w` bytes).
     Store(u8, i32),
+    /// `w` (1 to 8) bytes at `[p + i * s + k]` (`s`: 1, 2, 4 or 8), args `p`, `i`: a load
+    /// through a `PtrIndex`, folded last ([`super::opt::fold::index_addr`]).
+    LoadIx(u8, i32, u8),
+    /// `[p + i * s + k] = v` (`w` bytes, 1 to 8), args `p`, `i`, `v`: [`Op::LoadIx`]'s store.
+    StoreIx(u8, i32, u8),
     /// `w` bytes at byte `k` of a memory alloca.
     ALoad(AllocaId, i32, u8),
     /// The low `n` bytes (1 to 8, or 16 for a vector) of the value to byte `k` of a memory
@@ -1369,6 +1374,8 @@ impl Func {
             Op::AllocaAddr(..) | Op::RefAddr(..) | Op::ALoad(..) | Op::OsrLoad(..) | Op::LandingPad | Op::Island(_) => Vec::new(),
             Op::Load(..) => alloc::vec![8],
             Op::Store(w, _) => alloc::vec![8, *w],
+            Op::LoadIx(..) => alloc::vec![8, 8],
+            Op::StoreIx(w, _, _) => alloc::vec![8, 8, *w],
             Op::AStore(_, _, n) => alloc::vec![if n.is_power_of_two() { *n } else { 8 }],
             Op::HCall(_) => id.args.iter().map(|_| 1).collect(),
             Op::Call(c) => {
