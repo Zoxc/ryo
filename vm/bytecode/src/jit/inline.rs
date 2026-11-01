@@ -1282,7 +1282,9 @@ pub fn splice(f: &mut Func, call: Inst, c: &Func) {
                 for (n, &v) in parts.iter().take(results.len()).enumerate() {
                     let v = map(&mut vmap, f, v);
                     let w = f.w(results[n]);
-                    args.push(if f.w(v) < w && !matches!(f.def(v), ValueDef::Const(_) | ValueDef::Undef) {
+                    // A narrower part is zero-extended; a wider one (a C `signext` return,
+                    // widened by the callee) truncated.
+                    args.push(if f.w(v) > w || f.w(v) < w && !matches!(f.def(v), ValueDef::Const(_) | ValueDef::Undef) {
                         let e = f.inst(cur, Op::Ext { from: f.w(v), to: w, sx: false }, alloc::vec![v], &[w]);
                         f.result(e)
                     } else {

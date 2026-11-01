@@ -213,8 +213,11 @@ pub fn vm_fn_sig<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> Result<Ab
         return native("#[target_feature] not enabled for the crate");
     }
     let sig = abi_sig(tcx, instance)?;
-    if sig.conv != sig::CallConv::Rust {
-        return native("non-Rust ABI");
+    // A non-unwinding `extern "C"` fn is a VM function where `sig.rs` has a plan for its
+    // signature (SysV, shapes the VM passes); other C signatures, and every other ABI, stay
+    // native (`from_fn_abi` already refuses C-unwind and variadic ones).
+    if sig.plan.is_none() {
+        return native("non-Rust ABI without a plan");
     }
     Ok(sig)
 }
@@ -255,6 +258,8 @@ pub struct FnCx<'a, 'tcx> {
     arg_size: u32,
     /// How the function returns ([`ryo_bytecode::asm::RET_SRET`]).
     pub ret_kind: u32,
+    /// [`AbiSig::ret_sext`].
+    pub ret_sext: bool,
     /// The block after the one being lowered, in code order (for fall-through).
     pub next_block: Option<BasicBlock>,
     /// For a `#[track_caller]` function: the slot of its incoming `&'static Location` (the
@@ -304,6 +309,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             cuts: Vec::new(),
             arg_size: sig.plan.as_ref().map_or(0, |p| p.stack_size),
             ret_kind: sig.ret_kind,
+            ret_sext: sig.ret_sext,
             next_block: None,
             fused: None,
             insns: 0,

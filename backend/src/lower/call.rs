@@ -493,6 +493,12 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 self.op(Opcode::StoreCopy, &[p, 0, r.off, size]);
                 self.op(Opcode::Ret, &[p, load_kind(ret_kind(&[RetPart { xmm: false, size: 8, off: 0 }]))])
             }
+            // C's `signext` `i8`/`i16`: widened into a temporary, returned whole.
+            _ if self.ret_sext => {
+                let t = self.temp8();
+                self.op(if size == 1 { Opcode::SextW8W64 } else { Opcode::SextW16W64 }, &[t, r.off]);
+                self.op(Opcode::Ret, &[t, ret_kind(&[RetPart { xmm: false, size: 8, off: 0 }])])
+            }
             k => self.op(Opcode::Ret, &[r.off, load_kind(k)]),
         };
     }

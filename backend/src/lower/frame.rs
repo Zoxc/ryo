@@ -326,7 +326,8 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         for (i, locs) in plan.locs.iter().enumerate() {
             for &l in locs {
                 match l {
-                    ArgLoc::Reg { reg, off } => arg(self, self.frame.arg_homes[i] + off, reg),
+                    // The caller's extension of a C `signext` argument isn't relied on.
+                    ArgLoc::Reg { reg, off } => arg(self, self.frame.arg_homes[i] + off, ArgReg { sext: false, ..reg }),
                     ArgLoc::PtrReg(index) => arg(self, self.frame.arg_ptrs[i].unwrap(), ArgReg { xmm: false, size: 8, index, sext: false }),
                     ArgLoc::Stack { .. } | ArgLoc::StackByval { .. } | ArgLoc::PtrStack(_) => {}
                 }

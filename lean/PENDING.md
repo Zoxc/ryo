@@ -109,3 +109,15 @@ remove it once a Lean session has handled it.
   `cast_pieces` (and `dump_lean.rs` `scalars`) now cut such a unit to 2 bytes when 2 are left
   (an `f16`-sized `xmm` piece) and refuse other sizes (e.g. `{[f16; 3]}`, island), so a return
   no longer stores 8 bytes into a 2-byte value. The Lean plan computation needs the same rule.
+
+- SysV C-ABI definitions (commit "Backend: Compile SysV extern \"C\" fns as VM functions"):
+  non-unwinding `extern "C"` fns whose signature has a plan are VM functions on SysV (the
+  native reason "non-Rust ABI" is now only for signatures without a plan: Win64, C-unwind,
+  variadic, refused shapes). The prologue takes the C plan: `StackByval` copies `size` bytes
+  from `fp + 16 + at` into the input's home; `arg` never carries `sext` (the callee ignores
+  the caller's extension, the prologue clears the bit). A C `signext` 1-/2-byte return
+  (`AbiSig.ret_sext`) is `sext.w{8,16}.w64` into an 8-byte temporary and `ret` of that with
+  an 8-byte part, so the `ret` kind's load width is 8 where the function's (call) kind says 1
+  or 2: the cert/Lean `ret` rule must allow that. The JIT inliner truncates a callee's
+  returned part wider than the call's result (`Ext` to the narrower width). The function
+  certificate's plan carries the C shapes of the previous entry.

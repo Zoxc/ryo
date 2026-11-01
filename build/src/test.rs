@@ -138,6 +138,7 @@ const FAST: &[(&str, &[&str])] = &[
     ("vm_control", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-osr", "ryo-jit-ssa-shuffle", "ryo-fp", "ryo-fp-jit-ssa"]),
     ("vm_calls", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-osr", "ryo-jit-ssa-shuffle", "ryo-cgu16", "ryo-fp", "ryo-fp-jit-ssa"]),
     ("c_abi", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-shuffle"]),
+    ("c_abi_def", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-osr", "ryo-jit-ssa-shuffle"]),
     ("vm_tail", &["ryo", "ryo-jit-ssa", "ryo-jit-ssa-osr", "ryo-jit-ssa-shuffle"]),
     ("vm_cross", &["ryo", "ryo-jit-ssa", "ryo-cgu16"]),
     ("vm_cgu", &["ryo", "ryo-cgu1", "ryo-cgu16", "ryo-cgu256", "ryo-cgu16-share-generics", "ryo-cgu16-O3", "ryo-cgu16-jit-ssa"]),
@@ -1045,7 +1046,7 @@ impl Ctx<'_> {
         let exe = exe.ok_or_else(|| format!("{}: no binary crate", program.name))?;
         let result = self.run(&dir, &exe, variant)?;
         if variant.compiler == Compiler::Ryo && !variant.no_vm && !program.vm.is_empty() {
-            program.check_vm(&vm_fns, !variant.vm_only)?;
+            program.check_vm(&vm_fns, !variant.vm_only, checks::MSVC)?;
         }
         Ok(result)
     }

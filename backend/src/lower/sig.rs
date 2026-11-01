@@ -46,6 +46,9 @@ pub struct AbiSig<'tcx> {
     /// Where each input goes in the platform calling convention; `None` for signatures only
     /// islands call.
     pub plan: Option<ArgPlan>,
+    /// C ABI: the return value is a 1- or 2-byte integer the callee sign-extends to 32 bits
+    /// (`signext`; `zeroext` needs nothing, `ret` loads narrow integers zero-extended).
+    pub ret_sext: bool,
 }
 
 /// Where a piece of an ABI input goes (design/vm.md, "Calls and islands").
@@ -178,7 +181,10 @@ fn from_fn_abi<'tcx>(
         }
         CallConv::C => (0, None),
     };
-    Ok(AbiSig { inputs, output: fn_abi.ret.layout, fields, block_size, conv, caller_location, rust_call: false, ret_kind, plan })
+    let ret_sext = conv == CallConv::C
+        && matches!(fn_abi.ret.mode, PassMode::Direct(a) if a.arg_ext == ArgExtension::Sext)
+        && fn_abi.ret.layout.size.bytes() < 4;
+    Ok(AbiSig { inputs, output: fn_abi.ret.layout, fields, block_size, conv, caller_location, rust_call: false, ret_kind, plan, ret_sext })
 }
 
 /// The signature of a Rust-ABI fn with these (non-spread) inputs: the `call` template's
@@ -186,7 +192,18 @@ fn from_fn_abi<'tcx>(
 pub fn tys_sig<'tcx>(tcx: TyCtxt<'tcx>, inputs: Vec<Ty<'tcx>>, output: Ty<'tcx>) -> Result<AbiSig<'tcx>, NeedsNative> {
     let (fields, block_size) = arg_block(tcx, &inputs)?;
     let output = super::layout_of(tcx, output)?;
-    Ok(AbiSig { inputs, output, fields, block_size, conv: CallConv::Rust, caller_location: false, rust_call: false, ret_kind: 0, plan: None })
+    Ok(AbiSig {
+        inputs,
+        output,
+        fields,
+        block_size,
+        conv: CallConv::Rust,
+        caller_location: false,
+        rust_call: false,
+        ret_kind: 0,
+        plan: None,
+        ret_sext: false,
+    })
 }
 
 /// The argument block for `inputs`: the layout of their tuple (design/lowering.md#frame-slots).

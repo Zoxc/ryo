@@ -1,10 +1,11 @@
-//! The C ABI sweep: VM code calling `extern "C"` functions (native callees, the inline asm
-//! keeps them so), directly and through fn pointers, and native callers of the same callees
-//! for comparison. SysV covers integer extension (`zeroext`/`signext`, in registers and on the
-//! stack), floats, `i128`, aggregates classified per eightbyte (INTEGER, SSE, mixed, a short
-//! tail), `byval` aggregates, returns in mixed registers and sret, and the all-or-nothing rule
-//! for aggregates that don't fit in the registers left. On Win64 the same calls go through the
-//! `call_cN` island; the output is diffed against plain rustc either way.
+//! The C ABI sweep: `extern "C"` functions, native (the inline asm keeps them so) and
+//! compiled by the VM, each called from VM code directly and through fn pointers, and from
+//! native code. SysV covers integer extension (`zeroext`/`signext`, in registers and on the
+//! stack, and returned), floats, `i128`, aggregates classified per eightbyte (INTEGER, SSE,
+//! mixed, a short tail), `byval` aggregates, returns in mixed registers and sret, and the
+//! all-or-nothing rule for aggregates that don't fit in the registers left. On Win64 the
+//! callees stay native and the calls go through the `call_cN` island; the output is diffed
+//! against plain rustc either way.
 #![feature(f16)]
 use std::arch::asm;
 use std::hint::black_box;
@@ -17,7 +18,8 @@ macro_rules! native {
 }
 
 /// A case: the native `extern "C"` callee `$name::callee`, VM callers `direct` and `ptr`
-/// (through a fn pointer), and a native caller.
+/// (through a fn pointer), and a native caller; the same for the VM-compiled callee
+/// `vm_callee`: `vm_direct`, `vm_ptr` and `native_to_vm`.
 macro_rules! case {
     ($name:ident ($($a:ident: $t:ty = $v:expr),* $(,)?) -> $r:ty $body:block) => {
         mod $name {
@@ -42,8 +44,27 @@ macro_rules! case {
                 native!();
                 callee($(black_box($v)),*)
             }
+            #[inline(never)]
+            pub extern "C" fn vm_callee($($a: $t),*) -> $r {
+                $body
+            }
+            #[inline(never)]
+            pub fn vm_direct() -> $r {
+                vm_callee($(black_box($v)),*)
+            }
+            #[inline(never)]
+            pub fn vm_ptr() -> $r {
+                let f: extern "C" fn($($t),*) -> $r = black_box(vm_callee);
+                f($(black_box($v)),*)
+            }
+            #[inline(never)]
+            pub fn native_to_vm() -> $r {
+                native!();
+                vm_callee($(black_box($v)),*)
+            }
             pub fn run() {
                 println!("{}: {:?} {:?} {:?}", stringify!($name), direct(), ptr(), native_caller());
+                println!("{} (VM callee): {:?} {:?} {:?}", stringify!($name), vm_direct(), vm_ptr(), native_to_vm());
             }
         }
     };

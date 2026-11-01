@@ -193,7 +193,7 @@ pub fn run(target: &str) -> Result<(), String> {
             let (reference, _) = link.build(&cmd("rustc"), program, &out.join(program.name).join("rustc"))?;
             let dir = out.join(program.name).join("ryo");
             let (ryo, vm_fns) = link.build(&cmd(&rustc_ryo), program, &dir)?;
-            program.check_vm(&vm_fns, true)?;
+            program.check_vm(&vm_fns, true, crate::target::is_coff(target))?;
             let unwind = if macho { 0 } else { pe_unwind(&info, &dir)? };
             // The image refers to a DLL function both through its `__imp_` slot and directly
             // (design/platforms.md); with the real import library the direct reference
