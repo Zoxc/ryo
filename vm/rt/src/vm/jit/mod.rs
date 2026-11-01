@@ -9,7 +9,9 @@
 //!   cold, bias its counters ([`JitRecord`]), and return into the AOT code; in a compiled
 //!   function they continue into its JIT code instead (at a loop head through its OSR dispatcher). Lock-free: a CAS on
 //!   the record's state, a push onto [`QUEUE`], and a futex wake if the JIT thread sleeps.
-//!   They never compile or allocate, but the first push starts the JIT thread.
+//!   They never compile, allocate or start anything: the JIT thread starts at the
+//!   registration of the runtime's first images ([`start_once`]), and in a forked child at
+//!   its first trip ([`restart_child`]).
 //! - **The JIT thread** takes the whole queue at once ([`next_batch`]), decodes each
 //!   function from its image ([`ryo_bytecode::image::ImageResolver`]), encodes it again
 //!   without counters, installs the code near the image with its unwind information, and
@@ -335,13 +337,31 @@ static QUEUE: AtomicPtr<JitRecord> = AtomicPtr::new(ptr::null_mut());
 static WAKE: AtomicU32 = AtomicU32::new(0);
 /// The JIT thread is asleep or about to be: a push must wake it.
 static SLEEPING: AtomicBool = AtomicBool::new(false);
-/// The first push started the JIT thread.
+/// [`start_once`] ran (or is running): the JIT thread is started once per runtime instance.
+static START_CLAIMED: AtomicBool = AtomicBool::new(false);
+/// The JIT thread was started (or is being started) in [`JIT_PID`].
 static STARTED: AtomicBool = AtomicBool::new(false);
-/// The process the first push started the JIT thread in (0 until it does): a forked child
-/// inherits [`STARTED`] but has no JIT thread, so its trips don't wait for compiles.
+/// The process the JIT thread was started in (0 until it is): a child forked without the
+/// `pthread_atfork` handlers (a raw `fork` syscall) inherits [`STARTED`] but has no JIT
+/// thread, so its trips don't wait for compiles.
 static JIT_PID: AtomicU32 = AtomicU32::new(0);
+/// 1 once the JIT thread took its first batch ([`next_batch`]): it set itself up, which may
+/// take the loader lock (glibc's `__cxa_thread_atexit_impl` for its TLS destructors).
+static JIT_READY: AtomicU32 = AtomicU32::new(0);
 /// The JIT thread couldn't be started: the trips act as the no-op JIT.
 static DISABLED: AtomicBool = AtomicBool::new(false);
+/// The batch the JIT thread works on ([`next_batch`]): its records not yet reported, linked
+/// through [`JitRecord::next`] ([`done`] advances it). A forked child queues them again
+/// ([`fork_child`]): the thread that took them doesn't exist there.
+static IN_FLIGHT: AtomicPtr<JitRecord> = AtomicPtr::new(ptr::null_mut());
+/// A forked child that hasn't restarted its JIT thread yet: its pid, set by [`fork_child`];
+/// its first trip restarts the thread ([`restart_child`]). 0 otherwise.
+static CHILD_RESTART: AtomicU32 = AtomicU32::new(0);
+/// The quiesce lock: the JIT thread holds it around what a forked child couldn't recover
+/// from if the fork landed in the middle (taking a batch, installing code and its unwind
+/// information, unwinding a panic); `pthread_atfork`'s prepare handler takes it, so a fork
+/// waits for the section in progress. 0 free, 1 taken, 2 taken with waiters (a futex).
+static FORK_LOCK: AtomicU32 = AtomicU32::new(0);
 
 /// The trip of a function's entry: `r11` is its JIT record, `rsp` 16-aligned (the caller's
 /// and the stub's return addresses are on it), the argument registers live. Saves them,
@@ -573,20 +593,22 @@ fn trip(rec: *mut JitRecord) -> u32 {
         }
         return JIT_COLD;
     }
+    // A forked child's first trip starts its JIT thread.
+    if CHILD_RESTART.load(Relaxed) != 0 {
+        restart_child();
+    }
     let st = JitRecord::state(rec).load(Acquire);
     if st == JIT_COLD && JitRecord::state(rec).compare_exchange(JIT_COLD, JIT_QUEUED, AcqRel, Acquire).is_ok() {
         push(rec);
     }
     // With `sync`, a queued record keeps its counters unbiased, so that every thread that
     // trips meanwhile waits for the compile too, rather than running on in AOT code. Not
-    // once the process exits on PE: the JIT thread is gone (`sys::exiting`), the wait would
-    // never end, and the record stays queued (its code AOT). Nor in a forked child, which has
-    // no JIT thread (`JIT_PID`).
-    if cfg.sync && !super::sys::exiting() {
-        let has_jit = || {
-            let p = JIT_PID.load(Acquire);
-            p == 0 || p == super::sys::pid()
-        };
+    // where the wait could block what the JIT thread needs, or never end ([`may_wait`]),
+    // nor without a JIT thread in this process: before the start (a record registered by
+    // `ensure` ahead of its constructor), or in a forked child before its restart or
+    // without one (`JIT_PID`).
+    if cfg.sync && may_wait() && ready() {
+        let has_jit = || STARTED.load(Acquire) && JIT_PID.load(Acquire) == super::sys::pid();
         while JitRecord::state(rec).load(Acquire) == JIT_QUEUED && !DISABLED.load(Acquire) && has_jit() {
             futex_wait(JitRecord::state(rec), JIT_QUEUED);
         }
@@ -595,9 +617,53 @@ fn trip(rec: *mut JitRecord) -> u32 {
     JitRecord::state(rec).load(Acquire)
 }
 
-/// Pushes a record that just became `Queued`, starts the JIT thread with the first push, and
-/// wakes it if it sleeps.
+/// Whether a `RYO_JIT_SYNC` trip may wait for the JIT thread here. Not once the process exits
+/// on PE: the JIT thread is gone (`sys::exiting`), the wait would never end, and the record
+/// stays queued (its code AOT). Not under the loader lock (Windows: a DLL's constructor or
+/// `DllMain`), where a JIT thread started meanwhile can't run yet. Not on a signal
+/// handler's alternate stack (unix), where the interrupted thread may hold a lock the JIT
+/// thread needs. `RYO_JIT_SYNC` is for tests: a skipped wait only costs determinism.
+fn may_wait() -> bool {
+    !super::sys::exiting() && !super::sys::in_loader_lock() && !super::sys::on_altstack()
+}
+
+/// Whether the JIT thread is set up, waiting up to 2 s for it: a thread that holds the loader
+/// lock (a constructor `dlopen` runs) would keep it from finishing, so the wait for it
+/// is bounded, and for the compile skipped then.
+fn ready() -> bool {
+    for _ in 0..20 {
+        if JIT_READY.load(Acquire) != 0 {
+            return true;
+        }
+        if !STARTED.load(Acquire) || DISABLED.load(Acquire) {
+            return false;
+        }
+        super::sys::futex_wait_ms(&JIT_READY, 0, 100);
+    }
+    JIT_READY.load(Acquire) != 0
+}
+
+/// Pushes a record that just became `Queued` and wakes the JIT thread if it sleeps. Before
+/// the JIT thread started, the record waits in the queue for it.
 fn push(rec: *mut JitRecord) {
+    link(rec);
+    // A push after a failed start's `DISABLED` store: nothing pops it, but other threads may
+    // wait on the record (`RYO_JIT_SYNC`), having checked `DISABLED` before this push. Fail
+    // what is queued, as the failed start does: a push either precedes its `fail_queued`, or
+    // this load sees its `DISABLED` (the push's Acquire half reads from the swap or later).
+    if DISABLED.load(SeqCst) {
+        fail_queued();
+        return;
+    }
+    WAKE.fetch_add(1, SeqCst);
+    if SLEEPING.load(SeqCst) {
+        futex_wake(&WAKE, 1);
+    }
+}
+
+/// Links `rec`, which just became `Queued` (or is queued again, in a forked child), onto
+/// [`QUEUE`].
+fn link(rec: *mut JitRecord) {
     let mut head = QUEUE.load(Relaxed);
     loop {
         // SAFETY: only this thread writes `next` of a record it moved to `Queued`, until the
@@ -613,28 +679,6 @@ fn push(rec: *mut JitRecord) {
             Err(h) => head = h,
         }
     }
-    if !STARTED.load(Relaxed) && !STARTED.swap(true, AcqRel) {
-        JIT_PID.store(super::sys::pid(), Release);
-        if !start() {
-            // Fail everything queued so far, this record included, and wake its waiters
-            // (`RYO_JIT_SYNC`).
-            DISABLED.store(true, SeqCst);
-            fail_queued();
-            return;
-        }
-    }
-    // A push after a failed start's swap: nothing pops it, but other threads may wait on the
-    // record (`RYO_JIT_SYNC`), having checked `DISABLED` before this push. Fail what is
-    // queued, as the failed start does: a push either precedes its swap, or this load sees
-    // its `DISABLED` (the push's Acquire half reads from the swap or later).
-    if DISABLED.load(SeqCst) {
-        fail_queued();
-        return;
-    }
-    WAKE.fetch_add(1, SeqCst);
-    if SLEEPING.load(SeqCst) {
-        futex_wake(&WAKE, 1);
-    }
 }
 
 /// Fails and wakes the queued records, once the JIT can't start ([`DISABLED`]).
@@ -649,7 +693,7 @@ fn fail_queued() {
     }
 }
 
-/// What the JIT gets: built by the first push, before the JIT starts.
+/// What the JIT gets: built by [`start_once`], before the JIT starts.
 static RT_API: Once<RtApi> = Once::new();
 
 unsafe extern "C" {
@@ -657,9 +701,106 @@ unsafe extern "C" {
     fn rust_eh_personality();
 }
 
-/// Builds [`RT_API`] and starts the JIT thread. Called once, by the first push. False if the
-/// thread couldn't start.
-fn start() -> bool {
+/// Starts the JIT thread, once per runtime instance: called after every registration of a
+/// copy that isn't merged into another (`ryo_vm_register`), so first from the registry
+/// constructor of the runtime's first link unit, or from a merged copy's forwarded one
+/// (design/jit.md#when-the-jit-thread-starts). Never from a trip (`registry::ensure`
+/// registers through `register`, not here). On unix, also registers the fork handlers.
+pub(crate) fn start_once() {
+    if START_CLAIMED.load(Relaxed) || !config().enabled || START_CLAIMED.swap(true, AcqRel) {
+        return;
+    }
+    JIT_PID.store(super::sys::pid(), Release);
+    STARTED.store(true, Release);
+    if !start(false) {
+        // Fail everything queued so far and wake its waiters (`RYO_JIT_SYNC`).
+        DISABLED.store(true, SeqCst);
+        fail_queued();
+        return;
+    }
+    #[cfg(unix)]
+    super::sys::atfork(fork_prepare, fork_parent, fork_child);
+}
+
+/// Restarts the JIT thread in a forked child ([`CHILD_RESTART`]), at its first trip: not on
+/// a signal handler's alternate stack, which leaves it to a later trip, nor in a `vfork`
+/// child of the child, which shares its memory (its pid isn't [`CHILD_RESTART`]).
+#[cold]
+#[inline(never)]
+fn restart_child() {
+    let p = super::sys::pid();
+    if CHILD_RESTART.load(Relaxed) != p || super::sys::on_altstack() || CHILD_RESTART.compare_exchange(p, 0, AcqRel, Relaxed).is_err() {
+        return;
+    }
+    JIT_PID.store(p, Release);
+    STARTED.store(true, Release);
+    if !start(true) {
+        DISABLED.store(true, SeqCst);
+        fail_queued();
+    }
+}
+
+/// Takes [`FORK_LOCK`] ([`RtApi::fork_enter`]).
+extern "C-unwind" fn fork_enter() {
+    if FORK_LOCK.compare_exchange(0, 1, Acquire, Relaxed).is_err() {
+        while FORK_LOCK.swap(2, Acquire) != 0 {
+            futex_wait(&FORK_LOCK, 2);
+        }
+    }
+}
+
+/// Releases [`FORK_LOCK`] ([`RtApi::fork_leave`]).
+extern "C-unwind" fn fork_leave() {
+    if FORK_LOCK.swap(0, Release) == 2 {
+        futex_wake(&FORK_LOCK, 1);
+    }
+}
+
+/// `pthread_atfork`'s prepare handler: waits for the JIT thread's quiesced section in
+/// progress, if any, and keeps it out of the next until [`fork_parent`] or [`fork_child`].
+#[cfg(unix)]
+extern "C-unwind" fn fork_prepare() {
+    fork_enter();
+}
+
+/// `pthread_atfork`'s parent handler.
+#[cfg(unix)]
+extern "C-unwind" fn fork_parent() {
+    fork_leave();
+}
+
+/// `pthread_atfork`'s child handler: atomics only (the child of a multithreaded process may
+/// only make async-signal-safe calls). The child has no JIT thread: its batch goes back to
+/// the queue, and the first trip restarts the thread ([`restart_child`]).
+#[cfg(unix)]
+extern "C-unwind" fn fork_child() {
+    FORK_LOCK.store(0, Relaxed);
+    SLEEPING.store(false, Relaxed);
+    JIT_READY.store(0, Relaxed);
+    let mut list = IN_FLIGHT.swap(ptr::null_mut(), Relaxed);
+    while !list.is_null() {
+        let r = list;
+        // SAFETY: the dead thread's batch: no thread of the child uses its links.
+        list = unsafe { (*r).next };
+        if JitRecord::state(r).load(Relaxed) == JIT_QUEUED {
+            link(r);
+        }
+    }
+    let had = STARTED.swap(false, Relaxed);
+    JIT_PID.store(0, Relaxed);
+    if had && !DISABLED.load(Relaxed) {
+        CHILD_RESTART.store(super::sys::pid(), Release);
+    }
+}
+
+/// Builds [`RT_API`] (`child`: already built by the parent) and starts the JIT thread. False if
+/// the thread couldn't start.
+fn start(child: bool) -> bool {
+    if child {
+        let Some(api) = RT_API.get() else { return false };
+        // SAFETY: as below.
+        return unsafe { ryo_jit_start(api, true) }.is_some();
+    }
     let cfg = config();
     let table = |f: fn(ryo_bytecode::Opcode) -> Option<*const ()>| -> [*const (); ryo_bytecode::Opcode::COUNT] {
         core::array::from_fn(|i| f(ryo_bytecode::ALL_OPCODES[i]).unwrap_or(ptr::null()))
@@ -706,13 +847,15 @@ fn start() -> bool {
         fp_handlers,
         fp_reg_handlers,
         bt_publish: super::backtrace::bt_publish,
+        fork_enter,
+        fork_leave,
     };
     // The JIT thread runs this module's code (the sealed JIT) and reads its images for the
     // rest of the process: pin the module first.
     super::sys::pin_module(start as *const ());
     let Some(api) = RT_API.set_with(|| api) else { super::sys::fatal("the JIT started twice") };
     // SAFETY: the JIT reads `api` only after the start, and it lives forever.
-    let report = unsafe { ryo_jit_start(api) };
+    let report = unsafe { ryo_jit_start(api, false) };
     if let Some(r) = report {
         REPORT.store(r as *mut (), Release);
     }
@@ -721,20 +864,28 @@ fn start() -> bool {
 
 unsafe extern "C" {
     /// The JIT's (`ryo_jit`, `ryo_jit_start_<tag>`): starts its thread and returns its exit report
-    /// (`RYO_JIT_STATS`), or `None` if the thread can't start.
+    /// (`RYO_JIT_STATS`), or `None` if the thread can't start. `child`: again, in a forked
+    /// child.
     #[link_name = tagged!(ryo_bytecode::rt_sym!(jit_start))]
-    fn ryo_jit_start(rt: &'static RtApi) -> Option<extern "C" fn()>;
+    fn ryo_jit_start(rt: &'static RtApi, child: bool) -> Option<extern "C" fn()>;
 }
 
 /// The JIT's exit report, once its thread started (an `extern "C" fn()`).
 static REPORT: AtomicPtr<()> = AtomicPtr::new(ptr::null_mut());
 
 /// [`RtApi::next_batch`]: the queue, in trip order, once it isn't empty (or at once without
-/// `wait`).
+/// `wait`). It becomes [`IN_FLIGHT`], taken under [`FORK_LOCK`] so that a fork sees the
+/// records in one of the two.
 extern "C-unwind" fn next_batch(wait: bool) -> *mut JitRecord {
+    if JIT_READY.load(Relaxed) == 0 {
+        JIT_READY.store(1, Release);
+        futex_wake(&JIT_READY, i32::MAX);
+    }
     loop {
+        fork_enter();
         let mut list = QUEUE.swap(ptr::null_mut(), Acquire);
         if list.is_null() {
+            fork_leave();
             if !wait {
                 return list;
             }
@@ -758,15 +909,21 @@ extern "C-unwind" fn next_batch(wait: bool) -> *mut JitRecord {
                 list = next;
             }
         }
+        IN_FLIGHT.store(order, Relaxed);
+        fork_leave();
         return order;
     }
 }
 
-/// [`RtApi::done`]: fails a record that didn't compile, and wakes its waiters.
+/// [`RtApi::done`]: fails a record that didn't compile, takes it off [`IN_FLIGHT`] (after
+/// it is `Done` or `Failed`, which a forked child doesn't queue again), and wakes its
+/// waiters.
 extern "C-unwind" fn done(rec: *mut JitRecord, ok: bool) {
     if !ok {
         fail(rec);
     }
+    // SAFETY: the JIT thread's record, which it reports in batch order and doesn't unlink.
+    IN_FLIGHT.store(unsafe { (*rec).next }, Relaxed);
     if config().sync {
         futex_wake(JitRecord::state(rec), i32::MAX);
     }
@@ -810,7 +967,7 @@ pub(crate) fn registered(img: &Image<'_>) {
 /// registration.
 static ANNOUNCED: AtomicBool = AtomicBool::new(false);
 /// The process that printed the startup line, which prints the summary unless the JIT thread
-/// started in another process ([`JIT_PID`], a child forked before the first push).
+/// started in another process ([`JIT_PID`]: a forked child that restarted it).
 static ANNOUNCED_PID: AtomicU32 = AtomicU32::new(0);
 
 /// `RYO_JIT_STATS`'s start: the malformed-value warning, the startup line, and the exit
@@ -885,11 +1042,11 @@ extern "C" fn at_exit() {
     let why: &[u8] = if !config().enabled {
         b"JIT off"
     } else if !STARTED.load(Relaxed) {
-        b"no function reached a threshold"
+        b"JIT thread not started"
     } else if DISABLED.load(Relaxed) {
         b"JIT thread failed to start"
     } else if report.is_null() {
-        // `push` sets `STARTED` before `start` stores the report.
+        // `start_once` sets `STARTED` before `start` stores the report.
         b"JIT thread still starting"
     } else {
         // SAFETY: `ryo_jit_start`'s report, an `extern "C" fn()`.

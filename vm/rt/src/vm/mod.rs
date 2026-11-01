@@ -60,5 +60,10 @@ pub(crate) type RegisterFn = unsafe extern "C" fn(*const *const u8, *const *cons
 #[unsafe(export_name = tagged!(ryo_bytecode::rt_sym!(register)))]
 pub unsafe extern "C-unwind" fn ryo_vm_register(start: *const *const u8, end: *const *const u8, anchor: *const u8) {
     // SAFETY: per the caller.
-    unsafe { registry::register(start, end, anchor) }
+    unsafe { registry::register(start, end, anchor) };
+    // The JIT thread starts here, in a constructor (design/jit.md#when-the-jit-thread-starts),
+    // unless this copy forwarded to another, whose `ryo_vm_register` just started its own.
+    if jit::forward().is_none() {
+        jit::start_once();
+    }
 }

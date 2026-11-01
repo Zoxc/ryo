@@ -1,6 +1,6 @@
 //! The JIT (design/jit.md): a background thread that recompiles hot VM functions and
-//! switches them over to the new code. The runtime (`ryo_rt`) starts it with the first
-//! function it queues, through the one symbol this crate exports, [`ryo_jit_start`], and
+//! switches them over to the new code. The runtime (`ryo_rt`) starts it when it registers
+//! its first images, through the one symbol this crate exports, [`ryo_jit_start`], and
 //! the JIT sees the runtime only through the [`RtApi`] it gets there
 //! ([`ryo_bytecode::jit_abi`]).
 //!
@@ -32,14 +32,14 @@ use ryo_bytecode::jit_abi::RtApi;
 /// Starts the JIT thread, which compiles what `rt` queues, and returns its exit report
 /// (`RYO_JIT_STATS`'s summary), which the runtime calls at exit. `None` if the thread didn't
 /// start (always without a JIT for this target); the runtime then acts as the no-op JIT.
-/// Called once per runtime.
+/// Called once per runtime, and again (`child`) in a forked child, which has no thread.
 #[unsafe(export_name = ryo_bytecode::tagged!(ryo_bytecode::rt_sym!(jit_start)))]
-pub extern "C" fn ryo_jit_start(rt: &'static RtApi) -> Option<extern "C" fn()> {
+pub extern "C" fn ryo_jit_start(rt: &'static RtApi, child: bool) -> Option<extern "C" fn()> {
     #[cfg(target_arch = "x86_64")]
-    return (sys::SUPPORTED && thread::start(rt)).then_some(stats::report as extern "C" fn());
+    return (sys::SUPPORTED && thread::start(rt, child)).then_some(stats::report as extern "C" fn());
     #[cfg(not(target_arch = "x86_64"))]
     {
-        let _ = rt;
+        let _ = (rt, child);
         None
     }
 }

@@ -79,6 +79,12 @@ std::thread_local! {
     static IMAGES: core::cell::RefCell<HashMap<usize, Image<'static>>> = core::cell::RefCell::new(HashMap::new());
 }
 
+/// Initializes this thread's [`IMAGES`] (registering its destructor, which takes the loader
+/// lock on glibc), before the JIT thread reports itself ready (`RtApi::next_batch`).
+pub(crate) fn init_tls() {
+    IMAGES.with(|_| ());
+}
+
 /// The registered image whose header is at `header` (parsed once per thread).
 pub(super) fn image_of(header: usize) -> Image<'static> {
     IMAGES.with(|m| {

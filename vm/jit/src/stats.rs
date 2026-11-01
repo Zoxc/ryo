@@ -99,6 +99,12 @@ macro_rules! stats {
                 Stats { $($f: AtomicU64::new(0),)* failed: [const { AtomicU64::new(0) }; FAIL_SLOTS] }
             }
 
+            /// Zeroes every counter: a forked child's JIT counts its own.
+            pub(crate) fn reset(&self) {
+                $(self.$f.store(0, Relaxed);)*
+                self.failed.iter().for_each(|c| c.store(0, Relaxed));
+            }
+
             /// Every counter, each with a `Relaxed` load.
             pub(crate) fn load_all(&self) -> Snapshot {
                 Snapshot { $($f: self.$f.load(Relaxed),)* failed: core::array::from_fn(|i| self.failed[i].load(Relaxed)) }

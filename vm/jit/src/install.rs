@@ -31,6 +31,7 @@ mod callees;
 mod dump;
 mod region;
 
+pub(crate) use callees::init_tls;
 use callees::{Ext, InlineEnv, IrCache, Name, PoolMem};
 use region::{Place, REGION, Region, Span};
 
@@ -442,6 +443,9 @@ impl Jit {
             code[thunk_at..][..6].copy_from_slice(&[0xff, 0x25, 0, 0, 0, 0]);
             code[thunk_at + 6..][..8].copy_from_slice(&(self.rt.seh_handler as u64).to_le_bytes());
         }
+        // Registration and publication: a fork waits for them (`thread::quiesce`), so that a
+        // child never inherits the unwinder's lock taken or a record half published.
+        let _q = crate::thread::quiesce();
         map_and_register(&code, &eh, base, eh_base, mode)?;
         self.publish_calls(job, jit_f, code_len, &calls, &chains);
         self.publish(job, tier, jit_f, osr.is_some().then(|| jit_f + osr_at), code_len, osr_len, ro_at + rodata.len());

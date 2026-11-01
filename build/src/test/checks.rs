@@ -761,6 +761,118 @@ pub(super) fn jit_atomics(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<()
     Ok(())
 }
 
+/// Where the JIT thread starts (design/jit.md#when-the-jit-thread-starts), with every function
+/// compiled at its first call and waited for, each run under a timeout (a deadlock shows as a
+/// hang): `tests/jit_start/`'s
+/// - `fork.rs` (unix): a forked child and its child restart a JIT of their own and compile
+///   (their `RYO_JIT_STATS` summaries count it), a child forked while a compile is pending
+///   (`RYO_JIT_TEST_SLOW`) compiles that record, children forked while the JIT installs code
+///   or unwinds its panics (`RYO_JIT_TEST_PANIC`) can unwind, and `Command` children start no
+///   JIT;
+/// - `signal.rs` (unix): the first trips in a `SIGALRM` handler that interrupts `malloc`, on
+///   the thread's stack and (Linux) on the signal stack;
+/// - `jitlib.rs` (a cdylib) loaded and unloaded at run time by `host.c` (needs a C compiler),
+///   whose constructor calls VM code under the loader lock.
+pub(super) fn jit_start(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
+    let dir = out.join("jit-start");
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let build = |name: &str, kind: &str| -> Result<(), String> {
+        crate::utils::run(
+            cmd(rustc_ryo).arg("--edition=2024").arg(src.join(format!("{name}.rs"))).args(["--crate-type", kind]).arg("--out-dir").arg(&dir),
+        )
+    };
+    let run = |what: &str, exe: &Path, args: &[&str], env: &[(&str, &str)]| -> Result<Captured, String> {
+        let r = crate::utils::output_timeout(
+            Command::new(exe).args(args).envs(super::JIT_SYNC.iter().copied()).envs(env.iter().copied()),
+            std::time::Duration::from_secs(120),
+        )
+        .map_err(|e| format!("jit-start {what} (a deadlock?): {e}"))?;
+        Ok(Captured {
+            status: r.status,
+            stdout: String::from_utf8_lossy(&r.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&r.stderr).into_owned(),
+        })
+    };
+    let fail = |what: &str, r: &Captured, why: &str| {
+        format!("jit-start {what}: {why}, {}\nstdout:\n{}stderr:\n{}", r.status, r.stdout, r.stderr.lines().take(30).collect::<Vec<_>>().join("\n"))
+    };
+    let expect = |what: &str, r: &Captured, want: &str| -> Result<(), String> {
+        if r.status.success() && r.stdout == want { Ok(()) } else { Err(fail(what, r, &format!("expected {want:?}"))) }
+    };
+    build("fork", "bin")?;
+    build("signal", "bin")?;
+    let fork = dir.join(exe_name("fork"));
+    let signal = dir.join(exe_name("signal"));
+    let stats = ("RYO_JIT_STATS", "1");
+    if cfg!(unix) {
+        let r = run("fork", &fork, &["fork"], &[stats])?;
+        expect("fork", &r, "fork ok\n")?;
+        // The parent's, the child's and the grandchild's, each having compiled.
+        let s = summaries(&r.stderr);
+        if s.len() != 3 || s.iter().any(|&(_, compiled)| compiled == 0) {
+            return Err(fail("fork", &r, &format!("expected 3 summaries that compiled, got {s:?}")));
+        }
+        // The loop threshold only `long_loop` (and `long_loop_ref`) reaches, and each compile
+        // delayed: the fork lands while `long_loop`'s is pending.
+        let slow = [("RYO_JIT_THRESHOLD", "1000000000,1000000"), ("RYO_JIT_TEST_SLOW", "500"), stats];
+        let r = run("inflight", &fork, &["inflight"], &slow)?;
+        expect("inflight", &r, "inflight ok\n")?;
+        let s = summaries(&r.stderr);
+        if s.len() != 2 || s.iter().any(|&(_, compiled)| compiled == 0) {
+            return Err(fail("inflight", &r, &format!("expected 2 summaries that compiled, got {s:?}")));
+        }
+        expect("quiesce", &run("quiesce", &fork, &["quiesce"], &[])?, "quiesce ok\n")?;
+        let r = run("quiesce (panics)", &fork, &["quiesce"], &[("RYO_JIT_TEST_PANIC", "1")])?;
+        expect("quiesce (panics)", &r, "quiesce ok\n")?;
+        let r = run("spawn", &fork, &["spawn"], &[stats])?;
+        expect("spawn", &r, "spawn ok\n")?;
+        if summaries(&r.stderr).len() != 1 {
+            return Err(fail("spawn", &r, "expected only the parent's summary"));
+        }
+        expect("signal", &run("signal", &signal, &[], &[])?, "signals ok\n")?;
+        if cfg!(target_os = "linux") {
+            expect("signal (altstack)", &run("signal (altstack)", &signal, &["altstack"], &[])?, "signals ok (altstack)\n")?;
+        }
+    }
+    build("jitlib", "cdylib")?;
+    let Some(mut cc) = c_compiler(false) else {
+        return if MSVC { Err("jit-start: no `cl`".to_owned()) } else { Ok(()) };
+    };
+    let host = dir.join(exe_name("host"));
+    if MSVC {
+        let mut fe = OsString::from("/Fe:");
+        fe.push(&host);
+        cc.current_dir(&dir).arg("/nologo").arg(src.join("host.c")).arg(fe);
+    } else {
+        cc.arg(src.join("host.c")).arg("-o").arg(&host);
+        if cfg!(target_os = "linux") {
+            cc.arg("-ldl");
+        }
+    }
+    capture_ok(&mut cc)?;
+    let lib = dir.join(dll_name("jitlib"));
+    let r = run("dlopen", &host, &[lib.to_str().ok_or("a non-UTF-8 path")?], &[])?;
+    expect("dlopen", &r, "ctor 42 hot 328350000\nunloaded 499999500000\n")
+}
+
+/// The `RYO_JIT_STATS` exit summaries in `stderr`: each one's pid and `compiled` count.
+fn summaries(stderr: &str) -> Vec<(u32, u64)> {
+    let mut out = Vec::new();
+    for l in stderr.lines() {
+        if let Some(rest) = l.strip_prefix("[ryo] jit stats: summary, pid ") {
+            out.push((rest.split(',').next().and_then(|p| p.parse().ok()).unwrap_or(0), u64::MAX));
+        }
+        let w: Vec<&str> = l.split_whitespace().collect();
+        if w.len() > 4
+            && w[..4] == ["[ryo]", "jit", "stats:", "compiled"]
+            && let Some(last) = out.last_mut()
+        {
+            last.1 = w[4].trim_end_matches(':').parse().unwrap_or(0);
+        }
+    }
+    out
+}
+
 /// A call path from `ryo_rt`'s own code to core's panic machinery, through `ryo_bytecode`, if
 /// there is one. Under `--sysroot ryo` the panic handler is std's (VM code), so a panic in the
 /// runtime would enter the VM while it switches state. Everything `ryo_rt`'s rlib defines

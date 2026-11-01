@@ -979,7 +979,8 @@ calls it by name, local otherwise (backtraces, profilers) ([backend.md](backend.
   in the trip, off the hot path): VM code can run before its link unit's constructor where
   constructor order follows link order (Mach-O, [platforms.md](platforms.md#mach-o-x86_64-apple-darwin)),
   and only the JIT needs the registry there (the image's thresholds, `image_at`; Mach-O
-  images have no fixups).
+  images have no fixups). After each registration `ryo_vm_register` starts the JIT thread if
+  it hasn't yet ([jit.md](jit.md#when-the-jit-thread-starts)); `ensure` doesn't.
   It does no other work: it only parses headers (`Image::parse`, O(1)), checks each against
   the images registered before (a linear scan, so
   quadratic in the number of images, which stays in the thousands with cheap steps, and a

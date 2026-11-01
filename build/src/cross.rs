@@ -109,6 +109,9 @@ const RT_IMPORTS_MACHO: &[&str] = &[
     "_mach_vm_read_overwrite",
     // The JIT thread's owning process (`sys.rs`'s `pid`).
     "_getpid",
+    // The fork handlers and the signal-stack check of the JIT's start (`sys.rs`).
+    "_pthread_atfork",
+    "_sigaltstack",
 ];
 
 /// What differs between the object formats `y test --cross` covers.

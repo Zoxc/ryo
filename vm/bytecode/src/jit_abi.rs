@@ -3,10 +3,11 @@
 //! switch a function over to its JIT code. `core` only, so that neither crate depends on the
 //! other.
 //!
-//! The JIT defines one C symbol, `ryo_jit_start_<tag>(rt: &'static RtApi) -> Option<extern "C" fn()>`
-//! (ABI-tagged, [`crate::tagged!`]),
+//! The JIT defines one C symbol, `ryo_jit_start_<tag>(rt: &'static RtApi, child: bool) ->
+//! Option<extern "C" fn()>` (ABI-tagged, [`crate::tagged!`]),
 //! which starts its thread and returns its exit report (`RYO_JIT_STATS`'s summary), or `None`
-//! if the thread doesn't start.
+//! if the thread doesn't start. `child`: a restart in a forked child, whose JIT state (hooks,
+//! `atexit` handlers, statics) the parent set up: only a new thread with a new compiler.
 //! Everything else goes through the [`RtApi`]: the JIT reads the handlers' addresses from
 //! it, takes queued records with [`RtApi::next_batch`], and reports each with
 //! [`RtApi::done`]. Records, images and code are shared memory in the layout of
@@ -152,6 +153,12 @@ pub struct RtApi {
     /// the code can run. The region and its tables are the runtime's from then on, and stay
     /// for the rest of the process. Only the JIT's thread calls it.
     pub bt_publish: extern "C-unwind" fn(region: *mut BtRegion),
+    /// Takes and releases the quiesce lock, which a fork waits for (`pthread_atfork`): the
+    /// JIT's thread holds it around what a forked child couldn't recover from if the fork
+    /// landed in the middle (registering unwind information and publishing code, unwinding a
+    /// panic). Not re-entrant; held for microseconds, never across a compile.
+    pub fork_enter: extern "C-unwind" fn(),
+    pub fork_leave: extern "C-unwind" fn(),
 }
 
 /// The call map of one compilation's code, for backtraces (design/vm.md#source-locations):

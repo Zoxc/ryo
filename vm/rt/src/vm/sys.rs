@@ -146,6 +146,13 @@ mod futex {
         unsafe { syscall(SYS_FUTEX, a.as_ptr(), FUTEX_WAIT_PRIVATE, v, ptr::null::<c_void>()) };
     }
 
+    /// [`wait`], for at most `ms` milliseconds.
+    pub fn wait_ms(a: &AtomicU32, v: u32, ms: u32) {
+        let ts = [(ms / 1000) as i64, (ms % 1000) as i64 * 1_000_000];
+        // SAFETY: a futex wait on a live atomic, with a relative `timespec`.
+        unsafe { syscall(SYS_FUTEX, a.as_ptr(), FUTEX_WAIT_PRIVATE, v, ts.as_ptr()) };
+    }
+
     /// Wakes up to `n` threads waiting on `a`.
     pub fn wake(a: &AtomicU32, n: i32) {
         // SAFETY: a futex wake on a live atomic.
@@ -175,6 +182,12 @@ mod futex {
         unsafe { __ulock_wait(UL_COMPARE_AND_WAIT | ULF_NO_ERRNO, a.as_ptr().cast(), v as u64, 0) };
     }
 
+    /// [`wait`], for at most `ms` milliseconds.
+    pub fn wait_ms(a: &AtomicU32, v: u32, ms: u32) {
+        // SAFETY: as in `wait`, with a timeout.
+        unsafe { __ulock_wait(UL_COMPARE_AND_WAIT | ULF_NO_ERRNO, a.as_ptr().cast(), v as u64, ms.saturating_mul(1000)) };
+    }
+
     /// Wakes one thread waiting on `a`, or all of them.
     pub fn wake(a: &AtomicU32, n: i32) {
         let all = if n == 1 { 0 } else { ULF_WAKE_ALL };
@@ -202,6 +215,12 @@ mod futex {
         unsafe { WaitOnAddress(a.as_ptr().cast(), (&raw const v).cast(), 4, u32::MAX) };
     }
 
+    /// [`wait`], for at most `ms` milliseconds.
+    pub fn wait_ms(a: &AtomicU32, v: u32, ms: u32) {
+        // SAFETY: as in `wait`, with a timeout.
+        unsafe { WaitOnAddress(a.as_ptr().cast(), (&raw const v).cast(), 4, ms) };
+    }
+
     /// Wakes one thread waiting on `a`, or all of them.
     pub fn wake(a: &AtomicU32, n: i32) {
         // SAFETY: a wake on a live atomic.
@@ -209,7 +228,7 @@ mod futex {
     }
 }
 
-pub(crate) use futex::{wait as futex_wait, wake as futex_wake};
+pub(crate) use futex::{wait as futex_wait, wait_ms as futex_wait_ms, wake as futex_wake};
 
 /// The `N` words at `at` in this process, read without faulting; `None` where
 /// unreadable (the merge rendezvous, `jit/merge.rs`).
@@ -378,6 +397,79 @@ impl Bump {
             self.end = c.wrapping_add(CHUNK);
         }
     }
+}
+
+/// Whether the current thread holds the loader lock: on Windows, the `PEB`'s `LoaderLock`
+/// critical section is owned by this thread (a DLL's CRT initializers or `DllMain`, TLS
+/// callbacks), where a thread created meanwhile doesn't run until the lock is released.
+/// Elsewhere always false (ld.so's and dyld's locks don't keep the JIT thread from
+/// compiling).
+pub(crate) fn in_loader_lock() -> bool {
+    #[cfg(windows)]
+    {
+        let (peb, tid): (*const u8, usize);
+        // SAFETY: reads the TEB's `ProcessEnvironmentBlock` (0x60) and
+        // `ClientId.UniqueThread` (0x48), always mapped through `gs`.
+        unsafe {
+            core::arch::asm!("mov {}, gs:[0x60]", out(reg) peb, options(nostack, readonly, preserves_flags));
+            core::arch::asm!("mov {}, gs:[0x48]", out(reg) tid, options(nostack, readonly, preserves_flags));
+        }
+        // SAFETY: the PEB's `LoaderLock` (0x110 on x64), an `RTL_CRITICAL_SECTION` that lives
+        // as long as the process, whose `OwningThread` (0x10) holds the owner's thread id;
+        // read racily, but only this thread can make it equal its own id.
+        unsafe {
+            let cs = ptr::read_volatile(peb.add(0x110).cast::<*const u8>());
+            !cs.is_null() && ptr::read_volatile(cs.add(0x10).cast::<usize>()) == tid
+        }
+    }
+    #[cfg(not(windows))]
+    false
+}
+
+/// Whether the current thread runs on its signal stack (`sigaltstack`'s `SS_ONSTACK`): a
+/// handler of a signal that may have interrupted the thread anywhere. False off unix.
+pub(crate) fn on_altstack() -> bool {
+    #[cfg(unix)]
+    {
+        use core::ffi::{c_int, c_void};
+        #[cfg(not(target_vendor = "apple"))]
+        #[repr(C)]
+        struct StackT {
+            sp: *mut c_void,
+            flags: c_int,
+            size: usize,
+        }
+        #[cfg(target_vendor = "apple")]
+        #[repr(C)]
+        struct StackT {
+            sp: *mut c_void,
+            size: usize,
+            flags: c_int,
+        }
+        unsafe extern "C" {
+            fn sigaltstack(ss: *const StackT, old: *mut StackT) -> c_int;
+        }
+        const SS_ONSTACK: c_int = 1;
+        let mut old = StackT { sp: ptr::null_mut(), flags: 0, size: 0 };
+        // SAFETY: only reads the current signal stack (async-signal-safe).
+        unsafe { sigaltstack(ptr::null(), &mut old) == 0 && old.flags & SS_ONSTACK != 0 }
+    }
+    #[cfg(not(unix))]
+    false
+}
+
+/// Registers fork handlers (`pthread_atfork`): `prepare` in the forking thread before the
+/// fork, `parent` and `child` after it in each process.
+#[cfg(unix)]
+pub(crate) fn atfork(prepare: extern "C-unwind" fn(), parent: extern "C-unwind" fn(), child: extern "C-unwind" fn()) {
+    unsafe extern "C" {
+        // `C-unwind` pointers that this module never calls (a call through one would make
+        // `ryo_rt` require `panic=unwind`); the handlers never unwind.
+        fn pthread_atfork(prepare: extern "C-unwind" fn(), parent: extern "C-unwind" fn(), child: extern "C-unwind" fn()) -> core::ffi::c_int;
+    }
+    // SAFETY: registers plain functions that live for the whole process (the module is
+    // pinned once the JIT starts).
+    unsafe { pthread_atfork(prepare, parent, child) };
 }
 
 /// Whether the process is exiting with its other threads gone: on Windows, `ExitProcess`

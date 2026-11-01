@@ -486,6 +486,7 @@ enum Check {
     JitSealed,
     JitPrivateStd,
     JitAtomics,
+    JitStart,
     RejectUnsupported,
     CguDeterministic,
     CguOwnership,
@@ -504,11 +505,12 @@ enum Check {
 }
 
 impl Check {
-    const ALL: [Check; 17] = [
+    const ALL: [Check; 18] = [
         Check::RtCoreOnly,
         Check::JitSealed,
         Check::JitPrivateStd,
         Check::JitAtomics,
+        Check::JitStart,
         Check::RejectUnsupported,
         Check::CguDeterministic,
         Check::CguOwnership,
@@ -530,6 +532,7 @@ impl Check {
             Check::JitSealed => "jit-sealed",
             Check::JitPrivateStd => "jit-private-std",
             Check::JitAtomics => "jit-atomics",
+            Check::JitStart => "jit-start",
             Check::RejectUnsupported => "reject-unsupported",
             Check::CguDeterministic => "cgu-deterministic",
             Check::CguOwnership => "cgu-ownership",
@@ -552,6 +555,7 @@ impl Check {
             Check::RtCoreOnly | Check::JitSealed => None,
             Check::JitPrivateStd => Some("vm_jit_private.rs"),
             Check::JitAtomics => Some("vm_jit_atomics.rs"),
+            Check::JitStart => Some("jit_start/"),
             Check::RejectUnsupported | Check::MetadataOnly | Check::CargoRyo => Some("hello.rs"),
             Check::CguDeterministic => Some("vm_cgu.rs"),
             Check::CguOwnership => Some("vm_cgu_owner.rs"),
@@ -578,7 +582,7 @@ impl Check {
             | Check::PeImports => sel.fast,
             Check::RtCoreOnly | Check::JitSealed => sel.rt || sel.rt_checks,
             Check::MultiStaticlib | Check::MultiDylib => sel.rt,
-            Check::JitPrivateStd | Check::JitAtomics => sel.jit,
+            Check::JitPrivateStd | Check::JitAtomics | Check::JitStart => sel.jit,
             Check::Incremental | Check::CargoRyo | Check::MultiVersion => false,
         }
     }
@@ -590,6 +594,7 @@ impl Check {
             Check::JitSealed => jit_sealed(info, root, out),
             Check::JitPrivateStd => jit_private_std(rustc_ryo, &src(), out),
             Check::JitAtomics => jit_atomics(rustc_ryo, &src(), out),
+            Check::JitStart => jit_start(rustc_ryo, &src(), out),
             Check::RejectUnsupported => reject_unsupported(rustc_ryo, &src(), out),
             Check::CguDeterministic => cgu_deterministic(rustc_ryo, &src(), out),
             Check::CguOwnership => cgu_ownership(info, rustc_ryo, &src(), out),

@@ -1,8 +1,9 @@
 //! The JIT thread (design/jit.md): compiles what the runtime queued, in trip order,
 //! and reports each function. It sees the runtime only through the [`RtApi`] it starts with.
 
+use core::cell::Cell;
 use core::sync::atomic::AtomicPtr;
-use core::sync::atomic::Ordering::Relaxed;
+use core::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 
 use ryo_bytecode::image::JitRecord;
 use ryo_bytecode::jit_abi::RtApi;
@@ -25,24 +26,111 @@ fn is_jit() -> bool {
     IS_JIT.try_with(|c| c.get()).unwrap_or(false)
 }
 
-/// Starts the JIT thread. False if the thread didn't start.
-pub(crate) fn start(rt: &'static RtApi) -> bool {
-    quiet_panics(rt.settings.log);
-    oom_panics();
-    crate::sys::close_frame_registry_at_exit();
-    let _ = stats::STARTED_AT.set(std::time::Instant::now());
+/// Starts the JIT thread. False if the thread didn't start. `child`: again, in a forked
+/// child, which inherited the hooks, the `atexit` handlers and the start time, and gets its
+/// own counters.
+pub(crate) fn start(rt: &'static RtApi, child: bool) -> bool {
+    RT.store(rt as *const RtApi as *mut RtApi, Release);
+    if child {
+        stats::STATS.reset();
+    } else {
+        quiet_panics(rt.settings.log);
+        oom_panics();
+        crate::sys::close_frame_registry_at_exit();
+        let _ = stats::STARTED_AT.set(std::time::Instant::now());
+    }
     std::thread::Builder::new().name(NAME.into()).spawn(move || main(rt)).is_ok()
+}
+
+/// The runtime's interface, for [`quiesce`].
+static RT: AtomicPtr<RtApi> = AtomicPtr::new(core::ptr::null_mut());
+
+std::thread_local! {
+    /// How many [`quiesce`] sections (and panics, [`quiet_panics`]) this thread is in: the
+    /// outermost takes the runtime's quiesce lock.
+    static QUIESCED: Cell<u32> = const { Cell::new(0) };
+}
+
+/// Holds the runtime's quiesce lock ([`RtApi::fork_enter`]) until dropped: a fork waits until
+/// then, so that a forked child never inherits the section half done. Re-entrant per thread.
+pub(crate) struct Quiesce(());
+
+/// Enters a quiesced section, for what takes locks a forked child couldn't recover (the
+/// unwinder's frame registry, the sealed std's mutexes) or publishes code.
+pub(crate) fn quiesce() -> Quiesce {
+    enter();
+    Quiesce(())
+}
+
+impl Drop for Quiesce {
+    fn drop(&mut self) {
+        leave();
+    }
+}
+
+/// The runtime, once the JIT started (not in unit tests that call into the JIT directly).
+fn rt() -> Option<&'static RtApi> {
+    // SAFETY: the runtime's `&'static RtApi`, or null.
+    unsafe { RT.load(Acquire).as_ref() }
+}
+
+fn enter() {
+    // Without TLS (the thread is exiting) nothing is taken, nor released.
+    if QUIESCED.try_with(|c| c.replace(c.get() + 1)) == Ok(0)
+        && let Some(rt) = rt()
+    {
+        (rt.fork_enter)();
+    }
+}
+
+fn leave() {
+    if QUIESCED.try_with(|c| {
+        c.set(c.get().saturating_sub(1));
+        c.get()
+    }) == Ok(0)
+        && let Some(rt) = rt()
+    {
+        (rt.fork_leave)();
+    }
+}
+
+/// The current [`QUIESCED`] depth.
+fn depth() -> u32 {
+    QUIESCED.try_with(Cell::get).unwrap_or(0)
+}
+
+/// Leaves the sections entered since the depth was `d`: after a caught panic, whose hook
+/// entered one ([`quiet_panics`]).
+fn leave_to(d: u32) {
+    while depth() > d {
+        leave();
+    }
+}
+
+/// `catch_unwind`, leaving the quiesced section a panic in `f` entered.
+fn catch<R>(f: impl FnOnce() -> R) -> std::thread::Result<R> {
+    let d = depth();
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+    if r.is_err() {
+        leave_to(d);
+    }
+    r
 }
 
 /// Keeps the JIT thread's panics, which fail a function and nothing else, off stderr but
 /// with `RYO_JIT_LOG`. Other threads' panics go to the hook before: in the sealed JIT, whose
-/// std is its own, there are none; linked as an rlib (tests), the program's.
+/// std is its own, there are none; linked as an rlib (tests), the program's. On the JIT
+/// thread the unwind that follows is quiesced ([`quiesce`]), until [`catch`] ends it: it
+/// takes the unwinder's locks.
 fn quiet_panics(log: bool) {
     let prev = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         if !is_jit() {
             prev(info);
-        } else if log {
+            return;
+        }
+        enter();
+        if log {
             crate::install::log_line(&format!("ryo-jit: {info}\n"));
         }
     }));
@@ -72,8 +160,57 @@ fn oom_hook(layout: std::alloc::Layout) {
 /// Published records awaiting their re-check, each with how many times it was seen settled (`main`).
 type Recheck = Vec<(*mut JitRecord, u8)>;
 
+/// Releases the quiesce lock if the JIT thread ends holding it (a panic outside [`catch`]),
+/// so that forks don't wait for it forever.
+struct LeaveAll;
+
+impl Drop for LeaveAll {
+    fn drop(&mut self) {
+        leave_to(0);
+    }
+}
+
+/// Blocks the asynchronous signals on the JIT thread: a process-directed signal (`SIGALRM`,
+/// `SIGCHLD`, ...) whose handler is VM code would otherwise trip on this thread and, with
+/// `RYO_JIT_SYNC`, wait for its own compile. The synchronous ones (faults) stay.
+#[cfg(unix)]
+fn block_signals() {
+    use core::ffi::c_int;
+    unsafe extern "C" {
+        fn sigfillset(set: *mut u64) -> c_int;
+        fn sigdelset(set: *mut u64, sig: c_int) -> c_int;
+        fn pthread_sigmask(how: c_int, set: *const u64, old: *mut u64) -> c_int;
+    }
+    // Large enough for every `sigset_t` (glibc's is 128 bytes, Apple's 4).
+    let mut set = [0u64; 16];
+    #[cfg(target_vendor = "apple")]
+    const SIGS: [c_int; 5] = [4, 5, 8, 10, 11]; // SIGILL, SIGTRAP, SIGFPE, SIGBUS, SIGSEGV
+    #[cfg(not(target_vendor = "apple"))]
+    const SIGS: [c_int; 5] = [4, 5, 8, 7, 11];
+    #[cfg(target_vendor = "apple")]
+    const SIG_BLOCK: c_int = 1;
+    #[cfg(not(target_vendor = "apple"))]
+    const SIG_BLOCK: c_int = 0;
+    // SAFETY: plain libc calls on a buffer at least as large as a `sigset_t`.
+    unsafe {
+        sigfillset(set.as_mut_ptr());
+        for s in SIGS {
+            sigdelset(set.as_mut_ptr(), s);
+        }
+        pthread_sigmask(SIG_BLOCK, set.as_ptr(), core::ptr::null_mut());
+    }
+}
+
 fn main(rt: &'static RtApi) {
+    #[cfg(unix)]
+    block_signals();
     IS_JIT.set(true);
+    let _leave = LeaveAll;
+    // `RYO_JIT_TEST_SLOW=<ms>` (tests): every compile starts that late, so that a test can
+    // fork while one is pending.
+    let slow = std::env::var("RYO_JIT_TEST_SLOW").ok().and_then(|v| v.parse().ok()).map(std::time::Duration::from_millis);
+    // Before the first `next_batch`, which tells the runtime the thread is set up.
+    crate::install::init_tls();
     let mut jit = Jit::new(rt);
     // Records published lately, whose counters' bias a racing AOT increment may have erased
     // (`JitRecord`): re-checked after each batch and, while there are any, after a pause
@@ -94,12 +231,14 @@ fn main(rt: &'static RtApi) {
         let mut n = 0;
         while !list.is_null() {
             let rec = list;
-            // SAFETY: the records of a batch are this thread's until it reports them.
-            unsafe {
-                list = (*rec).next;
-                (*rec).next = core::ptr::null_mut();
-            }
+            // SAFETY: the records of a batch are this thread's until it reports them. Their
+            // links stay: the runtime walks the rest of the batch from a reported record
+            // (`IN_FLIGHT`).
+            list = unsafe { (*rec).next };
             n += 1;
+            if let Some(d) = slow {
+                std::thread::sleep(d);
+            }
             compile_one(&mut jit, rt, rec, &mut recheck);
         }
         stats::max(&STATS.largest_batch, n);
@@ -134,10 +273,10 @@ fn compile_one(jit: &mut Jit, rt: &RtApi, rec: *mut JitRecord, recheck: &mut Rec
     // `catch_unwind`s: a panic out of here would end the thread with records unreported.
     // The room for `recheck` is made before the compile, so that a published record is
     // always reported compiled.
-    let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let res = catch(|| {
         recheck.reserve(1);
         jit.compile(rec)
-    }));
+    });
     let why = match res {
         Ok(Ok(())) => None,
         Ok(Err(why)) => Some(why),
@@ -154,7 +293,7 @@ fn compile_one(jit: &mut Jit, rt: &RtApi, rec: *mut JitRecord, recheck: &mut Rec
         // visible to a `RYO_JIT_SYNC` waiter (stats.rs).
         STATS.fail(why);
         if rt.settings.log {
-            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| jit.log(rec, why.message())));
+            let _ = catch(|| jit.log(rec, why.message()));
         }
     }
     (rt.done)(rec, why.is_none());

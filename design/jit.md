@@ -102,11 +102,11 @@ section; its fields and the counter checks and stubs that use it are in
   the JIT thread announced it sleeps; the thread re-checks the queue after announcing, then
   waits on the word's value it read, so no wake is lost. On PE the futex is
   `WaitOnAddress`.
-- **The thread** starts with the first push (a flag swapped once), not at registration,
-  which runs in constructors and under the loader lock: the push builds the `RtApi` and
-  calls `ryo_jit_start`, which spawns the thread (`ryo-jit`) with the JIT's own std. If it
-  can't start (it returns false, as on PE for now, or if the thread doesn't spawn),
-  every queued record fails (its waiters woken) and the trips act as the no-op JIT. It
+- **The thread** starts once per runtime instance, at registration
+  ([below](#when-the-jit-thread-starts)): `start_once` builds the `RtApi`, pins the module
+  and calls `ryo_jit_start`, which spawns the thread (`ryo-jit`) with the JIT's own std. If
+  it can't start (it returns false, or the thread doesn't spawn), every queued record fails
+  (its waiters woken) and the trips act as the no-op JIT. It
   takes the queue with `RtApi::next_batch` (which sleeps on the futex while it is empty),
   compiles each record, catching its panics, and reports it with `RtApi::done` (counted, or
   `Failed`; the waiters woken). It is detached; exiting mid-compile is fine.
@@ -125,6 +125,78 @@ section; its fields and the counter checks and stubs that use it are in
   the unwinder is never reached. Code memory failing to map is an error (`vmem::reserve_code`
   returns `None`: no region, the function fails). The panic itself allocates its payload: a
   failure there is a second panic, which aborts, as in a truly exhausted process.
+
+### When the JIT thread starts
+
+A trip may run anywhere VM code runs: in a signal handler (std's SIGSEGV handler on its
+altstack, with `--sysroot ryo`), in a constructor under the loader lock, on a thread holding
+the malloc, stdio or loader lock (a callee of an interposed `malloc`, a `dl_iterate_phdr`
+callback), in a forked child. Starting a thread there (malloc, `dladdr`/`dlopen`,
+`pthread_create`, a few KiB of tables on an 8 KiB altstack) can deadlock or overflow. So the
+trips start nothing; they are a CAS, a Treiber push and a futex wake.
+
+- **Where**: `ryo_vm_register` calls `start_once` after every registration of a copy that
+  doesn't forward to another ([merge](vm.md#several-ryo-runtimes-in-one-process)): the
+  first is the registry constructor of the instance's first link unit (ELF
+  `.init_array.00000`, PE `.CRT$XCT`, Mach-O `__mod_init_func`), or a losing copy's
+  constructor forwarding to the winner. A constructor never runs in a signal handler; in an
+  executable it runs before `main`, single-threaded, with no loader lock. In a library
+  loaded by `dlopen`/`LoadLibrary` it runs under the loader lock, where creating a thread is
+  allowed as long as nobody waits for it: on Windows the thread doesn't run until the lock is
+  released, on macOS it may block in its first `dl*` call, which delays only the JIT. Once
+  (`START_CLAIMED`), and only with the JIT on.
+- **Not from `registry::ensure`**: a trip that registers its image ahead of its link unit's
+  constructor (a Mach-O constructor placed earlier, a PE TLS callback, an ELF constructor of
+  a dependency calling into an executable) goes through `register`, not `ryo_vm_register`.
+  Its record waits in the queue, and its trips don't wait for it with `RYO_JIT_SYNC`
+  (`STARTED` is false), until the constructor starts the thread.
+- **Cost**: a sleeping thread in every JIT-enabled process (a `pthread_create`, its virtual
+  stack), even if nothing gets hot, and the module is pinned at load (`dlclose` becomes a
+  no-op; `RYO_JIT=off` keeps it unloadable).
+- **`RYO_JIT_SYNC` waits** (`may_wait`) are skipped where they could block what the JIT
+  thread needs: under the loader lock on Windows (`sys::in_loader_lock`: the PEB's
+  `LoaderLock` owned by the current thread, through the TEB), on a signal stack
+  (`sigaltstack`'s `SS_ONSTACK`, where the interrupted thread may hold a lock), at exit on
+  PE (`sys::exiting`), and without a JIT thread in this process (`STARTED`, `JIT_PID`).
+  Under `dlopen`'s lock on Linux the JIT thread's setup blocks too (glibc's
+  `__cxa_thread_atexit_impl`, for its TLS destructors, takes `dl_load_lock`), and that lock
+  can't be queried: so a wait first waits up to 2 s for the thread to be set up (`JIT_READY`, at
+  its first `next_batch`, after it touched its TLS), and skips the compile's wait if it
+  isn't. Once set up, the thread takes no loader lock to compile. The JIT thread blocks
+  asynchronous signals: a process-directed signal whose handler is VM code would otherwise
+  trip there and wait for its own compile.
+
+### Forked children
+
+A child inherits the memory but no thread. Installed records keep working (their code is in
+the inherited regions); queued ones would stay queued. `pthread_atfork` handlers, registered
+by `start_once` (unix), keep the child consistent and let it start a JIT of its own:
+
+- **Quiesce lock** (`FORK_LOCK`, a futex mutex of the runtime, `RtApi::fork_enter`/
+  `fork_leave`): the JIT thread holds it around what a child couldn't recover from if the
+  fork landed in the middle: taking a batch (`next_batch`), registering unwind information
+  and publishing code (`Jit::install`: libgcc's `object_mutex`, the sealed std's
+  `FRAMES_OPEN`, a record half published), and a panic from its hook until `catch_unwind`
+  returns (the unwinder's locks; re-entrant per thread, `thread::quiesce`). Compiling
+  (computation and malloc, whose locks glibc and libSystem reset in the child) runs without
+  it, so it is held for microseconds. Log and stats lines are single `write`s and take no
+  lock.
+- **prepare** takes the lock (waiting for one section at most: the JIT thread never forks),
+  **parent** releases it, **child** (atomics only) resets it, queues the in-flight batch's
+  records that are still `Queued` again (`IN_FLIGHT`: the batch `next_batch` handed out,
+  advanced by `done` once a record is `Done` or `Failed`), clears `STARTED`, `JIT_PID` and
+  `SLEEPING`, and sets `CHILD_RESTART` to its pid.
+- **Restart**: the child's first trip (`restart_child`, not on a signal stack: a later trip
+  then) calls `ryo_jit_start(rt, child = true)`: the same `RtApi` and pin, no new hooks or
+  `atexit` handlers, zeroed counters, a new `Jit` with new regions (the parent's stay mapped
+  and in use; the hint search skips them). Records the dead thread was re-checking
+  (`Recheck`) may stay AOT. A child that never trips (fork + `exec`) never starts a thread.
+  `pthread_create` in the child of a multithreaded process is outside POSIX's
+  async-signal-safe set; glibc and libSystem support it once malloc is reset.
+- **Without the handlers**: `vfork`, `posix_spawn` and `clone(CLONE_VFORK)` run none and
+  share or replace the memory: `CHILD_RESTART` stays 0 (or another process's pid), so they
+  never restart. A raw `fork` syscall's child keeps `STARTED` but not `JIT_PID`'s pid: AOT,
+  no waits.
 
 ## Compiling and installing
 
@@ -921,7 +993,7 @@ rlib bundles (`build/src/jit.rs`, [build.md](build.md#build)):
   other): `extern "C" fn ryo_jit_start(rt: &'static RtApi) -> Option<extern "C" fn()>`, the
   JIT's only symbol, which returns its exit report ([statistics](#statistics)) or `None` if
   its thread didn't start,
-  and `RtApi`, which the runtime builds once, at the first push. Neither carries a version:
+  and `RtApi`, which the runtime builds once, when the JIT starts. Neither carries a version:
   the JIT is built with the runtime ([version-matched](vm.md#image-format)).
   | Field | |
   |---|---|
@@ -998,6 +1070,7 @@ for shuffled frames per image, `RtApi::shuffled`):
 | `RYO_JIT_SHUFFLE=1` | JIT frames in another layout ([OSR](#osr)) |
 | `RYO_JIT_TEST_PANIC=1` | tests: every compile panics, which must fail the function and nothing else |
 | `RYO_JIT_TEST_OOM=1` | tests: every compile fails an allocation (`isize::MAX` bytes), which must fail the function and nothing else |
+| `RYO_JIT_TEST_SLOW=<ms>` | tests: every compile starts that many milliseconds late, so that a test can fork while one is pending |
 | `RYO_JIT_OPT=…` | `ssa` (the default), `ssa-naive` or `reencode`: how functions are compiled ([The SSA pipeline](#the-ssa-pipeline)); with `RYO_JIT_SHUFFLE` the SSA pipeline lays allocas out in reverse with gaps |
 | `RYO_JIT_CHECK=1` | the SSA pipeline's checkers: a failure is printed on stderr and the function falls back |
 | `RYO_JIT_DUMP=dir` | the SSA pipeline writes each function's reduced code, IR before and after value numbering and the folds, locations and code (or, for one it doesn't handle, the reason and the reduced code) to `dir/f<index>-<image header address>.txt`, and every installed function's code with its relocations by name to `dir/f<index>-<image header address>.code` (for `y bench codegen`, [build.md](build.md#test-and-bench)); read by the JIT thread itself, not passed in `RtApi` |
@@ -1033,10 +1106,12 @@ the stderr it compares), each with one `write`:
   state leaves `Queued` (`JitRecord::publish`, `JitRecord::fail`), so a `RYO_JIT_SYNC` waiter
   sees them; the timing counters and `largest_batch` come after, so they can be one behind. Compile timing is gated by `JitSettings::count` (on with stats, and in tests).
 - **Summary**: the `atexit` handler calls the JIT's report (formatted on the stack, no lock,
-  no waiting for the JIT thread), or prints `JIT off`, `no function reached a threshold`,
+  no waiting for the JIT thread), or prints `JIT off`, `JIT thread not started`,
   `JIT thread failed to start` or `JIT thread still starting`. Read mid-compile, the counters needn't balance: `in flight`
-  saturates at 0. A child forked after the first push prints nothing (one forked
-  before it prints the summary of the JIT it starts, but no startup line); `_exit`, `abort`, signals and `exec` skip it.
+  saturates at 0. The start time is the registration's, so it includes the program's idle
+  time. A forked child that restarted its JIT prints its own summary (its pid, its counters
+  since the restart, the time since the parent's start), but no startup line; one that
+  didn't prints nothing. `_exit`, `abort`, signals and `exec` skip it.
 - **Progress** (`2`): the JIT thread checks after each batch, so an idle JIT prints none.
 - With `RYO_JIT_SYNC` in a single-threaded program, everything but the times and the pid is
   deterministic.
@@ -1046,8 +1121,11 @@ the stderr it compares), each with one `write`:
 
 ## Limits
 
-- A child forked after the JIT thread started has no JIT thread: its functions stay AOT (with
-  `RYO_JIT_SYNC` its trips don't wait, `JIT_PID`).
+- A forked child restarts the JIT at its first trip ([forked children](#forked-children));
+  one forked without the `pthread_atfork` handlers stays AOT. A fork from a thread inside
+  `dlopen` while the JIT thread unwinds a panic could wait on ld.so's locks (untested). On
+  macOS the restart is best effort (fork without `exec` of a multithreaded process is
+  fragile there anyway).
 - The JIT runs on Linux, Windows and x86_64 macOS (`sys`). On Windows `y test` passes with the JIT
   from the first call, by OSR, shuffled, with each tier and `RYO_JIT_CHECK=1`, and with
   `RYO_JIT_TEST_PANIC`/`RYO_JIT_TEST_OOM`, including panics unwinding through JIT frames
@@ -1076,7 +1154,7 @@ the stderr it compares), each with one `write`:
   member. Only a link that takes every member (`--whole-archive`) pulls both, and then the
   users' std and `ryo_rt` collide too (unsupported, as for any two Rust staticlibs).
 - The thread starting pins its module (`dladdr` + `dlopen(RTLD_NOLOAD | RTLD_NODELETE)`,
-  `GetModuleHandleExW(PIN)`): `dlclose` of it is a no-op.
+  `GetModuleHandleExW(PIN)`), at load since the start is eager: `dlclose` of it is a no-op.
 - `#![no_std]` final artifacts don't link with the native sysroot: the sealed object needs
   libc, libpthread and the unwinder, which std brings.
 
@@ -1160,6 +1238,13 @@ vector folds and the splat hoist, a vector reassembled from its halves),
   deadlock there), and the same program built with `-Cpanic=abort` and run with
   `RYO_JIT_TEST_PANIC`, and again with `RYO_JIT_TEST_OOM`, which must run as without the
   JIT, logging the failed compiles.
+- **Start and fork**: `jit-start` runs `tests/jit_start/` with `RYO_JIT_SYNC` under a
+  timeout: forked children and grandchildren that restart and compile (their summaries), a
+  fork while a compile is pending (`RYO_JIT_TEST_SLOW`), forks in a loop while the JIT
+  installs code or unwinds `RYO_JIT_TEST_PANIC` panics (each child unwinds), `Command`
+  children without a summary, first trips in a `SIGALRM` handler interrupting `malloc`
+  (on the thread's stack and on the signal stack), and a cdylib loaded and unloaded at run
+  time whose constructor runs VM code under the loader lock.
 - The counters' code shape, its round trips and the trips with `RYO_JIT=off` (the
   no-op JIT; `vm/rt/tests` run with it, `vm::configure_jit_off`) are tested with the encoder ([vm.md](vm.md#jit-records-and-counters)).
 
