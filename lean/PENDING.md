@@ -227,3 +227,13 @@ remove it once a Lean session has handled it.
   `PtrAdd`/`PtrIndex` keep known low bits. It relies on `fp` being 16-aligned and the JIT
   frame layout placing memory allocas congruent to their AOT offset mod 16. A Lean model of
   check elimination (if any) needs these facts as assumptions on the frame.
+
+- Distance folds of placement-free slots (Commit: "JIT SSA: Fold overlap checks against
+  placement-free frame slots"): `opt::checks` (`checks::distances`) folds unsigned
+  threshold compares of `Sub(AllocaAddr(A, k), x)` / `Sub(x, AllocaAddr(A, k))` (and block
+  parameters of such) against constants `<= size - k`, when every use of `A`'s addresses is
+  such a folded compare, a null compare, a known-bits mask, or a select diamond feeding them.
+  The argument is the abstract machine's freedom to place an unobserved allocation, not a
+  property of a concrete frame: a Lean model of check elimination would need a
+  nondeterministic-placement memory model to state it. Also `opt::run` reruns `dce` when
+  `thread` merged a branch.

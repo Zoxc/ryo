@@ -134,6 +134,10 @@ pub fn run(f: &mut Func, mem: Option<&dyn ConstMem>) {
     checks::checks(f);
     hoist::hoist(f);
     dce::dce(f);
-    thread::thread(f);
+    // A branch whose arms emptied (a select diamond on a folded compare) may have held the
+    // last use of a value: of a frame address, say, which promotion needs gone.
+    if thread::thread(f) {
+        dce::dce(f);
+    }
     layout::layout(f);
 }

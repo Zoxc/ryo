@@ -1396,3 +1396,54 @@ fn frame_address_null_and_alignment_checks_fold() {
         assert_eq!(ret_const(&f), want, "{imm}\n{f}");
     }
 }
+
+/// `copy_nonoverlapping`'s overlap check against a slot nothing else sees the address of:
+/// `abs_diff(p, a) >= 16` (a select diamond on `p < a`, then `>= 16`) folds, the address
+/// goes and the slot promotes. `leak` makes the arms differ in more than the difference (so
+/// the direction is observed), `escape` stores the address, `derived` makes `p` the slot's
+/// address plus 4: then the check stays.
+fn overlap_check(leak: bool, escape: bool, derived: bool) -> IrFunc {
+    let p = if derived { Insn::AddImmW64 { d: Slot(-8), a: Slot(-40), imm: 4 } } else { Insn::LoadW64 { d: Slot(-8), m: Mem { p: Slot(-8), k: 0 } } };
+    let (set1, set0) = if leak {
+        (Insn::ImmW64 { d: Slot(-56), imm: 1 }, Insn::ImmW64 { d: Slot(-56), imm: 0 })
+    } else {
+        (Insn::ImmW64 { d: Slot(-56), imm: 7 }, Insn::ImmW64 { d: Slot(-56), imm: 7 })
+    };
+    let esc = if escape { Insn::StoreW64 { m: Mem { p: Slot(-8), k: 16 }, s: Slot(-40) } } else { Insn::ImmW64 { d: Slot(-48), imm: 2 } };
+    let v = vec![
+        arg(-8, 0),
+        Insn::ImmW64 { d: Slot(-56), imm: 7 },
+        Insn::Addr { d: Slot(-40), s: Slot(-32) },
+        p,
+        esc,
+        Insn::BrLtUW64 { a: Slot(-8), b: Slot(-40), neg: F, t: Target(9) },
+        set1,
+        Insn::SubW64 { d: Slot(-48), a: Slot(-8), b: Slot(-40) },
+        Insn::Jmp { t: Target(11) },
+        set0,
+        Insn::SubW64 { d: Slot(-48), a: Slot(-40), b: Slot(-8) },
+        Insn::BrLtUImmW64 { a: Slot(-48), imm: 16, neg: T, t: Target(17) },
+        Insn::LoadW64 { d: Slot(-32), m: Mem { p: Slot(-8), k: 0 } },
+        Insn::LoadW64 { d: Slot(-24), m: Mem { p: Slot(-8), k: 8 } },
+        Insn::AddW64 { d: Slot(-32), a: Slot(-32), b: Slot(-24) },
+        Insn::AddW64 { d: Slot(-32), a: Slot(-32), b: Slot(-56) },
+        Insn::Ret { s: Slot(-32), k: 8 },
+        Insn::Unreachable {},
+    ];
+    let mut f = ir(&decoded(&v, 64, &[(2, -32, 16, ScopeKind::Escape { align: 8 })]));
+    ryo_bytecode::jit::opt::promote::promote(&mut f);
+    opt(f)
+}
+
+#[test]
+fn slot_overlap_check_folds() {
+    let traps = |f: &IrFunc| f.layout.iter().any(|b| matches!(f.blocks[b.idx()].term, Term::Trap));
+    let f = overlap_check(false, false, false);
+    assert!(!traps(&f), "{f}");
+    assert!(!live_ops(&f).iter().any(|o| matches!(o, Op::AllocaAddr(..) | Op::ALoad(..) | Op::AStore(..) | Op::Cmp(..))), "{f}");
+    assert!(f.allocas.iter().all(|a| a.kind == AllocaKind::Promoted), "{f}");
+    for (leak, escape, derived) in [(true, false, false), (false, true, false), (false, false, true)] {
+        let f = overlap_check(leak, escape, derived);
+        assert!(traps(&f), "{leak} {escape} {derived}\n{f}");
+    }
+}

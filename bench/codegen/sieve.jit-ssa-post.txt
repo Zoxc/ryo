@@ -602,8 +602,8 @@ b54(): ; Body
     v44:8, v45:1 = Ovf(Add, false, 8) (v36, v43)
     br ovf ? b18() : b20()
 b55(): ; Body cold
-    v182:8 = RefAddr(k13, false) ()
-    Call(Call { target: image.sym15, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }], parts: [], site: Pad { catch: false } }) (v36, v73, v182)
+    v179:8 = RefAddr(k13, false) ()
+    Call(Call { target: image.sym15, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }], parts: [], site: Pad { catch: false } }) (v36, v73, v179)
     invoke -> - unwind b44()
 b56(): ; Body
     trap
@@ -617,8 +617,8 @@ b60(): ; Body
     v31:1 = LoadIx(1, 0, 1) (v76, v21)
     br v31 ? b11() : b21(v21, v26, v63)
 b61(): ; Body cold
-    v181:8 = RefAddr(k9, false) ()
-    Call(Call { target: image.sym15, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }], parts: [], site: Pad { catch: false } }) (v21, v77, v181)
+    v178:8 = RefAddr(k9, false) ()
+    Call(Call { target: image.sym15, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }], parts: [], site: Pad { catch: false } }) (v21, v77, v178)
     invoke -> - unwind b40()
 b62(): ; Body
     trap
@@ -632,8 +632,8 @@ b66(): ; Body
     Store(1, 1) (v80, 0x0)
     jmp b5(0x2, v1, v0)
 b67(): ; Body cold
-    v183:8 = RefAddr(k5, false) ()
-    Call(Call { target: image.sym15, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }], parts: [], site: Pad { catch: false } }) (0x1, v81, v183)
+    v180:8 = RefAddr(k5, false) ()
+    Call(Call { target: image.sym15, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }], parts: [], site: Pad { catch: false } }) (0x1, v81, v180)
     invoke -> - unwind b36()
 b68(): ; Body
     trap
@@ -649,8 +649,8 @@ b72(): ; Body
     v81:8 = ALoad(AllocaId(35), 16, 8) ()
     br LtU.w8 0x1, v81 ? b66() : b67()
 b73(): ; Body cold
-    v185:8 = RefAddr(k3, false) ()
-    Call(Call { target: image.sym15, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }], parts: [], site: Pad { catch: false } }) (0x0, v130, v185)
+    v182:8 = RefAddr(k3, false) ()
+    Call(Call { target: image.sym15, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }], parts: [], site: Pad { catch: false } }) (0x0, v130, v182)
     invoke -> - unwind b34()
 b74(): ; Body
     trap
@@ -694,24 +694,24 @@ b89(): ; Body
 b90(): ; Body
     trap
 b91(): ; Body
-    v204:8 = Ext { from: 4, to: 8, sx: false } (v105)
-    v206:8 = Ext { from: 2, to: 8, sx: false } (v106)
-    v208:8 = Bin(Shl, 8) (v206, 0x20)
-    v209:8 = Bin(Or, 8) (v204, v208)
-    v211:8 = Ext { from: 1, to: 8, sx: false } (v107)
-    v213:8 = Bin(Shl, 8) (v211, 0x30)
-    v214:8 = Bin(Or, 8) (v209, v213)
-    v216:8 = Ext { from: 1, to: 8, sx: false } (v108)
-    v218:8 = Bin(Shl, 8) (v216, 0x38)
-    v219:8 = Bin(Or, 8) (v214, v218)
-    v221:8 = Bin(ShrU, 8) (v104, 0x20)
-    v223:8 = Bin(ShrU, 8) (v104, 0x30)
-    v225:8 = Bin(ShrU, 8) (v104, 0x38)
+    v201:8 = Ext { from: 4, to: 8, sx: false } (v105)
+    v203:8 = Ext { from: 2, to: 8, sx: false } (v106)
+    v205:8 = Bin(Shl, 8) (v203, 0x20)
+    v206:8 = Bin(Or, 8) (v201, v205)
+    v208:8 = Ext { from: 1, to: 8, sx: false } (v107)
+    v210:8 = Bin(Shl, 8) (v208, 0x30)
+    v211:8 = Bin(Or, 8) (v206, v210)
+    v213:8 = Ext { from: 1, to: 8, sx: false } (v108)
+    v215:8 = Bin(Shl, 8) (v213, 0x38)
+    v216:8 = Bin(Or, 8) (v211, v215)
+    v218:8 = Bin(ShrU, 8) (v104, 0x20)
+    v220:8 = Bin(ShrU, 8) (v104, 0x30)
+    v222:8 = Bin(ShrU, 8) (v104, 0x38)
     AStore(AllocaId(128), 0, 4) (v104)
-    AStore(AllocaId(128), 4, 2) (v221)
-    AStore(AllocaId(128), 6, 1) (v223)
-    AStore(AllocaId(128), 7, 1) (v225)
-    AStore(AllocaId(128), 8, 8) (v219)
+    AStore(AllocaId(128), 4, 2) (v218)
+    AStore(AllocaId(128), 6, 1) (v220)
+    AStore(AllocaId(128), 7, 1) (v222)
+    AStore(AllocaId(128), 8, 8) (v216)
     AStore(AllocaId(128), 16, 8) (0x0)
     v126:8 = AllocaAddr(AllocaId(128), 0) ()
     v127:1 = ALoad(AllocaId(134), 0, 1) ()
@@ -719,8 +719,8 @@ b91(): ; Body
     invoke -> b98() unwind b113()
 b92(): ; Body cold
     v113:8 = RefAddr(image.k1590, false) ()
-    v184:8 = RefAddr(image.k912, false) ()
-    Call(Call { target: image.sym14, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 1, index: 2, sext: false }, ArgReg { xmm: false, size: 8, index: 3, sext: false }], parts: [], site: Nounwind }) (v113, 0x1bb, 0x0, v184)
+    v181:8 = RefAddr(image.k912, false) ()
+    Call(Call { target: image.sym14, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 1, index: 2, sext: false }, ArgReg { xmm: false, size: 8, index: 3, sext: false }], parts: [], site: Nounwind }) (v113, 0x1bb, 0x0, v181)
     trap
 b93(): ; Body
     trap
@@ -732,17 +732,17 @@ b95(): ; Body cold
     v117:2 = ALoad(AllocaId(144), 20, 2) ()
     v118:1 = ALoad(AllocaId(144), 22, 1) ()
     v119:1 = ALoad(AllocaId(144), 23, 1) ()
-    v250:8 = Ext { from: 4, to: 8, sx: false } (v116)
-    v252:8 = Ext { from: 2, to: 8, sx: false } (v117)
-    v254:8 = Bin(Shl, 8) (v252, 0x20)
-    v255:8 = Bin(Or, 8) (v250, v254)
-    v257:8 = Ext { from: 1, to: 8, sx: false } (v118)
-    v259:8 = Bin(Shl, 8) (v257, 0x30)
-    v260:8 = Bin(Or, 8) (v255, v259)
-    v262:8 = Ext { from: 1, to: 8, sx: false } (v119)
-    v264:8 = Bin(Shl, 8) (v262, 0x38)
-    v265:8 = Bin(Or, 8) (v260, v264)
-    Call(Call { target: image.sym8, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }], parts: [], site: Pad { catch: false } }) (v115, v265)
+    v247:8 = Ext { from: 4, to: 8, sx: false } (v116)
+    v249:8 = Ext { from: 2, to: 8, sx: false } (v117)
+    v251:8 = Bin(Shl, 8) (v249, 0x20)
+    v252:8 = Bin(Or, 8) (v247, v251)
+    v254:8 = Ext { from: 1, to: 8, sx: false } (v118)
+    v256:8 = Bin(Shl, 8) (v254, 0x30)
+    v257:8 = Bin(Or, 8) (v252, v256)
+    v259:8 = Ext { from: 1, to: 8, sx: false } (v119)
+    v261:8 = Bin(Shl, 8) (v259, 0x38)
+    v262:8 = Bin(Or, 8) (v257, v261)
+    Call(Call { target: image.sym8, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }], parts: [], site: Pad { catch: false } }) (v115, v262)
     invoke -> - unwind b102()
 b96(): ; Body
     trap
@@ -770,7 +770,7 @@ b103(): ; Body cold
     Call(Call { target: fn19.slot, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }], parts: [], site: Pad { catch: true } }) (v139)
     invoke -> b104() unwind b105()
 b104(): ; Body cold
-    jmp b109(v151)
+    jmp b109(v150)
 b105(): ; Stub cold
     v140:8 = LandingPad ()
     jmp b114()
@@ -780,8 +780,8 @@ b107(): ; Body
     trap
 b108(): ; Body
     trap
-b109(v143:8): ; Body cold
-    hcall resume [(Fp, [None, None]), (Imm(4294967240), [Some(Scratch(0)), None])] ins [0] outs [] (v143)
+b109(v142:8): ; Body cold
+    hcall resume [(Fp, [None, None]), (Imm(4294967240), [Some(Scratch(0)), None])] ins [0] outs [] (v142)
     trap
 b110(): ; Body
     trap
@@ -790,7 +790,7 @@ b111(): ; Body
 b112(): ; Body
     trap
 b113(): ; Stub cold
-    v151:8 = LandingPad ()
+    v150:8 = LandingPad ()
     jmp b103()
 b114(): ; Body cold
     Call(Call { target: sym20, regs: [], parts: [], site: None }) ()

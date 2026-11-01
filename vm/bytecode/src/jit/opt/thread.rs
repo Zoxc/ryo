@@ -47,8 +47,10 @@ fn resolve(f: &Func, uses: &[u32], mut e: Edge, bare: bool) -> Edge {
     e
 }
 
-/// Threads jumps through empty blocks in `f` and drops the blocks left unreachable.
-pub fn thread(f: &mut Func) {
+/// Threads jumps through empty blocks in `f` and drops the blocks left unreachable. Whether a
+/// branch whose edges came to agree became a jump (dropping its operands' uses).
+pub fn thread(f: &mut Func) -> bool {
+    let mut merged = false;
     // Threading copies arguments around, and can pass a value more often than before (a
     // forwarding block that passes a parameter twice): the counts follow each rewritten edge
     // for `forward`. Dropped uses (a branch whose edges agree) only make them higher, which
@@ -69,7 +71,10 @@ pub fn thread(f: &mut Func) {
             }
         }
         t = match t {
-            Term::Br { t, f, .. } | Term::BrCmp { t, f, .. } if t == f => Term::Jmp(t),
+            Term::Br { t, f, .. } | Term::BrCmp { t, f, .. } if t == f => {
+                merged = true;
+                Term::Jmp(t)
+            }
             t => t,
         };
         f.blocks[b].term = t;
@@ -79,4 +84,5 @@ pub fn thread(f: &mut Func) {
     // reached from those.
     f.prune(true);
     f.rebuild_preds();
+    merged
 }

@@ -4,7 +4,10 @@
 //! - an [`Op::Ovf`] that can't overflow becomes a plain [`Op::Bin`], its flag the constant
 //!   0, and a [`Term::BrOvf`] on it a jump to its no-overflow edge;
 //! - a compare or a compare-branch the facts decide becomes a constant or a jump;
-//! - a mask of a frame address's low bits ([`frame_bits`]) becomes a constant.
+//! - a mask of a frame address's low bits ([`addr_facts`]) becomes a constant;
+//! - a distance between a slot no other code can locate and a value not computed from its
+//!   address ([`distances`]) is at least the slot's size, so `copy_nonoverlapping`'s
+//!   `abs_diff(src, dst) >= n` against it holds.
 //!
 //! A fact comes from the edge into a block with that one predecessor, which then holds in
 //! all the blocks it dominates: every path to them takes that edge, and the values in it are
@@ -93,6 +96,9 @@ enum Fact {
 
 struct Walk {
     facts: Vec<Fact>,
+    /// By value: a lower bound on it as a distance from a placement-free slot ([`distances`]),
+    /// 0 for none (empty: none at all).
+    dist: Vec<u32>,
 }
 
 /// How deep [`Walk::range`] looks through definitions.
@@ -207,6 +213,9 @@ impl Walk {
 
     /// Whether `a cc b` at `w` bytes is decided, and how.
     fn decide(&self, f: &Func, cc: Cc, w: u8, a: Value, b: Value) -> Option<bool> {
+        if let Some(r) = dist_decide(f, &self.dist, cc, w, a, b) {
+            return Some(r);
+        }
         if let Some(r) = self.decide_rel(cc, w, a, b) {
             return Some(r);
         }
@@ -441,11 +450,284 @@ fn decide_ranges(cc: Cc, x: Range, y: Range) -> Option<bool> {
     }
 }
 
+/// `a cc b` at `w` bytes decided by a distance bound ([`distances`]): `d >= c` and its
+/// variants for a distance `d` with the bound `L` and a constant `c <= L` (`< L` for `>`).
+fn dist_decide(f: &Func, dist: &[u32], cc: Cc, w: u8, a: Value, b: Value) -> Option<bool> {
+    if w != 8 || dist.is_empty() {
+        return None;
+    }
+    let (cc, d, c) = match (f.const_at(a, 8), f.const_at(b, 8)) {
+        (None, Some(c)) => (cc, a, c),
+        (Some(c), None) => (cc.swap(), b, c),
+        _ => return None,
+    };
+    let l = dist[d.idx()] as u64;
+    match cc {
+        _ if l == 0 => None,
+        Cc::GeU if c <= l => Some(true),
+        Cc::LtU if c <= l => Some(false),
+        Cc::GtU if c < l => Some(true),
+        Cc::LeU if c < l => Some(false),
+        _ => None,
+    }
+}
+
+/// A read of a value.
+#[derive(Clone, Copy)]
+enum Use {
+    Inst(Inst),
+    /// By the block's terminator, not as an edge argument.
+    Term(Block),
+    /// As argument `j` of edge `k` of the block's terminator.
+    Edge(Block, u32, u32),
+}
+
+/// What a value in a slot's address set ([`placement_free`]) is.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Taint {
+    No,
+    /// `AllocaAddr(a, k)`.
+    Addr(i32),
+    /// A difference or a parameter computed from one.
+    Int,
+}
+
+/// Distance bounds by value (design/jit.md, "Check elimination"): for each placement-free
+/// slot `A` of `size` bytes ([`placement_free`]), `Sub(A + k, x)` and `Sub(x, A + k)` with
+/// `x` not computed from `A`'s address are at least `size - k`, and so is a parameter all of
+/// whose arguments are. Empty if there are none.
+///
+/// Why that holds: nothing but these compares observes where `A` is, and they all fold, so
+/// the frame may as well have put `A` (it is the abstract machine's choice where a fresh
+/// allocation goes) at least `size - k` bytes from every such `x` around the address
+/// space; then `A + k - x` and `x - A - k` wrap to no less. A real run agrees whenever `x`
+/// is valid for the `c <= size - k` bytes the compare checks and points to another object
+/// (a pointer can't reach into `A` without its address): `[x, x + c)` and `[A, A + size)`
+/// are disjoint then. So the fold only differs where `x` is invalid for `c` bytes (dangling,
+/// one past the end, made up from an integer), and there it picks a placement too.
+fn distances(f: &Func, rpo: &[Block]) -> Vec<u32> {
+    let mut cand: Vec<bool> = f.allocas.iter().map(|a| a.kind == AllocaKind::Memory && !a.pinned).collect();
+    let mut addrs: Vec<(AllocaId, Value)> = Vec::new();
+    for &b in rpo {
+        for &i in &f.blocks[b.idx()].insts {
+            let op = &f.insts[i.idx()].op;
+            for a in op.named_allocas() {
+                cand[a.idx()] = false;
+            }
+            if let Op::AllocaAddr(a, _) = *op {
+                addrs.push((a, f.result(i)));
+            }
+        }
+    }
+    addrs.retain(|&(a, _)| cand[a.idx()]);
+    if addrs.is_empty() {
+        return Vec::new();
+    }
+    addrs.sort_unstable_by_key(|&(a, v)| (a.0, v.0));
+    // The uses of every value.
+    let mut uses: Vec<Vec<Use>> = alloc::vec![Vec::new(); f.values.len()];
+    for &b in rpo {
+        let bd = &f.blocks[b.idx()];
+        for &i in &bd.insts {
+            for &a in &f.insts[i.idx()].args {
+                uses[a.idx()].push(Use::Inst(i));
+            }
+        }
+        for u in bd.term.uses() {
+            uses[u.idx()].push(Use::Term(b));
+        }
+        for (k, e) in bd.term.edges().enumerate() {
+            for (j, &a) in e.args.iter().enumerate() {
+                uses[a.idx()].push(Use::Edge(b, k as u32, j as u32));
+            }
+        }
+    }
+    let mut dist = alloc::vec![0u32; f.values.len()];
+    let mut taint = alloc::vec![Taint::No; f.values.len()];
+    for group in addrs.chunk_by(|x, y| x.0 == y.0) {
+        let a = group[0].0;
+        let set = placement_free(f, &uses, &mut taint, a, group);
+        if let Some(set) = &set
+            && set.iter().all(|&(v, _)| dist[v.idx()] == 0)
+        {
+            for &(v, l) in set {
+                dist[v.idx()] = l;
+            }
+        }
+    }
+    dist
+}
+
+/// If nothing observes `a`'s address `addrs` but compares that fold, the distance bounds
+/// they rely on ([`distances`]). The address set `T`: the addresses, then the `Sub`s and the
+/// parameters reading a member (no other use: no store, call, return, access through it,
+/// handler or island operand, which would let other values depend on where `a` is). Its
+/// compares (64-bit) must each be decided, by non-null (an address against 0) or by a
+/// distance bound against a constant, or be a select diamond: a branch to two blocks only
+/// it reaches, holding only `Sub`s of `T`, jumping to one join with the same arguments
+/// where they aren't members. Then where `a` is only decides which arm computes a member,
+/// and no value outside `T` depends on it.
+fn placement_free(f: &Func, uses: &[Vec<Use>], taint: &mut [Taint], a: AllocaId, addrs: &[(AllocaId, Value)]) -> Option<Vec<(Value, u32)>> {
+    let size = f.allocas[a.idx()].size;
+    let mut set: Vec<Value> = Vec::new();
+    for &(_, v) in addrs {
+        let Some(&Op::AllocaAddr(_, k)) = f.def_op(v) else { unreachable!() };
+        taint[v.idx()] = Taint::Addr(k);
+        set.push(v);
+    }
+    let r = placement_free_in(f, uses, taint, size, &mut set);
+    for v in set {
+        taint[v.idx()] = Taint::No;
+    }
+    r
+}
+
+fn placement_free_in(f: &Func, uses: &[Vec<Use>], taint: &mut [Taint], size: u32, set: &mut Vec<Value>) -> Option<Vec<(Value, u32)>> {
+    // The closure.
+    let mut n = 0;
+    while n < set.len() {
+        let v = set[n];
+        n += 1;
+        for &u in &uses[v.idx()] {
+            let add = match u {
+                Use::Inst(i) => match f.insts[i.idx()].op {
+                    Op::Bin(BinOp::Sub, 8) => Some(f.result(i)),
+                    Op::Cmp(_, 8) => None,
+                    Op::Bin(BinOp::And, w @ 1..=8) if matches!(taint[v.idx()], Taint::Addr(_)) => {
+                        let [x, y] = f.insts[i.idx()].args2();
+                        masked_addr(f, x, y, w).or_else(|| masked_addr(f, y, x, w))?;
+                        None
+                    }
+                    _ => return None,
+                },
+                Use::Term(b) => match f.blocks[b.idx()].term {
+                    Term::BrCmp { w: 8, .. } => None,
+                    _ => return None,
+                },
+                Use::Edge(b, k, j) => {
+                    if taint[v.idx()] != Taint::Int {
+                        return None;
+                    }
+                    let to = f.blocks[b.idx()].term.edge(k as usize).to;
+                    Some(f.blocks[to.idx()].params[j as usize])
+                }
+            };
+            if let Some(r) = add
+                && taint[r.idx()] == Taint::No
+            {
+                taint[r.idx()] = Taint::Int;
+                set.push(r);
+            }
+        }
+    }
+    // The bounds: differences with outside values, then parameters, to a fixed point.
+    let mut lb: Vec<(Value, u32)> = Vec::new();
+    let bound = |lb: &[(Value, u32)], v: Value| lb.iter().find(|x| x.0 == v).map_or(0, |x| x.1);
+    for &v in set.iter() {
+        if let Some(i) = f.def_inst(v)
+            && let Op::Bin(BinOp::Sub, 8) = f.insts[i.idx()].op
+        {
+            let [x, y] = f.insts[i.idx()].args2();
+            let l = match (taint[x.idx()], taint[y.idx()]) {
+                (Taint::Addr(k), Taint::No) | (Taint::No, Taint::Addr(k)) if (0..size as i64).contains(&(k as i64)) => size - k as u32,
+                _ => 0,
+            };
+            if l > 0 {
+                lb.push((v, l));
+            }
+        }
+    }
+    loop {
+        let mut changed = false;
+        for &v in set.iter() {
+            let ValueDef::Param(b, j) = f.def(v) else { continue };
+            if bound(&lb, v) > 0 {
+                continue;
+            }
+            let preds = &f.blocks[b.idx()].preds;
+            let l = preds.iter().map(|&(p, k)| bound(&lb, f.blocks[p.idx()].term.edge(k as usize).args[j as usize])).min().unwrap_or(0);
+            if l > 0 {
+                lb.push((v, l));
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    // Every compare decided, or a diamond.
+    let dist = |v: Value| bound(&lb, v);
+    let decided = |cc: Cc, x: Value, y: Value| {
+        let k = |v: Value| f.const_at(v, 8);
+        let nonnull =
+            |p: Value, z: Value| matches!(taint[p.idx()], Taint::Addr(_)) && k(z) == Some(0) && addr_facts(f, p, DEPTH).is_some_and(|a| a.nonnull);
+        if matches!(cc, Cc::Eq | Cc::Ne) && (nonnull(x, y) || nonnull(y, x)) {
+            return true;
+        }
+        let (cc, d, c) = match (k(x), k(y)) {
+            (None, Some(c)) => (cc, x, c),
+            (Some(c), None) => (cc.swap(), y, c),
+            _ => return false,
+        };
+        let l = dist(d) as u64;
+        l > 0
+            && match cc {
+                Cc::GeU | Cc::LtU => c <= l,
+                Cc::GtU | Cc::LeU => c < l,
+                _ => false,
+            }
+    };
+    let diamond = |p: Block| -> bool {
+        let (t, e) = match &f.blocks[p.idx()].term {
+            Term::Br { t, f, .. } | Term::BrCmp { t, f, .. } => (t, f),
+            _ => return false,
+        };
+        if t.to == e.to || !t.args.is_empty() || !e.args.is_empty() {
+            return false;
+        }
+        let arm = |s: Block| -> Option<&Edge> {
+            let sd = &f.blocks[s.idx()];
+            let pure = sd.insts.iter().all(|&i| matches!(f.insts[i.idx()].op, Op::Bin(BinOp::Sub, 8)) && taint[f.result(i).idx()] == Taint::Int);
+            match &sd.term {
+                Term::Jmp(j) if sd.preds.len() == 1 && sd.params.is_empty() && pure => Some(j),
+                _ => None,
+            }
+        };
+        let (Some(x), Some(y)) = (arm(t.to), arm(e.to)) else { return false };
+        x.to == y.to && x.args.iter().zip(&y.args).all(|(&u, &v)| u == v || taint[u.idx()] == Taint::Int && taint[v.idx()] == Taint::Int)
+    };
+    for &v in set.iter() {
+        for &u in &uses[v.idx()] {
+            let ok = match u {
+                Use::Inst(i) => match f.insts[i.idx()].op {
+                    Op::Cmp(cc, 8) => {
+                        let [x, y] = f.insts[i.idx()].args2();
+                        decided(cc, x, y)
+                            || uses[f.result(i).idx()]
+                                .iter()
+                                .all(|&u| matches!(u, Use::Term(b) if matches!(f.blocks[b.idx()].term, Term::Br { .. }) && diamond(b)))
+                    }
+                    _ => true,
+                },
+                Use::Term(b) => match f.blocks[b.idx()].term {
+                    Term::BrCmp { cc, a: x, b: y, .. } => decided(cc, x, y) || diamond(b),
+                    _ => false,
+                },
+                Use::Edge(..) => true,
+            };
+            if !ok {
+                return None;
+            }
+        }
+    }
+    Some(lb)
+}
+
 /// Runs check elimination on `f`.
 pub fn checks(f: &mut Func) {
     let rpo = f.rpo();
     let idom = f.idoms(&rpo);
-    let mut w = Walk { facts: Vec::new() };
+    let mut w = Walk { facts: Vec::new(), dist: distances(f, &rpo) };
     let mut changed = false;
     let mut marks: Vec<usize> = Vec::new();
     for e in super::DomWalk::new(&idom, &rpo) {

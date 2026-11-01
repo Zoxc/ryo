@@ -444,7 +444,8 @@ incoming alloca is never null in bounds, nor a `RefAddr` of a constant, data are
 and its low 4 bits are its AOT frame offset's, since `fp` is 16-aligned in both frames and
 memory allocas move only by multiples of 16; `PtrAdd`/`PtrIndex` keep the low bits their
 constant or stride leave known; so `ptr::read`/`write`'s null checks and `& (align - 1)`
-alignment checks of frame addresses fold) and `opt::hoist`,
+alignment checks of frame addresses fold; and distances from placement-free slots, below)
+and `opt::hoist`,
 [loop-invariant code motion](#loop-invariant-code-motion). Last, `opt::dce` marks and sweeps: a value is live when an
 effect, a terminator or a live value reads it, and a parameter's edge arguments only when the
 parameter is live, so pure instructions without live results and dead parameters (dead
@@ -466,6 +467,33 @@ by 1, 2, 4 or 8 whose only uses they are (in its block) into `LoadIx`/`StoreIx`,
 an edge's move stub placed right after the branch) and inverts a branch whose true target is
 next, tests `x & c == 0` with `test x, c` when the `and` is used only by the branch right
 after it, and knows that a `Count` result is zero-extended.
+
+Distances from placement-free slots (`checks::distances`): `copy_nonoverlapping`'s UB check
+(`abs_diff(src, dst) >= n`, on integers) against an inlined frame temporary keeps the slot in
+memory only through that use of its address. A memory alloca `A` (not pinned, no handler or
+island naming it) is placement-free when every use of its addresses `AllocaAddr(A, k)` (the set
+`T`: those, and the `Sub`s and parameters reading a member) is a 64-bit compare that folds (an
+address against 0, or a distance against a constant), a `Sub`, an `and` of known low bits, or an
+edge argument of a difference, or the branch of a select diamond: two arms only it reaches,
+holding only `Sub`s of `T`, jumping to one join with equal arguments where they aren't members
+(the `p < a ? a - p : p - a` of `abs_diff`). Then `Sub(A + k, x)` and `Sub(x, A + k)`, `x`
+outside `T`, are at least `size - k` (so is a parameter all of whose arguments are), and
+`d >= c`, `d < c` (`c <= size - k`) and `d > c`, `d <= c` (`c < size - k`) fold. Soundness:
+nothing else observes where `A` is: no store, call, return, access or handler operand takes
+its address, so no value outside `T` depends on it, and the diamond's branch only chooses which
+arm computes a member. Where a fresh allocation goes is the abstract machine's choice, so the
+frame may as well have put `A` at least `size` bytes from every such `x` around the address
+space (an execution compares finitely many; LLVM's folds of compares against uncaptured
+allocas assume the same). It is no rule about a named callee, and it agrees with a real run
+whenever `x` is valid for the `c` bytes checked: a pointer into another object (it can't
+point into `A` without `A`'s address, which only `T` has) with `[x, x + c)` inside it is
+disjoint from `[A, A + size)`. Integers made pointers, null or dangling ZST pointers (`c` is 0
+for those, nothing to fold), one past the end of an object next to `A`, are the cases where
+the real distance can be smaller, and the fold picks the placement there. A pointer derived
+from `A` (`A + 4`) is in `T` (an `add` of it rejects `A`), and an escaped address (stored,
+passed) rejects `A` too. After the fold the address is dead (`opt::thread` merges the emptied
+diamond, and `opt::dce` runs again when it merged a branch), and promotion scalar-replaces the
+slot.
 
 ### OSR
 

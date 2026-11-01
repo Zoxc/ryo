@@ -8,7 +8,7 @@ a5: $-112, 8 bytes, Promoted
 a6: $-104, 8 bytes, Promoted
 a7: $-96, 8 bytes, Promoted
 a8: $-88, 8 bytes, Promoted
-a9: $-80, 8 bytes, Memory, escaped
+a9: $-80, 8 bytes, Promoted, escaped
 a10: $-72, 8 bytes, Promoted
 a11: $-64, 8 bytes, Promoted
 a12: $-56, 8 bytes, Promoted
@@ -29,8 +29,8 @@ a26: $-128, 8 bytes, Promoted, inlined
 a27: $-120, 8 bytes, Promoted, inlined
 a28: $-112, 8 bytes, Promoted, inlined
 a29: $-104, 8 bytes, Promoted, inlined
-a30: $-96, 4 bytes, Memory, escaped, inlined
-a31: $-92, 2 bytes, Memory, escaped, inlined
+a30: $-96, 4 bytes, Promoted, escaped, inlined
+a31: $-92, 2 bytes, Promoted, escaped, inlined
 a32: $-90, 1 bytes, Promoted, inlined
 a33: $-88, 8 bytes, Promoted, inlined
 a34: $-80, 8 bytes, Promoted, inlined
@@ -299,8 +299,8 @@ a296: $-128, 8 bytes, Promoted, inlined
 a297: $-120, 8 bytes, Promoted, inlined
 a298: $-112, 8 bytes, Promoted, inlined
 a299: $-104, 8 bytes, Promoted, inlined
-a300: $-96, 4 bytes, Memory, escaped, inlined
-a301: $-92, 2 bytes, Memory, escaped, inlined
+a300: $-96, 4 bytes, Promoted, escaped, inlined
+a301: $-92, 2 bytes, Promoted, escaped, inlined
 a302: $-90, 1 bytes, Promoted, inlined
 a303: $-88, 8 bytes, Promoted, inlined
 a304: $-80, 8 bytes, Promoted, inlined
@@ -502,11 +502,9 @@ b0(v0:8, v1:8, v2:8): ; Entry
     br Eq.w8 v6, 0x0 ? b5(0x0) : b1()
 b1(): ; Body
     v10:8 = Bin(Sub, 8) (0x8, v6)
-    AStore(AllocaId(9), 0, 8) (v10)
     br LtU.w8 v10, v2 ? b171() : b172()
 b2(): ; Body head 0
     v14:8 = Load(8, 64) (v0)
-    AStore(AllocaId(9), 0, 8) (v14)
     v17:8 = Bin(Mul, 8) (v14, 0x8)
     v19:8 = Bin(Shl, 8) (v230, v17)
     v20:8 = Load(8, 56) (v0)
@@ -514,8 +512,7 @@ b2(): ; Body head 0
     Store(8, 56) (v0, v21)
     br LtU.w8 v2, v10 ? b3() : b4()
 b3(): ; Body
-    v24:8 = Load(8, 64) (v0)
-    v25:8 = Bin(Add, 8) (v24, v2)
+    v25:8 = Bin(Add, 8) (v14, v2)
     Store(8, 64) (v0, v25)
     jmp b11()
 b4(): ; Body
@@ -534,13 +531,10 @@ b5(v33:8): ; Body
     v37:8 = Bin(And, 8) (v35, 0x7)
     jmp b6(v33, v35, v37, v1, v2, v0)
 b6(v38:8, v39:8, v40:8, v44:8, v45:8, v70:8): ; Body head 1
-    AStore(AllocaId(9), 0, 8) (v38)
     v41:8 = Bin(Sub, 8) (v39, v40)
     br LtU.w8 v38, v41 ? b7() : b10()
 b7(): ; Body
-    AStore(AllocaId(9), 0, 8) (0x0)
     v46:8 = PtrIndex(1) (v44, v38)
-    v47:8 = AllocaAddr(AllocaId(9), 0) ()
     br Eq.w8 v46, 0x0 ? b101() : b92()
 b8(): ; Body
     trap
@@ -582,9 +576,7 @@ b17(): ; Body
 b18(): ; Body
     trap
 b19(): ; Body
-    AStore(AllocaId(30), 0, 4) (0x0)
     v99:8 = PtrIndex(1) (v44, v38)
-    v100:8 = AllocaAddr(AllocaId(30), 0) ()
     br Eq.w8 v99, 0x0 ? b41() : b32()
 b20(): ; Body
     trap
@@ -611,26 +603,23 @@ b30(): ; Body
 b31(): ; Body
     trap
 b32(): ; Body
-    br LtU.w8 v99, v100 ? b34() : b35()
+    v110:4 = Load(4, 0) (v99)
+    v111:8 = Ext { from: 4, to: 8, sx: false } (v110)
+    jmp b45(0x4, v111)
 b33(): ; Body
     trap
 b34(): ; Body
-    v104:8 = Bin(Sub, 8) (v100, v99)
-    jmp b36(v104)
+    trap
 b35(): ; Body
-    v105:8 = Bin(Sub, 8) (v99, v100)
-    jmp b36(v105)
-b36(v106:8): ; Body
-    br GeU.w8 v106, 0x4 ? b39() : b41()
+    trap
+b36(): ; Body
+    trap
 b37(): ; Body
     trap
 b38(): ; Body
     trap
 b39(): ; Body
-    v110:4 = Load(4, 0) (v99)
-    AStore(AllocaId(30), 0, 4) (v110)
-    v111:8 = Ext { from: 4, to: 8, sx: false } (v110)
-    jmp b45(0x4, v111)
+    trap
 b40(): ; Body
     trap
 b41(): ; Body cold
@@ -648,10 +637,8 @@ b45(v112:8, v113:8): ; Body
     v114:8 = Bin(Add, 8) (v112, 0x1)
     br LtU.w8 v114, v40 ? b46() : b72(v112, v113)
 b46(): ; Body
-    AStore(AllocaId(31), 0, 2) (0x0)
     v115:8 = Bin(Add, 8) (v38, v112)
     v116:8 = PtrIndex(1) (v44, v115)
-    v117:8 = AllocaAddr(AllocaId(31), 0) ()
     br Eq.w8 v116, 0x0 ? b68() : b59()
 b47(): ; Body
     trap
@@ -678,30 +665,27 @@ b57(): ; Body
 b58(): ; Body
     trap
 b59(): ; Body
-    br LtU.w8 v116, v117 ? b61() : b62()
-b60(): ; Body
-    trap
-b61(): ; Body
-    v121:8 = Bin(Sub, 8) (v117, v116)
-    jmp b63(v121)
-b62(): ; Body
-    v122:8 = Bin(Sub, 8) (v116, v117)
-    jmp b63(v122)
-b63(v123:8): ; Body
-    br GeU.w8 v123, 0x2 ? b66() : b68()
-b64(): ; Body
-    trap
-b65(): ; Body
-    trap
-b66(): ; Body
     v127:2 = Load(2, 0) (v116)
-    AStore(AllocaId(31), 0, 2) (v127)
     v128:8 = Ext { from: 2, to: 8, sx: false } (v127)
     v129:8 = Bin(Mul, 8) (v112, 0x8)
     v130:8 = Bin(Shl, 8) (v128, v129)
     v131:8 = Bin(Or, 8) (v113, v130)
     v132:8 = Bin(Add, 8) (v112, 0x2)
     jmp b72(v132, v131)
+b60(): ; Body
+    trap
+b61(): ; Body
+    trap
+b62(): ; Body
+    trap
+b63(): ; Body
+    trap
+b64(): ; Body
+    trap
+b65(): ; Body
+    trap
+b66(): ; Body
+    trap
 b67(): ; Body
     trap
 b68(): ; Body cold
@@ -723,7 +707,6 @@ b73(): ; Body
 b74(): ; Body
     trap
 b75(): ; Body
-    AStore(AllocaId(31), 1, 1) (0x1)
     v140:1 = LoadIx(1, 0, 1) (v44, v135)
     v141:8 = Ext { from: 1, to: 8, sx: false } (v140)
     v142:8 = Bin(Mul, 8) (v133, 0x8)
@@ -768,30 +751,26 @@ b90(): ; Body
 b91(): ; Body
     trap
 b92(): ; Body
-    br LtU.w8 v46, v47 ? b94() : b95()
+    v80:8 = Load(8, 0) (v46)
+    v84:8 = Load(8, 24) (v70)
+    v85:8 = Bin(Xor, 8) (v84, v80)
+    Store(8, 24) (v70, v85)
+    Call(Call { target: fn1, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }], parts: [], site: Continue }) (v70)
+    jmp b9(v70, v80, v38, v39, v40, v44, v45)
 b93(): ; Body
     trap
 b94(): ; Body
-    v174:8 = Bin(Sub, 8) (v47, v46)
-    jmp b96(v174)
+    trap
 b95(): ; Body
-    v175:8 = Bin(Sub, 8) (v46, v47)
-    jmp b96(v175)
-b96(v176:8): ; Body
-    br GeU.w8 v176, 0x8 ? b99() : b101()
+    trap
+b96(): ; Body
+    trap
 b97(): ; Body
     trap
 b98(): ; Body
     trap
 b99(): ; Body
-    v80:8 = Load(8, 0) (v46)
-    AStore(AllocaId(9), 0, 8) (v80)
-    v84:8 = Load(8, 24) (v70)
-    v85:8 = Bin(Xor, 8) (v84, v80)
-    Store(8, 24) (v70, v85)
-    AStore(AllocaId(9), 0, 8) (v70)
-    Call(Call { target: fn1, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }], parts: [], site: Continue }) (v70)
-    jmp b9(v70, v80, v38, v39, v40, v44, v45)
+    trap
 b100(): ; Body
     trap
 b101(): ; Body cold
@@ -808,8 +787,6 @@ b104(): ; Body
 b105(): ; Body
     trap
 b106(): ; Body
-    AStore(AllocaId(300), 0, 4) (0x0)
-    v187:8 = AllocaAddr(AllocaId(300), 0) ()
     br Eq.w8 v1, 0x0 ? b128() : b119()
 b107(): ; Body
     trap
@@ -836,26 +813,23 @@ b117(): ; Body
 b118(): ; Body
     trap
 b119(): ; Body
-    br LtU.w8 v1, v187 ? b121() : b122()
+    v197:4 = Load(4, 0) (v1)
+    v198:8 = Ext { from: 4, to: 8, sx: false } (v197)
+    jmp b132(0x4, v198)
 b120(): ; Body
     trap
 b121(): ; Body
-    v191:8 = Bin(Sub, 8) (v187, v1)
-    jmp b123(v191)
+    trap
 b122(): ; Body
-    v192:8 = Bin(Sub, 8) (v1, v187)
-    jmp b123(v192)
-b123(v193:8): ; Body
-    br GeU.w8 v193, 0x4 ? b126() : b128()
+    trap
+b123(): ; Body
+    trap
 b124(): ; Body
     trap
 b125(): ; Body
     trap
 b126(): ; Body
-    v197:4 = Load(4, 0) (v1)
-    AStore(AllocaId(300), 0, 4) (v197)
-    v198:8 = Ext { from: 4, to: 8, sx: false } (v197)
-    jmp b132(0x4, v198)
+    trap
 b127(): ; Body
     trap
 b128(): ; Body cold
@@ -873,9 +847,7 @@ b132(v199:8, v200:8): ; Body
     v201:8 = Bin(Add, 8) (v199, 0x1)
     br LtU.w8 v201, v265 ? b133() : b159(v199, v200)
 b133(): ; Body
-    AStore(AllocaId(301), 0, 2) (0x0)
     v202:8 = PtrIndex(1) (v1, v199)
-    v203:8 = AllocaAddr(AllocaId(301), 0) ()
     br Eq.w8 v202, 0x0 ? b155() : b146()
 b134(): ; Body
     trap
@@ -902,30 +874,27 @@ b144(): ; Body
 b145(): ; Body
     trap
 b146(): ; Body
-    br LtU.w8 v202, v203 ? b148() : b149()
-b147(): ; Body
-    trap
-b148(): ; Body
-    v207:8 = Bin(Sub, 8) (v203, v202)
-    jmp b150(v207)
-b149(): ; Body
-    v208:8 = Bin(Sub, 8) (v202, v203)
-    jmp b150(v208)
-b150(v209:8): ; Body
-    br GeU.w8 v209, 0x2 ? b153() : b155()
-b151(): ; Body
-    trap
-b152(): ; Body
-    trap
-b153(): ; Body
     v213:2 = Load(2, 0) (v202)
-    AStore(AllocaId(301), 0, 2) (v213)
     v214:8 = Ext { from: 2, to: 8, sx: false } (v213)
     v215:8 = Bin(Mul, 8) (v199, 0x8)
     v216:8 = Bin(Shl, 8) (v214, v215)
     v217:8 = Bin(Or, 8) (v200, v216)
     v218:8 = Bin(Add, 8) (v199, 0x2)
     jmp b159(v218, v217)
+b147(): ; Body
+    trap
+b148(): ; Body
+    trap
+b149(): ; Body
+    trap
+b150(): ; Body
+    trap
+b151(): ; Body
+    trap
+b152(): ; Body
+    trap
+b153(): ; Body
+    trap
 b154(): ; Body
     trap
 b155(): ; Body cold
@@ -946,7 +915,6 @@ b160(): ; Body
 b161(): ; Body
     trap
 b162(): ; Body
-    AStore(AllocaId(301), 1, 1) (0x1)
     v225:1 = LoadIx(1, 0, 1) (v1, v219)
     v226:8 = Ext { from: 1, to: 8, sx: false } (v225)
     v227:8 = Bin(Mul, 8) (v219, 0x8)
@@ -2257,8 +2225,8 @@ a7: $-128, 8 bytes, Promoted
 a8: $-120, 8 bytes, Promoted
 a9: $-112, 8 bytes, Promoted
 a10: $-104, 8 bytes, Promoted
-a11: $-96, 4 bytes, Memory, escaped
-a12: $-92, 2 bytes, Memory, escaped
+a11: $-96, 4 bytes, Promoted, escaped
+a12: $-92, 2 bytes, Promoted, escaped
 a13: $-90, 1 bytes, Promoted
 a14: $-88, 8 bytes, Promoted
 a15: $-80, 8 bytes, Promoted
@@ -2442,9 +2410,7 @@ a192: $-1, 1 bytes, Promoted, inlined
 b0(v0:8, v1:8, v2:8, v3:8): ; Entry
     br LtU.w8 0x3, v3 ? b1() : b3(0x0, 0x0)
 b1(): ; Body
-    AStore(AllocaId(11), 0, 4) (0x0)
     v10:8 = PtrIndex(1) (v0, v2)
-    v11:8 = AllocaAddr(AllocaId(11), 0) ()
     br Eq.w8 v10, 0x0 ? b67() : b58()
 b2(): ; Body
     trap
@@ -2452,10 +2418,8 @@ b3(v13:8, v61:8): ; Body head 0
     v15:8 = Bin(Add, 8) (v13, 0x1)
     br LtU.w8 v15, v3 ? b4() : b6(v13, v61)
 b4(): ; Body
-    AStore(AllocaId(12), 0, 2) (0x0)
     v21:8 = Bin(Add, 8) (v2, v13)
     v22:8 = PtrIndex(1) (v0, v21)
-    v23:8 = AllocaAddr(AllocaId(12), 0) ()
     br Eq.w8 v22, 0x0 ? b42() : b33()
 b5(): ; Body
     trap
@@ -2485,7 +2449,6 @@ b16(): ; Body
 b17(): ; Body
     trap
 b18(): ; Body
-    AStore(AllocaId(12), 1, 1) (0x1)
     v77:1 = LoadIx(1, 0, 1) (v0, v28)
     v78:8 = Ext { from: 1, to: 8, sx: false } (v77)
     v81:8 = Bin(Mul, 8) (v25, 0x8)
@@ -2524,30 +2487,27 @@ b31(): ; Body
 b32(): ; Body
     trap
 b33(): ; Body
-    br LtU.w8 v22, v23 ? b35() : b36()
-b34(): ; Body
-    trap
-b35(): ; Body
-    v95:8 = Bin(Sub, 8) (v23, v22)
-    jmp b37(v95)
-b36(): ; Body
-    v96:8 = Bin(Sub, 8) (v22, v23)
-    jmp b37(v96)
-b37(v97:8): ; Body
-    br GeU.w8 v97, 0x2 ? b40() : b42()
-b38(): ; Body
-    trap
-b39(): ; Body
-    trap
-b40(): ; Body
     v52:2 = Load(2, 0) (v22)
-    AStore(AllocaId(12), 0, 2) (v52)
     v55:8 = Ext { from: 2, to: 8, sx: false } (v52)
     v58:8 = Bin(Mul, 8) (v13, 0x8)
     v59:8 = Bin(Shl, 8) (v55, v58)
     v62:8 = Bin(Or, 8) (v61, v59)
     v64:8 = Bin(Add, 8) (v13, 0x2)
     jmp b6(v64, v62)
+b34(): ; Body
+    trap
+b35(): ; Body
+    trap
+b36(): ; Body
+    trap
+b37(): ; Body
+    trap
+b38(): ; Body
+    trap
+b39(): ; Body
+    trap
+b40(): ; Body
+    trap
 b41(): ; Body
     trap
 b42(): ; Body cold
@@ -2586,26 +2546,23 @@ b56(): ; Body
 b57(): ; Body
     trap
 b58(): ; Body
-    br LtU.w8 v10, v11 ? b60() : b61()
+    v36:4 = Load(4, 0) (v10)
+    v39:8 = Ext { from: 4, to: 8, sx: false } (v36)
+    jmp b3(0x4, v39)
 b59(): ; Body
     trap
 b60(): ; Body
-    v110:8 = Bin(Sub, 8) (v11, v10)
-    jmp b62(v110)
+    trap
 b61(): ; Body
-    v111:8 = Bin(Sub, 8) (v10, v11)
-    jmp b62(v111)
-b62(v112:8): ; Body
-    br GeU.w8 v112, 0x4 ? b65() : b67()
+    trap
+b62(): ; Body
+    trap
 b63(): ; Body
     trap
 b64(): ; Body
     trap
 b65(): ; Body
-    v36:4 = Load(4, 0) (v10)
-    AStore(AllocaId(11), 0, 4) (v36)
-    v39:8 = Ext { from: 4, to: 8, sx: false } (v36)
-    jmp b3(0x4, v39)
+    trap
 b66(): ; Body
     trap
 b67(): ; Body cold
@@ -2779,7 +2736,7 @@ a102: $-16, 16 bytes, Promoted, inlined
 a103: $-72, 8 bytes, Promoted, inlined
 a104: $-64, 8 bytes, Promoted, inlined
 a105: $-56, 8 bytes, Promoted, inlined
-a106: $-48, 16 bytes, Memory, escaped, inlined
+a106: $-48, 16 bytes, Promoted, escaped, inlined
 a107: $-32, 8 bytes, Promoted, inlined
 a108: $-24, 8 bytes, Promoted, inlined
 a109: $-16, 8 bytes, Promoted, inlined
@@ -2923,7 +2880,7 @@ a246: $-16, 16 bytes, Promoted, inlined
 a247: $-72, 8 bytes, Promoted, inlined
 a248: $-64, 8 bytes, Promoted, inlined
 a249: $-56, 8 bytes, Promoted, inlined
-a250: $-48, 16 bytes, Memory, escaped, inlined
+a250: $-48, 16 bytes, Promoted, escaped, inlined
 a251: $-32, 8 bytes, Promoted, inlined
 a252: $-24, 8 bytes, Promoted, inlined
 a253: $-16, 8 bytes, Promoted, inlined
@@ -3139,9 +3096,6 @@ b10(): ; Body
     v62:8 = Load(8, 8) (v446)
     v63:8 = Bin(And, 8) (v61, v62)
     v65:8 = PtrIndex(1) (v57, v63)
-    AStore(AllocaId(250), 0, 8) (0x0)
-    AStore(AllocaId(250), 8, 8) (0x0)
-    v67:8 = AllocaAddr(AllocaId(250), 0) ()
     br Eq.w8 v65, 0x0 ? b81() : b71()
 b11(): ; Body
     trap
@@ -3194,27 +3148,27 @@ b29(): ; Body
 b30(): ; Body cold
     trap
 b31(): ; Osr(0)
-    v460:8 = OsrLoad(-8, 8) ()
-    jmp b2(v460)
+    v458:8 = OsrLoad(-8, 8) ()
+    jmp b2(v458)
 b32(): ; Osr(1)
     v37:8 = OsrLoad(-152, 8) ()
-    v461:8 = OsrLoad(-8, 8) ()
-    jmp b5(v37, v461)
+    v459:8 = OsrLoad(-8, 8) ()
+    jmp b5(v37, v459)
 b33(): ; Osr(3)
     v43:1 = OsrLoad(-177, 1) ()
     v44:8 = OsrLoad(-160, 8) ()
-    v464:8 = OsrLoad(-8, 8) ()
-    jmp b8(v43, v44, v464)
+    v462:8 = OsrLoad(-8, 8) ()
+    jmp b8(v43, v44, v462)
 b34(): ; Osr(6)
     v47:8 = OsrLoad(-168, 8) ()
     v49:8 = OsrLoad(-160, 8) ()
-    v463:8 = OsrLoad(-8, 8) ()
-    jmp b22(v47, v49, v463)
+    v461:8 = OsrLoad(-8, 8) ()
+    jmp b22(v47, v49, v461)
 b35(): ; Osr(7)
     v53:8 = OsrLoad(-168, 8) ()
     v54:8 = OsrLoad(-160, 8) ()
-    v462:8 = OsrLoad(-8, 8) ()
-    jmp b27(v53, v54, v462)
+    v460:8 = OsrLoad(-8, 8) ()
+    jmp b27(v53, v54, v460)
 b36(): ; Body
     trap
 b37(): ; Body cold
@@ -3286,38 +3240,28 @@ b69(): ; Body
 b70(): ; Body
     trap
 b71(): ; Body
-    br LtU.w8 v65, v67 ? b74() : b75()
+    v364:16 = Load(16, 0) (v65)
+    v84:16 = VConst(340282366920938463463374607431768211455) ()
+    v115:16 = V(Eq) (v364, v84)
+    v124:2 = V(Msb) (v115)
+    v129:8 = PtrIndex(1) (v57, v60)
+    br Eq.w8 v129, 0x0 ? b134() : b124()
 b72(): ; Body
     trap
 b73(): ; Body
     trap
 b74(): ; Body
-    v74:8 = Bin(Sub, 8) (v67, v65)
-    jmp b76(v74)
+    trap
 b75(): ; Body
-    v75:8 = Bin(Sub, 8) (v65, v67)
-    jmp b76(v75)
-b76(v76:8): ; Body
-    br GeU.w8 v76, 0x10 ? b79() : b81()
+    trap
+b76(): ; Body
+    trap
 b77(): ; Body
     trap
 b78(): ; Body
     trap
 b79(): ; Body
-    v364:16 = Load(16, 0) (v65)
-    v365:8 = V(Half(0)) (v364)
-    v366:8 = V(Half(1)) (v364)
-    AStore(AllocaId(250), 0, 8) (v365)
-    AStore(AllocaId(250), 8, 8) (v366)
-    v84:16 = VConst(340282366920938463463374607431768211455) ()
-    v115:16 = V(Eq) (v364, v84)
-    v124:2 = V(Msb) (v115)
-    v128:8 = Load(8, 0) (v446)
-    v129:8 = PtrIndex(1) (v128, v60)
-    AStore(AllocaId(106), 0, 8) (0x0)
-    AStore(AllocaId(106), 8, 8) (0x0)
-    v131:8 = AllocaAddr(AllocaId(106), 0) ()
-    br Eq.w8 v129, 0x0 ? b134() : b124()
+    trap
 b80(): ; Body
     trap
 b81(): ; Body cold
@@ -3410,29 +3354,7 @@ b122(): ; Body
 b123(): ; Body
     trap
 b124(): ; Body
-    br LtU.w8 v129, v131 ? b127() : b128()
-b125(): ; Body
-    trap
-b126(): ; Body
-    trap
-b127(): ; Body
-    v138:8 = Bin(Sub, 8) (v131, v129)
-    jmp b129(v138)
-b128(): ; Body
-    v139:8 = Bin(Sub, 8) (v129, v131)
-    jmp b129(v139)
-b129(v140:8): ; Body
-    br GeU.w8 v140, 0x10 ? b132() : b134()
-b130(): ; Body
-    trap
-b131(): ; Body
-    trap
-b132(): ; Body
     v367:16 = Load(16, 0) (v129)
-    v368:8 = V(Half(0)) (v367)
-    v369:8 = V(Half(1)) (v367)
-    AStore(AllocaId(106), 0, 8) (v368)
-    AStore(AllocaId(106), 8, 8) (v369)
     v175:16 = V(Eq) (v367, v84)
     v184:2 = V(Msb) (v175)
     v188:4 = Count { lz: true, w: 2 } (v124)
@@ -3441,6 +3363,22 @@ b132(): ; Body
     v191:8 = Ext { from: 4, to: 8, sx: false } (v190)
     v192:8 = Bin(Add, 8) (v189, v191)
     br LtU.w8 v192, 0x10 ? b157() : b156()
+b125(): ; Body
+    trap
+b126(): ; Body
+    trap
+b127(): ; Body
+    trap
+b128(): ; Body
+    trap
+b129(): ; Body
+    trap
+b130(): ; Body
+    trap
+b131(): ; Body
+    trap
+b132(): ; Body
+    trap
 b133(): ; Body
     trap
 b134(): ; Body cold
@@ -4377,7 +4315,7 @@ a141: $-16, 16 bytes, Promoted, inlined
 a142: $-72, 8 bytes, Promoted, inlined
 a143: $-64, 8 bytes, Promoted, inlined
 a144: $-56, 8 bytes, Promoted, inlined
-a145: $-48, 16 bytes, Memory, escaped, inlined
+a145: $-48, 16 bytes, Promoted, escaped, inlined
 a146: $-32, 8 bytes, Promoted, inlined
 a147: $-24, 8 bytes, Promoted, inlined
 a148: $-16, 8 bytes, Promoted, inlined
@@ -4570,9 +4508,6 @@ b20(): ; Body
 b21(v27:8, v32:8): ; Body
     v33:8 = Load(8, 0) (v0)
     v34:8 = PtrIndex(1) (v33, v27)
-    AStore(AllocaId(145), 0, 8) (0x0)
-    AStore(AllocaId(145), 8, 8) (0x0)
-    v36:8 = AllocaAddr(AllocaId(145), 0) ()
     br Eq.w8 v34, 0x0 ? b53() : b43()
 b22(): ; Body
     trap
@@ -4617,32 +4552,26 @@ b41(): ; Body
 b42(): ; Body
     trap
 b43(): ; Body
-    br LtU.w8 v34, v36 ? b46() : b47()
+    v234:16 = Load(16, 0) (v34)
+    v84:16 = V(Eq) (v234, v238)
+    v93:2 = V(Msb) (v84)
+    jmp b75(v93)
 b44(): ; Body
     trap
 b45(): ; Body
     trap
 b46(): ; Body
-    v43:8 = Bin(Sub, 8) (v36, v34)
-    jmp b48(v43)
+    trap
 b47(): ; Body
-    v44:8 = Bin(Sub, 8) (v34, v36)
-    jmp b48(v44)
-b48(v45:8): ; Body
-    br GeU.w8 v45, 0x10 ? b51() : b53()
+    trap
+b48(): ; Body
+    trap
 b49(): ; Body
     trap
 b50(): ; Body
     trap
 b51(): ; Body
-    v234:16 = Load(16, 0) (v34)
-    v235:8 = V(Half(0)) (v234)
-    v236:8 = V(Half(1)) (v234)
-    AStore(AllocaId(145), 0, 8) (v235)
-    AStore(AllocaId(145), 8, 8) (v236)
-    v84:16 = V(Eq) (v234, v238)
-    v93:2 = V(Msb) (v84)
-    jmp b75(v93)
+    trap
 b52(): ; Body
     trap
 b53(): ; Body cold
@@ -4900,7 +4829,7 @@ a86: $-8, 8 bytes, Promoted, inlined
 a87: $-72, 8 bytes, Promoted, inlined
 a88: $-64, 8 bytes, Promoted, inlined
 a89: $-56, 8 bytes, Promoted, inlined
-a90: $-48, 16 bytes, Memory, escaped, inlined
+a90: $-48, 16 bytes, Promoted, escaped, inlined
 a91: $-32, 8 bytes, Promoted, inlined
 a92: $-24, 8 bytes, Promoted, inlined
 a93: $-16, 8 bytes, Promoted, inlined
@@ -5078,9 +5007,6 @@ b30(): ; Body
     v78:8 = ALoad(AllocaId(21), 0, 8) ()
     v79:8 = Load(8, 0) (v0)
     v80:8 = PtrIndex(1) (v79, v78)
-    AStore(AllocaId(90), 0, 8) (0x0)
-    AStore(AllocaId(90), 8, 8) (0x0)
-    v82:8 = AllocaAddr(AllocaId(90), 0) ()
     br Eq.w8 v80, 0x0 ? b62() : b52()
 b31(): ; Body
     trap
@@ -5125,28 +5051,8 @@ b50(): ; Body
 b51(): ; Body
     trap
 b52(): ; Body
-    br LtU.w8 v80, v82 ? b55() : b56()
-b53(): ; Body
-    trap
-b54(): ; Body
-    trap
-b55(): ; Body
-    v89:8 = Bin(Sub, 8) (v82, v80)
-    jmp b57(v89)
-b56(): ; Body
-    v90:8 = Bin(Sub, 8) (v80, v82)
-    jmp b57(v90)
-b57(v91:8): ; Body
-    br GeU.w8 v91, 0x10 ? b60() : b62()
-b58(): ; Body
-    trap
-b59(): ; Body
-    trap
-b60(): ; Body
     v196:8 = Load(8, 0) (v80)
     v197:8 = Load(8, 8) (v80)
-    AStore(AllocaId(90), 0, 8) (v196)
-    AStore(AllocaId(90), 8, 8) (v197)
     AStore(AllocaId(20), 0, 8) (v196)
     AStore(AllocaId(20), 8, 8) (v197)
     v103:4 = ALoad(AllocaId(20), 12, 4) ()
@@ -5156,6 +5062,22 @@ b60(): ; Body
     v105:16 = ALoad(AllocaId(61), 0, 16) ()
     v111:2 = V(Msb) (v105)
     br Eq.w2 v111, 0x0 ? b75() : b74()
+b53(): ; Body
+    trap
+b54(): ; Body
+    trap
+b55(): ; Body
+    trap
+b56(): ; Body
+    trap
+b57(): ; Body
+    trap
+b58(): ; Body
+    trap
+b59(): ; Body
+    trap
+b60(): ; Body
+    trap
 b61(): ; Body
     trap
 b62(): ; Body cold
@@ -5189,8 +5111,7 @@ b74(): ; Body
     v117:4 = Count { lz: false, w: 2 } (v111)
     AStore(AllocaId(61), 12, 4) (v117)
     v118:8 = Ext { from: 4, to: 8, sx: false } (v117)
-    v119:8 = ALoad(AllocaId(21), 0, 8) ()
-    v120:8 = Bin(Add, 8) (v119, v118)
+    v120:8 = Bin(Add, 8) (v78, v118)
     v121:8 = Load(8, 8) (v0)
     v122:8 = Bin(And, 8) (v120, v121)
     jmp b73(0x1, v122)
@@ -5702,7 +5623,7 @@ a85: $-16, 16 bytes, Promoted, inlined
 a86: $-72, 8 bytes, Promoted, inlined
 a87: $-64, 8 bytes, Promoted, inlined
 a88: $-56, 8 bytes, Promoted, inlined
-a89: $-48, 16 bytes, Memory, escaped, inlined
+a89: $-48, 16 bytes, Promoted, escaped, inlined
 a90: $-32, 8 bytes, Promoted, inlined
 a91: $-24, 8 bytes, Promoted, inlined
 a92: $-16, 8 bytes, Promoted, inlined
@@ -5846,7 +5767,7 @@ a229: $-16, 16 bytes, Promoted, inlined
 a230: $-72, 8 bytes, Promoted, inlined
 a231: $-64, 8 bytes, Promoted, inlined
 a232: $-56, 8 bytes, Promoted, inlined
-a233: $-48, 16 bytes, Memory, escaped, inlined
+a233: $-48, 16 bytes, Promoted, escaped, inlined
 a234: $-32, 8 bytes, Promoted, inlined
 a235: $-24, 8 bytes, Promoted, inlined
 a236: $-16, 8 bytes, Promoted, inlined
@@ -5945,9 +5866,6 @@ b0(v0:8, v1:8): ; Entry
     v15:8 = Load(8, 8) (v0)
     v16:8 = Bin(And, 8) (v14, v15)
     v18:8 = PtrIndex(1) (v10, v16)
-    AStore(AllocaId(233), 0, 8) (0x0)
-    AStore(AllocaId(233), 8, 8) (0x0)
-    v20:8 = AllocaAddr(AllocaId(233), 0) ()
     br Eq.w8 v18, 0x0 ? b46() : b36()
 b1(): ; Body
     trap
@@ -6020,38 +5938,28 @@ b34(): ; Body
 b35(): ; Body
     trap
 b36(): ; Body
-    br LtU.w8 v18, v20 ? b39() : b40()
+    v233:16 = Load(16, 0) (v18)
+    v37:16 = VConst(340282366920938463463374607431768211455) ()
+    v68:16 = V(Eq) (v233, v37)
+    v77:2 = V(Msb) (v68)
+    v82:8 = PtrIndex(1) (v10, v13)
+    br Eq.w8 v82, 0x0 ? b99() : b89()
 b37(): ; Body
     trap
 b38(): ; Body
     trap
 b39(): ; Body
-    v27:8 = Bin(Sub, 8) (v20, v18)
-    jmp b41(v27)
+    trap
 b40(): ; Body
-    v28:8 = Bin(Sub, 8) (v18, v20)
-    jmp b41(v28)
-b41(v29:8): ; Body
-    br GeU.w8 v29, 0x10 ? b44() : b46()
+    trap
+b41(): ; Body
+    trap
 b42(): ; Body
     trap
 b43(): ; Body
     trap
 b44(): ; Body
-    v233:16 = Load(16, 0) (v18)
-    v234:8 = V(Half(0)) (v233)
-    v235:8 = V(Half(1)) (v233)
-    AStore(AllocaId(233), 0, 8) (v234)
-    AStore(AllocaId(233), 8, 8) (v235)
-    v37:16 = VConst(340282366920938463463374607431768211455) ()
-    v68:16 = V(Eq) (v233, v37)
-    v77:2 = V(Msb) (v68)
-    v81:8 = Load(8, 0) (v0)
-    v82:8 = PtrIndex(1) (v81, v13)
-    AStore(AllocaId(89), 0, 8) (0x0)
-    AStore(AllocaId(89), 8, 8) (0x0)
-    v84:8 = AllocaAddr(AllocaId(89), 0) ()
-    br Eq.w8 v82, 0x0 ? b99() : b89()
+    trap
 b45(): ; Body
     trap
 b46(): ; Body cold
@@ -6144,29 +6052,7 @@ b87(): ; Body
 b88(): ; Body
     trap
 b89(): ; Body
-    br LtU.w8 v82, v84 ? b92() : b93()
-b90(): ; Body
-    trap
-b91(): ; Body
-    trap
-b92(): ; Body
-    v91:8 = Bin(Sub, 8) (v84, v82)
-    jmp b94(v91)
-b93(): ; Body
-    v92:8 = Bin(Sub, 8) (v82, v84)
-    jmp b94(v92)
-b94(v93:8): ; Body
-    br GeU.w8 v93, 0x10 ? b97() : b99()
-b95(): ; Body
-    trap
-b96(): ; Body
-    trap
-b97(): ; Body
     v236:16 = Load(16, 0) (v82)
-    v237:8 = V(Half(0)) (v236)
-    v238:8 = V(Half(1)) (v236)
-    AStore(AllocaId(89), 0, 8) (v237)
-    AStore(AllocaId(89), 8, 8) (v238)
     v128:16 = V(Eq) (v236, v37)
     v137:2 = V(Msb) (v128)
     v141:4 = Count { lz: true, w: 2 } (v77)
@@ -6175,6 +6061,22 @@ b97(): ; Body
     v144:8 = Ext { from: 4, to: 8, sx: false } (v143)
     v145:8 = Bin(Add, 8) (v142, v144)
     br LtU.w8 v145, 0x10 ? b122() : b121()
+b90(): ; Body
+    trap
+b91(): ; Body
+    trap
+b92(): ; Body
+    trap
+b93(): ; Body
+    trap
+b94(): ; Body
+    trap
+b95(): ; Body
+    trap
+b96(): ; Body
+    trap
+b97(): ; Body
+    trap
 b98(): ; Body
     trap
 b99(): ; Body cold
@@ -6395,7 +6297,7 @@ a141: $-16, 16 bytes, Promoted, inlined
 a142: $-72, 8 bytes, Promoted, inlined
 a143: $-64, 8 bytes, Promoted, inlined
 a144: $-56, 8 bytes, Promoted, inlined
-a145: $-48, 16 bytes, Memory, escaped, inlined
+a145: $-48, 16 bytes, Promoted, escaped, inlined
 a146: $-32, 8 bytes, Promoted, inlined
 a147: $-24, 8 bytes, Promoted, inlined
 a148: $-16, 8 bytes, Promoted, inlined
@@ -6572,9 +6474,6 @@ b20(): ; Body
 b21(v27:8, v32:8): ; Body
     v33:8 = Load(8, 0) (v0)
     v34:8 = PtrIndex(1) (v33, v27)
-    AStore(AllocaId(145), 0, 8) (0x0)
-    AStore(AllocaId(145), 8, 8) (0x0)
-    v36:8 = AllocaAddr(AllocaId(145), 0) ()
     br Eq.w8 v34, 0x0 ? b53() : b43()
 b22(): ; Body
     trap
@@ -6619,32 +6518,26 @@ b41(): ; Body
 b42(): ; Body
     trap
 b43(): ; Body
-    br LtU.w8 v34, v36 ? b46() : b47()
+    v234:16 = Load(16, 0) (v34)
+    v84:16 = V(Eq) (v234, v238)
+    v93:2 = V(Msb) (v84)
+    jmp b75(v93)
 b44(): ; Body
     trap
 b45(): ; Body
     trap
 b46(): ; Body
-    v43:8 = Bin(Sub, 8) (v36, v34)
-    jmp b48(v43)
+    trap
 b47(): ; Body
-    v44:8 = Bin(Sub, 8) (v34, v36)
-    jmp b48(v44)
-b48(v45:8): ; Body
-    br GeU.w8 v45, 0x10 ? b51() : b53()
+    trap
+b48(): ; Body
+    trap
 b49(): ; Body
     trap
 b50(): ; Body
     trap
 b51(): ; Body
-    v234:16 = Load(16, 0) (v34)
-    v235:8 = V(Half(0)) (v234)
-    v236:8 = V(Half(1)) (v234)
-    AStore(AllocaId(145), 0, 8) (v235)
-    AStore(AllocaId(145), 8, 8) (v236)
-    v84:16 = V(Eq) (v234, v238)
-    v93:2 = V(Msb) (v84)
-    jmp b75(v93)
+    trap
 b52(): ; Body
     trap
 b53(): ; Body cold
@@ -6943,7 +6836,7 @@ a141: $-16, 16 bytes, Promoted, inlined
 a142: $-72, 8 bytes, Promoted, inlined
 a143: $-64, 8 bytes, Promoted, inlined
 a144: $-56, 8 bytes, Promoted, inlined
-a145: $-48, 16 bytes, Memory, escaped, inlined
+a145: $-48, 16 bytes, Promoted, escaped, inlined
 a146: $-32, 8 bytes, Promoted, inlined
 a147: $-24, 8 bytes, Promoted, inlined
 a148: $-16, 8 bytes, Promoted, inlined
@@ -7114,9 +7007,6 @@ b20(): ; Body
 b21(v27:8, v32:8): ; Body
     v33:8 = Load(8, 0) (v0)
     v34:8 = PtrIndex(1) (v33, v27)
-    AStore(AllocaId(145), 0, 8) (0x0)
-    AStore(AllocaId(145), 8, 8) (0x0)
-    v36:8 = AllocaAddr(AllocaId(145), 0) ()
     br Eq.w8 v34, 0x0 ? b53() : b43()
 b22(): ; Body
     trap
@@ -7161,32 +7051,26 @@ b41(): ; Body
 b42(): ; Body
     trap
 b43(): ; Body
-    br LtU.w8 v34, v36 ? b46() : b47()
+    v234:16 = Load(16, 0) (v34)
+    v84:16 = V(Eq) (v234, v238)
+    v93:2 = V(Msb) (v84)
+    jmp b75(v93)
 b44(): ; Body
     trap
 b45(): ; Body
     trap
 b46(): ; Body
-    v43:8 = Bin(Sub, 8) (v36, v34)
-    jmp b48(v43)
+    trap
 b47(): ; Body
-    v44:8 = Bin(Sub, 8) (v34, v36)
-    jmp b48(v44)
-b48(v45:8): ; Body
-    br GeU.w8 v45, 0x10 ? b51() : b53()
+    trap
+b48(): ; Body
+    trap
 b49(): ; Body
     trap
 b50(): ; Body
     trap
 b51(): ; Body
-    v234:16 = Load(16, 0) (v34)
-    v235:8 = V(Half(0)) (v234)
-    v236:8 = V(Half(1)) (v234)
-    AStore(AllocaId(145), 0, 8) (v235)
-    AStore(AllocaId(145), 8, 8) (v236)
-    v84:16 = V(Eq) (v234, v238)
-    v93:2 = V(Msb) (v84)
-    jmp b75(v93)
+    trap
 b52(): ; Body
     trap
 b53(): ; Body cold
@@ -7422,7 +7306,7 @@ a86: $-8, 8 bytes, Promoted, inlined
 a87: $-72, 8 bytes, Promoted, inlined
 a88: $-64, 8 bytes, Promoted, inlined
 a89: $-56, 8 bytes, Promoted, inlined
-a90: $-48, 16 bytes, Memory, escaped, inlined
+a90: $-48, 16 bytes, Promoted, escaped, inlined
 a91: $-32, 8 bytes, Promoted, inlined
 a92: $-24, 8 bytes, Promoted, inlined
 a93: $-16, 8 bytes, Promoted, inlined
@@ -7596,9 +7480,6 @@ b25(): ; Body
     v85:8 = ALoad(AllocaId(21), 0, 8) ()
     v86:8 = Load(8, 0) (v0)
     v87:8 = PtrIndex(1) (v86, v85)
-    AStore(AllocaId(90), 0, 8) (0x0)
-    AStore(AllocaId(90), 8, 8) (0x0)
-    v89:8 = AllocaAddr(AllocaId(90), 0) ()
     br Eq.w8 v87, 0x0 ? b57() : b47()
 b26(): ; Body
     trap
@@ -7643,28 +7524,8 @@ b45(): ; Body
 b46(): ; Body
     trap
 b47(): ; Body
-    br LtU.w8 v87, v89 ? b50() : b51()
-b48(): ; Body
-    trap
-b49(): ; Body
-    trap
-b50(): ; Body
-    v96:8 = Bin(Sub, 8) (v89, v87)
-    jmp b52(v96)
-b51(): ; Body
-    v97:8 = Bin(Sub, 8) (v87, v89)
-    jmp b52(v97)
-b52(v98:8): ; Body
-    br GeU.w8 v98, 0x10 ? b55() : b57()
-b53(): ; Body
-    trap
-b54(): ; Body
-    trap
-b55(): ; Body
     v203:8 = Load(8, 0) (v87)
     v204:8 = Load(8, 8) (v87)
-    AStore(AllocaId(90), 0, 8) (v203)
-    AStore(AllocaId(90), 8, 8) (v204)
     AStore(AllocaId(20), 0, 8) (v203)
     AStore(AllocaId(20), 8, 8) (v204)
     v110:4 = ALoad(AllocaId(20), 12, 4) ()
@@ -7674,6 +7535,22 @@ b55(): ; Body
     v112:16 = ALoad(AllocaId(61), 0, 16) ()
     v118:2 = V(Msb) (v112)
     br Eq.w2 v118, 0x0 ? b70() : b69()
+b48(): ; Body
+    trap
+b49(): ; Body
+    trap
+b50(): ; Body
+    trap
+b51(): ; Body
+    trap
+b52(): ; Body
+    trap
+b53(): ; Body
+    trap
+b54(): ; Body
+    trap
+b55(): ; Body
+    trap
 b56(): ; Body
     trap
 b57(): ; Body cold
@@ -7707,8 +7584,7 @@ b69(): ; Body
     v124:4 = Count { lz: false, w: 2 } (v118)
     AStore(AllocaId(61), 12, 4) (v124)
     v125:8 = Ext { from: 4, to: 8, sx: false } (v124)
-    v126:8 = ALoad(AllocaId(21), 0, 8) ()
-    v127:8 = Bin(Add, 8) (v126, v125)
+    v127:8 = Bin(Add, 8) (v85, v125)
     v128:8 = Load(8, 8) (v0)
     v129:8 = Bin(And, 8) (v127, v128)
     jmp b68(0x1, v129)
@@ -8545,7 +8421,7 @@ a125: $-16, 16 bytes, Promoted, inlined
 a126: $-72, 8 bytes, Promoted, inlined
 a127: $-64, 8 bytes, Promoted, inlined
 a128: $-56, 8 bytes, Promoted, inlined
-a129: $-48, 16 bytes, Memory, escaped, inlined
+a129: $-48, 16 bytes, Promoted, escaped, inlined
 a130: $-32, 8 bytes, Promoted, inlined
 a131: $-24, 8 bytes, Promoted, inlined
 a132: $-16, 8 bytes, Promoted, inlined
@@ -8646,9 +8522,6 @@ b0(v0:8, v1:8, v2:8, v3:8): ; Entry
 b1(v15:8, v16:8, v29:1, v109:8, v113:8, v122:8): ; Body head 0
     v17:8 = Load(8, 0) (v16)
     v21:8 = PtrIndex(1) (v17, v15)
-    AStore(AllocaId(129), 0, 8) (0x0)
-    AStore(AllocaId(129), 8, 8) (0x0)
-    v214:8 = AllocaAddr(AllocaId(129), 0) ()
     br Eq.w8 v21, 0x0 ? b85() : b75()
 b2(v24:2, v68:8, v71:8, v75:8, v77:8, v120:8, v134:1): ; Body head 1
     br Eq.w2 v24, 0x0 ? b10() : b3()
@@ -8838,35 +8711,31 @@ b73(): ; Body
 b74(): ; Body
     trap
 b75(): ; Body
-    br LtU.w8 v21, v214 ? b78() : b79()
-b76(): ; Body
-    trap
-b77(): ; Body
-    trap
-b78(): ; Body
-    v221:8 = Bin(Sub, 8) (v214, v21)
-    jmp b80(v221)
-b79(): ; Body
-    v222:8 = Bin(Sub, 8) (v21, v214)
-    jmp b80(v222)
-b80(v223:8): ; Body
-    br GeU.w8 v223, 0x10 ? b83() : b85()
-b81(): ; Body
-    trap
-b82(): ; Body
-    trap
-b83(): ; Body
     v270:16 = Load(16, 0) (v21)
     v271:8 = V(Half(0)) (v270)
     v272:8 = V(Half(1)) (v270)
-    AStore(AllocaId(129), 0, 8) (v271)
-    AStore(AllocaId(129), 8, 8) (v272)
     AStore(AllocaId(16), 0, 8) (v271)
     AStore(AllocaId(16), 8, 8) (v272)
     v205:16 = V(Splat) (v29)
     v203:16 = V(Eq) (v270, v205)
     v187:2 = V(Msb) (v203)
     jmp b2(v187, v15, v16, v109, v113, v122, v29)
+b76(): ; Body
+    trap
+b77(): ; Body
+    trap
+b78(): ; Body
+    trap
+b79(): ; Body
+    trap
+b80(): ; Body
+    trap
+b81(): ; Body
+    trap
+b82(): ; Body
+    trap
+b83(): ; Body
+    trap
 b84(): ; Body
     trap
 b85(): ; Body cold
@@ -8957,7 +8826,7 @@ a69: $-8, 8 bytes, Promoted, inlined
 a70: $-72, 8 bytes, Promoted, inlined
 a71: $-64, 8 bytes, Promoted, inlined
 a72: $-56, 8 bytes, Promoted, inlined
-a73: $-48, 16 bytes, Memory, escaped, inlined
+a73: $-48, 16 bytes, Promoted, escaped, inlined
 a74: $-32, 8 bytes, Promoted, inlined
 a75: $-24, 8 bytes, Promoted, inlined
 a76: $-16, 8 bytes, Promoted, inlined
@@ -9060,9 +8929,6 @@ b1(v8:8): ; Body head 0
     v7:8 = ALoad(AllocaId(4), 0, 8) ()
     v9:8 = Load(8, 0) (v8)
     v12:8 = PtrIndex(1) (v9, v7)
-    AStore(AllocaId(73), 0, 8) (0x0)
-    AStore(AllocaId(73), 8, 8) (0x0)
-    v104:8 = AllocaAddr(AllocaId(73), 0) ()
     br Eq.w8 v12, 0x0 ? b65() : b55()
 b2(v14:8, v30:8, v32:8): ; Body head 1
     br Eq.w8 v14, 0x1 ? b6() : b3()
@@ -9146,8 +9012,7 @@ b31(): ; Body
     v93:4 = Count { lz: false, w: 2 } (v87)
     AStore(AllocaId(44), 12, 4) (v93)
     v94:8 = Ext { from: 4, to: 8, sx: false } (v93)
-    v95:8 = ALoad(AllocaId(4), 0, 8) ()
-    v96:8 = Bin(Add, 8) (v95, v94)
+    v96:8 = Bin(Add, 8) (v7, v94)
     v97:8 = Load(8, 8) (v8)
     v98:8 = Bin(And, 8) (v96, v97)
     jmp b2(0x1, v98, v8)
@@ -9198,28 +9063,8 @@ b53(): ; Body
 b54(): ; Body
     trap
 b55(): ; Body
-    br LtU.w8 v12, v104 ? b58() : b59()
-b56(): ; Body
-    trap
-b57(): ; Body
-    trap
-b58(): ; Body
-    v111:8 = Bin(Sub, 8) (v104, v12)
-    jmp b60(v111)
-b59(): ; Body
-    v112:8 = Bin(Sub, 8) (v12, v104)
-    jmp b60(v112)
-b60(v113:8): ; Body
-    br GeU.w8 v113, 0x10 ? b63() : b65()
-b61(): ; Body
-    trap
-b62(): ; Body
-    trap
-b63(): ; Body
     v143:8 = Load(8, 0) (v12)
     v144:8 = Load(8, 8) (v12)
-    AStore(AllocaId(73), 0, 8) (v143)
-    AStore(AllocaId(73), 8, 8) (v144)
     AStore(AllocaId(3), 0, 8) (v143)
     AStore(AllocaId(3), 8, 8) (v144)
     v79:4 = ALoad(AllocaId(3), 12, 4) ()
@@ -9229,6 +9074,22 @@ b63(): ; Body
     v81:16 = ALoad(AllocaId(44), 0, 16) ()
     v87:2 = V(Msb) (v81)
     br Eq.w2 v87, 0x0 ? b32() : b31()
+b56(): ; Body
+    trap
+b57(): ; Body
+    trap
+b58(): ; Body
+    trap
+b59(): ; Body
+    trap
+b60(): ; Body
+    trap
+b61(): ; Body
+    trap
+b62(): ; Body
+    trap
+b63(): ; Body
+    trap
 b64(): ; Body
     trap
 b65(): ; Body cold
@@ -9456,7 +9317,7 @@ a139: $-8, 8 bytes, Promoted, inlined
 a140: $-72, 8 bytes, Promoted, inlined
 a141: $-64, 8 bytes, Promoted, inlined
 a142: $-56, 8 bytes, Promoted, inlined
-a143: $-48, 16 bytes, Memory, escaped, inlined
+a143: $-48, 16 bytes, Promoted, escaped, inlined
 a144: $-32, 8 bytes, Promoted, inlined
 a145: $-24, 8 bytes, Promoted, inlined
 a146: $-16, 8 bytes, Promoted, inlined
@@ -9629,12 +9490,12 @@ b0(v0:8, v1:8, v2:8, v3:8, v4:8, v5:1): ; Entry
     br Eq.w8 v56, 0x0 ? b13() : b14()
 b1(): ; Body
     trap
-b2(v184:8, v188:8, v190:8, v733:2, v742:2, v751:2, v760:1, v769:1): ; Body head 0
+b2(v184:8, v188:8, v190:8, v732:2, v740:2, v748:2, v756:1, v764:1): ; Body head 0
     v13:8 = ALoad(AllocaId(32), 16, 8) ()
     br Eq.w8 v13, 0x0 ? b6() : b128()
 b3(): ; Body
     trap
-b4(v16:8, v17:8, v19:8, v21:8, v730:2, v739:2, v748:2, v757:1, v766:1): ; Body head 1
+b4(v16:8, v17:8, v19:8, v21:8, v729:2, v737:2, v745:2, v753:1, v761:1): ; Body head 1
     v565:8 = Bin(ShrU, 8) (v16, 0x10)
     v567:8 = Bin(ShrU, 8) (v16, 0x20)
     v569:8 = Bin(ShrU, 8) (v16, 0x30)
@@ -9854,23 +9715,23 @@ b26(): ; Osr(0)
     v227:8 = OsrLoad(-24, 8) ()
     v228:8 = OsrLoad(-48, 8) ()
     v229:8 = OsrLoad(-56, 8) ()
-    v792:2 = OsrLoad(-80, 2) ()
-    v794:2 = OsrLoad(-78, 2) ()
-    v796:2 = OsrLoad(-76, 2) ()
-    v798:1 = OsrLoad(-74, 1) ()
-    v800:1 = OsrLoad(-73, 1) ()
-    jmp b2(v227, v228, v229, v792, v794, v796, v798, v800)
+    v782:2 = OsrLoad(-80, 2) ()
+    v784:2 = OsrLoad(-78, 2) ()
+    v786:2 = OsrLoad(-76, 2) ()
+    v788:1 = OsrLoad(-74, 1) ()
+    v790:1 = OsrLoad(-73, 1) ()
+    jmp b2(v227, v228, v229, v782, v784, v786, v788, v790)
 b27(): ; Osr(1)
     v185:8 = OsrLoad(-344, 8) ()
     v186:8 = OsrLoad(-24, 8) ()
     v187:8 = OsrLoad(-48, 8) ()
     v189:8 = OsrLoad(-56, 8) ()
-    v791:2 = OsrLoad(-80, 2) ()
-    v793:2 = OsrLoad(-78, 2) ()
-    v795:2 = OsrLoad(-76, 2) ()
-    v797:1 = OsrLoad(-74, 1) ()
-    v799:1 = OsrLoad(-73, 1) ()
-    jmp b4(v185, v186, v187, v189, v791, v793, v795, v797, v799)
+    v781:2 = OsrLoad(-80, 2) ()
+    v783:2 = OsrLoad(-78, 2) ()
+    v785:2 = OsrLoad(-76, 2) ()
+    v787:1 = OsrLoad(-74, 1) ()
+    v789:1 = OsrLoad(-73, 1) ()
+    jmp b4(v185, v186, v187, v189, v781, v783, v785, v787, v789)
 b28(): ; Body
     AStore(AllocaId(73), 0, 8) (v22)
     v276:8 = ALoad(AllocaId(33), 32, 8) ()
@@ -9923,9 +9784,6 @@ b48(): ; Body
     v279:8 = ALoad(AllocaId(74), 0, 8) ()
     v280:8 = ALoad(AllocaId(33), 24, 8) ()
     v281:8 = PtrIndex(1) (v280, v279)
-    AStore(AllocaId(143), 0, 8) (0x0)
-    AStore(AllocaId(143), 8, 8) (0x0)
-    v283:8 = AllocaAddr(AllocaId(143), 0) ()
     br Eq.w8 v281, 0x0 ? b80() : b70()
 b49(): ; Body
     trap
@@ -9970,28 +9828,8 @@ b68(): ; Body
 b69(): ; Body
     trap
 b70(): ; Body
-    br LtU.w8 v281, v283 ? b73() : b74()
-b71(): ; Body
-    trap
-b72(): ; Body
-    trap
-b73(): ; Body
-    v290:8 = Bin(Sub, 8) (v283, v281)
-    jmp b75(v290)
-b74(): ; Body
-    v291:8 = Bin(Sub, 8) (v281, v283)
-    jmp b75(v291)
-b75(v292:8): ; Body
-    br GeU.w8 v292, 0x10 ? b78() : b80()
-b76(): ; Body
-    trap
-b77(): ; Body
-    trap
-b78(): ; Body
     v458:8 = Load(8, 0) (v281)
     v459:8 = Load(8, 8) (v281)
-    AStore(AllocaId(143), 0, 8) (v458)
-    AStore(AllocaId(143), 8, 8) (v459)
     AStore(AllocaId(73), 0, 8) (v458)
     AStore(AllocaId(73), 8, 8) (v459)
     v304:4 = ALoad(AllocaId(73), 12, 4) ()
@@ -10001,6 +9839,22 @@ b78(): ; Body
     v306:16 = ALoad(AllocaId(114), 0, 16) ()
     v312:2 = V(Msb) (v306)
     br Eq.w2 v312, 0x0 ? b93() : b92()
+b71(): ; Body
+    trap
+b72(): ; Body
+    trap
+b73(): ; Body
+    trap
+b74(): ; Body
+    trap
+b75(): ; Body
+    trap
+b76(): ; Body
+    trap
+b77(): ; Body
+    trap
+b78(): ; Body
+    trap
 b79(): ; Body
     trap
 b80(): ; Body cold
@@ -10034,8 +9888,7 @@ b92(): ; Body
     v318:4 = Count { lz: false, w: 2 } (v312)
     AStore(AllocaId(114), 12, 4) (v318)
     v319:8 = Ext { from: 4, to: 8, sx: false } (v318)
-    v320:8 = ALoad(AllocaId(74), 0, 8) ()
-    v321:8 = Bin(Add, 8) (v320, v319)
+    v321:8 = Bin(Add, 8) (v279, v319)
     v322:8 = ALoad(AllocaId(33), 32, 8) ()
     v323:8 = Bin(And, 8) (v321, v322)
     jmp b91(0x1, v323)
@@ -10093,17 +9946,17 @@ b107(v355:8): ; Body
     StoreIx(1, 0, 1) (v191, v355, v198)
     v207:8 = ALoad(AllocaId(33), 24, 8) ()
     StoreIx(1, 0, 1) (v207, v204, v198)
-    v585:8 = Ext { from: 2, to: 8, sx: false } (v730)
-    v587:8 = Ext { from: 2, to: 8, sx: false } (v739)
+    v585:8 = Ext { from: 2, to: 8, sx: false } (v729)
+    v587:8 = Ext { from: 2, to: 8, sx: false } (v737)
     v589:8 = Bin(Shl, 8) (v587, 0x10)
     v590:8 = Bin(Or, 8) (v585, v589)
-    v592:8 = Ext { from: 2, to: 8, sx: false } (v748)
+    v592:8 = Ext { from: 2, to: 8, sx: false } (v745)
     v594:8 = Bin(Shl, 8) (v592, 0x20)
     v595:8 = Bin(Or, 8) (v590, v594)
-    v597:8 = Ext { from: 1, to: 8, sx: false } (v757)
+    v597:8 = Ext { from: 1, to: 8, sx: false } (v753)
     v599:8 = Bin(Shl, 8) (v597, 0x30)
     v600:8 = Bin(Or, 8) (v595, v599)
-    v602:8 = Ext { from: 1, to: 8, sx: false } (v766)
+    v602:8 = Ext { from: 1, to: 8, sx: false } (v761)
     v604:8 = Bin(Shl, 8) (v602, 0x38)
     v605:8 = Bin(Or, 8) (v600, v604)
     v210:8 = Load(8, 0) (v17)
@@ -10130,7 +9983,7 @@ b107(v355:8): ; Body
     v223:8 = Bin(Sub, 8) (0x0, v221)
     v224:8 = PtrIndex(1) (v218, v223)
     hcall.reg memcpy [(Fp, [None, None]), (Imm(4294966904), [Some(Scratch(0)), None]), (Imm(4294966912), [Some(Scratch(8)), None]), (Imm(4294966736), [Some(Scratch(16)), None])] outs 0 (v224, v217, v605)
-    jmp b2(v17, v19, v21, v730, v739, v748, v757, v766)
+    jmp b2(v17, v19, v21, v729, v737, v745, v753, v761)
 b108(): ; Body
     jmp b107(v317)
 b109(): ; Body
@@ -10204,7 +10057,7 @@ b129(): ; Body
     v180:8 = Bin(Sub, 8) (v178, 0x1)
     AStore(AllocaId(7), 0, 8) (v180)
     AStore(AllocaId(32), 16, 8) (v180)
-    jmp b4(v410, v184, v188, v190, v733, v742, v751, v760, v769)
+    jmp b4(v410, v184, v188, v190, v732, v740, v748, v756, v764)
 b130(): ; Body
     v411:8 = ALoad(AllocaId(32), 0, 8) ()
     v412:8 = PtrAdd(16) (v411)
@@ -12115,7 +11968,7 @@ fn std::arch::x86_64::_mm_loadu_si128
 a0: $-72, 8 bytes, Promoted
 a1: $-64, 8 bytes, Promoted
 a2: $-56, 8 bytes, Promoted
-a3: $-48, 16 bytes, Memory, escaped
+a3: $-48, 16 bytes, Promoted, escaped
 a4: $-32, 8 bytes, Promoted
 a5: $-24, 8 bytes, Promoted
 a6: $-16, 8 bytes, Promoted
@@ -12207,9 +12060,6 @@ a91: $-16, 8 bytes, Promoted, inlined
 a92: $-1, 1 bytes, Promoted, inlined
 a93: $-8, 8 bytes, Promoted, inlined
 b0(v0:8, v1:8): ; Entry
-    AStore(AllocaId(3), 0, 8) (0x0)
-    AStore(AllocaId(3), 8, 8) (0x0)
-    v5:8 = AllocaAddr(AllocaId(3), 0) ()
     br Eq.w8 v1, 0x0 ? b30() : b20()
 b1(): ; Body
     trap
@@ -12250,31 +12100,27 @@ b18(): ; Body
 b19(): ; Body
     trap
 b20(): ; Body
-    br LtU.w8 v1, v5 ? b23() : b24()
+    v37:8 = Load(8, 0) (v1)
+    v38:8 = Load(8, 8) (v1)
+    Store(8, 0) (v0, v37)
+    Store(8, 8) (v0, v38)
+    ret 0x8 (v0)
 b21(): ; Body
     trap
 b22(): ; Body
     trap
 b23(): ; Body
-    v16:8 = Bin(Sub, 8) (v5, v1)
-    jmp b25(v16)
+    trap
 b24(): ; Body
-    v17:8 = Bin(Sub, 8) (v1, v5)
-    jmp b25(v17)
-b25(v18:8): ; Body
-    br GeU.w8 v18, 0x10 ? b28() : b30()
+    trap
+b25(): ; Body
+    trap
 b26(): ; Body
     trap
 b27(): ; Body
     trap
 b28(): ; Body
-    v37:8 = Load(8, 0) (v1)
-    v38:8 = Load(8, 8) (v1)
-    AStore(AllocaId(3), 0, 8) (v37)
-    AStore(AllocaId(3), 8, 8) (v38)
-    Store(8, 0) (v0, v37)
-    Store(8, 8) (v0, v38)
-    ret 0x8 (v0)
+    trap
 b29(): ; Body
     trap
 b30(): ; Body cold
