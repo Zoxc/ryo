@@ -227,7 +227,7 @@ fn closures_native(f: &dyn Fn(u64, f64) -> (u64, f64), g: impl FnOnce([u8; 5]) -
     (f(4, 1.5), g([5, 4, 3, 2, 1]))
 }
 
-/// `extern "C"`: a VM function on SysV (native on Win64), called from VM code.
+/// `extern "C"`: a VM function, called from VM code.
 #[inline(never)]
 extern "C" fn c_fn(a: u8, b: f64, c: CS, d: u64) -> CS {
     CS { a: c.a + a as u32, b: c.b * 2.0 + b as f32, c: c.c ^ d }

@@ -3,10 +3,13 @@
 //! native code. SysV covers integer extension (`zeroext`/`signext`, in registers and on the
 //! stack, and returned), floats, `i128`, aggregates classified per eightbyte (INTEGER, SSE,
 //! mixed, a short tail), `byval` aggregates, returns in mixed registers and sret, and the
-//! all-or-nothing rule for aggregates that don't fit in the registers left. On Win64 the
-//! callees stay native and the calls go through the `call_cN` island; the output is diffed
-//! against plain rustc either way.
-#![feature(f16)]
+//! all-or-nothing rule for aggregates that don't fit in the registers left. Win64 covers the
+//! same matrix as its convention passes it: 1/2/4/8-byte aggregates as integers, others (and
+//! `i128`, `f128`, scalar pairs) by reference, ZSTs as pointers, every small integer argument
+//! and return extended to 32 bits, an `i128` returned in `xmm0` and an `f128` by sret. The
+//! output is diffed against plain rustc.
+#![feature(f16, f128)]
+#![allow(improper_ctypes_definitions)]
 use std::arch::asm;
 use std::hint::black_box;
 
@@ -263,6 +266,13 @@ case!(all_or_nothing_mixed(a: u64 = 1, b: u64 = 2, c: u64 = 3, d: u64 = 4, e: u6
 case!(wide_late(a: u64 = 1, b: u64 = 2, c: u64 = 3, d: u64 = 4, e: u64 = 5, f: i128 = -6, g: u64 = 7) -> i128 {
     f.wrapping_mul(h(&[a, b, c, d, e, g]) as i128)
 });
+case!(quad(a: f128 = 1.5, b: u8 = 3) -> f128 { a * b as f128 + 0.25 });
+case!(quad_ret(a: f64 = 2.5) -> f64 { quad::callee(a as f128, 2) as f64 });
+case!(zst(a: u32 = 1, z: () = (), b: i16 = -2, c: [u8; 0] = [], d: u8 = 200) -> i32 { black_box(z); black_box(c); a as i32 * 10 + b as i32 * 100 + d as i32 });
+case!(pair(a: (u32, f32) = (7, 1.5), b: (u64, u64) = (1, 2), c: (u8, u16) = (3, 0xfff0)) -> (u32, f32) {
+    (a.0 + b.0 as u32 + c.0 as u32, a.1 * b.1 as f32 + c.1 as f32)
+});
+case!(ret_i128(a: u64 = 0x1234_5678_9abc_def0, b: i8 = -3) -> i128 { (a as i128) << 40 | b as i128 & 0xff });
 case!(unit_ret(a: u32 = 1) -> () {
     black_box(a);
 });
@@ -331,6 +341,9 @@ fn main() {
     all_or_nothing_mixed::run();
     wide_late::run();
     unit_ret::run();
+    for f in [quad::run, quad_ret::run, zst::run, pair::run, ret_i128::run] {
+        f();
+    }
     for f in [h1::run, h1_ret::run, h3::run, h3_ret::run, h5_ret::run, b11::run, s10::run, b3::run, s64::run] {
         f();
     }

@@ -101,7 +101,7 @@ enum Target<'tcx> {
 
 impl<'tcx> Target<'tcx> {
     /// A call of `callee` with signature `sig`: direct for the Rust ABI, and for the C ABI
-    /// where the signature has a plan (SysV, shapes the VM passes), else the island.
+    /// where the signature has a plan (SysV or Win64, shapes the VM passes), else the island.
     fn of(sig: &AbiSig<'tcx>, callee: Callee<'tcx>) -> Self {
         match sig.conv {
             CallConv::Rust => Target::Direct(callee),

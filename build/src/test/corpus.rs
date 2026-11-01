@@ -14,9 +14,9 @@ pub(crate) struct Program {
     pub(crate) flags: &'static [&'static str],
     /// Functions the ryo build must compile to bytecode (as `RYO_STATS` prints them).
     pub(super) vm: &'static [&'static str],
-    /// Like [`Program::vm`], but only on SysV targets (on PE they may stay native: `extern
-    /// "C"` definitions).
-    pub(super) vm_sysv: &'static [&'static str],
+    /// Functions compiled to bytecode on PE targets and native elsewhere (`extern "C"` fns
+    /// whose signature only Win64's C convention passes in a shape the VM handles).
+    pub(super) vm_pe: &'static [&'static str],
     /// Functions the ryo build must not compile to bytecode.
     pub(super) native: &'static [&'static str],
     /// A C `main` (relative to `tests/`), compiled with `cc` (`cl` on MSVC) and linked against
@@ -41,16 +41,16 @@ impl Program {
     }
 
     /// Checks the functions the ryo build compiled to bytecode (`vm_fns`, as `RYO_STATS` prints
-    /// them): every one of [`Program::vm`] and, unless `pe`, of [`Program::vm_sysv`] (unless
-    /// not `all_vm`), and none of [`Program::native`].
+    /// them): every one of [`Program::vm`] and, if `pe`, of [`Program::vm_pe`] (unless not
+    /// `all_vm`), and none of [`Program::native`] (nor, unless `pe`, of [`Program::vm_pe`]).
     pub(crate) fn check_vm(&self, vm_fns: &[String], all_vm: bool, pe: bool) -> Result<(), String> {
         let names: Vec<&str> = vm_fns.iter().map(String::as_str).collect();
-        let sysv: &[&str] = if pe { &[] } else { self.vm_sysv };
-        let missing: Vec<_> = self.vm.iter().chain(sysv).filter(|f| !names.contains(f)).collect();
+        let (vm_pe, native_pe): (&[&str], &[&str]) = if pe { (self.vm_pe, &[]) } else { (&[], self.vm_pe) };
+        let missing: Vec<_> = self.vm.iter().chain(vm_pe).filter(|f| !names.contains(f)).collect();
         if all_vm && !missing.is_empty() {
             return Err(format!("not compiled to bytecode: {missing:?}; VM functions: {names:?}"));
         }
-        let wrong: Vec<_> = self.native.iter().filter(|f| names.contains(f)).collect();
+        let wrong: Vec<_> = self.native.iter().chain(native_pe).filter(|f| names.contains(f)).collect();
         if !wrong.is_empty() {
             return Err(format!("compiled to bytecode, but must stay native: {wrong:?}"));
         }
@@ -127,7 +127,7 @@ pub(super) const PROGRAM: Program = Program {
     crates: &[],
     flags: &[],
     vm: &[],
-    vm_sysv: &[],
+    vm_pe: &[],
     native: &[],
     c_main: None,
     msvc_only: false,
@@ -283,8 +283,8 @@ pub(crate) const CORPUS: &[Program] = &[
             "all_or_nothing_sse::direct", "all_or_nothing_sse::ptr", "all_or_nothing_mixed::direct",
             "all_or_nothing_mixed::ptr", "wide_late::direct", "wide_late::ptr", "unit_ret::direct", "unit_ret::ptr",
             "around", "h1::direct", "h1::ptr", "h1_ret::direct", "h1_ret::ptr", "h3::direct", "h3::ptr", "h3_ret::direct", "h3_ret::ptr", "h5_ret::direct", "h5_ret::ptr", "b11::direct", "b11::ptr", "s10::direct", "s10::ptr", "b3::direct", "b3::ptr", "s64::direct", "s64::ptr",
-        ],
-        vm_sysv: &[
+            "quad::direct", "quad::ptr", "quad_ret::direct", "quad_ret::ptr", "zst::direct", "zst::ptr",
+            "pair::direct", "pair::ptr", "ret_i128::direct", "ret_i128::ptr",
             "ext::vm_callee", "ext::vm_direct", "ext::vm_ptr", "ext_wide::vm_callee", "ext_wide::vm_direct",
             "ext_wide::vm_ptr", "wide::vm_callee", "wide::vm_direct", "wide::vm_ptr", "ret_i8::vm_callee",
             "ret_i8::vm_direct", "ret_i8::vm_ptr", "ret_u16::vm_callee", "ret_u16::vm_direct", "ret_u16::vm_ptr",
@@ -306,8 +306,12 @@ pub(crate) const CORPUS: &[Program] = &[
             "h3_ret::vm_direct", "h3_ret::vm_ptr", "h5_ret::vm_callee", "h5_ret::vm_direct",
             "h5_ret::vm_ptr", "b11::vm_callee", "b11::vm_direct", "b11::vm_ptr", "s10::vm_callee", "s10::vm_direct",
             "s10::vm_ptr", "b3::vm_callee", "b3::vm_direct", "b3::vm_ptr", "s64::vm_callee", "s64::vm_direct",
-            "s64::vm_ptr",
+            "s64::vm_ptr", "quad::vm_direct", "quad::vm_ptr", "quad_ret::vm_callee", "quad_ret::vm_direct",
+            "quad_ret::vm_ptr", "zst::vm_callee", "zst::vm_direct", "zst::vm_ptr", "pair::vm_callee",
+            "pair::vm_direct", "pair::vm_ptr", "ret_i128::vm_callee", "ret_i128::vm_direct", "ret_i128::vm_ptr",
         ],
+        // `[f16; 3]` is `Indirect` on Win64, an eightbyte rustc gives an `f64` unit on SysV.
+        vm_pe: &["h3::vm_callee", "h3_ret::vm_callee"],
         native: &[
             "ext::callee", "ext::native_caller", "ext_wide::callee", "ext_wide::native_caller", "ret_i8::callee",
             "ret_i8::native_caller", "ret_u16::callee", "ret_u16::native_caller", "ret_bool::callee",
@@ -329,15 +333,21 @@ pub(crate) const CORPUS: &[Program] = &[
             "byval_mix::native_to_vm", "byval_align::native_to_vm", "spill::native_to_vm",
             "all_or_nothing_int::native_to_vm", "all_or_nothing_sse::native_to_vm",
             "all_or_nothing_mixed::native_to_vm", "wide_late::native_to_vm", "unit_ret::native_to_vm",
-            "h3::vm_callee", "h3_ret::vm_callee", "h1::native_to_vm", "h1_ret::native_to_vm", "h3::native_to_vm", "h3_ret::native_to_vm",
+            "h1::native_to_vm", "h1_ret::native_to_vm", "h3::native_to_vm", "h3_ret::native_to_vm",
             "h5_ret::native_to_vm", "b11::native_to_vm", "s10::native_to_vm", "b3::native_to_vm", "s64::native_to_vm",
+            "quad::callee", "quad::native_caller", "quad::native_to_vm", "quad_ret::callee", "quad_ret::native_caller",
+            "quad_ret::native_to_vm", "zst::callee", "zst::native_caller", "zst::native_to_vm", "pair::callee",
+            "pair::native_caller", "pair::native_to_vm", "ret_i128::callee", "ret_i128::native_caller",
+            "ret_i128::native_to_vm",
         ],
     ),
     // VM-compiled `extern "C"` functions called back from native code; ends in an abort.
     single!(
         "c_abi_def",
-        vm: &["main", "sort_items", "pthreads", "threads", "export_calls", "threads::{closure#0}"],
-        vm_sysv: &["cmp_items", "cmp_bytes", "sum_thread", "ryo_c_abi_def_export", "catches", "escapes"],
+        vm: &[
+            "main", "sort_items", "pthreads", "threads", "export_calls", "threads::{closure#0}", "cmp_items", "cmp_bytes",
+            "sum_thread", "ryo_c_abi_def_export", "catches", "escapes",
+        ],
         native: &["native_cmp_bytes", "drive", "native_export_call"],
     ),
     single!(

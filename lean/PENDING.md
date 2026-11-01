@@ -121,3 +121,15 @@ remove it once a Lean session has handled it.
   or 2: the cert/Lean `ret` rule must allow that. The JIT inliner truncates a callee's
   returned part wider than the call's result (`Ext` to the narrower width). The function
   certificate's plan carries the C shapes of the previous entry.
+
+- Win64 C ABI (commit "Backend: C ABI on Win64"): non-unwinding `extern "C"` calls and
+  definitions get a plan on x86_64-pc-windows-msvc too, following rustc's `x86_win64.rs`
+  `PassMode`s: 1/2/4/8-byte aggregates (and scalar pairs) as one integer `Cast`, other
+  aggregates, `i128` and `f128` arguments `Indirect` (`PtrReg`/`PtrStack`), ZST arguments
+  `Indirect` from `Ignore` (a pointer taking a position), every integer scalar under 4 bytes
+  extended to 32 bits as argument (`ARG_SEXT`, `Stack` `ext`) and return (`ret_sext`). The PE
+  `i128`-in-two-positions / `f128`-by-reference argument rules and the `f128`-sret return rule
+  now apply only to `Direct` (Rust-ABI) scalars. The `i128` return is a `Cast` to one 16-byte
+  opaque vector unit: one 16-byte `xmm0` return part (`cast_pieces`, `dump_lean.rs`
+  `scalars`); a 16-byte `Cast` unit in an argument is refused. The Lean plan computation and
+  ABI convention lemmas need the Win64 C shapes.

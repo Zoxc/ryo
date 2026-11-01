@@ -1,5 +1,5 @@
-//! `extern "C"` functions compiled by the VM (on SysV; native on Win64 for now) called back from
-//! native code: a libc `qsort` comparator, `pthread_create` start routines and a `std::thread`
+//! `extern "C"` functions compiled by the VM called back from native code: a libc `qsort`
+//! comparator, `pthread_create` (Windows: `CreateThread`) start routines and a `std::thread`
 //! body through an `extern "C"` trampoline, a `#[no_mangle]` export called through a declared
 //! `extern` block, and VM callers of all of them. A panic out of an `extern "C"` fn aborts
 //! (the last thing the program does; the exit status is compared too).
@@ -58,9 +58,44 @@ fn native_cmp_bytes(f: extern "C" fn(u8, u8) -> i8) -> (i32, i32, i32) {
 
 // --- pthread start routines --------------------------------------------------------------
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+#[link(name = "kernel32")]
+unsafe extern "system" {
+    fn CreateThread(attr: *const c_void, stack: usize, start: extern "system" fn(*mut c_void) -> u32, arg: *mut c_void, flags: u32, id: *mut u32) -> *mut c_void;
+    fn WaitForSingleObject(h: *mut c_void, ms: u32) -> u32;
+    fn GetExitCodeThread(h: *mut c_void, code: *mut u32) -> i32;
+    fn CloseHandle(h: *mut c_void) -> i32;
+}
+
+#[cfg(windows)]
+/// A `CreateThread` start routine (`extern "system"` is C on x86-64): sums the slice its
+/// argument points to.
+extern "system" fn sum_thread(arg: *mut c_void) -> u32 {
+    let v = unsafe { &*(arg as *const Vec<u64>) };
+    v.iter().sum::<u64>() as u32
+}
+
+#[cfg(windows)]
+#[inline(never)]
 fn pthreads() -> Vec<u64> {
-    (1..5u64).map(|k| (0..100 * k).sum()).collect()
+    let data: Vec<Vec<u64>> = (1..5u64).map(|k| (0..100 * k).collect()).collect();
+    let mut ts = Vec::new();
+    for d in &data {
+        let h = unsafe { CreateThread(std::ptr::null(), 0, sum_thread, d as *const Vec<u64> as *mut c_void, 0, std::ptr::null_mut()) };
+        assert!(!h.is_null());
+        ts.push(h);
+    }
+    ts.into_iter()
+        .map(|h| {
+            let mut code = 0;
+            unsafe {
+                assert_eq!(WaitForSingleObject(h, u32::MAX), 0);
+                assert_ne!(GetExitCodeThread(h, &mut code), 0);
+                CloseHandle(h);
+            }
+            u64::from(code)
+        })
+        .collect()
 }
 
 #[cfg(unix)]

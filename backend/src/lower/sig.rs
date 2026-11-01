@@ -18,8 +18,8 @@ use super::{LayoutCx, NeedsNative, layout_error, native};
 pub enum CallConv {
     /// `Rust` / `rust-call`: direct calls, and the `call` template.
     Rust,
-    /// `extern "C"` that can't unwind: direct calls on SysV where the [`ArgPlan`] covers the
-    /// signature, else `call_cN`.
+    /// `extern "C"` that can't unwind: direct calls (SysV and Win64) where the [`ArgPlan`]
+    /// covers the signature, else `call_cN`.
     C,
 }
 
@@ -171,15 +171,12 @@ fn from_fn_abi<'tcx>(
             let k = ret_kind(tcx, &fn_abi.ret)?;
             (k, Some(arg_plan(tcx, fn_abi, k == RET_SRET, false)?))
         }
-        // SysV C: direct calls where every input and the return have a shape the VM passes;
-        // otherwise (and on Win64, for now) only the `call_cN` island calls it.
-        CallConv::C if !crate::symbols::is_pe(tcx) => {
-            match ret_kind(tcx, &fn_abi.ret).and_then(|k| Ok((k, arg_plan(tcx, fn_abi, k == RET_SRET, true)?))) {
-                Ok((k, p)) => (k, Some(p)),
-                Err(_) => (0, None),
-            }
-        }
-        CallConv::C => (0, None),
+        // C (SysV and Win64): direct calls where every input and the return have a shape the
+        // VM passes; otherwise only the `call_cN` island calls it.
+        CallConv::C => match ret_kind(tcx, &fn_abi.ret).and_then(|k| Ok((k, arg_plan(tcx, fn_abi, k == RET_SRET, true)?))) {
+            Ok((k, p)) => (k, Some(p)),
+            Err(_) => (0, None),
+        },
     };
     let ret_sext = conv == CallConv::C
         && matches!(fn_abi.ret.mode, PassMode::Direct(a) if a.arg_ext == ArgExtension::Sext)
@@ -267,7 +264,8 @@ fn reg_pieces<'tcx>(tcx: TyCtxt<'tcx>, arg: &ArgAbi<'tcx, Ty<'tcx>>) -> Option<V
 /// optional 8-byte prefix unit at 0 and one rest unit after it, each an integer (of the
 /// remaining size if under 8 bytes: a 12-byte struct's tail is 4 bytes) or a 4- or 8-byte float
 /// (an 8-byte `xmm` unit may hold two `f32`s). `None` for other shapes (vectors, multi-unit
-/// rests, `rest_offset`).
+/// rests, `rest_offset`). Win64 C's `i128` return is a 16-byte opaque vector unit, alone: one
+/// 16-byte `xmm` piece (`xmm0`; only returns get it, `arg_plan` refuses it).
 ///
 /// An SSE eightbyte that isn't 4 bytes is an `f64` unit whatever the value's size, so `{f16}`
 /// or the tail of `{f32, f32, f16}` is an 8-byte unit past the value's end (`value_size`):
@@ -281,6 +279,7 @@ fn cast_pieces(cast: &CastTarget, value_size: u64) -> Option<Vec<Piece>> {
             RegKind::Integer if (1..=8).contains(&size) => Some(Piece { float: false, size, off, ext: ArgExtension::None }),
             RegKind::Float if matches!(size, 4 | 8) && u64::from(size) <= left => Some(Piece { float: true, size, off, ext: ArgExtension::None }),
             RegKind::Float if size == 8 && left == 2 => Some(Piece { float: true, size: 2, off, ext: ArgExtension::None }),
+            RegKind::Vector { .. } if size == 16 && off == 0 && value_size == 16 => Some(Piece { float: true, size, off, ext: ArgExtension::None }),
             _ => None,
         }
     };
@@ -303,8 +302,8 @@ fn cast_pieces(cast: &CastTarget, value_size: u64) -> Option<Vec<Piece>> {
 
 /// The return kind of `ret` ([`ryo_bytecode::asm::RET_SRET`]): its `PassMode` as LLVM lowers
 /// it on x86-64. `Direct` and `Pair` scalars go to the next of `rax`, `rdx` (integers and
-/// pointers; `i128` takes both) or `xmm0`, `xmm1` (floats); a `Cast` is the Rust ABI's
-/// integer for an aggregate of up to 8 bytes; `Indirect` is sret.
+/// pointers; a `Direct` `i128` takes both) or `xmm0`, `xmm1` (floats); a `Cast` is one or two
+/// units ([`cast_pieces`]; Win64 C's `i128` a 16-byte `xmm0` part); `Indirect` is sret.
 fn ret_kind<'tcx>(tcx: TyCtxt<'tcx>, ret: &ArgAbi<'tcx, Ty<'tcx>>) -> Result<u32, NeedsNative> {
     match ret.mode {
         PassMode::Ignore => return Ok(0),
@@ -315,9 +314,11 @@ fn ret_kind<'tcx>(tcx: TyCtxt<'tcx>, ret: &ArgAbi<'tcx, Ty<'tcx>>) -> Result<u32
         return native(format!("return passed as {:?} ({:?})", ret.mode, ret.layout.backend_repr));
     };
     let pe = crate::symbols::is_pe(tcx);
-    if pe && pieces.iter().any(|p| p.float && p.size == 16) {
-        // Win64: LLVM returns an `f128` in memory the caller passes the address of, like an
-        // sret (`i128` comes back in `rax:rdx` as on SysV, `f16` in `xmm0`).
+    let scalars = matches!(ret.mode, PassMode::Direct(_) | PassMode::Pair(..));
+    if pe && scalars && pieces.iter().any(|p| p.float && p.size == 16) {
+        // Win64, a `Direct` `f128` (the Rust ABI; C's is `Indirect`): LLVM returns it in
+        // memory the caller passes the address of, like an sret (a `Direct` `i128` comes back
+        // in `rax:rdx` as on SysV, `f16` in `xmm0`).
         if pieces.len() > 1 {
             return native("f128 in a returned pair on Win64");
         }
@@ -345,10 +346,11 @@ fn ret_kind<'tcx>(tcx: TyCtxt<'tcx>, ret: &ArgAbi<'tcx, Ty<'tcx>>) -> Result<u32
 /// free), a float the next of `xmm0`–`xmm7`, and the rest go on the stack in 8-byte slots
 /// (16-aligned for 16-byte values). On Win64 each argument takes the next position: `rcx rdx
 /// r8 r9` or `xmm0`–`xmm3` by class, then 8-byte stack slots after the shadow space; an `i128`
-/// takes two positions, an `f128` is passed by reference (as LLVM 23 lowers them for the Rust
-/// ABI on x86_64-pc-windows-msvc). An sret return takes the first integer register. With `c`
-/// (SysV C), also `Indirect { on_stack: true }` (`byval`) and integer extension
-/// ([`ArgLoc::Stack`], [`ArgReg`]).
+/// takes two positions, an `f128` is passed by reference (as LLVM 23 lowers `Direct` ones, the
+/// Rust ABI's, on x86_64-pc-windows-msvc; Win64 C makes both `Indirect`, and ZSTs `Indirect`
+/// from `Ignore`: a pointer taking a position). An sret return takes the first integer
+/// register. With `c`, also SysV's `Indirect { on_stack: true }` (`byval`) and integer
+/// extension ([`ArgLoc::Stack`], [`ArgReg`]).
 fn arg_plan<'tcx>(tcx: TyCtxt<'tcx>, fn_abi: &FnAbi<'tcx, Ty<'tcx>>, sret: bool, c: bool) -> Result<ArgPlan, NeedsNative> {
     let pe = crate::symbols::is_pe(tcx);
     struct State {
@@ -389,7 +391,7 @@ fn arg_plan<'tcx>(tcx: TyCtxt<'tcx>, fn_abi: &FnAbi<'tcx, Ty<'tcx>>, sret: bool,
                 }
             }
         }
-        /// An integer of `size` bytes (1 to 8, or 16 for `i128`) at `off`.
+        /// An integer of `size` bytes (1 to 8, or 16 for a `Direct` `i128`) at `off`.
         fn int(&mut self, size: u32, off: u32, ext: ArgExtension, out: &mut Vec<ArgLoc>) {
             if self.pe && size == 16 {
                 // Win64 (Rust ABI): an `i128` is two 8-byte arguments, low half first, each
@@ -414,7 +416,8 @@ fn arg_plan<'tcx>(tcx: TyCtxt<'tcx>, fn_abi: &FnAbi<'tcx, Ty<'tcx>>, sret: bool,
         /// A float of `size` bytes at `off`.
         fn float(&mut self, size: u32, off: u32, out: &mut Vec<ArgLoc>) {
             // PE: an `f16` goes in the low 2 bytes of its `xmm` or its 8-byte stack slot; the
-            // caller passes an `f128` by reference (`Direct` ones only: see `arg_plan`).
+            // caller passes a `Direct` `f128` by reference (`arg_plan` refuses other 16-byte
+            // float pieces).
             if self.pe && size == 16 {
                 self.ptr(out);
             } else {
@@ -464,6 +467,11 @@ fn arg_plan<'tcx>(tcx: TyCtxt<'tcx>, fn_abi: &FnAbi<'tcx, Ty<'tcx>>, sret: bool,
                 // A pointer to one half of the input isn't an `ArgLoc`.
                 if pe && pieces.len() > 1 && pieces.iter().any(|p| p.float && p.size == 16) {
                     return native("f128 in a pair argument on Win64");
+                }
+                // The PE `i128`/`f128` rules in `State` are for `Direct` scalars (the Rust ABI);
+                // a 16-byte `Cast` unit (Win64 C's `i128` return shape) isn't an argument.
+                if matches!(arg.mode, PassMode::Cast { .. }) && pieces.iter().any(|p| p.size == 16) {
+                    return native("16-byte cast unit in an argument");
                 }
                 // SysV C: rustc's classifier counts registers per aggregate, and gives one that
                 // doesn't fit entirely `on_stack`; scalars and Rust-ABI pieces go one by one.
