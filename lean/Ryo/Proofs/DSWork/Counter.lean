@@ -1,5 +1,6 @@
 import Ryo.Proofs.DecodeSound.Basic
 import Ryo.Proofs.NoArgCursor
+import Ryo.Proofs.Discharge.StubsLinked
 
 set_option linter.constructorNameAsVariable false
 set_option linter.unusedSimpArgs false
@@ -474,7 +475,7 @@ theorem ctr_simple_canonical (i : Item) (h : i.wf 0 = true)
 
 /-- `reach_counter`. Proof: the check's items (`ctrInc true`, `jns stub`) are fetched from
 memory (`LinkOk.dec`, `branch_canonical`); `Counter.counter_noop` under `H.trip`: no trip falls
-through to `p2`; a trip branches to the stub (`H.stubsLinked`), whose `call [r11 + 16]` is an
+through to `p2`; a trip branches to the stub (`stubsLinked_of_decodes`), whose `call [r11 + 16]` is an
 environment step (`H.envOutside.trip`) returning to its `jmp back` (`back = p2`); `ctr_frameInv`
 with `ctr_apart hD H` keeps `FrameInv` (a loop head isn't a leading `arg`, `CounterApart.heads`),
 and the cache there is empty (`heads`, `CacheInv.empty`); on PE the trip keeps `rsi`/`rdi`
@@ -494,7 +495,7 @@ theorem reach_counter (hD : Decodes S code relocs rodata callSites dropped scope
   obtain ⟨huk, hnl⟩ := HC.heads k hk (by rw [hq]; rfl)
   have hci0 : ∀ y, CacheInv (S.used k) y := fun y => by rw [huk]; exact CacheInv.empty y
   have hnl' : ¬ LeadArg S s.pc := by rw [hs]; exact hnl
-  obtain ⟨hbs, n, t', long', q, ht', hdecs⟩ := H.stubsLinked k hk stub p2 hq
+  obtain ⟨hbs, n, t', long', q, ht', hdecs⟩ := stubsLinked_of_decodes hD H.stubsBoundary k hk stub p2 hq
   have hsp : S.body.spFrame = none := hf.code.fp
   cases hctr with
   | @check _ t long hcnt hdec =>

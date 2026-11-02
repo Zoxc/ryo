@@ -107,7 +107,8 @@ discharged later:
   dropped stores), `inlineEscBounded` (`InlineEscBounded`: after the scopes, escaped objects lie in
   `[-2^63, 2^63)`; they come from `Escape` scopes, which `FrameBounds` keeps in the window), `cacheCleared` (`CacheCleared`: the cache is empty at branch targets and
   landing pads), `padsLinked` (`PadsLinked`: the LSDA as linked against `cleanupAt`),
-  `stubsLinked` (`StubsLinked`: the counter stubs in memory as `read` checked them).
+  `stubsBoundary` (the counter stubs start at relocation boundaries; their items are
+  proved, `stubsDec_of_decodes`).
 
 Not covered: the prologue (R's `entry` against the entry's counter check, the prologue and the
 stack probe: the simulation starts at instruction 0's boundary) and the trip's `Done` outcome (a

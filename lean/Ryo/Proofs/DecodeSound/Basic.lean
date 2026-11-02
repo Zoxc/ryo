@@ -646,7 +646,10 @@ structure Hyps (S : Setup) : Prop where
   deadStore : DeadStoreSim S
   cacheCleared : CacheCleared S
   padsLinked : PadsLinked S
-  stubsLinked : StubsLinked S
+  /-- Open (decoder): each counter stub starts at a relocation boundary (the rest of
+  `StubsLinked`, the stub's items, is `Discharge/StubsLinked.lean`'s `stubsDec_of_decodes`). -/
+  stubsBoundary : ∀ k (hk : k < S.r.protos.size) stub back,
+    S.r.protos[k].counter = some (stub, back) → Boundary S.rs stub
   -- Prerequisites of the inline steps (`DSWork/Inline.lean`'s `bodySim_inline'`).
   /-- Every inline opcode's class is of its shape and `clsOk` (proved by kernel evaluation:
   `inlineOps_shape`, `RyoProofs/InlineOps.lean`, and `inlineOps_clsOk`,
