@@ -19,12 +19,12 @@ theorem bytesLeDefined_length {a b : List AbstractByte} (h : bytesLeDefined a b 
 theorem AbstractByte.leDefined_data {x y : AbstractByte} {d : UInt8} (h : x.leDefined y = true)
     (hx : x.data = some d) : y.data = some d := by
   cases x <;> cases y <;> simp_all [AbstractByte.leDefined, AbstractByte.data] <;>
-    (rename_i f1 _ f2; cases f1 <;> cases f2 <;> simp_all [AbstractByte.leDefined])
+    (rename_i f1 _ f2; cases f1 <;> cases f2 <;> simp_all)
 
 theorem AbstractByte.leDefined_frag {x y : AbstractByte} {f : ProvenanceFrag}
     (h : x.leDefined y = true) (hx : x.provFrag = some f) : y.provFrag = some f := by
   cases x <;> cases y <;> simp_all [AbstractByte.leDefined, AbstractByte.provFrag] <;>
-    (rename_i f1 _ f2; cases f1 <;> cases f2 <;> simp_all [AbstractByte.leDefined])
+    (rename_i f1 _ f2; cases f1 <;> cases f2 <;> simp_all)
 
 theorem mapM_data_mono {b1 b2 : List AbstractByte} {ds : List UInt8}
     (h : bytesLeDefined b1 b2 = true) (h1 : b1.mapM AbstractByte.data = some ds) :
@@ -351,7 +351,7 @@ theorem decode_mono' : (t : Ty) → (b1 b2 : List AbstractByte) → (v1 : Value)
     split at h
     · simp at h
     · rename_i hlen
-      simp only [hlen, ↓reduceIte]
+      simp only [hlen]
       cases hi : enumIdx vs dt repr b1 with
       | none => simp [hi] at h
       | some idx =>
@@ -360,7 +360,7 @@ theorem decode_mono' : (t : Ty) → (b1 b2 : List AbstractByte) → (v1 : Value)
         split at h
         · simp at h
         · rename_i hinh
-          simp only [hinh, ↓reduceIte]
+          simp only [hinh]
           cases hd : Ty.decodeVariant vs idx b1 with
           | none => simp [hd] at h
           | some d1 =>

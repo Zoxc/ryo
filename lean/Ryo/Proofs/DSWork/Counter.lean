@@ -484,7 +484,7 @@ theorem reach_counter (hD : Decodes S code relocs rodata callSites dropped scope
     (hq : S.r.protos[k].counter = some (stub, p2))
     (hctr : CounterRead S.fr S.body p1 (some (stub, p2)) p2) (hb : Boundary S.rs p1)
     {Q : X86.State → Prop} {s : R.RState} {x : X86.State} (hs : s.pc = k)
-    (hf : FrameInv S s x) (hrip : x.rip = addrAt S.ctx p1) (hci : CacheInv (S.used k) x)
+    (hf : FrameInv S s x) (hrip : x.rip = addrAt S.ctx p1) (_hci : CacheInv (S.used k) x)
     (kont : ∀ y, FrameInv S s y → y.rip = addrAt S.ctx p2 → CacheInv (S.used k) y →
       Reach S.ctx S.E Q y) :
     Reach S.ctx S.E Q x := by

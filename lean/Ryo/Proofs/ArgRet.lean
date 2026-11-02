@@ -1043,7 +1043,7 @@ theorem exec_epilogue (ctx : Ctx) (F : Nat) (m : Ryo.Obj.Mode) (y : X86.State)
   unfold epilogue
   cases hpe : m.pe <;> cases hfp : m.framePointer <;>
     simp only [hpe, hfp, Bool.false_eq_true, ↓reduceIte, true_or, or_true, or_false,
-      false_implies, forall_const, true_implies] at hsp ⊢
+      false_implies, forall_const] at hsp ⊢
   -- PE: `add rsp, F` (for `F > 0`) and `pop rbp`, from `rsp = fp - F`.
   case true.false | true.true =>
     obtain ⟨hr, hF⟩ := hsp
@@ -1054,20 +1054,20 @@ theorem exec_epilogue (ctx : Ctx) (F : Nat) (m : Ryo.Obj.Mode) (y : X86.State)
         List.cons_append, execItems_cons, execItems_nil, Item.exec, pure, Except.pure, ex_bind_ok']
       refine ⟨_, rfl, ?_⟩
       simp (config := { decide := true }) [State.pop, State.rsp, State.reg, State.setReg, State.jump]
-      simp only [BitVec.ofNat_eq_ofNat, BitVec.sub_zero] at hr
-      simp only [hr, idx_rbp]
+      simp only [BitVec.sub_zero] at hr
+      simp only [hr]
       and_intros
       all_goals first
         | (intro i h4 h5; simp [h4, h5])
         | (congr 1; bv_omega)
         | bv_omega
     · have hne : (F != 0) = true := by simpa using hF0
-      simp only [hne, ↓reduceIte, List.cons_append, List.singleton_append, execItems_cons,
-        execItems_nil, Item.exec, pure, Except.pure, ex_bind_ok']
+      simp only [hne, ↓reduceIte, List.cons_append, execItems_cons,
+        Item.exec, pure, Except.pure, ex_bind_ok']
       refine ⟨_, rfl, ?_⟩
-      simp (config := { decide := true }) [State.pop, State.rsp, State.reg, State.setReg,
+      simp (config := { decide := true }) [State.rsp, State.reg, State.setReg,
         State.setFlags, State.jump]
-      simp only [ea, idx_rbp]
+      simp only [ea]
       rw [hr, signExtend_ofNat_small _ (by omega)]
       and_intros
       all_goals first

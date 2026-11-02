@@ -205,7 +205,7 @@ theorem exec_div (ctx : Ctx) (sg : Bool) (w : W) (rm : Rm) (s : Ryo.X86.State)
   rcases hw with rfl | rfl
   all_goals
     simp (config := { decide := true }) only [Item.exec, regW_jump, rmW_jump, h,
-      bne_self_eq_false, Bool.false_and, Bool.and_false, Bool.false_eq_true, ↓reduceIte, pure,
+      ↓reduceIte, pure,
       Except.pure]
 
 theorem exec_bsf (ctx : Ctx) (w : W) (reg : Reg) (rm : Rm) (s : Ryo.X86.State) :

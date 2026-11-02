@@ -123,7 +123,7 @@ theorem sequence_ok_later {T : Type} {cls : Class} {ops : List (R.Opnd T)} {item
       | subst hit
       | split at hit
       | (simp only [List.mem_cons, List.mem_append, List.not_mem_nil,
-          or_false, or_assoc, ld, st, R, C, M.frame, Mrax, flagSeq, cmpImmSeq] at hit))) <;>
+          or_false, or_assoc, ld, st, R, C, M.frame] at hit))) <;>
     simp [seqItemOk, cacheSafe, onlyARB, okReg, okRm] <;>
     (try (cases ‹W› <;> simp_all)) <;>
     (try (cases ‹Sh› <;> simp_all))
@@ -146,7 +146,7 @@ theorem sequence_div_safe {T : Type} {sg rem : Bool} {w : W} {ops : List (R.Opnd
       | subst hit
       | split at hit
       | (simp only [List.mem_cons, List.mem_append, List.not_mem_nil,
-          or_false, or_assoc, ld, st, R, C, M.frame, Mrax, flagSeq, cmpImmSeq] at hit))) <;>
+          or_false, or_assoc, ld, R, C, M.frame] at hit))) <;>
     simp [cacheSafe] <;>
     (try (cases ‹W› <;> simp_all)) <;>
     (try (cases ‹Bool› <;> simp_all))
@@ -163,7 +163,7 @@ theorem sequence_div_pinned {T : Type} {sg rem : Bool} {w : W} {ops : List (R.Op
     | split at h)
   all_goals (try simp only [Option.some.injEq, Prod.mk.injEq] at h)
   all_goals (try obtain ⟨rfl, _⟩ := h)
-  all_goals (try (cases ‹W›)) <;> simp [isMulQ, ld, st, R, C]
+  all_goals (try (cases ‹W›)) <;> simp [isMulQ, ld, R, C]
 
 /-- The items of every inline sequence are `cacheSafe`, and name
 only `rax`, `rcx` and `rbp` unless the sequence has a `mul`/`div`, which keeps it on `rax`. -/
@@ -311,7 +311,7 @@ theorem exec_swap (ctx : Ctx) {xr : Reg} (hc : xr ≠ .rcx) {it : Item} (hs : ca
   all_goals (first | (simp only [reduceCtorEq] at h; done) | (simp only [Except.ok.injEq] at h; subst h))
   all_goals simp only [swapS_jump, swapS_setReg, swapS_setFlags, swapS_setMemW, swapS_setMem,
     swapS_setRegW, swapS_setRmW, jump_jump, regW_swapS, ea_swapS', rmW_swapS, memW_swapS,
-    flags_swapS, mem_swapS, hrcx, hrc]
+    flags_swapS, mem_swapS, hrcx]
   all_goals (try simp_all)
   -- `shiftCl` past the width: the flags through `Option.map`.
   all_goals

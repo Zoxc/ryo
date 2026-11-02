@@ -166,7 +166,7 @@ fact). For an island `L = -F + shadow`: the template's writes reach `fp - F + sh
 theorem FrameSep.islandApart {Owned : BitVec 64 → Prop} {lo sp0 : BitVec 64} {fp : Nat}
     {L K : Int} {ls : List (Int × Nat)} {st : OpSem.State} {x : X86.State}
     (hs : ScopeMem.FrameSep L K st x) (hw : ScopeMem.Window L K fp)
-    (hK : 0 ≤ K) (hb : x.reg .rbp = BitVec.ofNat 64 fp) (hF : 0 ≤ (fp : Int) + L)
+    (_hK : 0 ≤ K) (hb : x.reg .rbp = BitVec.ofNat 64 fp) (hF : 0 ≤ (fp : Int) + L)
     (hsp : (sp0.toNat : Int) ≤ fp + L)
     (hlends : ∀ l ∈ ls, -2 ^ 62 < l.1 ∧ l.1 + l.2 < 2 ^ 62)
     (hown : ∀ o, L ≤ o → o < K → ¬ Owned (fpAddr x o)) :
@@ -224,7 +224,7 @@ theorem island_query (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.State}
     (hi : c.d.insns[s.pc]? = some (.native op [.sym isl, .words ws]))
     (hf : op.full = some f) (hsh : f.info.shape = .island)
     (hr : RRel s x) (hm : MemRel s.st x) (hsz : ∀ sc ∈ c.scopesAt s.pc, sc.size < 2 ^ 62)
-    (hsp : x.rsp = x.reg .rbp - BitVec.ofNat 64 c.d.frameSize)
+    (_hsp : x.rsp = x.reg .rbp - BitVec.ofNat 64 c.d.frameSize)
     (hlo : lo.toNat + 8 ≤ x.rsp.toNat)
     (hro : OpsAt x.mem (ctx.addrOf (.ro o)) (ws.map (·.toInt)))
     (hroA : ∀ i < 4 * (ws.length + 1), ¬ InStack lo x.rsp (ctx.addrOf (.ro o) - 4 + BitVec.ofNat 64 i))

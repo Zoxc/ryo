@@ -381,7 +381,7 @@ theorem escStep_spec {st : OpSem.State} {off : Int} {m m' : Memory} {p : Abstrac
         simp only [hlt, ↓reduceIte, Option.some.injEq] at h'
         subst h'
         refine ⟨a, ha, rfl, by simp, fun j => ⟨fun hn => ?_, fun hh hj => ?_⟩⟩
-        · simp only [Array.set!_eq_setIfInBounds, Array.getElem?_setIfInBounds]
+        · simp only [Array.getElem?_setIfInBounds]
           split
           · rename_i hj; exact absurd ⟨e, he, rfl, hj⟩ (hn p (List.mem_singleton_self _))
           · rfl
@@ -390,7 +390,7 @@ theorem escStep_spec {st : OpSem.State} {off : Int} {m m' : Memory} {p : Abstrac
           subst hq
           rw [he] at he'; cases he'
           refine ⟨q, List.mem_singleton_self _, ⟨e, he, rfl, hj'⟩, ?_⟩
-          simp [Array.set!_eq_setIfInBounds, Array.getElem?_setIfInBounds, hj', hj]
+          simp [hj', hj]
       · simp only [hid, ↓reduceIte] at h'
         exact ⟨a', h', rfl, rfl, fun _ => ⟨fun _ => rfl, fun ⟨q, hq, e', he', hid', _⟩ => by
           simp only [List.mem_singleton] at hq; subst hq; rw [he] at he'; cases he'
@@ -541,8 +541,8 @@ theorem rel_writeFrame {st st' : OpSem.State} {x x' : X86.State} {d : Int} {bs :
       rw [hxo]
       cases hf : st.escapedAt o with
       | none =>
-        simp only [hf, OpSem.State.privateIn, hin', decide_true, Option.isNone_none, Bool.and_self,
-          ↓reduceIte, pure, Except.pure, Except.ok.injEq] at hb
+        simp only [hf, OpSem.State.privateIn, hin', Option.isNone_none,
+          pure, Except.pure, Except.ok.injEq] at hb
         subst hb
         rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hk, Option.getD_some]
         exact hx.getElem _ hk _

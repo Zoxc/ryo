@@ -528,7 +528,7 @@ theorem inline_nb_opSem {f : Full.Opcode} {cls : Class} (hok : Step.InlineOk f c
     intro m hm
     simp only [hh, bind, Except.bind] at hm
     repeat' split at hm
-    all_goals first | (cases hm; done) | (cases hm; simp [inline_ill_eq, inline_throw_eq] at *) |
+    all_goals first | (cases hm; done) | (cases hm; simp [inline_ill_eq] at *) |
       simp_all [inline_ill_eq, inline_throw_eq]
   have hh' := prepare_handler hp
   rw [hh] at hh'
@@ -1006,7 +1006,7 @@ def InWinAllocs (lo hi : Int) (st st' : OpSem.State) (x : X86.State) : Prop :=
 
 theorem inWinAllocs_refl (lo hi : Int) (st : OpSem.State) (x : X86.State) :
     InWinAllocs lo hi st st x :=
-  fun id a hg hl => .inl ⟨a, hg, hl, rfl, rfl⟩
+  fun _id a hg hl => .inl ⟨a, hg, hl, rfl, rfl⟩
 
 theorem inWinAllocs_trans {lo hi : Int} {st1 st2 st3 : OpSem.State} {x : X86.State}
     (h1 : InWinAllocs lo hi st1 st2 x) (h2 : InWinAllocs lo hi st2 st3 x) :

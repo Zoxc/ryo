@@ -22,7 +22,7 @@
 
 use rustc_abi::{BackendRepr, ExternAbi};
 use rustc_middle::mir::{BasicBlock, Operand, Place, SourceInfo, UnwindAction};
-use rustc_middle::ty::{self, GenericArg, Instance, InstanceKind, Ty, TypingEnv};
+use rustc_middle::ty::{self, Instance, InstanceKind, Ty, TypingEnv};
 use rustc_span::Spanned;
 use rustc_target::callconv::ArgExtension;
 use ryo_bytecode::abi::HEADER_SIZE;

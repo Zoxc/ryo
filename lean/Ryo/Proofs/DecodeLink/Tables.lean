@@ -136,7 +136,7 @@ theorem hdlTables_of_check {S : Setup} {code : ByteArray} {relocs : Array Reloc}
     obtain ⟨e0, es', rfl⟩ := List.exists_cons_of_ne_nil hne
     have h0 := hes 0 (by simp)
     have hle := tableEntry_le h0
-    simp only [atPos, Nat.mul_zero, Nat.add_zero] at hle
+    simp only [Nat.mul_zero, Nat.add_zero] at hle
     rw [hcode, ecode] at hle
     omega
   · rw [hD.rsEq]

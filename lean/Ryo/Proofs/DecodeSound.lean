@@ -448,7 +448,7 @@ table, standing in for R's `switch.dense` handler call. R: the scopes, then `opS
 but `rax`/`rcx` kept (`Dense.Keep`, `hdl_switch_regs`), so `FrameInv` of R's state after the
 scopes (`dense_frameInv`, `hdl_frameInv_regs`); the target's cache cleared
 (`CacheCleared.targets`). -/
-theorem bodySim_dense (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+theorem bodySim_dense (_hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (H : Hyps S) {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
     (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
     (hr : (denseSwitch S.fr).run cur = .ok (some q, c')) (htable : HdlTables S) :

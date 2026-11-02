@@ -42,11 +42,11 @@ theorem exec_writes {ctx : Ctx} {it : Item} (hs : cacheSafe it = true) {x y : X8
       | (simp only [writeOf] at ha
          simp only [X86S.mem_setMem, mem_jump, ea_jump]
          exact X86.Mem.write_other _ _ _ _ _ (ha _ _ rfl))
-      | (simp [State.setRegW, State.setRmW, mem_jump]; done)
-      | ((cases ‹W› <;> simp [State.setRegW, State.setRmW, mem_jump]) <;> done)
-      | ((cases ‹Rm› <;> simp_all [State.setRegW, State.setRmW, State.setMemW, mem_jump, aluF]) <;> done)
-      | ((cases ‹Rm› <;> cases ‹W› <;> simp_all [State.setRegW, State.setRmW, State.setMemW,
-          mem_jump, aluF]) <;> done)
+      | (simp [State.setRegW, State.setRmW]; done)
+      | ((cases ‹W› <;> simp [State.setRegW, State.setRmW]) <;> done)
+      | ((cases ‹Rm› <;> simp_all [State.setRegW, State.setRmW, aluF]) <;> done)
+      | ((cases ‹Rm› <;> cases ‹W› <;> simp_all [State.setRegW, State.setRmW,
+          aluF]) <;> done)
 
 theorem writeOf_withRm (it : Item) (rm : Rm) : writeOf (withRm it rm) = writeOf it := by
   cases it <;> rfl
@@ -337,7 +337,7 @@ theorem exec_rbp {ctx : Ctx} {it : Item} (hs : cacheSafe it = true) {x y : X86.S
   all_goals first
     | (simp_all [-reg_setReg', -X86S.reg_setReg, rbp_setReg, rbp_setRegW, State.setMemW,
         State.setRmW]; done)
-    | ((cases ‹Rm› <;> simp_all [-reg_setReg', -X86S.reg_setReg, rbp_setReg, rbp_setRegW,
+    | ((cases ‹Rm› <;> simp_all [-reg_setReg', -X86S.reg_setReg, rbp_setRegW,
         State.setMemW, State.setRmW]) <;> done)
     | ((cases ‹W› <;> simp_all [-reg_setReg', -X86S.reg_setReg, rbp_setReg, rbp_setRegW,
         State.setMemW, State.setRmW, State.setRegW]) <;> done)
@@ -368,7 +368,7 @@ theorem emit_store_split {T : Type} {w : W} {ops : List (R.Opnd T)} {cand : List
     ∃ init j, (cache.emit cand).1 = init ++ [j] ∧ ∀ e ∈ init, writeOf e = none := by
   have hc : ∃ (a b : M) (k : BitVec 32), cand = [Item.ld .q false .rax a, .ld w false .rcx b,
       .st w .rcx ⟨.rax, k⟩] := by
-    simp only [sequence, bind, Option.bind_eq_some_iff, pure] at hseq
+    simp only [sequence, bind, pure] at hseq
     repeat' (first
       | (obtain ⟨_, hs, hseq⟩ := hseq
          split at hs <;> (try simp only [Option.some.injEq, reduceCtorEq] at hs) <;> (try subst hs))

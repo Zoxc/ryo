@@ -130,24 +130,24 @@ theorem step_ld (ctx : Ctx) (w : W) (m : M) (x : State) :
   · refine ⟨_, rfl, ?_, rfl, rfl, fun i h1 h2 => ?_⟩
     · simp only [Asm.R, State.reg_setReg, memW_jump, ea_jump, Bool.false_eq_true, ↓reduceIte]
       exact zext32 _ (by decide)
-    · simp only [State.setRmW, State.setRegW, Asm.R, Asm.C, Inline.X86S.regs_setReg,
-        Inline.X86S.regs_jump, Inline.X86S.regs_setFlags, Inline.idx_rax, Inline.idx_rcx, h1, h2,
+    · simp only [Asm.R, Inline.X86S.regs_setReg,
+        Inline.X86S.regs_jump, Inline.idx_rax, h1,
         ↓reduceIte]
   · refine ⟨_, rfl, ?_, rfl, rfl, fun i h1 h2 => ?_⟩
     · simp only [Asm.R, State.reg_setReg, memW_jump, ea_jump, Bool.false_eq_true, ↓reduceIte]
       exact zext32 _ (by decide)
-    · simp only [State.setRmW, State.setRegW, Asm.R, Asm.C, Inline.X86S.regs_setReg,
-        Inline.X86S.regs_jump, Inline.X86S.regs_setFlags, Inline.idx_rax, Inline.idx_rcx, h1, h2,
+    · simp only [Asm.R, Inline.X86S.regs_setReg,
+        Inline.X86S.regs_jump, Inline.idx_rax, h1,
         ↓reduceIte]
   · refine ⟨_, rfl, ?_, rfl, rfl, fun i h1 h2 => ?_⟩
     · simp only [Asm.R, State.setRegW, State.reg_setReg, memW_jump, ea_jump]
-    · simp only [State.setRmW, State.setRegW, Asm.R, Asm.C, Inline.X86S.regs_setReg,
-        Inline.X86S.regs_jump, Inline.X86S.regs_setFlags, Inline.idx_rax, Inline.idx_rcx, h1, h2,
+    · simp only [State.setRegW, Asm.R, Inline.X86S.regs_setReg,
+        Inline.X86S.regs_jump, Inline.idx_rax, h1,
         ↓reduceIte]
   · refine ⟨_, rfl, ?_, rfl, rfl, fun i h1 h2 => ?_⟩
     · simp only [Asm.R, State.setRegW, State.reg_setReg, memW_jump, ea_jump]
-    · simp only [State.setRmW, State.setRegW, Asm.R, Asm.C, Inline.X86S.regs_setReg,
-        Inline.X86S.regs_jump, Inline.X86S.regs_setFlags, Inline.idx_rax, Inline.idx_rcx, h1, h2,
+    · simp only [State.setRegW, Asm.R, Inline.X86S.regs_setReg,
+        Inline.X86S.regs_jump, Inline.idx_rax, h1,
         ↓reduceIte]
 
 /-- `sub rax, rcx` after `mov rcx, base` (64 bits, `base` not an `imm32`). -/
@@ -159,7 +159,7 @@ theorem step_sub_reg (ctx : Ctx) (base a : BitVec 64) (y : State) (hy : y.reg .r
   · simp only [State.setRegW, State.regW, State.rmW, Asm.R, Asm.C, W.bits, State.reg_setReg,
       State.reg_setReg_other _ _ _ _ hrc, Switch.reg_jump, Switch.reg_setFlags, hy]
     all_goals (clear hy; bv_decide)
-  · simp only [State.setRmW, State.setRegW, Asm.R, Asm.C, Inline.X86S.regs_setReg,
+  · simp only [State.setRegW, Asm.R, Asm.C, Inline.X86S.regs_setReg,
         Inline.X86S.regs_jump, Inline.X86S.regs_setFlags, Inline.idx_rax, Inline.idx_rcx, h1, h2,
         ↓reduceIte]
 
@@ -173,31 +173,31 @@ theorem step_sub_imm (ctx : Ctx) (w : W) (base a : BitVec 64) (y : State) (hy : 
     · simp only [State.setRmW, State.setRegW, State.rmW, State.regW, Asm.R, W.bits,
         Asm.sextI32, State.reg_setReg, Switch.reg_jump, Switch.reg_setFlags, hy] at ha ⊢
       all_goals (clear hy hf; bv_decide)
-    · simp only [State.setRmW, State.setRegW, Asm.R, Asm.C, Inline.X86S.regs_setReg,
-        Inline.X86S.regs_jump, Inline.X86S.regs_setFlags, Inline.idx_rax, Inline.idx_rcx, h1, h2,
+    · simp only [State.setRmW, State.setRegW, Asm.R, Inline.X86S.regs_setReg,
+        Inline.X86S.regs_jump, Inline.X86S.regs_setFlags, Inline.idx_rax, h1,
         ↓reduceIte]
   · refine ⟨_, rfl, ?_, rfl, rfl, fun i h1 h2 => ?_⟩
     · simp only [State.setRmW, State.setRegW, State.rmW, State.regW, Asm.R, W.bits,
         Asm.sextI32, State.reg_setReg, Switch.reg_jump, Switch.reg_setFlags, hy] at ha ⊢
       all_goals (clear hy hf; bv_decide)
-    · simp only [State.setRmW, State.setRegW, Asm.R, Asm.C, Inline.X86S.regs_setReg,
-        Inline.X86S.regs_jump, Inline.X86S.regs_setFlags, Inline.idx_rax, Inline.idx_rcx, h1, h2,
+    · simp only [State.setRmW, State.setRegW, Asm.R, Inline.X86S.regs_setReg,
+        Inline.X86S.regs_jump, Inline.X86S.regs_setFlags, Inline.idx_rax, h1,
         ↓reduceIte]
   · refine ⟨_, rfl, ?_, rfl, rfl, fun i h1 h2 => ?_⟩
     · simp only [State.setRmW, State.setRegW, State.rmW, State.regW, Asm.R, W.bits,
-        Asm.sextI32, State.reg_setReg, Switch.reg_jump, Switch.reg_setFlags, hy] at ha ⊢
+        Asm.sextI32, State.reg_setReg, Switch.reg_jump, hy] at ha ⊢
       all_goals (clear hy hf; bv_decide)
-    · simp only [State.setRmW, State.setRegW, Asm.R, Asm.C, Inline.X86S.regs_setReg,
-        Inline.X86S.regs_jump, Inline.X86S.regs_setFlags, Inline.idx_rax, Inline.idx_rcx, h1, h2,
+    · simp only [State.setRmW, State.setRegW, Asm.R, Inline.X86S.regs_setReg,
+        Inline.X86S.regs_jump, Inline.X86S.regs_setFlags, Inline.idx_rax, h1,
         ↓reduceIte]
   · have hf' : (base.setWidth 32).signExtend 64 = base := by
       simpa [Asm.fits] using hf rfl
     refine ⟨_, rfl, ?_, rfl, rfl, fun i h1 h2 => ?_⟩
     · simp only [State.setRmW, State.setRegW, State.rmW, State.regW, Asm.R, W.bits,
-        Asm.sextI32, State.reg_setReg, Switch.reg_jump, Switch.reg_setFlags, hy] at ha ⊢
+        Asm.sextI32, State.reg_setReg, Switch.reg_jump, hy] at ha ⊢
       all_goals (clear hy hf; bv_decide)
-    · simp only [State.setRmW, State.setRegW, Asm.R, Asm.C, Inline.X86S.regs_setReg,
-        Inline.X86S.regs_jump, Inline.X86S.regs_setFlags, Inline.idx_rax, Inline.idx_rcx, h1, h2,
+    · simp only [State.setRmW, State.setRegW, Asm.R, Inline.X86S.regs_setReg,
+        Inline.X86S.regs_jump, Inline.X86S.regs_setFlags, Inline.idx_rax, h1,
         ↓reduceIte]
 
 /-- The `sub` of `base`, whichever form: `rax` is `a - base` at the width, zero-extended. -/
@@ -243,7 +243,7 @@ theorem step_tail (ctx : Ctx) (cw : W) (n c : BitVec 64) (y : State) (hy : y.reg
       all_goals (clear hy; bv_decide)
     · simp only [State.setRegW, Asm.R, Asm.C, State.reg_setReg,
         State.reg_setReg_other _ _ _ _ hcr, Switch.reg_jump, Switch.reg_setFlags]
-    · simp only [State.setRmW, State.setRegW, Asm.R, Asm.C, Inline.X86S.regs_setReg,
+    · simp only [State.setRegW, Asm.R, Asm.C, Inline.X86S.regs_setReg,
         Inline.X86S.regs_jump, Inline.X86S.regs_setFlags, Inline.idx_rax, Inline.idx_rcx, h1, h2,
         ↓reduceIte]
 

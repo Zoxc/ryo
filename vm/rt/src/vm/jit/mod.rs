@@ -1039,7 +1039,10 @@ extern "C" fn at_exit() {
         return;
     }
     let report = REPORT.load(Acquire);
-    let why: &[u8] = if !config().enabled {
+    // `announce`, which registered this, set the settings; `config()` could reach `from_env`
+    // and so could unwind.
+    let enabled = CONFIG.get().is_some_and(|c| c.enabled);
+    let why: &[u8] = if !enabled {
         b"JIT off"
     } else if !STARTED.load(Relaxed) {
         b"JIT thread not started"

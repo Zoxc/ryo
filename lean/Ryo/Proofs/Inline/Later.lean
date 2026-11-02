@@ -481,9 +481,9 @@ theorem bswap_w (A : BitVec 16) :
   have hA32 : A.toNat % 4294967296 = A.toNat := Nat.mod_eq_of_lt (by omega)
   have h16 : (16 : BitVec 8).toNat = 16 := by decide
   simp only [BitVec.toNat_setWidth, BitVec.toNat_ushiftRight, Nat.shiftRight_eq_div_pow,
-    swap32_toNat, Nat.reducePow, h16, hA32, Nat.reduceMod, Nat.reduceDiv]
+    swap32_toNat, Nat.reducePow, hA32]
   have h2 : A.toNat / 256 / 256 = 0 := by omega
-  simp only [h2, Nat.zero_div, Nat.zero_mod, Nat.zero_add, Nat.mul_zero]
+  simp only [h2, Nat.zero_div, Nat.zero_mod, Nat.zero_add]
   have hp : A.toNat / 256 % 256 < 256 := Nat.mod_lt _ (by decide)
   have hq : A.toNat % 256 < 256 := Nat.mod_lt _ (by decide)
   generalize A.toNat / 256 % 256 = p at *
@@ -632,7 +632,7 @@ theorem sound_bswap (w : W) : Sound (.bswap w) := by
     xrunL
     refine post_mem hr hwr (by rw [hlen]; rfl) (by decide) (by rw [hwr']; rfl) (bytesRel_bv ?_)
       ?_ ?_ ?_ ?_ ?_ rfl
-    · simp only [State.regW, X86S.reg_jump, reg_setFlags?]
+    · simp only [State.regW, X86S.reg_jump]
       exact bswap_b _
     all_goals first
       | with_reducible rfl
@@ -660,7 +660,7 @@ theorem sound_bswap (w : W) : Sound (.bswap w) := by
     xrunL
     refine post_mem hr hwr (by rw [hlen]; rfl) (by decide) (by rw [hwr']; rfl) (bytesRel_bv ?_)
       ?_ ?_ ?_ ?_ ?_ rfl
-    · simp only [State.regW, X86S.reg_jump, reg_setFlags?]
+    · simp only [State.regW, X86S.reg_jump]
       exact bswap_d _
     all_goals first
       | with_reducible rfl
@@ -674,7 +674,7 @@ theorem sound_bswap (w : W) : Sound (.bswap w) := by
     xrunL
     refine post_mem hr hwr (by rw [hlen]; rfl) (by decide) (by rw [hwr']; rfl) (bytesRel_bv ?_)
       ?_ ?_ ?_ ?_ ?_ rfl
-    · simp only [State.regW, X86S.reg_jump, reg_setFlags?]
+    · simp only [State.regW, X86S.reg_jump]
       exact bswap_q _
     all_goals first
       | with_reducible rfl
@@ -706,7 +706,7 @@ theorem sound_cmp3 (sg : Bool) (w : W) : Sound (.cmp3 sg w) := by
   all_goals
     simp (config := { decide := true }) only [sequence, Option.pure_def, Option.bind_eq_bind,
       Option.bind_some, Option.some.injEq, Prod.mk.injEq, List.getElem?_cons_zero,
-      List.getElem?_cons_succ, ↓reduceIte, List.cons_append, List.nil_append] at hseq
+      List.getElem?_cons_succ, ↓reduceIte] at hseq
     obtain ⟨rfl, rfl⟩ := hseq
     xrunL
     refine post_mem hr hwr (by rw [hlen]; rfl) (by decide) (by rw [hwr']; rfl) (bytesRel_bv ?_)

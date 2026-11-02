@@ -76,7 +76,7 @@ def isUnicodeScalar (v : Nat) : Bool := v ≤ 0x10FFFF && !(0xD800 ≤ v && v �
 -- [D2] [D28]
 /-- The variant index a tag value denotes, or an error message (rustc/Miri
 `read_discriminant`). Does not check inhabitedness. -/
-def tagToVariant (vs : List Variant) (discrTy : IntType) (tag : TagInfo) (bits : Nat) :
+def tagToVariant (vs : List Variant) (_discrTy : IntType) (tag : TagInfo) (bits : Nat) :
     Except String Nat :=
   match tag.encoding with
   | .direct =>

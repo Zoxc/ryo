@@ -175,7 +175,7 @@ theorem post_mem2s {c : Class} {op : Full.Opcode} {ops : List (R.Opnd Nat)} {val
   refine post_mem2 hr hw1 hw2 hlen hn hfl hwr hx hf ?_ ?_ ?_ ?_ ?_ hctl
   · simpa [State.setRegW] using hyb
   · simp only [X86S.mem_setMem, X86S.mem_jump, State.setRegW, X86S.mem_setReg, hym, ea_frame]
-    simp [fpAddr, State.setRegW, hyb]
+    simp [fpAddr, hyb]
   · intro i hi
     have h1 : i ≠ 1 := fun h => hi (h ▸ (clobbers_01 c).2)
     simp [State.setRegW, h1, hyr i hi]
@@ -565,7 +565,7 @@ theorem sound_mulOvf (sg : Bool) (w : W) : SoundC (.mulOvf sg w) := by
       | (intro i hi
          have h0 : i ≠ 0 := fun h => hi (h ▸ (clobbers_01 _).1)
          have h1 : i ≠ 1 := fun h => hi (h ▸ (clobbers_01 _).2)
-         simp [h1, hyr i h0 h1])
+         simp [hyr i h0 h1])
       | (simp only [ld, R, C])
   all_goals
     simp only [List.cons_append, List.nil_append]

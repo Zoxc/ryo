@@ -288,7 +288,7 @@ theorem inv_fold {st0 : OpSem.State} {fp : Nat} {L : List (Int × Nat)} {m : X86
     obtain ⟨st', hf, h'⟩ := inv_fold ps _ st1 h1 (fun p hp' => hp p (List.mem_cons_of_mem _ hp'))
     refine ⟨st', ?_, by simpa using h'⟩
     simp only [List.foldlM_cons, hlen, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte]
-    simp only [bind, Except.bind, pure, Except.pure, hw]
+    simp only [bind, Except.bind, hw]
     exact hf
 
 theorem inv_writeRanges {st0 st : OpSem.State} {fp : Nat} {L : List (Int × Nat)} {m : X86.Mem}

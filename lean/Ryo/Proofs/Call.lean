@@ -351,7 +351,7 @@ theorem exec_epilogue_only (ctx : Ctx) (F : Nat) (m : Ryo.Obj.Mode) (y : X86.Sta
   unfold epilogue
   cases hpe : m.pe <;> cases hfp : m.framePointer <;>
     simp only [hpe, hfp, Bool.false_eq_true, ↓reduceIte, true_or, or_true, or_false,
-      false_implies, forall_const, true_implies] at hsp ⊢
+      false_implies, forall_const] at hsp ⊢
   -- PE: `add rsp, F` (for `F > 0`) and `pop rbp`, from `rsp = fp - F`.
   case true.false | true.true =>
     obtain ⟨hr, hF⟩ := hsp
@@ -362,20 +362,20 @@ theorem exec_epilogue_only (ctx : Ctx) (F : Nat) (m : Ryo.Obj.Mode) (y : X86.Sta
         execItems_cons, execItems_nil, Item.exec, pure, Except.pure, ex_bind_ok']
       refine ⟨_, rfl, ?_⟩
       simp (config := { decide := true }) [State.pop, State.rsp, State.reg, State.setReg, State.jump]
-      simp only [BitVec.ofNat_eq_ofNat, BitVec.sub_zero] at hr
-      simp only [hr, idx_rbp]
+      simp only [BitVec.sub_zero] at hr
+      simp only [hr]
       and_intros
       all_goals first
         | (intro i h4 h5; simp [h4, h5])
         | (congr 1; bv_omega)
         | bv_omega
     · have hne : (F != 0) = true := by simpa using hF0
-      simp only [hne, ↓reduceIte, List.cons_append, List.singleton_append, List.nil_append,
+      simp only [hne, ↓reduceIte, List.cons_append, List.nil_append,
         execItems_cons, execItems_nil, Item.exec, pure, Except.pure, ex_bind_ok']
       refine ⟨_, rfl, ?_⟩
       simp (config := { decide := true }) [State.pop, State.rsp, State.reg, State.setReg,
         State.setFlags, State.jump]
-      simp only [ea, idx_rbp]
+      simp only [ea]
       rw [hr, ArgRet.signExtend_ofNat_small _ (by omega)]
       and_intros
       all_goals first
@@ -1248,7 +1248,7 @@ theorem call_return (ctx : Ctx) {c : R.Code} {s : R.RState} {x1 x' : X86.State}
     (hf : op.full = some f) (hsh : f.info.shape = .call)
     (he : EntryAt ctx c.mode.pe cal regs (s.fp - c.d.frameSize) stack s.world x1)
     (hlen : stack.length = c.stackSize s.pc) (hfp : c.d.frameSize ≤ s.fp)
-    (hr : RRel s x1) (hm : MemRel s.st x1)
+    (hr : RRel s x1) (_hm : MemRel s.st x1)
     (hb : c.d.frameSize + c.stackSize s.pc < 2 ^ 62) (hd : d.toInt + 16 ≤ 2 ^ 31)
     (hshadow : c.mode.pe = true → 32 ≤ c.stackSize s.pc)
     (hsafe : Safe ⟨.call cal regs (s.fp - c.d.frameSize) stack, s.world⟩)
@@ -1355,7 +1355,7 @@ theorem call_unwind (ctx : Ctx) {c : R.Code} {s : R.RState} {x1 x' : X86.State}
     (hf : op.full = some f) (hsh : f.info.shape = .call)
     (he : EntryAt ctx c.mode.pe cal regs (s.fp - c.d.frameSize) stack s.world x1)
     (hlen : stack.length = c.stackSize s.pc) (hfp : c.d.frameSize ≤ s.fp)
-    (hr : RRel s x1) (hm : MemRel s.st x1)
+    (hr : RRel s x1) (_hm : MemRel s.st x1)
     (hb : c.d.frameSize + c.stackSize s.pc < 2 ^ 62)
     (hshadow : c.mode.pe = true → 32 ≤ c.stackSize s.pc)
     (hsafe : Safe ⟨.call cal regs (s.fp - c.d.frameSize) stack, s.world⟩)

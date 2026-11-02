@@ -96,7 +96,7 @@ theorem wf_mov {T : Type} (w : W) {ops : List (R.Opnd T)} {items : List Item}
   cases w <;> wf_close
 
 theorem wf_mov128 {T : Type}  {ops : List (R.Opnd T)} {items : List Item}
-    {br : Option Cond} (hcls : clsOk (.mov128) = true)
+    {br : Option Cond} (_hcls : clsOk (.mov128) = true)
     (h : sequence (.mov128) ops = some (items, br)) : ∀ it ∈ items, wfAny it = true := by
   intro it hit
   wf_close
@@ -108,37 +108,37 @@ theorem wf_imm {T : Type} (w : W) {ops : List (R.Opnd T)} {items : List Item}
   cases w <;> wf_close
 
 theorem wf_addr {T : Type}  {ops : List (R.Opnd T)} {items : List Item}
-    {br : Option Cond} (hcls : clsOk (.addr) = true)
+    {br : Option Cond} (_hcls : clsOk (.addr) = true)
     (h : sequence (.addr) ops = some (items, br)) : ∀ it ∈ items, wfAny it = true := by
   intro it hit
   wf_close
 
 theorem wf_addrConst {T : Type}  {ops : List (R.Opnd T)} {items : List Item}
-    {br : Option Cond} (hcls : clsOk (.addrConst) = true)
+    {br : Option Cond} (_hcls : clsOk (.addrConst) = true)
     (h : sequence (.addrConst) ops = some (items, br)) : ∀ it ∈ items, wfAny it = true := by
   intro it hit
   wf_close
 
 theorem wf_addrSym {T : Type}  {ops : List (R.Opnd T)} {items : List Item}
-    {br : Option Cond} (hcls : clsOk (.addrSym) = true)
+    {br : Option Cond} (_hcls : clsOk (.addrSym) = true)
     (h : sequence (.addrSym) ops = some (items, br)) : ∀ it ∈ items, wfAny it = true := by
   intro it hit
   wf_close
 
 theorem wf_addrSymInd {T : Type}  {ops : List (R.Opnd T)} {items : List Item}
-    {br : Option Cond} (hcls : clsOk (.addrSymInd) = true)
+    {br : Option Cond} (_hcls : clsOk (.addrSymInd) = true)
     (h : sequence (.addrSymInd) ops = some (items, br)) : ∀ it ∈ items, wfAny it = true := by
   intro it hit
   wf_close
 
 theorem wf_ptrAdd {T : Type}  {ops : List (R.Opnd T)} {items : List Item}
-    {br : Option Cond} (hcls : clsOk (.ptrAdd) = true)
+    {br : Option Cond} (_hcls : clsOk (.ptrAdd) = true)
     (h : sequence (.ptrAdd) ops = some (items, br)) : ∀ it ∈ items, wfAny it = true := by
   intro it hit
   wf_close
 
 theorem wf_ptrIndex {T : Type}  {ops : List (R.Opnd T)} {items : List Item}
-    {br : Option Cond} (hcls : clsOk (.ptrIndex) = true)
+    {br : Option Cond} (_hcls : clsOk (.ptrIndex) = true)
     (h : sequence (.ptrIndex) ops = some (items, br)) : ∀ it ∈ items, wfAny it = true := by
   intro it hit
   wf_close
@@ -198,7 +198,7 @@ theorem wf_cmpImm {T : Type} (c : Cond) (w : W) {ops : List (R.Opnd T)} {items :
   cases w <;> wf_close
 
 theorem wf_br {T : Type}  {ops : List (R.Opnd T)} {items : List Item}
-    {br : Option Cond} (hcls : clsOk (.br) = true)
+    {br : Option Cond} (_hcls : clsOk (.br) = true)
     (h : sequence (.br) ops = some (items, br)) : ∀ it ∈ items, wfAny it = true := by
   intro it hit
   wf_close
@@ -318,9 +318,9 @@ theorem wfAny_ren {xr : Reg} (hu : xr.usable = true) (hc : xr ≠ .rcx) {it : It
   cases it <;> simp only [wfAny] at h <;> simp only [ren, mapRegs, wfAny] <;>
     (try exact h) <;>
     simp only [Item.wf, Item.memWf, Item.rmWf, Bool.and_eq_true, bne_iff_ne, ne_eq] at h ⊢ <;>
-    (try (rename_i rm; cases rm <;> simp only [mapRegs.mapRm, Item.rmWf, Item.memWf, bne_iff_ne,
+    (try (rename_i rm; cases rm <;> simp only [mapRegs.mapRm, bne_iff_ne,
       ne_eq] at h ⊢)) <;>
-    (try (rename_i w _; cases w <;> simp only [Item.wf] at h ⊢)) <;>
+    (try (rename_i w _; cases w <;> simp only at h ⊢)) <;>
     simp_all
 
 theorem wfAny_withRm {it : Item} (h : wfAny it = true) (i : Nat) :

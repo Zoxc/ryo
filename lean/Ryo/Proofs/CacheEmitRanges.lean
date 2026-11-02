@@ -75,8 +75,8 @@ theorem wo_mov {ρ : R.Addrs} {f : Full.Opcode} (w : W) {ops : List (R.Opnd Nat)
     (hn : nativeVals ρ f ops = some vals) (h0 : ops[0]? = some (.slot s)) :
     (s.toInt, outSize (.mov w)) ∈ wranges f vals := by
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
-  simp only [classHandler, classOperands, aluKind, cmpParams, Bool.false_eq_true, Bool.true_eq_false,
-    ↓reduceIte] at hh ho <;>
+  simp only [classHandler, classOperands,
+    ] at hh ho <;>
     (unfold wranges; rw [footprint_eq hh]; dsimp only) <;>
     (rw [(fp_w (tySize_tyName _ _)).1]) <;>
     simp only [Footprint.writeRanges, List.mem_filterMap] <;>
@@ -87,8 +87,8 @@ theorem wo_mov128 {ρ : R.Addrs} {f : Full.Opcode}  {ops : List (R.Opnd Nat)}
     (hn : nativeVals ρ f ops = some vals) (h0 : ops[0]? = some (.slot s)) :
     (s.toInt, outSize (.mov128)) ∈ wranges f vals := by
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
-  simp only [classHandler, classOperands, aluKind, cmpParams, Bool.false_eq_true, Bool.true_eq_false,
-    ↓reduceIte] at hh ho <;>
+  simp only [classHandler, classOperands,
+    ] at hh ho <;>
     (unfold wranges; rw [footprint_eq hh]; dsimp only) <;>
     (rw [(fp_w (ps := []) (ty := "u128") (n := 16) rfl).1]) <;>
     simp only [Footprint.writeRanges, List.mem_filterMap] <;>
@@ -99,8 +99,8 @@ theorem wo_imm {ρ : R.Addrs} {f : Full.Opcode} (w : W) {ops : List (R.Opnd Nat)
     (hn : nativeVals ρ f ops = some vals) (h0 : ops[0]? = some (.slot s)) :
     (s.toInt, outSize (.imm w)) ∈ wranges f vals := by
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
-  simp only [classHandler, classOperands, aluKind, cmpParams, Bool.false_eq_true, Bool.true_eq_false,
-    ↓reduceIte] at hh ho <;>
+  simp only [classHandler, classOperands,
+    ] at hh ho <;>
     (unfold wranges; rw [footprint_eq hh]; dsimp only) <;>
     (rw [(fp_w (tySize_tyName _ _)).2.1]) <;>
     simp only [Footprint.writeRanges, List.mem_filterMap] <;>
@@ -111,8 +111,8 @@ theorem wo_addr {ρ : R.Addrs} {f : Full.Opcode}  {ops : List (R.Opnd Nat)}
     (hn : nativeVals ρ f ops = some vals) (h0 : ops[0]? = some (.slot s)) :
     (s.toInt, outSize (.addr)) ∈ wranges f vals := by
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
-  simp only [classHandler, classOperands, aluKind, cmpParams, Bool.false_eq_true, Bool.true_eq_false,
-    ↓reduceIte] at hh ho <;>
+  simp only [classHandler, classOperands,
+    ] at hh ho <;>
     (unfold wranges; rw [footprint_eq hh]; dsimp only) <;>
     (rw [fp_addr]) <;>
     simp only [Footprint.writeRanges, List.mem_filterMap] <;>
@@ -123,8 +123,8 @@ theorem wo_addrConst {ρ : R.Addrs} {f : Full.Opcode}  {ops : List (R.Opnd Nat)}
     (hn : nativeVals ρ f ops = some vals) (h0 : ops[0]? = some (.slot s)) :
     (s.toInt, outSize (.addrConst)) ∈ wranges f vals := by
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
-  simp only [classHandler, classOperands, aluKind, cmpParams, Bool.false_eq_true, Bool.true_eq_false,
-    ↓reduceIte] at hh ho <;>
+  simp only [classHandler, classOperands,
+    ] at hh ho <;>
     (unfold wranges; rw [footprint_eq hh]; dsimp only) <;>
     (rw [fp_addr_const]) <;>
     simp only [Footprint.writeRanges, List.mem_filterMap] <;>
@@ -135,8 +135,8 @@ theorem wo_addrSym {ρ : R.Addrs} {f : Full.Opcode}  {ops : List (R.Opnd Nat)}
     (hn : nativeVals ρ f ops = some vals) (h0 : ops[0]? = some (.slot s)) :
     (s.toInt, outSize (.addrSym)) ∈ wranges f vals := by
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
-  simp only [classHandler, classOperands, aluKind, cmpParams, Bool.false_eq_true, Bool.true_eq_false,
-    ↓reduceIte] at hh ho <;>
+  simp only [classHandler, classOperands,
+    ] at hh ho <;>
     (unfold wranges; rw [footprint_eq hh]; dsimp only) <;>
     (obtain ⟨de, hde⟩ := fpAddrSym "false"; rw [hde]) <;>
     simp only [Footprint.writeRanges, List.mem_filterMap] <;>
@@ -147,8 +147,8 @@ theorem wo_addrSymInd {ρ : R.Addrs} {f : Full.Opcode}  {ops : List (R.Opnd Nat)
     (hn : nativeVals ρ f ops = some vals) (h0 : ops[0]? = some (.slot s)) :
     (s.toInt, outSize (.addrSymInd)) ∈ wranges f vals := by
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
-  simp only [classHandler, classOperands, aluKind, cmpParams, Bool.false_eq_true, Bool.true_eq_false,
-    ↓reduceIte] at hh ho <;>
+  simp only [classHandler, classOperands,
+    ] at hh ho <;>
     (unfold wranges; rw [footprint_eq hh]; dsimp only) <;>
     (obtain ⟨de, hde⟩ := fpAddrSym "true"; rw [hde]) <;>
     simp only [Footprint.writeRanges, List.mem_filterMap] <;>
@@ -159,8 +159,8 @@ theorem wo_ptrAdd {ρ : R.Addrs} {f : Full.Opcode}  {ops : List (R.Opnd Nat)}
     (hn : nativeVals ρ f ops = some vals) (h0 : ops[0]? = some (.slot s)) :
     (s.toInt, outSize (.ptrAdd)) ∈ wranges f vals := by
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
-  simp only [classHandler, classOperands, aluKind, cmpParams, Bool.false_eq_true, Bool.true_eq_false,
-    ↓reduceIte] at hh ho <;>
+  simp only [classHandler, classOperands,
+    ] at hh ho <;>
     (unfold wranges; rw [footprint_eq hh]; dsimp only) <;>
     (rw [fp_ptr_add]) <;>
     simp only [Footprint.writeRanges, List.mem_filterMap] <;>
@@ -171,8 +171,8 @@ theorem wo_ptrIndex {ρ : R.Addrs} {f : Full.Opcode}  {ops : List (R.Opnd Nat)}
     (hn : nativeVals ρ f ops = some vals) (h0 : ops[0]? = some (.slot s)) :
     (s.toInt, outSize (.ptrIndex)) ∈ wranges f vals := by
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
-  simp only [classHandler, classOperands, aluKind, cmpParams, Bool.false_eq_true, Bool.true_eq_false,
-    ↓reduceIte] at hh ho <;>
+  simp only [classHandler, classOperands,
+    ] at hh ho <;>
     (unfold wranges; rw [footprint_eq hh]; dsimp only) <;>
     (rw [fp_ptr_index]) <;>
     simp only [Footprint.writeRanges, List.mem_filterMap] <;>
@@ -183,8 +183,8 @@ theorem wo_load {ρ : R.Addrs} {f : Full.Opcode} (w : W) {ops : List (R.Opnd Nat
     (hn : nativeVals ρ f ops = some vals) (h0 : ops[0]? = some (.slot s)) :
     (s.toInt, outSize (.load w)) ∈ wranges f vals := by
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
-  simp only [classHandler, classOperands, aluKind, cmpParams, Bool.false_eq_true, Bool.true_eq_false,
-    ↓reduceIte] at hh ho <;>
+  simp only [classHandler, classOperands,
+    ] at hh ho <;>
     (unfold wranges; rw [footprint_eq hh]; dsimp only) <;>
     (rw [(fp_load (tySize_tyName _ _)).1]) <;>
     simp only [Footprint.writeRanges, List.mem_filterMap] <;>
@@ -195,7 +195,7 @@ theorem wo_bin {ρ : R.Addrs} {f : Full.Opcode} (op : Alu) (w : W) {ops : List (
     (hn : nativeVals ρ f ops = some vals) (h0 : ops[0]? = some (.slot s)) :
     (s.toInt, outSize (.bin op w)) ∈ wranges f vals := by
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
-  cases op <;> simp only [classHandler, classOperands, aluKind, cmpParams, Bool.false_eq_true, Bool.true_eq_false,
+  cases op <;> simp only [classHandler, classOperands, aluKind, Bool.false_eq_true,
     ↓reduceIte] at hh ho <;>
     (unfold wranges; rw [footprint_eq hh]; dsimp only) <;>
     (first | rw [(fp_w (tySize_tyName _ _)).2.2.1] | rw [(fp_w (tySize_tyName _ _)).2.2.2.1]) <;>
@@ -207,7 +207,7 @@ theorem wo_binImm {ρ : R.Addrs} {f : Full.Opcode} (op : Alu) (w : W) {ops : Lis
     (hn : nativeVals ρ f ops = some vals) (h0 : ops[0]? = some (.slot s)) :
     (s.toInt, outSize (.binImm op w)) ∈ wranges f vals := by
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
-  cases op <;> simp only [classHandler, classOperands, aluKind, cmpParams, Bool.false_eq_true, Bool.true_eq_false,
+  cases op <;> simp only [classHandler, classOperands, aluKind,
     ↓reduceIte] at hh ho <;>
     (unfold wranges; rw [footprint_eq hh]; dsimp only) <;>
     (first | rw [(fp_w (tySize_tyName _ _)).2.2.2.2.1] | rw [(fp_w (tySize_tyName _ _)).2.2.2.2.2.1]) <;>
@@ -219,8 +219,8 @@ theorem wo_mul {ρ : R.Addrs} {f : Full.Opcode} (w : W) {ops : List (R.Opnd Nat)
     (hn : nativeVals ρ f ops = some vals) (h0 : ops[0]? = some (.slot s)) :
     (s.toInt, outSize (.mul w)) ∈ wranges f vals := by
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
-  simp only [classHandler, classOperands, aluKind, cmpParams, Bool.false_eq_true, Bool.true_eq_false,
-    ↓reduceIte] at hh ho <;>
+  simp only [classHandler, classOperands,
+    ] at hh ho <;>
     (unfold wranges; rw [footprint_eq hh]; dsimp only) <;>
     (rw [(fp_w (tySize_tyName _ _)).2.2.1]) <;>
     simp only [Footprint.writeRanges, List.mem_filterMap] <;>
@@ -231,8 +231,8 @@ theorem wo_mulImm {ρ : R.Addrs} {f : Full.Opcode} (w : W) {ops : List (R.Opnd N
     (hn : nativeVals ρ f ops = some vals) (h0 : ops[0]? = some (.slot s)) :
     (s.toInt, outSize (.mulImm w)) ∈ wranges f vals := by
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
-  simp only [classHandler, classOperands, aluKind, cmpParams, Bool.false_eq_true, Bool.true_eq_false,
-    ↓reduceIte] at hh ho <;>
+  simp only [classHandler, classOperands,
+    ] at hh ho <;>
     (unfold wranges; rw [footprint_eq hh]; dsimp only) <;>
     (rw [(fp_w (tySize_tyName _ _)).2.2.2.2.1]) <;>
     simp only [Footprint.writeRanges, List.mem_filterMap] <;>
@@ -243,8 +243,8 @@ theorem wo_shiftImm {ρ : R.Addrs} {f : Full.Opcode} (sh : Sh) (w : W) {ops : Li
     (hn : nativeVals ρ f ops = some vals) (h0 : ops[0]? = some (.slot s)) :
     (s.toInt, outSize (.shiftImm sh w)) ∈ wranges f vals := by
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
-  simp only [classHandler, classOperands, aluKind, cmpParams, Bool.false_eq_true, Bool.true_eq_false,
-    ↓reduceIte] at hh ho <;>
+  simp only [classHandler, classOperands,
+    ] at hh ho <;>
     (unfold wranges; rw [footprint_eq hh]; dsimp only) <;>
     (rw [(fp_w (tySize_tyName _ _)).2.2.2.2.2.2.1]) <;>
     simp only [Footprint.writeRanges, List.mem_filterMap] <;>
@@ -255,8 +255,8 @@ theorem wo_cmp {ρ : R.Addrs} {f : Full.Opcode} (c : Cond) (w : W) {ops : List (
     (hn : nativeVals ρ f ops = some vals) (h0 : ops[0]? = some (.slot s)) :
     (s.toInt, outSize (.cmp c w)) ∈ wranges f vals := by
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
-  simp only [classHandler, classOperands, aluKind, cmpParams, Bool.false_eq_true, Bool.true_eq_false,
-    ↓reduceIte] at hh ho <;>
+  simp only [classHandler, classOperands, cmpParams,
+    ] at hh ho <;>
     (unfold wranges; rw [footprint_eq hh]; dsimp only) <;>
     (rw [(fp_w (tySize_tyName _ _)).2.2.2.2.2.2.2.1]) <;>
     simp only [Footprint.writeRanges, List.mem_filterMap] <;>
@@ -267,8 +267,8 @@ theorem wo_cmpImm {ρ : R.Addrs} {f : Full.Opcode} (c : Cond) (w : W) {ops : Lis
     (hn : nativeVals ρ f ops = some vals) (h0 : ops[0]? = some (.slot s)) :
     (s.toInt, outSize (.cmpImm c w)) ∈ wranges f vals := by
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
-  simp only [classHandler, classOperands, aluKind, cmpParams, Bool.false_eq_true, Bool.true_eq_false,
-    ↓reduceIte] at hh ho <;>
+  simp only [classHandler, classOperands, cmpParams,
+    ] at hh ho <;>
     (unfold wranges; rw [footprint_eq hh]; dsimp only) <;>
     (rw [(fp_w (tySize_tyName _ _)).2.2.2.2.2.2.2.2.1]) <;>
     simp only [Footprint.writeRanges, List.mem_filterMap] <;>
@@ -279,8 +279,8 @@ theorem wo_ovf {ρ : R.Addrs} {f : Full.Opcode} (op : Alu) (sg : Bool) (w : W) {
     (hn : nativeVals ρ f ops = some vals) (h0 : ops[0]? = some (.slot s)) :
     (s.toInt, outSize (.ovf op sg w)) ∈ wranges f vals := by
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
-  simp only [classHandler, classOperands, aluKind, cmpParams, Bool.false_eq_true, Bool.true_eq_false,
-    ↓reduceIte] at hh ho <;>
+  simp only [classHandler, classOperands,
+    ] at hh ho <;>
     (unfold wranges; rw [footprint_eq hh]; dsimp only) <;>
     (rw [fp_ovf (tySize_tyName _ _)]) <;>
     simp only [Footprint.writeRanges, List.mem_filterMap] <;>
@@ -291,8 +291,8 @@ theorem wo_mulOvf {ρ : R.Addrs} {f : Full.Opcode} (sg : Bool) (w : W) {ops : Li
     (hn : nativeVals ρ f ops = some vals) (h0 : ops[0]? = some (.slot s)) :
     (s.toInt, outSize (.mulOvf sg w)) ∈ wranges f vals := by
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
-  simp only [classHandler, classOperands, aluKind, cmpParams, Bool.false_eq_true, Bool.true_eq_false,
-    ↓reduceIte] at hh ho <;>
+  simp only [classHandler, classOperands,
+    ] at hh ho <;>
     (unfold wranges; rw [footprint_eq hh]; dsimp only) <;>
     (rw [fp_ovf (tySize_tyName _ _)]) <;>
     simp only [Footprint.writeRanges, List.mem_filterMap] <;>
@@ -303,8 +303,8 @@ theorem wo_ext {ρ : R.Addrs} {f : Full.Opcode} (src : W) (dst : W) (sx : Bool) 
     (hn : nativeVals ρ f ops = some vals) (h0 : ops[0]? = some (.slot s)) :
     (s.toInt, outSize (.ext src dst sx)) ∈ wranges f vals := by
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
-  simp only [classHandler, classOperands, aluKind, cmpParams, Bool.false_eq_true, Bool.true_eq_false,
-    ↓reduceIte] at hh ho <;>
+  simp only [classHandler, classOperands,
+    ] at hh ho <;>
     (unfold wranges; rw [footprint_eq hh]; dsimp only) <;>
     (rw [fp_cvt (tySize_tyName _ _) (tySize_tyName _ _)]) <;>
     simp only [Footprint.writeRanges, List.mem_filterMap] <;>
@@ -315,8 +315,8 @@ theorem wo_shiftVar {ρ : R.Addrs} {f : Full.Opcode} (sh : Sh) (w : W) {ops : Li
     (hn : nativeVals ρ f ops = some vals) (h0 : ops[0]? = some (.slot s)) :
     (s.toInt, outSize (.shiftVar sh w)) ∈ wranges f vals := by
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
-  cases sh <;> simp only [classHandler, classOperands, aluKind, cmpParams, Bool.false_eq_true, Bool.true_eq_false,
-    ↓reduceIte] at hh ho <;>
+  cases sh <;> simp only [classHandler, classOperands,
+    ] at hh ho <;>
     (unfold wranges; rw [footprint_eq hh]; dsimp only) <;>
     (first | rw [Later.fp_shift (tySize_tyName _ _)] | rw [Later.fp_rot (tySize_tyName _ _)]) <;>
     simp only [Footprint.writeRanges, List.mem_filterMap] <;>
@@ -327,8 +327,8 @@ theorem wo_div {ρ : R.Addrs} {f : Full.Opcode} (sg : Bool) (rem : Bool) (w : W)
     (hn : nativeVals ρ f ops = some vals) (h0 : ops[0]? = some (.slot s)) :
     (s.toInt, outSize (.div sg rem w)) ∈ wranges f vals := by
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
-  simp only [classHandler, classOperands, aluKind, cmpParams, Bool.false_eq_true, Bool.true_eq_false,
-    ↓reduceIte] at hh ho <;>
+  simp only [classHandler, classOperands,
+    ] at hh ho <;>
     (unfold wranges; rw [footprint_eq hh]; dsimp only) <;>
     (rw [fpBinFn (tySize_tyName _ _)]) <;>
     simp only [Footprint.writeRanges, List.mem_filterMap] <;>
@@ -339,8 +339,8 @@ theorem wo_count {ρ : R.Addrs} {f : Full.Opcode} (lz : Bool) (w : W) {ops : Lis
     (hn : nativeVals ρ f ops = some vals) (h0 : ops[0]? = some (.slot s)) :
     (s.toInt, outSize (.count lz w)) ∈ wranges f vals := by
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
-  simp only [classHandler, classOperands, aluKind, cmpParams, Bool.false_eq_true, Bool.true_eq_false,
-    ↓reduceIte] at hh ho <;>
+  simp only [classHandler, classOperands,
+    ] at hh ho <;>
     (unfold wranges; rw [footprint_eq hh]; dsimp only) <;>
     (rw [fpCount (tySize_tyName _ _)]) <;>
     simp only [Footprint.writeRanges, List.mem_filterMap] <;>
@@ -351,8 +351,8 @@ theorem wo_cmp3 {ρ : R.Addrs} {f : Full.Opcode} (sg : Bool) (w : W) {ops : List
     (hn : nativeVals ρ f ops = some vals) (h0 : ops[0]? = some (.slot s)) :
     (s.toInt, outSize (.cmp3 sg w)) ∈ wranges f vals := by
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
-  simp only [classHandler, classOperands, aluKind, cmpParams, Bool.false_eq_true, Bool.true_eq_false,
-    ↓reduceIte] at hh ho <;>
+  simp only [classHandler, classOperands,
+    ] at hh ho <;>
     (unfold wranges; rw [footprint_eq hh]; dsimp only) <;>
     (rw [Later.fp_cmp3 (tySize_tyName _ _)]) <;>
     simp only [Footprint.writeRanges, List.mem_filterMap] <;>
@@ -363,8 +363,8 @@ theorem wo_bswap {ρ : R.Addrs} {f : Full.Opcode} (w : W) {ops : List (R.Opnd Na
     (hn : nativeVals ρ f ops = some vals) (h0 : ops[0]? = some (.slot s)) :
     (s.toInt, outSize (.bswap w)) ∈ wranges f vals := by
   obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
-  simp only [classHandler, classOperands, aluKind, cmpParams, Bool.false_eq_true, Bool.true_eq_false,
-    ↓reduceIte] at hh ho <;>
+  simp only [classHandler, classOperands,
+    ] at hh ho <;>
     (unfold wranges; rw [footprint_eq hh]; dsimp only) <;>
     (rw [Later.fp_un (tySize_tyName _ _)]) <;>
     simp only [Footprint.writeRanges, List.mem_filterMap] <;>
