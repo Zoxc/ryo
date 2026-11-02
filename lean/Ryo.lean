@@ -6,6 +6,8 @@ import Ryo.X86
 import Ryo.X86.Unique
 import Ryo.Vm.DecodeReduced
 import Ryo.Vm.Frame
+import Ryo.Vm.FrameSizes
+import Ryo.Vm.CallSitesCheck
 import Ryo.Vm.DecodeObj
 import Ryo.Check.Image.Pool
 import Ryo.Check.Image.Dump

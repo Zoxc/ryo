@@ -42,6 +42,7 @@ starting there with its length and the instruction's action (its pad as the `lpa
 pad's byte offset), or no call site starting there and no landing pad.
 -/
 import Ryo.Proofs.DSWork.Boundary
+import Ryo.Proofs.Discharge.CallSites
 
 set_option linter.unusedSimpArgs false
 
@@ -458,11 +459,12 @@ theorem padsLinked_of_decodes (hD : Decodes S code relocs rodata callSites dropp
   padsLinked_of hU (sitesLinked_of_decodes hD hdist hal hsmall)
 
 /-- `Hyps.padsLinked`'s replacement: `PadsLinked` from the decoder and the three `Hyps` fields
-(`unwinderReadsLsda`, `startsDistinct`, `sitesAligned`). -/
+(`unwinderReadsLsda`, and `callSitesCheck`'s `StartsDistinct`/`SitesAligned`). -/
 theorem Hyps.padsLinked (H : Hyps S) (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (hsmall : S.body.code.size < 2 ^ 32) : PadsLinked S :=
-  padsLinked_of_decodes hD H.unwinderReadsLsda (by rw [← hD.callSitesEq]; exact H.startsDistinct)
-    H.sitesAligned hsmall
+  have hcs := callSites_of_check hD hD.callSitesOk
+  padsLinked_of_decodes hD H.unwinderReadsLsda (by rw [← hD.callSitesEq]; exact hcs.1)
+    hcs.2 hsmall
 
 end Discharge
 

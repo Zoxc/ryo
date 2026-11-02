@@ -10,6 +10,9 @@ steps, `ProtoFacts`, `bodySim_unreachable`, `bodySim_jmp`, `reach_padding`, `bou
 import Ryo.Proofs.DecodeLink
 import Ryo.Proofs.NoArgCursor
 import Ryo.Proofs.FrameBounds
+import Ryo.Proofs.Discharge.FrameBounds
+import Ryo.Proofs.Discharge.FrameSizes
+import Ryo.Vm.CallSitesCheck
 import Ryo.Proofs.Shapes
 import Ryo.Proofs.Call
 import Ryo.Proofs.Island
@@ -354,6 +357,9 @@ structure Decodes (S : Setup) (code : ByteArray) (relocs : Array Reloc) (rodata 
   /-- The prologue (the entry's counter check, the frame's `prologue`) is read item by item from
   0 to the body's start (frame-pointer form: the body cursor is the code's). -/
   prologue : S.c.mode.framePointer = true → ∃ items, Dec S.body 0 items S.body.pos
+  /-- The call sites' check (`callSitesCheck`, run by `Frame.decodeChecked`): `StartsDistinct`
+  and `SitesAligned` (`Discharge/CallSites.lean`). -/
+  callSitesOk : callSitesCheck code relocs rodata callSites dropped scopes mode = true
 
 theorem reducedOf_frameSize {r : ReadResult} {pe : Bool} {d : Decoded} (h : reducedOf r pe = .ok d) :
     d.frameSize = r.frameSize := by
@@ -642,14 +648,17 @@ structure Hyps (S : Setup) : Prop where
     S.c.d.insns[k]? = some (.handler h args t) → args.length ≤ (handlerRegs S.c.mode.pe).length
   /-- The window holds the incoming area. -/
   argSizeK : (16 + S.c.argSize : Int) ≤ S.K
+  /-- Checked: the bound check (`decodeBounded`, so `Frame.decodeChecked`, accepts only
+  then; `decodeChecked_ok`). `Hyps.frameBounds` derives `FrameBounds S.c S.K` from it. -/
+  boundsOk : S.c.d.boundsOk S.c.mode = true
+  /-- The window's end lies between `frameTop` and `2 ^ 31` (`checkSignature`:
+  `frameTop ≤ 16 + argSize ≤ 2 ^ 31`, so `K = 16 + argSize` qualifies). -/
+  frameK : S.c.d.frameTop S.c.mode ≤ S.K ∧ S.K ≤ 2 ^ 31
   -- Open prerequisites: the decoded code (checkable).
-  frameBounds : FrameBounds S.c S.K
   relocsIn : RelocsIn S
   argsOk : ArgsOk S
-  /-- On PE the frame size and the return address fit a signed 32-bit displacement, as PE's
-  epilogue (`ArgRet.ret_step`, `bodySim_ret`) needs (`FrameBounds.F_le` gives `F ≤ 2 ^ 31`
-  only). The decoder could check it. -/
-  peFrame : S.c.mode.pe = true → S.F + 8 < 2 ^ 31
+  /-- Checked by `Frame.decodeChecked` (`frameSizesCheck`): gives `Hyps.peFrame`. -/
+  frameSizes : frameSizesCheck S.c.d S.c.mode = true
   -- Open prerequisites: privacy of frame bytes after the scopes.
   loadPrivate : LoadPrivate S
   argPrivate : ArgPrivate S
@@ -670,22 +679,25 @@ structure Hyps (S : Setup) : Prop where
   -- Open prerequisites: the decoder's and linker's facts not yet exposed.
   deadStore : DeadStoreSim S
   cacheCleared : CacheCleared S
-  -- The landing pads: `PadsLinked` follows from these (`Hyps.padsLinked`,
-  -- `Discharge/PadsLinked.lean`).
+  -- The landing pads: `PadsLinked` follows from this and `Decodes.callSitesOk`
+  -- (`Hyps.padsLinked`, `Discharge/PadsLinked.lean`).
   /-- Trusted (environment contract): the personality's call-site lookup gives the LSDA's pad. -/
   unwinderReadsLsda : UnwinderReadsLsda S
-  /-- Open (checkable): no two call sites share a start; neither `read` nor the image checks
-  verify it yet (the writer emits them sorted by start). -/
-  startsDistinct : StartsDistinct S.callSites
-  /-- Open (checkable): call sites meeting an instruction's call range start where it does;
-  neither `read` nor the image checks verify it yet. -/
-  sitesAligned : SitesAligned S
   -- Prerequisites of the inline steps (`DSWork/Inline.lean`'s `bodySim_inline'`).
   /-- Every inline opcode's class is of its shape and `clsOk` (proved by kernel evaluation:
   `inlineOps_shape`, `RyoProofs/InlineOps.lean`, and `inlineOps_clsOk`,
   `RyoProofs/InlineOk.lean`; outside the default build, hence a field). -/
   inlineClsOk : ∀ (f : Full.Opcode) (cls : Class), (f, cls) ∈ inlineOps →
     shapeOk f cls = true ∧ CacheStep.clsOk cls = true
+
+/-- `FrameBounds` for the window, from the bound check (`Discharge/FrameBounds.lean`). -/
+theorem Hyps.frameBounds {S : Setup} (H : Hyps S) : FrameBounds S.c S.K :=
+  Discharge.FrameBounds.frameBounds_of_boundsOk_le H.boundsOk H.frameK.1 H.frameK.2
+
+/-- On PE the frame size and the return address fit a signed 32-bit displacement, as PE's
+epilogue (`ArgRet.ret_step`, `bodySim_ret`) needs (`frameSizesCheck`). -/
+theorem Hyps.peFrame {S : Setup} (H : Hyps S) : S.c.mode.pe = true → S.F + 8 < 2 ^ 31 :=
+  Discharge.FrameSizes.peFrame_of_check H.frameSizes
 
 /-! ## 4. Per instruction -/
 

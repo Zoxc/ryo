@@ -84,11 +84,9 @@ exception dispatcher enters on its own stack). Open prerequisites, each a named 
 discharged later:
 
 - of the decoded code, checkable (the decoder or a check could reject the code otherwise):
-  `frameBounds` (`FrameBounds c K`: `decode_frameBounds`, `DecodeLink/Bounds.lean`, gives it
-  for `K = frameTop` from `decodeBounded`'s acceptance, and `FrameBounds.mono` for larger `K` up
-  to `2 ^ 31`; not wired in yet, as `decode_sound` takes `decodeReduced`'s acceptance),
+  `frameK` (`frameTop ≤ K ≤ 2 ^ 31`; with `boundsOk`, checked by `decodeBounded`, it gives
+  `Hyps.frameBounds`, `Discharge/FrameBounds.lean`),
   `argSizeK` (the window holds the incoming area, `16 + argSize ≤ K`),
-  `peFrame` (on PE `F + 8 < 2 ^ 31`, for the epilogue),
   `relocsIn` (`RelocsIn`: relocated fields within the code), `argsOk` (`ArgsOk`:
   the leading `arg`s read distinct argument registers of the convention, and no branch target
   is one);
@@ -106,11 +104,10 @@ discharged later:
   rodata), `envOutside` (`EnvOutside`: the environment's entries are `Env.out` states);
 - facts of the decoder and linker not yet exposed: `deadStore` (`DeadStoreSim`: the steps of
   dropped stores), `cacheCleared` (`CacheCleared`: the cache is empty at branch targets and
-  landing pads), and, for the LSDA as linked against `cleanupAt` (`PadsLinked`, derived by
-  `Hyps.padsLinked` in `Discharge/PadsLinked.lean`), `startsDistinct` (`StartsDistinct`: no two
-  call sites share a start) and `sitesAligned` (`SitesAligned`: a call site meeting an
-  instruction's call range starts where it does); neither `read` nor the image checks verify
-  these two yet.
+  landing pads). The LSDA as linked against `cleanupAt` (`PadsLinked`) is derived by `Hyps.padsLinked`
+  (`Discharge/PadsLinked.lean`) from `callSitesCheck` (`Decodes.callSitesOk`, run by
+  `decodeChecked`: call sites sorted by start and aligned with the calls) and the trusted
+  `unwinderReadsLsda`.
 
 Not covered: the prologue (R's `entry` against the entry's counter check, the prologue and the
 stack probe: the simulation starts at instruction 0's boundary) and the trip's `Done` outcome (a
@@ -660,6 +657,7 @@ theorem decodes_of_ok {code : ByteArray} {relocs : Array Reloc} {rodata : ByteAr
     {mode : Ryo.Obj.Mode} {d : Decoded}
     (hdec : decodeReduced code relocs rodata callSites dropped scopes mode = .ok d)
     (hnr : regionPad mode callSites = none)
+    (hcs : callSitesCheck code relocs rodata callSites dropped scopes mode = true)
     (c : R.Code) (hc : c.d = d) (hm : c.mode = mode) (ctx : Ctx) (E : Env) (K : Int)
     (x0 : X86.State) (Owned : BitVec 64 → Prop) (lo : BitVec 64)
     (padOf : BitVec 64 → Option (BitVec 64)) (Safe : R.Query → Prop) :
@@ -674,7 +672,7 @@ theorem decodes_of_ok {code : ByteArray} {relocs : Array Reloc} {rodata : ByteAr
   refine ⟨Setup.mk ctx E c r c0 relocs rodata callSites targets st ca drs ar K x0 Owned lo padOf
     Safe, ⟨⟨c', hread⟩,
     hc ▸ hred, hm, rfl, rfl, rfl, hnr, hc0, ?_, h0, hc0', hd0, ha0, har, ?_,
-    fun hfp => hpro (hm ▸ hfp)⟩, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    fun hfp => hpro (hm ▸ hfp), hcs⟩, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
   · exact ⟨stub, padded, c1, by simpa [Setup.fr, hm, hsz] using hrun⟩
   · simpa [Setup.fr, hm] using hix
 
@@ -713,6 +711,7 @@ theorem decode_sound_of_ok {code : ByteArray} {relocs : Array Reloc} {rodata : B
     (hdec : decodeReduced code relocs rodata callSites dropped scopes mode = .ok d)
     (hnr : regionPad mode callSites = none)
     (htc : tablesCheck code relocs rodata callSites dropped scopes mode = true)
+    (hcs : callSitesCheck code relocs rodata callSites dropped scopes mode = true)
     (c : R.Code) (hc : c.d = d) (hm : c.mode = mode) (ctx : Ctx) (E : Env) (K : Int)
     (x0 : X86.State) (Owned : BitVec 64 → Prop) (lo : BitVec 64)
     (padOf : BitVec 64 → Option (BitVec 64)) (Safe : R.Query → Prop) :
@@ -721,7 +720,7 @@ theorem decode_sound_of_ok {code : ByteArray} {relocs : Array Reloc} {rodata : B
       S.padOf = padOf ∧ S.Safe = Safe ∧
       (Hyps S → ∀ s x, BInv S s x → SafeFrom Safe c s → FnSim ctx E c (BInv S) (ExitRel S) s x) := by
   obtain ⟨S, hD, h1, h2, h3, h4, h5, h6, h7, h8, h9⟩ :=
-    decodes_of_ok hdec hnr c hc hm ctx E K x0 Owned lo padOf Safe
+    decodes_of_ok hdec hnr hcs c hc hm ctx E K x0 Owned lo padOf Safe
   refine ⟨S, hD, h1, h2, h3, h4, h5, h6, h7, h8, h9, fun H => ?_⟩
   subst h1 h2 h3 h9
   exact decode_sound hD H htc
@@ -734,29 +733,40 @@ theorem decodeChecked_ok {code : ByteArray} {relocs : Array Reloc} {rodata : Byt
     (h : Frame.decodeChecked code (.relocs relocs) rodata callSites dropped scopes mode facts =
       .ok d) :
     decodeReduced code relocs rodata callSites dropped scopes mode = .ok d ∧
-      d.boundsOk mode = true ∧ tablesCheck code relocs rodata callSites dropped scopes mode = true := by
+      d.boundsOk mode = true ∧ tablesCheck code relocs rodata callSites dropped scopes mode = true ∧
+      frameSizesCheck d mode = true ∧
+      callSitesCheck code relocs rodata callSites dropped scopes mode = true := by
   unfold Frame.decodeChecked Frame.decodeChecked.checkDropped at h
   cases hb : decodeBounded code (.relocs relocs) rodata callSites dropped scopes mode with
   | error e => simp [hb, bind, Except.bind, throw, throwThe, MonadExceptOf.throw] at h
   | ok d0 =>
     obtain ⟨hd, hbo⟩ := DecodeLink.Bounds.decodeBounded_ok hb
+    cases hfs : frameSizesCheck d0 mode with
+    | false => simp [hb, hfs, bind, Except.bind, pure, Except.pure, throw, throwThe,
+        MonadExceptOf.throw] at h
+    | true =>
     cases ht : tablesCheck code relocs rodata callSites dropped scopes mode with
-    | false => simp [hb, ht, bind, Except.bind, pure, Except.pure, throw, throwThe, MonadExceptOf.throw] at h
+    | false => simp [hb, hfs, ht, bind, Except.bind, pure, Except.pure, throw, throwThe,
+        MonadExceptOf.throw] at h
+    | true =>
+    cases hcs : callSitesCheck code relocs rodata callSites dropped scopes mode with
+    | false => simp [hb, hfs, ht, hcs, bind, Except.bind, pure, Except.pure, throw, throwThe,
+        MonadExceptOf.throw] at h
     | true =>
       cases hdn : Frame.droppedNotDead d0 mode facts with
-      | error e => simp [hb, ht, hdn, bind, Except.bind, pure, Except.pure] at h
+      | error e => simp [hb, hfs, ht, hcs, hdn, bind, Except.bind, pure, Except.pure] at h
       | ok l =>
         cases l with
         | nil =>
-          simp [hb, ht, hdn, bind, Except.bind, pure, Except.pure] at h
+          simp [hb, hfs, ht, hcs, hdn, bind, Except.bind, pure, Except.pure] at h
           subst h
-          exact ⟨hd, hbo, rfl⟩
+          exact ⟨hd, hbo, rfl, hfs, rfl⟩
         | cons k rest =>
-          simp [hb, ht, hdn, bind, Except.bind, pure, Except.pure, throw, throwThe,
+          simp [hb, hfs, ht, hcs, hdn, bind, Except.bind, pure, Except.pure, throw, throwThe,
             MonadExceptOf.throw] at h
 
 /-- `decode_sound_of_ok` from the checked decoder's acceptance (`Frame.decodeChecked`: the
-bound check and `tablesCheck` included). -/
+bound check, `tablesCheck`, `frameSizesCheck` and `callSitesCheck` included). -/
 theorem decode_sound_of_checked {code : ByteArray} {relocs : Array Reloc} {rodata : ByteArray}
     {callSites : Array CallSite} {dropped : Array DroppedStore} {scopes : Array R.Scope}
     {mode : Ryo.Obj.Mode} {facts : Frame.Facts} {d : Decoded}
@@ -771,6 +781,6 @@ theorem decode_sound_of_checked {code : ByteArray} {relocs : Array Reloc} {rodat
       S.padOf = padOf ∧ S.Safe = Safe ∧
       (Hyps S → ∀ s x, BInv S s x → SafeFrom Safe c s → FnSim ctx E c (BInv S) (ExitRel S) s x) :=
   have h := decodeChecked_ok hdec
-  decode_sound_of_ok h.1 hnr h.2.2 c hc hm ctx E K x0 Owned lo padOf Safe
+  decode_sound_of_ok h.1 hnr h.2.2.1 h.2.2.2.2 c hc hm ctx E K x0 Owned lo padOf Safe
 
 end Ryo.Proofs.DecodeSound

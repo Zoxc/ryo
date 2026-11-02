@@ -112,6 +112,8 @@ any later use (a value-flow, not liveness, question).
 `head_liveness` is coarser (calls read every byte, handlers kill nothing).
 -/
 import Ryo.Vm.DecodeReduced
+import Ryo.Vm.FrameSizes
+import Ryo.Vm.CallSitesCheck
 import Ryo.Vm.OpSem.Footprint
 import Ryo.Vm.R.Islands
 import Std.Data.HashMap
@@ -840,10 +842,16 @@ def decodeChecked (code : ByteArray) (fields : Fields) (rodata : ByteArray)
   let d ← match decodeBounded code fields rodata callSites dropped scopes mode with
     | .ok d => pure d
     | .error e => throw s!"{e.what} at {e.at_}"
-  -- The switch tables' starts and the targets (`tablesCheck`, for `HdlTables`).
+  -- On PE the frame size and the return address fit a signed 32-bit displacement.
+  if !frameSizesCheck d mode then
+    throw "PE frame size + 8 past 2^31"
+  -- The switch tables' starts and the targets (`tablesCheck`, for `HdlTables`); the call sites
+  -- sorted by start and aligned with the calls (`callSitesCheck`, for `PadsLinked`).
   if let .relocs rs := fields then
     if !tablesCheck code rs rodata callSites dropped scopes mode then
       throw "switch table start off a relocation boundary, or code or targets over 2 GiB"
+    if !callSitesCheck code rs rodata callSites dropped scopes mode then
+      throw "call sites not sorted by start, or a call site misaligned with a call"
   checkDropped d mode facts
 
 where
