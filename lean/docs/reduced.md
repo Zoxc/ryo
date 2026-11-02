@@ -33,7 +33,12 @@ only those (`asm/encode.rs`), and C1' checks that too. The contract also says wh
 template does with each operand slot (`Ryo/Vm/R/Islands.lean`, by template and `ops`
 position): reads it, or only writes it, whole and when it returns (a destination: its bytes
 before the island are never observed), or neither. Which template an island is comes from
-its symbol (C1' checks it is the instance the dump names).
+its symbol (C1' checks it is the instance the dump names). The instruction lists' source
+locations (`asm::list::Loc`, kind 5, with the header's `strings` pool) are read by
+`Ryo/Obj/List.lean` and dropped: R carries no locations. Not done (optional,
+[vm.md](../../design/vm.md) "JIT chains"): locations as labels of decoded calls, and the JIT's
+per-call chains (`InstData::loc`, `Func::chains`, `Output::calls`) through the per-step
+checkers.
 
 ### C0.2 Frames are objects, at a layout
 
@@ -449,7 +454,16 @@ footprint (op : Full.Opcode) : Option Footprint
   allocation, or a store into an immutable one; a misaligned atomic or `addr.sym` slot;
   `addr` of an offset that is neither in an escaped object, nor at its end, nor a zero-sized
   object. Shift and rotation amounts are masked (`wrapping_sh*`,
-  `rotate_*`): no UB.
+  `rotate_*`): no UB. Everything else is defined at the opcode's width: `add`/`sub`/`mul`
+  (and `.imm`, `neg`) wrap, the `.ovf` forms give the wrapped result and whether the exact
+  one leaves the type's range, `ctlz`/`cttz` of zero give the width, `cmp3` is `-1`/`0`/`1`
+  as an `i8`, extensions and truncations are `as`, float to integer saturates (NaN to 0),
+  integer to float rounds to nearest-even (overflowing to infinity), and `ptr.add`/`ptr.index`
+  wrap the address modulo `2^64`.
+- **Failures**: the handlers don't panic (`interp.rs`); `abort` is `Stop.abort`, R's
+  `unreachable` `Stop.unreachable`. A callee or island that aborts or panics where it can't
+  unwind never answers its event (§C0.4): divergence, not a behavior of the function. One
+  that unwinds answers with an exception object, which lands at the call's pad.
 - **Footprint**: per opcode, from `HandlerKind` and its parameters, naming operands: the
   frame reads and writes at their exact extents (a width, `len`, `elem_size × count`; a
   memory operand reads its slot's 8 bytes), the address-taken slots, the accesses through pointers (source, extent, read /

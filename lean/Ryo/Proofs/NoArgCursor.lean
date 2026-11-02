@@ -1,7 +1,7 @@
 /-
-Ryo.Proofs.NoArgCursor — the `NoArg` cursor quirk (`DecodeLink.argInsn_none`) never matters for an
-accepted call, kept inline sequence or other instruction: each reads an item where the quirk's
-cursor has none (`decodeItem` fails there), so the cursor is the position's.
+Ryo.Proofs.NoArgCursor — facts about the cursor the attempts after `arg` start from (`NoArg`,
+the position's since `argInsn_none`) for an accepted call, kept inline sequence or other
+instruction.
 -/
 import Ryo.Proofs.DecodeLink
 
@@ -21,11 +21,7 @@ theorem noArg_dec_item {c : Cursor} {q : Nat} {l : List Item} (hl : l ≠ [])
 /-- The quirk's cursor is the position's, unless no item decodes there. -/
 theorem noArg_cases {fr : Frame} {c : Cursor} {p : Nat} {a : Bool} {cur : Cursor}
     (hn : NoArg fr c p a cur) : cur = atPos c p ∨ decodeItem cur = none := by
-  rcases hn with ⟨-, h⟩ | ⟨-, h⟩
-  · exact .inl h
-  · rcases argInsn_none h with h | ⟨_, _, _, _, h⟩
-    · exact .inl h
-    · exact .inr h
+  exact .inl hn
 
 theorem noArg_of_item {fr : Frame} {c : Cursor} {p : Nat} {a : Bool} {cur : Cursor}
     (hn : NoArg fr c p a cur) (hi : decodeItem cur ≠ none) : cur = atPos c p :=

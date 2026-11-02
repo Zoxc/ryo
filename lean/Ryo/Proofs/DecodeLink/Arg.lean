@@ -3,7 +3,7 @@ Ryo.Proofs.DecodeLink.Arg — `link_arg`'s bounds (aot.md §C2, toward M3 `decod
 argument register `argInsn` records decodes back to itself, `ArgReg.of? (word a) true = some a`,
 the hypothesis `ArgRet.arg_step` takes.
 
-- `argInsn_bounds`: `argInsn_read` with `a.size < 32` and `a.index < 2 ^ 24`. An `xmm` argument's
+- `argInsn_bounds`: `argInsn_read` with `a.size < 32`, `a.index < 2 ^ 24` and on PE `a.index < 4`. An `xmm` argument's
   size is 2 (`movd`) or that of an SSE store and its register below 8 (`decodeItem_xmmOk`); an
   integer one's index is `intIndex`'s, below 6, and its size the bytes the stores move, at most 8:
   the first parse (the stores, `shr`s between them) and the re-read `argStore a d pe` both run
@@ -58,14 +58,14 @@ theorem intStore_bytes {size : Nat} {r : X86.Reg} {m : M}
   simp [stBytes, widthOf, W.bits] at h
   omega
 
-/-- `argInsn_read` with the bounds `of_word_eq` needs. -/
+/-- `argInsn_read` with the bounds `of_word_eq` needs, and argInsn's PE bound. -/
 theorem argInsn_bounds {mode : Mode} {c c' : Cursor} {q : Proto}
     (h : (argInsn mode).run c = .ok (some q, c')) :
     ∃ (a : ArgReg) (d : BitVec 32),
       q = { op := .arg, ops := [.slot d, .imm (BitVec.ofNat 64 a.word)], pos := c.pos } ∧
       a.size < 32 ∧ a.index < 2 ^ 24 ∧
       (ArgReg.of? a.word true).isSome ∧ Dec c c.pos (argStore a d mode.pe) c'.pos ∧
-      c' = atPos c c'.pos := by
+      c' = atPos c c'.pos ∧ (mode.pe → a.index < 4) := by
   unfold argInsn at h
   obtain ⟨p0, c1, h1, h⟩ := bind_ok h
   obtain ⟨rfl, hc1⟩ := pos_run' h1
@@ -78,7 +78,7 @@ theorem argInsn_bounds {mode : Mode} {c c' : Cursor} {q : Proto}
   obtain ⟨r, c3, h3, h⟩ := bind_ok h
   have hR : ∀ a0 mm a, r = some (a0, mm) → a0 = some a →
       (a.xmm = true → a.size < 32 ∧ a.index < 8) ∧
-      (a.xmm = false → a.index < 6 ∧ ∃ items, Dec c c.pos items c3.pos ∧
+      (a.xmm = false → a.index < 7 ∧ ∃ items, Dec c c.pos items c3.pos ∧
         (items.map stBytes).sum = a.size) := by
     clear h
     intro a0 mm a hr ha
@@ -123,6 +123,7 @@ theorem argInsn_bounds {mode : Mode} {c c' : Cursor} {q : Proto}
       have hm := List.mem_of_find?_eq_some hk
       simp only [List.mem_range] at hm
       dsimp only
+      have har : argRax = 6 := rfl
       split at hm <;> omega
     · obtain ⟨rfl, rfl⟩ := pure_ok h3
       cases hr; cases ha
@@ -190,7 +191,7 @@ theorem argInsn_bounds {mode : Mode} {c c' : Cursor} {q : Proto}
       simp only [Bool.and_eq_true, beq_iff_eq] at hfa
       have hd' : Dec c c.pos (argStore a mm.disp mode.pe) c6.pos := by simpa using hd
       obtain ⟨hx, hint⟩ := hR _ _ a rfl hfa.1
-      refine ⟨a, mm.disp, rfl, ?_, ?_, hfa.2.1.1, hd', hc6⟩
+      refine ⟨a, mm.disp, rfl, ?_, ?_, hfa.2.1.1, hd', hc6, ?_⟩
       · cases hxa : a.xmm
         · obtain ⟨-, items, hdi, hs⟩ := hint hxa
           have hne : c6.pos = c3.pos := by simpa using hne
@@ -203,6 +204,8 @@ theorem argInsn_bounds {mode : Mode} {c c' : Cursor} {q : Proto}
       · cases hxa : a.xmm
         · have := (hint hxa).1; omega
         · have := (hx hxa).2; omega
+      · intro hpe
+        simpa [hpe] using hfa.2.1.2
   · dsimp only at h
     rw [hst] at h
     dsimp only at h

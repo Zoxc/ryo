@@ -18,7 +18,13 @@ def intMin (w : Nat) : BitVec w := BitVec.ofNat w (2 ^ (w - 1))
 
 /-- Rust's binary integer methods and operators on `a`, `b` (`bin`, `bin_fn`, `binop`,
 `shift`, and their `.imm` forms). `wrapping_sh*` masks the amount to the width;
-`unchecked_div`/`unchecked_rem` are UB on a zero divisor and on `MIN / -1`. -/
+`unchecked_div`/`unchecked_rem` are UB on a zero divisor and on `MIN / -1` (the handler is
+`core::intrinsics::unchecked_*`: no trap or panic is promised, MIR's checks precede it; the
+128-bit forms are the `div_*_w128`/`rem_*_w128` islands, with the same precondition).
+`sdiv`/`srem` truncate toward zero, the remainder taking the dividend's sign, as Rust's.
+The shift handlers pass the amount `b as u32` (sign-extending a signed `b`) and
+`wrapping_sh*` masks it to `w - 1`; since `w` divides `2 ^ 32`, that is `b`'s bit pattern
+modulo `w`, which is what this takes. -/
 def intBin (m : String) (signed : Bool) {w : Nat} (a b : BitVec w) : M (BitVec w) :=
   match m with
   | "wrapping_add" => pure (a + b)
@@ -37,7 +43,8 @@ def intBin (m : String) (signed : Bool) {w : Nat} (a b : BitVec w) : M (BitVec w
   | "wrapping_shr" => pure (if signed then a.sshiftRight (b.toNat % w) else a >>> (b.toNat % w))
   | _ => throw (.unsupported s!"integer method {m}")
 
-/-- `a.rotate_left(b)`, `a.rotate_right(b)`: `b` is a `u32`, taken modulo the width. -/
+/-- `a.rotate_left(b)`, `a.rotate_right(b)`: `b` is a `u32` (the handler reads 4 bytes of its
+slot at every width), taken modulo the width. -/
 def intRot (m : String) {w : Nat} (a : BitVec w) (b : Nat) : M (BitVec w) :=
   match m with
   | "rotate_left" => pure (a.rotateLeft (b % w))
@@ -71,7 +78,8 @@ def leadingZeros {w : Nat} (a : BitVec w) : Nat :=
 def trailingZeros {w : Nat} (a : BitVec w) : Nat :=
   ((List.range w).find? (a.getLsbD ·)).getD w
 
-/-- `count_ones`, `leading_zeros`, `trailing_zeros` (a `u32`). -/
+/-- `count_ones`, `leading_zeros`, `trailing_zeros` (a `u32`); a zero input gives the width
+for both `leading_zeros` and `trailing_zeros`, as Rust's (no UB, unlike `ctlz_nonzero`). -/
 def intCount (m : String) {w : Nat} (a : BitVec w) : M Nat :=
   match m with
   | "count_ones" => pure (countOnes a)

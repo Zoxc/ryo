@@ -22,8 +22,8 @@ checks. The stub's names carry the ABI tag of its build (`<tag>`, that of its on
   entry, `checkEntry` in `Ryo/Check/Image/Relocs.lean`);
 - with the link's image objects: each has the stub's tag (`checkTags`: an image of another
   tag is in another build's entry list, which this stub doesn't register), no two have the same
-  `(crate_hash, cgu_hash)` (which `ryo_vm_register` rejects), and the link has at most one
-  `__ryo_main`.
+  `(crate_hash, cgu_hash)` (which `ryo_vm_register` rejects). (There is no `__ryo_main`
+  slot: the C `main` is an ordinary image function, and the linker rejects two of them.)
 
 ELF only (the PE and Mach-O stubs are out of scope; `registryCtor true` is the PE form).
 -/
@@ -135,16 +135,15 @@ def checkTags (tag : String) (images : Array (String × String)) : Array String 
     else some s!"link: `{path}` has ABI tag `{t}`, the registry stub `{tag}`"
 
 /-- The link-level checks, on each image object's symbol, `crate_hash` and `cgu_hash`: no two
-objects with the same `(crate_hash, cgu_hash)` (`ryo_vm_register` rejects them), at most one
-`__ryo_main`. That each object registers itself is its entry (`checkEntry`). -/
-def checkLink (images : Array (String × Nat × Nat)) (mains : Nat) : Array String := Id.run do
+objects with the same `(crate_hash, cgu_hash)` (`ryo_vm_register` rejects them). That each
+object registers itself is its entry (`checkEntry`). -/
+def checkLink (images : Array (String × Nat × Nat)) : Array String := Id.run do
   let mut out : Array String := #[]
   let mut seen : Std.HashMap (Nat × Nat) String := {}
   for (s, ch, cg) in images do
     match seen[(ch, cg)]? with
     | some t => out := out.push s!"link: `{s}` and `{t}` have the same crate_hash and cgu_hash"
     | none => seen := seen.insert (ch, cg) s
-  if mains > 1 then out := out.push s!"link: {mains} image objects define {mainSlotName}"
   return out
 
 end Ryo.Check.Image

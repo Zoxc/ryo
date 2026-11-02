@@ -128,6 +128,16 @@ def loadKind (k : Nat) : Option Nat := do
 def retLoadKind (k : Nat) : Option Nat :=
   if k == 0 then some 0 else if k == RET_SRET then some 8 else loadKind k
 
+/-- The kind `ret` loads for a C `signext` 1- or 2-byte return (`AbiSig.ret_sext`): the value is
+`sext.w{8,16}.w64` into an 8-byte temporary, returned with one 8-byte integer part, where the
+return kind says 1 or 2 (`none` for any other kind). The object doesn't say whether the
+return is `signext`, so either width is accepted for such kinds; the upper bytes are the
+callee's (C's) extension, which a Rust caller ignores. -/
+def sextRetLoadKind (k : Nat) : Option Nat := do
+  let (some a, none) ← Asm.retParts k false | none
+  if a.xmm || a.off != 0 || !(a.size == 1 || a.size == 2) then none
+  pure (Asm.retKind [{ a with size := 8 }])
+
 /-- The kind a call of a function of return kind `k` collects (sret: 0, the address being an
 argument). -/
 def callKind (k : Nat) : Nat := if k == RET_SRET then 0 else k
@@ -176,7 +186,7 @@ def checkSignature (o : ImageObject) (i : Nat) (d : Decoded) : Array String := I
         match ops with
         | [.slot s, .imm kv] =>
           if let some want := retK then
-            if kv.toNat != want then
+            if kv.toNat != want && some kv.toNat != sextRetLoadKind f.retKind then
               out := out.push s!"{l}: insn {k}: ret of kind {hex kv.toNat}, ret_kind {hex f.retKind} loads {hex want}"
           if f.retKind == RET_SRET && !argSlots.contains s then
             out := out.push s!"{l}: insn {k}: sret ret from slot {s.toInt}, which no arg of the first integer register stores"

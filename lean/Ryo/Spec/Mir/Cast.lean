@@ -37,7 +37,10 @@ def vtableWordPtr (vt : ThinPointer) (k : Nat) : SemM ThinPointer := do
 /-- Attach the unsizing metadata (D30). `fuel` bounds the struct nesting. -/
 def unsizeValue (m : UnsizeMeta) : Nat → Value → Ty → Ty → SemM Value
   | 0, _, _, _ => throwIllFormed "Unsize: types nested too deeply"
+  -- `upcast none` (also the dump of an unsize between types equal after region erasure)
+  -- leaves the value as it is, whatever its shape.
   | fuel + 1, v, src, dst =>
+    if m == .upcast none then pure v else
     match v, src, dst with
     | .ptr p, .ptr _ _, .ptr _ _ => do
       match m with

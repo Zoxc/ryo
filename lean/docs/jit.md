@@ -274,6 +274,44 @@ of every inlined callee. Composed with the AOT theorem, the JIT code refines L0.
   stays, and the OSR entry still targets it. Rule: a block duplication with SSA repair
   (per-block symbolic evaluation; the copied branch reads the latch's arguments for the
   head's parameters). ("JIT SSA: Loop rotation behind RYO_JIT_ROTATE".)
+- **Address modes, cold sinking, peepholes**: after the passes, `opt::fold::index_addr`
+  turns a `Load`/`Store` through a `PtrIndex(s)` (s 1/2/4/8) whose only uses they are into
+  `LoadIx(w, k, s)` (args `p`, `i`) / `StoreIx(w, k, s)` (args `p`, `i`, `v`), accessing
+  `[p + i * s + k]`; `opt::dce` drops unused `Load`/`ALoad` (no longer effects);
+  `opt::layout` sinks pure values used only in cold blocks into copies there and orders the
+  hot blocks in chains. In the emitter, `BrCmp Eq|Ne (x & c), 0` is `test x, c` (the `and`
+  not emitted), a `Count` result is taken as zero-extended (no `mov r32, r32` for its
+  `Ext`), and a conditional branch falls through to an edge stub laid right after it. Rules:
+  the address equality `p + i * s + k` (`bv_decide`) for the fold; liveness (DCE's
+  certificate) with loads effect-free (they fault only where the R access would, and an
+  unused one's fault is the source's UB); availability/dominance for the sunk copies; step
+  6's templates for the three emitter forms. ("JIT SSA: Address modes, cold sinking and
+  branch peepholes".)
+- **`Ext` of `Undef`** (emitter): a widening `Ext` of an `Undef` operand writes 0 to the
+  destination instead of leaving it unwritten. Any value refines `Undef`, so the obligation
+  is only the step-6 template's (the destination holds a defined value afterwards). ("JIT:
+  Extend Undef to zero in the emitter".)
+- **Frame-address facts** (`opt::checks`, `checks::addr_facts`): compares and `and`-masks
+  fold using the known low bits and non-nullness of frame and static addresses: an
+  `AllocaAddr` of a memory or incoming alloca has low 4 bits `(aot_off + k) mod 16` and is
+  non-null for `k` in `0..=size`; a `RefAddr` of a constant, data area or function is
+  non-null; `PtrAdd`/`PtrIndex` keep known low bits. No check-elimination model exists in
+  Lean; these are assumptions on the JIT frame ([assumptions.md](assumptions.md)): `fp`
+  16-aligned and memory allocas placed congruent to their AOT offset mod 16 (step 6
+  already checks allocas aligned and pinned ones at their AOT offsets; the congruence for
+  unpinned ones would be added there). ("JIT SSA: Fold null and alignment checks of frame
+  addresses".)
+- **Distance folds of placement-free slots** (`opt::checks`, `checks::distances`): unsigned
+  threshold compares of `Sub(AllocaAddr(A, k), x)` / `Sub(x, AllocaAddr(A, k))` (and block
+  parameters of such) against constants `<= size - k` fold when every use of `A`'s
+  addresses is such a folded compare, a null compare, a known-bits mask, or a select
+  diamond feeding them. The argument is the abstract machine's freedom to place an
+  unobserved allocation, not a property of the concrete frame, so it cannot be validated
+  against the frame per compilation: stating it needs a nondeterministic-placement memory
+  model, which neither the MIR spec nor R has; recorded as an assumption
+  ([assumptions.md](assumptions.md)). `opt::run` also reruns `dce` when `thread` merged a
+  branch (DCE's certificate as above). ("JIT SSA: Fold overlap checks against
+  placement-free frame slots".)
 
 **`cpuid`.** The theorem is relative to the CPU having the logged features: the generic
 decoder accepts a form only if its feature is in the set, and L2+ faults on a form whose

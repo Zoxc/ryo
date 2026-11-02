@@ -363,7 +363,14 @@ impl<'tcx> Dumper<'tcx> {
             (_, rustc_abi::CanonAbi::C) => tag("c"),
             (_, other) => ctor("other", vec![("name", J::Str(format!("{other:?}")))]),
         };
-        obj(vec![("conv", conv), ("args", J::Arr(fn_abi.args.iter().map(|a| self.arg_abi(a)).collect())), ("ret", self.arg_abi(&fn_abi.ret))])
+        let mut fields =
+            vec![("conv", conv), ("args", J::Arr(fn_abi.args.iter().map(|a| self.arg_abi(a)).collect())), ("ret", self.arg_abi(&fn_abi.ret))];
+        // A C-variadic ABI's fixed argument count (as `sig::variadic_sig`'s
+        // `AbiSig::variadic`); absent otherwise.
+        if fn_abi.c_variadic {
+            fields.push(("fixed", num(fn_abi.fixed_count as usize)));
+        }
+        obj(fields)
     }
 
     fn arg_abi(&self, a: &ArgAbi<'tcx, Ty<'tcx>>) -> J {

@@ -13,10 +13,14 @@ entry's (from 0 for the first), and `v &&& 1` says what follows:
 - `1`, a modifier: its kind, then its fields: `0` a branch target (where the register cache
   is cleared); `1` a dropped store (the frame offset, then `size_log2 <<< 4 ||| reg`); `2`,
   `3`, `4` an escape, a storage end, an island operand (the frame offset and the size, then
-  for an escape the alignment).
+  for an escape the alignment); `5` a source location (`asm::list::Loc`: `file <<< 1 |||
+  inlined`, the line as a zigzag delta from the previous location's (from 0, summed in a
+  wrapping `i64`, each line in `u32`), the column, then if `inlined` the nonzero name; `file`
+  and the name are offsets in the image's string pool, `Header.strings`).
 
 Numbers are LEB128, frame offsets zigzag-encoded. At one position the entries come in the
-order target, scopes, dropped stores, instructions (a target once).
+order target, scopes, dropped stores, locations, instructions (a target once). Locations are
+pure labels: the decoders ignore them (`InsnList.read` drops them).
 
 `walk` ports `list::walk` (the well-formedness `Image::validate` checks), `InsnList.read`
 `InsnList::read`. The Lean decoder (`decodeReduced`) uses the list's dropped stores and scopes,
@@ -26,6 +30,7 @@ doesn't take the targets and inline sequences' entries as an index (`asm::decode
 which checks them against the code).
 -/
 import Ryo.Obj.Reloc
+import Ryo.Obj.Elf
 
 namespace Ryo.Obj
 
@@ -44,6 +49,9 @@ inductive ListEntry where
   /-- The frame offset, the size (1, 2, 4 or 8) and the register (x86 number, of the pool). -/
   | dropped (frameOffset : Int) (size reg : Nat)
   | scope (frameOffset : Int) (size : Nat) (kind : ScopeKind)
+  /-- A source location: the file's and the name's string pool offsets (`0`: none), the
+  absolute line and the column. -/
+  | loc (file line col name : Nat)
   deriving Repr, DecidableEq, Inhabited
 
 /-- An instruction entry (`list::Hint`). -/
@@ -89,6 +97,8 @@ def walkList (bytes : ByteArray) (codeLen : Nat) : Option (Array (Nat × ListEnt
   -- The kind order of the last entry at `pos`.
   let mut last : Option Nat := none
   let mut out : Array (Nat × ListEntry) := #[]
+  -- The line of the last location, an `i64` (`line += …` wraps in release builds).
+  let mut line : Int := 0
   let u32 (r : Nat × Nat) : Option (Nat × Nat) := if r.1 < 2 ^ 32 then some r else none
   let i32 (r : Nat × Nat) : Option (Int × Nat) := do
     let (v, j) ← u32 r
@@ -110,7 +120,7 @@ def walkList (bytes : ByteArray) (codeLen : Nat) : Option (Array (Nat × ListEnt
       i := j
       if o ≥ 2 ^ 16 then none
       let op ← Full.Opcode.ofNat? o
-      order := 3
+      order := 4
       e := .insn op ((sel + handlerSel) % 2 ^ 32)
     else
       let (k, j) ← readVarint bytes i
@@ -138,6 +148,25 @@ def walkList (bytes : ByteArray) (codeLen : Nat) : Option (Array (Nat × ListEnt
           kind := .escape a
         order := 1
         e := .scope off size kind
+      | 5 =>
+        let (fi, j) ← readVarint bytes i
+        let file := fi >>> 1
+        if file ≥ 2 ^ 32 then none
+        let (d, j) ← readVarint bytes j
+        -- `((d >> 1) as i64) ^ -((d & 1) as i64)`, `d >> 1 < 2 ^ 63`.
+        let dl : Int := if d % 2 == 0 then ((d >>> 1 : Nat) : Int) else -((d >>> 1 : Nat) : Int) - 1
+        line := toSigned 64 ((line + dl) % (2 ^ 64 : Nat)).toNat
+        let (col, j) ← u32 (← readVarint bytes j)
+        i := j
+        let mut name := 0
+        if fi % 2 == 1 then
+          let (n, j) ← u32 (← readVarint bytes i)
+          i := j
+          if n == 0 then none
+          name := n
+        if line < 0 || line ≥ 2 ^ 32 then none
+        order := 3
+        e := .loc file line.toNat col name
       | _ => none
     if let some l := last then
       if order < l || (order == l && order == 0) then none
@@ -154,5 +183,6 @@ def InsnList.read (bytes : ByteArray) (codeLen : Nat) : Option InsnList := do
     | .target => { l with targets := l.targets.push pos }
     | .dropped off size reg => { l with dropped := l.dropped.push ⟨pos, off, size, reg⟩ }
     | .scope off size kind => { l with scopes := l.scopes.push ⟨pos, off, size, kind⟩ }
+    | .loc .. => l
 
 end Ryo.Obj

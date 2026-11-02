@@ -314,9 +314,9 @@ theorem link_arg {ctx : Ctx} {m : Mem} {c c' : Cursor} {rs : Array Reloc} {mode 
   have : a.word < 2 ^ 32 := Nat.mod_lt _ (by decide)
   omega
 
-theorem low_parts : ∀ x : Bool, ∀ s : Fin 32,
-    let L := s.val ||| (if x then 32 else 0)
-    L < 64 ∧ L % 32 = s.val ∧ (L &&& 32 != 0) = x := by decide
+theorem low_parts : ∀ x y : Bool, ∀ s : Fin 32,
+    let L := s.val ||| (if x then 32 else 0) ||| (if y then 128 else 0)
+    L < 256 ∧ L % 32 = s.val ∧ (L &&& 32 != 0) = x ∧ (L &&& 128 != 0) = y := by decide
 
 theorem shl8_and32 (i : Nat) : i <<< 8 &&& 32 = 0 := by
   apply Nat.eq_of_testBit_eq; intro j
@@ -325,24 +325,37 @@ theorem shl8_and32 (i : Nat) : i <<< 8 &&& 32 = 0 := by
   · subst hj; simp
   · rw [show (32 : Nat) = 2 ^ 5 by rfl, Nat.testBit_two_pow]; simp [Ne.symm hj]
 
-theorem word_parts (x : Bool) (s i : Nat) (hs : s < 32) (hi : i < 2 ^ 24) :
-    Ryo.Vm.R.u32 (s ||| (if x then 32 else 0) ||| (i <<< 8)) &&& 0x1f = s ∧
-    (Ryo.Vm.R.u32 (s ||| (if x then 32 else 0) ||| (i <<< 8)) &&& 0x20 != 0) = x ∧
-    Ryo.Vm.R.u32 (s ||| (if x then 32 else 0) ||| (i <<< 8)) >>> 8 = i := by
-  obtain ⟨hL, hm, hb⟩ := low_parts x ⟨s, hs⟩
-  simp only at hL hm hb
-  generalize s ||| (if x then 32 else 0) = L at hL hm hb ⊢
+theorem shl8_and128 (i : Nat) : i <<< 8 &&& 128 = 0 := by
+  apply Nat.eq_of_testBit_eq; intro j
+  simp only [Nat.testBit_and, Nat.testBit_shiftLeft, Nat.zero_testBit]
+  by_cases hj : j = 7
+  · subst hj; simp
+  · rw [show (128 : Nat) = 2 ^ 7 by rfl, Nat.testBit_two_pow]; simp [Ne.symm hj]
+
+/-- The fields `ArgReg.of?` reads back from an `ArgReg.word`: size, SSE bit, sign-extension bit
+(`argSext`, bit 7) and index. -/
+theorem word_parts (x y : Bool) (s i : Nat) (hs : s < 32) (hi : i < 2 ^ 24) :
+    Ryo.Vm.R.u32 (s ||| (if x then 32 else 0) ||| (if y then argSext else 0) ||| (i <<< 8)) &&& 0x1f = s ∧
+    (Ryo.Vm.R.u32 (s ||| (if x then 32 else 0) ||| (if y then argSext else 0) ||| (i <<< 8)) &&& 0x20 != 0) = x ∧
+    Ryo.Vm.R.u32 (s ||| (if x then 32 else 0) ||| (if y then argSext else 0) ||| (i <<< 8)) >>> 8 = i ∧
+    (Ryo.Vm.R.u32 (s ||| (if x then 32 else 0) ||| (if y then argSext else 0) ||| (i <<< 8)) &&& argSext != 0) = y := by
+  obtain ⟨hL, hm, hb, hy⟩ := low_parts x y ⟨s, hs⟩
+  simp only at hL hm hb hy
+  simp only [argSext]
+  generalize s ||| (if x then 32 else 0) ||| (if y then 128 else 0) = L at hL hm hb hy ⊢
   have e : L ||| i <<< 8 = i <<< 8 + L := by
     rw [Nat.or_comm, Nat.shiftLeft_add_eq_or_of_lt (by omega)]
   have hw : Ryo.Vm.R.u32 (L ||| i <<< 8) = i <<< 8 + L := by
     simp only [Ryo.Vm.R.u32, e]
     apply Nat.mod_eq_of_lt; rw [Nat.shiftLeft_eq]; omega
   rw [hw]
-  refine ⟨?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_⟩
   · rw [show (0x1f : Nat) = 2 ^ 5 - 1 by rfl, Nat.and_two_pow_sub_one_eq_mod, Nat.shiftLeft_eq]; omega
   · rw [Nat.shiftLeft_add_eq_or_of_lt (by omega), Nat.and_or_distrib_right, shl8_and32]
     simpa using hb
   · rw [Nat.shiftRight_eq_div_pow, Nat.shiftLeft_eq]; omega
+  · rw [Nat.shiftLeft_add_eq_or_of_lt (by omega), Nat.and_or_distrib_right, shl8_and128]
+    simpa using hy
 
 theorem ite_some_eq {α : Type} {p : Prop} [Decidable p] {a b : α}
     (h : (if p then some a else none) = some b) : b = a := by
@@ -352,13 +365,13 @@ theorem ite_some_eq {α : Type} {p : Prop} [Decidable p] {a b : α}
 
 theorem of_word_eq {a b : ArgReg} (hs : a.size < 32) (hi : a.index < 2 ^ 24)
     (h : ArgReg.of? a.word true = some b) : b = a := by
-  obtain ⟨h1, h2, h3⟩ := word_parts a.xmm a.size a.index hs hi
-  have hb : b = ⟨a.word &&& 0x20 != 0, a.word &&& 0x1f, a.word >>> 8⟩ := by
+  obtain ⟨h1, h2, h3, h4⟩ := word_parts a.xmm a.sext a.size a.index hs hi
+  have hb : b = ⟨a.word &&& 0x20 != 0, a.word &&& 0x1f, a.word >>> 8, a.word &&& argSext != 0⟩ := by
     dsimp only [ArgReg.of?] at h
     exact ite_some_eq h
   subst hb
-  obtain ⟨x, s, i⟩ := a
-  simp only [ArgReg.word] at h1 h2 h3 ⊢
-  rw [h1, h2, h3]
+  obtain ⟨x, s, i, y⟩ := a
+  simp only [ArgReg.word] at h1 h2 h3 h4 ⊢
+  rw [h1, h2, h3, h4]
 
 end Ryo.Proofs.DecodeLink

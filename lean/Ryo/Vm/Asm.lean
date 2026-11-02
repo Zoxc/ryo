@@ -110,35 +110,51 @@ def partRegs (k : Nat) (load : Bool) : List (RetPart × Reg × Nat) :=
       (acc ++ [(p, (if g == 0 then Reg.rax else Reg.rdx), x)],
         if p.xmm then g else g + 1, if p.xmm then x + 1 else x)) ([], 0, 0)).1
 
-/-- `ArgReg`. -/
+/-- `ArgReg`: bits 0–4 the size, bit 5 an SSE register, bit 7 (`ARG_SEXT`, call argument
+lists only, 1- or 2-byte integers) a sign-extending load (`movsx r32`), bits 8–15 the index
+among the convention's argument registers of its class. -/
 structure ArgReg where
   xmm : Bool
   size : Nat
   index : Nat
+  sext : Bool := false
 deriving DecidableEq, Repr, Inhabited
 
-def ArgReg.word (a : ArgReg) : Nat := u32 (a.size ||| (if a.xmm then 32 else 0) ||| (a.index <<< 8))
+/-- `ARG_RAX`: in a SysV call's argument list, the integer register index of `rax`, loaded one
+byte (`movzx eax`): a C-variadic call's `al`. Never an `arg`'s register. -/
+def argRax : Nat := 6
+
+/-- `ARG_SEXT`. -/
+def argSext : Nat := 0x80
+
+def ArgReg.word (a : ArgReg) : Nat :=
+  u32 (a.size ||| (if a.xmm then 32 else 0) ||| (if a.sext then argSext else 0) ||| (a.index <<< 8))
 
 /-- `ArgReg::of`. Convention-independent: on PE it still takes integer indices 4 and 5 (which
-`intArg` turns into `rax`) and xmm indices 4 to 7, which Rust's encoders reject since dbb3619
-(`asm::pe_regs_ok`; `lean/PENDING.md`). -/
+`intArg` turns into `rax`) and xmm indices 4 to 7; the encoders reject them there
+(`asm::pe_regs_ok`, the decoder's `paramsOk`/`argInsn` bound). `rax` (`argRax`) only in call
+argument lists (`!exact`), one byte, not sign-extended; `sext` only there, 1- or 2-byte
+integers. -/
 def ArgReg.of? (r : Nat) (exact : Bool) : Option ArgReg :=
-  let a : ArgReg := ⟨r &&& 0x20 != 0, r &&& 0x1f, r >>> 8⟩
+  let a : ArgReg := ⟨r &&& 0x20 != 0, r &&& 0x1f, r >>> 8, r &&& argSext != 0⟩
   let int := if exact then 1 ≤ a.size && a.size ≤ 8
     else a.size == 1 || a.size == 2 || a.size == 4 || a.size == 8
+  let rax := !exact && a.index == argRax && a.size == 1 && !a.sext
   let ok := if a.xmm then (a.size == 2 || a.size == 4 || a.size == 8 || a.size == 16) && a.index < 8
-    else int && a.index < 6
-  if ok && r &&& 0xc0 == 0 && a.word == r then some a else none
+    else int && (a.index < 6 || rax)
+  let sextOk := !a.sext || (!exact && !a.xmm && (a.size == 1 || a.size == 2))
+  if ok && sextOk && r &&& 0x40 == 0 && a.word == r then some a else none
 
 /-! ### Fixed sequences -/
 
-/-- `int_arg`: `rdi rsi rdx rcx r8 r9`, PE `rcx rdx r8 r9`; `rax` past them. -/
+/-- `int_arg`: `rdi rsi rdx rcx r8 r9`, PE `rcx rdx r8 r9`; `rax` past them (on SysV index
+`argRax`, a variadic call's `al`). -/
 def intArg (pe : Bool) (i : Nat) : Reg :=
   if pe then [Reg.rcx, .rdx, .r8, .r9].getD i .rax else [Reg.rdi, .rsi, .rdx, .rcx, .r8, .r9].getD i .rax
 
-/-- The integer argument register index of `r` (`int_index`). -/
+/-- The integer argument register index of `r` (`int_index`): on SysV `rax` is `argRax`. -/
 def intIndex (r : Reg) (m : Mode) : Option Nat :=
-  (List.range (if m.pe then 4 else 6)).find? fun i => intArg m.pe i == r
+  (List.range (if m.pe then 4 else argRax + 1)).find? fun i => intArg m.pe i == r
 
 /-- The registers of a handler call's argument positions (`asm::handler_arg`): `rdi, rsi, rdx,
 rcx, r8, r9`, or on PE (Win64 handlers) `rcx, rdx, r8, r9`, after which comes the stack. -/
@@ -240,6 +256,9 @@ def mapRegs (f : Reg → Reg) : Item → Item
   | .div sg w rm => .div sg w (mapRm f rm)
   | .lea r to => .lea (f r) to
   | .loadRip r to => .loadRip (f r) to
+  | .mov d s => .mov (f d) (f s)
+  | .sse st size x m => .sse st size x ⟨f m.base, m.disp⟩
+  | .movd t x r => .movd t x (f r)
   | it => it
 where
   mapRm (f : Reg → Reg) : Rm → Rm

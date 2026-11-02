@@ -31,11 +31,13 @@ structure FuncUnwind where
 namespace ImageObject
 
 /-- The call sites of the image's table for function `f` (`From<&CallSiteEntry> for
-CallSite`: `CONTINUE` is no pad, `CATCH` the catch bit). -/
+CallSite`, `padParts`: `CONTINUE` is no pad, `NOUNWIND` no pad with the catch flag, `CATCH`
+the catch bit). An LSDA reads a `NOUNWIND` site back without the flag, so such a function's
+LSDA and table differ (`image differs`, as in Rust). -/
 def imageSites (o : ImageObject) (f : FuncEntry) : Array CallSite :=
   (o.image.callSites f).map fun c =>
-    if c.pad == CONTINUE then ⟨c.start, c.len, none, false⟩
-    else ⟨c.start, c.len, some (c.pad % CATCH), c.pad ≥ CATCH⟩
+    let (pad, catches) := padParts c.pad
+    ⟨c.start, c.len, pad, catches⟩
 
 /-- The FDE of function `i`: the one whose first address is the function's start in the text
 section (exactly one). -/

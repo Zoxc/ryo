@@ -321,7 +321,10 @@ theorem wfAny_ren {xr : Reg} (hu : xr.usable = true) (hc : xr ≠ .rcx) {it : It
     (try (rename_i rm; cases rm <;> simp only [mapRegs.mapRm, bne_iff_ne,
       ne_eq] at h ⊢)) <;>
     (try (rename_i w _; cases w <;> simp only at h ⊢)) <;>
-    simp_all
+    first
+    | (simp_all; done)
+    | (simp_all; intro he; exact absurd he (by decide))
+    | simp_all [R]
 
 theorem wfAny_withRm {it : Item} (h : wfAny it = true) (i : Nat) :
     wfAny (withRm it (.reg pool[i]!)) = true := by

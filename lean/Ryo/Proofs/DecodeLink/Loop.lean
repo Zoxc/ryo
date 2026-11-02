@@ -16,12 +16,7 @@ One iteration (`Iter`) from position `p`, cache `cache`, dropped stores `dr`:
   target, before the counter check (the shape lemmas' `pos`), its items from `p2`.
 
 The decoder functions that return `none` leave the cursor (`callInsn_none`, `inlineInsn_none`,
-`argInsn_none`). `argInsn` used to return `none` with the cursor past a `movd r11d, xmm` that no
-item follows (a Rust quirk, since fixed); `argInsn_none` and `NoArg` still allow that cursor,
-which no longer occurs (a simplification left to a later session). From that cursor every later
-attempt reads at a position where
-`decodeItem` fails, so only an inline sequence of a dropped store alone could still be accepted
-there; `ProtoRead` keeps that cursor explicit (`NoArg`).
+`argInsn_none`); `ProtoRead` names the cursor the attempts after `arg` start from (`NoArg`).
 
 - `instructions_read`: a successful `instructions` is a chain of iterations (`Iters`) from the
   cursor's position, an empty cache and all dropped stores, to its end position with none left;
@@ -172,11 +167,10 @@ inductive CounterRead (fr : Frame) (c : Cursor) : Nat → Option (Nat × Nat) �
   | check {p1 p2 : Nat} {t : BitVec 32} {long : Bool} : fr.mode.counters = true →
       Dec c p1 [.ctrInc true, .branch .ns t long] p2 → CounterRead fr c p1 (some (t.toNat, p2)) p2
 
-/-- The cursor the attempts after `arg` start from: the position, or (while every proto before
-is an `arg`) wherever a failed `argInsn` left it. -/
-def NoArg (fr : Frame) (c : Cursor) (p : Nat) (argsOnly : Bool) (cur : Cursor) : Prop :=
-  (argsOnly = false ∧ cur = atPos c p) ∨
-    (argsOnly = true ∧ (argInsn fr.mode).run (atPos c p) = .ok (none, cur))
+/-- The cursor the attempts after `arg` start from: the position's (a failed `argInsn` leaves
+it, `argInsn_none`). -/
+def NoArg (_fr : Frame) (c : Cursor) (p : Nat) (_argsOnly : Bool) (cur : Cursor) : Prop :=
+  cur = atPos c p
 
 /-- The proto read at `p` by the first of `argInsn`, `callInsn`, `inlineInsn`, `insn` that
 accepts, with the cache before (`cache`) and after, the dropped stores before and after, and
@@ -318,7 +312,13 @@ theorem callInsn_none {fr : Frame} {dropped : List DroppedStore} {c c' : Cursor}
     · obtain ⟨u, c5, h5, h⟩ := bind_ok h
       rw [run_setPos] at h5; cases h5
       obtain ⟨-, rfl⟩ := pure_ok h; exact back
-    · obtain ⟨it, c5, h5, h⟩ := bind_ok h
+    · by_cases hra : (!pre.isNone && paramsUseRax ps) = true
+      · rw [if_pos hra] at h
+        obtain ⟨u, c5, h5, h⟩ := bind_ok h
+        rw [run_setPos] at h5; cases h5
+        obtain ⟨-, rfl⟩ := pure_ok h; exact back
+      rw [if_neg hra] at h
+      obtain ⟨it, c5, h5, h⟩ := bind_ok h
       obtain ⟨r, c6, h6, h⟩ := bind_ok h
       have e5 := PosOnly.tryItem _ _ _ h5
       have e6 := (by loop_posonly : PosOnly _) _ _ _ h6
@@ -378,12 +378,10 @@ theorem callInsn_none {fr : Frame} {dropped : List DroppedStore} {c c' : Cursor}
         | dsimp only at hr))
       all_goals (obtain ⟨rfl, rfl⟩ := pure_ok hr; refine ⟨e', ?_⟩; first | exact .inl rfl | (right; refine ⟨rfl, ?_⟩; rw [run_setPos] at h1; cases h1; rfl))
 
-/-- `argInsn` that finds no `arg` leaves the cursor, but after a `movd r11d, xmm` no item
-follows (a fixed quirk whose case no longer occurs, see the module comment). -/
+/-- `argInsn` that finds no `arg` leaves the cursor. -/
 theorem argInsn_none {mode : Mode} {c c' : Cursor}
     (h : (argInsn mode).run c = .ok (none, c')) :
-    c' = c ∨ ∃ x n, decodeItem c = some (.movd false x .r11, n) ∧ c' = atPos c (c.pos + n) ∧
-      decodeItem c' = none := by
+    c' = c := by
   unfold argInsn at h
   obtain ⟨p0, c1, h1, h⟩ := bind_ok h
   obtain ⟨hp0, hc1⟩ := pos_run' h1
@@ -391,7 +389,7 @@ theorem argInsn_none {mode : Mode} {c c' : Cursor}
   obtain ⟨fi, c2, h2, h⟩ := bind_ok h
   cases fi with
   | none =>
-    left; rw [← run_tryItem_none h2]
+    rw [← run_tryItem_none h2]
     dsimp only at h
     exact (pure_ok h).2.symm
   | some first =>
@@ -399,7 +397,6 @@ theorem argInsn_none {mode : Mode} {c c' : Cursor}
   obtain ⟨r, c3, h3, h⟩ := bind_ok h
   cases r with
   | some am =>
-    left
     have e3 := (by loop_posonly : PosOnly _) _ _ _ h3
     have eh := (by loop_posonly : PosOnly _) _ _ _ h
     rw [eh, e3]
@@ -434,7 +431,6 @@ theorem argInsn_none {mode : Mode} {c c' : Cursor}
   | none =>
     dsimp only at h
     obtain ⟨-, rfl⟩ := pure_ok h
-    right
     dsimp only at h3
     repeat (any_goals (first
       | (obtain ⟨_, _, h4, h3⟩ := bind_ok h3)
@@ -668,7 +664,7 @@ theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedS
                   have h12' := h12
                   rw [hcx] at h12'
                   rcases o with _ | q
-                  · have hna := (Or.inr ⟨hA, h12'⟩ : NoArg fr c _ _ _)
+                  · have hna := (argInsn_none h12' : NoArg fr c _ _ _)
                     have hcy := chain hcx (po_arg _ _ _ _ h12)
                     obtain ⟨-, hr⟩ := (ite_ok hr).resolve_right (fun ⟨hn, _⟩ => by simp at hn)
                     obtain ⟨o, c13, h13, hr⟩ := bind_ok hr
@@ -698,7 +694,7 @@ theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedS
                     obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
                     obtain ⟨rfl, rfl⟩ := pure_ok hr
                     exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (by rw [hA]; exact .arg h12') (chain hcx (po_arg _ _ _ _ h12)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
-                · have hna := (Or.inl ⟨Bool.eq_false_iff.mpr hA, hcx⟩ : NoArg fr c _ _ _)
+                · have hna := (hcx : NoArg fr c _ _ _)
                   have hcy := hcx
                   obtain ⟨-, hr⟩ := (ite_ok hr).resolve_right (fun ⟨hn, _⟩ => by simp at hn)
                   obtain ⟨o, c13, h13, hr⟩ := bind_ok hr
@@ -732,7 +728,7 @@ theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedS
                 have h12' := h12
                 rw [hcx] at h12'
                 rcases o with _ | q
-                · have hna := (Or.inr ⟨hA, h12'⟩ : NoArg fr c _ _ _)
+                · have hna := (argInsn_none h12' : NoArg fr c _ _ _)
                   have hcy := chain hcx (po_arg _ _ _ _ h12)
                   obtain ⟨-, hr⟩ := (ite_ok hr).resolve_right (fun ⟨hn, _⟩ => by simp at hn)
                   obtain ⟨o, c13, h13, hr⟩ := bind_ok hr
@@ -762,7 +758,7 @@ theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedS
                   obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
                   obtain ⟨rfl, rfl⟩ := pure_ok hr
                   exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (by rw [hA]; exact .arg h12') (chain hcx (po_arg _ _ _ _ h12)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
-              · have hna := (Or.inl ⟨Bool.eq_false_iff.mpr hA, hcx⟩ : NoArg fr c _ _ _)
+              · have hna := (hcx : NoArg fr c _ _ _)
                 have hcy := hcx
                 obtain ⟨-, hr⟩ := (ite_ok hr).resolve_right (fun ⟨hn, _⟩ => by simp at hn)
                 obtain ⟨o, c13, h13, hr⟩ := bind_ok hr
@@ -793,7 +789,7 @@ theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedS
               have h12' := h12
               rw [hcx] at h12'
               rcases o with _ | q
-              · have hna := (Or.inr ⟨hA, h12'⟩ : NoArg fr c _ _ _)
+              · have hna := (argInsn_none h12' : NoArg fr c _ _ _)
                 have hcy := chain hcx (po_arg _ _ _ _ h12)
                 obtain ⟨-, hr⟩ := (ite_ok hr).resolve_right (fun ⟨hn, _⟩ => by simp at hn)
                 obtain ⟨o, c13, h13, hr⟩ := bind_ok hr
@@ -823,7 +819,7 @@ theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedS
                 obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
                 obtain ⟨rfl, rfl⟩ := pure_ok hr
                 exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (by rw [hA]; exact .arg h12') (chain hcx (po_arg _ _ _ _ h12)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
-            · have hna := (Or.inl ⟨Bool.eq_false_iff.mpr hA, hcx⟩ : NoArg fr c _ _ _)
+            · have hna := (hcx : NoArg fr c _ _ _)
               have hcy := hcx
               obtain ⟨-, hr⟩ := (ite_ok hr).resolve_right (fun ⟨hn, _⟩ => by simp at hn)
               obtain ⟨o, c13, h13, hr⟩ := bind_ok hr
@@ -888,7 +884,7 @@ theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedS
               have h12' := h12
               rw [hcx] at h12'
               rcases o with _ | q
-              · have hna := (Or.inr ⟨hA, h12'⟩ : NoArg fr c _ _ _)
+              · have hna := (argInsn_none h12' : NoArg fr c _ _ _)
                 have hcy := chain hcx (po_arg _ _ _ _ h12)
                 obtain ⟨-, hr⟩ := (ite_ok hr).resolve_right (fun ⟨hn, _⟩ => by simp at hn)
                 obtain ⟨o, c13, h13, hr⟩ := bind_ok hr
@@ -918,7 +914,7 @@ theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedS
                 obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
                 obtain ⟨rfl, rfl⟩ := pure_ok hr
                 exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (by rw [hA]; exact .arg h12') (chain hcx (po_arg _ _ _ _ h12)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
-            · have hna := (Or.inl ⟨Bool.eq_false_iff.mpr hA, hcx⟩ : NoArg fr c _ _ _)
+            · have hna := (hcx : NoArg fr c _ _ _)
               have hcy := hcx
               obtain ⟨-, hr⟩ := (ite_ok hr).resolve_right (fun ⟨hn, _⟩ => by simp at hn)
               obtain ⟨o, c13, h13, hr⟩ := bind_ok hr
@@ -952,7 +948,7 @@ theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedS
             have h12' := h12
             rw [hcx] at h12'
             rcases o with _ | q
-            · have hna := (Or.inr ⟨hA, h12'⟩ : NoArg fr c _ _ _)
+            · have hna := (argInsn_none h12' : NoArg fr c _ _ _)
               have hcy := chain hcx (po_arg _ _ _ _ h12)
               obtain ⟨-, hr⟩ := (ite_ok hr).resolve_right (fun ⟨hn, _⟩ => by simp at hn)
               obtain ⟨o, c13, h13, hr⟩ := bind_ok hr
@@ -982,7 +978,7 @@ theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedS
               obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
               obtain ⟨rfl, rfl⟩ := pure_ok hr
               exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (by rw [hA]; exact .arg h12') (chain hcx (po_arg _ _ _ _ h12)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
-          · have hna := (Or.inl ⟨Bool.eq_false_iff.mpr hA, hcx⟩ : NoArg fr c _ _ _)
+          · have hna := (hcx : NoArg fr c _ _ _)
             have hcy := hcx
             obtain ⟨-, hr⟩ := (ite_ok hr).resolve_right (fun ⟨hn, _⟩ => by simp at hn)
             obtain ⟨o, c13, h13, hr⟩ := bind_ok hr
@@ -1013,7 +1009,7 @@ theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedS
           have h12' := h12
           rw [hcx] at h12'
           rcases o with _ | q
-          · have hna := (Or.inr ⟨hA, h12'⟩ : NoArg fr c _ _ _)
+          · have hna := (argInsn_none h12' : NoArg fr c _ _ _)
             have hcy := chain hcx (po_arg _ _ _ _ h12)
             obtain ⟨-, hr⟩ := (ite_ok hr).resolve_right (fun ⟨hn, _⟩ => by simp at hn)
             obtain ⟨o, c13, h13, hr⟩ := bind_ok hr
@@ -1043,7 +1039,7 @@ theorem instructions_read {fr : Frame} {ro : ByteArray} {dropped : List DroppedS
             obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
             obtain ⟨rfl, rfl⟩ := pure_ok hr
             exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (by rw [hA]; exact .arg h12') (chain hcx (po_arg _ _ _ _ h12)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
-        · have hna := (Or.inl ⟨Bool.eq_false_iff.mpr hA, hcx⟩ : NoArg fr c _ _ _)
+        · have hna := (hcx : NoArg fr c _ _ _)
           have hcy := hcx
           obtain ⟨-, hr⟩ := (ite_ok hr).resolve_right (fun ⟨hn, _⟩ => by simp at hn)
           obtain ⟨o, c13, h13, hr⟩ := bind_ok hr

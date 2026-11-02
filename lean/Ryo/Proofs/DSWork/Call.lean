@@ -318,12 +318,14 @@ inductive CallReadS (fr : Frame) (c : Cursor) : Proto → Cursor → Prop
       Dec c c.pos (pre ++ ps) p3 → decodeItem (atPos c p3) = some (ci, n) →
       Dec c (p3 + n) (resultStores k d) c'.pos → c' = atPos c c'.pos →
       ((∀ it ∈ ps, XmmOk it) → Call.paramItems fr.mode.pe ws = some ps) → k < 2 ^ 32 →
+      (f = .callSymInd ∨ f = .callPtr → Call.usesRax ws = false) →
       CallReadS fr c (callProto f fo d k ws c.pos (p3, n)) c'
   | tail {w : Bool} {f : Full.Opcode} {fo : Opnd Nat} {pre ps : List Item} {j : Item}
       {ws : List (BitVec 32)} {c' : Cursor} :
       Call.tailHead w f fo = some (pre, j) →
       Dec c c.pos (pre ++ ps ++ (fr.epilogue ++ [j])) c'.pos → c' = atPos c c'.pos →
       ((∀ it ∈ ps, XmmOk it) → Call.paramItems fr.mode.pe ws = some ps) →
+      (f = .tailCallPtr → Call.usesRax ws = false) →
       CallReadS fr c { op := f, ops := [fo, .words ws], pos := c.pos } c'
 
 set_option maxRecDepth 100000 in
@@ -366,7 +368,7 @@ theorem call_read_site {fr : Frame} {dropped : List DroppedStore} {c c' : Cursor
         exact ⟨.nil _, rfl⟩
   obtain ⟨dpre, epre⟩ := hpre
   obtain ⟨ws, c3, h3, h⟩ := bind_ok h
-  obtain ⟨ps, dps, eps, hps⟩ := params_read h3
+  obtain ⟨ps, dps, eps, hps0⟩ := params_read h3
   rw [epre] at dps
   have dpp := dpre.trans' dps
   have eps' : c3 = atPos c c3.pos := eps.trans (by rw [epre])
@@ -380,6 +382,19 @@ theorem call_read_site {fr : Frame} {dropped : List DroppedStore} {c c' : Cursor
   split at h
   · obtain ⟨u, c9, -, h10⟩ := bind_ok h
     obtain ⟨he, -⟩ := pure_ok h10; cases he
+  rename_i hok
+  have hps : (∀ it ∈ ps, XmmOk it) → Call.paramItems fr.mode.pe ws = some ps :=
+    fun hx => hps0 hx (wordsOk_of_paramsOk (by simpa using hok))
+  try dsimp only at h
+  by_cases hra : (!pr.isNone && paramsUseRax ws) = true
+  · first
+      | rw [if_pos hra] at h
+      | simp only [hra, ↓reduceIte] at h
+    obtain ⟨u, c9, -, h10⟩ := bind_ok h
+    obtain ⟨he, -⟩ := pure_ok h10; cases he
+  first
+    | rw [if_neg hra] at h
+    | simp only [hra, Bool.false_eq_true, ↓reduceIte] at h
   obtain ⟨it, c5, h5, h⟩ := bind_ok h
   obtain ⟨r, c6, h6, h⟩ := bind_ok h
   have hnone : r = none → False := by
@@ -388,8 +403,8 @@ theorem call_read_site {fr : Frame} {dropped : List DroppedStore} {c c' : Cursor
     obtain ⟨he, -⟩ := pure_ok h10; cases he
   have fin_call : ∀ f fo ci n, Call.callHead f fo = some (preItems pr, ci) →
       decodeItem c3 = some (ci, n) → r = some (f, [fo], true) → c6 = atPos c3 (c3.pos + n) →
-      CallReadS fr c q c' := by
-    intro f fo ci n hhead hn hr hc6
+      (f = .callSymInd ∨ f = .callPtr → pr ≠ .none) → CallReadS fr c q c' := by
+    intro f fo ci n hhead hn hr hc6 hpr
     subst hr hc6
     dsimp only at h
     obtain ⟨x, c7, h7, h⟩ := bind_ok h
@@ -402,7 +417,7 @@ theorem call_read_site {fr : Frame} {dropped : List DroppedStore} {c c' : Cursor
     rw [eps'] at hn
     have hsite : (c3.pos, c3.pos + n - c3.pos) = (c3.pos, n) := by simp
     rw [hsite]
-    refine .call hhead dpp hn ?_ ?_ hps hk
+    refine .call hhead dpp hn ?_ ?_ hps hk (fun hf' => usesRax_of_pre hra (hpr hf'))
     · rw [eps'] at d8
       exact Dec.at_iff.mp d8
     · rw [e8, eps']
@@ -410,13 +425,13 @@ theorem call_read_site {fr : Frame} {dropped : List DroppedStore} {c c' : Cursor
       Dec c c3.pos fr.epilogue cE.pos → cE = atPos c cE.pos →
       decodeItem cE = some (j, n2) →
       r = some (f, [fo, .words ws], false) → c6 = atPos cE (cE.pos + n2) →
-      CallReadS fr c q c' := by
-    intro w f fo j cE n2 hhead dE eE hn2 hr hc6
+      (f = .tailCallPtr → pr ≠ .none) → CallReadS fr c q c' := by
+    intro w f fo j cE n2 hhead dE eE hn2 hr hc6 hpr
     subst hr hc6
     dsimp only at h
     obtain ⟨he, rfl⟩ := pure_ok h
     cases he
-    refine .tail hhead ?_ ?_ hps
+    refine .tail hhead ?_ ?_ hps (fun hf' => usesRax_of_pre hra (hpr hf'))
     · rw [eE] at hn2
       have := (dpp.append dE).append (Dec.single hn2)
       simpa using this
@@ -425,15 +440,17 @@ theorem call_read_site {fr : Frame} {dropped : List DroppedStore} {c c' : Cursor
   · obtain ⟨rfl, rfl⟩ := pure_ok h6
     obtain ⟨n, hn, rfl⟩ := run_tryItem_some h5
     exact fin_call _ _ _ n (head_call _) hn rfl rfl
+      (fun h => by rcases h with h | h <;> cases h)
   · obtain ⟨rfl, rfl⟩ := pure_ok h6
     obtain ⟨n, hn, rfl⟩ := run_tryItem_some h5
     exact fin_call _ _ _ n (head_callSym _) hn rfl rfl
+      (fun h => by rcases h with h | h <;> cases h)
   · obtain ⟨rfl, rfl⟩ := pure_ok h6
     obtain ⟨n, hn, rfl⟩ := run_tryItem_some h5
-    exact fin_call _ _ _ n (head_callSymInd _) hn rfl rfl
+    exact fin_call _ _ _ n (head_callSymInd _) hn rfl rfl (fun _ h => nomatch h)
   · obtain ⟨rfl, rfl⟩ := pure_ok h6
     obtain ⟨n, hn, rfl⟩ := run_tryItem_some h5
-    exact fin_call _ _ _ n (head_callPtr _) hn rfl rfl
+    exact fin_call _ _ _ n (head_callPtr _) hn rfl rfl (fun _ h => nomatch h)
   · -- A tail call: the epilogue and the jump, read again from `callAt`.
     have e5 : c5 = atPos c3 c5.pos := posOnly_run PosOnly.tryItem h5
     obtain ⟨u, c7, h7, h6⟩ := bind_ok h6
@@ -457,16 +474,19 @@ theorem call_read_site {fr : Frame} {dropped : List DroppedStore} {c c' : Cursor
     · obtain ⟨rfl, rfl⟩ := pure_ok h6
       obtain ⟨n2, hn2, rfl⟩ := run_tryItem_some h8
       exact fin_tail false _ _ _ cE n2 (head_tailCall false _) dE' eE' hn2 rfl rfl
+        (fun h => by cases h)
     · split at h6
       · obtain ⟨rfl, rfl⟩ := pure_ok h6
         exact (hnone rfl).elim
       · obtain ⟨rfl, rfl⟩ := pure_ok h6
         obtain ⟨n2, hn2, rfl⟩ := run_tryItem_some h8
         exact fin_tail false _ _ _ cE n2 (head_tailCallPtr false _) dE' eE' hn2 rfl rfl
+          (fun _ h => nomatch h)
     · split at h6
       · obtain ⟨rfl, rfl⟩ := pure_ok h6
         obtain ⟨n2, hn2, rfl⟩ := run_tryItem_some h8
         exact fin_tail true _ _ _ cE n2 (head_tailCallPtr true _) dE' eE' hn2 rfl rfl
+          (fun _ h => nomatch h)
       · obtain ⟨rfl, rfl⟩ := pure_ok h6
         exact (hnone rfl).elim
     · obtain ⟨rfl, rfl⟩ := pure_ok h6
@@ -535,20 +555,28 @@ theorem call_intArg_usable (pe : Bool) (i : Nat) : (intArg pe i).usable = true :
 
 theorem call_argReg_of_spec {r : Nat} {e : Bool} {a : ArgReg} (h : ArgReg.of? r e = some a) :
     (a.xmm = true → (a.size = 2 ∨ a.size = 4 ∨ a.size = 8 ∨ a.size = 16) ∧ a.index < 8) := by
-  unfold ArgReg.of? at h
   intro hx
-  generalize hA : (⟨r &&& 0x20 != 0, r &&& 0x1f, r >>> 8⟩ : ArgReg) = b at h
-  by_cases hc : ((if b.xmm then (b.size == 2 || b.size == 4 || b.size == 8 || b.size == 16) &&
-      b.index < 8 else (if e then 1 ≤ b.size && b.size ≤ 8
-      else b.size == 1 || b.size == 2 || b.size == 4 || b.size == 8) && b.index < 6) &&
-      r &&& 0xc0 == 0 && b.word == r) = true
-  · simp only [hc, ↓reduceIte] at h
-    cases h
-    rw [hx] at hc
-    simp only [↓reduceIte, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq,
-      decide_eq_true_eq] at hc
-    omega
-  · simp [hc] at h
+  unfold ArgReg.of? at h
+  simp only [Option.ite_none_right_eq_some, Option.some.injEq] at h
+  obtain ⟨hok, rfl⟩ := h
+  simp only [Bool.and_eq_true, beq_iff_eq] at hok
+  obtain ⟨⟨hok, -⟩, -⟩ := hok
+  simp only at hx ⊢
+  generalize (r &&& 32 != 0) = xb at hok hx ⊢
+  generalize r &&& 31 = sz at hok ⊢
+  generalize r >>> 8 = ix at hok ⊢
+  generalize (r &&& argSext != 0) = sb at hok ⊢
+  subst hx
+  cases e <;> cases sb <;> simp [argRax] at hok ⊢ <;> omega
+
+/-- An argument load's width check: `movsx` (`ARG_SEXT`) only of 1 or 2 bytes. -/
+theorem call_wf_ld_widthOf {a : ArgReg} (r : X86.Reg) (m : X86.M) (p : BitVec 32)
+    (hsx : a.sext = true → a.xmm = false ∧ (a.size = 1 ∨ a.size = 2)) :
+    (Item.ld (widthOf a.size) a.sext r m).wf p = (r.usable && Item.memWf m) := by
+  simp only [Item.wf]
+  cases hs : a.sext
+  · simp
+  · rcases (hsx hs).2 with h1 | h1 <;> simp [h1, widthOf]
 
 theorem call_paramItem_canon {pe : Bool} {s w : BitVec 32} {L : List Item}
     (h : Call.paramItem pe s w = some L) : ∀ i ∈ L, ∀ pos, i.Canonical pos := by
@@ -558,15 +586,20 @@ theorem call_paramItem_canon {pe : Bool} {s w : BitVec 32} {L : List Item}
   · cases h
   rename_i a ha
   have hx := call_argReg_of_spec ha
+  have hsx := (Call.argReg_of_false ha).2.2
   cases pe <;> cases hB : (w.toNat &&& argAddr != 0) <;> cases hX : a.xmm <;> simp [hB, hX] at h
   all_goals first
     | obtain ⟨hc, rfl⟩ := h
     | (by_cases h2 : a.size = 2 <;> simp [h2] at h <;> subst h)
+    | subst h
+    | (obtain ⟨hc, rfl⟩ := h.symm)
   all_goals intro i hi pos
-  all_goals simp at hi
+  all_goals (try simp at hi)
   all_goals (try rcases hi with rfl | rfl)
   all_goals (try subst hi)
   all_goals refine call_canon_of (fun p => ?_) (fun _ _ h => by cases h) pos
+  all_goals (try rw [call_wf_ld_widthOf _ _ _ hsx])
+  all_goals clear hsx
   all_goals simp [Item.wf, call_intArg_usable, Item.memWf, M.frame, *]
   all_goals first | (have := (hx hX).1; omega) | decide | simp [Reg.usable]
 
@@ -1038,30 +1071,30 @@ theorem call_storeR_form {d : BitVec 32} {p : RetPart} {rr : R.Reg} (hp : CallLe
   rcases hfor with ⟨hx, hr | hr⟩ | ⟨hx, hr | hr⟩ <;> subst hr
   · have hv : 1 ≤ p.size ∧ p.size ≤ 8 := by unfold CallLemmas.partOkS at hp; simpa [hx] using hp
     have hst : CallLemmas.storeR d (p, .gpr 0) =
-        argStore ⟨false, p.size, 6⟩ (d + BitVec.ofNat 32 p.off) false := by
+        argStore ⟨false, p.size, 6, false⟩ (d + BitVec.ofNat 32 p.off) false := by
       simp [argStore, CallLemmas.storeR, hx, ArgRet.retX86, frameAt, intArg]
     rw [hst]
-    exact call_items_form ⟨false, p.size, 6⟩ _ false ⟨fun h => by simp at h, fun _ => hv⟩
+    exact call_items_form ⟨false, p.size, 6, false⟩ _ false ⟨fun h => by simp at h, fun _ => hv⟩
   · have hv : 1 ≤ p.size ∧ p.size ≤ 8 := by unfold CallLemmas.partOkS at hp; simpa [hx] using hp
     have hst : CallLemmas.storeR d (p, .gpr 1) =
-        argStore ⟨false, p.size, 2⟩ (d + BitVec.ofNat 32 p.off) false := by
+        argStore ⟨false, p.size, 2, false⟩ (d + BitVec.ofNat 32 p.off) false := by
       simp [argStore, CallLemmas.storeR, hx, ArgRet.retX86, frameAt, intArg]
     rw [hst]
-    exact call_items_form ⟨false, p.size, 2⟩ _ false ⟨fun h => by simp at h, fun _ => hv⟩
+    exact call_items_form ⟨false, p.size, 2, false⟩ _ false ⟨fun h => by simp at h, fun _ => hv⟩
   · have hv : p.size = 2 ∨ p.size = 4 ∨ p.size = 8 ∨ p.size = 16 := by
       unfold CallLemmas.partOkS at hp; simpa [hx] using hp
     have hst : CallLemmas.storeR d (p, .xmm 0) =
-        argStore ⟨true, p.size, 0⟩ (d + BitVec.ofNat 32 p.off) false := by
+        argStore ⟨true, p.size, 0, false⟩ (d + BitVec.ofNat 32 p.off) false := by
       simp [argStore, CallLemmas.storeR, hx, ArgRet.retXmm, frameAt]
     rw [hst]
-    exact call_items_form ⟨true, p.size, 0⟩ _ false ⟨fun _ => ⟨hv, by simp⟩, fun h => by simp at h⟩
+    exact call_items_form ⟨true, p.size, 0, false⟩ _ false ⟨fun _ => ⟨hv, by simp⟩, fun h => by simp at h⟩
   · have hv : p.size = 2 ∨ p.size = 4 ∨ p.size = 8 ∨ p.size = 16 := by
       unfold CallLemmas.partOkS at hp; simpa [hx] using hp
     have hst : CallLemmas.storeR d (p, .xmm 1) =
-        argStore ⟨true, p.size, 1⟩ (d + BitVec.ofNat 32 p.off) false := by
+        argStore ⟨true, p.size, 1, false⟩ (d + BitVec.ofNat 32 p.off) false := by
       simp [argStore, CallLemmas.storeR, hx, ArgRet.retXmm, frameAt]
     rw [hst]
-    exact call_items_form ⟨true, p.size, 1⟩ _ false ⟨fun _ => ⟨hv, by simp⟩, fun h => by simp at h⟩
+    exact call_items_form ⟨true, p.size, 1, false⟩ _ false ⟨fun _ => ⟨hv, by simp⟩, fun h => by simp at h⟩
 
 /-- The bytes `IslandKept` names: code or rodata (`CodeApart`), or a link slot. -/
 theorem call_kept_cases (H : Hyps S) {x : X86.State} {b : BitVec 64} (hb : IslandKept S x b) :
@@ -1265,7 +1298,7 @@ theorem bodySim_call' (hD : Decodes S code relocs rodata callSites dropped scope
   have hpk := (Array.getElem?_eq_some_iff.1 hpq).2
   have hio' := hpk ▸ hio hlt
   cases call_read_site hr with
-  | @call f fo pre ps ci ws d kk p3 n c'' hhead hd hn1 hd2 hc' hps hk32 =>
+  | @call f fo pre ps ci ws d kk p3 n c'' hhead hd hn1 hd2 hc' hps hk32 hrax =>
     -- The instruction.
     simp only [InsnOf] at hio'
     obtain ⟨op, ops, hof, rfl, hops⟩ := hio'
@@ -1322,7 +1355,8 @@ theorem bodySim_call' (hD : Decodes S code relocs rodata callSites dropped scope
     have hlo : S.lo.toNat + 8 ≤ x.rsp.toNat := by have := hfi.room; omega
     obtain ⟨cal, regs, stack, x1, hq, hx1, he1, hstl, -, hrr1, -, -, -, -, hrsp1, hret1, hsv1,
         hmem1⟩ :=
-      Call.call_query S.ctx hi hf hsh hseq hfi.rrel hfi.mem (hfb.scope_size _) hfi.rsp hb62 hlo
+      Call.call_query S.ctx hi hf hsh hseq
+        hrax hfi.rrel hfi.mem (hfb.scope_size _) hfi.rsp hb62 hlo
         (H.envApart.syms s x hfi) hstep hap
     have hrbp1 : x1.reg .rbp = x.reg .rbp := by
       show x1.regs 5 = x.regs 5; exact hsv1 5 (Island.saved_rbp _)
@@ -1499,7 +1533,7 @@ theorem bodySim_call' (hD : Decodes S code relocs rodata callSites dropped scope
         exact absurd h (pad_not_leadArg hD hcl)
       · change CacheInv (S.used pad) y
         rw [H.cacheCleared.pads k pad cat hcl]; exact CacheInv.emptyPe _ _
-  | @tail w f fo pre ps j ws c'' hhead hd hc' hps =>
+  | @tail w f fo pre ps j ws c'' hhead hd hc' hps hrax =>
     simp only [InsnOf] at hio'
     obtain ⟨op, ops, hof, rfl, hops⟩ := hio'
     obtain ⟨hf, hsh, hfoT⟩ := call_tail_op hhead hof
@@ -1524,7 +1558,8 @@ theorem bodySim_call' (hD : Decodes S code relocs rodata callSites dropped scope
     rw [← hs] at hi
     obtain ⟨fin, hstep⟩ := tail_step_done hi hf hsh hsafe
     obtain ⟨s1, cal, regs, stack, x', hfin, -, -, -, -, hx', hent, -, hrsp', hrbp', -, hsv'⟩ :=
-      Call.tail_call_step S.ctx hi hf hsh hseq hfi.rrel hfi.mem (hfb.scope_size _)
+      Call.tail_call_step S.ctx hi hf hsh hseq
+        hrax hfi.rrel hfi.mem (hfb.scope_size _)
         (fun h1 => ⟨hfi.rsp, by
           rcases h1 with h1 | h1
           · exact H.peFrame h1

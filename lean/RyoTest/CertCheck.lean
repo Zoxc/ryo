@@ -20,9 +20,9 @@ def RET_SRET : Nat := Ryo.Check.Image.RET_SRET
 `"f128"`). -/
 def scalarOf (s : String) (off : Nat := 0) : AbiScalar :=
   match s with
-  | "i8" => ⟨false, 1, off⟩ | "i16" => ⟨false, 2, off⟩ | "i32" => ⟨false, 4, off⟩
-  | "i128" => ⟨false, 16, off⟩ | "f32" => ⟨true, 4, off⟩ | "f64" => ⟨true, 8, off⟩
-  | "f128" => ⟨true, 16, off⟩ | "f16" => ⟨true, 2, off⟩ | _ => ⟨false, 8, off⟩
+  | "i8" => { float := false, size := 1, off := off } | "i16" => { float := false, size := 2, off := off } | "i32" => { float := false, size := 4, off := off }
+  | "i128" => { float := false, size := 16, off := off } | "f32" => { float := true, size := 4, off := off } | "f64" => { float := true, size := 8, off := off }
+  | "f128" => { float := true, size := 16, off := off } | "f16" => { float := true, size := 2, off := off } | _ => { float := false, size := 8, off := off }
 
 def direct (s : String) : ArgAbi :=
   let sc := scalarOf s
@@ -37,14 +37,14 @@ def indirect (size : Nat) (onStack : Bool := false) : ArgAbi :=
   { mode := .indirect, size, align := Align.ofBytes 8, detail := if onStack then "on_stack" else "" }
 
 def cast (size : Nat) : ArgAbi :=
-  { mode := .cast, size, align := Align.ofBytes 1, detail := "CastTarget", scalars := some [⟨false, size, 0⟩] }
+  { mode := .cast, size, align := Align.ofBytes 1, detail := "CastTarget", scalars := some [⟨false, size, 0, none⟩] }
 
 def unit : ArgAbi := { mode := .ignore, size := 0, align := .one }
 
 def sig (args : List ArgAbi) (ret : ArgAbi := unit) : FnAbiSummary := { conv := .rust, args, ret }
 
-def r (i size : Nat) (off : Nat := 0) : ArgLoc := .reg ⟨false, size, i⟩ off
-def x (i size : Nat) (off : Nat := 0) : ArgLoc := .reg ⟨true, size, i⟩ off
+def r (i size : Nat) (off : Nat := 0) : ArgLoc := .reg ⟨false, size, i, false⟩ off
+def x (i size : Nat) (off : Nat := 0) : ArgLoc := .reg ⟨true, size, i, false⟩ off
 
 def expectSig (pe : Bool) (s : FnAbiSummary) (k : Nat) (locs : List (List ArgLoc)) (stack : Nat) : Except String Unit :=
   match sigOf pe s with
@@ -97,7 +97,8 @@ def sysv : Except String Unit := do
   expectNoSig false (sig [{ mode := .indirectUnsized, size := 16, align := Align.ofBytes 8 }]) "indirectUnsized"
   expectNoSig false (sig [cast 12]) "Cast"
   expectNoSig false (sig [] (pair "i128" "i64" 16)) "more than two registers"
-  expectNoSig false { conv := .c, args := [], ret := unit } "ABI"
+  -- The C ABI has plans too (`sig.rs`): no arguments, no return.
+  expectSig false { conv := .c, args := [], ret := unit } 0 [] 0
 
 def win64 : Except String Unit := do
   -- Positions, not classes; after four, 8-byte slots after the 32 bytes of shadow space.
@@ -157,24 +158,24 @@ def argLists : Except String Unit := do
   let plan : ArgPlan := ⟨[[r 0 3, x 0 8 8], [.ptrReg 1], [.stack 0 0 8]], 16⟩
   -- A call: sret by address, a 3-byte piece passed as 4, an `Indirect` input by address.
   let some want := (passArgs fc plan true false).toOption | .error "passArgs"
-  let ok := words [(-64, 8 ||| argAddr), (-40, (ArgReg.mk false 4 0).word), (-32, (ArgReg.mk true 8 0).word),
-    (-56, (ArgReg.mk false 8 1).word ||| argAddr)]
+  let ok := words [(-64, 8 ||| argAddr), (-40, (ArgReg.mk false 4 0 false).word), (-32, (ArgReg.mk true 8 0 false).word),
+    (-56, (ArgReg.mk false 8 1 false).word ||| argAddr)]
   check (checkArgList ok want == none) s!"{checkArgList ok want}"
   -- An input's pieces at different homes, a missing `ARG_ADDR`, a short list.
-  let badHome := words [(-64, 8 ||| argAddr), (-40, (ArgReg.mk false 4 0).word), (-24, (ArgReg.mk true 8 0).word),
-    (-56, (ArgReg.mk false 8 1).word ||| argAddr)]
+  let badHome := words [(-64, 8 ||| argAddr), (-40, (ArgReg.mk false 4 0 false).word), (-24, (ArgReg.mk true 8 0 false).word),
+    (-56, (ArgReg.mk false 8 1 false).word ||| argAddr)]
   check (checkArgList badHome want |>.isSome) "pieces at two homes"
-  let noAddr := words [(-64, 8), (-40, (ArgReg.mk false 4 0).word), (-32, (ArgReg.mk true 8 0).word),
-    (-56, (ArgReg.mk false 8 1).word ||| argAddr)]
+  let noAddr := words [(-64, 8), (-40, (ArgReg.mk false 4 0 false).word), (-32, (ArgReg.mk true 8 0 false).word),
+    (-56, (ArgReg.mk false 8 1 false).word ||| argAddr)]
   check (checkArgList noAddr want |>.isSome) "sret without ARG_ADDR"
   check (checkArgList (ok.take 6) want |>.isSome) "a short list"
   -- A tail call passes the incoming sret and `Indirect` pointers, not by address.
   let some want := (passArgs fc ⟨[[r 0 8], [.ptrReg 1]], 0⟩ true true).toOption | .error "passArgs tail"
-  check (checkArgList (words [(-32, 8), (-24, 8), (-8, (ArgReg.mk false 8 1).word)]) want == none) "tail call"
-  check (checkArgList (words [(-16, 8), (-24, 8), (-8, (ArgReg.mk false 8 1).word)]) want |>.isSome) "tail call, wrong sret slot"
+  check (checkArgList (words [(-32, 8), (-24, 8), (-8, (ArgReg.mk false 8 1 false).word)]) want == none) "tail call"
+  check (checkArgList (words [(-16, 8), (-24, 8), (-8, (ArgReg.mk false 8 1 false).word)]) want |>.isSome) "tail call, wrong sret slot"
   -- The function's own `arg`s.
   let some pro := (prologueArgs fc (fc.plan.getD default)).toOption | .error "prologueArgs"
-  check (pro == [(-32, 8), (-24, (ArgReg.mk true 8 0).word), (-8, (ArgReg.mk false 8 1).word)]) s!"prologue {pro}"
+  check (pro == [(-32, 8), (-24, (ArgReg.mk true 8 0 false).word), (-8, (ArgReg.mk false 8 1 false).word)]) s!"prologue {pro}"
 
 def facts : Except String Unit := do
   let call (insn : Nat) (stack : Nat) (sret : Bool) (kind : CallKind := .vm) : CallCert :=

@@ -8,10 +8,10 @@ text sections its header's `data` and `text` fields are relocated against. Ports
 (`vm/bytecode/src/image/mod.rs`) over the object's bytes, and gathers each function's inputs
 to `asm::decode_reduced` (`Ryo.Obj.FuncInputs`).
 
-Layouts are `repr(C)` (`Header` 168 bytes, `FuncEntry` 36, `CallSiteEntry` 12, `FixupEntry`
+Layouts are `repr(C)` (`Header` 176 bytes, `FuncEntry` 36, `CallSiteEntry` 12, `FixupEntry`
 16; `image_layouts_are_pinned`). The header ends with `cgu_hash` (at 144), `abi` (152) and
 `anchor` (160, relocated against the registry anchor, which `Ryo/Check/Image/Relocs.lean`
-checks). Each function's scopes, dropped stores and branch targets are in its instruction list
+checks) and `strings` (168, the source locations' string pool). Each function's scopes, dropped stores and branch targets are in its instruction list
 (`Ryo.Obj.List`), a run of the instruction-list bytes.
 -/
 import Std.Data.HashMap
@@ -30,9 +30,20 @@ def imageMagic : List UInt8 := "RYOIMAGE".toUTF8.toList
 16 lowercase hex digits; `objfile::image_symbol`). -/
 def imageSymbolPrefix : String := "__ryo_image_"
 
-/-- `image::CONTINUE` and `image::CATCH`. -/
+/-- `image::CONTINUE`, `image::NOUNWIND` and `image::CATCH`. `NOUNWIND` (`u32::MAX - 1`,
+`Cleanup::Nounwind`) is the continue entry of a call that can't unwind in a function without
+landing pads; it has `CATCH` set, so no pad offset is ever it. -/
 def CONTINUE : Nat := 0xffffffff
+def NOUNWIND : Nat := 0xfffffffe
 def CATCH : Nat := 0x80000000
+
+/-- `Cleanup::from_word(..).parts()` as `From<&CallSiteEntry> for CallSite` takes it: no pad
+for `CONTINUE` (no catch) and `NOUNWIND` (catch set, `asm::Unwind::Nounwind`), else the pad
+offset without `CATCH` and whether `CATCH` is set. -/
+def padParts (w : Nat) : Option Nat × Bool :=
+  if w == CONTINUE then (none, false)
+  else if w == NOUNWIND then (none, true)
+  else (some (w % CATCH), w ≥ CATCH)
 
 /-- `image::SYM_INDIRECT`. -/
 def SYM_INDIRECT : Nat := 1
@@ -46,7 +57,7 @@ def FUNC_INLINE_HINT : Nat := 8
 def FUNC_FLAGS : Nat := FUNC_INLINE_ALWAYS ||| FUNC_INLINE_NEVER ||| FUNC_COLD ||| FUNC_INLINE_HINT
 
 /-- `size_of::<Header>()`. -/
-def headerSize : Nat := 168
+def headerSize : Nat := 176
 
 /-- `image::Span`: offset and element count. -/
 structure Span where
@@ -92,6 +103,9 @@ structure Header where
   /-- The link unit's registry anchor (relocated against `__ryo_registry_anchor_<tag>`; 0 in
   the unlinked bytes): a runtime registers only the images of its own stub's anchor. -/
   anchor : Nat
+  /-- The string pool (bytes) of the instruction lists' source locations (`asm::list::Loc`):
+  at each offset a LEB128 length, then the UTF-8 bytes. Nothing in the VM semantics reads it. -/
+  strings : Span
   deriving Repr, Inhabited
 
 /-- `offset_of!(Header, anchor)`. -/
@@ -178,7 +192,7 @@ def readHeader (b : ByteArray) : Header :=
     funcFlags := span! b 80, symbols := span! b 88, consts := span! b 96, lists := span! b 104,
     callSites := span! b 112, mode := u32! b 120, pad := u32! b 124,
     jitRecords := span! b 128, constRelocs := span! b 136, cguHash := u64! b 144,
-    abi := u64! b 152, anchor := u64! b headerAnchorOff }
+    abi := u64! b 152, anchor := u64! b headerAnchorOff, strings := span! b 168 }
 
 /-- `cast`'s checks: `span.count` elements of `size` bytes at `span.off` lie in `len` bytes,
 and `span.off` is a multiple of `align` (the section start is 8-aligned). -/
@@ -209,6 +223,7 @@ def Image.parse (bytes : ByteArray) (aligned : Bool := true) : Except ImageError
   checkPart n h.lists 1 1 "instruction lists"
   checkPart n h.callSites 12 4 "call sites"
   checkPart n h.constRelocs 4 4 "constant relocations"
+  checkPart n h.strings 1 1 "strings"
   if h.symFlags.count != h.symbols.count then throw (.outOfBounds "symbol flags")
   if h.funcFlags.count != h.functions.count then throw (.outOfBounds "function flags")
   if h.pad != 0 then throw .badData
@@ -297,7 +312,9 @@ def validate (img : Image) : Except ImageError Unit := do
     let mut prev := 0
     let mut j := 0
     for c in img.callSites f do
-      let padOk := c.pad == CONTINUE || c.pad % CATCH < f.codeLen
+      let padOk := match padParts c.pad with
+        | (some p, _) => p < f.codeLen
+        | (none, _) => true
       let cEnd := c.start + c.len
       let sorted := c.start ≥ prev
       prev := cEnd
@@ -556,8 +573,8 @@ def funcInputs (o : ImageObject) (i : Nat) : Except String FuncInputs := do
     code := o.textBytes.extract f.codeOff (f.codeOff + f.codeLen), relocs,
     rodata := img.codeConsts,
     callSites := (img.callSites f).map fun c =>
-      if c.pad == CONTINUE then ⟨c.start, c.len, none, false⟩
-      else ⟨c.start, c.len, some (c.pad % CATCH), c.pad ≥ CATCH⟩,
+      let (pad, catches) := padParts c.pad
+      ⟨c.start, c.len, pad, catches⟩,
     dropped := list.dropped,
     scopes := list.scopes,
     mode := img.mode,

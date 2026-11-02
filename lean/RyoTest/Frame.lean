@@ -175,10 +175,6 @@ def tests : List TestCase :=
      call [(-8, reg 0)]] [lend 1 (-32) 8, lend 1 (-8) 8]) (islandAt1 "ryo_island_call"),
    rejects "an island's input" (fn [mov 64 (-32), island [-32, -8]]
      [lend 1 (-32) 8, lend 1 (-8) 8]) (islandAt1 "ryo_island_call"),
-   rejects "a call_c island's fn pointer" (fn [mov 64 (-8), island [-32, -16, -8]]
-     [lend 1 (-32) 8, lend 1 (-16) 8, lend 1 (-8) 8]) (islandAt1 "ryo_island_call_c1"),
-   accepts "a call_c island's destination" (fn [mov 64 (-16), island [-32, -16, -8]]
-     [lend 1 (-32) 8, lend 1 (-16) 8, lend 1 (-8) 8]) (islandAt1 "ryo_island_call_c1"),
    rejects "a destination that is also an input" (fn [mov 64 (-8), island [-16, -48, -16]]
      [lend 1 (-16) 16, lend 1 (-48) 16, lend 1 (-16) 16]) (islandAt1 "ryo_island_mul_w128"),
    accepts "a wrapper's destination" (fn [mov 64 (-8), island [-32, -48, -16]]
@@ -194,9 +190,7 @@ def tests : List TestCase :=
          [lend 1 (-32) 8, lend 1 (-8) 8] with cleanup := #[(1, some 3, false)] } (islandAt1 "ryo_island_call"),
    rejects "an island's destination while escaped" (fn [mov 64 (-8), island [-32, -8]]
      [escape 0 (-8) 8, lend 1 (-32) 8, lend 1 (-8) 8]) (islandAt1 "ryo_island_call"),
-   rolesAre "ryo_island_call_c16" (some [.read, .write, .read]),
-   rolesAre "ryo_island_call_c17" none,
-   rolesAre "ryo_island_call_c03" none,
+   rolesAre "ryo_island_call_c1" none,
    rolesAre "ryo_island_simd_fma" (some [.read, .read, .read, .write]),
    rolesAre "ryo_island_catch_unwind" (some [.read, .read, .read, .write]),
    rolesAre "ryo_island_drop_in_place" (some [.read]),

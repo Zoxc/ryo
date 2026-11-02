@@ -1,6 +1,6 @@
 /-
 Ryo.Check.Image.Relocs — the relocations of an image object (aot.md §C4: "Relocations",
-"Symbol slots", "JIT records", "Image header", the anchor field and the `__ryo_main` slot),
+"Symbol slots", "JIT records", "Image header", the anchor field),
 against the writer's mapping (`ImageWriter::finish_encoded`, `objfile.rs` `write_image`).
 
 **The ABI tag.** The object's names carry the ABI tag of the ryo build that wrote it
@@ -62,10 +62,9 @@ as the header says (the read-only one RELRO; the text exactly `text_size` bytes)
 stub's anchor). **Registration entry**: one 8-byte `ryo_images_<tag>` section
 (`SHF_ALLOC | SHF_WRITE | SHF_GNU_RETAIN`), its one `R_X86_64_64` + 0 field against the start
 of the read-only section (the header), which the registry stub's constructor passes to
-`ryo_vm_register_<tag>` with the other objects' (`Ryo/Check/Image/Registry.lean`). **`__ryo_main`**: at most one, an 8-byte slot with one `R_X86_64_64` + 0
-against a symbol, which, if this object defines it, is one of its functions; a
-`.data.rel.ro.ryo_main` section that doesn't hold it is a mismatch. Which function it must be
-(`main`'s instance) needs the dump.
+`ryo_vm_register_<tag>` with the other objects' (`Ryo/Check/Image/Registry.lean`). There is
+no entry slot (the former `__ryo_main`): the C `main` is a VM function of the entry fn's image,
+checked like any other, so a relocated `.data.rel.ro.ryo_main` is an unknown section.
 -/
 import Ryo.Check.Image.Common
 
@@ -304,7 +303,7 @@ def checkDataRelocs (o : ImageObject) (tag : String) : Array String := Id.run do
       out := out.push s!"JIT record {k}: nonzero bytes besides the counters and func"
   return out
 
-/-! ## The tag, the header, sections, the anchor, `__ryo_main` -/
+/-! ## The tag, the header, sections, the anchor -/
 
 /-- The runtime symbols the text calls carry the object's tag: every handler (`ryo_h_<op>`,
 or `ryo_hf_<op>` in the frame-pointer handler set) and the probe, as `refOf` reads them (which
@@ -388,12 +387,6 @@ def checkEntry (o : ImageObject) (tag : String) : Array String := Id.run do
   | l => out := out.push s!"entry: {l.length} relocations, not 1"
   return out
 
-/-- What a `__ryo_main` slot names: the symbol, and the function of this image it is, if it
-defines it. -/
-structure MainSlot where
-  name : String
-  func : Option Nat
-
 /-- The anchor: the object's only relocation against `__ryo_registry_anchor_<tag>` is the
 header's `anchor` field's (`checkRoRelocs` checks its form), and the object doesn't define it
 (the registry stub does). -/
@@ -412,30 +405,8 @@ def checkAnchor (o : ImageObject) (tag : String) : Array String := Id.run do
   | l => out := out.push s!"anchor: {l.length} relocations against `{name}`, not 1"
   return out
 
-/-- `__ryo_main`, if the object has one: mismatches, and what it names. -/
-def checkMain (o : ImageObject) : Array String × Option MainSlot := Id.run do
-  let e := o.elf
-  match (e.symbols.filter (·.name == mainSlotName)).toList with
-  | [] => (#[], none)
-  | [m] =>
-    let some s := (if m.defined then e.section? m.shndx else none)
-      | (#[s!"{mainSlotName}: not defined"], none)
-    let mut out : Array String := #[]
-    if m.value != 0 || m.size != 8 then out := out.push s!"{mainSlotName}: at {m.value} of {m.size} bytes in `{s.name}`"
-    match slotSection e s with
-    | .error msg => (out.push s!"{mainSlotName}: {msg}", none)
-    | .ok t =>
-      if !t.defined then (out, some ⟨t.name, none⟩)
-      else
-        let f := if t.shndx == o.text.index && t.type == Elf.STT_FUNC && t.value ≥ o.textBase then
-          o.funcs.findIdx? (·.codeOff == t.value - o.textBase) else none
-        match f with
-        | some i => (out, some ⟨t.name, some i⟩)
-        | none => (out.push s!"{mainSlotName}: `{t.name}` is defined here but isn't one of the image's functions", some ⟨t.name, none⟩)
-  | l => (#[s!"{mainSlotName}: {l.length} symbols"], none)
-
-/-- Relocation sections against sections that aren't the image's, its unwind tables, the
-`__ryo_main` slot, or the registration entry. -/
+/-- Relocation sections against sections that aren't the image's, its unwind tables, or the
+registration entry. -/
 def checkOtherRelocs (o : ImageObject) (tag : String) : Array String := Id.run do
   let e := o.elf
   let mut out : Array String := #[]
@@ -444,9 +415,6 @@ def checkOtherRelocs (o : ImageObject) (tag : String) : Array String := Id.run d
     let known := rs.target == o.ro.index || rs.target == o.data.index || rs.target == o.text.index
       || s.name == ".eh_frame" || s.name.startsWith ".gcc_except_table"
       || s.name == entriesSection tag
-      -- The `__ryo_main` slot only where the symbol is (`checkMain` checks it there).
-      || (s.name == ".data.rel.ro.ryo_main" &&
-        e.symbols.any fun m => m.name == mainSlotName && m.defined && m.shndx == rs.target)
     if !known then out := out.push s!"relocations of `{s.name}`, which isn't an image section"
   return out
 

@@ -36,7 +36,9 @@ provenance at `fp + off`, good only for zero-sized accesses; anything else is UB
      `lpad`) or a handler call: `view`, then `opSem` and the shape's control flow
      (`Then.succ`): `semR i = opSem (view i)` plus control. `view = none` is `illFormed`.
      `resume` (no `opSem`: its handler is assembly) unwinds from `pc` with the exception
-     object in its slot; `unreachable` (no `opSem`: a bare `ud2`, no handler) stops with
+     object in its slot (on PE, and in the `pe-test` set, `ryo_h_Resume` aborts through
+     `fatal`; it is reached there only outside the pad region, i.e. from cleanup code that
+     never runs, so this is the in-region behavior); `unreachable` (no `opSem`: a bare `ud2`, no handler) stops with
      `Stop.unreachable`.
    - `jmp t`: to `t`.
    - `arg d, r`: register `r` of the incoming argument registers, its `r.size` low bytes
@@ -69,7 +71,12 @@ The answer's `world` (memory and exposed allocations) replaces the state's: the 
 sees and changes memory, escaped frame objects included, but not the private frame bytes,
 which only the answer's outgoing-area and `Lend` bytes write. What an answer may be (that a
 callee keeps its convention, that an island keeps its contract) is the environment's
-specification, not this file's.
+specification, not this file's. An environment may also give no answer: a callee or island
+that aborts (a panic in a `nounwind` context, `process::abort`, a failed runtime check of
+`ryo_rt` going to `fatal`) or never returns. That is divergence of the whole program, not a
+behavior of this function; `Ryo.Vm.R.Run` reports it as a halt. The handlers themselves don't
+panic (`interp.rs`: wrapping offset arithmetic, unchecked indexing, errors through `fatal`):
+their only failures are `opSem`'s `Stop`s (`abort` for `abort`'s handler, UB otherwise).
 
 **Unwinding** is single-phase here: the environment answers a call by unwinding with an
 exception object, and the function lands at the call's landing pad. A `catch` entry (a pad
@@ -309,6 +316,14 @@ def exit (s : RState) (e : Exit) : Final :=
 def zext (bs : List AbstractByte) (n : Nat) : List AbstractByte :=
   bs ++ List.replicate (n - bs.length) (.ofByte 0)
 
+/-- `bs` sign-extended to 4 bytes, then zero-extended to `n` (`ARG_SEXT`'s `movsx r32`). The
+fill bytes are uninitialized when the top byte is. -/
+def sext32 (bs : List AbstractByte) (n : Nat) : List AbstractByte :=
+  let fill : AbstractByte := match bs.getLast? with
+    | some (.init b _) => .ofByte (if b &&& 0x80 != 0 then 0xff else 0)
+    | _ => .uninit
+  zext (bs ++ List.replicate (4 - bs.length) fill) n
+
 /-- The argument registers a call's list `ws` of (slot, register word) pairs builds: by value,
 the slot's bytes at the register's size; by address (`ARG_ADDR`, an integer register of 8
 bytes), a pointer to the slot as `addr` makes it (`addrOf`: in or at the end of an escaped
@@ -328,7 +343,7 @@ def argRegs (st : OpSem.State) : List (BitVec 32) → M Regs
         if a.xmm || a.size != 8 then illFormed s!"by-address argument in {repr reg}"
         pure (encodePtr (← st.addrOf s.toInt))
       else st.readFrame s.toInt a.size
-    pure ⟨(reg, zext bs reg.width) :: rs.vals⟩
+    pure ⟨(reg, (if a.sext then sext32 else zext) bs reg.width) :: rs.vals⟩
 
 /-- The parts of return kind `k` with their registers, in order (`part_regs`): integer parts
 in `rax` then `rdx`, `xmm` parts in `xmm0` then `xmm1`. `load` as `ret_parts`'. -/

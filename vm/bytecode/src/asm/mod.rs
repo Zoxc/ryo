@@ -526,7 +526,7 @@ pub fn params_ok(a: &[u32]) -> bool {
 }
 
 /// Whether the argument list `a` ([`params_ok`]) loads `al` ([`ARG_RAX`]).
-fn uses_rax(a: &[u32]) -> bool {
+pub(crate) fn uses_rax(a: &[u32]) -> bool {
     a.chunks(2).any(|p| param_reg(p[1]).is_some_and(|r| !r.xmm && r.index == ARG_RAX))
 }
 

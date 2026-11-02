@@ -16,15 +16,27 @@ namespace Ryo.Check.Lower
 
 open Lean Ryo.Vm.Asm
 
-/-- `plan_json`'s pieces: `{"reg": {xmm, size, index}, "off"}`, `{"stack", "off", "size"}`,
-`{"ptrReg"}` or `{"ptrStack"}`. -/
+/-- `plan_json`'s pieces: `{"reg": {xmm, size, index[, "sext": true]}, "off"}`, `{"stack",
+"off", "size"[, "ext": "zext"|"sext"]}`, `{"stackByval", "size", "align"}`, `{"ptrReg"}` or
+`{"ptrStack"}`. An absent `sext` is `false`, an absent `ext` none. -/
 instance : FromJson ArgLoc where
   fromJson? j := do
     if let .ok r := j.getObjVal? "reg" then
-      let reg : ArgReg := ⟨← r.getObjValAs? Bool "xmm", ← r.getObjValAs? Nat "size", ← r.getObjValAs? Nat "index"⟩
+      let sext ← match r.getObjVal? "sext" with
+        | .ok v => fromJson? (α := Bool) v
+        | .error _ => pure false
+      let reg : ArgReg := ⟨← r.getObjValAs? Bool "xmm", ← r.getObjValAs? Nat "size", ← r.getObjValAs? Nat "index", sext⟩
       return .reg reg (← j.getObjValAs? Nat "off")
+    if let .ok a := j.getObjValAs? Nat "stackByval" then
+      return .stackByval a (← j.getObjValAs? Nat "size") (← j.getObjValAs? Nat "align")
     if let .ok a := j.getObjValAs? Nat "stack" then
-      return .stack a (← j.getObjValAs? Nat "off") (← j.getObjValAs? Nat "size")
+      let ext ← match j.getObjVal? "ext" with
+        | .error _ => pure ArgExt.none
+        | .ok v => match ← fromJson? (α := String) v with
+          | "zext" => pure .zext
+          | "sext" => pure .sext
+          | e => throw s!"argument extension {e}"
+      return .stack a (← j.getObjValAs? Nat "off") (← j.getObjValAs? Nat "size") ext
     if let .ok i := j.getObjValAs? Nat "ptrReg" then return .ptrReg i
     if let .ok a := j.getObjValAs? Nat "ptrStack" then return .ptrStack a
     throw s!"not an argument location: {j.compress}"

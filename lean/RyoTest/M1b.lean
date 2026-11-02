@@ -83,7 +83,7 @@ def onceShim (spread : Bool) : Body :=
   { body i32 [unit, argTy] (spread := spread) (do
       assignL 0 (.binaryOp .add argOp (ci32 1))
       ret) with
-    abi := some ⟨.rustCall, [abiIgnore, abiI32], abiI32⟩ }
+    abi := some ⟨.rustCall, [abiIgnore, abiI32], abiI32, none⟩ }
 
 /-- `(f as fn(i32) -> i32)(41)` where `f` is the shim; the caller's ABI is `callerAbi`. -/
 def fnPtrToShim (callerAbi : FnAbiSummary) (spread := false) : Program := program do
@@ -95,14 +95,14 @@ def fnPtrToShim (callerAbi : FnAbiSummary) (spread := false) : Program := progra
     setBlock next
     ret
 
-def rustI32 : FnAbiSummary := ⟨.rust, [abiI32], abiI32⟩
+def rustI32 : FnAbiSummary := ⟨.rust, [abiI32], abiI32, none⟩
 
 def ignoreArgs : Except String Unit := do
   expectReturnValue (fnPtrToShim rustI32) (.int 42)
   expectReturnValue (fnPtrToShim rustI32 (spread := true)) (.int 42)
   -- a different calling convention, and a different argument class, are still UB
-  expectUb (fnPtrToShim ⟨.c, [abiI32], abiI32⟩) "function ABIs are not compatible"
-  expectUb (fnPtrToShim ⟨.rust, [{ mode := .direct, size := 4, align := Align.ofBytes 4, detail := "f32" }], abiI32⟩)
+  expectUb (fnPtrToShim ⟨.c, [abiI32], abiI32, none⟩) "function ABIs are not compatible"
+  expectUb (fnPtrToShim ⟨.rust, [{ mode := .direct, size := 4, align := Align.ofBytes 4, detail := "f32" }], abiI32, none⟩)
     "function ABIs are not compatible"
 
 /-! ### `Drop` of a `dyn Trait` place calls the vtable's drop entry -/

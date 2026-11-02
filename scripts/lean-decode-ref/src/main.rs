@@ -23,7 +23,7 @@
 //! func <i> <name>
 //!   frame <frame size>
 //!   <reduced::Disasm lines: word offset, then the instruction>
-//!   cleanup <word offset> -> <landing pad word offset>[ catch] | continue
+//!   cleanup <word offset> -> <landing pad word offset>[ catch] | continue | nounwind
 //!   scope <word offset> <frame offset> <size> escape <align> | end | lend
 //!   dropped <word offset>
 //!   head <word offset>
@@ -46,7 +46,7 @@ use object::read::elf::ElfFile64;
 use object::{LittleEndian, Object, ObjectSection, ObjectSymbol, RelocationFlags, RelocationTarget, SectionIndex, SymbolKind, SymbolSection, elf};
 use ryo_bytecode::asm::{CallSite, Ref, Resolver, ScopeKind, lsda};
 use ryo_bytecode::full::Opcode;
-use ryo_bytecode::image::{CATCH, CONTINUE, Header, Image, ImageResolver, JIT_LOOP_CTR};
+use ryo_bytecode::image::{CATCH, CONTINUE, Header, Image, ImageResolver, JIT_LOOP_CTR, NOUNWIND};
 use ryo_bytecode::{ALL_OPCODES, reduced};
 
 const IMAGE_PREFIX: &str = "__ryo_image_";
@@ -424,6 +424,7 @@ impl<'d> Linked<'d> {
                     for c in &d.cleanup {
                         out.push(match c.target {
                             CONTINUE => format!("  cleanup {} -> continue", c.offset),
+                            NOUNWIND => format!("  cleanup {} -> nounwind", c.offset),
                             t if t & CATCH != 0 => format!("  cleanup {} -> {} catch", c.offset, t & !CATCH),
                             t => format!("  cleanup {} -> {t}", c.offset),
                         });

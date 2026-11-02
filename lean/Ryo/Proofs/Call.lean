@@ -9,8 +9,9 @@ accepts.
 `Asm.resultStores`): `pre` is `mov rax, [rip + slot]` for `call.sym.ind` and `mov rax, [rbp + p]`
 for `call.ptr`, nothing otherwise (`callHead`); `params` loads each argument register from its
 slot (`paramItems`, the inverse of the decoder's `params`: `mov`/`movzx` of the register's size
-into `intArg pe i`, `lea` of the slot for `ARG_ADDR`, `movss`/`movsd`/`movups`, or a 2-byte `xmm`
-through `r11`); the call is `call f`, `call [rip + slot]`, `call [rax]` or `call rax`. A tail call
+into `intArg pe i` (`movsx r32` for `ARG_SEXT`; on SysV `intArg false argRax` is `rax`, a
+variadic call's `al`), `lea` of the slot for `ARG_ADDR`, `movss`/`movsd`/`movups`, or a 2-byte
+`xmm` through `r11`); the call is `call f`, `call [rip + slot]`, `call [rax]` or `call rax`. A tail call
 is `pre ++ params ++ epilogue F mode ++ [jmp]` (`tailSeq`), the jump `jmp f` or `jmp rax` (`w`:
 `rex.w jmp rax`, PE's form; the decoder accepts either in any mode, `jmpRaxOf`).
 
@@ -69,6 +70,9 @@ hypothesis fails: those calls aren't covered).
   with `RRel s'' x''`, `MemRel s''.st x''`, `s''.pc = s.pc + 1`, `rip` past the stores, `rsp` the
   caller's.
 - `call_sound`: the two composed (the full R step, from the state before the instruction).
+- `call_query`, `call_sound` and `tail_call_step` take `hrax`: a call through `rax`
+  (`call.sym.ind`, `call.ptr`, `tail_call.ptr`) loads no `al` argument (`usesRax`), which would
+  overwrite the callee (`asm::return_ok`; the decoder refuses it, `callInsn`).
 - `call_unwind`: every `Unw x1 x'` gives an answer `.unwind exc` with which R lands at the call's
   landing pad (`Code.cleanupAt s.pc = some (some pad, _)`), related to `x'` at the pad's position.
 - `tail_call_step`: R's step `.done fin` (`fin = exit s1 (.tailCall cal regs (fp + 16) stack)`)
@@ -114,8 +118,9 @@ open Ryo.Proofs.CallLemmas
 
 /-- The load of one argument register, slot `s` and register word `w` (the forms the decoder's
 `params` accepts): `lea` of the slot into the integer register for `ARG_ADDR`, `mov`/`movzx` of
-the register's size, `movss`/`movsd`/`movups`, or a 2-byte `xmm` through `r11`. Integer registers
-beyond the convention's (4 on PE, 6 otherwise) have no load. -/
+the register's size (`movsx r32` for `ARG_SEXT`, 1- or 2-byte), `movss`/`movsd`/`movups`, or a
+2-byte `xmm` through `r11`. Integer registers beyond the convention's (4 on PE, 6 otherwise, plus
+on SysV `argRax`, the one-byte `al` load `ArgReg.of?` allows) have no load. -/
 def paramItem (pe : Bool) (s w : BitVec 32) : Option (List Item) :=
   let rn := w.toNat
   let byAddr := rn &&& Asm.argAddr != 0
@@ -128,9 +133,17 @@ def paramItem (pe : Bool) (s w : BitVec 32) : Option (List Item) :=
     else if a.xmm then
       if a.size == 2 then some [.ld .w false .r11 (M.frame s), .movd true a.index .r11]
       else some [.sse false a.size a.index (M.frame s)]
-    else if a.index < (if pe then 4 else 6) then
-      some [.ld (widthOf a.size) false (intArg pe a.index) (M.frame s)]
+    else if a.index < (if pe then 4 else argRax + 1) then
+      some [.ld (widthOf a.size) a.sext (intArg pe a.index) (M.frame s)]
     else none
+
+/-- The register word of SysV's `al` load (`argRax`, one byte, zero-extended). -/
+def raxWord : Nat := (ArgReg.mk false 1 argRax false).word
+
+/-- Whether a call's argument list loads `al` (`asm::uses_rax`). -/
+def usesRax : List (BitVec 32) → Bool
+  | _ :: w :: rest => w.toNat == raxWord || usesRax rest
+  | _ => false
 
 /-- The argument loads of a call's list of (slot, register word) pairs, in order. -/
 def paramItems (pe : Bool) : List (BitVec 32) → Option (List Item)
@@ -566,7 +579,8 @@ theorem argRegs_cons {st : OpSem.State} {s w : BitVec 32} {rest : List (BitVec 3
       (((w.toNat &&& argAddr != 0) = true ∧ a.xmm = false ∧ a.size = 8 ∧
           ∃ p, st.addrOf s.toInt = .ok p ∧ bs = encodePtr p) ∨
         ((w.toNat &&& argAddr != 0) = false ∧ st.readFrame s.toInt a.size = .ok bs)) ∧
-      regs = ⟨(R.Reg.ofArgReg a, R.zext bs (R.Reg.ofArgReg a).width) :: rs.vals⟩ := by
+      regs = ⟨(R.Reg.ofArgReg a,
+        (if a.sext then R.sext32 else R.zext) bs (R.Reg.ofArgReg a).width) :: rs.vals⟩ := by
   unfold R.argRegs at h
   simp only [bind, Except.bind] at h
   cases hrs : R.argRegs st rest with
@@ -602,10 +616,13 @@ theorem argRegs_cons {st : OpSem.State} {s w : BitVec 32} {rest : List (BitVec 3
 
 
 /-- What `ArgReg.of? r false` checks: an `xmm` of 2, 4, 8 or 16 bytes and index below 8, or an
-integer register of 1, 2, 4 or 8 bytes and index below 6. -/
+integer register of 1, 2, 4 or 8 bytes and index below 6, or `argRax` at one byte, not
+sign-extended; sign extension only of a 1- or 2-byte integer register. -/
 theorem argReg_of_false {r : Nat} {a : ArgReg} (h : ArgReg.of? r false = some a) :
     (a.xmm = true → (a.size = 2 ∨ a.size = 4 ∨ a.size = 8 ∨ a.size = 16) ∧ a.index < 8) ∧
-    (a.xmm = false → (a.size = 1 ∨ a.size = 2 ∨ a.size = 4 ∨ a.size = 8) ∧ a.index < 6) := by
+    (a.xmm = false → (a.size = 1 ∨ a.size = 2 ∨ a.size = 4 ∨ a.size = 8) ∧
+      (a.index < 6 ∨ (a.index = argRax ∧ a.size = 1 ∧ a.sext = false))) ∧
+    (a.sext = true → a.xmm = false ∧ (a.size = 1 ∨ a.size = 2)) := by
   unfold ArgReg.of? at h
   simp only [Option.ite_none_right_eq_some, Option.some.injEq] at h
   obtain ⟨hok, rfl⟩ := h
@@ -615,10 +632,32 @@ theorem argReg_of_false {r : Nat} {a : ArgReg} (h : ArgReg.of? r false = some a)
   generalize (r &&& 32 != 0) = xb at hok ⊢
   generalize r &&& 31 = sz at hok ⊢
   generalize r >>> 8 = ix at hok ⊢
-  cases xb <;> simp at hok ⊢ <;> omega
+  generalize (r &&& argSext != 0) = sb at hok ⊢
+  cases xb <;> cases sb <;> simp [argRax] at hok ⊢ <;> omega
+
+/-- `ArgReg.of?` returns only a register whose word is its argument. -/
+theorem argReg_of_word {r : Nat} {e : Bool} {a : ArgReg} (h : ArgReg.of? r e = some a) :
+    a.word = r := by
+  unfold ArgReg.of? at h
+  simp only [Option.ite_none_right_eq_some, Option.some.injEq] at h
+  obtain ⟨hok, rfl⟩ := h
+  simp only [Bool.and_eq_true, beq_iff_eq] at hok
+  first | exact hok.2 | simpa using hok.2
+
+/-- The `al` load's register is `raxWord`'s. -/
+theorem argReg_rax_word {a : ArgReg} (hx : a.xmm = false) (hs : a.size = 1) (hi : a.index = argRax)
+    (hsx : a.sext = false) : a.word = raxWord := by
+  obtain ⟨x, sz, i, sx⟩ := a
+  simp only at hx hs hi hsx
+  subst hx hs hi hsx
+  rfl
 
 /-- The integer argument registers of the convention. -/
 abbrev conv (pe : Bool) : Nat := if pe then 4 else 6
+
+/-- The integer registers a call's argument list loads: the convention's, and on SysV `rax`
+(`argRax`, a variadic call's `al`). -/
+abbrev convR (pe : Bool) : Nat := if pe then 4 else argRax + 1
 
 theorem intArg_ne11 (pe : Bool) (j : Nat) : (intArg pe j).idx ≠ 11 := by
   have := ArgRet.intArg_mem pe j
@@ -669,8 +708,8 @@ theorem paramItem_cases {pe : Bool} {s w : BitVec 32} {its : List Item} {a : Arg
         its = [.ld .w false .r11 (M.frame s), .movd true a.index .r11]) ∨
       ((w.toNat &&& argAddr != 0) = false ∧ a.xmm = true ∧ a.size ≠ 2 ∧
         its = [.sse false a.size a.index (M.frame s)]) ∨
-      ((w.toNat &&& argAddr != 0) = false ∧ a.xmm = false ∧ a.index < conv pe ∧
-        its = [.ld (widthOf a.size) false (intArg pe a.index) (M.frame s)]) := by
+      ((w.toNat &&& argAddr != 0) = false ∧ a.xmm = false ∧ a.index < convR pe ∧
+        its = [.ld (widthOf a.size) a.sext (intArg pe a.index) (M.frame s)]) := by
   unfold paramItem at h
   dsimp only at h
   rw [ha] at h
@@ -688,11 +727,11 @@ theorem paramItem_cases {pe : Bool} {s w : BitVec 32} {its : List Item} {a : Arg
     simp only [hb', Bool.false_eq_true, ↓reduceIte] at h
     cases hx : a.xmm
     · simp only [hx, Bool.false_eq_true, ↓reduceIte] at h
-      by_cases hc : a.index < conv pe
-      · simp only [conv] at hc
+      by_cases hc : a.index < convR pe
+      · simp only [convR] at hc
         simp only [hc, ↓reduceIte, Option.some.injEq] at h
-        exact .inr (.inr (.inr ⟨hb', rfl, by simp only [conv]; omega, h.symm⟩))
-      · simp only [conv] at hc; simp [hc] at h
+        exact .inr (.inr (.inr ⟨hb', rfl, by simp only [convR]; omega, h.symm⟩))
+      · simp only [convR] at hc; simp [hc] at h
     · simp only [hx, ↓reduceIte] at h
       by_cases h2 : a.size = 2
       · simp only [h2, beq_self_eq_true, ↓reduceIte, Option.some.injEq] at h
@@ -702,8 +741,139 @@ theorem paramItem_cases {pe : Bool} {s w : BitVec 32} {its : List Item} {a : Arg
         exact .inr (.inr (.inl ⟨hb', rfl, h2, h.symm⟩))
 
 
+/-! ### Sign-extending loads (`ARG_SEXT`) -/
+
+/-- `R.sext32`'s fill byte for top byte `x`. -/
+def sxFill (x : UInt8) : UInt8 := if x &&& 0x80 != 0 then 0xff else 0
+
+/-- `R.sext32`'s fill for top byte `b`. -/
+def sxByte : AbstractByte → AbstractByte
+  | .init b _ => .ofByte (sxFill b)
+  | _ => .uninit
+
+set_option maxRecDepth 100000 in
+theorem sxFill_toNat (x : UInt8) : (sxFill x).toNat = if 128 ≤ x.toNat then 255 else 0 := by
+  have key : ∀ n : Fin 256, (sxFill (UInt8.ofNat n.val)).toNat = if 128 ≤ n.val then 255 else 0 := by
+    decide
+  have := key ⟨x.toNat, UInt8.toNat_lt x⟩
+  simp only [UInt8.ofNat_toNat] at this
+  exact this
+
+theorem sxByte_rel {b : AbstractByte} {x : UInt8} (h : ByteRel b x) : ByteRel (sxByte b) (sxFill x) := by
+  cases b with
+  | uninit => trivial
+  | init b p =>
+    have hb : b = x := h
+    subst hb
+    exact rfl
+
+theorem BytesRel.rep {b : AbstractByte} {x : UInt8} (h : ByteRel b x) :
+    ∀ n, BytesRel (List.replicate n b) (List.replicate n x)
+  | 0 => trivial
+  | n + 1 => ⟨h, BytesRel.rep h n⟩
+
+theorem sext32_one (b0 : AbstractByte) :
+    R.sext32 [b0] 8 = R.zext [b0, sxByte b0, sxByte b0, sxByte b0] 8 := by
+  cases b0 <;> rfl
+
+theorem sext32_two (b0 b1 : AbstractByte) :
+    R.sext32 [b0, b1] 8 = R.zext [b0, b1, sxByte b1, sxByte b1] 8 := by
+  cases b1 <;> rfl
+
+/-- A 1-byte `movsx r32` zero-extended to 64 bits against `R.sext32`. -/
+theorem sext_rel8 {bs : List AbstractByte} {xs : List UInt8} (h : BytesRel bs xs)
+    (hl : xs.length = 1) :
+    BytesRel (R.sext32 bs 8)
+      (leEncode 8 (((BitVec.ofNat 8 (leDecode xs)).signExtend 32).setWidth 64).toNat) := by
+  obtain ⟨x0, rfl⟩ : ∃ x0, xs = [x0] := by
+    rcases xs with _ | ⟨x0, _ | ⟨_, _⟩⟩
+    · simp at hl <;> omega
+    · exact ⟨x0, rfl⟩
+    · simp at hl <;> omega
+  cases bs with
+  | nil => exact False.elim h
+  | cons b0 rest =>
+  cases rest with
+  | cons b1 rest => exact False.elim h.2
+  | nil =>
+  have hb0 : ByteRel b0 x0 := h.1
+  have hv : (((BitVec.ofNat 8 (leDecode [x0])).signExtend 32).setWidth 64).toNat =
+      leDecode [x0, sxFill x0, sxFill x0, sxFill x0] := by
+    have hx := UInt8.toNat_lt x0
+    have hF := sxFill_toNat x0
+    simp only [leDecode, BitVec.toNat_setWidth, BitVec.toNat_signExtend, BitVec.msb_eq_decide,
+      BitVec.toNat_ofNat]
+    generalize (sxFill x0).toNat = F at hF ⊢
+    generalize x0.toNat = n at hx hF ⊢
+    split at hF <;> split <;>
+      (try simp only [decide_eq_true_eq, Nat.reducePow, Nat.reduceSub] at *) <;> omega
+  rw [hv, sext32_one]
+  have hf := sxByte_rel hb0
+  exact ArgRet.bytesRel_zext (bs := [b0, sxByte b0, sxByte b0, sxByte b0])
+    (xs := [x0, sxFill x0, sxFill x0, sxFill x0]) ⟨hb0, hf, hf, hf, trivial⟩ (by simp)
+
+/-- A 2-byte `movsx r32` zero-extended to 64 bits against `R.sext32`. -/
+theorem sext_rel16 {bs : List AbstractByte} {xs : List UInt8} (h : BytesRel bs xs)
+    (hl : xs.length = 2) :
+    BytesRel (R.sext32 bs 8)
+      (leEncode 8 (((BitVec.ofNat 16 (leDecode xs)).signExtend 32).setWidth 64).toNat) := by
+  obtain ⟨x0, x1, rfl⟩ : ∃ x0 x1, xs = [x0, x1] := by
+    rcases xs with _ | ⟨x0, _ | ⟨x1, _ | ⟨_, _⟩⟩⟩
+    · simp at hl <;> omega
+    · simp at hl <;> omega
+    · exact ⟨x0, x1, rfl⟩
+    · simp at hl <;> omega
+  cases bs with
+  | nil => exact False.elim h
+  | cons b0 rest =>
+  cases rest with
+  | nil => exact False.elim h.2
+  | cons b1 rest =>
+  cases rest with
+  | cons b2 rest => exact False.elim h.2.2
+  | nil =>
+  have hb0 : ByteRel b0 x0 := h.1
+  have hb1 : ByteRel b1 x1 := h.2.1
+  have hv : (((BitVec.ofNat 16 (leDecode [x0, x1])).signExtend 32).setWidth 64).toNat =
+      leDecode [x0, x1, sxFill x1, sxFill x1] := by
+    have hx0 := UInt8.toNat_lt x0
+    have hx1 := UInt8.toNat_lt x1
+    have hF := sxFill_toNat x1
+    simp only [leDecode, BitVec.toNat_setWidth, BitVec.toNat_signExtend, BitVec.msb_eq_decide,
+      BitVec.toNat_ofNat]
+    generalize (sxFill x1).toNat = F at hF ⊢
+    generalize x0.toNat = n0 at hx0 ⊢
+    generalize x1.toNat = n1 at hx1 hF ⊢
+    split at hF <;> split <;>
+      (try simp only [decide_eq_true_eq, Nat.reducePow, Nat.reduceSub] at *) <;> omega
+  rw [hv, sext32_two]
+  have hf := sxByte_rel hb1
+  exact ArgRet.bytesRel_zext (bs := [b0, b1, sxByte b1, sxByte b1])
+    (xs := [x0, x1, sxFill x1, sxFill x1]) ⟨hb0, hb1, hf, hf, trivial⟩ (by simp)
+
+theorem exec_ld_sx8 (ctx : Ctx) (r : Reg) (m : M) (y : X86.State) :
+    ∃ y', (Item.ld .b true r m).exec ctx y = .ok y' ∧ y'.mem = y.mem ∧
+      y'.reg r = ((BitVec.ofNat 8 (y.mem.readNat (y.ea m) 1)).signExtend 32).setWidth 64 ∧
+      (∀ i, i ≠ r.idx → y'.regs i = y.regs i) ∧
+      y'.xmm = y.xmm ∧ y'.rip = y.rip + BitVec.ofNat 64 (Item.ld .b true r m).size := by
+  refine ⟨_, rfl, rfl, ?_, ?_, rfl, rfl⟩
+  · show (State.setReg _ r _).reg r = _
+    rw [State.reg_setReg]; rfl
+  · intro i hi; simp [State.setReg, State.jump, hi]
+
+theorem exec_ld_sx16 (ctx : Ctx) (r : Reg) (m : M) (y : X86.State) :
+    ∃ y', (Item.ld .w true r m).exec ctx y = .ok y' ∧ y'.mem = y.mem ∧
+      y'.reg r = ((BitVec.ofNat 16 (y.mem.readNat (y.ea m) 2)).signExtend 32).setWidth 64 ∧
+      (∀ i, i ≠ r.idx → y'.regs i = y.regs i) ∧
+      y'.xmm = y.xmm ∧ y'.rip = y.rip + BitVec.ofNat 64 (Item.ld .w true r m).size := by
+  refine ⟨_, rfl, rfl, ?_, ?_, rfl, rfl⟩
+  · show (State.setReg _ r _).reg r = _
+    rw [State.reg_setReg]; rfl
+  · intro i hi; simp [State.setReg, State.jump, hi]
+
 open Ryo.Proofs.ArgRet in
-/-- One argument register's load against `argRegs`' entry for it. -/
+/-- One argument register's load against `argRegs`' entry for it. The integer registers it
+changes are its own (one of the convention's, or `rax` for `raxWord`) and `r11`. -/
 theorem param_one (ctx : Ctx) {pe : Bool} {st : OpSem.State} {x0 y : X86.State} {s w : BitVec 32}
     {its : List Item} {a : ArgReg} {bs : List AbstractByte}
     (hr : Rel st x0) (hym : y.mem = x0.mem) (hyb : y.reg .rbp = x0.reg .rbp)
@@ -715,8 +885,10 @@ theorem param_one (ctx : Ctx) {pe : Bool} {st : OpSem.State} {x0 y : X86.State} 
         ((w.toNat &&& argAddr != 0) = false ∧ st.readFrame s.toInt a.size = .ok bs)) :
     ∃ y1, execItems ctx its y = .ok y1 ∧ y1.mem = y.mem ∧
       y1.rip = y.rip + BitVec.ofNat 64 (its.map Item.size).sum ∧
-      (∀ i : Fin 16, (∀ j < conv pe, i ≠ (intArg pe j).idx) → i ≠ 11 → y1.regs i = y.regs i) ∧
-      BytesRel (R.zext bs (R.Reg.ofArgReg a).width) (argBytes pe y1 (R.Reg.ofArgReg a)) ∧
+      (∀ i : Fin 16, (∀ j < conv pe, i ≠ (intArg pe j).idx) → i ≠ 11 →
+        (i = 0 → w.toNat ≠ raxWord) → y1.regs i = y.regs i) ∧
+      BytesRel ((if a.sext then R.sext32 else R.zext) bs (R.Reg.ofArgReg a).width)
+        (argBytes pe y1 (R.Reg.ofArgReg a)) ∧
       (∀ r, IsArg pe r → r ≠ R.Reg.ofArgReg a → argBytes pe y1 r = argBytes pe y r) := by
   have hspec := argReg_of_false ha
   have hsb := toInt_bounds s
@@ -729,10 +901,15 @@ theorem param_one (ctx : Ctx) {pe : Bool} {st : OpSem.State} {x0 y : X86.State} 
       rcases hbs with h | ⟨h, -⟩
       · exact h
       · rw [hb] at h; cases h
+    have hsx : a.sext = false := by
+      cases hs : a.sext
+      · rfl
+      · have := (hspec.2.2 hs).2; omega
+    simp only [hsx, Bool.false_eq_true, ↓reduceIte]
     obtain ⟨y1, e1, m1, r1, rs1, x1, p1⟩ := exec_leaM ctx (intArg pe a.index) (M.frame s) y
     have hreg : R.Reg.ofArgReg a = .gpr a.index := by simp [R.Reg.ofArgReg, hx]
     refine ⟨y1, by rw [execItems_cons_ok e1]; rfl, m1, by rw [p1]; simp, ?_, ?_, ?_⟩
-    · intro i hi _; exact rs1 i (hi a.index hix)
+    · intro i hi _ _; exact rs1 i (hi a.index hix)
     · rw [hreg]
       have hl : (encodePtr p).length = 8 := by
         rw [(BytesRel.encodePtr p).length, leEncode_length]
@@ -749,6 +926,11 @@ theorem param_one (ctx : Ctx) {pe : Bool} {st : OpSem.State} {x0 y : X86.State} 
         rw [rs1 _ (fun h => hi' (intArg_inj hr' hix h))]
       | xmm i' => simp [argBytes, x1]
   · -- a 2-byte xmm through r11
+    have hsx : a.sext = false := by
+      cases hs : a.sext
+      · rfl
+      · have := (hspec.2.2 hs).1; rw [hx] at this; cases this
+    simp only [hsx, Bool.false_eq_true, ↓reduceIte]
     obtain hrd : st.readFrame s.toInt a.size = .ok bs := by
       rcases hbs with ⟨h, -⟩ | ⟨-, h⟩
       · rw [hb] at h; cases h
@@ -759,7 +941,7 @@ theorem param_one (ctx : Ctx) {pe : Bool} {st : OpSem.State} {x0 y : X86.State} 
     have hix : a.index < 8 := (hspec.1 hx).2
     refine ⟨y2, by rw [execItems_cons_ok e1, execItems_cons_ok e2]; rfl, by rw [m2, m1],
       by rw [p2, p1]; simp [BitVec.add_assoc, BitVec.ofNat_add], ?_, ?_, ?_⟩
-    · intro i _ h11; rw [x2, rs1 i h11]
+    · intro i _ h11 _; rw [x2, rs1 i h11]
     · rw [hreg]
       have hbr := readFrame_rel hr hrd (by omega) (by omega)
       have hlt := Theorems.leDecode_lt (bytesAt x0.mem (fpAddr x0 s.toInt) a.size)
@@ -780,6 +962,11 @@ theorem param_one (ctx : Ctx) {pe : Bool} {st : OpSem.State} {x0 y : X86.State} 
         simp only [argBytes]
         rw [rs2 _ (fun h => hi' (xmmIdx_inj (by omega) (by omega) h)), x1]
   · -- movss / movsd / movups
+    have hsx : a.sext = false := by
+      cases hs : a.sext
+      · rfl
+      · have := (hspec.2.2 hs).1; rw [hx] at this; cases this
+    simp only [hsx, Bool.false_eq_true, ↓reduceIte]
     obtain hrd : st.readFrame s.toInt a.size = .ok bs := by
       rcases hbs with ⟨h, -⟩ | ⟨-, h⟩
       · rw [hb] at h; cases h
@@ -790,7 +977,7 @@ theorem param_one (ctx : Ctx) {pe : Bool} {st : OpSem.State} {x0 y : X86.State} 
     have hreg : R.Reg.ofArgReg a = .xmm a.index := by simp [R.Reg.ofArgReg, hx]
     have hix : a.index < 8 := (hspec.1 hx).2
     refine ⟨y1, by rw [execItems_cons_ok e1]; rfl, m1, by rw [p1]; simp, ?_, ?_, ?_⟩
-    · intro i _ _; rw [rs1]
+    · intro i _ _ _; rw [rs1]
     · rw [hreg]
       have hbr := readFrame_rel hr hrd (by omega) (by omega)
       simp only [R.Reg.width, argBytes]
@@ -805,32 +992,111 @@ theorem param_one (ctx : Ctx) {pe : Bool} {st : OpSem.State} {x0 y : X86.State} 
         have hi8 : i' < 8 := by simp only [IsArg] at hr'; split at hr' <;> omega
         simp only [argBytes]
         rw [x1 _ (fun h => hi' (xmmIdx_inj (by omega) (by omega) h))]
-  · -- mov / movzx
+  · -- mov / movzx / movsx, into one of the convention's registers or `rax`
     obtain hrd : st.readFrame s.toInt a.size = .ok bs := by
       rcases hbs with ⟨h, -⟩ | ⟨-, h⟩
       · rw [hb] at h; cases h
       · exact h
-    have hs := (hspec.2 hx).1
-    obtain ⟨y1, e1, m1, r1, rs1, x1, p1⟩ :=
-      exec_ld ctx (widthOf a.size) (intArg pe a.index) (M.frame s) y
+    have hs := (hspec.2.1 hx).1
+    have hidx : a.index < conv pe ∨
+        (pe = false ∧ a.index = argRax ∧ a.size = 1 ∧ a.sext = false) := by
+      rcases (hspec.2.1 hx).2 with h6 | hra
+      · cases pe
+        · exact .inl (show a.index < 6 from h6)
+        · exact .inl (show a.index < 4 from hix)
+      · cases pe
+        · exact .inr ⟨rfl, hra⟩
+        · exfalso
+          have h4 : a.index < 4 := hix
+          have h6' : a.index = 6 := hra.1
+          omega
     have hreg : R.Reg.ofArgReg a = .gpr a.index := by simp [R.Reg.ofArgReg, hx]
-    have hw : (widthOf a.size).bits / 8 = a.size := by
-      rcases hs with h | h | h | h <;> rw [h] <;> rfl
-    refine ⟨y1, by rw [execItems_cons_ok e1]; rfl, m1, by rw [p1]; simp, ?_, ?_, ?_⟩
-    · intro i hi _; exact rs1 i (hi a.index hix)
-    · rw [hreg]
-      have hbr := readFrame_rel hr hrd (by omega) (by omega)
-      simp only [R.Reg.width, argBytes]
-      rw [r1, ea_frame, hfp, hym, hw, readNat_eq, BitVec.toNat_ofNat,
-        show (2 : Nat) ^ 64 = 2 ^ (8 * 8) by rfl, Theorems.leEncode_mod]
-      exact bytesRel_zext hbr (by rw [bytesAt_length]; omega)
-    · intro r hr' hne
-      cases r with
-      | gpr i' =>
-        have hi' : i' ≠ a.index := fun h => hne (by rw [hreg, h])
-        simp only [argBytes, State.reg]
-        rw [rs1 _ (fun h => hi' (intArg_inj hr' hix h))]
-      | xmm i' => simp [argBytes, x1]
+    -- the registers it changes
+    have hclob : ∀ i : Fin 16, (∀ j < conv pe, i ≠ (intArg pe j).idx) →
+        (i = 0 → w.toNat ≠ raxWord) → i ≠ (intArg pe a.index).idx := by
+      intro i hi h0 he
+      rcases hidx with hc | ⟨rfl, hi6, hs1, hsx⟩
+      · exact hi a.index hc he
+      · have hw := argReg_of_word ha
+        rw [hb] at hw
+        simp only [Bool.false_eq_true, ↓reduceIte] at hw
+        have h0' : i = 0 := by rw [he, hi6]; decide
+        exact h0 h0' (hw.symm.trans (argReg_rax_word hx hs1 hi6 hsx))
+    have hother : ∀ i', i' < conv pe → i' ≠ a.index →
+        (intArg pe i').idx ≠ (intArg pe a.index).idx := by
+      intro i' hi' hne h
+      rcases hidx with hc | ⟨rfl, hi6, -, -⟩
+      · exact hne (intArg_inj hi' hc h)
+      · rw [hi6] at h
+        exact intArg_keep hi' 0 (.inl rfl) (h.trans (by decide)).symm
+    have hbr := readFrame_rel hr hrd (by omega) (by omega)
+    cases hsx : a.sext
+    · -- zero-extending
+      simp only [Bool.false_eq_true, ↓reduceIte]
+      obtain ⟨y1, e1, m1, r1, rs1, x1, p1⟩ :=
+        exec_ld ctx (widthOf a.size) (intArg pe a.index) (M.frame s) y
+      have hw : (widthOf a.size).bits / 8 = a.size := by
+        rcases hs with h | h | h | h <;> rw [h] <;> rfl
+      refine ⟨y1, by rw [execItems_cons_ok e1]; rfl, m1, by rw [p1]; simp, ?_, ?_, ?_⟩
+      · intro i hi _ h0; exact rs1 i (hclob i hi h0)
+      · rw [hreg]
+        simp only [R.Reg.width, argBytes]
+        rw [r1, ea_frame, hfp, hym, hw, readNat_eq, BitVec.toNat_ofNat,
+          show (2 : Nat) ^ 64 = 2 ^ (8 * 8) by rfl, Theorems.leEncode_mod]
+        exact bytesRel_zext hbr (by rw [bytesAt_length]; omega)
+      · intro r hr' hne
+        cases r with
+        | gpr i' =>
+          have hi' : i' ≠ a.index := fun h => hne (by rw [hreg, h])
+          simp only [argBytes, State.reg]
+          rw [rs1 _ (hother i' hr' hi')]
+        | xmm i' => simp [argBytes, x1]
+    · -- sign-extending (`movsx r32`): 1 or 2 bytes, never `rax`
+      rw [show (if true = true then R.sext32 else R.zext) = R.sext32 from rfl]
+      have hc : a.index < conv pe := by
+        rcases hidx with hc | ⟨-, -, -, h⟩
+        · exact hc
+        · rw [hsx] at h; cases h
+      have h12 := (hspec.2.2 hsx).2
+      have hgoal : ∀ y1 : X86.State, execItems ctx [.ld (widthOf a.size) true (intArg pe a.index)
+            (M.frame s)] y = .ok y1 → y1.mem = y.mem →
+          y1.rip = y.rip + BitVec.ofNat 64 ([Item.ld (widthOf a.size) true (intArg pe a.index)
+            (M.frame s)].map Item.size).sum →
+          (∀ i, i ≠ (intArg pe a.index).idx → y1.regs i = y.regs i) → y1.xmm = y.xmm →
+          BytesRel (R.sext32 bs 8) (leEncode 8 (y1.reg (intArg pe a.index)).toNat) →
+          ∃ y1, execItems ctx [.ld (widthOf a.size) true (intArg pe a.index) (M.frame s)] y =
+              .ok y1 ∧ y1.mem = y.mem ∧
+            y1.rip = y.rip + BitVec.ofNat 64 ([Item.ld (widthOf a.size) true (intArg pe a.index)
+              (M.frame s)].map Item.size).sum ∧
+            (∀ i : Fin 16, (∀ j < conv pe, i ≠ (intArg pe j).idx) → i ≠ 11 →
+              (i = 0 → w.toNat ≠ raxWord) → y1.regs i = y.regs i) ∧
+            BytesRel (R.sext32 bs (R.Reg.ofArgReg a).width) (argBytes pe y1 (R.Reg.ofArgReg a)) ∧
+            (∀ r, IsArg pe r → r ≠ R.Reg.ofArgReg a → argBytes pe y1 r = argBytes pe y r) := by
+        intro y1 e1 m1 p1 rs1 x1 hv
+        refine ⟨y1, e1, m1, p1, fun i hi _ h0 => rs1 i (hclob i hi h0), ?_, ?_⟩
+        · rw [hreg]; exact hv
+        · intro r hr' hne
+          cases r with
+          | gpr i' =>
+            have hi' : i' ≠ a.index := fun h => hne (by rw [hreg, h])
+            simp only [argBytes, State.reg]
+            rw [rs1 _ (hother i' hr' hi')]
+          | xmm i' => simp [argBytes, x1]
+      rcases h12 with h1 | h1
+      · have hw : widthOf a.size = .b := by rw [h1]; rfl
+        rw [hw] at hgoal ⊢
+        obtain ⟨y1, e1, m1, r1, rs1, x1, p1⟩ := exec_ld_sx8 ctx (intArg pe a.index) (M.frame s) y
+        refine hgoal y1 (by rw [execItems_cons_ok e1]; rfl) m1 (by rw [p1]; simp) rs1 x1 ?_
+        rw [r1, ea_frame, hfp, hym, readNat_eq]
+        rw [h1] at hbr
+        exact sext_rel8 hbr (bytesAt_length _ _ _)
+      · have hw : widthOf a.size = .w := by rw [h1]; rfl
+        rw [hw] at hgoal ⊢
+        obtain ⟨y1, e1, m1, r1, rs1, x1, p1⟩ := exec_ld_sx16 ctx (intArg pe a.index) (M.frame s) y
+        refine hgoal y1 (by rw [execItems_cons_ok e1]; rfl) m1 (by rw [p1]; simp) rs1 x1 ?_
+        rw [r1, ea_frame, hfp, hym, readNat_eq]
+        rw [h1] at hbr
+        exact sext_rel16 hbr (bytesAt_length _ _ _)
 
 open Ryo.Proofs.ArgRet in
 theorem regs_get_cons (r r' : R.Reg) (b : List AbstractByte) (vals : List (R.Reg × List AbstractByte)) :
@@ -859,14 +1125,15 @@ theorem exec_params (ctx : Ctx) (pe : Bool) {st : OpSem.State} {x0 : X86.State} 
       y.reg .rbp = x0.reg .rbp →
       ∃ y', execItems ctx its y = .ok y' ∧ y'.mem = y.mem ∧
         y'.rip = y.rip + BitVec.ofNat 64 (its.map Item.size).sum ∧
-        (∀ i : Fin 16, (∀ j < conv pe, i ≠ (intArg pe j).idx) → i ≠ 11 → y'.regs i = y.regs i) ∧
+        (∀ i : Fin 16, (∀ j < conv pe, i ≠ (intArg pe j).idx) → i ≠ 11 →
+          (i ≠ 0 ∨ usesRax ws = false) → y'.regs i = y.regs i) ∧
         (∀ r, IsArg pe r → (regs.vals.find? (·.1 == r)).isSome → RegRel pe regs y' r) ∧
         (∀ r, IsArg pe r → regs.vals.find? (·.1 == r) = none → argBytes pe y' r = argBytes pe y r)
   | [], regs, its, y, h, hp, _, _ => by
     simp only [R.argRegs, pure, Except.pure, Except.ok.injEq] at h
     simp only [paramItems, Option.some.injEq] at hp
     subst h hp
-    exact ⟨y, rfl, rfl, by simp, fun _ _ _ => rfl, fun r _ h => by simp at h, fun _ _ _ => rfl⟩
+    exact ⟨y, rfl, rfl, by simp, fun _ _ _ _ => rfl, fun r _ h => by simp at h, fun _ _ _ => rfl⟩
   | [_], regs, its, y, _, hp, _, _ => by simp [paramItems] at hp
   | s :: w :: rest, regs, its, y, h, hp, hym, hyb => by
     obtain ⟨rs, a, bs, hrs, ha, hdup, hbs, rfl⟩ := argRegs_cons h
@@ -881,7 +1148,7 @@ theorem exec_params (ctx : Ctx) (pe : Bool) {st : OpSem.State} {x0 : X86.State} 
     subst hp
     obtain ⟨y1, e1, m1, p1, rs1, hrel1, ho1⟩ := param_one ctx hr hym hyb h1 ha hbs
     have hk5 : y1.regs 5 = y.regs 5 :=
-      rs1 5 (fun j hj => intArg_keep hj 5 (by simp)) (by decide)
+      rs1 5 (fun j hj => intArg_keep hj 5 (by simp)) (by decide) (fun h => absurd h (by decide))
     obtain ⟨y2, e2, m2, p2, rs2, hrel2, ho2⟩ := exec_params ctx pe hr rest rs its2 y1 hrs
       h2 (m1.trans hym) (by simp only [State.reg] at hyb ⊢; rw [show Reg.rbp.idx = 5 from rfl] at hyb ⊢; rw [hk5]; exact hyb)
     have hnone : rs.vals.find? (·.1 == R.Reg.ofArgReg a) = none := by
@@ -891,7 +1158,13 @@ theorem exec_params (ctx : Ctx) (pe : Bool) {st : OpSem.State} {x0 : X86.State} 
       exact this hq'
     refine ⟨y2, by rw [ArgRet.execItems_append, e1]; exact e2, m2.trans m1,
       by rw [p2, p1]; simp [BitVec.add_assoc, BitVec.ofNat_add],
-      fun i hi h11 => by rw [rs2 i hi h11, rs1 i hi h11], ?_, ?_⟩
+      fun i hi h11 h0 => ?_, ?_, ?_⟩
+    · have h0' : (i ≠ 0 ∨ usesRax rest = false) ∧ (i = 0 → w.toNat ≠ raxWord) := by
+        simp only [usesRax, Bool.or_eq_false_iff, beq_eq_false_iff_ne] at h0
+        rcases h0 with h0 | ⟨hw, hr⟩
+        · exact ⟨.inl h0, fun h => absurd h h0⟩
+        · exact ⟨.inr hr, fun _ => hw⟩
+      rw [rs2 i hi h11 h0'.1, rs1 i hi h11 h0'.2]
     · intro r hr' hs'
       unfold RegRel
       rw [regs_get_cons]
@@ -941,7 +1214,8 @@ theorem head_exec (ctx : Ctx) {f : Full.Opcode} {fo : R.Opnd Nat} {pre : List It
     ∃ y0, execItems ctx pre x = .ok y0 ∧ y0.mem = x.mem ∧
       (∀ i : Fin 16, i ≠ 0 → y0.regs i = x.regs i) ∧ y0.xmm = x.xmm ∧
       y0.rip = x.rip + BitVec.ofNat 64 (pre.map Item.size).sum ∧
-      ∀ y : X86.State, y.mem = x.mem → y.reg .rax = y0.reg .rax → ∃ tgt,
+      ∀ y : X86.State, y.mem = x.mem → (f = .callSymInd ∨ f = .callPtr → y.reg .rax = y0.reg .rax) →
+        ∃ tgt,
         ci.exec ctx y = .ok (((y.jump (y.rip + BitVec.ofNat 64 ci.size)).push
           (y.rip + BitVec.ofNat 64 ci.size)).jump tgt) ∧
         ∀ (lo sp : BitVec 64) (m' : Mem), (∀ b, ¬ InStack lo sp b → m' b = x.mem b) →
@@ -989,10 +1263,10 @@ theorem head_exec (ctx : Ctx) {f : Full.Opcode} {fo : R.Opnd Nat} {pre : List It
         subst this
         obtain ⟨y0, e0, m0, r0, rs0, x0, p0⟩ := exec_loadRip ctx .rax (.sym s) x
         refine ⟨y0, by rw [ArgRet.execItems_cons_ok e0]; rfl, m0, fun i hi => rs0 i hi, x0,
-          by rw [p0]; simp, fun y hy hra => ⟨_, rfl, ?_⟩⟩
+          by rw [p0]; simp, fun y hy hra' => ⟨_, rfl, ?_⟩⟩
         intro lo sp m' hm' hs
         show y.mem.read64 (y.reg .rax) = m'.read64 (m'.read64 (ctx.addrOf (.sym s)))
-        rw [hy, hra, r0, hsym lo sp m' hm' hs s (ctx.addrOf (.sym s)) (by simp),
+        rw [hy, hra' (.inl (by simpa using hfi)), r0, hsym lo sp m' hm' hs s (ctx.addrOf (.sym s)) (by simp),
           hsym lo sp m' hm' hs s (x.mem.read64 (ctx.addrOf (.sym s))) (by simp)]
       · cases hh
   | slot p =>
@@ -1018,10 +1292,10 @@ theorem head_exec (ctx : Ctx) {f : Full.Opcode} {fo : R.Opnd Nat} {pre : List It
       have hpa := asPtr_rel (readFrame_rel hr hrd (by omega) (by omega)) hpt
       obtain ⟨y0, e0, m0, r0, rs0, x0, p0⟩ := ArgRet.exec_ld ctx .q .rax (M.frame p) x
       refine ⟨y0, by rw [ArgRet.execItems_cons_ok e0]; rfl, m0, fun i hi => rs0 i hi, x0,
-        by rw [p0]; simp, fun y hy hra => ⟨_, rfl, ?_⟩⟩
+        by rw [p0]; simp, fun y hy hra' => ⟨_, rfl, ?_⟩⟩
       intro lo sp m' _ _
       show y.reg .rax = BitVec.ofNat 64 ptr.addr
-      rw [hra, r0, ea_frame, show W.q.bits / 8 = 8 from rfl, readNat_eq, hpa]
+      rw [hra' (.inr rfl), r0, ea_frame, show W.q.bits / 8 = 8 from rfl, readNat_eq, hpa]
     · cases hh
   | _ => simp [callHead] at hh
 
@@ -1043,7 +1317,7 @@ theorem tailHead_exec (ctx : Ctx) {w : Bool} {f : Full.Opcode} {fo : R.Opnd Nat}
     ∃ y0, execItems ctx pre x = .ok y0 ∧ y0.mem = x.mem ∧
       (∀ i : Fin 16, i ≠ 0 → y0.regs i = x.regs i) ∧ y0.xmm = x.xmm ∧
       y0.rip = x.rip + BitVec.ofNat 64 (pre.map Item.size).sum ∧
-      ∀ y : X86.State, y.reg .rax = y0.reg .rax → ∀ m : Mem,
+      ∀ y : X86.State, (f = .tailCallPtr → y.reg .rax = y0.reg .rax) → ∀ m : Mem,
         j.exec ctx y = .ok (y.jump (calleeTarget ctx m cal)) := by
   cases fo with
   | func g =>
@@ -1081,8 +1355,8 @@ theorem tailHead_exec (ctx : Ctx) {w : Bool} {f : Full.Opcode} {fo : R.Opnd Nat}
       have hpa := asPtr_rel (readFrame_rel hr hrd (by omega) (by omega)) hpt
       obtain ⟨y0, e0, m0, r0, rs0, x0, p0⟩ := ArgRet.exec_ld ctx .q .rax (M.frame p) x
       refine ⟨y0, by rw [ArgRet.execItems_cons_ok e0]; rfl, m0, fun i hi => rs0 i hi, x0,
-        by rw [p0]; simp, fun y hra m => ?_⟩
-      rw [exec_jmpRaxOf, hra, r0, ea_frame, show W.q.bits / 8 = 8 from rfl, readNat_eq, ← hpa]
+        by rw [p0]; simp, fun y hra' m => ?_⟩
+      rw [exec_jmpRaxOf, hra' rfl, r0, ea_frame, show W.q.bits / 8 = 8 from rfl, readNat_eq, ← hpa]
       rfl
     · cases hh
   | _ => simp [tailHead] at hh
@@ -1129,6 +1403,7 @@ theorem call_query (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.State}
     (hi : c.d.insns[s.pc]? = some (.native op [.slot d, fo, .imm k, .words ws]))
     (hf : op.full = some f) (hsh : f.info.shape = .call)
     (hs : callSeq c.mode.pe f fo ws = some items)
+    (hrax : f = .callSymInd ∨ f = .callPtr → usesRax ws = false)
     (hr : RRel s x) (hm : MemRel s.st x) (hsz : ∀ sc ∈ c.scopesAt s.pc, sc.size < 2 ^ 62)
     (hsp : x.rsp = x.reg .rbp - BitVec.ofNat 64 c.d.frameSize)
     (hb : c.d.frameSize + c.stackSize s.pc < 2 ^ 62)
@@ -1171,15 +1446,19 @@ theorem call_query (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.State}
   have hy0b : y0.reg .rbp = x.reg .rbp := rs0 5 (by decide)
   obtain ⟨y, e1, m1, p1, rs1, hlist, -⟩ := exec_params ctx c.mode.pe hr1.rel ws regs ps y0 ha hps
     m0 hy0b
-  have hkeep : ∀ i : Fin 16, (i = 0 ∨ i = 4 ∨ i = 5 ∨ Saved c.mode.pe i) → y.regs i = y0.regs i := by
+  have hkeep : ∀ i : Fin 16, (i = 4 ∨ i = 5 ∨ Saved c.mode.pe i) → y.regs i = y0.regs i := by
     intro i hi
-    exact rs1 i (fun j hj => intArg_keep hj i hi) (by
-      rcases hi with rfl | rfl | rfl | hs
+    refine rs1 i (fun j hj => intArg_keep hj i (.inr hi)) ?_ (.inl ?_)
+    · rcases hi with rfl | rfl | hs
       · decide
       · decide
+      · intro h11; subst h11; have := saved_ne hs; exact this.2.2.1 rfl
+    · rcases hi with rfl | rfl | hs
       · decide
-      · intro h11; subst h11; have := saved_ne hs; exact this.2.2.1 rfl)
-  have hyrax : y.reg .rax = y0.reg .rax := hkeep 0 (by simp)
+      · decide
+      · exact (saved_ne hs).1
+  have hyrax : f = .callSymInd ∨ f = .callPtr → y.reg .rax = y0.reg .rax := fun hf' =>
+    rs1 0 (fun j hj => intArg_keep hj 0 (.inl rfl)) (by decide) (.inr (hrax hf'))
   have hymem : y.mem = x.mem := m1.trans m0
   obtain ⟨tgt, eci, htgt⟩ := hci y hymem hyrax
   have hyrsp : y.rsp = x.rsp := by
@@ -1303,6 +1582,7 @@ theorem call_sound (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.State}
     (hi : c.d.insns[s.pc]? = some (.native op [.slot d, fo, .imm k, .words ws]))
     (hf : op.full = some f) (hsh : f.info.shape = .call)
     (hs : callSeq c.mode.pe f fo ws = some items)
+    (hrax : f = .callSymInd ∨ f = .callPtr → usesRax ws = false)
     (hr : RRel s x) (hm : MemRel s.st x) (hsz : ∀ sc ∈ c.scopesAt s.pc, sc.size < 2 ^ 62)
     (hsp : x.rsp = x.reg .rbp - BitVec.ofNat 64 c.d.frameSize)
     (hb : c.d.frameSize + c.stackSize s.pc < 2 ^ 62) (hd : d.toInt + 16 ≤ 2 ^ 31)
@@ -1325,7 +1605,7 @@ theorem call_sound (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.State}
         x''.rip = x.rip + BitVec.ofNat 64 ((items ++ resultStores k.toNat d).map Item.size).sum ∧
         x''.rsp = x.rsp ∧ (∀ i, Saved c.mode.pe i → x''.regs i = x.regs i) := by
   obtain ⟨cal, regs, stack, x1, hq, hx, he, hstl, hF, hr', hm', hpc, hfp, -, hrsp, hret, hsaved,
-    -⟩ := call_query ctx hi hf hsh hs hr hm hsz hsp hb hlo hsym h hap
+    -⟩ := call_query ctx hi hf hsh hs hrax hr hm hsz hsp hb hlo hsym h hap
   obtain ⟨-, parts, -, -, -, -, hp, -⟩ := CallLemmas.step_call hi hf hsh h
   refine ⟨cal, regs, stack, x1, hq, hx, he, fun x' hR => ?_⟩
   have hx1b : x1.reg .rbp = x.reg .rbp := by
@@ -1390,6 +1670,7 @@ theorem tail_call_step (ctx : Ctx) {c : R.Code} {s : R.RState} {x : X86.State}
     (hi : c.d.insns[s.pc]? = some (.native op [fo, .words ws]))
     (hf : op.full = some f) (hsh : f.info.shape = .tailCall)
     (hs : tailSeq c.d.frameSize c.mode w f fo ws = some items)
+    (hrax : f = .tailCallPtr → usesRax ws = false)
     (hr : RRel s x) (hm : MemRel s.st x) (hsz : ∀ sc ∈ c.scopesAt s.pc, sc.size < 2 ^ 62)
     (hsp : c.mode.pe = true ∨ c.mode.framePointer = false →
       x.rsp = x.reg .rbp - BitVec.ofNat 64 c.d.frameSize ∧ c.d.frameSize + 8 < 2 ^ 31)
@@ -1421,14 +1702,17 @@ theorem tail_call_step (ctx : Ctx) {c : R.Code} {s : R.RState} {x : X86.State}
   have hy0b : y0.reg .rbp = x.reg .rbp := rs0 5 (by decide)
   obtain ⟨y, e1, m1, p1, rs1, hlist, -⟩ := exec_params ctx c.mode.pe hr1.rel ws regs ps y0 ha hps
     m0 hy0b
-  have hkeep : ∀ i : Fin 16, (i = 0 ∨ i = 4 ∨ i = 5 ∨ Saved c.mode.pe i) → y.regs i = y0.regs i := by
+  have hkeep : ∀ i : Fin 16, (i = 4 ∨ i = 5 ∨ Saved c.mode.pe i) → y.regs i = y0.regs i := by
     intro i hi
-    exact rs1 i (fun j hj => intArg_keep hj i hi) (by
-      rcases hi with rfl | rfl | rfl | hs
+    refine rs1 i (fun j hj => intArg_keep hj i (.inr hi)) ?_ (.inl ?_)
+    · rcases hi with rfl | rfl | hs
       · decide
       · decide
+      · intro h11; subst h11; have := saved_ne hs; exact this.2.2.1 rfl
+    · rcases hi with rfl | rfl | hs
       · decide
-      · intro h11; subst h11; have := saved_ne hs; exact this.2.2.1 rfl)
+      · decide
+      · exact (saved_ne hs).1
   have hymem : y.mem = x.mem := m1.trans m0
   have hyrsp : y.rsp = x.rsp := by
     show y.regs 4 = x.regs 4; rw [hkeep 4 (by simp), rs0 4 (by decide)]
@@ -1437,9 +1721,11 @@ theorem tail_call_step (ctx : Ctx) {c : R.Code} {s : R.RState} {x : X86.State}
   obtain ⟨y', ex, mx, xx, rspx, regsx, rbpx, rbpx2⟩ :=
     exec_epilogue_only ctx c.d.frameSize c.mode y (fun h1 => by
       rw [hyrsp, hyrbp]; exact hsp h1)
-  have hyrax' : y'.reg .rax = y0.reg .rax := by
+  have hyrax' : f = .tailCallPtr → y'.reg .rax = y0.reg .rax := by
+    intro hf'
     show y'.regs 0 = y0.regs 0
-    rw [regsx 0 (by decide) (by decide), hkeep 0 (by simp)]
+    rw [regsx 0 (by decide) (by decide)]
+    exact rs1 0 (fun j hj => intArg_keep hj 0 (.inl rfl)) (by decide) (.inr (hrax hf'))
   generalize hx' : y'.jump (calleeTarget ctx y'.mem cal) = x'
   have ej := hj y' hyrax' y'.mem
   rw [hx'] at ej

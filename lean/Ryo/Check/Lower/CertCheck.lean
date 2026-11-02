@@ -224,7 +224,7 @@ def immOf? : Option (Opnd Nat) → Option Nat
 power of two). -/
 def roundPow2 (n : Nat) : Nat := if n ≤ 1 then 1 else if n ≤ 2 then 2 else if n ≤ 4 then 4 else 8
 
-def gpr (i : Nat) : Nat := (ArgReg.mk false 8 i).word
+def gpr (i : Nat) : Nat := (ArgReg.mk false 8 i false).word
 
 /-- Where an argument-list entry's slot must be: anywhere (a non-tail call's sret
 destination), a slot the certificate gives, or input `i`'s home plus `off`. -/
@@ -235,8 +235,13 @@ inductive SlotReq
 
 /-- The argument list `pass_args` builds from `plan` (register words with slot requirements),
 for a tail call (`tail`) or not, with the caller's certificate `fc` (its sret and incoming
-`Indirect` pointer slots). -/
-def passArgs (fc : FuncCert) (plan : ArgPlan) (sret tail : Bool) : Except String (List (SlotReq × Nat)) := do
+`Indirect` pointer slots). For a C-variadic call (`variadic`: the fixed input count, from the
+dumped ABI's `FnAbiSummary.fixed`), the entries `pass_args` appends: on Win64 (`pe`) each
+variadic `xmm` piece again, from the same slot, in the integer register of its position; on
+SysV the one-byte `al` load (`argRax`) of a temporary holding the number of `xmm` registers
+used (the slot is unconstrained; its value isn't checked here). -/
+def passArgs (fc : FuncCert) (plan : ArgPlan) (sret tail : Bool) (pe : Bool := false)
+    (variadic : Option Nat := none) : Except String (List (SlotReq × Nat)) := do
   let mut out : List (SlotReq × Nat) := []
   if sret then
     if tail then
@@ -253,7 +258,15 @@ def passArgs (fc : FuncCert) (plan : ArgPlan) (sret tail : Bool) : Except String
           let some (some p) := fc.argPtrs[i]? | throw s!"tail call passing input {i} indirectly, which the function didn't get so"
           out := out ++ [(.fixed p, gpr idx)]
         else out := out ++ [(.home i 0, gpr idx ||| argAddr)]
-      | .stack .. | .ptrStack _ => pure ()
+      | .stack .. | .stackByval .. | .ptrStack _ => pure ()
+  if let some fixed := variadic then
+    if pe then
+      for h : i in [fixed:plan.locs.length] do
+        for l in plan.locs[i] do
+          if let .reg r off := l then
+            if r.xmm then out := out ++ [(.home i off, (ArgReg.mk false (roundPow2 (max r.size 4)) r.index false).word)]
+    else
+      out := out ++ [(.any, (ArgReg.mk false 1 argRax false).word)]
   return out
 
 /-- Checks a call's argument-list words `ws` against `want`; an error message, or none. -/
@@ -288,7 +301,8 @@ def prologueArgs (fc : FuncCert) (plan : ArgPlan) : Except String (List (Int × 
       match l with
       | .reg r off =>
         let some home := fc.argHomes[i]? | throw s!"no home for input {i}"
-        out := out ++ [(home + off, r.word)]
+        -- `arg` never carries `sext` (the callee ignores the caller's extension).
+        out := out ++ [(home + off, { r with sext := false }.word)]
       | .ptrReg idx =>
         let some (some p) := fc.argPtrs[i]? | throw s!"no pointer slot for the indirect input {i}"
         out := out ++ [(p, gpr idx)]
@@ -448,14 +462,22 @@ def checkFunc (c : Ctx) (i : Nat) (d : Decoded) (fc : FuncCert) : FuncCheck := I
     let some plan := cc.plan | r := err r s!"call at {k} without a plan"; continue
     match cc.kind with
     | .virtualDrop =>
-      if plan != ⟨[[.reg ⟨false, 8, 0⟩ 0]], 0⟩ || cc.retKind != 0 then r := err r s!"call at {k}: virtual drop plan {plan.text}"
+      if plan != ⟨[[.reg ⟨false, 8, 0, false⟩ 0]], 0⟩ || cc.retKind != 0 then r := err r s!"call at {k}: virtual drop plan {plan.text}"
     | .threadLocal =>
       if plan != ⟨[], 0⟩ || cc.retKind != retKind [⟨false, 8, 0⟩] || cc.retSize != 8 then r := err r s!"call at {k}: thread-local shim plan {plan.text}"
     | _ => pure ()
     let ws := match opnd op ops "a" with
       | some (.words ws) => ws
       | _ => []
-    match passArgs fc plan csret cc.kind.tail with
+    -- A C-variadic call's fixed input count, from the dumped ABI of the terminator the call
+    -- is alone in (as for (ii) below).
+    let variadic : Option Nat := match body, termOf[k]? with
+      | some b, some bi =>
+        if termCalls.getD bi 0 == 1 && fc.blocks.size == b.blocks.size then
+          (termAbi c.prog b.blocks[bi]!.term).bind (·.fixed)
+        else none
+      | _, _ => none
+    match passArgs fc plan csret cc.kind.tail c.pe variadic with
     | .error e => r := err r s!"call at {k}: {e}"
     | .ok want => if let some e := checkArgList ws want then r := err r s!"call at {k}: {e}"
     -- (i) The callee's entry.
@@ -555,6 +577,8 @@ def checkObject (prog : Program) (cert : Cert) (o : ImageObject) : Report := Id.
   for h : i in [0:o.funcs.size] do
     let name := o.funcName o.funcs[i].codeOff
     let n := count.getD name 0
+    -- The backend's C `main` (`lower/entry.rs`) has no rustc instance and no certificate.
+    if n == 0 && name == "main" then continue
     if n != 1 then
       rep := { rep with errors := rep.errors.push s!"{funcLabel o i}: {n} certificates" }
       if n == 0 then continue

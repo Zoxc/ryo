@@ -6,7 +6,8 @@ M3 `decode_sound`), against `Ryo.Proofs.Call`'s items.
   `Call.paramItem` of the (slot, word) pair it records (the word's `ArgReg.of?` decoded by
   `decide` over the finitely many register indices and sizes).
 - `params_read`: `params` reads loads `ps` one after the other, and `Call.paramItems` of its
-  words is `ps`, given the loads' `xmm` fields in range (`XmmOk`).
+  words is `ps`, given the loads' `xmm` fields in range (`XmmOk`) and the words valid
+  (`WordsOk`, which `paramsOk` checks: a load into `rax` other than `al`'s has none).
 - `resultSeq_read`: the result stores are `resultStores k d` (none: `k = 0`, `d = 0`, no items).
 - `callInsn_read` (`CallRead`): a call is `callHead`'s items, the loads, the call and the result
   stores; a tail call `tailHead`'s items, the loads, the epilogue and the jump (`jmp rax` or
@@ -34,29 +35,51 @@ namespace Ryo.Proofs.DecodeLink
 
 open Ryo.X86 Ryo.Vm Ryo.Vm.R Ryo.Vm.Asm
 
-theorem int_word_facts : ∀ pe : Bool, ∀ w : W, ∀ i : Fin 6, i.val < (if pe then 4 else 6) →
-    let rn := (BitVec.ofNat 32 (ArgReg.mk false (w.bits / 8) i.val).word).toNat
-    (rn &&& argAddr != 0) = false ∧ ArgReg.of? rn false = some ⟨false, w.bits / 8, i.val⟩ ∧
+theorem int_word_facts : ∀ w : W, ∀ i : Fin 7, ∀ sx : Bool,
+    let rn := (BitVec.ofNat 32 (ArgReg.mk false (w.bits / 8) i.val sx).word).toNat
+    (rn &&& argAddr != 0) = false ∧
+      (ArgReg.of? rn false = none ∨ ArgReg.of? rn false = some ⟨false, w.bits / 8, i.val, sx⟩) ∧
       widthOf (w.bits / 8) = w := by
-  intro pe w; cases pe <;> cases w <;> decide
+  intro w; cases w <;> decide
 
-theorem paramItem_int (pe : Bool) (w : W) (i : Nat) (hi : i < (if pe then 4 else 6))
-    (s : BitVec 32) :
-    Call.paramItem pe s (BitVec.ofNat 32 (ArgReg.mk false (w.bits / 8) i).word) =
-      some [.ld w false (intArg pe i) (M.frame s)] := by
-  have hi6 : i < 6 := by split at hi <;> omega
-  obtain ⟨h1, h2, h3⟩ := int_word_facts pe w ⟨i, hi6⟩ hi
-  simp only at h1 h2 h3
+/-- A call argument word is valid (`ArgReg.of?` of it, by address or not). -/
+def WordOk (w : BitVec 32) : Prop :=
+  (ArgReg.of? (if (w.toNat &&& argAddr != 0) = true then w.toNat - argAddr else w.toNat)
+    false).isSome = true
+
+/-- Every register word of an argument list is valid. -/
+def WordsOk : List (BitVec 32) → Prop
+  | _ :: w :: rest => WordOk w ∧ WordsOk rest
+  | _ => True
+
+theorem paramItem_int (pe : Bool) (w : W) (i : Nat) (sx : Bool)
+    (hi : i < (if pe then 4 else argRax + 1)) (s : BitVec 32)
+    (hW : WordOk (BitVec.ofNat 32 (ArgReg.mk false (w.bits / 8) i sx).word)) :
+    Call.paramItem pe s (BitVec.ofNat 32 (ArgReg.mk false (w.bits / 8) i sx).word) =
+      some [.ld w sx (intArg pe i) (M.frame s)] := by
+  have har : argRax = 6 := rfl
+  have hi7 : i < 7 := by cases pe <;> simp at hi <;> omega
+  obtain ⟨h1, h2, h3⟩ := int_word_facts w ⟨i, hi7⟩ sx
+  simp only at h1 h2
+  rcases h2 with h2 | h2
+  · exfalso
+    unfold WordOk at hW
+    simp only [h1, Bool.false_eq_true, ↓reduceIte, h2] at hW
+    all_goals simp at hW
   unfold Call.paramItem
   simp only [h1, h2, Bool.false_eq_true, ↓reduceIte, hi, h3]
 
 theorem addr_word_facts : ∀ pe : Bool, ∀ i : Fin 6, i.val < (if pe then 4 else 6) →
-    let rn := (BitVec.ofNat 32 ((ArgReg.mk false 8 i.val).word ||| argAddr)).toNat
-    (rn &&& argAddr != 0) = true ∧ ArgReg.of? (rn - argAddr) false = some ⟨false, 8, i.val⟩ := by
+    let rn := (BitVec.ofNat 32 ((ArgReg.mk false 8 i.val false).word ||| argAddr)).toNat
+    (rn &&& argAddr != 0) = true ∧ ArgReg.of? (rn - argAddr) false = some ⟨false, 8, i.val, false⟩ := by
   intro pe; cases pe <;> decide
 
+theorem addr_rax_none :
+    let rn := (BitVec.ofNat 32 ((ArgReg.mk false 8 6 false).word ||| argAddr)).toNat
+    (rn &&& argAddr != 0) = true ∧ ArgReg.of? (rn - argAddr) false = none := by decide
+
 theorem paramItem_addr (pe : Bool) (i : Nat) (hi : i < (if pe then 4 else 6)) (s : BitVec 32) :
-    Call.paramItem pe s (BitVec.ofNat 32 ((ArgReg.mk false 8 i).word ||| argAddr)) =
+    Call.paramItem pe s (BitVec.ofNat 32 ((ArgReg.mk false 8 i false).word ||| argAddr)) =
       some [.leaM (intArg pe i) (M.frame s)] := by
   have hi6 : i < 6 := by split at hi <;> omega
   obtain ⟨h1, h2⟩ := addr_word_facts pe ⟨i, hi6⟩ hi
@@ -66,14 +89,59 @@ theorem paramItem_addr (pe : Bool) (i : Nat) (hi : i < (if pe then 4 else 6)) (s
   simp only [h1, h2, ↓reduceIte, hn, Bool.false_eq_true, bne_self_eq_false, Bool.or_false,
     decide_false]
 
+theorem paramItem_addr' (pe : Bool) (i : Nat) (hi : i < (if pe then 4 else argRax + 1))
+    (s : BitVec 32) (hW : WordOk (BitVec.ofNat 32 ((ArgReg.mk false 8 i false).word ||| argAddr))) :
+    Call.paramItem pe s (BitVec.ofNat 32 ((ArgReg.mk false 8 i false).word ||| argAddr)) =
+      some [.leaM (intArg pe i) (M.frame s)] := by
+  have har : argRax = 6 := rfl
+  by_cases h6 : i = 6
+  · subst h6
+    exfalso
+    obtain ⟨h1, h2⟩ := addr_rax_none
+    try simp only at h1 h2
+    unfold WordOk at hW
+    simp only [h1, if_true, ↓reduceIte, h2] at hW
+    all_goals simp at hW
+  · exact paramItem_addr pe i (by cases pe <;> simp at hi ⊢ <;> omega) s
+
+theorem wordsOk_append (s w : BitVec 32) :
+    ∀ l : List (BitVec 32), l.length % 2 = 0 → WordsOk (l ++ [s, w]) → WordsOk l ∧ WordOk w
+  | [], _, h => ⟨trivial, h.1⟩
+  | [_], h, _ => by simp at h
+  | a :: b :: rest, h, hw => by
+    have := wordsOk_append s w rest (by simp at h; omega) hw.2
+    exact ⟨⟨hw.1, this.1⟩, this.2⟩
+
+/-- `paramsOk` checks every register word. -/
+theorem wordsOk_of_regs (pe : Bool) : ∀ ws : List (BitVec 32),
+    (paramsOk.regs ws).all (fun r => r.any (fun a => !pe || a.index < 4)) = true → WordsOk ws
+  | [], _ => trivial
+  | [_], _ => trivial
+  | _ :: w :: rest, h => by
+    simp only [paramsOk.regs, List.all_cons, Bool.and_eq_true] at h
+    refine ⟨?_, wordsOk_of_regs pe rest h.2⟩
+    have h1 := h.1
+    unfold WordOk
+    cases hb : (w.toNat &&& argAddr != 0)
+    · simp only [hb, Bool.false_eq_true, ↓reduceIte] at h1 ⊢
+      cases ho : ArgReg.of? w.toNat false <;> simp_all
+    · simp only [hb, ↓reduceIte] at h1 ⊢
+      cases ho : ArgReg.of? (w.toNat - argAddr) false <;> simp_all
+
+theorem wordsOk_of_paramsOk {pe : Bool} {ws : List (BitVec 32)} (h : paramsOk pe ws = true) :
+    WordsOk ws := by
+  unfold paramsOk at h
+  simp only [Bool.and_eq_true] at h
+  exact wordsOk_of_regs pe ws h.1.2
+
 theorem xmm_word_facts : ∀ size : Nat, size = 2 ∨ size = 4 ∨ size = 8 ∨ size = 16 → ∀ x : Fin 8,
-    let rn := (BitVec.ofNat 32 (ArgReg.mk true size x.val).word).toNat
-    (rn &&& argAddr != 0) = false ∧ ArgReg.of? rn false = some ⟨true, size, x.val⟩ := by
+    let rn := (BitVec.ofNat 32 (ArgReg.mk true size x.val false).word).toNat
+    (rn &&& argAddr != 0) = false ∧ ArgReg.of? rn false = some ⟨true, size, x.val, false⟩ := by
   intro size hs
   rcases hs with rfl | rfl | rfl | rfl <;> decide
 
 theorem paramItem_movd (pe : Bool) (x : Nat) (hx : x < 8) (s : BitVec 32) :
-    Call.paramItem pe s (BitVec.ofNat 32 (ArgReg.mk true 2 x).word) =
+    Call.paramItem pe s (BitVec.ofNat 32 (ArgReg.mk true 2 x false).word) =
       some [.ld .w false .r11 (M.frame s), .movd true x .r11] := by
   obtain ⟨h1, h2⟩ := xmm_word_facts 2 (.inl rfl) ⟨x, hx⟩
   simp only at h1 h2
@@ -82,7 +150,7 @@ theorem paramItem_movd (pe : Bool) (x : Nat) (hx : x < 8) (s : BitVec 32) :
 
 theorem paramItem_sse (pe : Bool) (size x : Nat) (hs : size = 4 ∨ size = 8 ∨ size = 16)
     (hx : x < 8) (s : BitVec 32) :
-    Call.paramItem pe s (BitVec.ofNat 32 (ArgReg.mk true size x).word) =
+    Call.paramItem pe s (BitVec.ofNat 32 (ArgReg.mk true size x false).word) =
       some [.sse false size x (M.frame s)] := by
   obtain ⟨h1, h2⟩ := xmm_word_facts size (.inr hs) ⟨x, hx⟩
   simp only at h1 h2
@@ -91,7 +159,7 @@ theorem paramItem_sse (pe : Bool) (size x : Nat) (hs : size = 4 ∨ size = 8 ∨
   simp only [h1, h2, Bool.false_eq_true, ↓reduceIte, hs2]
 
 theorem intIndex_spec {r : X86.Reg} {mode : Mode} {i : Nat} (h : intIndex r mode = some i) :
-    i < (if mode.pe then 4 else 6) ∧ intArg mode.pe i = r := by
+    i < (if mode.pe then 4 else argRax + 1) ∧ intArg mode.pe i = r := by
   unfold intIndex at h
   have h1 := List.find?_some h
   have h2 := List.mem_of_find?_eq_some h
@@ -130,23 +198,40 @@ def XmmOk : Item → Prop
   | .movd _ x _ => x < 8
   | _ => True
 
+theorem usesRax_eq : ∀ ws : List (BitVec 32), Call.usesRax ws = paramsUseRax ws
+  | [] => rfl
+  | [_] => rfl
+  | _ :: _ :: rest => by
+    simp only [Call.usesRax, paramsUseRax, Call.raxWord, usesRax_eq rest]
+
+/-- What `callInsn`'s `al` check gives: a call with a head (`call.sym.ind`, `call.ptr`,
+`tail_call.ptr`) loads no `al`. -/
+theorem usesRax_of_pre {pr : Pre} {ws : List (BitVec 32)}
+    (h : ¬((!pr.isNone) && paramsUseRax ws) = true) (hp : pr ≠ .none) :
+    Call.usesRax ws = false := by
+  rw [usesRax_eq]
+  cases pr with
+  | none => exact absurd rfl hp
+  | sym _ => simpa [Pre.isNone] using h
+  | ptr _ => simpa [Pre.isNone] using h
+
 theorem params_read {mode : Mode} {c c' : Cursor} {ws : List (BitVec 32)}
     (h : (params mode).run c = .ok (ws, c')) :
     ∃ ps, Dec c c.pos ps c'.pos ∧ c' = atPos c c'.pos ∧
-      ((∀ it ∈ ps, XmmOk it) → Call.paramItems mode.pe ws = some ps) := by
+      ((∀ it ∈ ps, XmmOk it) → WordsOk ws → Call.paramItems mode.pe ws = some ps) := by
   unfold params at h
   obtain ⟨fu, c1, h1, h⟩ := bind_ok h
   have := fuel_run h1; subst c1
   obtain ⟨st, c2, h2, h⟩ := bind_ok h
   let J : Array (BitVec 32) → Cursor → Prop := fun out cur =>
     out.size % 2 = 0 ∧ ∃ ps, Dec c c.pos ps cur.pos ∧ cur = atPos c cur.pos ∧
-      ((∀ it ∈ ps, XmmOk it) → Call.paramItems mode.pe out.toList = some ps)
+      ((∀ it ∈ ps, XmmOk it) → WordsOk out.toList → Call.paramItems mode.pe out.toList = some ps)
   let I : Option (List (BitVec 32)) × Array (BitVec 32) → Cursor → Prop := fun st cur =>
     st.1 = none ∧ J st.2 cur
   let D : Option (List (BitVec 32)) × Array (BitVec 32) → Cursor → Prop := fun st cur =>
     st.1 = some st.2.toList ∧ J st.2 cur
   have key := forIn_range_inv I D _ ?step fu (none, #[]) c c2 st
-    ⟨rfl, rfl, [], .nil _, rfl, fun _ => rfl⟩ h2
+    ⟨rfl, rfl, [], .nil _, rfl, fun _ _ => rfl⟩ h2
   case step =>
     intro a b cur r cur' hI hr
     obtain ⟨-, hev, ps, hd, hc, hpi⟩ := hI
@@ -157,7 +242,8 @@ theorem params_read {mode : Mode} {c c' : Cursor} {ws : List (BitVec 32)}
     -- what the inner block read
     have inner : (nx = none ∧ c4 = atPos c c4.pos) ∨
         ∃ s w L, nx = some (s, w) ∧ Dec c cur.pos L c4.pos ∧ c4 = atPos c c4.pos ∧
-          ((∀ it ∈ L, XmmOk it) → Call.paramItem mode.pe s (BitVec.ofNat 32 w) = some L) := by
+          ((∀ it ∈ L, XmmOk it) → WordOk (BitVec.ofNat 32 w) →
+            Call.paramItem mode.pe s (BitVec.ofNat 32 w) = some L) := by
       obtain ⟨y, c5, h5, h6⟩ := bind_ok h4
       cases y with
       | none =>
@@ -171,24 +257,25 @@ theorem params_read {mode : Mode} {c c' : Cursor} {ws : List (BitVec 32)}
           intro mm hm; cases mm; simp only [beq_iff_eq] at hm; subst hm; rfl
         split at h6
         · -- ld
-          rename_i w dst mm heq
+          rename_i w sx dst mm heq
           cases heq
           split at h6
           · rename_i i hi
             obtain ⟨hil, hia⟩ := intIndex_spec hi
             split at h6
             · rename_i hb
+              simp only [Bool.and_eq_true] at hb
               obtain ⟨rfl, rfl⟩ := pure_ok h6
-              refine .inr ⟨_, _, [.ld w false dst mm], rfl, ?_, ?_, fun _ => ?_⟩
+              refine .inr ⟨_, _, [.ld w sx dst mm], rfl, ?_, ?_, fun _ hW => ?_⟩
               · exact Dec.single hn
               · rw [hc]
-              · rw [paramItem_int _ _ _ hil, hia, hframe mm hb]
+              · rw [paramItem_int _ _ _ _ hil _ hW, hia, hframe mm hb.1]
             · obtain ⟨rfl, rfl⟩ := pure_ok h6
               exact .inl ⟨rfl, by rw [hc]⟩
           · split at h6
             · rename_i hcond
-              simp only [Bool.and_eq_true, beq_iff_eq] at hcond
-              obtain ⟨⟨rfl, rfl⟩, hb⟩ := hcond
+              simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at hcond
+              obtain ⟨⟨⟨rfl, rfl⟩, rfl⟩, hb⟩ := hcond
               obtain ⟨y2, c7, h7, h8⟩ := bind_ok h6
               cases y2 with
               | none =>
@@ -201,7 +288,7 @@ theorem params_read {mode : Mode} {c c' : Cursor} {ws : List (BitVec 32)}
                 · rename_i x heq2
                   cases heq2
                   obtain ⟨rfl, rfl⟩ := pure_ok h8
-                  refine .inr ⟨_, _, [.ld .w false .r11 mm, .movd true x .r11], rfl, ?_, ?_, fun hx => ?_⟩
+                  refine .inr ⟨_, _, [.ld .w false .r11 mm, .movd true x .r11], rfl, ?_, ?_, fun hx _ => ?_⟩
                   · rw [hc] at hn2
                     exact (Dec.single hn).append (Dec.single hn2)
                   · rw [hc]
@@ -219,8 +306,8 @@ theorem params_read {mode : Mode} {c c' : Cursor} {ws : List (BitVec 32)}
             split at h6
             · rename_i hb
               obtain ⟨rfl, rfl⟩ := pure_ok h6
-              refine .inr ⟨_, _, [.leaM dst mm], rfl, Dec.single hn, by rw [hc], fun _ => ?_⟩
-              rw [paramItem_addr _ _ hil, hia, hframe mm hb]
+              refine .inr ⟨_, _, [.leaM dst mm], rfl, Dec.single hn, by rw [hc], fun _ hW => ?_⟩
+              rw [paramItem_addr' _ _ hil _ hW, hia, hframe mm hb]
             · obtain ⟨rfl, rfl⟩ := pure_ok h6
               exact .inl ⟨rfl, by rw [hc]⟩
           · obtain ⟨rfl, rfl⟩ := pure_ok h6
@@ -231,7 +318,7 @@ theorem params_read {mode : Mode} {c c' : Cursor} {ws : List (BitVec 32)}
           split at h6
           · rename_i hb
             obtain ⟨rfl, rfl⟩ := pure_ok h6
-            refine .inr ⟨_, _, [.sse false size x mm], rfl, Dec.single hn, by rw [hc], fun hx => ?_⟩
+            refine .inr ⟨_, _, [.sse false size x mm], rfl, Dec.single hn, by rw [hc], fun hx _ => ?_⟩
             obtain ⟨hs, hx8, -⟩ := hx (.sse false size x mm) (by simp)
             rw [paramItem_sse _ _ _ hs hx8, hframe mm hb]
           · obtain ⟨rfl, rfl⟩ := pure_ok h6
@@ -247,11 +334,13 @@ theorem params_read {mode : Mode} {c c' : Cursor} {ws : List (BitVec 32)}
       rw [hc4, hc]
     · simp only at hr
       obtain ⟨rfl, rfl⟩ := pure_ok hr
-      refine ⟨rfl, by simp; omega, ps ++ L, ?_, hc4, fun hx => ?_⟩
+      refine ⟨rfl, by simp; omega, ps ++ L, ?_, hc4, fun hx hW => ?_⟩
       · rw [hc] at hdL; exact hd.append (Dec.at_iff.mp hdL)
-      · simp only [Array.toList_push, List.append_assoc, List.singleton_append]
-        apply paramItems_append _ _ _ _ (hL fun it hit => hx it (by simp [hit])) _ _ (by simpa using hev)
-        exact hpi fun it hit => hx it (by simp [hit])
+      · simp only [Array.toList_push, List.append_assoc, List.singleton_append] at hW ⊢
+        obtain ⟨hW1, hW2⟩ := wordsOk_append _ _ _ (by simpa using hev) hW
+        apply paramItems_append _ _ _ _ (hL (fun it hit => hx it (by simp [hit])) hW2) _ _
+          (by simpa using hev)
+        exact hpi (fun it hit => hx it (by simp [hit])) hW1
   rcases key with ⟨hn, hev, ps, hd, hc, hpi⟩ | ⟨hs, hev, ps, hd, hc, hpi⟩
   · dsimp only at h; rw [hn] at h; dsimp only at h
     obtain ⟨rfl, rfl⟩ := pure_ok h
@@ -387,7 +476,7 @@ theorem callInsn_read {fr : Frame} {dropped : List DroppedStore} {c c' : Cursor}
         exact ⟨.nil _, rfl⟩
   obtain ⟨dpre, epre⟩ := hpre
   obtain ⟨ws, c3, h3, h⟩ := bind_ok h
-  obtain ⟨ps, dps, eps, hps⟩ := params_read h3
+  obtain ⟨ps, dps, eps, hps0⟩ := params_read h3
   rw [epre] at dps
   have dpp := dpre.trans' dps
   have eps' : c3 = atPos c c3.pos := eps.trans (by rw [epre])
@@ -401,6 +490,19 @@ theorem callInsn_read {fr : Frame} {dropped : List DroppedStore} {c c' : Cursor}
   split at h
   · obtain ⟨u, c9, -, h10⟩ := bind_ok h
     obtain ⟨he, -⟩ := pure_ok h10; cases he
+  rename_i hok
+  have hps : (∀ it ∈ ps, XmmOk it) → Call.paramItems fr.mode.pe ws = some ps :=
+    fun hx => hps0 hx (wordsOk_of_paramsOk (by simpa using hok))
+  try dsimp only at h
+  by_cases hra : (!pr.isNone && paramsUseRax ws) = true
+  · first
+      | rw [if_pos hra] at h
+      | simp only [hra, ↓reduceIte] at h
+    obtain ⟨u, c9, -, h10⟩ := bind_ok h
+    obtain ⟨he, -⟩ := pure_ok h10; cases he
+  first
+    | rw [if_neg hra] at h
+    | simp only [hra, Bool.false_eq_true, ↓reduceIte] at h
   obtain ⟨it, c5, h5, h⟩ := bind_ok h
   obtain ⟨r, c6, h6, h⟩ := bind_ok h
   have hnone : r = none → False := by

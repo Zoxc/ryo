@@ -18,7 +18,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use ryo_bytecode::asm::{self, Mode, Ref, Scope, ScopeKind};
 use ryo_bytecode::full::*;
-use ryo_bytecode::image::{CATCH, CONTINUE, CleanupEntry};
+use ryo_bytecode::image::{CATCH, CONTINUE, CleanupEntry, NOUNWIND};
 use ryo_bytecode::reduced;
 
 struct Rng(u64);
@@ -354,6 +354,8 @@ fn text(d: &asm::Decoded) -> String {
     for e in &d.cleanup {
         if e.target == CONTINUE {
             writeln!(s, "cleanup {} continue", e.offset).unwrap();
+        } else if e.target == NOUNWIND {
+            writeln!(s, "cleanup {} nounwind", e.offset).unwrap();
         } else {
             writeln!(s, "cleanup {} -> {}{}", e.offset, e.target & !CATCH, if e.target & CATCH != 0 { " catch" } else { "" }).unwrap();
         }

@@ -288,6 +288,7 @@ def funcLines (d : Decoded) : Array String := Id.run do
     out := out.push s!"  {pad6 wpos[k]!}: {insnText wpos k d.insns[k]}"
   for e in d.cleanupEntries do
     out := out.push (if e.target == continueTarget then s!"  cleanup {e.offset} -> continue"
+      else if e.target == nounwindTarget then s!"  cleanup {e.offset} -> nounwind"
       else if e.target &&& catchBit != 0 then s!"  cleanup {e.offset} -> {e.target &&& (catchBit - 1)} catch"
       else s!"  cleanup {e.offset} -> {e.target}")
   for (i, sc) in d.scopes do

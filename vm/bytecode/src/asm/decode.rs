@@ -968,6 +968,11 @@ fn call_insn(c: &mut Cursor<'_>, fr: &Frame, dropped: &[DroppedStore]) -> Option
     if !super::params_ok(&ps) || !pe_ok(&ps) {
         return fail(c);
     }
+    // A call through `rax` (`call.sym.ind`, `call.ptr`, `tail_call.ptr`) loads no `al`: it would
+    // overwrite the callee ([`super::return_ok`]).
+    if !matches!(pre, Pre::None) && super::uses_rax(&ps) {
+        return fail(c);
+    }
     let a_op = Opnd::Words(ps);
     let item = c.item();
     let (op, mut ops, call) = match (item, &pre) {

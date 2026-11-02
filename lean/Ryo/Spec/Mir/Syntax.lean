@@ -112,7 +112,8 @@ inductive UnsizeMeta where
   /-- `T` → `dyn Trait`: the vtable allocation (rustc `vtable_allocation`). -/
   | vtable (g : GlobalId)
   /-- `dyn A` → `dyn B`: keep the vtable (`none`), or use the vtable pointer stored in word
-  `k` of the old vtable (trait upcasting). -/
+  `k` of the old vtable (trait upcasting). Unsize casts between types equal after region
+  erasure also dump as `upcast none` (the value is unchanged). -/
   | upcast (entry : Option Nat)
 deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
@@ -209,7 +210,10 @@ inductive UnwindAction where
   | cleanup (bb : BasicBlock)
 deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
-/-- Calling conventions (rustc `ExternAbi` as far as calls care). -/
+/-- Calling conventions: the lowered rustc `CanonAbi` (`rust`, `c`, else `other "<CanonAbi>"`,
+its `Debug` name), so `system`, `sysv64`, … are `c` where they lower to it; `rustCall` is the
+`ExternAbi::RustCall` of the declaration, kept apart since its arguments are spread
+(`dump_lean.rs` `fn_abi`). -/
 inductive CallConv where
   | rust | rustCall | c | other (name : String)
 deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
@@ -225,6 +229,9 @@ structure AbiScalar where
   float : Bool
   size : Size
   off : Size
+  /-- The dump's `"sext": true` (only present when set): a `signext` integer under 4 bytes
+  (C ABIs); absent means `zeroext` or no extension. -/
+  sext : Option Bool := none
 deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 /-- How one argument (or the return value) is passed (rustc `ArgAbi`, summarized). -/
@@ -247,6 +254,10 @@ structure FnAbiSummary where
   conv : CallConv
   args : List ArgAbi
   ret : ArgAbi
+  /-- A C-variadic ABI's fixed argument count (`args` lists the variadic ones after them);
+  `none` when not variadic, and in dumps that predate the field. Not used by the semantics;
+  the lowering check (`Ryo/Check/Lower/CertCheck.lean`, `passArgs`) reads it. -/
+  fixed : Option Nat := none
 deriving Repr, DecidableEq, Inhabited, ToJson, FromJson
 
 -- [D19]

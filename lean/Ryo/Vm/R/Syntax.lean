@@ -139,12 +139,15 @@ structure Scope where
   kind : ScopeKind
 deriving DecidableEq, Repr, Inhabited
 
-/-- `image::CONTINUE` and `image::CATCH`. -/
+/-- `image::CONTINUE`, `image::NOUNWIND` and `image::CATCH`. `NOUNWIND` (`u32::MAX - 1`,
+`Cleanup::Nounwind`) continues like `CONTINUE`, for a call that can't unwind in a function
+without landing pads (decoded as no pad with the catch flag). -/
 def continueTarget : Nat := 0xffff_ffff
+def nounwindTarget : Nat := 0xffff_fffe
 def catchBit : Nat := 0x8000_0000
 
-/-- A cleanup entry (`image::CleanupEntry`): word offsets, `target` `CONTINUE` or a landing
-pad's offset with `CATCH` for a catch. -/
+/-- A cleanup entry (`image::CleanupEntry`): word offsets, `target` `CONTINUE`, `NOUNWIND` or a
+landing pad's offset with `CATCH` for a catch. -/
 structure CleanupEntry where
   offset : Nat
   target : Nat
@@ -155,7 +158,8 @@ landing pads, scope positions, dropped stores and loop heads by instruction inde
 structure Decoded where
   insns : Array Insn
   frameSize : Nat
-  /-- (instruction, landing pad or `none` to continue, catch), by instruction. -/
+  /-- (instruction, landing pad or `none` to continue, catch), by instruction; `none` with the
+  catch flag is a `NOUNWIND` entry. -/
   cleanup : Array (Nat × Option Nat × Bool)
   /-- Each before the instruction of this index (the count for the end), in order. -/
   scopes : Array (Nat × Scope)
@@ -258,7 +262,7 @@ def Decoded.cleanupEntries (d : Decoded) : Array CleanupEntry :=
   d.cleanup.map fun (i, pad, isCatch) =>
     { offset := wpos[i]!,
       target := match pad with
-        | none => continueTarget
+        | none => if isCatch then nounwindTarget else continueTarget
         | some p => wpos[p]! ||| (if isCatch then catchBit else 0) }
 
 /-! ### Text (`reduced::Disasm` and the side data) -/
@@ -350,6 +354,8 @@ def Decoded.toText (d : Decoded) : String := Id.run do
   for e in d.cleanupEntries do
     if e.target == continueTarget then
       s := s ++ s!"cleanup {e.offset} continue\n"
+    else if e.target == nounwindTarget then
+      s := s ++ s!"cleanup {e.offset} nounwind\n"
     else
       let c := if e.target &&& catchBit != 0 then " catch" else ""
       s := s ++ s!"cleanup {e.offset} -> {e.target &&& (catchBit - 1)}{c}\n"

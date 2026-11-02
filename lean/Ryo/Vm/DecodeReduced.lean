@@ -305,21 +305,26 @@ def params (mode : Mode) : DM (List (BitVec 32)) := do
     let at_ ← pos
     let next : Option (BitVec 32 × Nat) ← (do
       match ← tryItem with
-      | some (.ld w false dst m) =>
+      | some (.ld w sx dst m) =>
         match intIndex dst mode with
-        | some i => if m.base == .rbp then return some (m.disp, (ArgReg.mk false (w.bits / 8) i).word) else return none
+        -- `movzx`/`mov`, or for 1- and 2-byte integers `movsx r32` (`ARG_SEXT`); `rax` is
+        -- `argRax` (a variadic call's `al`, `paramsOk` takes it only as one byte).
+        | some i =>
+          if m.base == .rbp && (!sx || w.bits ≤ 16) then
+            return some (m.disp, ({ xmm := false, size := w.bits / 8, index := i, sext := sx } : ArgReg).word)
+          else return none
         | none =>
-          if dst == .r11 && w == .w && m.base == .rbp then
+          if dst == .r11 && w == .w && !sx && m.base == .rbp then
             match ← tryItem with
-            | some (.movd true x .r11) => return some (m.disp, (ArgReg.mk true 2 x).word)
+            | some (.movd true x .r11) => return some (m.disp, (ArgReg.mk true 2 x false).word)
             | _ => return none
           else return none
       | some (.leaM dst m) =>
         match intIndex dst mode with
-        | some i => if m.base == .rbp then return some (m.disp, (ArgReg.mk false 8 i).word ||| argAddr) else return none
+        | some i => if m.base == .rbp then return some (m.disp, (ArgReg.mk false 8 i false).word ||| argAddr) else return none
         | none => return none
       | some (.sse false size x m) =>
-        if m.base == .rbp then return some (m.disp, (ArgReg.mk true size x).word) else return none
+        if m.base == .rbp then return some (m.disp, (ArgReg.mk true size x false).word) else return none
       | _ => return none)
     match next with
     | some (s, w) => out := out.push s |>.push (BitVec.ofNat 32 w)
@@ -339,10 +344,20 @@ def paramsOk (pe : Bool) (ps : List (BitVec 32)) : Bool :=
   ps.length % 2 == 0 && rs.all (fun r => r.any (fun a => !pe || a.index < 4)) &&
     (rs.filterMap (·.map (fun a => (a.xmm, a.index)))).Nodup
 
+/-- Whether an argument list loads `al` (`asm::uses_rax`: `argRax`, one byte). -/
+def paramsUseRax : List (BitVec 32) → Bool
+  | _ :: r :: rest => r.toNat == (ArgReg.mk false 1 argRax false).word || paramsUseRax rest
+  | _ => false
+
 inductive Pre
   | none
   | sym (s : Nat)
   | ptr (p : BitVec 32)
+
+/-- Whether a call has no head (nothing loaded into `rax` before the arguments). -/
+def Pre.isNone : Pre → Bool
+  | .none => true
+  | _ => false
 
 /-- A call or tail call at the cursor (`call_insn`), or `none` with the cursor unmoved. -/
 def callInsn (fr : Frame) (dropped : List DroppedStore) : DM (Option Proto) := do
@@ -356,6 +371,9 @@ def callInsn (fr : Frame) (dropped : List DroppedStore) : DM (Option Proto) := d
   let callAt ← pos
   if dropped.head?.any (·.at_ ≤ callAt) then setPos p0; return none
   if !paramsOk fr.mode.pe ps then setPos p0; return none
+  -- A call through `rax` (`call.sym.ind`, `call.ptr`, `tail_call.ptr`) loads no `al`, which
+  -- would overwrite the callee (`asm::return_ok`).
+  if !pre.isNone && paramsUseRax ps then setPos p0; return none
   let aOp : Opnd Nat := .words ps
   let it ← tryItem
   let r : Option (Full.Opcode × List (Opnd Nat) × Bool) ← (do
@@ -400,11 +418,11 @@ def argInsn (mode : Mode) : DM (Option Proto) := do
             size := size + w2.bits / 8
           else setPos at_; break
         | _, _ => setPos at_; break
-      return some ((intIndex src mode).map (ArgReg.mk false size ·), m)
-    | .sse true size x m => return some (some ⟨true, size, x⟩, m)
+      return some ((intIndex src mode).map (ArgReg.mk false size · false), m)
+    | .sse true size x m => return some (some ⟨true, size, x, false⟩, m)
     | .movd false x .r11 =>
       match ← tryItem with
-      | some (.st _ _ m) => return some (some ⟨true, 2, x⟩, m)
+      | some (.st _ _ m) => return some (some ⟨true, 2, x, false⟩, m)
       | _ => return some (none, M.frame 0)
     | _ => return some (none, M.frame 0))
   let some (a, m) := r | return none
@@ -973,7 +991,8 @@ def actionsOf (callSites : Array CallSite) (protos : Array Proto) (rs : Nat) :
       | some cs =>
         if cs.len == l then
           used := used + 1
-          if action.any (· != (cs.pad, cs.catches)) || (cs.catches && cs.pad.isNone) then
+          -- A call site without a pad that catches is a `NOUNWIND` entry (`Cleanup::Nounwind`).
+          if action.any (· != (cs.pad, cs.catches)) then
             err s "call sites of one instruction disagree"
           action := some (cs.pad, cs.catches)
         else err s "call site length"

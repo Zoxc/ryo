@@ -25,7 +25,8 @@ What each instruction reads (`gen`) and writes for sure (`kill`), and what that 
   constant or symbol, never a frame object). `resume` (assembly, no footprint) reads
   its slot and leaves the function as a return does. Where the operands don't give an
   extent, `asm::frame::handler`'s over-estimate: a read of 16 bytes or the lengths its `len`
-  / `elem_size × count` operands give, its `d` clobbered, and a pointer access.
+  / `elem_size × count` operands give, its `d`, `o` and `lpad`'s `x` clobbered, `p`, `dp`, `sp`, `n`
+  read 8 bytes, and a pointer access.
 - **Calls** read their argument list `a` (each slot at its register's size; a by-address
   argument reads no byte itself), `call.ptr`'s `p`, and memory through pointers (below). A
   callee reads the caller's frame otherwise only as its stack arguments, in the outgoing area
@@ -324,7 +325,8 @@ addresses taken, and a pointer access if it dereferences a pointer that may reac
 itself is a constant or a symbol). `resume` (assembly, no footprint) reads its slot
 and leaves the function as a return does. Else, and for an extent the operands don't give,
 `asm::frame::handler`'s over-estimate: 16 bytes or the lengths its `len` / `elem_size ×
-count` operands give, `d` clobbered, and a pointer access. -/
+count` operands give, `d`, `o` and `lpad`'s `x` clobbered, pointer and length operands
+(`p`, `dp`, `sp`, `n`) read 8 bytes, and a pointer access. -/
 def handler (h : Full.Opcode) (args : List Arg) (mode : Mode) : Except String Effects := do
   let some l := h.layout mode.fpArg mode.pe | throw "no layout"
   if args.length != l.regs then throw "handler arguments"
@@ -361,8 +363,12 @@ def handler (h : Full.Opcode) (args : List Arg) (mode : Mode) : Except String Ef
     if l.locs[k]!.count == 0 then continue
     let some (.imm v) := args[l.locs[k]!.reg]? | throw "a slot operand that isn't an immediate"
     let s := BitVec.ofNat 32 (v.toNat >>> (l.locs[k]!.shift / 32 * 32))
-    out := out ++ [(s, if o.kind == .mem || o.name == "p" then .read 8
-      else if o.name == "d" then .clobber (cap ext) else .read (cap ext))]
+    -- Pointers and lengths are 8 bytes; `d`, `o` (the overflow and exchange flags) and
+    -- `lpad`'s `x` are the outputs.
+    out := out ++ [(s, if o.kind == .mem || ["p", "dp", "sp", "n"].contains o.name then .read 8
+      else if o.name == "d" || o.name == "o" || (o.name == "x" && info.shape == .lpad) then
+        .clobber (cap ext)
+      else .read (cap ext))]
   return { opnds := out, pointer := true }
 
 /-- An inline instruction's frame accesses as its machine items make them: reads not served by
@@ -555,7 +561,7 @@ if that is the first integer register, by address (`pass_args` puts it first). -
 def sretDest (ws : List (BitVec 32)) : Option (BitVec 32) :=
   match ws with
   | s :: r :: _ =>
-    if r.toNat == (ArgReg.mk false 8 0).word ||| Ryo.Vm.Asm.argAddr then some s else none
+    if r.toNat == (ArgReg.mk false 8 0 false).word ||| Ryo.Vm.Asm.argAddr then some s else none
   | _ => none
 
 /-- A call instruction's argument list. -/

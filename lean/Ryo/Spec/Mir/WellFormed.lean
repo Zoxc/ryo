@@ -364,12 +364,18 @@ def checkCast (k : CastKind) (src dst : Ty) : WfM Unit := do
       -- is coerced field by field (D30), which `unsizeValue` checks when it runs.
       match src, dst with
       | .ptr _ _, .ptr _ _ =>
-        let cls := match m with | .length _ => 1 | _ => 2
-        expect (ptrTyMetaClass dst == cls)
-          s!"the target pointer's metadata does not fit the {ctorName m} metadata"
-        -- An upcast keeps or replaces the source's vtable (`unsizeValue`), so needs one.
-        if m matches .upcast _ then
-          expect (ptrTyMetaClass src == 2) "an upcast needs a source pointer with a vtable"
+        if m == .upcast none then
+          -- Keeps the pointer as is: a same-vtable upcast, or (the dump) an unsize between
+          -- types equal after region erasure, whose metadata may be of any kind.
+          expect (ptrTyMetaClass src == ptrTyMetaClass dst)
+            "an unchanged unsize must keep the kind of metadata"
+        else
+          let cls := match m with | .length _ => 1 | _ => 2
+          expect (ptrTyMetaClass dst == cls)
+            s!"the target pointer's metadata does not fit the {ctorName m} metadata"
+          -- An upcast replaces the source's vtable (`unsizeValue`), so needs one.
+          if m matches .upcast _ then
+            expect (ptrTyMetaClass src == 2) "an upcast needs a source pointer with a vtable"
       | .tuple fs _ _, .tuple fs' _ _ => expect (fs.length == fs'.length) "the structs differ"
       | _, _ => expect false "expected a pointer or a struct of pointers"
 

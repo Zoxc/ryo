@@ -43,6 +43,15 @@ Flags (SDM Vol. 2, per instruction; `none` = undefined, see `Ryo.X86.State`):
 - `lea`, `mov`, `movzx`/`movsx`, `setcc`, `push rbp`/`pop rbp`, `call`/`ret`, `leave`, `jmp`/`jcc`,
   SSE moves: no flags.
 
+Faults: `ud2` (`Fault.ud`), `int3` (`Fault.breakpoint`), `div`/`idiv` by zero or with an
+out-of-range quotient (including `MIN / -1`, `Fault.divide`), reading an undefined flag, and
+executing data or an item the encoder doesn't emit stop execution (`Except.error`; `Faults` in
+`Ryo.X86.Fetch`). Not modeled as faults: memory is flat and total (`Ryo.X86.State`'s `Mem`),
+so no access raises `#PF`/`#GP` (that the code only touches its frame and the memory its
+operands give is the frame-bounds proofs' obligation, `Ryo.Proofs.FrameBounds`), and a `call`
+only pushes and jumps: what the callee does (a handler that panics, aborts or unwinds) is the
+calling environment's, not this file's (x86.md §B.2).
+
 Partial register writes: a 32-bit destination zero-extends into the 64-bit register (also a
 `cmov` whose condition fails); 8- and 16-bit destinations merge into it (the byte registers are the low bytes: the encoder gives
 `sil`/`dil` a REX prefix, so `ah`–`bh` never occur). `movzx`/`movsx` (`ld` at `B`/`W`) write a

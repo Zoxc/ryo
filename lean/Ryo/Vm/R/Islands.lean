@@ -13,9 +13,6 @@ calls `FnCx::island` with the operands in this order):
 
 - `ryo_island_call` (`call<F, Args, R>`): `[args, dest]`: reads the argument block, writes
   `R` (`lower/call.rs`, `emit_call`, `Target::Template`: `[(block, bn), (d, dn)]`).
-- `ryo_island_call_cN` (`call_c0` … `call_c16`): `[args, dest, fn pointer]`: reads the fn
-  pointer and the argument block, writes `R` (`emit_call`, `Target::CIsland`:
-  `[(block, bn), (d, dn), (p, 8)]`).
 - `ryo_island_drop_in_place` (`drop_in_place<T>`): `[ptr]`: reads the (thin or wide) pointer
   (`drop_terminator`). The pointee is memory through a pointer, not an operand.
 - `ryo_island_catch_unwind` (`catch_unwind<Data>`): `[try_fn, data, catch_fn, dest]`: reads
@@ -31,6 +28,7 @@ calls `FnCx::island` with the operands in this order):
   `fmaf32/64` (3), whose templates no lowering emits now; the `volatile_*` wrappers, which
   are emitted, aren't in it (so they read every operand, which is sound).
 
+There is no `call_cN` template (an `extern "C"` call without a plan keeps the caller native).
 Any other name reads every operand (`roles` is `none`), and so does an operand list of another
 length than the template's (`role` checks the length).
 -/
@@ -83,17 +81,7 @@ def roles (t : String) : Option (List Role) :=
     if n == "call" then some [.read, .write]
     else if n == "drop_in_place" then some [.read]
     else if n == "catch_unwind" then some [.read, .read, .read, .write]
-    else if let some k := callC? n then
-      if k ≤ 16 then some [.read, .write, .read] else none
     else (wrappers.lookup n).map fun k => List.replicate k .read ++ [.write]
-where
-  /-- `call_cN`'s `N`. -/
-  callC? (n : String) : Option Nat :=
-    if n.startsWith "call_c" then
-      let d := (n.drop 6).toString
-      let canonical := d.length == 1 || d.front != '0'
-      if !d.isEmpty && d.all Char.isDigit && canonical then d.toNat? else none
-    else none
 
 /-- Operand `i`'s role in template `t`'s `ops` list of `count` operands: `read` unless the
 table knows `t` with exactly `count` operands. -/

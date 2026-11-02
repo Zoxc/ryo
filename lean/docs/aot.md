@@ -100,12 +100,13 @@ per-frame relation `R_Γ (s0 : L0 frame) (s1 : R frame)`:
   callee's function-table entry.
 - **Unwinding**: L0 `unwind` from a callee ↔ R landing at the call's cleanup entry, `lpad x`
   storing the exception object in slot `x`, `resume x` ↔ `UnwindResume`. Terminate pads ↔
-  D18's lang-item call. `UnwindAction::Unreachable` ↔ no call-site entry (L0 UB, so
-  anything goes).
+  D18's lang-item call. `UnwindAction::Unreachable` (and a non-unwinding C callee) ↔ a
+  `NOUNWIND` call-site entry (no pad, written to the LSDA as a plain continue one) in a body
+  without landing pads, none in a body with them (L0 UB to unwind there, so anything goes).
+  `extern "C-unwind"` calls get a call-site entry like Rust calls.
 - **Islands**: each template family has a **contract** at R (`Ryo/Vm/R/Islands.lean`): which
   slots it reads at which types, which it writes, and which L0 operation it performs.
   - `call`: the FnOnce call of `F` with the argument tuple.
-  - `call_cN`: external C call through the fn-pointer slot.
   - `drop_in_place`: call of the drop glue.
   - intrinsic wrappers: the D20 intrinsic.
   - `as_cast`, 128-bit arithmetic: the L0 op.
@@ -532,12 +533,11 @@ and "decode" mean §C1/§C2; the rest are new checks in `Ryo/Check/Image/`, run 
 | **Relocations** of the text and the read-only section | every relocated field the decoder met has a relocation of the kind its form needs (`Call32` → `ryo_h_<h>_<tag>` or `ryo_probe_stack_<tag>`, carrying the object's ABI tag; `Pc32` → a symbol slot, pool offset, data/record offset, rodata; `Abs64` for the header's `text`/`data`/`anchor`, pool pointers, JIT-record initial values → the trip entry points); no relocation outside such fields; names resolve as C1' requires (`Sym s` slot ↔ the callee's symbol) | the linker applies them (see "Linked binary" below) |
 | **Symbol slots** (`[u64]`, RELRO) | each slot has exactly one `Abs64` relocation against the symbol `name(s)`, and `SYM_INDIRECT` flags are clear (ELF) | `ld.so` fills them and RELRO makes them read-only after loading |
 | **JIT records** (writable: `ctr_e`/`ctr_l`, `entry`/`osr`) | initial counter values, and `Abs64` relocations of `entry`/`osr` to `ryo_jit_trip_entry_<tag>`/`ryo_jit_trip_osr_<tag>` | runtime-owned memory, outside the program's memory relation |
-| Image header | parsed by the Lean image reader (168 bytes); `text`/`data` relocations checked, `anchor` relocated against `__ryo_registry_anchor_<tag>`; `abi` is the FNV-1a hash of the object's ABI tag (that of its `ryo_images_<tag>` section); the symbol is `__ryo_image_<stable_crate_id>_<cgu_hash>`; `const_relocs` lists exactly the pool's `Abs64` fields | `Image::validate` at registration is runtime code (it only rejects) |
+| Image header | parsed by the Lean image reader (176 bytes, the last field `strings`, the source locations' string pool); `text`/`data` relocations checked, `anchor` relocated against `__ryo_registry_anchor_<tag>`; `abi` is the FNV-1a hash of the object's ABI tag (that of its `ryo_images_<tag>` section); the symbol is `__ryo_image_<stable_crate_id>_<cgu_hash>`; `const_relocs` lists exactly the pool's `Abs64` fields | `Image::validate` at registration is runtime code (it only rejects) |
 | **`.eh_frame` FDEs** (required) | each VM function has exactly one FDE covering `[code_off, +code_len)`, and its rows match what the decoded prologue/epilogue do in that mode (`image::eh_fde`: CFA and saved `rbp`/return address at each prologue position). A handful of fixed shapes per mode, so the check is cheap; it turns the CFI assumption into "the unwinder implements DWARF CFI" | the unwinder |
 | `.gcc_except_table` LSDAs | parsed in Lean, checked against the image's call-site table, the decoded `lpad` stubs and C1''s unwind actions | the personality routine |
 | **Registration entries and the registry stub** (`write_image`'s entry, `write_registry`): each image object's 8-byte `ryo_images_<tag>` entry; the stub (the same for every crate of one ryo build): the constructor `lea rdi,[rip+__start_ryo_images_<tag>]; lea rsi,[rip+__stop_ryo_images_<tag>]; lea rdx,[rip+__ryo_registry_anchor_<tag>]; jmp ryo_vm_register_<tag>` in `.text.ryo_registry`, its `.init_array.00000` entry, its null `ryo_images_<tag>` entry, the weak hidden `__ryo_registry_anchor_<tag>` | each image object has exactly one entry, retained (`SHF_GNU_RETAIN`), one `Abs64` + 0 to its header; the stub's 4 instructions decoded with the L2 decoder (B.1 extra form), `PC32` → the hidden undefined bounds and the anchor, `PLT32` → the hidden `ryo_vm_register_<tag>`; the `.init_array` entry is an `Abs64` to the constructor; the stub's entry is null and unrelocated, nothing else of it relocated; every image object of the link has the stub's tag; no two with the same `(crate_hash, cgu_hash)`. Each image's header `anchor` field is its only reference to `__ryo_registry_anchor_<tag>` | the linker concatenates the `ryo_images_<tag>` sections and defines their bounds; `ryo_vm_register` (runtime: trusted contract "registers the non-null entries' images before any VM code runs") | `ryo_vm_register` (runtime: trusted contract "registers the images before any VM code runs"); the C runtime runs `.init_array` in priority order |
-| **`__ryo_main` slot** | one `Abs64` against the symbol of the entry fn the dump names (`main`'s instance) | — |
-| **`c_main`** (`ryo_rt::entry::c_main`, cg_llvm-compiled) | — | native code: loads `__ryo_main` and calls the `start` lang item with it. Ten lines of Rust compiled by LLVM; verifying it means binary verification of LLVM output, which buys little over the native-code assumption every program already has |
+| **The C `main`** (a VM entry fn's: `backend/src/lower/entry.rs`) | a C-ABI VM function of the entry fn's image, symbol `target.entry_name` (`main`), lowered from a MIR body the backend builds (reify the entry fn, `IntToInt`/`PtrToPtr` casts, `lang_start::<T>` with unwind `Unreachable`, `IntToInt` of the result) and decoded and checked like any other image function; it exists exactly when the entry fn is an image function (`Dump.lean`). There is no certificate for it (no rustc instance), so C1' doesn't cover its body | — |
 | Islands | C1' checks the template instance and `ops` | cg_llvm instances of `ryo_rt` templates: trusted contracts (§C6) |
 | Functions the backend leaves native (`NeedsNative`, template gaps), statics | — | LLVM code and data from MIR, under the convention |
 | PE (`.pdata`/`.xdata`, fixups, `__imp_` slots) | — | out of scope |
@@ -553,8 +553,8 @@ function's dumped body mentions; `fill` operands are byte constants (C1' checks 
 references from functions outside the dump are reported, not failed. A static pointer's
 relocation names the static's symbol as the dump gives it (`Global.symbol`).
 `Ryo/Check/Image/Dump.lean` (also `check-pool`) checks the rest that the dump decides without
-the function ↔ instance map: `__ryo_main` exists iff an image function has the entry
-instance's symbol, and names it; no image function is a dumped intrinsic. That each
+the function ↔ instance map: the image has the C `main` iff an image function has the entry
+instance's symbol; no image function is a dumped intrinsic. That each
 function's and slot's symbol is the instance's the MIR names is C1''s (its certificate maps
 functions to instances).
 
@@ -574,9 +574,9 @@ read-only section's relocations only the header's `data`/`text`, one per symbol 
 data area; the JIT records (`ctr_e` = −625, `ctr_l` = −10000, `func`, zeros,
 `entry`/`osr`/`header` relocations); the header (image symbol from `stable_crate_id`,
 `crate_hash`, `abi`, section sizes, RELRO); the `anchor` field; the ABI tag of the runtime
-names; `__ryo_main` (one slot naming one of the image's functions or an undefined symbol).
+names (there is no `__ryo_main` slot: a relocated `.data.rel.ro.ryo_main` is an unknown section).
 Registry: the constructor decoded with `decodeX` from its relocations, `.init_array.00000`,
-the null entry, and per link the images' ABI tags (the stub's), each image symbol listed once, at most one `__ryo_main`. A link's image
+the null entry, and per link the images' ABI tags (the stub's), each image symbol listed once. A link's image
 objects include a crate's several images (one per CGU with VM functions, each with its own
 `ryo_images_<tag>` entry), so the distinct `(crate_hash, cgu_hash)` check covers them; a call into
 another image of the crate is a `call.sym` through a slot naming the callee's global symbol,
@@ -596,7 +596,7 @@ entry's counter stub, the entry rules there; epilogues have no rules by design: 
 admits no call between the frame's release and `ret`), every call site and landing pad in the
 body, and the LSDAs in function order, each equal to the function's call-site run, which the
 decoder matched against the calls and `lpad`s. Remaining: what needs the dump (symbol names,
-`ArgPlan`s, which function `__ryo_main` names; the pool and vtables are `Pool.lean`'s).
+`ArgPlan`s; the pool and vtables are `Pool.lean`'s).
 
 **Linked binary vs the image object (recommendation).** Validate the **object** as the
 primary input: its relocations are *named*, which is what makes the C1'/§C4 resolution
@@ -620,8 +620,10 @@ in M6 (it is only needed for the program-level theorem); before then, the linker
   by differential runs. Verifying them means binary verification of LLVM's `-O3` output, a
   separate project (possible later with L2+).
 - **The linker**, until the linked-equals-object check exists; afterwards only the loader.
-- **`ryo_vm_register`, `c_main`, handlers, the trip entry points, `ryo_probe_stack`**:
-  runtime code, trusted contracts, tested.
+- **`ryo_vm_register`, handlers, the trip entry points, `ryo_probe_stack`**:
+  runtime code, trusted contracts, tested. `ryo_probe_stack` touches each page of the `rax`
+  bytes below the caller's `rsp`, top down, the last probe at the frame's bottom (none
+  below it), keeping every register but `r11` ([assumptions.md](assumptions.md) §6).
 
 ## C5. The AOT theorems
 
@@ -650,8 +652,10 @@ behaviors of the MIR program, or a prefix of one followed by `stackOverflow` (D2
 
 **Dependence on the JIT.** `decode_sound` treats the counter stubs as no-ops *given the trip
 contract*, which lets control go to JIT code that simulates the same function. So:
-- with `RYO_JIT=off` or the no-op JIT, the trip contract reduces to "returns with registers
-  preserved", and the theorem is unconditional on the JIT;
+- with `RYO_JIT=off` or a JIT that couldn't start ("the no-op JIT": the same trips, Rust
+  behind assembly, which settle both counters at the `Failed` bias, keeping the counts), the
+  trip contract reduces to "returns with registers preserved", and the theorem is
+  unconditional on the JIT;
 - with the JIT on, the theorem for a run assumes **every JIT compilation in that run passed
   validation** ([jit.md](jit.md)). The induction over run time is well founded: JIT code is entered
   only after publication, and each published unit is validated against AOT code.
@@ -670,7 +674,7 @@ theorem; the program-level theorem is then conditional on their correctness.
 - **ABI**: that rustc's `PassMode` plan for each signature is what LLVM implements (checked by
   `tests/vm_abi.rs`). The convention's L0 side is rustc's `fn_abi`.
 - **Native code**: LLVM-compiled functions and data (native functions, statics, islands,
-  `c_main`, allocator shims), libc, the panic runtime and unwinder honor their semantics under
+  allocator shims, the backend's `jmp` forwarders), libc, the panic runtime and unwinder honor their semantics under
   the convention.
 - **Contracts**: `H h` per handler, `ryo_probe_stack`, `ryo_h_Resume`, island templates, trip
   entry points, `ryo_vm_register`.

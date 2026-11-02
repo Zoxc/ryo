@@ -259,7 +259,7 @@ theorem instructions_pos_le {fr : Vm.Frame} {ro : ByteArray} {dropped : List Dro
                   have h12' := h12
                   rw [hcx] at h12'
                   rcases o with _ | q
-                  · have hna := (Or.inr ⟨hA, h12'⟩ : NoArg fr c _ _ _)
+                  · have hna := (argInsn_none h12' : NoArg fr c _ _ _)
                     have hcy := chain hcx (po_arg _ _ _ _ h12)
                     obtain ⟨-, hr⟩ := (ite_ok hr).resolve_right (fun ⟨hn, _⟩ => by simp at hn)
                     obtain ⟨o, c13, h13, hr⟩ := bind_ok hr
@@ -289,7 +289,7 @@ theorem instructions_pos_le {fr : Vm.Frame} {ro : ByteArray} {dropped : List Dro
                     obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
                     obtain ⟨rfl, rfl⟩ := pure_ok hr
                     exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (by rw [hA]; exact .arg h12') (chain hcx (po_arg _ _ _ _ h12)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
-                · have hna := (Or.inl ⟨Bool.eq_false_iff.mpr hA, hcx⟩ : NoArg fr c _ _ _)
+                · have hna := (hcx : NoArg fr c _ _ _)
                   have hcy := hcx
                   obtain ⟨-, hr⟩ := (ite_ok hr).resolve_right (fun ⟨hn, _⟩ => by simp at hn)
                   obtain ⟨o, c13, h13, hr⟩ := bind_ok hr
@@ -323,7 +323,7 @@ theorem instructions_pos_le {fr : Vm.Frame} {ro : ByteArray} {dropped : List Dro
                 have h12' := h12
                 rw [hcx] at h12'
                 rcases o with _ | q
-                · have hna := (Or.inr ⟨hA, h12'⟩ : NoArg fr c _ _ _)
+                · have hna := (argInsn_none h12' : NoArg fr c _ _ _)
                   have hcy := chain hcx (po_arg _ _ _ _ h12)
                   obtain ⟨-, hr⟩ := (ite_ok hr).resolve_right (fun ⟨hn, _⟩ => by simp at hn)
                   obtain ⟨o, c13, h13, hr⟩ := bind_ok hr
@@ -353,7 +353,7 @@ theorem instructions_pos_le {fr : Vm.Frame} {ro : ByteArray} {dropped : List Dro
                   obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
                   obtain ⟨rfl, rfl⟩ := pure_ok hr
                   exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (by rw [hA]; exact .arg h12') (chain hcx (po_arg _ _ _ _ h12)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
-              · have hna := (Or.inl ⟨Bool.eq_false_iff.mpr hA, hcx⟩ : NoArg fr c _ _ _)
+              · have hna := (hcx : NoArg fr c _ _ _)
                 have hcy := hcx
                 obtain ⟨-, hr⟩ := (ite_ok hr).resolve_right (fun ⟨hn, _⟩ => by simp at hn)
                 obtain ⟨o, c13, h13, hr⟩ := bind_ok hr
@@ -384,7 +384,7 @@ theorem instructions_pos_le {fr : Vm.Frame} {ro : ByteArray} {dropped : List Dro
               have h12' := h12
               rw [hcx] at h12'
               rcases o with _ | q
-              · have hna := (Or.inr ⟨hA, h12'⟩ : NoArg fr c _ _ _)
+              · have hna := (argInsn_none h12' : NoArg fr c _ _ _)
                 have hcy := chain hcx (po_arg _ _ _ _ h12)
                 obtain ⟨-, hr⟩ := (ite_ok hr).resolve_right (fun ⟨hn, _⟩ => by simp at hn)
                 obtain ⟨o, c13, h13, hr⟩ := bind_ok hr
@@ -414,7 +414,7 @@ theorem instructions_pos_le {fr : Vm.Frame} {ro : ByteArray} {dropped : List Dro
                 obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
                 obtain ⟨rfl, rfl⟩ := pure_ok hr
                 exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (by rw [hA]; exact .arg h12') (chain hcx (po_arg _ _ _ _ h12)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
-            · have hna := (Or.inl ⟨Bool.eq_false_iff.mpr hA, hcx⟩ : NoArg fr c _ _ _)
+            · have hna := (hcx : NoArg fr c _ _ _)
               have hcy := hcx
               obtain ⟨-, hr⟩ := (ite_ok hr).resolve_right (fun ⟨hn, _⟩ => by simp at hn)
               obtain ⟨o, c13, h13, hr⟩ := bind_ok hr
@@ -479,7 +479,7 @@ theorem instructions_pos_le {fr : Vm.Frame} {ro : ByteArray} {dropped : List Dro
               have h12' := h12
               rw [hcx] at h12'
               rcases o with _ | q
-              · have hna := (Or.inr ⟨hA, h12'⟩ : NoArg fr c _ _ _)
+              · have hna := (argInsn_none h12' : NoArg fr c _ _ _)
                 have hcy := chain hcx (po_arg _ _ _ _ h12)
                 obtain ⟨-, hr⟩ := (ite_ok hr).resolve_right (fun ⟨hn, _⟩ => by simp at hn)
                 obtain ⟨o, c13, h13, hr⟩ := bind_ok hr
@@ -509,7 +509,7 @@ theorem instructions_pos_le {fr : Vm.Frame} {ro : ByteArray} {dropped : List Dro
                 obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
                 obtain ⟨rfl, rfl⟩ := pure_ok hr
                 exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (by rw [hA]; exact .arg h12') (chain hcx (po_arg _ _ _ _ h12)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
-            · have hna := (Or.inl ⟨Bool.eq_false_iff.mpr hA, hcx⟩ : NoArg fr c _ _ _)
+            · have hna := (hcx : NoArg fr c _ _ _)
               have hcy := hcx
               obtain ⟨-, hr⟩ := (ite_ok hr).resolve_right (fun ⟨hn, _⟩ => by simp at hn)
               obtain ⟨o, c13, h13, hr⟩ := bind_ok hr
@@ -543,7 +543,7 @@ theorem instructions_pos_le {fr : Vm.Frame} {ro : ByteArray} {dropped : List Dro
             have h12' := h12
             rw [hcx] at h12'
             rcases o with _ | q
-            · have hna := (Or.inr ⟨hA, h12'⟩ : NoArg fr c _ _ _)
+            · have hna := (argInsn_none h12' : NoArg fr c _ _ _)
               have hcy := chain hcx (po_arg _ _ _ _ h12)
               obtain ⟨-, hr⟩ := (ite_ok hr).resolve_right (fun ⟨hn, _⟩ => by simp at hn)
               obtain ⟨o, c13, h13, hr⟩ := bind_ok hr
@@ -573,7 +573,7 @@ theorem instructions_pos_le {fr : Vm.Frame} {ro : ByteArray} {dropped : List Dro
               obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
               obtain ⟨rfl, rfl⟩ := pure_ok hr
               exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (by rw [hA]; exact .arg h12') (chain hcx (po_arg _ _ _ _ h12)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
-          · have hna := (Or.inl ⟨Bool.eq_false_iff.mpr hA, hcx⟩ : NoArg fr c _ _ _)
+          · have hna := (hcx : NoArg fr c _ _ _)
             have hcy := hcx
             obtain ⟨-, hr⟩ := (ite_ok hr).resolve_right (fun ⟨hn, _⟩ => by simp at hn)
             obtain ⟨o, c13, h13, hr⟩ := bind_ok hr
@@ -604,7 +604,7 @@ theorem instructions_pos_le {fr : Vm.Frame} {ro : ByteArray} {dropped : List Dro
           have h12' := h12
           rw [hcx] at h12'
           rcases o with _ | q
-          · have hna := (Or.inr ⟨hA, h12'⟩ : NoArg fr c _ _ _)
+          · have hna := (argInsn_none h12' : NoArg fr c _ _ _)
             have hcy := chain hcx (po_arg _ _ _ _ h12)
             obtain ⟨-, hr⟩ := (ite_ok hr).resolve_right (fun ⟨hn, _⟩ => by simp at hn)
             obtain ⟨o, c13, h13, hr⟩ := bind_ok hr
@@ -634,7 +634,7 @@ theorem instructions_pos_le {fr : Vm.Frame} {ro : ByteArray} {dropped : List Dro
             obtain ⟨u16, c16, h16, hr⟩ := bind_ok hr
             obtain ⟨rfl, rfl⟩ := pure_ok hr
             exact fin _ _ _ _ _ _ _ _ _ _ hpr hctr (by simp [hT] <;> rfl) (by rw [hA]; exact .arg h12') (chain hcx (po_arg _ _ _ _ h12)) (by first | exact Or.inl rfl | exact Or.inr ⟨_, _, rfl, by assumption, rfl⟩) _ h16
-        · have hna := (Or.inl ⟨Bool.eq_false_iff.mpr hA, hcx⟩ : NoArg fr c _ _ _)
+        · have hna := (hcx : NoArg fr c _ _ _)
           have hcy := hcx
           obtain ⟨-, hr⟩ := (ite_ok hr).resolve_right (fun ⟨hn, _⟩ => by simp at hn)
           obtain ⟨o, c13, h13, hr⟩ := bind_ok hr

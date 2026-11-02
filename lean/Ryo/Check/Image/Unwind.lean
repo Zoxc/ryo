@@ -33,7 +33,7 @@ the body; every call site is checked to lie in the body too).
 **LSDAs.** The FDE's LSDA pointer points into a `.gcc_except_table` section; the functions'
 LSDAs follow each other in function order from the section's start to its end; each parses
 (`Lsda.parse`) and equals the function's run of the image's call-site table (`CONTINUE`, the
-`CATCH` bit). The decoder took that run as the function's call sites: it checked that each
+`CATCH` bit; a `NOUNWIND` site as a plain continue one, as `lsda::write` writes it). The decoder took that run as the function's call sites: it checked that each
 starts at a call-like instruction's call with its exact length and that one instruction's
 sites agree, that every one is used (`call site outside every call`), and that each landing
 pad is an `lpad` instruction, giving `Decoded.cleanup`. So the LSDA covers exactly the
@@ -164,7 +164,9 @@ def unwindChecks (o : ImageObject) (ds : Array FuncDecoding) : Array String := I
     match u.sites with
     | none => out := out.push s!"{l}: the LSDA doesn't parse"
     | some sites =>
-      if sites != o.imageSites f then
+      -- The LSDA writes a `NOUNWIND` site (no pad, `catches`) as a plain continue one.
+      let want := (o.imageSites f).map fun c => { c with catches := c.catches && c.pad.isSome }
+      if sites != want then
         out := out.push s!"{l}: the LSDA's {sites.size} call sites aren't the image's {(o.imageSites f).size}"
     -- The rows.
     let some di := ds[i]? | continue

@@ -31,8 +31,8 @@ def uleb (v : Nat) : List UInt8 :=
 /-- `lsda::write`: the LSDA of a function with these call sites (sorted by position). -/
 def write (sites : Array CallSite) : ByteArray :=
   let table := sites.toList.flatMap fun s =>
-    uleb s.start ++ uleb s.len ++ uleb (s.pad.getD 0) ++ uleb (if s.catches then 1 else 0)
-  let actions : List UInt8 := if sites.any (·.catches) then [1, 0] else []
+    uleb s.start ++ uleb s.len ++ uleb (s.pad.getD 0) ++ uleb (if s.catches && s.pad.isSome then 1 else 0)
+  let actions : List UInt8 := if sites.any (fun s => s.catches && s.pad.isSome) then [1, 0] else []
   ⟨([0xff, 0xff, 0x01] ++ uleb table.length ++ table ++ actions).toArray⟩
 
 /-- `leb::Reader::minimal_u32` on the bytes `b` up to `stop`: the `uleb128` at `pos` and the

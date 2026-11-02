@@ -51,7 +51,8 @@ islands):
   allocator shims) goes through the environment interface (§A.6).
 
 **Out of scope** (ryo keeps these native, or they don't occur in runtime MIR): `InlineAsm`,
-`Yield`, `CoroutineDrop`, `FalseEdge`, `FalseUnwind`, coroutines, C-variadic calls,
+`Yield`, `CoroutineDrop`, `FalseEdge`, `FalseUnwind`, coroutines, C-variadic function *definitions* (calls of
+external C-variadic functions go through §A.6),
 non-Rust-ABI function *definitions*, `unsized_fn_params`, extern types, SIMD *operations*
 (SIMD values may appear as opaque byte blobs), `f16`/`f128` arithmetic, concurrency (D17),
 aliasing models (D16).
@@ -449,7 +450,14 @@ text above is not rewritten to match.
 - **MIR AST**: `ProjElem.deref` carries the pointee type (pointer types only carry pointee
   layouts, to keep recursive types finite). `reifyFnPointer`/`closureFnPointer` carry the
   resolved instance, `unsize` carries `UnsizeMeta` (length, vtable global, or upcast word).
-  `Callee.virtual idx` has no instance. Calls carry the caller's `FnAbiSummary` and a
+  `Callee.virtual idx` has no instance. `CallConv` is rustc's lowered `CanonAbi` (`rust`,
+  `c`, `other`), with `rustCall` kept apart; unsize casts between types equal after region
+  erasure dump as `upcast none` (value unchanged). A C-variadic call's `FnAbiSummary` lists
+  the extra (variadic) arguments too, and gives the fixed argument count as `fixed` (absent
+  for non-variadic ABIs). Globals: nested statics (`DefKind::Static { nested:
+  true }`) are `static` with `mutable` from their allocation; a constant the backend later
+  finds to be a vtable (supertrait vtables included) is labeled `vtable`, not `const`.
+  Calls carry the caller's `FnAbiSummary` and a
   `CallerLoc` (`const` or `inherit`, for `#[track_caller]` forwarding). Terminate lang items
   and `panic_nounwind` are `Program.langItems`; intrinsic instances carry their type
   arguments (`TyArg`, R30).

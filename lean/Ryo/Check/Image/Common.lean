@@ -16,11 +16,10 @@ open Ryo.Obj Ryo.Vm Ryo.Vm.R
 `rt_symbols.rs`), before the ABI tag and mangling: `ryo_rt`'s trips and `ryo_vm_register`,
 the registry stub's anchor. Each carries the ABI tag of the ryo build as a suffix,
 `<name>_<tag>` (`tagged`, design/build.md#the-abi-tag); the `ryo_rt` ones are mangled as
-internal symbols (`isRtSymbol`). `__ryo_main` (the binary's entry slot) is untagged. -/
+internal symbols (`isRtSymbol`). -/
 def tripEntryName : String := "ryo_jit_trip_entry"
 def tripOsrName : String := "ryo_jit_trip_osr"
 def anchorBase : String := "__ryo_registry_anchor"
-def mainSlotName : String := "__ryo_main"
 def registerName : String := "ryo_vm_register"
 /-- The prefix of the ELF section of the registration entries (`objfile.rs` `elf_entries`). -/
 def entriesBase : String := "ryo_images"

@@ -111,7 +111,10 @@ structure Reloc where
   deriving Repr, DecidableEq, Inhabited
 
 /-- `asm::CallSite`: a call that may unwind, with its landing pad (`none`: unwinding
-continues in the caller), and whether the pad catches. -/
+continues in the caller), and whether the pad catches (`catch`; `asm::CallSite::catches`
+is `catch` with a pad). With no pad and `catches` set it is a `NOUNWIND` site: the call can't
+unwind (the continue entry of a function without landing pads; the LSDA writes it as a plain
+continue one). -/
 structure CallSite where
   start : Nat
   len : Nat

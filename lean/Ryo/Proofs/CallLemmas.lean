@@ -669,9 +669,9 @@ theorem exec_storePart (ctx : Ctx) (d : BitVec 32) (p : RetPart) (rr : R.Reg) (y
       exact ⟨fun h => by simp [hx] at h, fun _ => hp⟩
     have h8 : p.size ≤ 8 := (hv.2 hx).2
     rcases hr with rfl | rfl
-    · obtain ⟨y', e, m, xm, rs, rip⟩ := exec_argStore ctx ⟨false, p.size, 6⟩
+    · obtain ⟨y', e, m, xm, rs, rip⟩ := exec_argStore ctx ⟨false, p.size, 6, false⟩
         (d + BitVec.ofNat 32 p.off) false y (by simpa [hx] using hv) hD
-      have hst : argStore ⟨false, p.size, 6⟩ (d + BitVec.ofNat 32 p.off) false = storeR d (p, .gpr 0) := by
+      have hst : argStore ⟨false, p.size, 6, false⟩ (d + BitVec.ofNat 32 p.off) false = storeR d (p, .gpr 0) := by
         simp [argStore, storeR, hx, retX86, frameAt, intArg]
       rw [hst] at e rip
       refine ⟨y', _, e, by rw [m, fpAddr_disp y d p.off (by omega) hd], ?_, xm, ?_, rip, ?_⟩
@@ -699,9 +699,9 @@ theorem exec_storePart (ctx : Ctx) (d : BitVec 32) (p : RetPart) (rr : R.Reg) (y
         · show leEncode 8 (y'.regs 2).toNat = leEncode 8 (y.regs 2).toNat; rw [hrs 2 (by decide)]
         · simp [retBytes, xm]
         · simp [retBytes, xm]
-    · obtain ⟨y', e, m, xm, rs, rip⟩ := exec_argStore ctx ⟨false, p.size, 2⟩
+    · obtain ⟨y', e, m, xm, rs, rip⟩ := exec_argStore ctx ⟨false, p.size, 2, false⟩
         (d + BitVec.ofNat 32 p.off) false y (by simpa [hx] using hv) hD
-      have hst : argStore ⟨false, p.size, 2⟩ (d + BitVec.ofNat 32 p.off) false = storeR d (p, .gpr 1) := by
+      have hst : argStore ⟨false, p.size, 2, false⟩ (d + BitVec.ofNat 32 p.off) false = storeR d (p, .gpr 1) := by
         simp [argStore, storeR, hx, retX86, frameAt, intArg]
       rw [hst] at e rip
       have hrs : ∀ i : Fin 16, i ≠ 2 → y'.regs i = y.regs i := by
@@ -735,9 +735,9 @@ theorem exec_storePart (ctx : Ctx) (d : BitVec 32) (p : RetPart) (rr : R.Reg) (y
         (∀ r' ∈ retRegList, r' ≠ rr → retBytes y' r' = retBytes y r') := by
       intro i hi
       subst hi
-      obtain ⟨y', e, m, xm, rs, rip⟩ := exec_argStore ctx ⟨true, p.size, i⟩
+      obtain ⟨y', e, m, xm, rs, rip⟩ := exec_argStore ctx ⟨true, p.size, i, false⟩
         (d + BitVec.ofNat 32 p.off) false y (by simpa [hx] using hv) hD
-      have hst : argStore ⟨true, p.size, i⟩ (d + BitVec.ofNat 32 p.off) false = storeR d (p, .xmm i) := by
+      have hst : argStore ⟨true, p.size, i, false⟩ (d + BitVec.ofNat 32 p.off) false = storeR d (p, .xmm i) := by
         simp [argStore, storeR, hx, retXmm, frameAt]
       rw [hst] at e rip
       have hrs : ∀ j : Fin 16, j ≠ 11 → y'.regs j = y.regs j := by

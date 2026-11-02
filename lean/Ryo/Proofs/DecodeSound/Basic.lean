@@ -913,13 +913,7 @@ theorem bs_insn {ctx : Ctx} {m : Mem} {c c' : Cursor} {rs : Array Reloc} {fr : V
 theorem bs_noArg {ctx : Ctx} {m : Mem} {c : Cursor} {rs : Array Reloc} {fr : Vm.Frame} {p : Nat}
     {a : Bool} {cur : Cursor} (hk : LinkOk ctx m c rs) (hb : Boundary rs p)
     (hn : NoArg fr c p a cur) : cur = atPos c cur.pos ∧ Boundary rs cur.pos := by
-  have k0 := bs_linkOk_at hk p
-  rcases hn with ⟨-, rfl⟩ | ⟨-, h⟩
-  · exact ⟨rfl, hb⟩
-  · rcases argInsn_none h with rfl | ⟨x, n, hi, rfl, -⟩
-    · exact ⟨rfl, hb⟩
-    · refine ⟨rfl, ?_⟩
-      exact (decodeItem_itemAt k0.fields k0.sorted k0.loaded k0.small k0.fp hb hi).2.2.2
+  subst hn; exact ⟨rfl, hb⟩
 
 theorem bs_protoRead {ctx : Ctx} {m : Mem} {c : Cursor} {rs : Array Reloc} {fr : Vm.Frame}
     {ro : ByteArray} {p : Nat} {cache cache' : Cache} {dr dr' : List DroppedStore} {a : Bool}
