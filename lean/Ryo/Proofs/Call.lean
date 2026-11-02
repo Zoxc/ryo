@@ -229,6 +229,20 @@ structure Extends (m m' : Memory) : Prop where
 theorem Extends.refl (m : Memory) : Extends m m :=
   ⟨Nat.le_refl _, fun _ a h => ⟨a, h, rfl, rfl⟩⟩
 
+/-- `EscWF` survives a step to a state with the same escaped objects whose memory extends the
+old one: their allocations stay, with the same sizes; new allocations get larger ids. -/
+theorem EscWF.of_extends {st st' : OpSem.State} (hw : EscWF st) (he : st'.escaped = st.escaped)
+    (hx : Extends st.mem st'.mem) : EscWF st' := by
+  refine ⟨fun e h => ?_, fun e h e' h' hid => ?_, fun e h a' ha' => ?_, fun e h e' h' hne => ?_⟩
+  · rw [he] at h; exact Nat.lt_of_lt_of_le (hw.idLt e h) hx.size
+  · rw [he] at h h'; exact hw.idInj e h e' h' hid
+  · rw [he] at h
+    obtain ⟨a, ha⟩ := Option.isSome_iff_exists.1 (get?_isSome.2 (hw.idLt e h))
+    obtain ⟨a'', ha'', -, hsz⟩ := hx.keep e.id a ha
+    rw [ha'] at ha''; cases ha''
+    rw [hsz]; exact hw.size e h a ha
+  · rw [he] at h h'; exact hw.disj e h e' h' hne
+
 /-- `b` is in a live allocation of `w`. -/
 def InAlloc (w : R.World) (b : BitVec 64) : Prop :=
   ∃ id al, w.mem.get? id = some al ∧ al.live = true ∧ (b - BitVec.ofNat 64 al.addr).toNat < al.size
@@ -535,10 +549,9 @@ theorem answer_rel {Owned : BitVec 64 → Prop} {lo : BitVec 64} {F n : Nat} {s 
     rw [getElem_bytesAt, ← fpAddr_add] at this
     exact this
   obtain ⟨hs1, hs2, hs3, hs4, hs5⟩ := hsame
-  refine ⟨st1, hw, hrel, ⟨fun e he => ?_, fun e he e' he' hid => ?_⟩, hmr, hs1.trans he0, ?_,
+  have hwf0 : EscWF st0 := EscWF.of_extends hr.wf he0 (by rw [hm0]; exact hce.grows)
+  refine ⟨st1, hw, hrel, hwf0.of_sizes hs1 (SizesKept.of_escOnly hs2), hmr, hs1.trans he0, ?_,
     ?_, ?_⟩
-  · rw [hs1, he0] at he; rw [hs2.1, hm0]; exact Nat.lt_of_lt_of_le (hr.wf.idLt e he) hsize
-  · rw [hs1, he0] at he he'; exact hr.wf.idInj e he e' he' hid
   · rw [hs5, ← hst0]; rfl
   · rw [hs3, ← hst0]; rfl
   · rw [← hm0]; exact hs2.of_escaped (by rw [he0])
@@ -1565,8 +1578,7 @@ theorem call_return (ctx : Ctx) {c : R.Code} {s : R.RState} {x1 x' : X86.State}
   refine ⟨a, ⟨s.pc + 1, s.fp, st2, s.args⟩, x'', hcr, answer_ret hi hf hsh hresR hw hp hfold,
     by rw [hstores]; exact hx, ⟨hrel2, by rw [hrbp2, hrbp]; exact hr.rbp, ?_⟩, hmr2, rfl, rfl, rfl,
     by rw [p2, hcr.rip, hstores], ?_, fun i hi' => ?_⟩
-  · exact ⟨fun e he' => by rw [g1] at he'; rw [g2]; exact hwf.idLt e he',
-      fun e he' e' he'' hid => by rw [g1] at he' he''; exact hwf.idInj e he' e' he'' hid⟩
+  · exact hwf.of_sizes g1 (by rw [g2]; exact SizesKept.refl _)
   · show x''.regs 4 = _
     rw [rs2 4 (by decide) (by decide) (by decide)]; exact hcr.rsp
   · obtain ⟨h0, h2, h11, -⟩ := saved_ne hi'
@@ -1656,7 +1668,7 @@ theorem call_unwind (ctx : Ctx) {c : R.Code} {s : R.RState} {x1 x' : X86.State}
     hland.saved 5 (saved_of_calleeSaved (by simp [CalleeSaved]))
   obtain ⟨st1, hw, hrel, hwf, hmr, -, -, -, -⟩ := answer_rel hr hce hap hrbp hfp hb
   refine ⟨a, exc, _, hres, hce, answer_unwind hi hf hsh hres hw hpad, rfl, rfl,
-    ⟨rel_exc exc hrel, by rw [hrbp]; exact hr.rbp, ⟨hwf.idLt, hwf.idInj⟩⟩, hmr, rfl, rfl,
+    ⟨rel_exc exc hrel, by rw [hrbp]; exact hr.rbp, ⟨hwf.idLt, hwf.idInj, hwf.size, hwf.disj⟩⟩, hmr, rfl, rfl,
     Option.some.inj (hland.rip.symm.trans hpos), hland.rax, hland.rsp, hland.saved⟩
 
 /-! ### Tail calls -/

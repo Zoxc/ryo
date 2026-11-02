@@ -847,7 +847,7 @@ theorem bodySim_island (hD : Decodes S code relocs rodata callSites dropped scop
       FrameSep.extend hsep1 hrbpY rfl hal.1 hsep1.init hal.2.1 hal.2.2
     have hsepY := island_sep_writeRanges hsepW hlendsIn hw
     refine .done (.inl ⟨_, .answer hstep hans, ?_⟩)
-    refine ⟨⟨⟨⟨hR1.frame, hR1.layout, hR1.zeroSized⟩, hrbpS, ⟨hW1.idLt, hW1.idInj⟩⟩, hM1,
+    refine ⟨⟨⟨⟨hR1.frame, hR1.layout, hR1.zeroSized⟩, hrbpS, ⟨hW1.idLt, hW1.idInj, hW1.size, hW1.disj⟩⟩, hM1,
       ⟨hsepY.own, hsepY.init, hsepY.dis, hsepY.space⟩,
       by show (s1.fp : Int) + _ ≤ _; rw [hk.fp]; exact hwinT,
       by show S.c.d.frameSize ≤ s1.fp; rw [hk.fp]; exact hfpF,

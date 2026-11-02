@@ -648,35 +648,18 @@ structure Hyps (S : Setup) : Prop where
   cacheCleared : CacheCleared S
   padsLinked : PadsLinked S
   stubsLinked : StubsLinked S
-  -- Open prerequisites of the inline steps (`DSWork/Inline.lean`'s `bodySim_inline'`; stated
-  -- here unfolded, as `CacheRegsOk` there).
-  /-- Checkable (a decoder fact): on PE, `emit` never computes in `rsi`/`rdi` (pool entries 2
-  and 3) with the cache an instruction is read with (`CacheRegsOk`): the decoder's caches start
-  with `pe` set and only `emit` fills entries, never those two then. -/
-  cacheRegsOk : ∀ k, S.c.mode.pe = true → ∀ cand : List Item,
-    (emitHead { S.used k with tick := (S.used k).tick + 1 } cand).1 ≠ 2 ∧
-      (emitHead { S.used k with tick := (S.used k).tick + 1 } cand).1 ≠ 3
+  -- Prerequisites of the inline steps (`DSWork/Inline.lean`'s `bodySim_inline'`).
   /-- Every inline opcode's class is of its shape and `clsOk` (proved by kernel evaluation:
   `inlineOps_shape`, `RyoProofs/InlineOps.lean`, and `inlineOps_clsOk`,
   `RyoProofs/InlineOk.lean`; outside the default build, hence a field). -/
   inlineClsOk : ∀ (f : Full.Opcode) (cls : Class), (f, cls) ∈ inlineOps →
     shapeOk f cls = true ∧ CacheStep.clsOk cls = true
-  /-- Open privacy invariant (`InlinePrivate`, as `loadPrivate`): after the scopes, an inline
-  instruction's frame writes hit no escaped object. -/
-  inlinePrivate : ∀ (s : R.RState) (x : X86.State) (s1 : R.RState) (op : Reduced.Opcode)
-    (ops : List (R.Opnd Nat)) (f : Full.Opcode) (cls : Class) (vals : Operands),
-    FrameInv S s x → S.c.d.insns[s.pc]? = some (.native op ops) → op.full = some f →
-    (f, cls) ∈ inlineOps → nativeVals S.c.ρ f ops = some vals →
-    (S.c.scopesAt s.pc).foldlM R.applyScope s = .ok s1 → Private f vals s1.st
-  /-- Open (`InlineMemKept`): an inline instruction other than `store` whose writes are private
-  keeps R's memory and escaped objects, and the frame outside its written ranges (the last two
-  follow from `SameButWrites` once every inline class has a `footprint`). -/
-  inlineMemKept : ∀ (ops : List (R.Opnd Nat)) (f : Full.Opcode) (cls : Class) (vals : Operands)
-    (st st' : OpSem.State) (ch : OpSem.Choice) (ctl : Control),
-    (f, cls) ∈ inlineOps → (∀ w, cls ≠ .store w) → nativeVals S.c.ρ f ops = some vals →
-    opSem f vals st ch = .ok (ctl, st') → Private f vals st →
-    st'.mem = st.mem ∧ st'.escaped = st.escaped ∧
-      ∀ o, st'.frame o = st.frame o ∨ ∃ r ∈ wranges f vals, inRange o r = true
+  /-- Open invariant (`InlineEscBounded`): after the scopes, the escaped objects lie within the
+  frame offsets `Rel.frame` relates, `[-2^63, 2^63)` (each comes from an `Escape` scope, whose
+  range is in the window `[-F, K)` by `frameBounds`' `scopesIn`; `MemPost.memRel_of_post`). -/
+  inlineEscBounded : ∀ (s : R.RState) (x : X86.State) (s1 : R.RState), FrameInv S s x →
+    (S.c.scopesAt s.pc).foldlM R.applyScope s = .ok s1 →
+    ∀ e ∈ s1.st.escaped, -2 ^ 63 ≤ e.off ∧ e.off + e.size ≤ 2 ^ 63
 
 /-! ## 4. Per instruction -/
 

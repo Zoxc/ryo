@@ -984,8 +984,7 @@ theorem call_return_at (ctx : Ctx) {c : R.Code} {s : R.RState} {x1 x' : X86.Stat
   refine ⟨⟨s.pc + 1, s.fp, st2, s.args⟩, x'', CallLemmas.answer_ret hi hf hsh hresR hw hp hfold,
     by rw [hstores]; exact hx, ⟨hrel2, by rw [hrbp2, hrbp]; exact hr.rbp, ?_⟩, hmr2, rfl, rfl,
     by rw [p2, hstores], ?_, hrbp2, fun i hi' => ?_, st1, parts, regsR, hw, hp, hfold⟩
-  · exact ⟨fun e he' => by rw [g1] at he'; rw [g2]; exact hwf.idLt e he',
-      fun e he' e' he'' hid => by rw [g1] at he' he''; exact hwf.idInj e he' e' he'' hid⟩
+  · exact hwf.of_sizes g1 (by rw [g2]; exact SizesKept.refl _)
   · show x''.regs 4 = x'.regs 4
     exact rs2 4 (by decide) (by decide) (by decide)
   · obtain ⟨h0, h2, h11, -⟩ := Call.saved_ne hi'
@@ -1013,7 +1012,7 @@ theorem call_unwind_at {c : R.Code} {s : R.RState} {x1 x' : X86.State}
     hland.saved 5 (Call.saved_of_calleeSaved (by simp [CalleeSaved]))
   obtain ⟨st1, hw, hrel, hwf, hmr, -, -, -, -⟩ := Call.answer_rel hr hce hap hrbp hfp hb
   exact ⟨st1, hw, CallLemmas.answer_unwind hi hf hsh hres hw hpad,
-    ⟨Call.rel_exc exc hrel, by rw [hrbp]; exact hr.rbp, ⟨hwf.idLt, hwf.idInj⟩⟩, hmr⟩
+    ⟨Call.rel_exc exc hrel, by rw [hrbp]; exact hr.rbp, ⟨hwf.idLt, hwf.idInj, hwf.size, hwf.disj⟩⟩, hmr⟩
 
 /-! #### The result stores -/
 

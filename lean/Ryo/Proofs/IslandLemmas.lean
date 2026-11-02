@@ -169,6 +169,8 @@ structure Inv (st0 : OpSem.State) (fp : Nat) (L D : List (Int × Nat)) (m : X86.
   escaped : st.escaped = st0.escaped
   zeroSized : st.zeroSized = st0.zeroSized
   size : st0.mem.allocs.size ≤ st.mem.allocs.size
+  /-- Each escaped object's allocation keeps `e.size` bytes (`EscWF.size`). -/
+  esize : ∀ e ∈ st0.escaped, ∀ a, st.mem.get? e.id = some a → a.size = e.size
   alloc : ∀ e ∈ st0.escaped, ∃ al, st.mem.get? e.id = some al ∧
     BitVec.ofNat 64 al.addr = la fp e.off
   mem : ∀ id al, st.mem.get? id = some al → al.live = true → ∀ i (h : i < al.data.size),
@@ -215,7 +217,10 @@ theorem inv_write {st0 st : OpSem.State} {fp : Nat} {L D : List (Int × Nat)} {m
   have hw : st.writeEscaped off bs = .ok m' := hm'
   have hspec := writeEscaped_spec hw
   refine ⟨_, by unfold OpSem.State.writeFrame; rw [hw]; rfl, ?_⟩
-  refine ⟨hinv.escaped, hinv.zeroSized, by simp only; rw [hspec.1]; exact hinv.size, ?_, ?_, ?_⟩
+  refine ⟨hinv.escaped, hinv.zeroSized, by simp only; rw [hspec.1]; exact hinv.size,
+    fun e he a' ha' => ?_, ?_, ?_, ?_⟩
+  · obtain ⟨a, ha, hs⟩ := (SizesKept.of_escFrom hspec).2 _ _ ha'
+    rw [hs]; exact hinv.esize e he a ha
   · intro e he
     obtain ⟨al, hal, haddr⟩ := hinv.alloc e he
     have hlt : e.id < m'.allocs.size := by
@@ -325,7 +330,7 @@ theorem inv_final {st0 st : OpSem.State} {fp : Nat} {L : List (Int × Nat)} {m :
     Rel st x ∧ MemRel st x ∧ EscWF st := by
   have hfa : ∀ o, fpAddr x o = la fp o := fun o => by simp [fpAddr, la, hrbp]
   have hea := escapedAt_congr h.escaped
-  refine ⟨⟨fun o h1 h2 b hb => ?_, fun e he a ha => ?_, fun p hp => ?_⟩, ?_, ?_, ?_⟩
+  refine ⟨⟨fun o h1 h2 b hb => ?_, fun e he a ha => ?_, fun p hp => ?_⟩, ?_, ⟨?_, ?_, ?_, ?_⟩⟩
   · rw [hfa, hx]
     unfold OpSem.State.byteAt at hb
     cases hf : st.escapedAt o with
@@ -368,22 +373,35 @@ theorem inv_final {st0 st : OpSem.State} {fp : Nat} {L : List (Int × Nat)} {m :
   · intro e he e' he' hid
     rw [h.escaped] at he he'
     exact hwf.idInj e he e' he' hid
+  · intro e he a ha
+    rw [h.escaped] at he
+    exact h.esize e he a ha
+  · intro e he e' he' hne
+    rw [h.escaped] at he he'
+    exact hwf.disj e he e' he' hne
 
 /-- At the template's return, before the writes: the state with the answer's world. -/
 theorem inv_init {st0 : OpSem.State} {fp : Nat} {L : List (Int × Nat)} {x x' : X86.State}
     {w : R.World} (hr : Rel st0 x) (hrbp : x.reg .rbp = BitVec.ofNat 64 fp) (hwf : EscWF st0)
     (hsize : st0.mem.allocs.size ≤ w.mem.allocs.size)
-    (hkeep : ∀ id a, st0.mem.get? id = some a → ∃ a', w.mem.get? id = some a' ∧ a'.addr = a.addr)
+    (hkeep : ∀ id a, st0.mem.get? id = some a → ∃ a', w.mem.get? id = some a' ∧ a'.addr = a.addr ∧
+      a'.size = a.size)
     (hw : ∀ id a, w.mem.get? id = some a → a.live = true → ∀ i (h : i < a.data.size),
       ByteRel a.data[i] (x'.mem (BitVec.ofNat 64 (a.addr + i))))
     (hout : ∀ o : Int, -2 ^ 63 ≤ o → o < 2 ^ 63 → st0.escapedAt o = none →
       st0.frame o ≠ .uninit → (∀ l ∈ L, ¬ InR l o) → x'.mem (la fp o) = x.mem (la fp o)) :
     Inv st0 fp L [] x'.mem { st0 with mem := w.mem, exposed := w.exposed } := by
   have hfa : ∀ o, fpAddr x o = la fp o := fun o => by simp [fpAddr, la, hrbp]
-  refine ⟨rfl, rfl, hsize, fun e he => ?_, hw, fun o h1 h2 hn hD => ?_⟩
+  refine ⟨rfl, rfl, hsize, fun e he a ha => ?_, fun e he => ?_, hw, fun o h1 h2 hn hD => ?_⟩
   · obtain ⟨a0, ha0⟩ : ∃ a0, st0.mem.get? e.id = some a0 :=
       ⟨_, Array.getElem?_eq_getElem (hwf.idLt e he)⟩
-    obtain ⟨a', ha', hae⟩ := hkeep _ _ ha0
+    obtain ⟨a', ha', -, has⟩ := hkeep _ _ ha0
+    change w.mem.get? e.id = some a at ha
+    rw [ha] at ha'; cases ha'
+    rw [has]; exact hwf.size e he a0 ha0
+  · obtain ⟨a0, ha0⟩ : ∃ a0, st0.mem.get? e.id = some a0 :=
+      ⟨_, Array.getElem?_eq_getElem (hwf.idLt e he)⟩
+    obtain ⟨a', ha', hae, -⟩ := hkeep _ _ ha0
     refine ⟨a', ha', ?_⟩
     rw [hae, hr.layout e he a0 ha0, hfa]
   · rcases hD with ⟨l, hl, -⟩ | hall

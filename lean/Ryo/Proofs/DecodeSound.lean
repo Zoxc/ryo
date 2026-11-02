@@ -52,9 +52,9 @@ relocation boundary (`boundary_start`), R's scopes never stop with `noBehavior` 
 facts of the decoder: the prologue read item by item (`read_instructions_prologue`), landing
 pads are `lpad`s (`pad_lpad`, so not leading `arg`s, `pad_not_leadArg`), protos lie within the
 code (`posOf_le_size`, so `posOf_lt_32`). `bodySim_inline` is `DSWork/Inline.lean`'s
-`bodySim_inline'` (its open steps are `Hyps` fields: `cacheRegsOk`, `inlinePrivate`,
-`inlineMemKept`; it also takes `inlineClsOk`, proved in `RyoProofs`, and `InlineBelowLink`,
-from `FrameBounds.writesOff`).
+`bodySim_inline'` (its open step is the `Hyps` field `inlineEscBounded`; it also
+takes `inlineClsOk`, proved in `RyoProofs`, `InlineBelowLink`, from `FrameBounds.writesOff`, and
+`CacheRegsOk`, from `DecodeLink/CacheRegs.lean`'s `cacheRegsOk_of_decodes`).
 
 **Files.** `DecodeSound/Basic.lean`: §1–§3 and §4's helpers, `bodySim_unreachable`,
 `bodySim_jmp`, `reach_padding`, `boundary_start`. `DSWork/Boundary.lean`: the decoder facts.
@@ -90,12 +90,10 @@ discharged later:
   `peFrame` (on PE `F + 8 < 2 ^ 31`, for the epilogue),
   `relocsIn` (`RelocsIn`: relocated fields within the code), `argsOk` (`ArgsOk`:
   the leading `arg`s read distinct argument registers of the convention, and no branch target
-  is one), `cacheRegsOk` (on PE
-  `emit` never computes in `rsi`/`rdi`, a decoder fact);
+  is one);
 - privacy after the scopes (checkable with the scopes, as an invariant): `loadPrivate` (a
   `load`'s destination, `LoadPrivate`), `argPrivate` (an `arg`'s, `ArgPrivate`),
-  `resultPrivate` (a call's result slots, `ResultPrivate`), `inlinePrivate` (an inline
-  instruction's frame writes, `InlinePrivate`), `linkPrivate` (the frame's link
+  `resultPrivate` (a call's result slots, `ResultPrivate`), `linkPrivate` (the frame's link
   slots, in no escaped object or `Lend` extent, `LinkPrivate`), `peShadow` (on PE the island
   templates' 32-byte shadow space at the frame's bottom holds no private byte);
 - the environment and the layout (not checkable from the function): `sepAcross` (the frame
@@ -106,8 +104,8 @@ discharged later:
   the frame, from the image), `codeApart` (`CodeApart`: nothing the function or its environment writes is code or
   rodata), `envOutside` (`EnvOutside`: the environment's entries are `Env.out` states);
 - facts of the decoder and linker not yet exposed: `deadStore` (`DeadStoreSim`: the steps of
-  dropped stores), `inlineMemKept` (`InlineMemKept`: an inline instruction other than `store`
-  with private writes keeps the rest of memory), `cacheCleared` (`CacheCleared`: the cache is empty at branch targets and
+  dropped stores), `inlineEscBounded` (`InlineEscBounded`: after the scopes, escaped objects lie in
+  `[-2^63, 2^63)`; they come from `Escape` scopes, which `FrameBounds` keeps in the window), `cacheCleared` (`CacheCleared`: the cache is empty at branch targets and
   landing pads), `padsLinked` (`PadsLinked`: the LSDA as linked against `cleanupAt`),
   `stubsLinked` (`StubsLinked`: the counter stubs in memory as `read` checked them).
 
@@ -125,7 +123,10 @@ import Ryo.Proofs.DSWork.Call
 import Ryo.Proofs.DSWork.Handler
 import Ryo.Proofs.Dense
 import Ryo.Proofs.DSWork.Inline
+import Ryo.Proofs.DecodeLink.Bounds
+import Ryo.Vm.Frame
 import Ryo.Proofs.DecodeLink.Tables
+import Ryo.Proofs.DecodeLink.CacheRegs
 
 set_option linter.constructorNameAsVariable false
 set_option linter.unusedSimpArgs false
@@ -153,14 +154,16 @@ variable {S : Setup} {code : ByteArray} {relocs : Array Reloc} {rodata : ByteArr
 
 Proved in `DSWork/*.lean`: `bodySim_arg` (Arg), `bodySim_ret` (Ret), `bodySim_island` (Island),
 `reach_counter` (Counter), `bodySim_call'` (Call), `bodySim_handler'` (Handler),
-`bodySim_inline'` (Inline, under `Hyps`' `cacheRegsOk`, `inlinePrivate`, `inlineMemKept`, and
-the proved `inlineClsOk` and `InlineBelowLink`, `inlineBelowLink_of`);
+`bodySim_inline'` (Inline, under `Hyps`' `inlineEscBounded`, and the proved
+`inlineClsOk`, `InlineBelowLink` (`inlineBelowLink_of`) and `CacheRegsOk`
+(`cacheRegsOk_of_decodes`));
 `bodySim_unreachable`, `bodySim_jmp` in `DecodeSound/Basic.lean`. Here: `bodySim_inline`
 and `bodySim_dense`. -/
 
 /-- An inline sequence without a dropped store: `DSWork/Inline.lean`'s `bodySim_inline'`, its
-extra hypotheses from `Hyps` (`cacheRegsOk`, `inlinePrivate`, `inlineMemKept`, `inlineClsOk`)
-and `InlineBelowLink` from `frameBounds` (`inlineBelowLink_of`). -/
+extra hypotheses from `Hyps` (`inlineEscBounded`, `inlineClsOk`), `InlineBelowLink`
+from `frameBounds` (`inlineBelowLink_of`) and `CacheRegsOk` from the decoder's caches
+(`cacheRegsOk_of_decodes`, `k` below the protos' count). -/
 theorem bodySim_inline (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (H : Hyps S) {k p : Nat} {a : Bool} {q : Proto} {cur cur' c' : Cursor}
     {cache' : Cache} {dr' : List DroppedStore}
@@ -169,7 +172,9 @@ theorem bodySim_inline (hD : Decodes S code relocs rodata callSites dropped scop
     (hr : (inlineInsn (S.used k) (S.dr k) true).run cur' = .ok (some (q, cache', dr'), c'))
     (hq : q.dropped = false) :
     BodySim S k p (S.used k) := by
-  exact bodySim_inline' hD H (inlineBelowLink_of H.frameBounds) H.cacheRegsOk H.inlinePrivate H.inlineMemKept H.inlineClsOk hP hn hc hr hq
+  have hk : k ≤ S.r.protos.toList.length := by rw [Array.length_toList]; exact Nat.le_of_lt hP.lt
+  exact bodySim_inline' hD H (inlineBelowLink_of H.frameBounds) H.inlineEscBounded
+    H.inlineClsOk (CacheRegs.cacheRegsOk_of_decodes hD k hk) hP hn hc hr hq
 
 /-! #### The dense switch -/
 
@@ -717,5 +722,52 @@ theorem decode_sound_of_ok {code : ByteArray} {relocs : Array Reloc} {rodata : B
   refine ⟨S, hD, h1, h2, h3, h4, h5, h6, h7, h8, h9, fun H => ?_⟩
   subst h1 h2 h3 h9
   exact decode_sound hD H htc
+
+/-- What `Frame.decodeChecked` accepting a function gives: `decodeReduced`'s acceptance, the
+bound check (`Decoded.boundsOk`) and `tablesCheck`. -/
+theorem decodeChecked_ok {code : ByteArray} {relocs : Array Reloc} {rodata : ByteArray}
+    {callSites : Array CallSite} {dropped : Array DroppedStore} {scopes : Array R.Scope}
+    {mode : Ryo.Obj.Mode} {facts : Frame.Facts} {d : Decoded}
+    (h : Frame.decodeChecked code (.relocs relocs) rodata callSites dropped scopes mode facts =
+      .ok d) :
+    decodeReduced code relocs rodata callSites dropped scopes mode = .ok d ∧
+      d.boundsOk mode = true ∧ tablesCheck code relocs rodata callSites dropped scopes mode = true := by
+  unfold Frame.decodeChecked Frame.decodeChecked.checkDropped at h
+  cases hb : decodeBounded code (.relocs relocs) rodata callSites dropped scopes mode with
+  | error e => simp [hb, bind, Except.bind, throw, throwThe, MonadExceptOf.throw] at h
+  | ok d0 =>
+    obtain ⟨hd, hbo⟩ := DecodeLink.Bounds.decodeBounded_ok hb
+    cases ht : tablesCheck code relocs rodata callSites dropped scopes mode with
+    | false => simp [hb, ht, bind, Except.bind, pure, Except.pure, throw, throwThe, MonadExceptOf.throw] at h
+    | true =>
+      cases hdn : Frame.droppedNotDead d0 mode facts with
+      | error e => simp [hb, ht, hdn, bind, Except.bind, pure, Except.pure] at h
+      | ok l =>
+        cases l with
+        | nil =>
+          simp [hb, ht, hdn, bind, Except.bind, pure, Except.pure] at h
+          subst h
+          exact ⟨hd, hbo, rfl⟩
+        | cons k rest =>
+          simp [hb, ht, hdn, bind, Except.bind, pure, Except.pure, throw, throwThe,
+            MonadExceptOf.throw] at h
+
+/-- `decode_sound_of_ok` from the checked decoder's acceptance (`Frame.decodeChecked`: the
+bound check and `tablesCheck` included). -/
+theorem decode_sound_of_checked {code : ByteArray} {relocs : Array Reloc} {rodata : ByteArray}
+    {callSites : Array CallSite} {dropped : Array DroppedStore} {scopes : Array R.Scope}
+    {mode : Ryo.Obj.Mode} {facts : Frame.Facts} {d : Decoded}
+    (hdec : Frame.decodeChecked code (.relocs relocs) rodata callSites dropped scopes mode facts =
+      .ok d)
+    (hnr : regionPad mode callSites = none)
+    (c : R.Code) (hc : c.d = d) (hm : c.mode = mode) (ctx : Ctx) (E : Env) (K : Int)
+    (x0 : X86.State) (Owned : BitVec 64 → Prop) (lo : BitVec 64)
+    (padOf : BitVec 64 → Option (BitVec 64)) (Safe : R.Query → Prop) :
+    ∃ S : Setup, Decodes S code relocs rodata callSites dropped scopes mode ∧ S.c = c ∧
+      S.ctx = ctx ∧ S.E = E ∧ S.K = K ∧ S.x0 = x0 ∧ S.Owned = Owned ∧ S.lo = lo ∧
+      S.padOf = padOf ∧ S.Safe = Safe ∧
+      (Hyps S → ∀ s x, BInv S s x → SafeFrom Safe c s → FnSim ctx E c (BInv S) (ExitRel S) s x) :=
+  have h := decodeChecked_ok hdec
+  decode_sound_of_ok h.1 hnr h.2.2 c hc hm ctx E K x0 Owned lo padOf Safe
 
 end Ryo.Proofs.DecodeSound

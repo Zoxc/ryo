@@ -812,7 +812,7 @@ theorem handler_resume' (hD : Decodes S code relocs rodata callSites dropped sco
   let s2 : R.RState := { s1 with pc := pad, st := { s1.st with exception := exc } }
   have hfi : FrameInv S s2 x :=
     ⟨⟨⟨fun o h1 h2 b hb => hr1.rel.frame o h1 h2 b hb, hr1.rel.layout, hr1.rel.zeroSized⟩,
-      hr1.rbp, ⟨hr1.wf.idLt, hr1.wf.idInj⟩⟩, hm1, ⟨hsep1.own, hsep1.init, hsep1.dis, hsep1.space⟩, hk1.fp ▸ hf.win, hk1.fp ▸ hf.fpF, hf.rsp, hf.room,
+      hr1.rbp, ⟨hr1.wf.idLt, hr1.wf.idInj, hr1.wf.size, hr1.wf.disj⟩⟩, hm1, ⟨hsep1.own, hsep1.init, hsep1.dis, hsep1.space⟩, hk1.fp ▸ hf.win, hk1.fp ▸ hf.fpF, hf.rsp, hf.room,
       hf.code, hf.ro, fun h => absurd h hnl, hf.frame⟩
   have h8 : 8 ≤ x.rsp.toNat := by omega
   have hag : Counter.Agree S.Owned S.lo x x' := by

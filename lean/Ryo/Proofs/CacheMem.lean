@@ -44,6 +44,7 @@ frame write is like `load`'s, but isn't proved here).
 -/
 import Ryo.Proofs.CacheStep
 import Ryo.Proofs.ScopeMem
+import Ryo.Proofs.OpFacts
 
 set_option linter.constructorNameAsVariable false
 
@@ -175,9 +176,8 @@ theorem store_step (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.State}
   have hm1 := (memRel_foldlM _ hsz hr hm hsc).2
   obtain ⟨rfl, x', hx, hpost⟩ := sound_store w ctx c.ρ f ops items br vals s1.st st' ctl ch x
     hok.shape hseq hn ho hr1.rel hm1 (hap s1 hsc) (hdis s1 hsc)
-  obtain ⟨hsize, hesc⟩ := store_allocs hok.shape hn ho
-  have hw : EscWF st' := ⟨fun e he => by rw [hesc] at he; rw [hsize]; exact hr1.wf.idLt e he,
-    fun e he e' he' hid => by rw [hesc] at he he'; exact hr1.wf.idInj e he e' he' hid⟩
+  obtain ⟨-, hesc, hks⟩ := Ryo.Proofs.OpFacts.opSem_out ho
+  have hw : EscWF st' := hr1.wf.of_sizes hesc hks
   exact ⟨x', hx, hpost.rel, rbp_of_regs hpost.regs, hw, hpost.memRel, hpost.rip, hpost.ctl⟩
 
 /-- One R step of a rip-relative address (`addrConst`, `addrSym`, `addrSymInd`) against its
@@ -598,9 +598,8 @@ theorem store_step_sep (ctx : Ctx) {wl wh : Int} {c : R.Code} {s s' : R.RState} 
         have hs1 := afterScopes_sep hr hs hw hin s1 hsc
         obtain ⟨rfl, x', hx, hpost⟩ := sound_store w ctx c.ρ f ops items br vals s1.st st' ctl ch x
           hok.shape hseq hn ho hr1.rel hm1 hs1.frameApart hs1.dis
-        obtain ⟨hsize, hesc⟩ := store_allocs hok.shape hn ho
-        have hwf : EscWF st' := ⟨fun e he => by rw [hesc] at he; rw [hsize]; exact hr1.wf.idLt e he,
-          fun e he e' he' hid => by rw [hesc] at he he'; exact hr1.wf.idInj e he e' he' hid⟩
+        obtain ⟨-, hesc, hks⟩ := Ryo.Proofs.OpFacts.opSem_out ho
+        have hwf : EscWF st' := hr1.wf.of_sizes hesc hks
         have hb := rbp_of_regs hpost.regs
         exact ⟨x', hx, hpost.rel, hb, hwf,
           ⟨hpost.memRel, sep_of_shape hs1 (store_shape hok.shape hn ho) hesc
@@ -834,9 +833,8 @@ theorem store_step_sep_regs (ctx : Ctx) {wl wh : Int} {c : R.Code} {s s' : R.RSt
         have hs1 := afterScopes_sep hr hs hw hin s1 hsc
         obtain ⟨rfl, x', hx, hpost⟩ := sound_store w ctx c.ρ f ops items br vals s1.st st' ctl ch x
           hok.shape hseq hn ho hr1.rel hm1 hs1.frameApart hs1.dis
-        obtain ⟨hsize, hesc⟩ := store_allocs hok.shape hn ho
-        have hwf : EscWF st' := ⟨fun e he => by rw [hesc] at he; rw [hsize]; exact hr1.wf.idLt e he,
-          fun e he e' he' hid => by rw [hesc] at he he'; exact hr1.wf.idInj e he e' he' hid⟩
+        obtain ⟨-, hesc, hks⟩ := Ryo.Proofs.OpFacts.opSem_out ho
+        have hwf : EscWF st' := hr1.wf.of_sizes hesc hks
         have hb := rbp_of_regs hpost.regs
         exact ⟨x', hx, hpost.rel, hb, hwf,
           ⟨hpost.memRel, sep_of_shape hs1 (store_shape hok.shape hn ho) hesc

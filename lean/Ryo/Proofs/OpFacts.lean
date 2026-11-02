@@ -31,15 +31,31 @@ theorem store_size {st : OpSem.State} {m m' : Memory} {p : ThinPointer} {bs : Li
   · cases h; exact (Ryo.Spec.Theorems.Memory.store_agree (by assumption)).1.symm
   all_goals cases h
 
+theorem sizesKept_of_agree {m m' : Memory} (ha : Ryo.Spec.Theorems.Agree m m') :
+    SizesKept m m' := by
+  refine ⟨ha.1.symm, fun id a' h' => ?_⟩
+  rcases ha.get? id with ⟨-, h2⟩ | ⟨a, b, h1, h2, -, -, -, hsz, -⟩
+  · rw [h2] at h'; cases h'
+  · rw [h2] at h'; cases h'
+    exact ⟨a, h1, hsz.symm⟩
+
+/-- An L0 store keeps every allocation's size. -/
+theorem store_kept {st : OpSem.State} {m m' : Memory} {p : ThinPointer} {bs : List AbstractByte}
+    {al : Align} (h : st.store m p bs al = .ok m') : SizesKept m m' := by
+  unfold OpSem.State.store liftOutcome at h
+  split at h
+  · cases h; exact sizesKept_of_agree (Ryo.Spec.Theorems.Memory.store_agree (by assumption))
+  all_goals cases h
+
 theorem kindSem_out {k : HandlerKind} {ps : List String} {e : Env} {o : Out}
     (h : kindSem k ps e = .ok o) :
-    o.mem.allocs.size = e.st.mem.allocs.size ∧ KindCtl k o.ctl := by
+    SizesKept e.st.mem o.mem ∧ KindCtl k o.ctl := by
   cases k <;> simp only [kindSem, bind, Except.bind, pure, Except.pure] at h <;>
     repeat' (first | (simp only [reduceCtorEq] at h; done) | (simp [illFormed, ub] at h; done) | split at h)
   all_goals
     injection h with h
     subst h
-    exact ⟨by first | rfl | exact store_size (by assumption),
+    exact ⟨by first | exact SizesKept.refl _ | exact store_kept (by assumption),
       by first | rfl | exact ⟨_, rfl⟩ | trivial⟩
 
 
@@ -47,18 +63,18 @@ theorem kindSem_out {k : HandlerKind} {ps : List String} {e : Env} {o : Out}
 
 theorem writeFrame_keeps {st st' : OpSem.State} {off : Int} {bs : List AbstractByte}
     (h : st.writeFrame off bs = .ok st') :
-    st'.escaped = st.escaped ∧ st'.mem.allocs.size = st.mem.allocs.size := by
+    st'.escaped = st.escaped ∧ SizesKept st.mem st'.mem := by
   unfold OpSem.State.writeFrame at h
   cases hm : st.writeEscaped off bs with
   | error e => simp [hm, bind, Except.bind] at h
   | ok m' =>
     simp only [hm, bind, Except.bind, pure, Except.pure, Except.ok.injEq] at h
     subst h
-    exact ⟨rfl, (Inline.writeEscaped_spec hm).1⟩
+    exact ⟨rfl, SizesKept.of_escFrom (Inline.writeEscaped_spec hm)⟩
 
 theorem commitOne_keeps {fp : Footprint} {val : String → Option Val} {st st' : OpSem.State}
     {w : String × List AbstractByte} (h : commitOne fp val st w = .ok st') :
-    st'.escaped = st.escaped ∧ st'.mem.allocs.size = st.mem.allocs.size := by
+    st'.escaped = st.escaped ∧ SizesKept st.mem st'.mem := by
   unfold commitOne at h
   split at h
   · simp [illFormed] at h
@@ -71,8 +87,8 @@ theorem commitOne_keeps {fp : Footprint} {val : String → Option Val} {st st' :
 theorem commit_keeps {fp : Footprint} {val : String → Option Val} :
     ∀ (ws : List (String × List AbstractByte)) {st st' : OpSem.State},
       commit fp val st ws = .ok st' →
-        st'.escaped = st.escaped ∧ st'.mem.allocs.size = st.mem.allocs.size
-  | [], st, st', h => by cases h; exact ⟨rfl, rfl⟩
+        st'.escaped = st.escaped ∧ SizesKept st.mem st'.mem
+  | [], st, st', h => by cases h; exact ⟨rfl, SizesKept.refl _⟩
   | w :: ws, st, st', h => by
     simp only [commit, List.foldlM_cons, bind, Except.bind] at h
     cases h1 : commitOne fp val st w with
@@ -81,14 +97,14 @@ theorem commit_keeps {fp : Footprint} {val : String → Option Val} :
       simp only [h1] at h
       obtain ⟨e1, s1⟩ := commitOne_keeps h1
       obtain ⟨e2, s2⟩ := commit_keeps ws h
-      exact ⟨e2.trans e1, s2.trans s1⟩
+      exact ⟨e2.trans e1, s1.trans s2⟩
 
 /-- A successful `opSem` runs a handler whose kind gives its control (`KindCtl`), keeps the
 escaped objects and the number of allocations. -/
 theorem opSem_out {op : Full.Opcode} {ops : Operands} {st st' : OpSem.State} {ch : OpSem.Choice}
     {ctl : Control} (h : opSem op ops st ch = .ok (ctl, st')) :
     (∃ hi, op.handler? = some hi ∧ KindCtl hi.kind ctl) ∧ st'.escaped = st.escaped ∧
-      st'.mem.allocs.size = st.mem.allocs.size := by
+      SizesKept st.mem st'.mem := by
   unfold opSem at h
   simp only [bind, Except.bind] at h
   cases hp : prepare op ops with
@@ -126,15 +142,13 @@ theorem opSem_out {op : Full.Opcode} {ops : Operands} {st st' : OpSem.State} {ch
           obtain ⟨rfl, rfl⟩ := h
           obtain ⟨s1, c1⟩ := kindSem_out hk
           obtain ⟨e2, s2⟩ := commit_keeps _ hc
-          exact ⟨⟨hi, hh, c1⟩, e2, s2.trans s1⟩
+          exact ⟨⟨hi, hh, c1⟩, e2, s1.trans s2⟩
 
 /-- `opSem` keeps `EscWF`. -/
 theorem opSem_escWF {op : Full.Opcode} {ops : Operands} {st st' : OpSem.State} {ch : OpSem.Choice}
     {ctl : Control} (h : opSem op ops st ch = .ok (ctl, st')) (hw : EscWF st) : EscWF st' := by
   obtain ⟨-, he, hs⟩ := opSem_out h
-  refine ⟨fun e h1 => ?_, fun e h1 e' h2 hid => ?_⟩
-  · rw [he] at h1; rw [hs]; exact hw.idLt e h1
-  · rw [he] at h1 h2; exact hw.idInj e h1 e' h2 hid
+  exact hw.of_sizes he hs
 
 /-! ### Control by shape -/
 

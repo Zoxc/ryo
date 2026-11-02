@@ -207,7 +207,7 @@ theorem answer_core {pe : Bool} {Owned : BitVec 64 → Prop} {lo : BitVec 64} {s
       ∀ x'' : X86.State, x''.mem = x'.mem → x''.reg .rbp = BitVec.ofNat 64 s.fp →
         Rel st x'' ∧ MemRel st x'' ∧ EscWF st := by
   have hinit := IslandLemmas.inv_init (L := L) (x' := x') (w := a.world) hr.rel hr.rbp hr.wf
-    he.grows.size (fun id a h => let ⟨a', h1, h2, _⟩ := he.grows.keep id a h; ⟨a', h1, h2⟩)
+    he.grows.size he.grows.keep
     he.world (fun o h1 h2 hn hu hall => he.mem _ (hap o h1 h2 hn hu hall))
   obtain ⟨st, hw, hinv⟩ := IslandLemmas.inv_writeRanges hinit he.frameLen
     (fun j h1 h2 => he.frame j h1 h2) hlends
@@ -423,7 +423,7 @@ theorem island_unwind (ctx : Ctx) {c : R.Code} {s : R.RState} {x1 x' : X86.State
     rw [hland.saved 5 (saved_rbp _)]; exact hr.rbp
   obtain ⟨hR1, hM1, hW1⟩ := hrel x' rfl hrbp
   refine ⟨a, exc, { s.withWorld a.world with st := { st with exception := exc }, pc := pad },
-    hres, hend, ?_, rfl, rfl, ⟨⟨hR1.frame, hR1.layout, hR1.zeroSized⟩, hrbp, ⟨hW1.idLt, hW1.idInj⟩⟩,
+    hres, hend, ?_, rfl, rfl, ⟨⟨hR1.frame, hR1.layout, hR1.zeroSized⟩, hrbp, ⟨hW1.idLt, hW1.idInj, hW1.size, hW1.disj⟩⟩,
     hM1, rfl, rfl,
     Option.some.inj (hland.rip.symm.trans hpos), hland.rax, hland.rsp, hland.saved⟩
   rw [IslandLemmas.answer_island a hi hf hsh, hw, hres]

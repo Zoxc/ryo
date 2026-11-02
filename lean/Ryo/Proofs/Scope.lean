@@ -40,6 +40,50 @@ structure EscWF (st : OpSem.State) : Prop where
   idLt : ∀ e ∈ st.escaped, e.id < st.mem.allocs.size
   /-- Escaped objects have distinct ids (each `escape` takes a fresh one). -/
   idInj : ∀ e ∈ st.escaped, ∀ e' ∈ st.escaped, e.id = e'.id → e = e'
+  /-- Each escaped object's allocation holds `e.size` bytes (`escape` copies that many; frame
+  writes, `End`'s `freeObjs` and `opSem`'s stores keep allocation sizes). -/
+  size : ∀ e ∈ st.escaped, ∀ a, st.mem.get? e.id = some a → a.size = e.size
+  /-- Escaped ranges are disjoint (`escape` rejects a partial overlap and keeps a covered range;
+  `End` only drops objects). -/
+  disj : ∀ e ∈ st.escaped, ∀ e' ∈ st.escaped, e ≠ e' →
+    e.off + e.size ≤ e'.off ∨ e'.off + e'.size ≤ e.off
+
+/-- `m'` has the allocations of `m`, each of the same size (frame writes, stores, `freeObjs`). -/
+def SizesKept (m m' : Memory) : Prop :=
+  m'.allocs.size = m.allocs.size ∧
+    ∀ id a', m'.get? id = some a' → ∃ a, m.get? id = some a ∧ a'.size = a.size
+
+theorem SizesKept.refl (m : Memory) : SizesKept m m := ⟨rfl, fun _ a h => ⟨a, h, rfl⟩⟩
+
+theorem SizesKept.trans {m1 m2 m3 : Memory} (h1 : SizesKept m1 m2) (h2 : SizesKept m2 m3) :
+    SizesKept m1 m3 := by
+  refine ⟨h2.1.trans h1.1, fun id a3 h => ?_⟩
+  obtain ⟨a2, h2', e2⟩ := h2.2 id a3 h
+  obtain ⟨a1, h1', e1⟩ := h1.2 id a2 h2'
+  exact ⟨a1, h1', e2.trans e1⟩
+
+theorem SizesKept.of_escOnly {st : OpSem.State} {m m' : Memory} (h : EscOnly st m m') :
+    SizesKept m m' :=
+  ⟨h.1, fun id a' ha => by
+    obtain ⟨a, ha', -, hsz, -⟩ := h.2 id a' ha
+    exact ⟨a, ha', hsz⟩⟩
+
+theorem SizesKept.of_escFrom {st : OpSem.State} {off : Int} {l : List (AbstractByte × Nat)}
+    {m m' : Memory} (h : EscFrom st off l m m') : SizesKept m m' :=
+  ⟨h.1, fun id a' ha => by
+    obtain ⟨a, ha', -, hsz, -⟩ := h.2 id a' ha
+    exact ⟨a, ha', hsz⟩⟩
+
+/-- `EscWF` for a state with the same escaped objects and allocations of the same sizes. -/
+theorem EscWF.of_sizes {st st' : OpSem.State} (hw : EscWF st) (he : st'.escaped = st.escaped)
+    (hs : SizesKept st.mem st'.mem) : EscWF st' := by
+  refine ⟨fun e h => ?_, fun e h e' h' hid => ?_, fun e h a' ha' => ?_, fun e h e' h' hne => ?_⟩
+  · rw [he] at h; rw [hs.1]; exact hw.idLt e h
+  · rw [he] at h h'; exact hw.idInj e h e' h' hid
+  · rw [he] at h
+    obtain ⟨a, ha, hsz⟩ := hs.2 e.id a' ha'
+    rw [hsz]; exact hw.size e h a ha
+  · rw [he] at h h'; exact hw.disj e h e' h' hne
 
 /-- The R state `s` and the x86 state `x` (§C0.7 under `φ_AOT`, `fp` in `rbp`). -/
 structure RRel (s : R.RState) (x : X86.State) : Prop where
@@ -138,7 +182,7 @@ theorem rrel_escape {s s' : R.RState} {x : X86.State} {off : Int} {size align : 
     (hr : RRel s x) (h : R.escape s off size align = .ok s') : RRel s' x := by
   rcases escape_ok h with rfl | ⟨bytes, a, hdis, hnn, haddr, hdata, hlive, hread, rfl⟩
   · exact hr
-  obtain ⟨⟨hfr, hlay, hzs⟩, hrbp, ⟨hlt, hinj⟩⟩ := hr
+  obtain ⟨⟨hfr, hlay, hzs⟩, hrbp, ⟨hlt, hinj, hsz0, hdj⟩⟩ := hr
   obtain ⟨hlen, hall⟩ := mapM_ok hread
   simp only [List.length_range] at hlen
   have hget : ∀ e ∈ s.st.escaped,
@@ -149,7 +193,8 @@ theorem rrel_escape {s s' : R.RState} {x : X86.State} {off : Int} {size align : 
       ↓reduceIte]
   have hgetn : ({ allocs := s.st.mem.allocs.push a } : Memory).get? s.st.mem.allocs.size = some a := by
     simp [Memory.get?]
-  refine ⟨⟨fun o ho1 ho2 b hb => ?_, fun e he a' ha' => ?_, hzs⟩, hrbp, ⟨fun e he => ?_, ?_⟩⟩
+  refine ⟨⟨fun o ho1 ho2 b hb => ?_, fun e he a' ha' => ?_, hzs⟩, hrbp,
+    ⟨fun e he => ?_, ?_, ?_, ?_⟩⟩
   · -- frame
     cases ho : s.st.escapedAt o with
     | some e =>
@@ -215,6 +260,29 @@ theorem rrel_escape {s s' : R.RState} {x : X86.State} {off : Int} {size align : 
     · exact absurd hid (Nat.ne_of_lt (hlt e he))
     · exact absurd hid.symm (Nat.ne_of_lt (hlt e' he'))
     · rfl
+  · -- the new allocation holds the `size` bytes read
+    intro e he a' ha'
+    simp only [List.mem_append, List.mem_singleton] at he
+    rcases he with he | rfl
+    · rw [hget e he] at ha'
+      exact hsz0 e he a' ha'
+    · rw [hgetn] at ha'
+      cases ha'
+      show a.data.size = size
+      rw [hdata, List.size_toArray]
+      exact hlen
+  · -- the new range overlaps no escaped object
+    intro e he e' he' hne
+    simp only [List.mem_append, List.mem_singleton] at he he'
+    rcases he with he | rfl <;> rcases he' with he' | rfl
+    · exact hdj e he e' he' hne
+    · have := hdis e he
+      simp only
+      omega
+    · have := hdis e' he'
+      simp only
+      omega
+    · exact absurd rfl hne
 
 /-! ### `End` -/
 
@@ -261,7 +329,7 @@ theorem storageEnd_ok {s s' : R.RState} {off : Int} {size : Nat}
 theorem rrel_storageEnd {s s' : R.RState} {x : X86.State} {off : Int} {size : Nat}
     (hr : RRel s x) (h : R.storageEnd s off size = .ok s') : RRel s' x := by
   obtain ⟨st', hw, rfl⟩ := storageEnd_ok h
-  obtain ⟨⟨hfr, hlay, hzs⟩, hrbp, ⟨hlt, hinj⟩⟩ := hr
+  obtain ⟨⟨hfr, hlay, hzs⟩, hrbp, ⟨hlt, hinj, hsz0, hdj⟩⟩ := hr
   generalize hcov : (fun e : EscapedObj => decide (off ≤ e.off ∧ e.off + e.size ≤ off + size)) = cov at hw
   generalize hst1 : ({ s.st with
         mem := R.freeObjs s.st.mem (s.st.escaped.filter cov),
@@ -302,7 +370,8 @@ theorem rrel_storageEnd {s s' : R.RState} {x : X86.State} {off : Int} {size : Na
   simp only [hm, bind, Except.bind, pure, Except.pure, Except.ok.injEq] at hw
   subst hw
   have hesc := writeEscaped_spec hm
-  refine ⟨⟨fun o ho1 ho2 b hb => ?_, fun e he a' ha' => ?_, ?_⟩, hrbp, ⟨fun e he => ?_, ?_⟩⟩
+  refine ⟨⟨fun o ho1 ho2 b hb => ?_, fun e he a' ha' => ?_, ?_⟩, hrbp,
+    ⟨fun e he => ?_, ?_, ?_, ?_⟩⟩
   · have hea' : ∀ (f : Int → AbstractByte) (m : Memory),
         ({ st1 with mem := m, frame := f } : OpSem.State).escapedAt o = st1.escapedAt o :=
       fun _ _ => rfl
@@ -386,6 +455,15 @@ theorem rrel_storageEnd {s s' : R.RState} {x : X86.State} {off : Int} {size : Na
   · rw [hesc.1, hsz1]; exact hlt e (hkept e he).1
   · intro e he e' he' hid
     exact hinj e (hkept e he).1 e' (hkept e' he').1 hid
+  · -- `freeObjs` and the write keep the sizes
+    intro e he a' ha'
+    obtain ⟨a1, ha1, -, hsz, -⟩ := hesc.2 _ _ ha'
+    rw [hm1 e he] at ha1
+    show a'.data.size = e.size
+    rw [hsz]
+    exact hsz0 e (hkept e he).1 a1 ha1
+  · intro e he e' he' hne
+    exact hdj e (hkept e he).1 e' (hkept e' he').1 hne
 
 /-! ### Scopes -/
 
@@ -477,9 +555,6 @@ theorem scopes_keeps : ∀ (l : List R.Scope) {s s' : R.RState},
 `EscWF`: its escaped objects are the same, and its memory has as many allocations. -/
 theorem escWF_of_sameButWrites {st st' : OpSem.State} (hw : EscWF st)
     (h : SameButWrites st' st) : EscWF st' := by
-  obtain ⟨hesc, ⟨hsz, -⟩, -⟩ := h
-  refine ⟨fun e he => ?_, fun e he e' he' hid => ?_⟩
-  · rw [hesc] at he; rw [hsz]; exact hw.idLt e he
-  · rw [hesc] at he he'; exact hw.idInj e he e' he' hid
+  exact hw.of_sizes h.1 (SizesKept.of_escOnly h.2.1)
 
 end Ryo.Proofs.Scope
