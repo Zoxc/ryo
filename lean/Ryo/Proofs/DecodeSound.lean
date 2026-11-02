@@ -52,8 +52,8 @@ relocation boundary (`boundary_start`), R's scopes never stop with `noBehavior` 
 facts of the decoder: the prologue read item by item (`read_instructions_prologue`), landing
 pads are `lpad`s (`pad_lpad`, so not leading `arg`s, `pad_not_leadArg`), protos lie within the
 code (`posOf_le_size`, so `posOf_lt_32`). `bodySim_inline` is `DSWork/Inline.lean`'s
-`bodySim_inline'` (its open step is the `Hyps` field `inlineEscBounded`; it also
-takes `inlineClsOk`, proved in `RyoProofs`, `InlineBelowLink`, from `FrameBounds.writesOff`, and
+`bodySim_inline'` (with `InlineEscBounded`, proved from `FrameSep`'s `EscIn` by
+`inlineEscBounded_of`; it also takes `inlineClsOk`, proved in `RyoProofs`, `InlineBelowLink`, from `FrameBounds.writesOff`, and
 `CacheRegsOk`, from `DecodeLink/CacheRegs.lean`'s `cacheRegsOk_of_decodes`).
 
 **Files.** `DecodeSound/Basic.lean`: §1–§3 and §4's helpers, `bodySim_unreachable`,
@@ -104,11 +104,8 @@ discharged later:
   the frame, from the image), `codeApart` (`CodeApart`: nothing the function or its environment writes is code or
   rodata), `envOutside` (`EnvOutside`: the environment's entries are `Env.out` states);
 - facts of the decoder and linker not yet exposed: `deadStore` (`DeadStoreSim`: the steps of
-  dropped stores), `inlineEscBounded` (`InlineEscBounded`: after the scopes, escaped objects lie in
-  `[-2^63, 2^63)`; they come from `Escape` scopes, which `FrameBounds` keeps in the window), `cacheCleared` (`CacheCleared`: the cache is empty at branch targets and
-  landing pads), `padsLinked` (`PadsLinked`: the LSDA as linked against `cleanupAt`),
-  `stubsBoundary` (the counter stubs start at relocation boundaries; their items are
-  proved, `stubsDec_of_decodes`).
+  dropped stores), `cacheCleared` (`CacheCleared`: the cache is empty at branch targets and
+  landing pads), `padsLinked` (`PadsLinked`: the LSDA as linked against `cleanupAt`).
 
 Not covered: the prologue (R's `entry` against the entry's counter check, the prologue and the
 stack probe: the simulation starts at instruction 0's boundary) and the trip's `Done` outcome (a
@@ -155,14 +152,14 @@ variable {S : Setup} {code : ByteArray} {relocs : Array Reloc} {rodata : ByteArr
 
 Proved in `DSWork/*.lean`: `bodySim_arg` (Arg), `bodySim_ret` (Ret), `bodySim_island` (Island),
 `reach_counter` (Counter), `bodySim_call'` (Call), `bodySim_handler'` (Handler),
-`bodySim_inline'` (Inline, under `Hyps`' `inlineEscBounded`, and the proved
+`bodySim_inline'` (Inline, with the proved `InlineEscBounded` (`inlineEscBounded_of`),
 `inlineClsOk`, `InlineBelowLink` (`inlineBelowLink_of`) and `CacheRegsOk`
 (`cacheRegsOk_of_decodes`));
 `bodySim_unreachable`, `bodySim_jmp` in `DecodeSound/Basic.lean`. Here: `bodySim_inline`
 and `bodySim_dense`. -/
 
 /-- An inline sequence without a dropped store: `DSWork/Inline.lean`'s `bodySim_inline'`, its
-extra hypotheses from `Hyps` (`inlineEscBounded`, `inlineClsOk`), `InlineBelowLink`
+extra hypotheses: `InlineEscBounded` (`inlineEscBounded_of`), `inlineClsOk` from `Hyps`, `InlineBelowLink`
 from `frameBounds` (`inlineBelowLink_of`) and `CacheRegsOk` from the decoder's caches
 (`cacheRegsOk_of_decodes`, `k` below the protos' count). -/
 theorem bodySim_inline (hD : Decodes S code relocs rodata callSites dropped scopes mode)
@@ -174,7 +171,7 @@ theorem bodySim_inline (hD : Decodes S code relocs rodata callSites dropped scop
     (hq : q.dropped = false) :
     BodySim S k p (S.used k) := by
   have hk : k ≤ S.r.protos.toList.length := by rw [Array.length_toList]; exact Nat.le_of_lt hP.lt
-  exact bodySim_inline' hD H (inlineBelowLink_of H.frameBounds) H.inlineEscBounded
+  exact bodySim_inline' hD H (inlineBelowLink_of H.frameBounds) (inlineEscBounded_of H)
     H.inlineClsOk (CacheRegs.cacheRegsOk_of_decodes hD k hk) hP hn hc hr hq
 
 /-! #### The dense switch -/

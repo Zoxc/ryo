@@ -627,7 +627,8 @@ theorem bodySim_arg (hD : Decodes S code relocs rodata callSites dropped scopes 
     rw [OpSem.State.escapedAt, List.find?_eq_none] at this
     exact this e hemem (by simp; omega)
   have hsep' : FrameSep (-(S.F : Int)) S.K st' x' := by
-    refine FrameSep.congr hrbp ⟨?_, frameInit_writeFrame hsep1.init hw hFd (by omega), ?_, ?_⟩
+    refine FrameSep.congr hrbp ⟨?_, frameInit_writeFrame hsep1.init hw hFd (by omega), ?_, ?_,
+      fun e he => hsep1.esc e (hescEq ▸ he)⟩
     · intro id al o hg hl h1 h2 hin
       rw [hmemEq] at hg
       rw [hescEq]

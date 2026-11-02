@@ -646,22 +646,12 @@ structure Hyps (S : Setup) : Prop where
   deadStore : DeadStoreSim S
   cacheCleared : CacheCleared S
   padsLinked : PadsLinked S
-  /-- Open (decoder): each counter stub starts at a relocation boundary (the rest of
-  `StubsLinked`, the stub's items, is `Discharge/StubsLinked.lean`'s `stubsDec_of_decodes`). -/
-  stubsBoundary : ∀ k (hk : k < S.r.protos.size) stub back,
-    S.r.protos[k].counter = some (stub, back) → Boundary S.rs stub
   -- Prerequisites of the inline steps (`DSWork/Inline.lean`'s `bodySim_inline'`).
   /-- Every inline opcode's class is of its shape and `clsOk` (proved by kernel evaluation:
   `inlineOps_shape`, `RyoProofs/InlineOps.lean`, and `inlineOps_clsOk`,
   `RyoProofs/InlineOk.lean`; outside the default build, hence a field). -/
   inlineClsOk : ∀ (f : Full.Opcode) (cls : Class), (f, cls) ∈ inlineOps →
     shapeOk f cls = true ∧ CacheStep.clsOk cls = true
-  /-- Open invariant (`InlineEscBounded`): after the scopes, the escaped objects lie within the
-  frame offsets `Rel.frame` relates, `[-2^63, 2^63)` (each comes from an `Escape` scope, whose
-  range is in the window `[-F, K)` by `frameBounds`' `scopesIn`; `MemPost.memRel_of_post`). -/
-  inlineEscBounded : ∀ (s : R.RState) (x : X86.State) (s1 : R.RState), FrameInv S s x →
-    (S.c.scopesAt s.pc).foldlM R.applyScope s = .ok s1 →
-    ∀ e ∈ s1.st.escaped, -2 ^ 63 ≤ e.off ∧ e.off + e.size ≤ 2 ^ 63
 
 /-! ## 4. Per instruction -/
 

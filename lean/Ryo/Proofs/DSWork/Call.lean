@@ -910,7 +910,8 @@ theorem call_sep_uninit {lo hi : Int} {st st' : OpSem.State} {x : X86.State} {of
   simp only [hm, bind, Except.bind, pure, Except.pure, Except.ok.injEq] at h
   subst h
   have hsh : AllocShape st.mem m' := allocShape_of_escOnly (writeEscaped_spec hm).escOnly
-  refine ⟨⟨fun id a' o hg hl h1 h2 hin => ?_, fun o he hu => ?_, ?_, ?_⟩, hsh, hesc⟩
+  refine ⟨⟨fun id a' o hg hl h1 h2 hin => ?_, fun o he hu => ?_, ?_, ?_,
+    fun e he => hs.esc e (hesc ▸ he)⟩, hsh, hesc⟩
   · obtain ⟨a, ha, had, hlv, hsz⟩ := hsh id a' hg
     obtain ⟨e, hem, ho1, ho2, hid⟩ := hs.own id a o ha (hlv ▸ hl) h1 h2
       (by rw [← had, ← hsz]; exact hin)
@@ -1522,7 +1523,7 @@ theorem bodySim_call' (hD : Decodes S code relocs rodata callSites dropped scope
       have hsvY : ∀ i, Saved S.c.mode.pe i → y.regs i = x.regs i := fun i hi => by
         rw [hland.saved i hi, hsv1 i hi]
       refine .done (.inl ⟨_, .answer hstep hans, ?_⟩)
-      refine ⟨⟨hrrY, hmrY, ⟨hsepY.own, hsepY.init, hsepY.dis, hsepY.space⟩,
+      refine ⟨⟨hrrY, hmrY, ⟨hsepY.own, hsepY.init, hsepY.dis, hsepY.space, hsepY.esc⟩,
         by show (s'.fp : Int) + _ ≤ _; rw [hfpS]; exact hwinT,
         by show S.c.d.frameSize ≤ s'.fp; rw [hfpS]; exact hfpF,
         by rw [hrspY, hrbpY]; exact hfi.rsp, by rw [hrspY]; exact hfi.room,

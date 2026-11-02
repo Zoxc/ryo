@@ -7,7 +7,7 @@ allocation's bytes relate to the x86 bytes at its address), with the x86 state u
 - `memRel_storageEnd`: freed objects are no longer live; the kept ones' bytes in the range
   become `Uninit`, which relates to any byte, and the other allocations are unchanged.
 - The separation facts (`FrameSep` over a frame window `[lo, hi)`: `FrameOwn`, `FrameInit`,
-  `MemDisjoint`, `InSpace`; see that section): kept by `Escape` in the window (`sep_escape`)
+  `MemDisjoint`, `InSpace`, `EscIn`; see that section): kept by `Escape` in the window (`sep_escape`)
   and by `End` (`sep_storageEnd`), so by the scopes (`sep_foldlM`); they give `FrameApart` and
   `WrApart` (`FrameSep.frameApart`, `FrameSep.wrApart`). Across a call, island or handler
   (`FrameSep.extend`): from the environment's facts on the allocations it leaves
@@ -172,12 +172,18 @@ def FrameInit (lo hi : Int) (st : OpSem.State) : Prop :=
 def InSpace (st : OpSem.State) : Prop :=
   ∀ id a, st.mem.get? id = some a → a.live = true → a.addr + a.size ≤ 2 ^ 64
 
+/-- The escaped objects lie within `[-2^63, 2^63)`, the frame offsets `Rel.frame` relates (each
+comes from an `Escape` scope in a window, `sep_escape`; `End` only drops objects). -/
+def EscIn (st : OpSem.State) : Prop :=
+  ∀ e ∈ st.escaped, -2 ^ 63 ≤ e.off ∧ e.off + e.size ≤ 2 ^ 63
+
 /-- The separation facts over the frame window `[lo, hi)` (see above). -/
 structure FrameSep (lo hi : Int) (st : OpSem.State) (x : X86.State) : Prop where
   own : FrameOwn lo hi st x
   init : FrameInit lo hi st
   dis : MemDisjoint st
   space : InSpace st
+  esc : EscIn st
 
 /-- The frame window: offsets within `[-2^63, 2^63)`, addresses `fp + o` within 64 bits. -/
 structure Window (lo hi : Int) (fp : Nat) : Prop where
@@ -217,7 +223,7 @@ theorem FrameSep.congr {lo hi : Int} {st : OpSem.State} {x y : X86.State}
     (hb : y.reg .rbp = x.reg .rbp) (h : FrameSep lo hi st x) : FrameSep lo hi st y := by
   have hfp : ∀ o, fpAddr y o = fpAddr x o := fun o => by simp [fpAddr, hb]
   exact ⟨fun id a o hg hl h1 h2 hin => h.own id a o hg hl h1 h2 (by rw [← hfp]; exact hin),
-    h.init, h.dis, h.space⟩
+    h.init, h.dis, h.space, h.esc⟩
 
 /-! #### `Escape` -/
 
@@ -261,6 +267,15 @@ theorem escape_fresh {s s' : R.RState} {off : Int} {size align : Nat}
   · exfalso; apply hov
     exact Array.any_eq_true'.2 ⟨a, ha, by simp [hl, ho]⟩
 
+theorem writeFrame_escaped {st st' : OpSem.State} {off : Int} {bs : List AbstractByte}
+    (h : st.writeFrame off bs = .ok st') : st'.escaped = st.escaped := by
+  unfold OpSem.State.writeFrame at h
+  cases hm : st.writeEscaped off bs with
+  | error e => simp [hm, bind, Except.bind] at h
+  | ok m' =>
+    simp only [hm, bind, Except.bind, pure, Except.pure, Except.ok.injEq] at h
+    subst h; rfl
+
 theorem sep_escape {lo hi : Int} {s s' : R.RState} {x : X86.State} {off : Int} {size align : Nat}
     (hr : RRel s x) (hs : FrameSep lo hi s.st x) (hw : Window lo hi s.fp) (hlo : lo ≤ off)
     (hhi : off + size ≤ hi) (h : R.escape s off size align = .ok s') : FrameSep lo hi s'.st x := by
@@ -286,7 +301,7 @@ theorem sep_escape {lo hi : Int} {s s' : R.RState} {x : X86.State} {off : Int} {
     split at hg
     · left; cases hg; exact ⟨by assumption, rfl⟩
     · right; exact ⟨Array.mem_of_getElem? hg, hg⟩
-  refine ⟨?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
   · intro id a' o hg hl h1 h2 hin
     rcases hget id a' hg with ⟨rfl, ha⟩ | ⟨-, hg0⟩
     · rw [ha, hA, fpAddr_sub, hasz, BitVec.toNat_ofInt] at hin
@@ -341,6 +356,12 @@ theorem sep_escape {lo hi : Int} {s s' : R.RState} {x : X86.State} {off : Int} {
     rcases hget id a' hg with ⟨-, ha⟩ | ⟨-, hg0⟩
     · rw [ha, hasz]; exact hend
     · exact hs.space id a' hg0 hl
+  · intro e he
+    rcases List.mem_append.1 he with he | he
+    · exact hs.esc e he
+    · rw [List.mem_singleton] at he
+      subst he
+      exact ⟨Int.le_trans hwlo hlo, Int.le_trans hhi hwhi⟩
 
 /-! #### `End` -/
 
@@ -443,7 +464,7 @@ theorem storageEnd_init {lo hi : Int} {s s' : R.RState} {off : Int} {size : Nat}
 
 theorem sep_storageEnd {lo hi : Int} {s s' : R.RState} {x : X86.State} {off : Int} {size : Nat}
     (hs : FrameSep lo hi s.st x) (h : R.storageEnd s off size = .ok s') : FrameSep lo hi s'.st x := by
-  refine ⟨fun id a o hg hl h1 h2 hin => ?_, storageEnd_init hs.init h, ?_, ?_⟩
+  refine ⟨fun id a o hg hl h1 h2 hin => ?_, storageEnd_init hs.init h, ?_, ?_, ?_⟩
   · obtain ⟨a0, hg0, hl0, had, hsz, hk⟩ := storageEnd_alloc h hg hl
     rw [had, hsz] at hin
     obtain ⟨e, hem, ho1, ho2, rfl⟩ := hs.own id a0 o hg0 hl0 h1 h2 hin
@@ -456,6 +477,11 @@ theorem sep_storageEnd {lo hi : Int} {s s' : R.RState} {x : X86.State} {off : In
   · intro id a hg hl
     obtain ⟨a0, hg0, hl0, had, hsz, -⟩ := storageEnd_alloc h hg hl
     rw [had, hsz]; exact hs.space id a0 hg0 hl0
+  · intro e he
+    obtain ⟨st', hw, rfl⟩ := storageEnd_ok h
+    have he' : e ∈ st'.escaped := he
+    rw [writeFrame_escaped hw] at he'
+    exact hs.esc e (List.mem_filter.1 he').1
 
 /-! #### Scopes -/
 
@@ -518,15 +544,6 @@ theorem globals_of_memRel {ctx : X86.Ctx} {ρ : R.Addrs} {st0 st : OpSem.State} 
   rwa [Nat.add_sub_cancel' h1] at this
 
 /-! #### `Private` -/
-
-theorem writeFrame_escaped {st st' : OpSem.State} {off : Int} {bs : List AbstractByte}
-    (h : st.writeFrame off bs = .ok st') : st'.escaped = st.escaped := by
-  unfold OpSem.State.writeFrame at h
-  cases hm : st.writeEscaped off bs with
-  | error e => simp [hm, bind, Except.bind] at h
-  | ok m' =>
-    simp only [hm, bind, Except.bind, pure, Except.pure, Except.ok.injEq] at h
-    subst h; rfl
 
 /-- The scopes keep the offsets `S` out of every escaped object if no `Escape` among them
 overlaps `S`. -/
@@ -597,7 +614,7 @@ theorem FrameSep.extend {lo hi : Int} {st st' : OpSem.State} {x x' : X86.State}
     (hal : AllocsAfter lo hi st st' x) (hinit : FrameInit lo hi st') (hdis : MemDisjoint st')
     (hsp : InSpace st') : FrameSep lo hi st' x' := by
   have hfp : ∀ o, fpAddr x' o = fpAddr x o := fun o => by simp [fpAddr, hb]
-  refine ⟨fun id a o hg hl h1 h2 hin => ?_, hinit, hdis, hsp⟩
+  refine ⟨fun id a o hg hl h1 h2 hin => ?_, hinit, hdis, hsp, fun e he => hs.esc e (hesc ▸ he)⟩
   rw [hfp] at hin
   rcases hal id a hg hl with ⟨a0, hg0, hl0, hadd, hsz⟩ | hoff
   · rw [← hadd, ← hsz] at hin

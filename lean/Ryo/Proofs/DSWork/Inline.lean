@@ -1333,13 +1333,19 @@ theorem inline_effects' (H : Hyps S) (hbl : InlineBelowLink S) {s s' : R.RState}
   | ext a b sx => exact cached (inline_soundC _ (.inl rfl))
   | shiftVar | div | count | cmp3 | bswap => exact cached (inline_soundC_all _ (.inr (.inr rfl)))
 
-/-- Open invariant: after the scopes, the escaped objects lie within the frame offsets
-`Rel.frame` relates (`Hyps.inlineEscBounded`; each comes from an `Escape` scope inside the
-window). -/
+/-- After the scopes, the escaped objects lie within the frame offsets `Rel.frame` relates
+(`inlineEscBounded_of`; each comes from an `Escape` scope inside the window). -/
 def InlineEscBounded (S : Setup) : Prop :=
   ∀ (s : R.RState) (x : X86.State) (s1 : R.RState), FrameInv S s x →
     (S.c.scopesAt s.pc).foldlM R.applyScope s = .ok s1 →
     ∀ e ∈ s1.st.escaped, -2 ^ 63 ≤ e.off ∧ e.off + e.size ≤ 2 ^ 63
+
+/-- `InlineEscBounded` from the frame separation after the scopes (`sep_foldlM`, its `EscIn`:
+`Escape` scopes lie in the window by `frameBounds`' `scopesIn`, and the window in
+`[-2^63, 2^63)`). -/
+theorem inlineEscBounded_of (H : Hyps S) : InlineEscBounded S := fun s _ _ hf hsc =>
+  (sep_foldlM _ (H.frameBounds.scopesIn s.pc) (H.frameBounds.window hf.win) hf.rrel hf.sep
+    hsc).2.esc
 
 /-- `MemRel` and `FrameSep` after an inline instruction other than `store`, from its inline
 theorem's `SameButWrites` (`hsd`: `opSem` changed only escaped objects' data and frame bytes) and

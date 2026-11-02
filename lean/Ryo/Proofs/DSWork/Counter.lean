@@ -495,7 +495,7 @@ theorem reach_counter (hD : Decodes S code relocs rodata callSites dropped scope
   obtain ⟨huk, hnl⟩ := HC.heads k hk (by rw [hq]; rfl)
   have hci0 : ∀ y, CacheInv (S.used k) y := fun y => by rw [huk]; exact CacheInv.empty y
   have hnl' : ¬ LeadArg S s.pc := by rw [hs]; exact hnl
-  obtain ⟨hbs, n, t', long', q, ht', hdecs⟩ := stubsLinked_of_decodes hD H.stubsBoundary k hk stub p2 hq
+  obtain ⟨hbs, n, t', long', q, ht', hdecs⟩ := stubsLinked_of_decodes hD (stubsBoundary_of_decodes hD H.fp hf.code) k hk stub p2 hq
   have hsp : S.body.spFrame = none := hf.code.fp
   cases hctr with
   | @check _ t long hcnt hdec =>

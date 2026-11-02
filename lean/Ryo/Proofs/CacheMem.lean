@@ -473,7 +473,8 @@ theorem sep_of_shape {wl wh : Int} {st st' : OpSem.State} {x x' : X86.State}
   have hfp : ∀ o, fpAddr x' o = fpAddr x o := fun o => by simp [fpAddr, hb]
   have hea : ∀ o, st'.escapedAt o = st.escapedAt o := fun o => by
     unfold OpSem.State.escapedAt; rw [he]
-  refine ⟨fun id a' o hg hl h1 h2 hin => ?_, fun o he' hu => ?_, ?_, ?_⟩
+  refine ⟨fun id a' o hg hl h1 h2 hin => ?_, fun o he' hu => ?_, ?_, ?_,
+    fun e hm => hs.esc e (he ▸ hm)⟩
   · obtain ⟨a, ha, had, hlv, hsz⟩ := hsh id a' hg
     obtain ⟨e, hem, ho1, ho2, hid⟩ := hs.own id a o ha (hlv ▸ hl) h1 h2
       (by rw [← had, ← hsz, ← hfp]; exact hin)

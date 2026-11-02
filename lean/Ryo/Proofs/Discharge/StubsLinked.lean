@@ -12,8 +12,12 @@ Ryo.Proofs.Discharge.StubsLinked — the counter stubs `read` checks (`checkStub
 - `stubsDec_of_decodes`: the `Dec` part of `StubsLinked` from `Decodes`.
 - `stubsLinked_of_decodes`: `StubsLinked`, given the stubs' relocation boundaries (`Boundary`
   needs the relocations sorted, `LinkOk`, which `Decodes` doesn't give).
+- `sl_checkStubs_R`, `sl_read_stubs_R`: the stubs follow one after the other from the body's end.
+- `stubsBoundary_of_decodes`: the `Hyps` field `stubsBoundary` from `Decodes`, the frame-pointer
+  form and `LinkOk`.
 -/
 import Ryo.Proofs.DecodeSound.Basic
+import Ryo.Proofs.DSWork.Boundary
 
 set_option linter.constructorNameAsVariable false
 set_option linter.unusedSimpArgs false
@@ -293,6 +297,99 @@ theorem sl_checkStubs {entry : Option (Nat × Nat)} {protos : Array Proto} {head
   rw [List.getElem?_append_left (by simpa using hn)] at hL
   simpa [hn] using hL
 
+/-- `checkStubs` reads its stubs one after the other from `bodyEnd`: a property of positions that
+holds at `bodyEnd` and is kept by every `Dec` reading holds at every loop head's stub. -/
+theorem sl_checkStubs_R {entry : Option (Nat × Nat)} {protos : Array Proto} {heads : Array Nat}
+    {bodyEnd limit : Nat} {c c' : Cursor} {u : Unit} (R : Nat → Prop)
+    (hR : ∀ p L q, R p → Dec c p L q → R q) (hR0 : R bodyEnd)
+    (h : (checkStubs entry protos heads bodyEnd limit).run c = .ok (u, c'))
+    (he : entry.isSome = true) :
+    ∀ n (hn : n < heads.size), R (protos[heads[n]]!.counter.getD (0, 0)).1 := by
+  obtain ⟨⟨es, eb⟩, rfl⟩ := Option.isSome_iff_exists.mp he
+  unfold checkStubs at h
+  dsimp only at h
+  obtain ⟨u1, c1, h1, h⟩ := bind_ok h
+  rw [run_setPos] at h1
+  cases h1
+  obtain ⟨u2, c2, h2, -⟩ := bind_ok h
+  rw [Std.Legacy.Range.forIn'_eq_forIn'_range'] at h2
+  have key := sl_forIn'_each (fun c2 => c2 = atPos c c2.pos ∧ R c2.pos)
+    (fun n => n < heads.size → ∃ stub back,
+      (heads.toList.map (fun i => protos[i]!.counter.getD (0, 0)) ++ [(es, eb)])[n]? =
+        some (stub, back) ∧ R stub)
+    _ _ _ _ _ _ ?step ⟨rfl, hR0⟩ h2
+  case step =>
+    intro n hmem b cur r cur' hP0 hr
+    obtain ⟨hP, hRc⟩ := hP0
+    have hlt0 : n < (heads.toList.map (fun i => protos[i]!.counter.getD (0, 0)) ++
+        [(es, eb)]).length := by
+      obtain ⟨i, hi, hni⟩ := List.mem_range'.1 hmem
+      simp only [Std.Legacy.Range.size, List.length_append, List.length_map,
+        Array.length_toList, List.length_singleton] at hi hni ⊢
+      omega
+    generalize heq : (heads.toList.map (fun i => protos[i]!.counter.getD (0, 0)) ++
+      [(es, eb)])[n]'hlt0 = sb at hr
+    obtain ⟨stub, back⟩ := sb
+    try dsimp only at hr
+    obtain ⟨at_, c1, h1, hr⟩ := bind_ok hr
+    obtain ⟨rfl, hc1⟩ := pos_run' h1
+    subst c1
+    try dsimp only at hr
+    rcases sl_ite_ok hr with ⟨-, hr⟩ | ⟨hne, hr⟩
+    · obtain ⟨_, _, h', -⟩ := bind_ok hr; exact (err_ok h').elim
+    have hs : cur.pos = stub := by simpa using hne
+    obtain ⟨c2, d2, e2, hr⟩ := check_dec (fun _ _ _ hh => err_ok hh) hr
+    have P2 := sl_trans hP e2
+    try dsimp only at hr
+    rcases sl_ite_ok hr with ⟨hlt, hr⟩ | ⟨hlt, hr⟩
+    · obtain ⟨c3, d3, e3, hr⟩ := check_dec (fun _ _ _ hh => err_ok hh) hr
+      obtain ⟨c4, d4, e4, hr⟩ := check_dec (fun _ _ _ hh => err_ok hh) hr
+      obtain ⟨x, c5, h5, hr⟩ := bind_ok hr
+      obtain ⟨d5, e5⟩ := item_dec h5
+      have P3 := sl_trans P2 e3
+      have P4 := sl_trans P3 e4
+      have P5 := sl_trans P4 e5
+      have d := (sl_dec hP d2).append ((sl_dec P2 d3).append ((sl_dec P3 d4).append (sl_dec P4 d5)))
+      have hR5 := hR _ _ _ hRc d
+      try dsimp only at hr
+      split at hr
+      · try dsimp only at hr
+        rcases sl_ite_ok hr with ⟨-, hr⟩ | ⟨-, hr⟩
+        · obtain ⟨_, _, h', -⟩ := bind_ok hr; exact (err_ok h').elim
+        obtain ⟨rfl, rfl⟩ := pure_ok hr
+        refine ⟨⟨P5, hR5⟩, ?_, _, rfl⟩
+        intro _
+        exact ⟨stub, back, List.getElem?_eq_some_iff.mpr ⟨_, heq⟩, by rw [← hs]; exact hRc⟩
+      · first
+          | exact (err_ok hr).elim
+          | (obtain ⟨_, _, h', -⟩ := bind_ok hr; exact (err_ok h').elim)
+    · obtain ⟨c3, d3, e3, hr⟩ := check_dec (fun _ _ _ hh => err_ok hh) hr
+      obtain ⟨x, c5, h5, hr⟩ := bind_ok hr
+      obtain ⟨d5, e5⟩ := item_dec h5
+      have P3 := sl_trans P2 e3
+      have P5 := sl_trans P3 e5
+      have d := (sl_dec hP d2).append ((sl_dec P2 d3).append (sl_dec P3 d5))
+      have hR5 := hR _ _ _ hRc d
+      try dsimp only at hr
+      split at hr
+      · try dsimp only at hr
+        rcases sl_ite_ok hr with ⟨-, hr⟩ | ⟨-, hr⟩
+        · obtain ⟨_, _, h', -⟩ := bind_ok hr; exact (err_ok h').elim
+        obtain ⟨rfl, rfl⟩ := pure_ok hr
+        refine ⟨⟨P5, hR5⟩, ?_, _, rfl⟩
+        intro h
+        exact absurd h hlt
+      · first
+          | exact (err_ok hr).elim
+          | (obtain ⟨_, _, h', -⟩ := bind_ok hr; exact (err_ok h').elim)
+  intro n hn
+  obtain ⟨stub, back, hL, hRs⟩ :=
+    key n (by simp [List.mem_range', Std.Legacy.Range.size] <;> omega) hn
+  rw [List.getElem?_append_left (by simpa using hn)] at hL
+  have hL' : protos[heads[n]]!.counter.getD (0, 0) = (stub, back) := by simpa [hn] using hL
+  rw [hL']
+  exact hRs
+
 /-! ### `read` -/
 
 /-- `read` (no pad region) reads every loop head's counter stub, from a cursor that is the body's
@@ -356,6 +453,103 @@ theorem sl_read_stubs {ro : ByteArray} {callSites : Array CallSite}
   obtain ⟨rfl, rfl⟩ := hL
   exact ⟨n, t, long, q, ht, hd⟩
 
+/-- `read` (no pad region): its second `instructions` pass from the body's cursor `c0` (with the
+prologue before it), and a property of positions that holds where that pass ends and is kept by
+every `Dec` reading from `c0` holds at every counter stub. -/
+theorem sl_read_stubs_R {ro : ByteArray} {callSites : Array CallSite}
+    {dropped : List DroppedStore} {scopes : Array R.Scope} {mode : Ryo.Obj.Mode} {c c' : Cursor}
+    {r : ReadResult} (h : (Vm.read ro callSites dropped scopes mode).run c = .ok (r, c'))
+    (hnr : regionPad mode callSites = none) :
+    ∃ (c0 c7 : Cursor) (targets : Array Nat) (stub : Option Nat) (padded : Array Bool),
+      c0 = bodyCursor c mode r.frameSize c0.pos ∧
+      (instructions ⟨r.frameSize, mode, false⟩ ro dropped (some targets) stub c.code.size
+        callSites).run c0 = .ok ((r.protos, padded), c7) ∧
+      (mode.framePointer = true → ∃ items, Dec c0 c.pos items c0.pos) ∧
+      ∀ R : Nat → Prop, (∀ p L q, R p → Dec c0 p L q → R q) → R c7.pos →
+        ∀ k (hk : k < r.protos.size) stub back, r.protos[k].counter = some (stub, back) →
+          R stub := by
+  unfold Vm.read at h
+  obtain ⟨⟨entry, fs⟩, c1, h1, h⟩ := bind_ok h
+  have hc1 := readFrame_body h1
+  obtain ⟨items, hd⟩ := readFrame_dec h1
+  dsimp only at h
+  obtain ⟨x, c2, h2, h⟩ := bind_ok h
+  obtain ⟨hx, hc2⟩ := get_run h2
+  rw [hx, hc2] at h
+  obtain ⟨ra, c3, h3, h⟩ := bind_ok h
+  have hra : ra = none ∧ c3 = c1 := by
+    unfold regionEntry at h3; rw [hnr] at h3
+    exact ⟨(pure_ok h3).1.symm, (pure_ok h3).2.symm⟩
+  rw [hra.1, hra.2] at h
+  have hsize : c1.code.size = c.code.size := by rw [hc1]; rfl
+  dsimp only at h
+  obtain ⟨body, c4, h4, h⟩ := bind_ok h
+  obtain ⟨hb4, hc4⟩ := pos_run' h4
+  subst hb4
+  rw [hc4] at h
+  obtain ⟨⟨p1, pd1, be1⟩, c5, h5, h⟩ := bind_ok h
+  have e5 := readParts_pos h5
+  dsimp only at h
+  obtain ⟨⟨protos, padded, bodyEnd⟩, c6, h6, h⟩ := bind_ok h
+  have e6 := readParts_pos h6
+  -- The second pass: `instructions` from the body, ending at `bodyEnd`.
+  have hpass : ∃ c7, bodyEnd = c7.pos ∧ (instructions ⟨fs, mode, false⟩ ro dropped
+      (some ((p1.toList.flatMap Proto.targets).toArray.qsort (· < ·))) (entry.map (·.1))
+      c.code.size callSites).run (atPos c5 c1.pos) = .ok ((protos, padded), c7) := by
+    unfold readParts at h6
+    obtain ⟨u, c7, h7, h6⟩ := bind_ok h6
+    rw [run_setPos] at h7; cases h7
+    obtain ⟨⟨ps, pd⟩, c8, h8, h6⟩ := bind_ok h6
+    obtain ⟨be, c9, h9, h6⟩ := bind_ok h6
+    obtain ⟨rfl, rfl⟩ := pos_run' h9
+    obtain ⟨u, c10, h10, h6⟩ := bind_ok h6
+    obtain ⟨he, -⟩ := pure_ok h6
+    cases he
+    rw [hsize] at h8
+    exact ⟨_, rfl, h8⟩
+  obtain ⟨c7, hbe, hc7⟩ := hpass
+  dsimp only at h
+  obtain ⟨u, c8, h8, h⟩ := bind_ok h
+  have e8 : c8 = c6 := by
+    first
+      | exact (pure_ok h8).2.symm
+      | (simp only [checkRegionStart] at h8; exact (pure_ok h8).2.symm)
+  obtain ⟨heads, c9, h9, h⟩ := bind_ok h
+  have e9 := sl_loopHeads_pos h9
+  have hh := sl_heads h9
+  obtain ⟨u', c10, h10, h⟩ := bind_ok h
+  simp only [Nat.lt_irrefl, ↓reduceIte] at h
+  obtain ⟨protos', c11, h11, h⟩ := bind_ok h
+  obtain ⟨rfl, rfl⟩ := pure_ok h11
+  obtain ⟨acts, c12, -, h⟩ := bind_ok h
+  obtain ⟨he, -⟩ := pure_ok h
+  cases he
+  rw [e8] at e9
+  have hb : atPos c5 c1.pos = bodyCursor c mode fs (atPos c5 c1.pos).pos := by
+    rw [e5]
+    show atPos (atPos c1 c5.pos) c1.pos = _
+    rw [hc1]; rfl
+  -- `checkStubs`'s cursor is the body's.
+  have e9' : c9 = atPos (atPos c5 c1.pos) c9.pos := by
+    refine (sl_trans (sl_trans e5 e6) e9).trans ?_
+    show atPos c1 c9.pos = atPos c5 c9.pos
+    rw [e5]
+    try rfl
+  refine ⟨_, c7, _, _, padded, hb, hc7, fun hfp => ⟨items, ?_⟩, ?_⟩
+  · show Dec (atPos c5 c1.pos) c.pos items c1.pos
+    have hx : atPos c5 c1.pos = atPos c c1.pos := by rw [hb]; simp [bodyCursor, hfp]
+    rw [hx, Dec.at_iff]
+    exact hd
+  intro R hR hR0 k hk stub back hc
+  have hk0 : k < protos.size := hk
+  have hc0 : protos[k].counter = some (stub, back) := hc
+  obtain ⟨hcnt, n, hn, hkn⟩ := hh k hk0 (by rw [hc0]; rfl)
+  have hRn := sl_checkStubs_R R (fun p L q hp hd => hR p L q hp (sl_dec e9' hd))
+    (by rw [hbe]; exact hR0) h10 (sl_readFrame_entry h1 hcnt) n hn
+  have hk' : protos[k]! = protos[k] := by simp [getElem!_def, hk0]
+  rw [hkn, hk', hc0] at hRn
+  exact hRn
+
 /-! ### From `Decodes` -/
 
 section Discharge
@@ -389,6 +583,39 @@ theorem stubsLinked_of_decodes (hD : Decodes S code relocs rodata callSites drop
     (hB : ∀ k (hk : k < S.r.protos.size) stub back, S.r.protos[k].counter = some (stub, back) →
       Boundary S.rs stub) : StubsLinked S :=
   fun k hk stub back hc => ⟨hB k hk stub back hc, stubsDec_of_decodes hD k hk stub back hc⟩
+
+/-- `Iters` from a relocation boundary ends at one (in memory, `LinkOk`). -/
+theorem sl_iters_boundary {ctx : Ctx} {m : Mem} {c : Cursor} {rs : Array Reloc} {fr : Vm.Frame}
+    {ro : ByteArray} {targets : Array Nat} {callSites : Array CallSite} (hk : LinkOk ctx m c rs) :
+    ∀ {a : Bool} {p : Nat} {cache : Cache} {dr : List DroppedStore} {qs : List Proto} {pe : Nat}
+      {dre : List DroppedStore}, Iters fr ro (some targets) callSites c a p cache dr qs pe dre →
+      Boundary rs p → Boundary rs pe := by
+  intro a p cache dr qs pe dre h
+  induction h with
+  | nil => exact id
+  | cons hi _ ih => exact fun hb => ih (bs_iter hk hb hi)
+
+/-- The `Hyps` field `stubsBoundary`: each counter stub starts at a relocation boundary, from the
+decoder's acceptance, the frame-pointer form (the prologue read item by item) and the code linked
+with sorted relocations (`LinkOk`): the body ends at a boundary (the prologue's end, then each
+iteration's), and the stubs follow one after the other from there. -/
+theorem stubsBoundary_of_decodes (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    (hfp : S.c.mode.framePointer = true) {m : Mem} (hL : LinkOk S.ctx m S.body S.rs) :
+    ∀ k (hk : k < S.r.protos.size) stub back, S.r.protos[k].counter = some (stub, back) →
+      Boundary S.rs stub := by
+  obtain ⟨c', hr⟩ := hD.read
+  obtain ⟨c0, c7, tg, st, pd, hc0, hrun, hpro, hall⟩ := sl_read_stubs_R hr hD.noRegion
+  have key : c0 = atPos S.body c0.pos := by
+    calc c0 = bodyCursor { code := code.data, pos := 0, fields := .relocs relocs } mode
+            S.r.frameSize c0.pos := hc0
+      _ = atPos (bodyCursor { code := code.data, pos := 0, fields := .relocs relocs } mode
+            S.r.frameSize S.body.pos) c0.pos := rfl
+      _ = atPos S.body c0.pos := (congrArg (atPos · c0.pos) hD.bodyEq).symm
+  have hL0 : LinkOk S.ctx m c0 S.rs := by rw [key]; exact hL.atPos _
+  obtain ⟨items, hd⟩ := hpro (hD.modeEq ▸ hfp)
+  have hb0 : Boundary S.rs c0.pos := (hL0.dec hd (boundary_zero _)).2.2
+  have hend : Boundary S.rs c7.pos := sl_iters_boundary hL0 (instructions_read hrun).1 hb0
+  exact hall (Boundary S.rs) (fun p L q hp hd => (hL0.dec hd hp).2.2) hend
 
 end Discharge
 
