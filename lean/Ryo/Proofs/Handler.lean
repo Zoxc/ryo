@@ -13,8 +13,8 @@ shape's control flow) implements R's step of that instruction (`Ryo.Vm.R.Sem.ste
   puts each argument's value (`argVal`: `rbp`, `rax`, the immediate, `ρ`'s address of the
   argument, `Linked`) in its register (`ArgsIn`), keeps memory, the `xmm`s and every register
   outside the six SysV argument registers (`X86.argRegs`, also on PE, where `setup_exec` gives
-  the stronger fact), and moves `rip` past the items. (PE's stack argument, the `atomic.cxchg` handlers', writes the frame's bottom: its
-  step is open.)
+  the stronger fact), and moves `rip` past the items. (PE's stack argument, the `atomic.cxchg`
+  handlers', writes the frame's bottom: `HandlerStackArg.handler_call5`.)
 - `HandlerContract`: what a handler call does, as a trusted assumption on an abstract return
   relation `Ret h x x'` (`x` just after `call h`, at `h`'s linked entry, `AtHandler`; `x'`
   where it returns). It is `opSem` plus

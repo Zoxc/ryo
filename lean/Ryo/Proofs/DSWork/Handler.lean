@@ -3,6 +3,7 @@ import Ryo.Proofs.NoArgCursor
 import Ryo.Proofs.DSWork.Island
 import Ryo.Proofs.OpFacts
 import Ryo.Proofs.Discharge.PadsLinked
+import Ryo.Proofs.HandlerStackArg
 
 set_option linter.constructorNameAsVariable false
 
@@ -478,6 +479,79 @@ theorem handler_call_steps {ctx : Ctx} {mode : Ryo.Obj.Mode} (hfp : mode.framePo
   exact steps_of_run_last (S := InCode ctx (items ++ [Item.call (.handler n)]) p) hcan hc hrip
     (fun _ h => h) (fetchRun_of_forall (fun i hi => (hok i hi).2) x) he
 
+/-- The setup with PE's stack argument and the call, fetched from memory at `p`: the store
+(`HandlerStackArg.fetchRun_stImm`) keeps the code when it is off the stack argument (`hS`). -/
+theorem handler_call_steps5 {ctx : Ctx} {mode : Ryo.Obj.Mode} (hfp : mode.framePointer = true)
+    (hpe : mode.pe = true) {ρ : R.Addrs} (hl : Handler.Linked ctx ρ)
+    {a0 a1 a2 a3 a4 : R.Arg} {items : List Item}
+    (hs : Handler.setupItems mode [a0, a1, a2, a3, a4] = some items) {n p : Nat}
+    {x x2 : X86.State} (hc : CodeAt ctx x.mem (items ++ [Item.call (.handler n)]) p)
+    (hrip : x.rip = addrAt ctx p)
+    (hS : ∀ a, InCode ctx (items ++ [Item.call (.handler n)]) p a →
+      ¬ HandlerStackArg.InStackArg x.rsp a)
+    (he : execItems ctx (items ++ [Item.call (.handler n)]) x = .ok x2) : Steps ctx x x2 := by
+  obtain ⟨rItems, it, rfl, hs4, h4⟩ := HandlerStackArg.setupItems_pe5 hpe hs
+  obtain ⟨v, -, -, rfl⟩ := HandlerStackArg.stackItem_some h4
+  have hle : ([a0, a1, a2, a3] : List R.Arg).length ≤ (handlerRegs mode.pe).length := by
+    simp [handlerRegs, hpe]
+  have hok := handler_setup_ok ctx hfp hs4 hle
+  have hcan : Canon ((rItems ++ [Item.stImm .d M.stackArg (v.setWidth 32)]) ++
+      [Item.call (.handler n)]) p :=
+    handler_canon_of fun i hi => by
+      rcases List.mem_append.mp hi with hi | hi
+      · rcases List.mem_append.mp hi with hi | hi
+        · exact (hok i hi).1
+        · simp only [List.mem_singleton] at hi; subst hi
+          exact HandlerStackArg.stImm_canonical _
+      · simp only [List.mem_singleton] at hi; subst hi; exact handler_call_canonical n
+  refine steps_of_run_last (S := InCode ctx ((rItems ++
+      [Item.stImm .d M.stackArg (v.setWidth 32)]) ++ [Item.call (.handler n)]) p) hcan hc hrip
+    (fun _ h => h) ?_ he
+  refine HandlerStackArg.fetchRun_append_single
+    (fetchRun_of_forall (fun i hi => (hok i hi).2) x) fun y hy => ?_
+  refine HandlerStackArg.fetchRun_stImm _ y fun a ha => ?_
+  obtain ⟨x1, he1, -, -, -, hr1, -⟩ := Handler.exec_setup ctx ρ mode _ rItems x hs4 hle hl
+  rw [he1] at hy
+  have hsp : y.rsp = x.rsp := by
+    rw [← Switch.except_ok_inj hy]
+    exact hr1 4 (by
+      intro r hr
+      simp only [X86.argRegs, List.mem_cons, List.not_mem_nil, or_false] at hr
+      rcases hr with rfl | rfl | rfl | rfl | rfl | rfl <;> decide)
+  rw [hsp]
+  exact hS a ha
+
+theorem hdl_link_length (addr : BitVec 64) (addrOf : RefAddr) :
+    ∀ (relocs : List X86.Reloc) (code : List UInt8), (link addr addrOf code relocs).length = code.length
+  | [], _ => rfl
+  | r :: rs, code => by
+    simp only [link, List.foldl_cons] at *
+    have := hdl_link_length addr addrOf rs
+    simp only [link] at this
+    rw [this]; simp
+
+theorem hdl_linkedAt_length (ctx : Ctx) (i : Item) (pos : Nat) :
+    (i.linkedAt ctx pos).length = i.size := by
+  unfold Item.linkedAt
+  simp only
+  rw [hdl_link_length, encode_len]
+
+/-- The addresses of items decoded from a linked cursor are code addresses (`ctr_inCode_dec`). -/
+theorem hdl_inCode_dec {ctx : Ctx} {m : Mem} {c : Cursor} {rs : Array Reloc} (hk : LinkOk ctx m c rs) :
+    ∀ {p q : Nat} {items : List Item}, Dec c p items q → Boundary rs p →
+      ∀ a, InCode ctx items p a → ∃ j, j < c.code.size ∧ a = addrAt ctx j := by
+  intro p q items hd
+  induction hd with
+  | nil => intro _ a h; exact absurd h id
+  | @cons p n q i is hdi _ ih =>
+    intro hb a ha
+    obtain ⟨-, hsz, hle, hb'⟩ := decodeItem_itemAt (c := atPos c p) hk.fields hk.sorted hk.loaded
+      hk.small hk.fp hb hdi
+    rcases ha with ⟨j, hj, rfl⟩ | ha
+    · rw [hdl_linkedAt_length, hsz] at hj
+      exact ⟨p + j, by simp at hle; omega, addrAt_add' ctx p j⟩
+    · rw [hsz] at ha; exact ih hb' a ha
+
 section Insn
 
 variable {S : Setup} {code : ByteArray} {relocs : Array Reloc} {rodata : ByteArray}
@@ -775,7 +849,7 @@ theorem handler_resume' (hD : Decodes S code relocs rodata callSites dropped sco
     hf.code.sorted hf.code.loaded hf.code.small hf.code.fp hbh hcall
   have hlen5 : len = 5 := by rw [← hlen]; rfl
   have hlo : S.lo.toNat + 8 ≤ x.rsp.toNat := by have := hf.room; omega
-  have hreg : args.length ≤ (handlerRegs S.fr.mode.pe).length := H.regArgs s.pc _ _ _ hi
+  have hreg : args.length ≤ (handlerRegs S.fr.mode.pe).length := H.regArgs s.pc _ _ hi
   obtain ⟨x2, hx2, hat2, hargs2, hrsp2, hsaved2, hmem2, hret2⟩ :=
     handler_call_ret (lo := S.lo) S.ctx H.linked hnop hsetup hreg hlo
   have hsteps := handler_call_steps H.fp hsetup hreg hca hrip hx2
@@ -1063,6 +1137,8 @@ theorem hdl_call_reach (_hD : Decodes S code relocs rodata callSites dropped sco
     (hi : S.c.d.insns[s.pc]? = some (.handler h args t))
     (hsc : (S.c.scopesAt s.pc).foldlM R.applyScope s = .ok s1)
     (hu : R.unpack S.c.ρ h S.c.mode args = some vals) (hno : Handler.NoUB h vals s1.st)
+    (hcodeIn : ∀ a, InCode S.ctx (items ++ [Item.call (.handler n)]) p a →
+      ∃ j, j < S.body.code.size ∧ a = addrAt S.ctx j)
     (kont : ∀ x' ch ctl st', opSem h vals s1.st ch = .ok (ctl, st') → Handler.CtlIn ctl x' →
       x'.rip = addrAt S.ctx (p + codeSize (items ++ [Item.call (.handler n)])) →
       (∀ pc, ¬ LeadArg S pc → FrameInv S { s1 with pc, st := st' } x') → Reach S.ctx S.E Q x') :
@@ -1071,7 +1147,7 @@ theorem hdl_call_reach (_hD : Decodes S code relocs rodata callSites dropped sco
   have hfb := H.frameBounds
   have hwinT : (s.fp : Int) + S.K ≤ 2 ^ 64 := hf.win
   have hfpF : S.F ≤ s.fp := hf.fpF
-  obtain ⟨hrbN, hrspN, -, -, -, -, -⟩ := hdl_nums H hf
+  obtain ⟨hrbN, hrspN, -, hfp16, -, -, hK16⟩ := hdl_nums H hf
   have hsep1 : FrameSep (-(S.F : Int)) S.K s1.st x :=
     (sep_foldlM _ (hfb.scopesIn s.pc) (hfb.window hwinT) hf.rrel hf.sep hsc).2
   obtain ⟨hr1, hm1⟩ := memRel_foldlM _ (hfb.scope_size _) hf.rrel hf.mem hsc
@@ -1080,19 +1156,75 @@ theorem hdl_call_reach (_hD : Decodes S code relocs rodata callSites dropped sco
       (Handler.stack_off_window (by rw [hrbN, hrspN]; omega) (by rw [hrbN]; omega))
       (island_allocs' H hf hsc)
   have hlo : S.lo.toNat + 8 ≤ x.rsp.toNat := by have := hf.room; omega
-  have hreg : args.length ≤ (handlerRegs S.c.mode.pe).length := H.regArgs s.pc _ _ _ hi
-  obtain ⟨x2, hx2, hat2, hargs2, hrsp2, hsv2, hmem2, hret2⟩ :=
-    handler_call_ret (lo := S.lo) S.ctx H.linked hn hsetup hreg hlo
-  obtain ⟨x2', hx2', -, -, hH2, hrbp2, -, -⟩ :=
-    handler_call (lo := S.lo) S.ctx H.linked hn hsetup hreg ⟨hr1.rel, hm1⟩ hap hlo
-  have e2 : x2' = x2 := by
-    rw [hx2] at hx2'
-    exact (Switch.except_ok_inj hx2').symm
-  rw [e2] at hH2 hrbp2
-  have hsteps := handler_call_steps H.fp hsetup hreg hca hrip hx2
-  have hra : x2.mem.read64 x2.rsp =
-      addrAt S.ctx (p + codeSize (items ++ [Item.call (.handler n)])) := by
-    rw [hret2, hrip, addrAt_add']; rfl
+  -- The setup and `call h`: arguments in registers (`handler_call_ret`), or PE's five with the
+  -- stack argument (`HandlerStackArg.handler_call5`, the store's bytes off the relations by
+  -- `H.peStackArg`).
+  obtain ⟨x2, hsteps, hat2, hargs2, hrsp2, hsv2, hmem2, hra, hH2, hrbp2⟩ :
+      ∃ x2, Steps S.ctx x x2 ∧ Handler.AtHandler S.ctx h x2 ∧
+        Handler.ArgsIn S.c.ρ S.c.mode.pe x2 x2 args ∧ x2.rsp = x.rsp - 8 ∧
+        (∀ i, Saved S.c.mode.pe i → x2.regs i = x.regs i) ∧
+        (∀ a, ¬ InStack S.lo x.rsp a → IslandKept S x a → x2.mem a = x.mem a) ∧
+        x2.mem.read64 x2.rsp = addrAt S.ctx (p + codeSize (items ++ [Item.call (.handler n)])) ∧
+        Handler.HRel s1.st x2 ∧ x2.reg .rbp = x.reg .rbp := by
+    rcases HandlerStackArg.setupItems_length hsetup with hreg | ⟨hpe, h5⟩
+    · obtain ⟨x2, hx2, hat2, hargs2, hrsp2, hsv2, hmem2, hret2⟩ :=
+        handler_call_ret (lo := S.lo) S.ctx H.linked hn hsetup hreg hlo
+      obtain ⟨x2', hx2', -, -, hH2, hrbp2, -, -⟩ :=
+        handler_call (lo := S.lo) S.ctx H.linked hn hsetup hreg ⟨hr1.rel, hm1⟩ hap hlo
+      have e2 : x2' = x2 := by
+        rw [hx2] at hx2'
+        exact (Switch.except_ok_inj hx2').symm
+      rw [e2] at hH2 hrbp2
+      refine ⟨x2, handler_call_steps H.fp hsetup hreg hca hrip hx2, hat2, hargs2, hrsp2, hsv2,
+        fun a ha _ => hmem2 a ha, ?_, hH2, hrbp2⟩
+      rw [hret2, hrip, addrAt_add']; rfl
+    · obtain ⟨a0, a1, a2, a3, a4, rfl⟩ := HandlerStackArg.eq_five h5
+      obtain ⟨hF36, hpriv⟩ := H.peStackArg hpe s.pc h _ t hi h5
+      have hfp64 : s.fp < 2 ^ 64 := by omega
+      have hb : x.reg .rbp = BitVec.ofNat 64 s.fp := hf.rrel.rbp
+      obtain ⟨x2, hx2, hat2, hargs2, hrsp2, hrbp2, hpk, hmem2, hret2⟩ :=
+        HandlerStackArg.handler_call5 (lo := S.lo) S.ctx H.linked hpe hn hsetup hlo
+      have harg : HandlerStackArg.ArgApart (HandlerStackArg.InStackArg x.rsp) s1.st x :=
+        HandlerStackArg.stackArg_apart hb hrspN hF36 hfpF hfp64 hwinT (by omega) hsep1
+          (hpriv s x s1 hf rfl hsc)
+      have hH2 := HandlerStackArg.hrel_after ⟨hr1.rel, hm1⟩ hap harg hrbp2 hmem2
+      -- Code and rodata bytes are off the window, so off the stack argument.
+      have hcodeOff : ∀ a, ((∃ j, j < S.body.code.size ∧ a = addrAt S.ctx j) ∨
+          (∃ j, j < S.ro.size ∧ a = S.ctx.addrOf (.ro j))) →
+          ¬ HandlerStackArg.InStackArg x.rsp a := by
+        intro a ha hin
+        obtain ⟨j', hj', he⟩ :=
+          HandlerStackArg.inStackArg_eq_fpAddr hb hrspN hF36 hfpF hfp64 hin
+        exact (H.codeApart a ha).2.2.1 (-(S.F : Int) + 32 + j') (by omega) (by omega)
+          (he.trans (hf.fpAddr_eq _))
+      refine ⟨x2, handler_call_steps5 H.fp hpe H.linked hsetup hca hrip
+          (fun a ha => hcodeOff a (.inl (hcodeIn a ha))) hx2, hat2, hargs2, hrsp2, ?_, ?_, ?_,
+        hH2, hrbp2⟩
+      · intro i hi
+        rcases hi with (rfl | rfl | rfl | rfl | rfl | rfl) | ⟨-, rfl | rfl⟩ <;>
+          refine hpk _ (fun r hr => ?_) (by decide) <;>
+          (rw [hpe] at hr
+           simp [handlerRegs] at hr
+           rcases hr with rfl | rfl | rfl | rfl <;> decide)
+      · intro a ha hk
+        refine hmem2 a ha ?_
+        rcases hk with hk | ⟨r, hr, kk, hkk, rfl⟩ | hk | ⟨i, hi', hk⟩
+        · exact hcodeOff a (.inl hk)
+        · exact hcodeOff _ (.inl ⟨r.pos + kk, by have := H.relocsIn r hr; omega, rfl⟩)
+        · exact hcodeOff a (.inr hk)
+        · -- A link slot: `fp + o` with `o ∈ [0, 16)`.
+          obtain ⟨o, ho1, ho2, rfl⟩ : ∃ o : Int, 0 ≤ o ∧ o < 16 ∧ a = fpAddr x o := by
+            have e : ∀ c : Int, x.reg .rbp + BitVec.ofInt 64 c + BitVec.ofNat 64 i =
+                fpAddr x (c + i) := fun c => by
+              simp only [fpAddr, island_ofInt_add, BitVec.add_assoc]
+            rcases hk with rfl | rfl
+            · refine ⟨8 + i, by omega, by omega, ?_⟩
+              rw [← e]; rfl
+            · refine ⟨0 + i, by omega, by omega, ?_⟩
+              rw [← e]; simp
+          exact HandlerStackArg.not_inStackArg_fpAddr hb hrspN hF36 hfpF hfp64 (by omega)
+            (by omega)
+      · rw [hret2, hrip, addrAt_add']; rfl
   have hrsp2le : x2.rsp.toNat ≤ x.rsp.toNat := by
     have h8 : (x.rsp - 8).toNat = x.rsp.toNat - 8 := by
       rw [BitVec.toNat_sub]; have := x.rsp.isLt; simp; omega
@@ -1121,7 +1253,7 @@ theorem hdl_call_reach (_hD : Decodes S code relocs rodata callSites dropped sco
   have hkeep : ∀ b, IslandKept S x b → x'.mem b = x.mem b := by
     intro b hb
     obtain ⟨h1, h2⟩ := hdl_kept H hf hci hsc hi hu hrbp2 hrsp2le b hb
-    rw [hmw b h1, hmem2 b h2]
+    rw [hmw b h1, hmem2 b h2 hb]
   -- The frame separation after the handler.
   have hesc : st'.escaped = s1.st.escaped := (Ryo.Proofs.OpFacts.opSem_out hop).2.1
   have hwr : WrIn (-(S.F : Int)) S.K h vals := hfb.handler s.pc h args t vals hi hu
@@ -1331,7 +1463,7 @@ theorem handler_general' (hD : Decodes S code relocs rodata callSites dropped sc
   have hend' : hat + len = p + codeSize (items ++ [Item.call (.handler n)]) := hend
   have hbe' : Boundary S.rs (hat + len) := hbe
   refine hdl_call_reach hD H hf (by rw [hs]; exact hci) hrip hca hnop hhh hsetup hi hsc hu
-    hno ?_
+    hno (hdl_inCode_dec hLp (hd.append (Dec.single hcall)) hP.bound) ?_
   intro x' ch ctl st' hop hctl hrip' hFI
   obtain ⟨pc, hpc, hstep⟩ := hsucc ch ctl st' hop
   have hripT : x'.rip = addrAt S.ctx (hat + len) := by rw [hrip', hend']

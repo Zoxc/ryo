@@ -41,6 +41,7 @@ import Ryo.Proofs.PassArgsStack
 import Ryo.Proofs.PassArgsDup
 import Ryo.Proofs.Discharge.Nounwind
 import Ryo.Proofs.Discharge.StackSizes
+import Ryo.Proofs.HandlerStackArg
 import Ryo.Proofs.Island
 import Ryo.Proofs.DecodeLink
 import Ryo.Proofs.ArgPeBound

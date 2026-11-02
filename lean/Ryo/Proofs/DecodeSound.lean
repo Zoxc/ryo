@@ -77,9 +77,8 @@ lookup (`unwinderReadsLsda`: the unwinder's pad for a return address is the LSDA
 `RyoProofs/OpFacts.lean`), `InlineOk` of every inline opcode (`inlineOk`, by `inlineOps_ok`,
 `RyoProofs/InlineOk.lean`) and each inline class of its shape and `clsOk` (`inlineClsOk`, by
 `inlineOps_shape`, `RyoProofs/InlineOps.lean`, and `inlineOps_clsOk`). Restrictions: the frame-pointer mode (`fp`), the items without a
-frame pointer have no step lemmas yet; handler calls with their arguments in registers
-(`regArgs`: PE's stack argument, the `atomic.cxchg` handlers', writes the frame's bottom, its
-step is open); no PE pad region (`Decodes.noRegion`: PE's cleanup code after the body, which the
+frame pointer have no step lemmas yet; `resume` with its arguments in registers (`regArgs`;
+other handler calls may have PE's stack argument, `HandlerStackArg`); no PE pad region (`Decodes.noRegion`: PE's cleanup code after the body, which the
 exception dispatcher enters on its own stack). Open prerequisites, each a named hypothesis to be
 discharged later:
 
@@ -94,7 +93,9 @@ discharged later:
   `load`'s destination, `LoadPrivate`), `argPrivate` (an `arg`'s, `ArgPrivate`),
   `resultPrivate` (a call's result slots, `ResultPrivate`), `linkPrivate` (the frame's link
   slots, in no escaped object or `Lend` extent, `LinkPrivate`), `peShadow` (on PE the island
-  templates' 32-byte shadow space at the frame's bottom holds no private byte);
+  templates' 32-byte shadow space at the frame's bottom holds no private byte), `peStackArg`
+  (on PE a handler call's stack argument, `[-F + 32, -F + 36)`, is private and `Uninit`, and
+  `36 ≤ F`);
 - the environment and the layout (not checkable from the function): `sepAcross` (the frame
   separation across handler calls, calls and islands, `SepAcross`: `FrameSep.extend`'s
   allocation facts, not yet in the contracts), `envApart` (`EnvApart`: the frame window not

@@ -447,9 +447,9 @@ follows the decoder's structure:
   (`DSWork/Inline.lean`, with the emitted items' facts in `CacheEmit*.lean`); no `sorry`
   ([assumptions.md](assumptions.md) §1.1). The frame-pointer mode only, without a PE pad region
   (`Decodes.noRegion`: PE's cleanup code after the body, entered by the exception dispatcher on
-  its own stack, is decoded but not simulated), and handler calls with their arguments in
-  registers (`Hyps.regArgs`: PE's stack argument, the `atomic.cxchg` handlers', writes the
-  frame's bottom; its step is open). On PE the frame keeps no saved `rsi`/`rdi`: they are
+  its own stack, is decoded but not simulated), and `resume` with its arguments in
+  registers (`Hyps.regArgs`; other handler calls may have PE's stack argument, whose bytes at
+  the frame's bottom `Hyps.peStackArg` makes private, `HandlerStackArg`). On PE the frame keeps no saved `rsi`/`rdi`: they are
   callee-saved registers the function's code never changes (`FrameFacts.saved` over
   `Call.Saved`), and the PE `nop` after a call with a landing pad is part of the iteration
   (`NopRead`). The open prerequisites are

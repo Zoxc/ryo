@@ -641,12 +641,13 @@ structure Hyps (S : Setup) : Prop where
   -- Proved in `RyoProofs` (outside the default build): `opFacts`, `inlineOps_ok`.
   opFacts : ∀ h, Shapes.OpFacts h
   inlineOk : ∀ f cls, (f, cls) ∈ inlineOps → Step.InlineOk f cls
-  -- The restrictions: the frame-pointer form (no step lemmas without it yet), and handler calls
-  -- with their arguments in registers (PE's stack argument, the `atomic.cxchg` handlers', writes
-  -- the frame's bottom: its step is open).
+  -- The restrictions: the frame-pointer form (no step lemmas without it yet), and `resume` with
+  -- its arguments in registers (its step uses the register-only setup; other handler calls may
+  -- have PE's stack argument, `hdl_call_reach`).
   fp : S.c.mode.framePointer = true
-  regArgs : ∀ (k : Nat) (h : Full.Opcode) (args : List R.Arg) (t : R.Then Nat),
-    S.c.d.insns[k]? = some (.handler h args t) → args.length ≤ (handlerRegs S.c.mode.pe).length
+  regArgs : ∀ (k : Nat) (args : List R.Arg) (t : R.Then Nat),
+    S.c.d.insns[k]? = some (.handler .resume args t) →
+      args.length ≤ (handlerRegs S.c.mode.pe).length
   /-- The window holds the incoming area. -/
   argSizeK : (16 + S.c.argSize : Int) ≤ S.K
   /-- Checked: the bound check (`decodeBounded`, so `Frame.decodeChecked`, accepts only
@@ -671,6 +672,18 @@ structure Hyps (S : Setup) : Prop where
   discharge it with the scopes (no private slot in the shadow space). -/
   peShadow : S.c.mode.pe = true → 32 ≤ S.F ∧ ∀ s x s1, FrameInv S s x →
     (S.c.scopesAt s.pc).foldlM R.applyScope s = .ok s1 → FrameSep (-(S.F : Int) + 32) S.K s1.st x
+  /-- On PE, a handler call with a stack argument (five arguments, the `atomic.cxchg`
+  handlers') stores it at `[rsp + 32, rsp + 36)`, the frame offsets `[-F + 32, -F + 36)`: they
+  lie below the link slots (`36 ≤ F`) and are private and `Uninit` after the scopes
+  (`HandlerStackArg.stackArg_apart`, `hdl_call_reach`). A check could discharge it with the
+  scopes (`shadowSize` is 40 then, so no frame range starts below `-F + 40`; no `Escape` scope
+  there). -/
+  peStackArg : S.c.mode.pe = true → ∀ (k : Nat) (h : Full.Opcode) (args : List R.Arg)
+    (t : R.Then Nat), S.c.d.insns[k]? = some (.handler h args t) → args.length = 5 →
+    36 ≤ S.F ∧ ∀ s x s1, FrameInv S s x → s.pc = k →
+      (S.c.scopesAt s.pc).foldlM R.applyScope s = .ok s1 →
+      ∀ o : Int, -(S.F : Int) + 32 ≤ o → o < -(S.F : Int) + 36 →
+        s1.st.escapedAt o = none ∧ s1.st.frame o = .uninit
   -- Open prerequisites: the environment and the layout.
   sepAcross : SepAcross S
   envApart : EnvApart S
