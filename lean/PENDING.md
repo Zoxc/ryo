@@ -8,11 +8,15 @@ remove it once a Lean session has handled it.
   code" and the `f16` SSE cut): the model and checkers are done (`Check/Lower/Plan.lean` with
   `AbiScalar.sext` read from the dump, `Cert.lean`, `CertCheck`, `Check/Image/Funcs.lean`,
   `Vm/Asm.lean`'s `ArgReg.sext`/`argRax`; variadic calls' `ARG_RAX` and Win64 duplicate
-  entries in `passArgs`, from the dump's `FnAbiSummary.fixed`). Left: proofs (the ABI
-  convention lemmas, the variadic entries). The call-list `movsx` and `al` loads are in
-  `Proofs/Call.lean` (`paramItem`), and the decoders refuse an `al` load in calls through `rax`. `Proofs/PassArgs.lean` has the
-  `al`-word and `sext` facts of `ArgReg.of?`; still missing: `passArgs`' variadic suffix (the
-  `al` entry last on SysV, Win64's duplicates) and the convention lemmas.
+  entries in `passArgs`, from the dump's `FnAbiSummary.fixed`). Left: connecting these to the call simulation. `Proofs/PassArgsConv.lean` has `passArgs`'
+  variadic suffix (`passArgs_variadic`; SysV `passArgs_sysv_variadic`: the `al` entry last;
+  Win64 `passArgs_win64_variadic`/`mem_win64Dups`: the duplicates) and the convention lemmas
+  (`argPlan_locsOk`: every register piece in a convention register; `argPlan_reg`/
+  `argPlan_ptrReg`: integer pieces in `handlerReg`, never `rax`). Still missing: the stack
+  pieces' offsets (`slot`, `byval`) against the convention's stack layout, and how the Win64
+  duplicate words decode (`ArgReg.of?`). The call-list `movsx` and `al` loads are in
+  `Proofs/Call.lean` (`paramItem`); `Proofs/PassArgs.lean` has the `al`-word and `sext` facts
+  of `ArgReg.of?`.
 
 - `UnwindAction::Unreachable` call sites (follow-up to "Backend: C-unwind and variadic C calls
   in VM code"): calls and islands with MIR's `Unreachable`, and direct calls of non-unwinding
