@@ -509,14 +509,13 @@ structure EnvApart (S : Setup) : Prop where
   slotOff : ∀ j < 8,
     ¬ InStack S.lo S.x0.rsp (S.ctx.addrOf .record + BitVec.ofNat 64 16 + BitVec.ofNat 64 j)
 
-/-- Open (checkable): the leading `arg`s. Each reads an argument register of the convention
-(the decoder takes `xmm4`–`xmm7` and integer indices 4 and 5 on PE too) and no two read the same register (`arg_store`
+/-- Open (checkable): the leading `arg`s. (That each reads an argument register of the convention
+is proved from the decoder, `Discharge/ArgsOk.lean`'s `argsOk_conv`.) No two read the same register (`arg_store`
 may clobber the register it stores); no branch target is a leading `arg` (the registers there
 would be those of the branch; landing pads are `lpad`s, `pad_not_leadArg`, and loop heads are
 targets). The decoder could reject each (the backend stores each incoming register once,
 before any code that branches). -/
 structure ArgsOk (S : Setup) : Prop where
-  conv : ∀ j r, LeadArg S j → ArgRegAt S j r → ArgRet.IsArg S.c.mode.pe r
   distinct : ∀ j k r, j < k → LeadArg S k → ArgRegAt S j r → ¬ ArgRegAt S k r
   untargeted : ∀ k (hk : k < S.r.protos.size), ∀ t ∈ S.r.protos[k].targets, ∀ j,
     posOf S.r j = t → ¬ LeadArg S j

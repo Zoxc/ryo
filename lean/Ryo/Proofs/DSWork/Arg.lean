@@ -1,5 +1,6 @@
 import Ryo.Proofs.DecodeSound.Basic
 import Ryo.Proofs.NoArgCursor
+import Ryo.Proofs.Discharge.ArgsOk
 
 set_option linter.constructorNameAsVariable false
 
@@ -315,11 +316,11 @@ variable {S : Setup} {code : ByteArray} {relocs : Array Reloc} {rodata : ByteArr
   {callSites : Array CallSite} {dropped : Array DroppedStore} {scopes : Array R.Scope}
   {mode : Ryo.Obj.Mode}
 
-/-- A leading `arg`'s register is still related (`ArgsOk.conv`, `ArgsOk.distinct`). -/
-theorem arg_regRel (H : Hyps S) {k : Nat} {r : R.Reg} {args : R.Regs} {x : X86.State}
+/-- A leading `arg`'s register is still related (`argsOk_conv`, `ArgsOk.distinct`). -/
+theorem arg_regRel (hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S) {k : Nat} {r : R.Reg} {args : R.Regs} {x : X86.State}
     (hl : ArgsLive S k args x) (hk : LeadArg S k) (hr : ArgRegAt S k r) :
     ArgRet.RegRel S.c.mode.pe args x r :=
-  hl r (H.argsOk.conv k r hk hr) (fun j hj hj' => H.argsOk.distinct j k r hj hk hj' hr)
+  hl r (argsOk_conv hD H.inlineOk k r hk hr) (fun j hj hj' => H.argsOk.distinct j k r hj hk hj' hr)
 
 /-- After `arg` at `k` (register `a`, a convention register), the registers no `arg` up to `k`
 read stay related. Proof: `r ≠ .ofArgReg a`, so `ArgsLive` at `k` gives `RegRel r` at `x`;
@@ -543,7 +544,7 @@ theorem bodySim_arg (hD : Decodes S code relocs rodata callSites dropped scopes 
   have hlead : LeadArg S k := ⟨hlt, by rw [hargsk, ha]; rfl⟩
   have hRA : ArgRegAt S k (.ofArgReg a) := ⟨op, d, _, .arg, a, hik, hf', arg_shape, hof, rfl⟩
   have hlive : ArgsLive S k s.args x := hs ▸ hf.args (hs ▸ hlead)
-  have harg := arg_regRel H hlive hlead hRA
+  have harg := arg_regRel hD H hlive hlead hRA
   obtain ⟨x', hx, hr', hrip', hpc, hfp, hargs, hxm, hregs⟩ :=
     arg_step_fb S.ctx H.frameBounds hf.rrel hi hf' arg_shape hof harg hstep
   obtain ⟨x2, hx2, hm2, -⟩ := ArgRet.exec_argStore S.ctx a d S.c.mode.pe x
@@ -663,7 +664,7 @@ theorem bodySim_arg (hD : Decodes S code relocs rodata callSites dropped scopes 
           rcases h67 with rfl | rfl <;>
             first | exact this.1 h | exact this.1 h.symm | exact this.2 h | exact this.2 h.symm)]
         exact f4 i (.inr ⟨hpe, h67⟩) h5
-  have hconv := H.argsOk.conv k _ hlead hRA
+  have hconv := argsOk_conv hD H.inlineOk k _ hlead hRA
   refine Reach.steps hsteps (.done (.inl ⟨_, .step hstep, ⟨⟨hr', hmem', hsep', hk1.fp ▸ hf.win,
     hk1.fp ▸ hf.fpF, by rw [hrsp, hrbp]; exact hf.rsp, by rw [hrsp]; exact hf.room, hLk', hro',
     fun _ => ?_, hframe'⟩, .inl ⟨?_, ?_⟩⟩⟩))
