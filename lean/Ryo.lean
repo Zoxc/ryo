@@ -36,6 +36,8 @@ import Ryo.Proofs.FrameBounds
 import Ryo.Proofs.Call
 import Ryo.Proofs.PassArgs
 import Ryo.Proofs.PassArgsConv
+import Ryo.Proofs.PassArgsStack
+import Ryo.Proofs.PassArgsDup
 import Ryo.Proofs.Island
 import Ryo.Proofs.DecodeLink
 import Ryo.Proofs.ArgPeBound

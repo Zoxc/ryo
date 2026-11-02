@@ -12,9 +12,11 @@ remove it once a Lean session has handled it.
   variadic suffix (`passArgs_variadic`; SysV `passArgs_sysv_variadic`: the `al` entry last;
   Win64 `passArgs_win64_variadic`/`mem_win64Dups`: the duplicates) and the convention lemmas
   (`argPlan_locsOk`: every register piece in a convention register; `argPlan_reg`/
-  `argPlan_ptrReg`: integer pieces in `handlerReg`, never `rax`). Still missing: the stack
-  pieces' offsets (`slot`, `byval`) against the convention's stack layout, and how the Win64
-  duplicate words decode (`ArgReg.of?`). The call-list `movsx` and `al` loads are in
+  `argPlan_ptrReg`: integer pieces in `handlerReg`, never `rax`); `Proofs/PassArgsStack.lean`
+  the stack pieces' layout (`argPlan_chain`/`argPlan_stack_mem`/`argPlan_pairwise`: increasing,
+  disjoint, 8-aligned, after Win64's shadow space, within `stackSize`, a multiple of 16) and
+  `Proofs/PassArgsDup.lean` how the Win64 duplicates decode (`win64Dup_of?`: `xmm_i`'s home into
+  `intArg true i`). The call-list `movsx` and `al` loads are in
   `Proofs/Call.lean` (`paramItem`); `Proofs/PassArgs.lean` has the `al`-word and `sext` facts
   of `ArgReg.of?`.
 
