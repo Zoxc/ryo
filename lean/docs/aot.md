@@ -459,7 +459,7 @@ follows the decoder's structure:
   scopes (`LoadPrivate`, `ArgPrivate`, `ResultPrivate`, `LinkPrivate`: the link slots in no
   escaped object or `Lend` extent); the environment and layout (`SepAcross`, `EnvApart`: the
   window not runtime-owned, live allocations neither runtime-owned nor below `rsp`, symbol slots
-  and the JIT record off the stack; `StackSizes`, `CodeApart`, `EnvOutside`); facts of the
+  and the JIT record off the stack; `CodeApart`, `EnvOutside`; `StackSizes` follows from check-image's `stackSizesCheck`); facts of the
   decoder and linker not yet exposed (`DeadStoreSim`, `CacheCleared`, `PadsLinked`,
   `StubsLinked`); trusted, beside the other contracts, `ResumeContract` (`resume`'s handler is
   assembly, outside `opSem`: it comes back only at a landing pad). Not covered: the prologue (the

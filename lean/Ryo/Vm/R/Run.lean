@@ -241,19 +241,23 @@ def imageCallee (d : Decoded) (k : Nat) : Option Nat :=
 
 end Image
 
+/-- Function `i` of image object `o` as R code (`imageProgram`); `zeroSized` as there. -/
+def Image.imageCode (o : Ryo.Obj.ImageObject) (zeroSized : String → List Int) (i : Nat)
+    (fi : Ryo.Obj.FuncInputs) (d : Decoded) : Code :=
+  { d, mode := fi.mode, ρ := Image.addrs, argSize := (o.funcs[i]?.map (·.argSize)).getD 0,
+    zeroSized := (o.funcs[i]?.map fun f => zeroSized (o.funcName f.codeOff)).getD [],
+    stackSize := fun k => ((Image.imageCallee d k).bind (o.funcs[·]?)).map (·.argSize) |>.getD 0,
+    sretSize := fun k => do
+      let g ← Image.imageCallee d k
+      let e ← o.funcs[g]?
+      if e.retKind == Asm.retSret then some e.retSize else none }
+
 /-- Image object `o` as a program (see the module comment), and its world; `zeroSized` gives
 each function's zero-sized frame objects by its symbol. -/
 def imageProgram (o : Ryo.Obj.ImageObject) (zeroSized : String → List Int := fun _ => []) :
     Program × World :=
   let decoded := DecodeObj.decodeAll o
-  let code (i : Nat) (fi : Ryo.Obj.FuncInputs) (d : Decoded) : Code :=
-    { d, mode := fi.mode, ρ := Image.addrs, argSize := (o.funcs[i]?.map (·.argSize)).getD 0,
-      zeroSized := (o.funcs[i]?.map fun f => zeroSized (o.funcName f.codeOff)).getD [],
-      stackSize := fun k => ((Image.imageCallee d k).bind (o.funcs[·]?)).map (·.argSize) |>.getD 0,
-      sretSize := fun k => do
-        let g ← Image.imageCallee d k
-        let e ← o.funcs[g]?
-        if e.retKind == Asm.retSret then some e.retSize else none }
+  let code := Image.imageCode o zeroSized
   ({ codes := decoded.mapIdx fun i x => x.map fun (fi, d) => code i fi d }, Image.world o)
 
 /-! ### Text -/

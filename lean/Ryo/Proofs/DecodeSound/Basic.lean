@@ -12,6 +12,7 @@ import Ryo.Proofs.NoArgCursor
 import Ryo.Proofs.FrameBounds
 import Ryo.Proofs.Discharge.FrameBounds
 import Ryo.Proofs.Discharge.FrameSizes
+import Ryo.Proofs.Discharge.StackSizes
 import Ryo.Vm.CallSitesCheck
 import Ryo.Proofs.Shapes
 import Ryo.Proofs.Call
@@ -563,9 +564,9 @@ def LinkPrivate (S : Setup) : Prop :=
 /-- Open (image): the callees' stack argument areas (`Code.stackSize`, from the image's
 `FuncEntry`s) fit: below `2^62` with the frame (`call_sound`'s `hb`; `tail_call_step`'s `hn`
 follows), on PE a call's holds the 32-byte shadow space, and every callee's area (with PE's
-16 bytes of return address and alignment) fits in the frame. The image checks (§C4) could
-discharge it against the frame size; `frame` is checked by check-image for direct calls, not
-yet for indirect ones. -/
+16 bytes of return address and alignment) fits in the frame. Checked: `Hyps.stackSizes` derives
+it from `stackSizesCheck`, which check-image runs on each function's `imageCode` (on PE an
+indirect call's area is 0 there, so the check rejects PE functions with indirect calls). -/
 structure StackSizes (S : Setup) : Prop where
   stack : ∀ k, S.F + S.c.stackSize k < 2 ^ 62
   shadow : S.c.mode.pe = true → ∀ (k : Nat) (op : Reduced.Opcode) (ops : List (R.Opnd Nat))
@@ -673,7 +674,11 @@ structure Hyps (S : Setup) : Prop where
   -- Open prerequisites: the environment and the layout.
   sepAcross : SepAcross S
   envApart : EnvApart S
-  stackSizes : StackSizes S
+  /-- Checked by `stackSizesCheck` (ryo-lean, against the image's areas): gives
+  `Hyps.stackSizes`. -/
+  stackSizesOk : stackSizesCheck S.c = true
+  /-- `Code.stackSize` is zero past the instructions (`imageProgram`: `imageStackSize_out`). -/
+  stackSizeOut : ∀ k, S.c.d.insns.size ≤ k → S.c.stackSize k = 0
   codeApart : CodeApart S
   envOutside : EnvOutside S
   -- Open prerequisites: the decoder's and linker's facts not yet exposed.
@@ -693,6 +698,11 @@ structure Hyps (S : Setup) : Prop where
 /-- `FrameBounds` for the window, from the bound check (`Discharge/FrameBounds.lean`). -/
 theorem Hyps.frameBounds {S : Setup} (H : Hyps S) : FrameBounds S.c S.K :=
   Discharge.FrameBounds.frameBounds_of_boundsOk_le H.boundsOk H.frameK.1 H.frameK.2
+
+/-- The callees' stack areas fit, from `stackSizesCheck` (`Discharge/StackSizes.lean`). -/
+theorem Hyps.stackSizes {S : Setup} (H : Hyps S) : StackSizes S :=
+  have h := Discharge.StackSizes.of_check H.stackSizesOk H.stackSizeOut H.frameBounds.F_le
+  ⟨h.1, h.2.1, h.2.2.1⟩
 
 /-- On PE the frame size and the return address fit a signed 32-bit displacement, as PE's
 epilogue (`ArgRet.ret_step`, `bodySim_ret`) needs (`frameSizesCheck`). -/

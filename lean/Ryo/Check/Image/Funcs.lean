@@ -40,6 +40,8 @@ decoded code:
 -/
 import Ryo.Check.Image.Common
 import Ryo.Vm.Frame
+import Ryo.Vm.R.Run
+import Ryo.Vm.StackSizes
 
 namespace Ryo.Check.Image
 
@@ -236,7 +238,12 @@ def checkFuncs (o : ImageObject) (ds : Array FuncDecoding) : Array String := Id.
   let mut out := checkTable o ++ checkSymbols o
   for h : i in [0:ds.size] do
     match ds[i].decoded with
-    | .ok d => out := out ++ checkSignature o i d
+    | .ok d =>
+      out := out ++ checkSignature o i d
+      -- The calls' stack areas against the frame (`stackSizesCheck`, `Hyps.stackSizesOk`).
+      if let .ok fi := ds[i].inputs then
+        if !stackSizesCheck (Ryo.Vm.R.Image.imageCode o (fun _ => []) i fi d) then
+          out := out.push s!"{funcLabel o i}: a call's stack area doesn't fit the frame (stackSizesCheck)"
     | .error e => out := out.push s!"{funcLabel o i}: decode: {e}"
   return out
 

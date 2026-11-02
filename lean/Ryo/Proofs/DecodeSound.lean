@@ -99,8 +99,7 @@ discharged later:
   separation across handler calls, calls and islands, `SepAcross`: `FrameSep.extend`'s
   allocation facts, not yet in the contracts), `envApart` (`EnvApart`: the frame window not
   runtime-owned, live allocations neither runtime-owned nor below `rsp`, the symbol slots and
-  the JIT record off the stack), `stackSizes` (`StackSizes`: the callees' stack areas, fitting
-  the frame, from the image), `codeApart` (`CodeApart`: nothing the function or its environment writes is code or
+  the JIT record off the stack), `codeApart` (`CodeApart`: nothing the function or its environment writes is code or
   rodata), `envOutside` (`EnvOutside`: the environment's entries are `Env.out` states);
 - facts of the decoder and linker not yet exposed: `deadStore` (`DeadStoreSim`: the steps of
   dropped stores), `cacheCleared` (`CacheCleared`: the cache is empty at branch targets and

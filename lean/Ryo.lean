@@ -7,6 +7,7 @@ import Ryo.X86.Unique
 import Ryo.Vm.DecodeReduced
 import Ryo.Vm.Frame
 import Ryo.Vm.FrameSizes
+import Ryo.Vm.StackSizes
 import Ryo.Vm.CallSitesCheck
 import Ryo.Vm.DecodeObj
 import Ryo.Check.Image.Pool
@@ -39,6 +40,7 @@ import Ryo.Proofs.PassArgsConv
 import Ryo.Proofs.PassArgsStack
 import Ryo.Proofs.PassArgsDup
 import Ryo.Proofs.Discharge.Nounwind
+import Ryo.Proofs.Discharge.StackSizes
 import Ryo.Proofs.Island
 import Ryo.Proofs.DecodeLink
 import Ryo.Proofs.ArgPeBound
