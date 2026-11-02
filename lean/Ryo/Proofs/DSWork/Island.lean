@@ -1,5 +1,6 @@
 import Ryo.Proofs.DSWork.Boundary
 import Ryo.Proofs.NoArgCursor
+import Ryo.Proofs.Discharge.PadsLinked
 
 set_option linter.constructorNameAsVariable false
 
@@ -798,7 +799,7 @@ theorem bodySim_island (hD : Decodes S code relocs rodata callSites dropped scop
             .lea (Island.islandRegs S.c.mode.pe).2 (.ro o)] ++ [Item.callMem (.sym isl)] := rfl
         rw [e, codeSize_append, hc6]
       rw [this, hsite, Nat.add_assoc]; rfl
-    have hpads := H.padsLinked k hlt site (by rw [hpk]; simp)
+    have hpads := (H.padsLinked hD hfi.code.small) k hlt site (by rw [hpk]; simp)
       (p + codeSize (Island.islandPre S.c.mode isl o)) (by omega) (by omega)
     have hl := hland.rip
     rw [hretA, hpads] at hl

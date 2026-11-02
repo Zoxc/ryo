@@ -2,6 +2,7 @@ import Ryo.Proofs.DecodeSound.Basic
 import Ryo.Proofs.NoArgCursor
 import Ryo.Proofs.DSWork.Island
 import Ryo.Proofs.OpFacts
+import Ryo.Proofs.Discharge.PadsLinked
 
 set_option linter.constructorNameAsVariable false
 
@@ -781,7 +782,7 @@ theorem handler_resume' (hD : Decodes S code relocs rodata callSites dropped sco
   have hra : x2.mem.read64 x2.rsp = addrAt S.ctx (hat + 5) := by
     rw [hret2, hrip, addrAt_add', ← hlen5, hend]; rfl
   have hsite : (hat, 5) ∈ S.r.protos[k].sites := by rw [hpk]; simp
-  have hpl := H.padsLinked k hlt (hat, 5) hsite (hat + 5) (by simp) (by simp)
+  have hpl := (H.padsLinked hD hf.code.small) k hlt (hat, 5) hsite (hat + 5) (by simp) (by simp)
   have hout := H.envOutside.handler .resume x2 hat2
   refine Reach.steps hsteps (.env hout fun x' hret => ?_)
   obtain ⟨hpad, -, hrsp', hsaved', hmem'⟩ := H.resume args off x2 x' hu hat2 hargs2 hret

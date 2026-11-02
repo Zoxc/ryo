@@ -3,6 +3,7 @@ import Ryo.Proofs.NoArgCursor
 import Ryo.Proofs.DSWork.Ret
 import Ryo.Proofs.DSWork.Island
 import Ryo.Proofs.DSWork.Arg
+import Ryo.Proofs.Discharge.PadsLinked
 
 set_option linter.constructorNameAsVariable false
 
@@ -1480,7 +1481,7 @@ theorem bodySim_call' (hD : Decodes S code relocs rodata callSites dropped scope
     · -- It unwinds.
       obtain ⟨a', exc, hres, hend, hland, hal⟩ := hsa.2 ⟨hy, hry⟩
       rw [hstl] at hend
-      have hpads := H.padsLinked k hlt (p3, n) (by rw [hpk]; simp) (p3 + n)
+      have hpads := (H.padsLinked hD hfi.code.small) k hlt (p3, n) (by rw [hpk]; simp) (p3 + n)
         (by show p3 < p3 + n; omega) (by show p3 + n ≤ p3 + n; omega)
       have hl := hland.rip
       rw [hra, hpads] at hl

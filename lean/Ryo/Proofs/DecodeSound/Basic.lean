@@ -591,6 +591,31 @@ def HdlTables (S : Setup) : Prop :=
     es ≠ [] → ∀ hk : k < S.r.protos.size, (∀ e ∈ es, e.toNat ∈ S.r.protos[k].targets) →
     tb.toNat < 2 ^ 31 ∧ Boundary S.rs tb.toNat ∧ ∀ e ∈ es, e.toNat < 2 ^ 31
 
+/-! ### The LSDA as the unwinder reads it -/
+
+/-- The personality's call-site lookup: the first site with `start < p ≤ start + len`. -/
+def siteAt (sites : Array CallSite) (p : Nat) : Option CallSite :=
+  sites.find? fun s => decide (s.start < p) && decide (p ≤ s.start + s.len)
+
+/-- The landing pad's byte offset the LSDA gives for return address offset `p`. -/
+def lsdaPad (S : Setup) (p : Nat) : Option (BitVec 64) :=
+  ((siteAt S.callSites p).bind (·.pad)).map (BitVec.ofNat 64)
+
+/-- Trusted (environment contract, `rust_eh_personality`'s lookup): the unwinder's pad for a return address in the function is
+the LSDA's. -/
+def UnwinderReadsLsda (S : Setup) : Prop :=
+  ∀ p, S.padOf (addrAt S.ctx p) = (lsdaPad S p).map (S.ctx.base + ·)
+
+/-- Open (checkable; neither `read` nor the image checks verify it yet): no two call sites share a start. -/
+def StartsDistinct (sites : Array CallSite) : Prop :=
+  ∀ a ∈ sites, ∀ b ∈ sites, a.start = b.start → a = b
+
+/-- Open (checkable; neither `read` nor the image checks verify it yet): a call site whose return-address range meets one of
+instruction `k`'s call ranges starts where that one does. -/
+def SitesAligned (S : Setup) : Prop :=
+  ∀ k (hk : k < S.r.protos.size), ∀ site ∈ S.r.protos[k].sites, ∀ cs ∈ S.callSites, ∀ p,
+    site.1 < p → p ≤ site.1 + site.2 → cs.start < p → p ≤ cs.start + cs.len → cs.start = site.1
+
 /-- What `decode_sound` assumes (see the module comment): the trusted contracts, facts proved
 outside the default build, the frame-pointer restriction, and the open prerequisites. -/
 structure Hyps (S : Setup) : Prop where
@@ -645,7 +670,16 @@ structure Hyps (S : Setup) : Prop where
   -- Open prerequisites: the decoder's and linker's facts not yet exposed.
   deadStore : DeadStoreSim S
   cacheCleared : CacheCleared S
-  padsLinked : PadsLinked S
+  -- The landing pads: `PadsLinked` follows from these (`Hyps.padsLinked`,
+  -- `Discharge/PadsLinked.lean`).
+  /-- Trusted (environment contract): the personality's call-site lookup gives the LSDA's pad. -/
+  unwinderReadsLsda : UnwinderReadsLsda S
+  /-- Open (checkable): no two call sites share a start; neither `read` nor the image checks
+  verify it yet (the writer emits them sorted by start). -/
+  startsDistinct : StartsDistinct S.callSites
+  /-- Open (checkable): call sites meeting an instruction's call range start where it does;
+  neither `read` nor the image checks verify it yet. -/
+  sitesAligned : SitesAligned S
   -- Prerequisites of the inline steps (`DSWork/Inline.lean`'s `bodySim_inline'`).
   /-- Every inline opcode's class is of its shape and `clsOk` (proved by kernel evaluation:
   `inlineOps_shape`, `RyoProofs/InlineOps.lean`, and `inlineOps_clsOk`,

@@ -71,7 +71,8 @@ gives them.
 **Hypotheses** (`Hyps`). Trusted: the handler, `resume`, call, island and trip contracts on the
 environment's `ret` (`HandlerContract`, `ResumeContract`: `resume`'s handler is assembly, outside
 `opSem`, and comes back only at a landing pad; `CallContract`, `IslandContract`,
-`TripContract`; on PE every return keeps `rsi`/`rdi`, `peSaved`), the link map (`Linked`,
+`TripContract`; on PE every return keeps `rsi`/`rdi`, `peSaved`), the personality's call-site
+lookup (`unwinderReadsLsda`: the unwinder's pad for a return address is the LSDA's), the link map (`Linked`,
 `Globals`). Proved elsewhere, outside the default build: `OpFacts` of every opcode (`opFacts`,
 `RyoProofs/OpFacts.lean`), `InlineOk` of every inline opcode (`inlineOk`, by `inlineOps_ok`,
 `RyoProofs/InlineOk.lean`) and each inline class of its shape and `clsOk` (`inlineClsOk`, by
@@ -105,7 +106,11 @@ discharged later:
   rodata), `envOutside` (`EnvOutside`: the environment's entries are `Env.out` states);
 - facts of the decoder and linker not yet exposed: `deadStore` (`DeadStoreSim`: the steps of
   dropped stores), `cacheCleared` (`CacheCleared`: the cache is empty at branch targets and
-  landing pads), `padsLinked` (`PadsLinked`: the LSDA as linked against `cleanupAt`).
+  landing pads), and, for the LSDA as linked against `cleanupAt` (`PadsLinked`, derived by
+  `Hyps.padsLinked` in `Discharge/PadsLinked.lean`), `startsDistinct` (`StartsDistinct`: no two
+  call sites share a start) and `sitesAligned` (`SitesAligned`: a call site meeting an
+  instruction's call range starts where it does); neither `read` nor the image checks verify
+  these two yet.
 
 Not covered: the prologue (R's `entry` against the entry's counter check, the prologue and the
 stack probe: the simulation starts at instruction 0's boundary) and the trip's `Done` outcome (a
