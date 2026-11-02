@@ -24,5 +24,9 @@ remove it once a Lean session has handled it.
   in VM code"): calls and islands with MIR's `Unreachable`, and direct calls of non-unwinding
   `C` callees, get a `NOUNWIND` cleanup entry (`FnCx::unwind_entry`) when the body has no
   landing pad, none otherwise. `docs/aot.md` (Unwinding) states the rule and the image checks
-  accept the entry; no Lean checker derives cleanup entries from MIR. Left: proofs only (the
-  call-site/cleanup-entry correspondence).
+  accept the entry. `Proofs/Discharge/Nounwind.lean` proves the entry's meaning (L0's
+  `Unreachable` unwind is UB; R unwinds out at a `NOUNWIND` entry, never catches there; the
+  unwinder finds no pad; the image encodes and reads it back) against `unwindEntry`, a mirror of
+  `FnCx::unwind_entry`. Left: no Lean checker derives cleanup entries from MIR, so that the
+  decoded entries are `unwindEntry` of the body's actions is unproved; non-unwinding `C`
+  callees are treated as `Unreachable`.
