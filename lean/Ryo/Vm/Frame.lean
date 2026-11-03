@@ -868,14 +868,14 @@ def droppedOk (d : Decoded) (fl : Flow) (live : Array Nat) (k : Nat) : Bool :=
   | none => false
 
 /-- The dropped stores `droppedNotDead` can't show dead: their instruction indices (all of them
-if a fixpoint check or `endsUnread` fails). -/
+if a fixpoint check fails). `preciseOk`/`endsUnread` aren't run: `endsUnread` rejects real code
+(a slot re-initialised in part after its `End`, then copied whole: a read of `Uninit` padding). -/
 def droppedNotDead (d : Decoded) (mode : Mode) (facts : Facts := {}) : Except String (List Nat) := do
   if d.dropped.isEmpty then return []
   let fl ← Flow.of d mode facts
   let liveIn := fl.liveIn
-  let plive := fl.preciseLive
-  -- The fixpoints checked (the proofs can't look into the loops), and the `End` check.
-  if !(fl.liveOk liveIn && escOk d fl.edges fl.esc && fl.preciseOk plive && endsUnread d fl plive) then
+  -- The fixpoints checked (the proofs can't look into the loops).
+  if !(fl.liveOk liveIn && escOk d fl.edges fl.esc) then
     return d.dropped.toList
   return d.dropped.toList.filter fun k => !droppedOk d fl liveIn k
 

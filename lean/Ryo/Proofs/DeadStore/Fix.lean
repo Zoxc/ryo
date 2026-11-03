@@ -2,8 +2,9 @@
 Ryo.Proofs.DeadStore.Fix — the dead-store certificate's bitset algebra (design T1).
 
 `Flow.liveIn` and `Flow.preciseLive` are `while` loops (`partial`), so nothing is proved of them:
-`droppedNotDead` checks that they are post-fixpoints (`Flow.liveOk`, `Flow.preciseOk`), and these
-lemmas read the per-instruction facts off the checks:
+`droppedNotDead` checks that `liveIn` is a post-fixpoint (`Flow.liveOk`), and these lemmas read the
+per-instruction facts off the checks (`Flow.preciseOk` and `endsUnread` have lemmas here but aren't
+run: `endsUnread` rejects real code):
 
 - `testBit_*`: `diff`, `bitsOf`, `Ranges.bits`, `|||`-folds bit by bit;
 - `postFix_spec`, `testBit_transferWith`: a post-fixpoint's transfer at `k` is in `live[k]`;
@@ -12,7 +13,8 @@ lemmas read the per-instruction facts off the checks:
   live into `k`;
 - `endsUnread_spec`: an ended byte a dropped store writes isn't precise-live out of `k`;
 - `droppedOk_spec`: the dropped store's bytes, but its flag byte, are dead into each successor;
-- `droppedNotDead_ok`: `droppedNotDead … = .ok []` with stores dropped gives all of these.
+- `droppedNotDead_ok`: `droppedNotDead … = .ok []` with stores dropped gives `liveOk`, `escOk` and
+  `droppedOk` of each store.
 -/
 import Ryo.Vm.Frame
 
@@ -249,20 +251,18 @@ post-fixpoints and every dropped store shown dead. -/
 theorem droppedNotDead_ok {d : Decoded} {mode : Ryo.Obj.Mode} {facts : Frame.Facts}
     (h : droppedNotDead d mode facts = .ok []) (hne : d.dropped.isEmpty = false) :
     ∃ fl, Flow.of d mode facts = .ok fl ∧ fl.liveOk fl.liveIn = true ∧
-      escOk d fl.edges fl.esc = true ∧ fl.preciseOk fl.preciseLive = true ∧
-      endsUnread d fl fl.preciseLive = true ∧
+      escOk d fl.edges fl.esc = true ∧
       ∀ k ∈ d.dropped.toList, droppedOk d fl fl.liveIn k = true := by
   unfold droppedNotDead at h
   cases hf : Flow.of d mode facts with
   | error e => simp [hne, hf, bind, Except.bind] at h
   | ok fl =>
     refine ⟨fl, rfl, ?_⟩
-    by_cases hc : (fl.liveOk fl.liveIn && escOk d fl.edges fl.esc && fl.preciseOk fl.preciseLive &&
-        endsUnread d fl fl.preciseLive) = true
+    by_cases hc : (fl.liveOk fl.liveIn && escOk d fl.edges fl.esc) = true
     · have hc' := hc
       simp only [Bool.and_eq_true] at hc'
-      obtain ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ := hc'
-      refine ⟨h1, h2, h3, h4, ?_⟩
+      obtain ⟨h1, h2⟩ := hc'
+      refine ⟨h1, h2, ?_⟩
       have h' : d.dropped.toList.filter (fun k => !droppedOk d fl fl.liveIn k) = [] := by
         simpa [hne, hf, hc, bind, Except.bind, pure, Except.pure] using h
       intro k hk
