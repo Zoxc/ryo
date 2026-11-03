@@ -14,6 +14,8 @@ import Ryo.Proofs.Discharge.FrameBounds
 import Ryo.Proofs.Discharge.FrameSizes
 import Ryo.Proofs.Discharge.StackSizes
 import Ryo.Proofs.Discharge.PeStackArg
+import Ryo.Proofs.Discharge.EscFrom
+import Ryo.Proofs.Discharge.PrivCheck
 import Ryo.Vm.CallSitesCheck
 import Ryo.Vm.RelocsInCheck
 import Ryo.Vm.CacheClearedCheck
@@ -303,6 +305,10 @@ structure FrameInv (S : Setup) (s : R.RState) (x : X86.State) : Prop where
   the code reaches them (`boundsOk`), nor a call's answer (`argSlotsCheck`); it gives
   `Hyps.peStackArg` (`Discharge/PeStackArg.lean`). -/
   slots : Discharge.PeStackArg.ArgSlots S.c s.st
+  /-- Every escaped object is the range of an `Escape` scope of the code; in the run of leading
+  `arg`s, of one before `pc` (`Discharge/EscFrom.lean`). With `privCheck` it gives
+  `Hyps.linkPrivate` and `Hyps.argPrivate`. -/
+  esc : Discharge.EscFrom.EscFrom S.c (LeadArg S s.pc) s.pc s.st
 
 /-- The relation at an instruction boundary (see the module comment). -/
 def BInv (S : Setup) (s : R.RState) (x : X86.State) : Prop :=
@@ -549,10 +555,9 @@ structure ArgsOk (S : Setup) : Prop where
   untargeted : ∀ k (hk : k < S.r.protos.size), ∀ t ∈ S.r.protos[k].targets, ∀ j,
     posOf S.r j = t → ¬ LeadArg S j
 
-/-- Open: an `arg`'s destination is private after the scopes (`arg_step` keeps `RRel`; with a
-private destination memory is unchanged, so `MemRel` and `FrameSep` are kept), like
-`LoadPrivate`. A check could discharge it: no `Escape` before the leading run covers an `arg`'s
-slot (then by induction, escaped objects come only from the scopes). -/
+/-- An `arg`'s destination is private after the scopes (`arg_step` keeps `RRel`; with a
+private destination memory is unchanged, so `MemRel` and `FrameSep` are kept). Checked:
+`Hyps.argPrivate`, from `privCheck` and `FrameInv.esc`. -/
 def ArgPrivate (S : Setup) : Prop :=
   ∀ (s : R.RState) (x : X86.State) (s1 : R.RState) (op : Reduced.Opcode) (d : BitVec 32)
     (w : BitVec 64) (f : Full.Opcode) (a : ArgReg), FrameInv S s x →
@@ -574,10 +579,10 @@ def ResultPrivate (S : Setup) : Prop :=
     ∀ parts, R.retRegs k.toNat false = .ok parts → ∀ q ∈ parts, ∀ i < q.1.size,
       s1.st.escapedAt (d.toInt + q.1.off + i) = none
 
-/-- Open: the frame's link slots `[0, 16)` are private after the scopes and in no `Lend`
-extent (so no callee, handler or template may write them: `FrameOwn` puts private window bytes
-in no live allocation; `FrameFacts` is kept). A check could discharge it: no `Escape` or `Lend`
-scope covers the link slots (then by induction, escaped objects come only from the scopes). -/
+/-- The frame's link slots `[0, 16)` are private after the scopes and in no `Lend` extent (so
+no callee, handler or template may write them: `FrameOwn` puts private window bytes in no live
+allocation; `FrameFacts` is kept). Checked: `Hyps.linkPrivate`, from `privCheck` and
+`FrameInv.esc`. -/
 def LinkPrivate (S : Setup) : Prop :=
   ∀ s x s1, FrameInv S s x → (S.c.scopesAt s.pc).foldlM R.applyScope s = .ok s1 →
     ∀ o : Int, 0 ≤ o → o < 16 →
@@ -669,10 +674,10 @@ structure Hyps (S : Setup) : Prop where
   /-- Checked: the bound check (`decodeBounded`, so `Frame.decodeChecked`, accepts only
   then; `decodeChecked_ok`). `Hyps.frameBounds` derives `FrameBounds S.c S.K` from it. -/
   boundsOk : S.c.d.boundsOk S.c.mode = true
-  /-- Checked (`windowCheck`, what the image checker's `checkSignature` checks:
+  /-- Checked (`windowCheck`, which check-image runs on each function's `imageCode`:
   `frameTop ≤ 16 + argSize ≤ 2 ^ 31`): the window `[-F, K)` holds the frame ranges.
   `Hyps.frameBounds` derives `FrameBounds S.c S.K` from it and `boundsOk`. -/
-  windowOk : Discharge.FrameBounds.windowCheck S.c = true
+  windowOk : windowCheck S.c = true
   /-- Checked by `Frame.decodeChecked` (`relocsInCheck`; `relocsInOk_of_decodes`): gives
   `Hyps.relocsIn` (`Discharge/RelocsIn.lean`). -/
   relocsInOk : relocsInCheck S.body.code S.rs = true
@@ -683,9 +688,10 @@ structure Hyps (S : Setup) : Prop where
   frameSizes : frameSizesCheck S.c.d S.c.mode = true
   -- Open prerequisites: privacy of frame bytes after the scopes.
   loadPrivate : LoadPrivate S
-  argPrivate : ArgPrivate S
   resultPrivate : ResultPrivate S
-  linkPrivate : LinkPrivate S
+  /-- Checked by `Frame.decodeChecked` (`privCheck`): with `FrameInv.esc` gives
+  `Hyps.linkPrivate` and `Hyps.argPrivate`. -/
+  privOk : privCheck S.c.d = true
   -- Open prerequisites: the environment and the layout.
   sepAcross : SepAcross S
   envApart : EnvApart S
@@ -711,6 +717,170 @@ structure Hyps (S : Setup) : Prop where
   `RyoProofs/InlineOk.lean`; outside the default build, hence a field). -/
   inlineClsOk : ∀ (f : Full.Opcode) (cls : Class), (f, cls) ∈ inlineOps →
     shapeOk f cls = true ∧ CacheStep.clsOk cls = true
+
+/-- The link slots are private and in no `Lend` extent after the scopes: no `Escape` or `Lend`
+scope covers them (`privCheck`), and escaped objects are `Escape` scopes' ranges
+(`FrameInv.esc`). -/
+theorem Hyps.linkPrivate {S : Setup} (H : Hyps S) : LinkPrivate S := by
+  intro s x s1 hf hsc o h0 h16
+  obtain ⟨hesc, hlend⟩ := Discharge.PrivCheck.link_of_check H.privOk
+  refine ⟨?_, fun l hl => hlend s.pc l hl o h0 h16⟩
+  exact Discharge.EscFrom.escapedAt_none_of (Discharge.EscFrom.EscFrom.scopes hf.esc hsc)
+    (fun p hp he _ => hesc p hp he o h0 h16)
+
+set_option maxRecDepth 100000 in
+theorem privc_ofFullTable : (List.range Reduced.ofFullTable.size).all (fun i =>
+    (Reduced.ofFullTable[i]!).all fun op =>
+      Reduced.toFullTable[op.val.toNat]! == some ⟨i.toUInt16⟩) = true := by
+  decide +kernel
+
+set_option maxRecDepth 100000 in
+/-- Only `arg` has the `arg` shape (among the opcodes `ofFull` maps). -/
+theorem privc_shapeTable : (List.range Reduced.ofFullTable.size).all (fun i =>
+    (Full.Opcode.info ⟨i.toUInt16⟩).shape != .arg || i == 901) = true := by
+  decide +kernel
+
+set_option maxRecDepth 100000 in
+theorem privc_ofFull_lt {f : Full.Opcode} {op : Reduced.Opcode}
+    (h : Reduced.Opcode.ofFull f = some op) : f.val.toNat < Reduced.ofFullTable.size := by
+  unfold Reduced.Opcode.ofFull at h
+  refine Classical.byContradiction fun hn => ?_
+  rw [getElem!_neg Reduced.ofFullTable f.val.toNat hn] at h
+  cases h
+
+set_option maxRecDepth 100000 in
+/-- `Opcode.ofFull` and `Opcode.full` agree. -/
+theorem privc_full_of {f : Full.Opcode} {op : Reduced.Opcode}
+    (h : Reduced.Opcode.ofFull f = some op) : op.full = some f := by
+  have hlt := privc_ofFull_lt h
+  unfold Reduced.Opcode.ofFull at h
+  have := List.all_eq_true.1 privc_ofFullTable f.val.toNat (List.mem_range.2 hlt)
+  rw [h] at this
+  simp only [Option.all_some, beq_iff_eq] at this
+  unfold Reduced.Opcode.full
+  rw [this]
+  congr
+  simp
+
+set_option maxRecDepth 100000 in
+/-- A reduced opcode of `arg` shape is `arg`'s. -/
+theorem privc_arg_of_shape {g : Full.Opcode} {op : Reduced.Opcode}
+    (h : Reduced.Opcode.ofFull g = some op) (hs : g.info.shape = .arg) : g = .arg := by
+  have hlt := privc_ofFull_lt h
+  have hv : g.val.toNat.toUInt16 = g.val := by simp
+  have h0 := List.all_eq_true.1 privc_shapeTable g.val.toNat (List.mem_range.2 hlt)
+  simp only [hv] at h0
+  have h1 : ((Full.Opcode.info g).shape != .arg || g.val.toNat == 901) = true := h0
+  rw [hs] at h1
+  have h2 : g.val.toNat = 901 := by simpa using h1
+  have e : g.val = (901 : UInt16) := UInt16.toNat_inj.1 (h2.trans (by decide))
+  cases g
+  cases e
+  rfl
+
+/-- An instruction with an `arg` destination. -/
+theorem privc_argDest_some {i : R.Insn} (h : (R.Insn.argDest i).isSome = true) :
+    ∃ op d w f, i = .native op [.slot d, .imm w] ∧ op.full = some f ∧ f.info.shape = .arg := by
+  unfold R.Insn.argDest at h
+  split at h
+  next op d w =>
+    split at h
+    next f hf =>
+      split at h
+      next hs => exact ⟨op, d, w, f, rfl, hf, by simpa using hs⟩
+      next => simp at h
+    next => simp at h
+  next => simp at h
+
+/-- A decoded instruction with an `arg` destination is an `arg` proto. -/
+theorem privc_lead_op {S : Setup} {code : ByteArray} {relocs : Array Reloc}
+    {rodata : ByteArray} {callSites : Array CallSite} {dropped : Array DroppedStore}
+    {scopes : Array R.Scope} {mode : Ryo.Obj.Mode}
+    (hD : Decodes S code relocs rodata callSites dropped scopes mode) {j : Nat}
+    (hs : (S.c.d.insns[j]?.bind R.Insn.argDest).isSome = true) :
+    ∃ hj : j < S.r.protos.size, S.r.protos[j].op = .arg := by
+  obtain ⟨sz, hI⟩ := reducedOf_insns hD.reduced
+  cases hij : S.c.d.insns[j]? with
+  | none => rw [hij] at hs; simp at hs
+  | some i =>
+    rw [hij] at hs
+    change (R.Insn.argDest i).isSome = true at hs
+    obtain ⟨op, d, w, f, rfl, hf, hsh⟩ := privc_argDest_some hs
+    obtain ⟨hj, hji⟩ := Array.getElem?_eq_some_iff.1 hij
+    have hjp : j < S.r.protos.size := sz ▸ hj
+    have hio := hI j hjp hj
+    rw [hji] at hio
+    unfold InsnOf at hio
+    split at hio
+    next => obtain ⟨t', ht', -⟩ := hio; cases ht'
+    next =>
+      obtain ⟨op', ops, hof, hin, -⟩ := hio
+      injection hin with h1 h2
+      subst h1
+      have e := privc_full_of hof
+      rw [hf] at e
+      injection e with e
+      rw [e] at hsh
+      exact ⟨hjp, privc_arg_of_shape hof hsh⟩
+
+/-- A leading run of `arg`s in the decoded instructions is one of the decoder's (`LeadArg`). -/
+theorem leadArg_of_leadUpTo {S : Setup} {code : ByteArray} {relocs : Array Reloc}
+    {rodata : ByteArray} {callSites : Array CallSite} {dropped : Array DroppedStore}
+    {scopes : Array R.Scope} {mode : Ryo.Obj.Mode}
+    (hD : Decodes S code relocs rodata callSites dropped scopes mode) {k : Nat}
+    (h : S.c.d.leadUpTo k = true) : LeadArg S k := by
+  revert h
+  induction k with
+  | zero =>
+    intro h
+    unfold R.Decoded.leadUpTo at h
+    have hs := List.all_eq_true.1 h 0 (List.mem_range.2 (by omega))
+    obtain ⟨hj, hop⟩ := privc_lead_op hD hs
+    refine ⟨hj, ?_⟩
+    rw [hD.argsSucc 0 (by simpa using hj), hD.args0]
+    simp [hop]
+  | succ k ih =>
+    intro h
+    unfold R.Decoded.leadUpTo at h
+    have hk' : S.c.d.leadUpTo k = true := by
+      unfold R.Decoded.leadUpTo
+      exact List.all_eq_true.2 fun j hj =>
+        List.all_eq_true.1 h j (List.mem_range.2 (by have := List.mem_range.1 hj; omega))
+    have hk := ih hk'
+    have hs := List.all_eq_true.1 h (k + 1) (List.mem_range.2 (by omega))
+    obtain ⟨hj, hop⟩ := privc_lead_op hD hs
+    refine ⟨hj, ?_⟩
+    rw [hD.argsSucc (k + 1) (by simpa using hj), hk.2]
+    simp [hop]
+
+/-- The instruction before a leading `arg` is one. -/
+theorem LeadArg.prev {S : Setup} {code : ByteArray} {relocs : Array Reloc}
+    {rodata : ByteArray} {callSites : Array CallSite} {dropped : Array DroppedStore}
+    {scopes : Array R.Scope} {mode : Ryo.Obj.Mode}
+    (hD : Decodes S code relocs rodata callSites dropped scopes mode) {k : Nat}
+    (h : LeadArg S (k + 1)) : LeadArg S k := by
+  obtain ⟨h1, h2⟩ := h
+  refine ⟨by omega, ?_⟩
+  have := hD.argsSucc (k + 1) (by simpa using h1)
+  rw [this, Bool.and_eq_true] at h2
+  exact h2.1
+
+/-- An `arg`'s destination is private after the scopes: no `Escape` scope that may have run
+covers it (`privCheck`; a leading `arg` is `LeadArg`, `leadArg_of_leadUpTo`, so `FrameInv.esc`
+names scopes before it). -/
+theorem Hyps.argPrivate {S : Setup} {code : ByteArray} {relocs : Array Reloc}
+    {rodata : ByteArray} {callSites : Array CallSite} {dropped : Array DroppedStore}
+    {scopes : Array R.Scope} {mode : Ryo.Obj.Mode}
+    (hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S) :
+    ArgPrivate S := by
+  intro s x s1 op d w f a hf hi hfo hsh ha hsc i hia
+  have hE := Discharge.EscFrom.EscFrom.scopes hf.esc hsc
+  refine Discharge.EscFrom.escapedAt_none_of hE ?_
+  intro p hp he hL
+  refine Discharge.PrivCheck.arg_of_check H.privOk hi hfo hsh ha p hp he ?_ i hia
+  intro hl
+  have := hL (leadArg_of_leadUpTo hD hl)
+  omega
 
 /-- `FrameBounds` for the window, from the bound check (`Discharge/FrameBounds.lean`). -/
 theorem Hyps.frameBounds {S : Setup} (H : Hyps S) : FrameBounds S.c S.K :=
@@ -1248,12 +1418,12 @@ theorem FrameInv.congr {s : R.RState} {x y : X86.State} (h : FrameInv S s x)
     (hr : y.regs = x.regs) (hx : y.xmm = x.xmm) (hm : y.mem = x.mem) : FrameInv S s y := by
   have hrsp : y.rsp = x.rsp := by simp [State.rsp, State.reg, hr]
   have hrbp : y.reg .rbp = x.reg .rbp := by simp [State.reg, hr]
-  obtain ⟨⟨hrel, hb, hwf⟩, hmem, hsep, hwin, hfpF, hsp, hroom, hcode, hro, hargs, hfr, hsl⟩ := h
+  obtain ⟨⟨hrel, hb, hwf⟩, hmem, hsep, hwin, hfpF, hsp, hroom, hcode, hro, hargs, hfr, hsl, hesc⟩ := h
   refine ⟨⟨Shapes.rel_congr hr hm hrel, hrbp.trans hb, hwf⟩, Shapes.memRel_congr hm hmem,
     hsep.congr hrbp, hwin, hfpF, by rw [hrsp, hrbp]; exact hsp, by rw [hrsp]; exact hroom,
     by rw [hm]; exact hcode, by rw [hm]; exact hro,
     fun ha r hr' hfr => (hargs ha r hr' hfr).congr (fun i _ => by rw [hr]) (fun i _ => by rw [hx]),
-    ?_, hsl⟩
+    ?_, hsl, hesc⟩
   obtain ⟨f1, f2, f3, f5⟩ := hfr
   refine ⟨by rw [hrbp]; exact f1, by rw [hrbp, hm]; exact f2, by rw [hrbp, hm]; exact f3,
     fun i hi h5 => by rw [hr]; exact f5 i hi h5⟩
@@ -1389,7 +1559,9 @@ theorem bodySim_jmp (_hD : Decodes S code relocs rodata callSites dropped scopes
         hf.rrel hf.sep hsc).2
       have hrbp : x'.reg .rbp = x.reg .rbp := by simp [State.reg, hregs]
       refine ⟨⟨hr', hm', hsep.congr hrbp, hk.fp ▸ hf.win, hk.fp ▸ hf.fpF, hf0.rsp, hf0.room,
-        hf0.code, hf0.ro, fun ha => ?_, hf0.frame, (H.slots_scopes (s1 := s1) hf hsc :)⟩, .inr ⟨?_, ?_⟩⟩
+        hf0.code, hf0.ro, fun ha => ?_, hf0.frame, (H.slots_scopes (s1 := s1) hf hsc :),
+        (hf.esc.scopes hsc).of_not fun ha => H.argsUntargeted _hD k hlt t.toNat
+          (by rw [hpk]; simp [Proto.targets, Opnd.targetsOf]) t' ht' ha⟩, .inr ⟨?_, ?_⟩⟩
       · exact absurd ha (H.argsUntargeted _hD k hlt t.toNat
           (by rw [hpk]; simp [Proto.targets, Opnd.targetsOf]) t' ht')
       · show x'.rip = addrAt S.ctx (posOf S.r t')

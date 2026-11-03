@@ -717,7 +717,7 @@ theorem hdl_frameInv (H : Hyps S) (HC : HdlApart S) {s : R.RState} {x y : X86.St
   refine ⟨⟨⟨fun o h1 h2 b hb => ?_, fun e he a h => ?_, fun p hp => ?_⟩, hrbp.trans hf.rrel.rbp,
     hf.rrel.wf⟩, fun id a hg hl i hi => ?_, hf.sep.congr hrbp, hf.win, hf.fpF,
     by rw [hag.1, hrbp]; exact hf.rsp, by rw [hag.1]; exact hf.room, hdl_linkOk H HC hf hm,
-    hdl_roLoaded H hf hm, fun h => absurd h ha, ?_, hf.slots⟩
+    hdl_roLoaded H hf hm, fun h => absurd h ha, ?_, hf.slots, hf.esc⟩
   · have hr := hf.rrel.rel.frame o h1 h2 b hb
     rw [hfp]
     cases b with
@@ -921,7 +921,8 @@ theorem handler_resume' (hD : Decodes S code relocs rodata callSites dropped sco
     ⟨⟨⟨fun o h1 h2 b hb => hr1.rel.frame o h1 h2 b hb, hr1.rel.layout, hr1.rel.zeroSized⟩,
       hr1.rbp, ⟨hr1.wf.idLt, hr1.wf.idInj, hr1.wf.size, hr1.wf.disj⟩⟩, hm1, ⟨hsep1.own, hsep1.init, hsep1.dis, hsep1.space, hsep1.esc⟩, hk1.fp ▸ hf.win, hk1.fp ▸ hf.fpF, hf.rsp, hf.room,
       hf.code, hf.ro, fun h => absurd h hnl, hf.frame,
-      (H.slots_scopes hf hsc).congr rfl (fun _ _ _ => rfl)⟩
+      (H.slots_scopes hf hsc).congr rfl (fun _ _ _ => rfl),
+      ((hf.esc.scopes hsc).of_not hnl).congr rfl⟩
   have h8 : 8 ≤ x.rsp.toNat := by omega
   have hag : Counter.Agree S.Owned S.lo x x' := by
     refine ⟨by rw [hrsp', hrsp2]; exact BitVec.sub_add_cancel _ _,
@@ -1048,13 +1049,13 @@ theorem hdl_frameInv_regs {s : R.RState} {x y : X86.State} (hf : FrameInv S s x)
     (hm : y.mem = x.mem) (hrbp : y.reg .rbp = x.reg .rbp) (hrsp : y.rsp = x.rsp)
     (hsv : ∀ i, Saved S.c.mode.pe i → y.regs i = x.regs i) (ha : ¬ LeadArg S s.pc) :
     FrameInv S s y := by
-  obtain ⟨⟨hrel, hb, hwf⟩, hmem, hsep, hwin, hfpF, hsp, hroom, hcode, hro, -, hfr, hsl⟩ := hf
+  obtain ⟨⟨hrel, hb, hwf⟩, hmem, hsep, hwin, hfpF, hsp, hroom, hcode, hro, -, hfr, hsl, hesc⟩ := hf
   obtain ⟨f1, f2, f3, f5⟩ := hfr
   exact ⟨⟨Inline.rel_congr hrel hrbp hm, hrbp.trans hb, hwf⟩, Shapes.memRel_congr hm hmem,
     hsep.congr hrbp, hwin, hfpF, by rw [hrsp, hrbp]; exact hsp, by rw [hrsp]; exact hroom,
     by rw [hm]; exact hcode, by rw [hm]; exact hro, fun h => absurd h ha,
     ⟨by rw [hrbp]; exact f1, by rw [hrbp, hm]; exact f2, by rw [hrbp, hm]; exact f3,
-      fun i hi h5 => by rw [hsv i hi]; exact f5 i hi h5⟩, hsl⟩
+      fun i hi h5 => by rw [hsv i hi]; exact f5 i hi h5⟩, hsl, hesc.of_not ha⟩
 
 /-- A handler call's home bytes (`R.handlerHome`: PE's 32-byte home space, 40 with a stack
 argument) fit in the frame: `shadowSize` covers them and `frameSizesCheck` bounds it by `F`
@@ -1112,7 +1113,8 @@ theorem hdl_frameInv_clear (H : Hyps S) {s : R.RState} {x : X86.State} {st'' : O
       rrel := ⟨hr', hf.rrel.rbp, hf.rrel.wf.of_sizes hesc hsz⟩
       mem := ScopeMem.memRel_writeUninit hf.mem hw
       sep := island_sep_writeFrame hf.sep hw (Int.le_refl _) (by rw [List.length_replicate]; omega)
-      slots := hf.slots.clearHome hcl }
+      slots := hf.slots.clearHome hcl
+      esc := hf.esc.congr hesc }
   · exact hf
 
 set_option maxRecDepth 100000 in
@@ -1425,7 +1427,8 @@ theorem hdl_call_reach (_hD : Decodes S code relocs rodata callSites dropped sco
     · exact ⟨hsep', hslots'.clearHome hcl⟩
   refine ⟨⟨hH''.rel, ?_, hwf''⟩, hH''.mem, hsep'', ?_, ?_, ?_, ?_, island_link_kept hf.code hkeep,
     island_ro_kept hf.ro hkeep, fun ha => absurd ha hnl,
-    island_frame_kept hf.frame hkeep hrbp' (fun i hi _ => hsvX i hi), hslots''⟩
+    island_frame_kept hf.frame hkeep hrbp' (fun i hi _ => hsvX i hi), hslots'',
+    ((hf.esc.scopes hsc).of_not hnl).congr (hesc''.trans hesc)⟩
   · show x'.reg .rbp = BitVec.ofNat 64 s1.fp
     rw [hrbp', hf.rrel.rbp, hk.fp]
   · show (s1.fp : Int) + S.K ≤ 2 ^ 64

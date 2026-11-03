@@ -6,8 +6,8 @@ decoder's bound check and the window's end.
 `Decoded.boundsOk` (which `decodeBounded`, and so `Frame.decodeChecked`, checks), and
 `DecodeLink.Bounds.FrameBounds.mono` raises the end to any `K` with `frameTop ≤ K ≤ 2 ^ 31`.
 The window's end is `Setup.K = 16 + argSize`; neither inequality follows from `Decodes`
-(`argSize` is the image's, not an input of the decoder). `windowCheck` checks both, as the
-image checker's `checkSignature` does (`frameTop ≤ 16 + argSize ≤ 2 ^ 31`), and
+(`argSize` is the image's, not an input of the decoder). `windowCheck` (`Ryo.Vm.StackSizes`) checks
+both; check-image runs it on each function's `imageCode`, and
 `frameBounds_of_window` gives `FrameBounds c (16 + argSize)` from it (the `Hyps` field
 `windowOk`).
 
@@ -15,6 +15,7 @@ This file doesn't import `DecodeSound/Basic.lean`, so `Basic.lean` can import it
 `Hyps.frameBounds` from the fields replacing it.
 -/
 import Ryo.Proofs.DecodeLink.Bounds
+import Ryo.Vm.StackSizes
 
 namespace Ryo.Proofs.Discharge.FrameBounds
 
@@ -26,11 +27,6 @@ theorem frameBounds_of_boundsOk_le {c : R.Code} {K : Int}
     Ryo.Proofs.FrameBounds.FrameBounds c K :=
   Ryo.Proofs.DecodeLink.Bounds.FrameBounds.mono
     (Ryo.Proofs.DecodeLink.Bounds.frameBounds_of_boundsOk hb) hK hK'
-
-/-- The window check: the frame ranges end no higher than the incoming area's end
-`16 + argSize`, itself at most `2 ^ 31` (`checkSignature`'s `frameTop` and `2 ^ 31` checks). -/
-def windowCheck (c : R.Code) : Bool :=
-  decide (c.d.frameTop c.mode ≤ 16 + (c.argSize : Int)) && decide (16 + (c.argSize : Int) ≤ 2 ^ 31)
 
 /-- `FrameBounds` for the window `[-F, 16 + argSize)`, from the bound and window checks. -/
 theorem frameBounds_of_window {c : R.Code}

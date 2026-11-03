@@ -607,7 +607,7 @@ theorem bodySim_arg (hD : Decodes S code relocs rodata callSites dropped scopes 
   obtain ⟨-, hsep1⟩ := sep_foldlM _ (H.frameBounds.scopesIn s.pc) (H.frameBounds.window hf.win)
     hf.rrel hf.sep hsc
   have hm1 := (memRel_foldlM _ (H.frameBounds.scope_size _) hf.rrel hf.mem hsc).2
-  have hpriv := H.argPrivate s x s1 op d _ .arg a hf hi hf' arg_shape hof hsc
+  have hpriv := Hyps.argPrivate hD H s x s1 op d _ .arg a hf hi hf' arg_shape hof hsc
   have hlen : ((s1.args.get (.ofArgReg a)).take a.size).length ≤ a.size := List.length_take_le _ _
   obtain ⟨hmemEq, hescEq⟩ := arg_writeFrame_priv (fun i hi => hpriv i (by omega)) hw
   have hsub : ∀ u v : BitVec 64, u + v - u = v := by intros; bv_omega
@@ -671,7 +671,9 @@ theorem bodySim_arg (hD : Decodes S code relocs rodata callSites dropped scopes 
   refine Reach.steps hsteps (.done (.inl ⟨_, .step hstep, ⟨⟨hr', hmem', hsep', hk1.fp ▸ hf.win,
     hk1.fp ▸ hf.fpF, by rw [hrsp, hrbp]; exact hf.rsp, by rw [hrsp]; exact hf.room, hLk', hro',
     fun _ => ?_, hframe', (H.slots_scopes hf hsc).writeFrame_above hw
-      (Discharge.PeStackArg.arg_lo H.boundsOk hik hf' arg_shape hof)⟩, .inl ⟨?_, ?_⟩⟩⟩))
+      (Discharge.PeStackArg.arg_lo H.boundsOk hik hf' arg_shape hof),
+    (((hf.esc.scopes hsc).mono (pc' := s1.pc + 1) (fun _ => hs ▸ hlead) (by have := hk1.pc; omega)).congr hescEq :)⟩,
+    .inl ⟨?_, ?_⟩⟩⟩))
   · show ArgsLive S (s1.pc + 1) s1.args x'
     rw [hk1.pc, hk1.args, hs]
     exact arg_argsLive_succ hlive hRA hconv hregs hxm

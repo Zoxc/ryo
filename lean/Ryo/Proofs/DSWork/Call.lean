@@ -1449,12 +1449,7 @@ theorem bodySim_call' (hD : Decodes S code relocs rodata callSites dropped scope
         Discharge.PeStackArg.ArgSlots.parts (Discharge.PeStackArg.result_lo H.boundsOk hi hf hsh)
           regsR parts' ((hslots'.congr (st' := (s'.withWorld a'.world).st) rfl
             (fun _ _ _ => rfl)).writeRanges hw1 (H.areaMiss hi' hf hsh)) hfold
-      have hFI : FrameInv S s'' x'' := by
-        refine ⟨hrr'', hmr'', hsepX, by rw [hfp'', hfpS]; exact hwinT,
-          by rw [hfp'', hfpS]; exact hfpF, by rw [hrspX, hrbpX]; exact hfi.rsp,
-          by rw [hrspX]; exact hfi.room, island_link_kept hfi.code hmemK'',
-          island_ro_kept hfi.ro hmemK'', ?_,
-          island_frame_kept hfi.frame hmemK'' hrbpX (fun i hi _ => hsvX i hi), hsl''⟩
+      have hNL : ¬ LeadArg S s''.pc := by
         rintro ⟨hlt', ha⟩
         change s''.pc < S.r.protos.size at hlt'
         change S.args (s''.pc + 1) = true at ha
@@ -1465,6 +1460,17 @@ theorem bodySim_call' (hD : Decodes S code relocs rodata callSites dropped scope
         have h2 := hD.argsSucc (k + 1) (by simpa using hlt')
         rw [h1] at h2
         simp [h2] at ha
+      have hE : s''.st.escaped = s1.st.escaped := by
+        rw [Discharge.EscFrom.foldlM_keep _ (fun _ _ _ h => writeFrame_escaped h) _ hfold,
+          Discharge.EscFrom.writeRanges_escaped hw1]
+        exact hesc'
+      have hFI : FrameInv S s'' x'' :=
+        ⟨hrr'', hmr'', hsepX, by rw [hfp'', hfpS]; exact hwinT,
+          by rw [hfp'', hfpS]; exact hfpF, by rw [hrspX, hrbpX]; exact hfi.rsp,
+          by rw [hrspX]; exact hfi.room, island_link_kept hfi.code hmemK'',
+          island_ro_kept hfi.ro hmemK'', fun h => absurd h hNL,
+          island_frame_kept hfi.frame hmemK'' hrbpX (fun i hi _ => hsvX i hi), hsl'',
+          ((hfi.esc.scopes hsc).of_not hNL).congr hE⟩
       have fin : ∀ z : X86.State, z.regs = x''.regs → z.xmm = x''.xmm → z.mem = x''.mem →
           z.rip = addrAt S.ctx (S.start (k + 1)) → Reach S.ctx S.E (SNext S s) z := by
         intro z hzr hzx hzm hzrip
@@ -1540,7 +1546,10 @@ theorem bodySim_call' (hD : Decodes S code relocs rodata callSites dropped scope
         island_frame_kept hfi.frame hmemKy hrbpY (fun i hi _ => hsvY i hi),
         ((hslots'.congr (st' := (s'.withWorld a'.world).st) rfl (fun _ _ _ => rfl)).writeRanges
           hw1 (H.areaMiss hi' hf hsh)).congr (st' := { st1 with exception := exc }) rfl
-          (fun _ _ _ => rfl)⟩, .inr ⟨hyrip, ?_⟩⟩
+          (fun _ _ _ => rfl),
+        ((hfi.esc.scopes hsc).of_not (pad_not_leadArg hD hcl)).congr
+          (by show st1.escaped = _; rw [Discharge.EscFrom.writeRanges_escaped hw1]; exact hesc')⟩,
+        .inr ⟨hyrip, ?_⟩⟩
       · intro h
         exact absurd h (pad_not_leadArg hD hcl)
       · change CacheInv (S.used pad) y

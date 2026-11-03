@@ -4,7 +4,8 @@ Ryo.Vm.StackSizes — a Lean-only check of the calls' stack-argument areas again
 areas (`Code.stackSize`, in `imageProgram` the callee's `FuncEntry::arg_size`) come from the
 image, which the decoder doesn't see, so `Frame.decodeChecked` can't run it; check-image (or
 whatever builds the `R.Code`s) does. `Ryo.Proofs.Discharge.StackSizes` turns its success into
-`StackSizes` (and `Hyps.peShadow`, `32 ≤ F`).
+`StackSizes` (and `Hyps.peShadow`, `32 ≤ F`). `windowCheck`, the frame window's end against the
+incoming area, reads the image's `argSize` the same way.
 
 It checks: on PE `32 ≤ F`; for every instruction `k`, its area fits in the frame with PE's 16
 bytes of return address and alignment (`StackSizes.frame`), and on PE a call's holds the
@@ -43,5 +44,12 @@ def stackSizesCheck (c : R.Code) : Bool :=
         (!c.mode.pe || !((c.d.insns[k]?.map R.Insn.isCall).getD false) ||
           decide (32 ≤ c.stackSize k))) &&
     argSlotsCheck c
+
+/-- The window check: the frame ranges end no higher than the incoming area's end
+`16 + argSize`, itself at most `2 ^ 31` (`Hyps.windowOk`: with `boundsOk` it gives the window's
+`FrameBounds`, `Ryo.Proofs.Discharge.FrameBounds`). Like `stackSizesCheck` it reads the image's
+`argSize`, so check-image runs it. -/
+def windowCheck (c : R.Code) : Bool :=
+  decide (c.d.frameTop c.mode ≤ 16 + (c.argSize : Int)) && decide (16 + (c.argSize : Int) ≤ 2 ^ 31)
 
 end Ryo.Vm

@@ -1534,13 +1534,16 @@ theorem inline_run' (H : Hyps S) (hbl : InlineBelowLink S) (heb : InlineEscBound
     ⟨by rw [hrbp]; exact f1, by rw [hrbp, hl8]; exact f2, by rw [hrbp, hl0]; exact f3,
       fun i hi5 h5 => by rw [hsaved i hi5 h5]; exact f4 i hi5 h5⟩
   refine ⟨hsteps, ⟨hrr, hm', hs', ?_, ?_, ?_, ?_, hLk', hro', fun hl => absurd hl hnl, hframe',
-    ?_⟩⟩
+    ?_, ?_⟩⟩
   · rw [hfp']; exact hf.win
   · rw [hfp']; exact hf.fpF
   · rw [hrsp, hrbp]; exact hf.rsp
   · rw [hrsp]; exact hf.room
   · rw [R.Out.step.inj he]
     exact (H.slots_scopes hf hsc).opSem ho (Discharge.PeStackArg.native_lo H.boundsOk hi hfull hn)
+  · have hnl' := hnl
+    rw [R.Out.step.inj he] at hnl' ⊢
+    exact ((hf.esc.scopes hsc).of_not hnl').congr (Ryo.Proofs.OpFacts.opSem_out ho).2.1
 
 /-- An inline instruction's R step with the default choice is not `noBehavior`: the scopes never
 stop with `noBehavior` (`noNB_scopes`), the view is native (`Step.view_native`, by `InlineOk`'s

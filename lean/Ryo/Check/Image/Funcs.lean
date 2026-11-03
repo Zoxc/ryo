@@ -170,11 +170,6 @@ def checkSignature (o : ImageObject) (i : Nat) (d : Decoded) : Array String := I
   -- frame ranges the shadow space at the frame's bottom.
   let mode := o.image.mode
   if !d.boundsOk mode then out := out.push s!"{l}: frame access outside the frame (Decoded.boundsOk)"
-  if d.frameTop mode > 16 + (f.argSize : Int) then
-    out := out.push s!"{l}: frame ranges end at fp + {d.frameTop mode}, past 16 + arg_size {f.argSize}"
-  -- `FrameBounds.mono` takes the window's end to at most `2 ^ 31`.
-  if 16 + (f.argSize : Int) > 2 ^ 31 then
-    out := out.push s!"{l}: 16 + arg_size {f.argSize} is past 2^31"
   -- The slots the first integer argument register is stored to (an sret function's pointer).
   let argSlots := d.insns.toList.filterMap fun
     | .native op [.slot s, .imm w] => if op.info.mnemonic == "arg" && w.toNat == 8 then some s else none
@@ -244,6 +239,9 @@ def checkFuncs (o : ImageObject) (ds : Array FuncDecoding) : Array String := Id.
       if let .ok fi := ds[i].inputs then
         if !stackSizesCheck (Ryo.Vm.R.Image.imageCode o (fun _ => []) i fi d) then
           out := out.push s!"{funcLabel o i}: a call's stack area doesn't fit the frame (stackSizesCheck)"
+        -- The frame window's end (`windowCheck`, `Hyps.windowOk`).
+        if !windowCheck (Ryo.Vm.R.Image.imageCode o (fun _ => []) i fi d) then
+          out := out.push s!"{funcLabel o i}: frame ranges end past 16 + arg_size or 2^31 (windowCheck)"
     | .error e => out := out.push s!"{funcLabel o i}: decode: {e}"
   return out
 

@@ -117,6 +117,7 @@ import Ryo.Vm.CallSitesCheck
 import Ryo.Vm.RelocsInCheck
 import Ryo.Vm.CacheClearedCheck
 import Ryo.Vm.ArgsLeadCheck
+import Ryo.Vm.PrivCheck
 import Ryo.Vm.OpSem.Footprint
 import Ryo.Vm.R.Islands
 import Std.Data.HashMap
@@ -838,7 +839,7 @@ def incomingExtents (decoded : Array (Option Decoded)) (mode : Mode) : Array (Op
 /-- `decodeBounded` (`decodeReducedWith` with the frame bounds), accepting the code only if
 `tablesCheck` accepts its switch tables (with relocations), `callSitesCheck` its call sites,
 `relocsInCheck` its relocations, `cacheClearedCheck` the cache at targets and landing pads,
-`argsLeadCheck` the leading `arg`s, and
+`argsLeadCheck` the leading `arg`s, `privCheck` the link slots and `arg` destinations, and
 `droppedNotDead` shows every dropped
 store dead (given `facts`): the decoding, or an error
 naming the first store it doesn't (its word offset). -/
@@ -852,6 +853,10 @@ def decodeChecked (code : ByteArray) (fields : Fields) (rodata : ByteArray)
   -- frame holds the shadow space and a handler call's stack argument (`peStackArgCheck`).
   if !frameSizesCheck d mode then
     throw "PE frame size + 8 past 2^31, or the frame smaller than its shadow space"
+  -- The link slots and the `arg` destinations private (`privCheck`, for `LinkPrivate` and
+  -- `ArgPrivate`).
+  if !privCheck d then
+    throw "an Escape or Lend scope covers the link slots, or an Escape one an arg's destination"
   -- The switch tables' starts and the targets (`tablesCheck`, for `HdlTables`); the call sites
   -- sorted by start and aligned with the calls (`callSitesCheck`, for `PadsLinked`); every
   -- relocated field within the code (`relocsInCheck`, for `RelocsIn`).
