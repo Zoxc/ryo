@@ -22,18 +22,22 @@ shape's control flow) implements R's step of that instruction (`Ryo.Vm.R.Sem.ste
   has no UB for any choice, the handler returns; and each return matches `opSem` for one of its
   choices with the relations (`HRel`: `Rel` and `MemRel`) kept, the control result in
   `rax`/`al` (`CtlIn`), `rsp` popped, the callee-saved registers kept, and x86 memory changed
-  only at the frame's write ranges, in live allocations, in runtime-owned bytes and on the
-  stack below `rsp`. On PE that last part is too strong: a Win64 handler may also write its
-  32-byte home space and stack argument above its return address (`[rsp + 8, rsp + 48)` at its
-  entry), which `MayWrite` leaves out (`Island.IslandMayWrite` widens its bound by `shadow`);
-  widening it here is open.
+  only at the frame's write ranges, in live allocations, in runtime-owned bytes, on the stack
+  below `rsp` and, on PE, in the Win64 home space and stack argument slot above the return
+  address (`[rsp + 8, rsp + 8 + R.handlerHome)` at its entry: 32 bytes, 40 with a stack
+  argument). The relations hold of `opSem`'s state with those bytes `Uninit` (`R.clearHome`,
+  as R's step does at the frame's bottom, frame offset `ho` with `fpAddr x ho = rsp + 8`): a
+  handler writing them breaks no relation (as `Island.IslandMayWrite` and `Code.islandWrites`
+  for an island's shadow space). The home addresses must be in a live allocation only as an
+  escaped frame object's byte at that offset (`ScopeMem.FrameOwn` over them, from the frame
+  separation), whose bytes the clearing makes `Uninit` too.
 - `StackApart` (no initialized private frame byte and no live allocation byte on the stack
   below `rsp`, where the call pushes): `StackApart.rel` keeps `Rel` and `MemRel` across a
   change confined to that stack; `FrameSep.stackApart` derives it from the frame separation;
   `stackApart_all_false`: over every private byte, as first stated, it is unsatisfiable once
   the stack below `rsp` is non-empty and the byte at `rsp - 1` is private.
 - `handler_op_sound`: from `HRel st x`, the setup and the call reach the state after the
-  instruction, related to `opSem`'s. `br_tail`: a `br` handler's tail (`test al, al; jz/jnz t`)
+  instruction, related to `opSem`'s with the home space cleared (`R.clearHome`). `br_tail`: a `br` handler's tail (`test al, al; jz/jnz t`)
   branches exactly when `Then.succ` takes it (composed with the setup and the call in
   `Shapes.lean`, `handler_step_br`).
 
@@ -154,13 +158,14 @@ def NoUB (op : Full.Opcode) (vals : Operands) (st : OpSem.State) : Prop :=
   ∀ ch e, opSem op vals st ch = .error e → ∃ m, e = .noBehavior m
 
 /-- The addresses a return may change: the frame's write ranges, live allocations (memory
-through pointers), runtime-owned bytes and the stack below `rsp`. -/
-def MayWrite (Owned : BitVec 64 → Prop) (lo : BitVec 64) (op : Full.Opcode) (vals : Operands)
-    (st : OpSem.State) (x : X86.State) (a : BitVec 64) : Prop :=
+through pointers), runtime-owned bytes, the stack below `rsp` and the `home` bytes above the
+return address (PE's home space and stack argument, `R.handlerHome`). -/
+def MayWrite (Owned : BitVec 64 → Prop) (lo : BitVec 64) (home : Nat) (op : Full.Opcode)
+    (vals : Operands) (st : OpSem.State) (x : X86.State) (a : BitVec 64) : Prop :=
   (∃ r ∈ wranges op vals, (a - fpAddr x r.1).toNat < r.2) ∨
   (∃ id al, st.mem.get? id = some al ∧ al.live = true ∧
     (a - BitVec.ofNat 64 al.addr).toNat < al.size) ∨
-  Owned a ∨ InStack lo x.rsp a
+  Owned a ∨ InStack lo x.rsp a ∨ (a - (x.rsp + 8)).toNat < home
 
 /-- `x` is at the entry of `h`'s handler as linked in `ctx`. -/
 def AtHandler (ctx : Ctx) (h : Full.Opcode) (x : X86.State) : Prop :=
@@ -168,18 +173,22 @@ def AtHandler (ctx : Ctx) (h : Full.Opcode) (x : X86.State) : Prop :=
 
 /-- The handler contract (trusted; see the module comment). `x` is the state just after
 `call h`: at the handler (`AtHandler`), the argument registers set, the return address at
-`rsp`. -/
+`rsp`; `ho` the frame offset of `rsp + 8`, where the home bytes start. -/
 structure HandlerContract (ctx : Ctx) (ρ : R.Addrs) (mode : Ryo.Obj.Mode) (Owned : BitVec 64 → Prop)
     (lo : BitVec 64) (Ret : Full.Opcode → X86.State → X86.State → Prop) : Prop where
   returns : ∀ h args vals st x, h.hasHandler = true → R.unpack ρ h mode args = some vals →
     AtHandler ctx h x → ArgsIn ρ mode.pe x x args → HRel st x → NoUB h vals st →
     (∃ ch r, opSem h vals st ch = .ok r) → ∃ x', Ret h x x'
   sound : ∀ h args vals st x x', h.hasHandler = true → R.unpack ρ h mode args = some vals →
-    AtHandler ctx h x → ArgsIn ρ mode.pe x x args → HRel st x → NoUB h vals st → Ret h x x' →
-    ∃ ch ctl st', opSem h vals st ch = .ok (ctl, st') ∧ HRel st' x' ∧ CtlIn ctl x' ∧
-      x'.rsp = x.rsp + 8 ∧ x'.rip = x.mem.read64 x.rsp ∧
+    AtHandler ctx h x → ArgsIn ρ mode.pe x x args → HRel st x → NoUB h vals st →
+    ∀ ho : Int, fpAddr x ho = x.rsp + 8 →
+    ScopeMem.FrameOwn ho (ho + R.handlerHome mode.pe args.length) st x → Ret h x x' →
+    ∃ ch ctl st', opSem h vals st ch = .ok (ctl, st') ∧
+      (∀ st'', R.clearHome mode.pe args.length ho st' = .ok st'' → HRel st'' x') ∧
+      CtlIn ctl x' ∧ x'.rsp = x.rsp + 8 ∧ x'.rip = x.mem.read64 x.rsp ∧
       (∀ i, CalleeSaved i → x'.regs i = x.regs i) ∧
-      ∀ a, ¬ MayWrite Owned lo h vals st x a → x'.mem a = x.mem a
+      ∀ a, ¬ MayWrite Owned lo (R.handlerHome mode.pe args.length) h vals st x a →
+        x'.mem a = x.mem a
 
 /-! ### The setup -/
 
@@ -507,10 +516,13 @@ theorem handler_op_sound {ρ : R.Addrs} {mode : Ryo.Obj.Mode} {Owned : BitVec 64
     (hu : R.unpack ρ h mode args = some vals) (hs : setupItems mode args = some items)
     (hreg : args.length ≤ (handlerRegs mode.pe).length)
     {st : OpSem.State} {x : X86.State} (hr : HRel st x) (hno : NoUB h vals st)
-    (hap : StackApart lo st x) (hlo : lo.toNat + 8 ≤ x.rsp.toNat) :
+    (hap : StackApart lo st x) (hlo : lo.toNat + 8 ≤ x.rsp.toNat)
+    {ho : Int} (hho : fpAddr x ho = x.rsp)
+    (hown : ScopeMem.FrameOwn ho (ho + R.handlerHome mode.pe args.length) st x) :
     ∃ x1, execItems ctx (items ++ [Item.call (.handler n)]) x = .ok x1 ∧
       ((∃ ch r, opSem h vals st ch = .ok r) → ∃ x', Ret h x1 x') ∧
-      ∀ x', Ret h x1 x' → ∃ ch ctl st', opSem h vals st ch = .ok (ctl, st') ∧ HRel st' x' ∧
+      ∀ x', Ret h x1 x' → ∃ ch ctl st', opSem h vals st ch = .ok (ctl, st') ∧
+        (∀ st'', R.clearHome mode.pe args.length ho st' = .ok st'' → HRel st'' x') ∧
         CtlIn ctl x' ∧ x'.rsp = x.rsp ∧
         x'.rip = x.rip + BitVec.ofNat 64 ((items ++ [Item.call (.handler n)]).map Item.size).sum ∧
         (∀ i, CalleeSaved i → x'.regs i = x.regs i) := by
@@ -568,9 +580,13 @@ theorem handler_op_sound {ρ : R.Addrs} {mode : Ryo.Obj.Mode} {Owned : BitVec 64
   have hH : HRel st x2 :=
     let ⟨h1, h2⟩ := hap.rel hr.rel hr.mem hrbp hmem2; ⟨h1, h2⟩
   refine ⟨x2, hexec, fun hex => hC.returns h args vals st x2 hh hu hat hA hH hno hex, ?_⟩
+  have hho2 : fpAddr x2 ho = x2.rsp + 8 := by
+    rw [hfp, hho, hrsp2]; exact (BitVec.sub_add_cancel _ _).symm
+  have hown2 : ScopeMem.FrameOwn ho (ho + R.handlerHome mode.pe args.length) st x2 :=
+    fun id al o hg hl h1 h2 hin => hown id al o hg hl h1 h2 (by rw [← hfp]; exact hin)
   intro x' hR
   obtain ⟨ch, ctl, st', hop, hH', hctl, hsp', hrip', hsaved, -⟩ :=
-    hC.sound h args vals st x2 x' hh hu hat hA hH hno hR
+    hC.sound h args vals st x2 x' hh hu hat hA hH hno ho hho2 hown2 hR
   refine ⟨ch, ctl, st', hop, hH', hctl, ?_, ?_, ?_⟩
   · rw [hsp', hrsp2]; exact BitVec.sub_add_cancel _ _
   · rw [hrip', hret]

@@ -1506,7 +1506,7 @@ theorem inline_run' (H : Hyps S) (hbl : InlineBelowLink S) (heb : InlineEscBound
   have hok := H.inlineOk f cls hmem
   -- R's step keeps `fp`.
   obtain ⟨s1, hsc, hv⟩ := Step.step_native hi hfull hok.opShape hstep
-  obtain ⟨_, _, _, _, _, _, _, _, _, he⟩ :=
+  obtain ⟨vals, _, _, st', _, hn, _, ho, _, he⟩ :=
     Step.stepView_native hfull hok.opShape hok.notResume hok.notUnreachable hv
   have hfp' : s'.fp = s.fp := by
     rw [R.Out.step.inj he]
@@ -1533,11 +1533,14 @@ theorem inline_run' (H : Hyps S) (hbl : InlineBelowLink S) (heb : InlineEscBound
   have hframe' : FrameFacts S x' :=
     ⟨by rw [hrbp]; exact f1, by rw [hrbp, hl8]; exact f2, by rw [hrbp, hl0]; exact f3,
       fun i hi5 h5 => by rw [hsaved i hi5 h5]; exact f4 i hi5 h5⟩
-  refine ⟨hsteps, ⟨hrr, hm', hs', ?_, ?_, ?_, ?_, hLk', hro', fun hl => absurd hl hnl, hframe'⟩⟩
+  refine ⟨hsteps, ⟨hrr, hm', hs', ?_, ?_, ?_, ?_, hLk', hro', fun hl => absurd hl hnl, hframe',
+    ?_⟩⟩
   · rw [hfp']; exact hf.win
   · rw [hfp']; exact hf.fpF
   · rw [hrsp, hrbp]; exact hf.rsp
   · rw [hrsp]; exact hf.room
+  · rw [R.Out.step.inj he]
+    exact (H.slots_scopes hf hsc).opSem ho (Discharge.PeStackArg.native_lo H.boundsOk hi hfull hn)
 
 /-- An inline instruction's R step with the default choice is not `noBehavior`: the scopes never
 stop with `noBehavior` (`noNB_scopes`), the view is native (`Step.view_native`, by `InlineOk`'s
@@ -1574,7 +1577,7 @@ theorem inline_progress' (H : Hyps S) (s : R.RState) (op : Reduced.Opcode)
         exact inline_nb_opSem hok vals s1.st m ho
       | ok r =>
         obtain ⟨ctl, st'⟩ := r
-        simp only [ho] at hv
+        simp only [ho, pure, Except.pure] at hv
         cases hp : t.succ s1.pc ctl with
         | none => simp [hp, inline_ill_eq] at hv
         | some pc' => simp [hp, pure, Except.pure] at hv
@@ -1584,7 +1587,7 @@ set_option maxRecDepth 100000 in
 `Step.stepView_native`, `s'.pc` is `k + 1` (`S.args (k + 1) = false`: `hP.args`, `q.op` isn't
 `arg`, no `inlineOps` entry is; so `S.args (k + 2) = false` by `hD.argsSucc`) or a target of
 the control, which is one of proto `k`'s targets (`inline_ctl_targets`), so no leading `arg`
-(`H.argsOk.untargeted`). -/
+(`H.argsUntargeted`). -/
 theorem inline_not_leadArg' (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     {k p : Nat} {q : Proto} {c' : Cursor} {cache' : Cache} {s s' : R.RState} {op : Reduced.Opcode}
     {ops : List (R.Opnd Nat)} {f : Full.Opcode} {cls : Class} {ch : OpSem.Choice}
@@ -1640,7 +1643,7 @@ theorem inline_not_leadArg' (hD : Decodes S code relocs rodata callSites dropped
     have h2 := hD.argsSucc (k + 1) (by simpa using hlt')
     rw [h1] at h2
     simp [h2] at ha
-  · exact H.argsOk.untargeted k hP.lt _ (htg _ hx) _ rfl
+  · exact H.argsUntargeted hD k hP.lt _ (htg _ hx) _ rfl
 
 set_option maxRecDepth 100000 in
 /-- `bodySim_inline'` (`inline_run'`, `inline_progress'`, `branch_canonical`), with the frame

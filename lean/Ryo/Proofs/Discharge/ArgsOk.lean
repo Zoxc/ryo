@@ -6,13 +6,18 @@ Ryo.Proofs.Discharge.ArgsOk — what the decoder's acceptance gives of `ArgsOk` 
   sequence, a call, a handler call, a dense switch, `ret`, `jmp`, … is never an `arg`), so its
   operands are `[.slot d, .imm (word a)]` with `ArgReg.of?` giving back `a`, below 4 on PE.
 - `argsOk_conv`: every leading `arg` reads a convention register, from that and `isArg_of`.
-- `ArgsOk`'s other fields, `distinct` and `untargeted`, stay `Hyps` fields: the decoder does not
-  check them.
+- `ArgsOk`'s other fields, `distinct` and `untargeted`, the decoder does not check (below), so
+  `Frame.decodeChecked` runs `argsLeadCheck` (`Ryo/Vm/ArgsLeadCheck.lean`), whose success is
+  `Hyps.argsChecked` (`argsChecked_of_decodes`). `untargeted` is `Hyps.argsUntargeted`
+  (`DecodeSound/Basic.lean`, where `bodySim_jmp` uses it); `argsOk_distinct` proves `distinct`
+  (`argRegOf_of_at`: an `ArgRegAt` instruction's proto gives its register to `argRegOf`, and a
+  leading `arg`'s proto is in `leadRun`, `lead_ops`/`leadRun_getElem?`); `Hyps.argsOk` puts the
+  three together.
 
 The inline case uses `InlineOk` of the inline opcodes (`Hyps.inlineOk`, a closed fact,
 `inlineOps_ok`), passed as `hInl`, as `DSWork/Arg.lean`'s `arg_inline_ne` does.
 
-**Not checked by the decoder** (neither in `DecodeReduced.lean`'s `argInsn`/`instructions` nor
+**Not checked by the decoder** (hence `argsLeadCheck`) (neither in `DecodeReduced.lean`'s `argInsn`/`instructions` nor
 in Rust's `vm/bytecode/src/asm/decode.rs`, `arg` and the `protos.iter().all(|p| p.op ==
 Opcode::Arg)` attempt in the instruction loop):
 - `distinct`: `argInsn` accepts any convention register; nothing compares it with the leading
@@ -184,6 +189,75 @@ theorem argsOk_conv (hD : Decodes S code relocs rodata callSites dropped scopes 
   rw [hm.2, hof'] at hof
   cases hof
   exact isArg_of hof' hpe
+
+/-- `Reg.ofArgReg` distinguishes exactly the class and the index (`argRegOf`'s key). -/
+theorem ofArgReg_key {a b : ArgReg}
+    (h : Ryo.Vm.R.Reg.ofArgReg a = Ryo.Vm.R.Reg.ofArgReg b) :
+    (a.xmm, a.index) = (b.xmm, b.index) := by
+  cases ha : a.xmm <;> cases hb : b.xmm <;> simp_all [Ryo.Vm.R.Reg.ofArgReg]
+
+/-- The proto of an instruction reading `r` (`ArgRegAt`) gives `r`'s key to `argRegOf`. -/
+theorem argRegOf_of_at (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    {j : Nat} {r : Ryo.Vm.R.Reg} (hj : j < S.r.protos.size) (h : ArgRegAt S j r) :
+    ∃ a : ArgReg, r = Ryo.Vm.R.Reg.ofArgReg a ∧
+      argRegOf S.r.protos[j] = some (a.xmm, a.index) := by
+  obtain ⟨op, d, w, f, a, hi, -, -, hof, rfl⟩ := h
+  obtain ⟨hk', hij⟩ := Array.getElem?_eq_some_iff.mp hi
+  have hio := (reducedOf_insns hD.reduced).2 j hj hk'
+  rw [hij] at hio
+  cases hh : S.r.protos[j].handler with
+  | some v =>
+    obtain ⟨args, t⟩ := v
+    simp only [InsnOf, hh] at hio
+    obtain ⟨t', he, -⟩ := hio
+    cases he
+  | none =>
+    simp only [InsnOf, hh] at hio
+    obtain ⟨op', ops', -, he, hm⟩ := hio
+    injection he with h1 h2
+    subst h2
+    refine ⟨a, rfl, ?_⟩
+    unfold argRegOf
+    rw [← hm]
+    simp [opndMap, hof]
+
+/-- `ArgsOk.distinct` from `argsLeadCheck` (`Hyps.argsChecked`). -/
+theorem argsOk_distinct (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    (hc : argsLeadOk S.r.protos = true) :
+    ∀ j k r, j < k → LeadArg S k → ArgRegAt S j r → ¬ ArgRegAt S k r := by
+  rintro j k r hjk hl hj hk'
+  have hk := hl.1
+  have hkl : k < S.r.protos.toList.length := by simpa using hk
+  have hops := lead_ops hD hkl hl.2
+  have hrun := leadRun_getElem? S.r.protos.toList k (fun i _ hik => hops i hik)
+  obtain ⟨aj, rfl, rj⟩ := argRegOf_of_at hD (by omega : j < S.r.protos.size) hj
+  obtain ⟨ak, hak, rk⟩ := argRegOf_of_at hD hk hk'
+  rw [← ofArgReg_key hak] at rk
+  have ej : S.r.protos.toList[j]? = some S.r.protos[j] := by
+    simp [show j < S.r.protos.size by omega]
+  have ek : S.r.protos.toList[k]? = some S.r.protos[k] := by simp [hk]
+  simp only [argsLeadOk, Bool.and_eq_true] at hc
+  refine regsDistinct_spec hc.1 hjk (a := some (aj.xmm, aj.index)) ?_ ?_
+  · rw [List.getElem?_map, hrun j (by omega), ej]
+    simp [rj]
+  · rw [List.getElem?_map, hrun k (Nat.le_refl k), ek]
+    simp [rk]
+
+/-- `decodeChecked`'s `argsLeadCheck` on the function's inputs gives `Hyps.argsChecked` for
+their read. -/
+theorem argsChecked_of_decodes (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    (h : argsLeadCheck code relocs rodata callSites dropped scopes mode = true) :
+    argsLeadOk S.r.protos = true := by
+  obtain ⟨c', hread⟩ := hD.read
+  unfold argsLeadCheck at h
+  rw [hread] at h
+  exact h
+
+/-- `ArgsOk` from the decoder (`argsOk_conv`) and `argsLeadCheck` (`Hyps.argsChecked`). -/
+theorem Hyps.argsOk (H : Hyps S)
+    (hD : Decodes S code relocs rodata callSites dropped scopes mode) : ArgsOk S where
+  distinct := argsOk_distinct hD H.argsChecked
+  untargeted := H.argsUntargeted hD
 
 end
 

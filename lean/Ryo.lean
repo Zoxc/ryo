@@ -11,6 +11,7 @@ import Ryo.Vm.StackSizes
 import Ryo.Vm.CallSitesCheck
 import Ryo.Vm.RelocsInCheck
 import Ryo.Vm.CacheClearedCheck
+import Ryo.Vm.ArgsLeadCheck
 import Ryo.Vm.DecodeObj
 import Ryo.Check.Image.Pool
 import Ryo.Check.Image.Dump

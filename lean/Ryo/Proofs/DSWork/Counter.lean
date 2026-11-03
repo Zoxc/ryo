@@ -245,7 +245,7 @@ theorem ctr_apart (hD : Decodes S code relocs rodata callSites dropped scopes mo
     H.relocsIn, fun k hk hc => ?_⟩
   · rw [hf.fpAddr_eq]; exact H.envApart.window o h1 h2
   · obtain ⟨k', hk', hmem⟩ := ctr_head_target hD hk hc
-    refine ⟨?_, H.argsOk.untargeted k' hk' _ hmem k rfl⟩
+    refine ⟨?_, H.argsUntargeted hD k' hk' _ hmem k rfl⟩
     unfold Setup.used
     rw [ite_eq_left_iff.mpr (fun h => absurd (H.cacheTargets k' hk' _ hmem) h)]
 
@@ -386,7 +386,7 @@ theorem ctr_frameInv (H : Hyps S) (HC : CounterApart S) {s : R.RState} {x y : X8
   refine ⟨⟨⟨fun o h1 h2 b hb => ?_, fun e he a h => ?_, fun p hp => ?_⟩, hrbp.trans hf.rrel.rbp,
     hf.rrel.wf⟩, fun id a hg hl i hi => ?_, hf.sep.congr hrbp, hf.win, hf.fpF,
     by rw [hag.1, hrbp]; exact hf.rsp, by rw [hag.1]; exact hf.room, ctr_linkOk H HC hf hm,
-    ctr_roLoaded H hf hm, fun h => absurd h ha, ?_⟩
+    ctr_roLoaded H hf hm, fun h => absurd h ha, ?_, hf.slots⟩
   · have hr := hf.rrel.rel.frame o h1 h2 b hb
     rw [hfp]
     cases b with

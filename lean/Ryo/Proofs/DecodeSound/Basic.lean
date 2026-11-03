@@ -17,6 +17,7 @@ import Ryo.Proofs.Discharge.PeStackArg
 import Ryo.Vm.CallSitesCheck
 import Ryo.Vm.RelocsInCheck
 import Ryo.Vm.CacheClearedCheck
+import Ryo.Vm.ArgsLeadCheck
 import Ryo.Proofs.Shapes
 import Ryo.Proofs.Call
 import Ryo.Proofs.Island
@@ -221,8 +222,6 @@ structure Setup where
   cache : Nat → Cache
   dr : Nat → List DroppedStore
   args : Nat → Bool
-  /-- The frame window's end above `fp`. -/
-  K : Int
   /-- The state at the function's entry, just after the caller's `call`. -/
   x0 : X86.State
   Owned : BitVec 64 → Prop
@@ -235,6 +234,9 @@ namespace Setup
 variable (S : Setup)
 
 def F : Nat := S.c.d.frameSize
+
+/-- The frame window's end above `fp`: the incoming area's end, `[fp + 16, fp + 16 + argSize)`. -/
+abbrev K : Int := 16 + S.c.argSize
 
 def fr : Vm.Frame := ⟨S.r.frameSize, S.c.mode, false⟩
 
@@ -296,6 +298,11 @@ structure FrameInv (S : Setup) (s : R.RState) (x : X86.State) : Prop where
   ro : RoLoaded S.ctx x.mem S.ro
   args : LeadArg S s.pc → ArgsLive S s.pc s.args x
   frame : FrameFacts S x
+  /-- The frame bytes in `[-F + 32, frameLo)` (on PE with a handler call's stack argument, the
+  8 bytes above the shadow space; empty otherwise) are private and `Uninit`: no frame write of
+  the code reaches them (`boundsOk`), nor a call's answer (`argSlotsCheck`); it gives
+  `Hyps.peStackArg` (`Discharge/PeStackArg.lean`). -/
+  slots : Discharge.PeStackArg.ArgSlots S.c s.st
 
 /-- The relation at an instruction boundary (see the module comment). -/
 def BInv (S : Setup) (s : R.RState) (x : X86.State) : Prop :=
@@ -404,14 +411,17 @@ def withWorld (st : OpSem.State) (w : R.World) : OpSem.State :=
 /-- Open: the frame separation across a handler, a call or an island (`FrameSep.extend`): the
 contracts strengthened by the allocation facts of the state after (`AllocFacts`: new live
 allocations off the frame window, disjoint, in the address space), for the same choice or
-answer the contract relates the return to. -/
+answer the contract relates the return to (for a handler, as `HandlerContract`: the relations
+of `opSem`'s state with PE's home space at `-F`, `rsp + 8` at the handler's entry, cleared). -/
 structure SepAcross (S : Setup) : Prop where
   handler : ∀ h args vals st x x' y, h.hasHandler = true →
     R.unpack S.c.ρ h S.c.mode args = some vals → Handler.AtHandler S.ctx h x →
     Handler.ArgsIn S.c.ρ S.c.mode.pe x x args → Handler.HRel st x → Handler.NoUB h vals st →
     S.E.ret x x' →
-    FrameSep (-(S.F : Int)) S.K st y →
-    ∃ ch ctl st', opSem h vals st ch = .ok (ctl, st') ∧ Handler.HRel st' x' ∧
+    FrameSep (-(S.F : Int)) S.K st y → fpAddr x (-(S.F : Int)) = x.rsp + 8 →
+    ∃ ch ctl st', opSem h vals st ch = .ok (ctl, st') ∧
+      (∀ st'', R.clearHome S.c.mode.pe args.length (-(S.F : Int)) st' = .ok st'' →
+        Handler.HRel st'' x') ∧
       Handler.CtlIn ctl x' ∧ AllocFacts S st st' y
   call : ∀ cal regs sp stack (st : OpSem.State) x x' y,
     EntryAt S.ctx S.c.mode.pe cal regs sp stack ⟨st.mem, st.exposed⟩ x →
@@ -530,8 +540,10 @@ structure EnvApart (S : Setup) : Prop where
 is proved from the decoder, `Discharge/ArgsOk.lean`'s `argsOk_conv`.) No two read the same register (`arg_store`
 may clobber the register it stores); no branch target is a leading `arg` (the registers there
 would be those of the branch; landing pads are `lpad`s, `pad_not_leadArg`, and loop heads are
-targets). The decoder could reject each (the backend stores each incoming register once,
-before any code that branches). -/
+targets). The decoder doesn't check either; `Frame.decodeChecked` runs `argsLeadCheck` (the
+backend stores each incoming register once, before any code that branches), whose success
+(`Hyps.argsChecked`) gives `Hyps.argsUntargeted` (below) and `Hyps.argsOk`
+(`Discharge/ArgsOk.lean`). -/
 structure ArgsOk (S : Setup) : Prop where
   distinct : ∀ j k r, j < k → LeadArg S k → ArgRegAt S j r → ¬ ArgRegAt S k r
   untargeted : ∀ k (hk : k < S.r.protos.size), ∀ t ∈ S.r.protos[k].targets, ∀ j,
@@ -652,26 +664,21 @@ structure Hyps (S : Setup) : Prop where
   -- Proved in `RyoProofs` (outside the default build): `opFacts`, `inlineOps_ok`.
   opFacts : ∀ h, Shapes.OpFacts h
   inlineOk : ∀ f cls, (f, cls) ∈ inlineOps → Step.InlineOk f cls
-  -- The restrictions: the frame-pointer form (no step lemmas without it yet), and `resume` with
-  -- its arguments in registers (its step uses the register-only setup; other handler calls may
-  -- have PE's stack argument, `hdl_call_reach`).
+  -- The restriction: the frame-pointer form (no step lemmas without it yet).
   fp : S.c.mode.framePointer = true
-  regArgs : ∀ (k : Nat) (args : List R.Arg) (t : R.Then Nat),
-    S.c.d.insns[k]? = some (.handler .resume args t) →
-      args.length ≤ (handlerRegs S.c.mode.pe).length
-  /-- The window holds the incoming area. -/
-  argSizeK : (16 + S.c.argSize : Int) ≤ S.K
   /-- Checked: the bound check (`decodeBounded`, so `Frame.decodeChecked`, accepts only
   then; `decodeChecked_ok`). `Hyps.frameBounds` derives `FrameBounds S.c S.K` from it. -/
   boundsOk : S.c.d.boundsOk S.c.mode = true
-  /-- The window's end lies between `frameTop` and `2 ^ 31` (`checkSignature`:
-  `frameTop ≤ 16 + argSize ≤ 2 ^ 31`, so `K = 16 + argSize` qualifies). -/
-  frameK : S.c.d.frameTop S.c.mode ≤ S.K ∧ S.K ≤ 2 ^ 31
+  /-- Checked (`windowCheck`, what the image checker's `checkSignature` checks:
+  `frameTop ≤ 16 + argSize ≤ 2 ^ 31`): the window `[-F, K)` holds the frame ranges.
+  `Hyps.frameBounds` derives `FrameBounds S.c S.K` from it and `boundsOk`. -/
+  windowOk : Discharge.FrameBounds.windowCheck S.c = true
   /-- Checked by `Frame.decodeChecked` (`relocsInCheck`; `relocsInOk_of_decodes`): gives
   `Hyps.relocsIn` (`Discharge/RelocsIn.lean`). -/
   relocsInOk : relocsInCheck S.body.code S.rs = true
-  -- Open prerequisites: the decoded code (checkable).
-  argsOk : ArgsOk S
+  /-- Checked by `Frame.decodeChecked` (`argsLeadCheck`; `argsChecked_of_decodes`): gives
+  `Hyps.argsUntargeted` and, with `argsOk_distinct`, `Hyps.argsOk` (`Discharge/ArgsOk.lean`). -/
+  argsChecked : argsLeadOk S.r.protos = true
   /-- Checked by `Frame.decodeChecked` (`frameSizesCheck`): gives `Hyps.peFrame`. -/
   frameSizes : frameSizesCheck S.c.d S.c.mode = true
   -- Open prerequisites: privacy of frame bytes after the scopes.
@@ -679,15 +686,6 @@ structure Hyps (S : Setup) : Prop where
   argPrivate : ArgPrivate S
   resultPrivate : ResultPrivate S
   linkPrivate : LinkPrivate S
-  /-- Open (a state invariant, not a fact of the decoded code): the frame bytes from `-F + 32`
-  up to `frameLo` (on PE with a handler call's stack argument the 8 bytes above the shadow
-  space, `[-F + 32, -F + 40)`; empty otherwise) are private and `Uninit` at every boundary.
-  `FrameInv` doesn't record it (its `FrameInit` allows initialized private bytes anywhere in
-  `[-F, K)`), so it is stated over all of `FrameInv`'s states; its place is a
-  `FrameInv` field. With `frameSizesCheck` and `boundsOk` it gives `Hyps.peStackArg`
-  (`Discharge/PeStackArg.lean`). -/
-  peArgSlots : ∀ s x, FrameInv S s x → ∀ o : Int, -(S.F : Int) + 32 ≤ o →
-    o < S.c.d.frameLo S.c.mode → s.st.escapedAt o = none ∧ s.st.frame o = .uninit
   -- Open prerequisites: the environment and the layout.
   sepAcross : SepAcross S
   envApart : EnvApart S
@@ -716,7 +714,11 @@ structure Hyps (S : Setup) : Prop where
 
 /-- `FrameBounds` for the window, from the bound check (`Discharge/FrameBounds.lean`). -/
 theorem Hyps.frameBounds {S : Setup} (H : Hyps S) : FrameBounds S.c S.K :=
-  Discharge.FrameBounds.frameBounds_of_boundsOk_le H.boundsOk H.frameK.1 H.frameK.2
+  Discharge.FrameBounds.frameBounds_of_window H.boundsOk H.windowOk
+
+/-- The window holds the incoming area (`K = 16 + argSize`, by definition). -/
+theorem Hyps.argSizeK {S : Setup} (_ : Hyps S) : (16 + S.c.argSize : Int) ≤ S.K :=
+  Int.le_refl _
 
 /-- The callees' stack areas fit, from `stackSizesCheck` (`Discharge/StackSizes.lean`). -/
 theorem Hyps.stackSizes {S : Setup} (H : Hyps S) : StackSizes S :=
@@ -726,7 +728,7 @@ theorem Hyps.stackSizes {S : Setup} (H : Hyps S) : StackSizes S :=
 /-- On PE an island template's 32-byte shadow space at the frame's bottom, `[-F, -F + 32)`, lies
 below the link slots (`bodySim_island`), from `stackSizesCheck`. The template may write it: R's
 answer makes those bytes `Uninit` (`R.Code.islandWrites`), so no privacy fact about them is
-needed. -/
+needed. Likewise a Win64 handler's home space (`R.clearHome`, `hdl_home_le`). -/
 theorem Hyps.peShadow {S : Setup} (H : Hyps S) : S.c.mode.pe = true → 32 ≤ S.F :=
   (Discharge.StackSizes.of_check H.stackSizesOk H.stackSizeOut H.frameBounds.F_le).2.2.2
 
@@ -750,7 +752,7 @@ handlers') stores it at `[rsp + 32, rsp + 36)`, the frame offsets `[-F + 32, -F 
 lie below the link slots (`36 ≤ F`) and are private and `Uninit` after the scopes
 (`HandlerStackArg.stackArg_apart`, `hdl_call_reach`). `shadowSize` is 40 then, so `frameLo` is
 `-F + 40`: `frameSizesCheck` gives `40 ≤ F`, and the scopes, which start at or above
-`frameLo` (`boundsOk`), keep `peArgSlots` (`Discharge/PeStackArg.lean`). -/
+`frameLo` (`boundsOk`), keep `FrameInv.slots` (`Discharge/PeStackArg.lean`). -/
 theorem Hyps.peStackArg {S : Setup} (H : Hyps S) : S.c.mode.pe = true →
     ∀ (k : Nat) (h : Full.Opcode) (args : List R.Arg)
     (t : R.Then Nat), S.c.d.insns[k]? = some (.handler h args t) → args.length = 5 →
@@ -764,8 +766,26 @@ theorem Hyps.peStackArg {S : Setup} (H : Hyps S) : S.c.mode.pe = true →
   refine ⟨?_, fun s x s1 hf _ hsc o h1 h2 => ?_⟩
   · have := Discharge.PeStackArg.F_ge_of_check H.frameSizes hpe hi h5
     omega
-  · exact Discharge.PeStackArg.below_frameLo_scopes H.boundsOk (H.peArgSlots s x hf) hsc o h1
+  · exact Discharge.PeStackArg.below_frameLo_scopes H.boundsOk hf.slots hsc o h1
       (by omega)
+
+/-- `FrameInv.slots` after the scopes (`Discharge.PeStackArg.ArgSlots.scopes`). -/
+theorem Hyps.slots_scopes {S : Setup} (H : Hyps S) {s s1 : R.RState} {x : X86.State} {k : Nat}
+    (hf : FrameInv S s x) (hsc : (S.c.scopesAt k).foldlM R.applyScope s = .ok s1) :
+    Discharge.PeStackArg.ArgSlots S.c s1.st :=
+  Discharge.PeStackArg.ArgSlots.scopes H.boundsOk hf.slots hsc
+
+/-- A call's stack area misses `FrameInv.slots` (`argSlotsCheck`, in `stackSizesCheck`). -/
+theorem Hyps.areaMiss {S : Setup} (H : Hyps S) {k : Nat} {op : Reduced.Opcode}
+    {ops : List (R.Opnd Nat)} {f : Full.Opcode} (hi : S.c.d.insns[k]? = some (.native op ops))
+    (hf : op.full = some f) (hsh : f.info.shape = .call) :
+    ∀ r ∈ [(-(S.c.d.frameSize : Int), S.c.stackSize k)], ∀ o : Int,
+      -(S.c.d.frameSize : Int) + 32 ≤ o → o < S.c.d.frameLo S.c.mode → inRange o r = false := by
+  intro r hr
+  simp only [List.mem_singleton] at hr
+  subst hr
+  exact Discharge.PeStackArg.area_miss (Discharge.StackSizes.argSlots_call
+    (Discharge.StackSizes.argSlots_of_check H.stackSizesOk) hi hf hsh)
 
 /-! ## 4. Per instruction -/
 
@@ -1171,6 +1191,50 @@ theorem posOf_eq {r : ReadResult} {k : Nat} (hk : k < r.protos.size) :
     posOf r k = r.protos[k].pos := by
   simp [posOf, hk]
 
+/-- A leading `arg` and every instruction before it are `arg`s (`Decodes.argsSucc`). -/
+theorem lead_ops (hD : Decodes S code relocs rodata callSites dropped scopes mode) {k : Nat}
+    (hk : k < S.r.protos.toList.length) (ha : S.args (k + 1) = true) :
+    ∀ i (hi : i ≤ k), S.r.protos.toList[i].op = .arg := by
+  induction k with
+  | zero =>
+    intro i hi
+    rw [hD.argsSucc 0 hk, Bool.and_eq_true] at ha
+    obtain rfl : i = 0 := by omega
+    simpa using ha.2
+  | succ k ih =>
+    intro i hi
+    rw [hD.argsSucc (k + 1) hk, Bool.and_eq_true] at ha
+    by_cases hik : i = k + 1
+    · subst hik
+      simpa using ha.2
+    · exact ih (by omega) ha.1 i (by omega)
+
+/-- A leading `arg` is in `leadRun` of the instructions. -/
+theorem lead_mem (hD : Decodes S code relocs rodata callSites dropped scopes mode) {j : Nat}
+    (hj : LeadArg S j) : S.r.protos[j]'hj.1 ∈ leadRun S.r.protos.toList := by
+  have hjs := hj.1
+  have ha := hj.2
+  have hjl : j < S.r.protos.toList.length := by simpa using hjs
+  have hops := lead_ops hD hjl ha
+  have hrun := leadRun_getElem? S.r.protos.toList j (fun i _ hij => hops i hij) j (Nat.le_refl j)
+  exact mem_of_getElem?_some (by rw [hrun]; simp [hjs])
+
+/-- `ArgsOk.untargeted` from `argsLeadCheck` (`Hyps.argsChecked`): no branch target is a
+leading `arg`. -/
+theorem Hyps.argsUntargeted (H : Hyps S)
+    (hD : Decodes S code relocs rodata callSites dropped scopes mode) :
+    ∀ k (hk : k < S.r.protos.size), ∀ t ∈ S.r.protos[k].targets, ∀ j,
+      posOf S.r j = t → ¬ LeadArg S j := by
+  rintro k hk t ht j rfl hl
+  have hmem := lead_mem hD hl
+  have hc := H.argsChecked
+  simp only [argsLeadOk, Bool.and_eq_true] at hc
+  have h2 := List.all_eq_true.1 hc.2 S.r.protos[k] (by simp)
+  have h3 := List.all_eq_true.1 h2 _ ht
+  have hany : (leadRun S.r.protos.toList).any (·.pos == posOf S.r j) = true :=
+    List.any_eq_true.2 ⟨_, hmem, by simp [posOf_eq hl.1]⟩
+  simp [hany] at h3
+
 /-! ### Facts derived from the decoder and the relation -/
 /-- At a boundary, `fp` is the entry's `rsp - 8` (`FrameFacts.rbp`). -/
 theorem FrameInv.fpAddr_eq {s : R.RState} {x : X86.State} (h : FrameInv S s x) (o : Int) :
@@ -1184,12 +1248,12 @@ theorem FrameInv.congr {s : R.RState} {x y : X86.State} (h : FrameInv S s x)
     (hr : y.regs = x.regs) (hx : y.xmm = x.xmm) (hm : y.mem = x.mem) : FrameInv S s y := by
   have hrsp : y.rsp = x.rsp := by simp [State.rsp, State.reg, hr]
   have hrbp : y.reg .rbp = x.reg .rbp := by simp [State.reg, hr]
-  obtain ⟨⟨hrel, hb, hwf⟩, hmem, hsep, hwin, hfpF, hsp, hroom, hcode, hro, hargs, hfr⟩ := h
+  obtain ⟨⟨hrel, hb, hwf⟩, hmem, hsep, hwin, hfpF, hsp, hroom, hcode, hro, hargs, hfr, hsl⟩ := h
   refine ⟨⟨Shapes.rel_congr hr hm hrel, hrbp.trans hb, hwf⟩, Shapes.memRel_congr hm hmem,
     hsep.congr hrbp, hwin, hfpF, by rw [hrsp, hrbp]; exact hsp, by rw [hrsp]; exact hroom,
     by rw [hm]; exact hcode, by rw [hm]; exact hro,
     fun ha r hr' hfr => (hargs ha r hr' hfr).congr (fun i _ => by rw [hr]) (fun i _ => by rw [hx]),
-    ?_⟩
+    ?_, hsl⟩
   obtain ⟨f1, f2, f3, f5⟩ := hfr
   refine ⟨by rw [hrbp]; exact f1, by rw [hrbp, hm]; exact f2, by rw [hrbp, hm]; exact f3,
     fun i hi h5 => by rw [hr]; exact f5 i hi h5⟩
@@ -1325,8 +1389,8 @@ theorem bodySim_jmp (_hD : Decodes S code relocs rodata callSites dropped scopes
         hf.rrel hf.sep hsc).2
       have hrbp : x'.reg .rbp = x.reg .rbp := by simp [State.reg, hregs]
       refine ⟨⟨hr', hm', hsep.congr hrbp, hk.fp ▸ hf.win, hk.fp ▸ hf.fpF, hf0.rsp, hf0.room,
-        hf0.code, hf0.ro, fun ha => ?_, hf0.frame⟩, .inr ⟨?_, ?_⟩⟩
-      · exact absurd ha (H.argsOk.untargeted k hlt t.toNat
+        hf0.code, hf0.ro, fun ha => ?_, hf0.frame, (H.slots_scopes (s1 := s1) hf hsc :)⟩, .inr ⟨?_, ?_⟩⟩
+      · exact absurd ha (H.argsUntargeted _hD k hlt t.toNat
           (by rw [hpk]; simp [Proto.targets, Opnd.targetsOf]) t' ht')
       · show x'.rip = addrAt S.ctx (posOf S.r t')
         rw [hrip', ht']

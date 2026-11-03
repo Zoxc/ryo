@@ -35,6 +35,11 @@ provenance at `fp + off`, good only for zero-sized accesses; anything else is UB
    - a native instruction `opSem` gives the meaning of (shapes `op`, `br`, `switch`, `trap`,
      `lpad`) or a handler call: `view`, then `opSem` and the shape's control flow
      (`Then.succ`): `semR i = opSem (view i)` plus control. `view = none` is `illFormed`.
+     On PE a handler call's Win64 callee may write its 32-byte home space and its stack
+     argument's 8-byte slot (`handlerHome`), the frame's bottom `[fp - F, fp - F + 32)` (40
+     with the stack argument): after `opSem` those bytes are `Uninit` (`clearHome`; the code
+     never reads them, but a call's answer may have left initialized bytes there). An inline
+     dense switch, a handler call in R, clears them too (nothing reads them).
      `resume` (no `opSem`: its handler is assembly) unwinds from `pc` with the exception
      object in its slot (on PE, and in the `pe-test` set, `ryo_h_Resume` aborts through
      `fatal`; it is reached there only outside the pad region, i.e. from cleanup code that
@@ -72,8 +77,8 @@ provenance at `fp + off`, good only for zero-sized accesses; anything else is UB
 
 The answer's `world` (memory and exposed allocations) replaces the state's: the environment
 sees and changes memory, escaped frame objects included, but not the private frame bytes,
-which only the answer's outgoing-area and `Lend` bytes write (and an island's PE shadow
-space, made `Uninit`). What an answer may be (that a callee keeps its convention, that an
+which only the answer's outgoing-area and `Lend` bytes write (and an island's or a handler
+call's PE shadow space, made `Uninit`). What an answer may be (that a callee keeps its convention, that an
 island keeps its contract) is the environment's specification, not this file's. An
 environment may also give no answer: a callee or island that aborts (a panic in a `nounwind`
 context, `process::abort`, a failed runtime check of `ryo_rt` going to `fatal`) or never
@@ -385,7 +390,19 @@ def unwindAt (c : Code) (s : RState) (exc : ThinPointer) : M Out :=
   | some (none, _) => pure (.done (exit s (.unwind exc)))
   | none => ub s!"unwinding through instruction {s.pc}, which has no call-site entry"
 
-/-- An instruction `opSem` gives the meaning of (through `view`), or `resume`. -/
+/-- The bytes above its return address a handler call's callee may write: on PE (Win64) its
+32-byte home space, and with a stack argument (a fifth position) that argument's 8-byte slot
+(as `Decoded.shadowSize`); none on SysV. -/
+def handlerHome (pe : Bool) (nargs : Nat) : Nat :=
+  if pe then (if nargs > 4 then 40 else 32) else 0
+
+/-- After a handler call with `nargs` arguments: on PE its home bytes (`handlerHome`), at frame
+offset `off` (the frame's bottom, `-F`), made `Uninit`; nothing on SysV. -/
+def clearHome (pe : Bool) (nargs : Nat) (off : Int) (st : OpSem.State) : M OpSem.State :=
+  if pe then st.writeFrame off (List.replicate (handlerHome pe nargs) .uninit) else pure st
+
+/-- An instruction `opSem` gives the meaning of (through `view`), or `resume`. A handler call
+then clears its PE home space (`clearHome`). -/
 def stepView (c : Code) (s : RState) (i : Insn) (ch : OpSem.Choice) : M Out := do
   let some v := view c.mode c.ρ i | illFormed s!"instruction {s.pc} has no view"
   let some t := v.ctl | illFormed s!"instruction {s.pc} ({v.op.mnemonic}) is not an operation"
@@ -394,6 +411,9 @@ def stepView (c : Code) (s : RState) (i : Insn) (ch : OpSem.Choice) : M Out := d
     return ← unwindAt c s (← asPtr (← s.st.readFrame x 8))
   if v.op == .unreachable then throw .unreachable
   let (ctl, st) ← opSem v.op v.ops s.st ch
+  let st ← match i with
+    | .handler _ args _ => clearHome c.mode.pe args.length (-(c.d.frameSize : Int)) st
+    | _ => pure st
   let some pc := t.succ s.pc ctl | illFormed s!"{v.op.mnemonic}'s control flow"
   pure (.step { s with pc, st })
 

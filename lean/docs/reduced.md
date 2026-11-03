@@ -163,7 +163,10 @@ stores are not ghost state: the Lean decoder re-checks them ([aot.md](aot.md) §
   `[load64(p) + k]`.
 - `handler h args neg t`: the contract `H h` (below), then the shape's control flow: branch
   on the returned `bool` with polarity `neg`, jump through `t` on the returned index (default
-  last), or fall through.
+  last), or fall through. On PE the Win64 handler owns its 32-byte home space and its stack
+  argument's slot above its return address, the frame's bottom `[fp - F, fp - F + 32)` (40
+  with a stack argument): after `opSem` R makes those bytes `Uninit` (`R.clearHome`), as an
+  island's answer does its shadow space; the code never reads them.
 - Calls at register level: `call`/`call.sym`/`call.ptr`/`tail_call*`/`ret`/`arg`, using the
   call's argument list and return kind `k` (these are already native R instructions). The
   callee is the environment or another R function, under the convention
@@ -208,7 +211,7 @@ Scopes before an instruction take effect before it (§C0.3: `Escape` an exposed 
 `fp + off` with the current bytes, `End` deallocating what it covers whole and making the
 bytes `Uninit`, `Lend` nothing); every escaped object is deallocated at the end. A native
 instruction with a handler shape or a handler call is `opSem (view i)` plus `Then.succ`
-(`view = none` is `illFormed`); `resume` and an unwinding answer land at the instruction's
+(`view = none` is `illFormed`; a handler call then clears PE's home space, `clearHome`); `resume` and an unwinding answer land at the instruction's
 cleanup entry (the landing pad, with the exception register set for `lpad`; out of the
 function for `continue`; UB with no entry), single-phase (`Code.catchesAt` gives the `catch`
 flag a search phase would ask). Calls build their registers from the argument list (by value

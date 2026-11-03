@@ -134,15 +134,17 @@ theorem handler_view {mode : Ryo.Obj.Mode} {ρ : R.Addrs} {h : Full.Opcode} {arg
     · split at hv <;> simp at hv <;> (try split at hv) <;> simp_all
 
 /-- What `RSafe` gives of a handler call `handler h args t` (not `resume`, not `unreachable`):
-the scopes succeed, the arguments unpack, `opSem` has no UB, and each of its results is an R
-step to `Then.succ`'s successor. -/
+the scopes succeed, the arguments unpack, `opSem` has no UB, and each of its results, with PE's
+home space cleared (`R.clearHome`, which then succeeds), is an R step to `Then.succ`'s
+successor. -/
 theorem handler_rside {Safe : R.Query → Prop} {c : R.Code} {s : R.RState} {h : Full.Opcode}
     {args : List R.Arg} {t : R.Then Nat} (hi : c.d.insns[s.pc]? = some (.handler h args t))
     (hsafe : RSafe Safe c s) (hres : h ≠ .resume) (hun : h ≠ .unreachable) :
     ∃ s1 vals, (c.scopesAt s.pc).foldlM R.applyScope s = .ok s1 ∧
       R.unpack c.ρ h c.mode args = some vals ∧ Handler.NoUB h vals s1.st ∧
-      ∀ ch ctl st', opSem h vals s1.st ch = .ok (ctl, st') → ∃ pc, t.succ s.pc ctl = some pc ∧
-        R.step c s ch = .ok (.step { s1 with pc, st := st' }) := by
+      ∀ ch ctl st', opSem h vals s1.st ch = .ok (ctl, st') → ∃ st'' pc,
+        R.clearHome c.mode.pe args.length (-(c.d.frameSize : Int)) st' = .ok st'' ∧
+        t.succ s.pc ctl = some pc ∧ R.step c s ch = .ok (.step { s1 with pc, st := st'' }) := by
   have hE : ∀ ch e, R.step c s ch = .error e → handler_NotNB e → False := fun ch e h1 h2 => by
     obtain ⟨m, hm⟩ := hsafe.1 ch e h1; exact h2 m hm
   cases hsc : (c.scopesAt s.pc).foldlM R.applyScope s with
@@ -166,18 +168,30 @@ theorem handler_rside {Safe : R.Query → Prop} {c : R.Code} {s : R.RState} {h :
       · refine hsafe.1 ch e ((hst ch).trans ?_)
         unfold R.stepView
         simp only [hv, bind, Except.bind, beq_iff_eq, hres, hun, ↓reduceIte, he]
-      · cases hp : t.succ s.pc ctl with
+      · cases hcl : R.clearHome c.mode.pe args.length (-(c.d.frameSize : Int)) st' with
+        | error e =>
+          exfalso
+          refine hE ch e ((hst ch).trans ?_) ?_
+          · unfold R.stepView
+            simp only [hv, bind, Except.bind, beq_iff_eq, hres, hun, ↓reduceIte, hop, hcl]
+          · unfold R.clearHome at hcl
+            split at hcl
+            · exact handler_writeFrame_err hcl
+            · simp [pure, Except.pure] at hcl
+        | ok st'' =>
+        cases hp : t.succ s.pc ctl with
         | none =>
           exfalso
           obtain ⟨msg, hmsg⟩ : ∃ msg, R.stepView c s1 (.handler h args t) ch =
               .error (.illFormed msg) := by
             unfold R.stepView
-            simp only [hv, bind, Except.bind, beq_iff_eq, hres, hun, ↓reduceIte, hop, hpc, hp]
+            simp only [hv, bind, Except.bind, beq_iff_eq, hres, hun, ↓reduceIte, hop, hcl, hpc,
+              hp]
             exact ⟨_, rfl⟩
           exact hE ch _ ((hst ch).trans hmsg) (handler_illFormed_notNB _)
         | some pc =>
-          exact ⟨pc, rfl, (hst ch).trans
-            (Shapes.stepView_succ hv hres hun hop (by rw [hpc]; exact hp))⟩
+          exact ⟨st'', pc, rfl, rfl, (hst ch).trans
+            (Shapes.stepView_succ hv hres hun hop hcl (by rw [hpc]; exact hp))⟩
 
 /-! ### The x86 side: the setup and the call -/
 
@@ -703,7 +717,7 @@ theorem hdl_frameInv (H : Hyps S) (HC : HdlApart S) {s : R.RState} {x y : X86.St
   refine ⟨⟨⟨fun o h1 h2 b hb => ?_, fun e he a h => ?_, fun p hp => ?_⟩, hrbp.trans hf.rrel.rbp,
     hf.rrel.wf⟩, fun id a hg hl i hi => ?_, hf.sep.congr hrbp, hf.win, hf.fpF,
     by rw [hag.1, hrbp]; exact hf.rsp, by rw [hag.1]; exact hf.room, hdl_linkOk H HC hf hm,
-    hdl_roLoaded H hf hm, fun h => absurd h ha, ?_⟩
+    hdl_roLoaded H hf hm, fun h => absurd h ha, ?_, hf.slots⟩
   · have hr := hf.rrel.rel.frame o h1 h2 b hb
     rw [hfp]
     cases b with
@@ -756,6 +770,14 @@ theorem handler_thenSeq_resume {nn hat : Nat} {c c' : Cursor} {t : R.Then Nat}
   obtain ⟨rfl, rfl⟩ := he
   exact ⟨rfl, by simp only [show (Full.Opcode.resume == Full.Opcode.resume) = true from by decide,
     ↓reduceIte]⟩
+
+set_option maxRecDepth 100000 in
+/-- `resume`'s layout (one operand, the slot, after `fp` with `fpArg`) fits in the handler
+argument registers: its calls never take PE's stack argument (`unpack` bounds the arguments to
+the layout's `regs`). -/
+theorem resume_regs_le (a b : Bool) :
+    ((Full.Opcode.resume.layout a b).map (·.regs)).getD 0 ≤ (handlerRegs b).length := by
+  cases a <;> cases b <;> decide
 
 set_option maxRecDepth 100000 in
 /-- `resume` (`handler resume [x] trap`): R unwinds from `k` with the exception object in slot
@@ -849,7 +871,17 @@ theorem handler_resume' (hD : Decodes S code relocs rodata callSites dropped sco
     hf.code.sorted hf.code.loaded hf.code.small hf.code.fp hbh hcall
   have hlen5 : len = 5 := by rw [← hlen]; rfl
   have hlo : S.lo.toNat + 8 ≤ x.rsp.toNat := by have := hf.room; omega
-  have hreg : args.length ≤ (handlerRegs S.fr.mode.pe).length := H.regArgs s.pc _ _ hi
+  have hreg : args.length ≤ (handlerRegs S.fr.mode.pe).length := by
+    have h := resume_regs_le S.c.mode.fpArg S.c.mode.pe
+    cases hl : Full.Opcode.resume.layout S.c.mode.fpArg S.c.mode.pe with
+    | none => simp [R.unpack, hl] at hu
+    | some l =>
+      rw [hl] at h
+      have : args.length = l.regs := by
+        by_cases hne : args.length = l.regs
+        · exact hne
+        · simp [R.unpack, hl, hne] at hu
+      rw [this]; exact h
   obtain ⟨x2, hx2, hat2, hargs2, hrsp2, hsaved2, hmem2, hret2⟩ :=
     handler_call_ret (lo := S.lo) S.ctx H.linked hnop hsetup hreg hlo
   have hsteps := handler_call_steps H.fp hsetup hreg hca hrip hx2
@@ -888,7 +920,8 @@ theorem handler_resume' (hD : Decodes S code relocs rodata callSites dropped sco
   have hfi : FrameInv S s2 x :=
     ⟨⟨⟨fun o h1 h2 b hb => hr1.rel.frame o h1 h2 b hb, hr1.rel.layout, hr1.rel.zeroSized⟩,
       hr1.rbp, ⟨hr1.wf.idLt, hr1.wf.idInj, hr1.wf.size, hr1.wf.disj⟩⟩, hm1, ⟨hsep1.own, hsep1.init, hsep1.dis, hsep1.space, hsep1.esc⟩, hk1.fp ▸ hf.win, hk1.fp ▸ hf.fpF, hf.rsp, hf.room,
-      hf.code, hf.ro, fun h => absurd h hnl, hf.frame⟩
+      hf.code, hf.ro, fun h => absurd h hnl, hf.frame,
+      (H.slots_scopes hf hsc).congr rfl (fun _ _ _ => rfl)⟩
   have h8 : 8 ≤ x.rsp.toNat := by omega
   have hag : Counter.Agree S.Owned S.lo x x' := by
     refine ⟨by rw [hrsp', hrsp2]; exact BitVec.sub_add_cancel _ _,
@@ -1015,13 +1048,72 @@ theorem hdl_frameInv_regs {s : R.RState} {x y : X86.State} (hf : FrameInv S s x)
     (hm : y.mem = x.mem) (hrbp : y.reg .rbp = x.reg .rbp) (hrsp : y.rsp = x.rsp)
     (hsv : ∀ i, Saved S.c.mode.pe i → y.regs i = x.regs i) (ha : ¬ LeadArg S s.pc) :
     FrameInv S s y := by
-  obtain ⟨⟨hrel, hb, hwf⟩, hmem, hsep, hwin, hfpF, hsp, hroom, hcode, hro, -, hfr⟩ := hf
+  obtain ⟨⟨hrel, hb, hwf⟩, hmem, hsep, hwin, hfpF, hsp, hroom, hcode, hro, -, hfr, hsl⟩ := hf
   obtain ⟨f1, f2, f3, f5⟩ := hfr
   exact ⟨⟨Inline.rel_congr hrel hrbp hm, hrbp.trans hb, hwf⟩, Shapes.memRel_congr hm hmem,
     hsep.congr hrbp, hwin, hfpF, by rw [hrsp, hrbp]; exact hsp, by rw [hrsp]; exact hroom,
     by rw [hm]; exact hcode, by rw [hm]; exact hro, fun h => absurd h ha,
     ⟨by rw [hrbp]; exact f1, by rw [hrbp, hm]; exact f2, by rw [hrbp, hm]; exact f3,
-      fun i hi h5 => by rw [hsv i hi]; exact f5 i hi h5⟩⟩
+      fun i hi h5 => by rw [hsv i hi]; exact f5 i hi h5⟩, hsl⟩
+
+/-- A handler call's home bytes (`R.handlerHome`: PE's 32-byte home space, 40 with a stack
+argument) fit in the frame: `shadowSize` covers them and `frameSizesCheck` bounds it by `F`
+(`peStackArgCheck`); `32 ≤ F` on PE (`Hyps.peShadow`). -/
+theorem hdl_home_le (H : Hyps S) {k : Nat} {h : Full.Opcode} {args : List R.Arg}
+    {t : R.Then Nat} (hi : S.c.d.insns[k]? = some (.handler h args t)) :
+    R.handlerHome S.c.mode.pe args.length ≤ S.F := by
+  have hF : S.F = S.c.d.frameSize := rfl
+  unfold R.handlerHome
+  by_cases hpe : S.c.mode.pe = true
+  · rw [if_pos hpe]
+    by_cases h4 : args.length > 4
+    · rw [if_pos h4]
+      have hp := Discharge.PeStackArg.peStackArgCheck_of_frameSizes H.frameSizes
+      unfold peStackArgCheck at hp
+      have hs := of_decide_eq_true hp
+      have h40 : S.c.d.shadowSize S.c.mode = 40 := by
+        unfold R.Decoded.shadowSize
+        split
+        · next hn => simp [hpe] at hn
+        · split
+          · rfl
+          · next hno =>
+            exfalso
+            apply hno
+            exact Array.any_eq_true'.2 ⟨_, Array.mem_of_getElem? hi, by simp [h4]⟩
+      omega
+    · rw [if_neg h4]
+      exact H.peShadow hpe
+  · rw [if_neg hpe]
+    exact Nat.zero_le _
+
+/-- `R.clearHome` at `-F` with at most `F` bytes keeps `FrameInv`: the cleared bytes are `Uninit`,
+which relates to any x86 byte (`CallLemmas.rel_writeFrame_in`, `ScopeMem.memRel_writeUninit`),
+lie in the window (`island_sep_writeFrame`) and keep the slots (`ArgSlots.writeFrame_uninit`). -/
+theorem hdl_frameInv_clear (H : Hyps S) {s : R.RState} {x : X86.State} {st'' : OpSem.State}
+    {n : Nat} (hf : FrameInv S s x) (hn : R.handlerHome S.c.mode.pe n ≤ S.F)
+    (hcl : R.clearHome S.c.mode.pe n (-(S.F : Int)) s.st = .ok st'') :
+    FrameInv S { s with st := st'' } x := by
+  have hFle : (S.F : Int) ≤ 2 ^ 31 := H.frameBounds.F_le
+  obtain ⟨-, -, -, -, -, -, hK16⟩ := hdl_nums H hf
+  rcases Shapes.clearHome_cases hcl with ⟨-, hw⟩ | ⟨-, rfl⟩
+  · obtain ⟨hesc, hsz⟩ := Shapes.clearHome_keeps hcl
+    have hbs : BytesRel (List.replicate (R.handlerHome S.c.mode.pe n) .uninit)
+        (bytesAt x.mem (fpAddr x (-(S.F : Int)))
+          (List.replicate (R.handlerHome S.c.mode.pe n) AbstractByte.uninit).length) := by
+      rw [List.length_replicate]
+      have := Ryo.Proofs.ArgRet.BytesRel.uninit
+        (bytesAt x.mem (fpAddr x (-(S.F : Int))) (R.handlerHome S.c.mode.pe n))
+      rwa [bytesAt_length] at this
+    have hr' := (CallLemmas.rel_writeFrame_in
+      (fun o h1 h2 _ b hb => hf.rrel.rel.frame o h1 h2 b hb) hf.rrel.rel.layout
+      hf.rrel.rel.zeroSized hw (by omega) (by rw [List.length_replicate]; omega) hbs).1
+    exact { hf with
+      rrel := ⟨hr', hf.rrel.rbp, hf.rrel.wf.of_sizes hesc hsz⟩
+      mem := ScopeMem.memRel_writeUninit hf.mem hw
+      sep := island_sep_writeFrame hf.sep hw (Int.le_refl _) (by rw [List.length_replicate]; omega)
+      slots := hf.slots.clearHome hcl }
+  · exact hf
 
 set_option maxRecDepth 100000 in
 /-- A handler leaves the code, the rodata and the frame's link slots alone, and none is on the
@@ -1034,8 +1126,10 @@ theorem hdl_kept (H : Hyps S) {s s1 : R.RState} {x x2 : X86.State} (hf : FrameIn
     (hi : S.c.d.insns[s.pc]? = some (.handler h args t))
     (hu : R.unpack S.c.ρ h S.c.mode args = some vals)
     (hrbp2 : x2.reg .rbp = x.reg .rbp) (hrsp2 : x2.rsp.toNat ≤ x.rsp.toNat)
+    (hrsp2e : x2.rsp = x.rsp - 8) (hhome : R.handlerHome S.c.mode.pe args.length ≤ S.F)
     (b : BitVec 64) (hb : IslandKept S x b) :
-    ¬ Handler.MayWrite S.Owned S.lo h vals s1.st x2 b ∧ ¬ InStack S.lo x.rsp b := by
+    ¬ Handler.MayWrite S.Owned S.lo (R.handlerHome S.c.mode.pe args.length) h vals s1.st x2 b ∧
+      ¬ InStack S.lo x.rsp b := by
   have hK : (16 : Int) ≤ S.K := by have := H.argSizeK; omega
   have hwin : (s.fp : Int) + S.K ≤ 2 ^ 64 := hf.win
   have hfpF : S.F ≤ s.fp := hf.fpF
@@ -1048,6 +1142,21 @@ theorem hdl_kept (H : Hyps S) {s s1 : R.RState} {x x2 : X86.State} (hf : FrameIn
   have hW : ∀ o, S.winAddr o = BitVec.ofNat 64 s.fp + BitVec.ofInt 64 o := fun o => by
     rw [← hf.fpAddr_eq]; simp [fpAddr, hrbp]
   have hwr : WrIn (-(S.F : Int)) S.K h vals := hfb.handler s.pc h args t vals hi hu
+  -- A home byte (PE's home space and stack argument, `[x2.rsp + 8, + home)`): the frame offsets
+  -- `[-F, -F + home)`, below the link slots.
+  have hhomeW : ∀ b, (b - (x2.rsp + 8)).toNat < R.handlerHome S.c.mode.pe args.length →
+      ∃ o : Int, -(S.F : Int) ≤ o ∧ o < 0 ∧ b = fpAddr x o := by
+    intro b hb
+    have e8 : x2.rsp + 8 = x.rsp := by rw [hrsp2e]; exact BitVec.sub_add_cancel _ _
+    rw [e8] at hb
+    have hx : x.rsp = fpAddr x (-(S.F : Int)) := by
+      apply BitVec.eq_of_toNat_eq
+      rw [HandlerStackArg.fpAddr_toNat hrbp (o := -(S.F : Int)) (by omega) (by omega), hrsp0]
+      omega
+    refine ⟨-(S.F : Int) + ((b - x.rsp).toNat : Nat), by omega, by omega, ?_⟩
+    calc b = x.rsp + BitVec.ofNat 64 (b - x.rsp).toNat := island_sub_toNat rfl
+      _ = fpAddr x (-(S.F : Int)) + BitVec.ofNat 64 (b - x.rsp).toNat := by rw [← hx]
+      _ = _ := by simp only [fpAddr, island_ofInt_add, BitVec.add_assoc]
   -- A byte off the window: in no frame write range.
   have hwr_win : ∀ b, (∀ o : Int, -(S.F : Int) ≤ o → o < S.K → b ≠ S.winAddr o) →
       ¬ ∃ r ∈ wranges h vals, (b - fpAddr x2 r.1).toNat < r.2 := by
@@ -1062,12 +1171,13 @@ theorem hdl_kept (H : Hyps S) {s s1 : R.RState} {x x2 : X86.State} (hf : FrameIn
   -- A code or rodata byte.
   have hcode : ∀ b, ((∃ p, p < S.body.code.size ∧ b = addrAt S.ctx p) ∨
       (∃ j, j < S.ro.size ∧ b = S.ctx.addrOf (.ro j))) →
-      ¬ Handler.MayWrite S.Owned S.lo h vals s1.st x2 b ∧ ¬ InStack S.lo x.rsp b := by
+      ¬ Handler.MayWrite S.Owned S.lo (R.handlerHome S.c.mode.pe args.length) h vals s1.st x2 b ∧
+        ¬ InStack S.lo x.rsp b := by
     intro b hb'
     obtain ⟨hown, hstk, hnw, hal⟩ := H.codeApart b hb'
     have hst : ¬ InStack S.lo x.rsp b := hdl_inStack_lift H hf hstk
     refine ⟨?_, hst⟩
-    rintro (hwb | hal1 | ho | hst2)
+    rintro (hwb | hal1 | ho | hst2 | hh)
     · exact hwr_win b hnw hwb
     · have hold : island_AllOk (fun addr sz => ¬ (b - BitVec.ofNat 64 addr).toNat < sz) s.st :=
         fun id al hg hl hlt => hal s _ hbi ⟨id, al, hg, hl, hlt⟩
@@ -1081,6 +1191,8 @@ theorem hdl_kept (H : Hyps S) {s s1 : R.RState} {x x2 : X86.State} (hf : FrameIn
       exact hnew id al hg hl hlt
     · exact hown ho
     · exact hst ⟨hst2.1, Nat.lt_of_lt_of_le hst2.2 hrsp2⟩
+    · obtain ⟨o, h1, h2, he⟩ := hhomeW b hh
+      exact hnw o h1 (by omega) (he.trans (hf.fpAddr_eq o))
   rcases hb with hb | ⟨r, hr, k, hk, rfl⟩ | hb | ⟨i, hi', hb⟩
   · exact hcode b (.inl hb)
   · exact hcode _ (.inl ⟨r.pos + k, by have := H.relocsIn r hr; omega, rfl⟩)
@@ -1105,7 +1217,7 @@ theorem hdl_kept (H : Hyps S) {s s1 : R.RState} {x x2 : X86.State} (hf : FrameIn
       rw [hrsp0, hxo] at h2
       omega
     refine ⟨?_, hst⟩
-    rintro (⟨r, hr, hlt⟩ | ⟨id, al, hg, hlv, hlt⟩ | ho | hst2)
+    rintro (⟨r, hr, hlt⟩ | ⟨id, al, hg, hlv, hlt⟩ | ho | hst2 | hh)
     · have hli := hwr r hr
       have hoff := hfb.handlerOff s.pc h args t vals hi hu r hr
       have e2 : fpAddr x2 r.1 = fpAddr x r.1 := by simp [fpAddr, hrbp2]
@@ -1119,13 +1231,19 @@ theorem hdl_kept (H : Hyps S) {s s1 : R.RState} {x x2 : X86.State} (hf : FrameIn
     · rw [hf.fpAddr_eq] at ho
       exact H.envApart.window o hoF (by omega) ho
     · exact hst ⟨hst2.1, Nat.lt_of_lt_of_le hst2.2 hrsp2⟩
+    · obtain ⟨o', h1, h2, he⟩ := hhomeW _ hh
+      have := congrArg BitVec.toNat he
+      rw [HandlerStackArg.fpAddr_toNat hrbp (o := o) (by omega) (by omega),
+        HandlerStackArg.fpAddr_toNat hrbp (o := o') (by omega) (by omega)] at this
+      omega
 
 set_option maxHeartbeats 1000000 in
 /-- The setup, `call h` and the handler's return (`H.handler`, `SepAcross.handler`): each return
 continues at the item after the call with `opSem`'s result for a choice, its control in the
-return registers, and `FrameInv` of R's state after for any successor past the leading `arg`s
-(the frame writes in the window, `FrameBounds.handler`; the code, rodata and link slots kept,
-`hdl_kept`). -/
+return registers, and `FrameInv` of R's state after (with PE's home space cleared,
+`R.clearHome`) for any successor past the leading `arg`s (the frame writes in the window,
+`FrameBounds.handler`; the code, rodata and link slots kept, `hdl_kept`; the home bytes the
+handler may write, `[-F, -F + handlerHome)`, below the link slots, `hdl_home_le`). -/
 theorem hdl_call_reach (_hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (H : Hyps S)
     {Q : X86.State → Prop} {s s1 : R.RState} {x : X86.State} {p n : Nat}
@@ -1141,7 +1259,9 @@ theorem hdl_call_reach (_hD : Decodes S code relocs rodata callSites dropped sco
       ∃ j, j < S.body.code.size ∧ a = addrAt S.ctx j)
     (kont : ∀ x' ch ctl st', opSem h vals s1.st ch = .ok (ctl, st') → Handler.CtlIn ctl x' →
       x'.rip = addrAt S.ctx (p + codeSize (items ++ [Item.call (.handler n)])) →
-      (∀ pc, ¬ LeadArg S pc → FrameInv S { s1 with pc, st := st' } x') → Reach S.ctx S.E Q x') :
+      (∀ st'', R.clearHome S.c.mode.pe args.length (-(S.F : Int)) st' = .ok st'' →
+        ∀ pc, ¬ LeadArg S pc → FrameInv S { s1 with pc, st := st'' } x') →
+      Reach S.ctx S.E Q x') :
     Reach S.ctx S.E Q x := by
   have hk := scopes_keeps _ hsc
   have hfb := H.frameBounds
@@ -1229,13 +1349,28 @@ theorem hdl_call_reach (_hD : Decodes S code relocs rodata callSites dropped sco
     have h8 : (x.rsp - 8).toNat = x.rsp.toNat - 8 := by
       rw [BitVec.toNat_sub]; have := x.rsp.isLt; simp; omega
     rw [hrsp2, h8]; omega
+  -- The home bytes (PE's home space and stack argument) at `x2.rsp + 8 = fp - F`.
+  have hHome := hdl_home_le H hi
+  have hxF : x.rsp = fpAddr x (-(S.F : Int)) := by
+    apply BitVec.eq_of_toNat_eq
+    rw [HandlerStackArg.fpAddr_toNat hf.rrel.rbp (o := -(S.F : Int)) (by omega) (by omega),
+      hrspN]
+    omega
+  have hho : fpAddr x2 (-(S.F : Int)) = x2.rsp + 8 := by
+    rw [hrsp2, BitVec.sub_add_cancel, hxF]; simp [fpAddr, hrbp2]
+  have hown : FrameOwn (-(S.F : Int)) (-(S.F : Int) + R.handlerHome S.c.mode.pe args.length)
+      s1.st x2 := by
+    intro id a o hg hl h1 h2 hin
+    have e : fpAddr x2 o = fpAddr x o := by simp [fpAddr, hrbp2]
+    rw [e] at hin
+    exact hsep1.own id a o hg hl h1 (by omega) hin
   refine Reach.steps hsteps (.env (H.envOutside.handler h x2 hat2) fun x' hret => ?_)
   -- The return.
   obtain ⟨ch, ctl, st', hop, hH', hctl, hal⟩ :=
-    H.sepAcross.handler h args vals s1.st x2 x' x hhh hu hat2 hargs2 hH2 hno hret hsep1
+    H.sepAcross.handler h args vals s1.st x2 x' x hhh hu hat2 hargs2 hH2 hno hret hsep1 hho
   obtain ⟨-, -, -, -, -, -, hrsp', hrip', hsv', hmw⟩ :=
-    H.handler.sound h args vals s1.st x2 x' hhh hu hat2 hargs2 hH2 hno hret
-  refine kont x' ch ctl st' hop hctl (by rw [hrip', hra]) fun pc hnl => ?_
+    H.handler.sound h args vals s1.st x2 x' hhh hu hat2 hargs2 hH2 hno _ hho hown hret
+  refine kont x' ch ctl st' hop hctl (by rw [hrip', hra]) fun st'' hcl pc hnl => ?_
   have hrbp' : x'.reg .rbp = x.reg .rbp := by
     show x'.regs 5 = x.regs 5
     rw [hsv' 5 (by simp [CalleeSaved])]
@@ -1252,7 +1387,7 @@ theorem hdl_call_reach (_hD : Decodes S code relocs rodata callSites dropped sco
       · rw [h7]; exact hsv2 7 (Or.inr ⟨hpe, Or.inr rfl⟩)
   have hkeep : ∀ b, IslandKept S x b → x'.mem b = x.mem b := by
     intro b hb
-    obtain ⟨h1, h2⟩ := hdl_kept H hf hci hsc hi hu hrbp2 hrsp2le b hb
+    obtain ⟨h1, h2⟩ := hdl_kept H hf hci hsc hi hu hrbp2 hrsp2le hrsp2 hHome b hb
     rw [hmw b h1, hmem2 b h2 hb]
   -- The frame separation after the handler.
   have hesc : st'.escaped = s1.st.escaped := (Ryo.Proofs.OpFacts.opSem_out hop).2.1
@@ -1277,9 +1412,20 @@ theorem hdl_call_reach (_hD : Decodes S code relocs rodata callSites dropped sco
   have hsep' : FrameSep (-(S.F : Int)) S.K st' x' :=
     FrameSep.extend hsep1 hrbp' hesc hal.1 hinit hal.2.1 hal.2.2
   have hwf' : EscWF st' := (H.opFacts h).escWF vals s1.st ch ctl st' hop hr1.wf
-  refine ⟨⟨hH'.rel, ?_, hwf'⟩, hH'.mem, hsep', ?_, ?_, ?_, ?_, island_link_kept hf.code hkeep,
+  have hslots' := (H.slots_scopes hf hsc).opSem hop (Discharge.PeStackArg.handler_lo H.boundsOk hi hu)
+  -- PE's home space cleared (`R.clearHome`): `Uninit`, inside the window.
+  have hH'' := hH' st'' hcl
+  obtain ⟨hesc'', hsz''⟩ := Shapes.clearHome_keeps hcl
+  have hwf'' : EscWF st'' := hwf'.of_sizes hesc'' hsz''
+  obtain ⟨hsep'', hslots''⟩ :
+      FrameSep (-(S.F : Int)) S.K st'' x' ∧ Discharge.PeStackArg.ArgSlots S.c st'' := by
+    rcases Shapes.clearHome_cases hcl with ⟨-, hw⟩ | ⟨-, rfl⟩
+    · exact ⟨island_sep_writeFrame hsep' hw (Int.le_refl _) (by rw [List.length_replicate]; omega),
+        hslots'.clearHome hcl⟩
+    · exact ⟨hsep', hslots'.clearHome hcl⟩
+  refine ⟨⟨hH''.rel, ?_, hwf''⟩, hH''.mem, hsep'', ?_, ?_, ?_, ?_, island_link_kept hf.code hkeep,
     island_ro_kept hf.ro hkeep, fun ha => absurd ha hnl,
-    island_frame_kept hf.frame hkeep hrbp' (fun i hi _ => hsvX i hi)⟩
+    island_frame_kept hf.frame hkeep hrbp' (fun i hi _ => hsvX i hi), hslots''⟩
   · show x'.reg .rbp = BitVec.ofNat 64 s1.fp
     rw [hrbp', hf.rrel.rbp, hk.fp]
   · show (s1.fp : Int) + S.K ≤ 2 ^ 64
@@ -1316,7 +1462,8 @@ set_option maxHeartbeats 1000000 in
 /-- The `br` shape's tail after the return: `test al, al; jz/jnz tgt` (`Handler.br_tail`), to the
 target (not a leading `arg`, `ArgsOk.untargeted`; the cache cleared there,
 `CacheCleared.targets`) or falling through. -/
-theorem hdl_br (H : Hyps S) {k pT j pc : Nat} {q : Proto} {c3 : Cursor} {s s1 : R.RState}
+theorem hdl_br (hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
+    {k pT j pc : Nat} {q : Proto} {c3 : Cursor} {s s1 : R.RState}
     {x' : X86.State} {st' : OpSem.State} {ch : OpSem.Choice} {b : Bool} {cond : Cond}
     {tgt : BitVec 32} {long : Bool}
     (hs : s.pc = k) (hlt : k < S.r.protos.size)
@@ -1364,7 +1511,7 @@ theorem hdl_br (H : Hyps S) {k pT j pc : Nat} {q : Proto} {c3 : Cursor} {s s1 : 
     rw [ite_eq_left hbn] at hpc
     rw [ite_eq_left hbn] at hrip2
     rw [← hpc] at hstep
-    have hnlj : ¬ LeadArg S j := H.argsOk.untargeted k hlt _ htg j hj
+    have hnlj : ¬ LeadArg S j := H.argsUntargeted hD k hlt _ htg j hj
     have hfj := (hFI j hnlj).congr hregs hxmm hmem
     refine Reach.steps hst (.done (.inl ⟨_, .step hstep, hfj, .inr ⟨?_, ?_⟩⟩))
     · show x''.rip = addrAt S.ctx (posOf S.r j)
@@ -1389,7 +1536,8 @@ set_option maxHeartbeats 1000000 in
 /-- The `switch` shape's tail after the return: the jump through the table
 (`Switch.switch_tail`) to entry `i`'s target (not a leading `arg`, `ArgsOk.untargeted`; the
 cache cleared there, `CacheCleared.targets`). -/
-theorem hdl_switch (H : Hyps S) {k pT pc i pE : Nat} {s s1 : R.RState}
+theorem hdl_switch (hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
+    {k pT pc i pE : Nat} {s s1 : R.RState}
     {x' : X86.State} {st' : OpSem.State} {ch : OpSem.Choice} {tb : BitVec 32}
     {es : List (BitVec 32)}
     (hlt : k < S.r.protos.size)
@@ -1403,7 +1551,7 @@ theorem hdl_switch (H : Hyps S) {k pT pc i pE : Nat} {s s1 : R.RState}
     (hFI : ∀ pc, ¬ LeadArg S pc → FrameInv S { s1 with pc, st := st' } x')
     (hstep : R.step S.c s ch = .ok (.step { s1 with pc, st := st' })) :
     Reach S.ctx S.E (SNext S s) x' := by
-  have hnl : ¬ LeadArg S pc := H.argsOk.untargeted k hlt _ htg pc hpe
+  have hnl : ¬ LeadArg S pc := H.argsUntargeted hD k hlt _ htg pc hpe
   have hfi := hFI pc hnl
   have hlkT : LinkOk S.ctx x'.mem (atPos S.body pT) S.rs := bs_linkOk_at hfi.code pT
   obtain ⟨hcaS, -, -⟩ := hlkT.dec hdT hbT0
@@ -1464,8 +1612,9 @@ theorem handler_general' (hD : Decodes S code relocs rodata callSites dropped sc
   have hbe' : Boundary S.rs (hat + len) := hbe
   refine hdl_call_reach hD H hf (by rw [hs]; exact hci) hrip hca hnop hhh hsetup hi hsc hu
     hno (hdl_inCode_dec hLp (hd.append (Dec.single hcall)) hP.bound) ?_
-  intro x' ch ctl st' hop hctl hrip' hFI
-  obtain ⟨pc, hpc, hstep⟩ := hsucc ch ctl st' hop
+  intro x' ch ctl st' hop hctl hrip' hFI0
+  obtain ⟨st'', pc, hcl, hpc, hstep⟩ := hsucc ch ctl st' hop
+  have hFI := hFI0 st'' hcl
   have hripT : x'.rip = addrAt S.ctx (hat + len) := by rw [hrip', hend']
   cases thenSeq_read hthen with
   | next hsh =>
@@ -1488,7 +1637,7 @@ theorem handler_general' (hD : Decodes S code relocs rodata callSites dropped sc
       rintro rfl
       rw [hdl_arg_shape] at hsh
       cases hsh
-    exact hdl_br H (pT := hat + len) hs hlt
+    exact hdl_br hD H (pT := hat + len) hs hlt
       (by rw [hpk]; simp [Proto.targets, R.Then.targets]) hj hcond hdecT hbe' hripT hctl hFI
       hpc' hstep (hdl_next_notLead hD hP harg) hP.nop hP.cache
   | switch hsh htr =>
@@ -1509,7 +1658,7 @@ theorem handler_general' (hD : Decodes S code relocs rodata callSites dropped sc
         (List.ne_nil_of_length_pos (by omega)) hlt (fun e he => by
           rw [hpk]
           simp [Proto.targets, R.Then.targets] <;> exact ⟨e, he, rfl⟩)
-    exact hdl_switch H (pT := hat + len) hlt hdT hbe' hripT hes htb hbtb hes31 hil' hpe
+    exact hdl_switch hD H (pT := hat + len) hlt hdT hbe' hripT hes htb hbtb hes31 hil' hpe
       (by
         rw [hpk]
         simp [Proto.targets, R.Then.targets] <;> exact ⟨es[i], List.getElem_mem hil', rfl⟩)

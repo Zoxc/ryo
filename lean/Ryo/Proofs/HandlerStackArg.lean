@@ -1,6 +1,6 @@
 /-
 Ryo.Proofs.HandlerStackArg — the pieces of a handler call with PE's stack argument (the fifth
-position, `mov dword [rsp + 32], imm`, `stackItem`), toward dropping `Hyps.regArgs`.
+position, `mov dword [rsp + 32], imm`, `stackItem`), for handler calls with PE's stack argument.
 
 On PE the setup of five arguments is the four register items and then the store
 (`setupItems_pe5`). The store writes `[rsp + 32, rsp + 36)` (`InStackArg`), above `rsp`, at the
@@ -263,7 +263,7 @@ theorem setupItems_pe5 {mode : Ryo.Obj.Mode} (hpe : mode.pe = true) {a0 a1 a2 a3
     List.mapM_nil, h0, h1, h2, h3] <;> rfl
 
 /-- A setup's arguments are in registers, or on PE they are five (the fifth on the stack):
-`regArgs` holds everywhere but PE's five-argument calls. -/
+at most `handlerRegs` everywhere but PE's five-argument calls. -/
 theorem setupItems_length {mode : Ryo.Obj.Mode} {args : List R.Arg} {items : List Item}
     (hs : setupItems mode args = some items) :
     args.length ≤ (handlerRegs mode.pe).length ∨ (mode.pe = true ∧ args.length = 5) := by

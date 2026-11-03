@@ -7,8 +7,9 @@ it (`thenSeq`'s tails), composing `Handler.handler_op_sound` / `br_tail` with th
 (`rrel_scopes`, `memRel_foldlM`).
 
 - `handler_core`: the common part for any `then`: after the scopes, `handler_op_sound`'s
-  return gives a choice whose `opSem` result is related (`HRel`, `EscWF`), and R's step for it
-  is `.step` at `Then.succ`'s successor, or an error when `Then.succ` is `none`.
+  return gives a choice whose `opSem` result, with PE's home space cleared (`R.clearHome`, which
+  succeeds: `clearHome_ok`), is related (`HRel`, `EscWF`), and R's step for it is `.step` at
+  `Then.succ`'s successor, or an error when `Then.succ` is `none`.
 - `handler_step_op`:`handler h args next` of shape `op` or `lpad`, items `setup ++ [call h]`.
   From `RRel s x` and `MemRel`, the items reach the handler (`x1`); if R can step for some
   choice, the handler returns; and for every return `x'` there is a choice `ch` with
@@ -27,8 +28,8 @@ it (`thenSeq`'s tails), composing `Handler.handler_op_sound` / `br_tail` with th
 **Hypotheses.** Targets: R's targets are instruction indices, the x86 ones offsets from
 `ctx.base`; `pos : Nat → BitVec 32` is the placement (`pos t` is where instruction `t`'s items
 start, the offset the decoder read the branch with), assumed as `pos t = tgt`. The pre-step
-facts about the state after the scopes (`NoUB`, `StackApart`) are taken about `s1`, the
-scopes' result (`hsc`). `OpFacts h`, of the opcode tables and `opSem`, is a hypothesis here
+facts about the state after the scopes (`NoUB`, `StackApart`, `FrameOwn` over the home bytes
+at `-F`, with `rsp` there: `hho`) are taken about `s1`, the scopes' result (`hsc`). `OpFacts h`, of the opcode tables and `opSem`, is a hypothesis here
 (proved for every opcode by `opFacts`, `RyoProofs/OpFacts.lean`, outside the default build): the
 control result has the shape's form (`next` for `op`/`lpad`, a `bool` for `br`) and `opSem`
 keeps `EscWF` (it keeps the escaped objects and the number of allocations,
@@ -38,6 +39,7 @@ keeps `EscWF` (it keeps the escaped objects and the number of allocations,
 import Ryo.Proofs.Handler
 import Ryo.Proofs.Step
 import Ryo.Proofs.ScopeMem
+import Ryo.Proofs.CallLemmas
 
 set_option linter.constructorNameAsVariable false
 
@@ -107,14 +109,56 @@ theorem step_handler {c : R.Code} {s s1 : R.RState} {ch : OpSem.Choice} {h : Ful
   unfold R.step
   simp only [hi, bind, Except.bind, hsc]
 
+/-- `R.clearHome`: on PE a write of `Uninit` bytes, else nothing. -/
+theorem clearHome_cases {pe : Bool} {n : Nat} {off : Int} {st st' : OpSem.State}
+    (h : R.clearHome pe n off st = .ok st') :
+    (pe = true ∧ st.writeFrame off (List.replicate (R.handlerHome pe n) .uninit) = .ok st') ∨
+      (pe = false ∧ st' = st) := by
+  unfold R.clearHome at h
+  cases pe with
+  | false =>
+    rw [if_neg Bool.false_ne_true] at h
+    simp only [pure, Except.pure, Except.ok.injEq] at h
+    exact .inr ⟨rfl, h.symm⟩
+  | true =>
+    rw [if_pos rfl] at h
+    exact .inl ⟨rfl, h⟩
+
+/-- `R.clearHome` keeps the escaped objects and the allocations' sizes. -/
+theorem clearHome_keeps {pe : Bool} {n : Nat} {off : Int} {st st' : OpSem.State}
+    (h : R.clearHome pe n off st = .ok st') :
+    st'.escaped = st.escaped ∧ SizesKept st.mem st'.mem := by
+  rcases clearHome_cases h with ⟨-, hw⟩ | ⟨-, rfl⟩
+  · unfold OpSem.State.writeFrame at hw
+    cases hm : st.writeEscaped off (List.replicate (R.handlerHome pe n) .uninit) with
+    | error e => simp [hm, bind, Except.bind] at hw
+    | ok m' =>
+      simp only [hm, bind, Except.bind, pure, Except.pure, Except.ok.injEq] at hw
+      subst hw
+      exact ⟨rfl, SizesKept.of_escFrom (Inline.writeEscaped_spec hm)⟩
+  · exact ⟨rfl, SizesKept.refl _⟩
+
+/-- `R.clearHome` succeeds when every escaped object has an allocation (`EscWF`). -/
+theorem clearHome_ok {pe : Bool} {n : Nat} {off : Int} {st : OpSem.State} (hw : EscWF st) :
+    ∃ st', R.clearHome pe n off st = .ok st' := by
+  unfold R.clearHome
+  cases pe with
+  | false => exact ⟨st, rfl⟩
+  | true =>
+    rw [if_pos rfl]
+    exact CallLemmas.writeFrame_ok _ _ hw.idLt
+
 theorem stepView_succ {c : R.Code} {s1 : R.RState} {ch : OpSem.Choice} {h : Full.Opcode}
-    {args : List R.Arg} {t : R.Then Nat} {vals : Operands} {ctl : Control} {st' : OpSem.State}
+    {args : List R.Arg} {t : R.Then Nat} {vals : Operands} {ctl : Control}
+    {st' st'' : OpSem.State}
     {pc : Nat} (hv : R.view c.mode c.ρ (.handler h args t) = some ⟨h, vals, some t⟩)
     (hres : h ≠ .resume) (hun : h ≠ .unreachable) (hop : opSem h vals s1.st ch = .ok (ctl, st'))
+    (hcl : R.clearHome c.mode.pe args.length (-(c.d.frameSize : Int)) st' = .ok st'')
     (hp : t.succ s1.pc ctl = some pc) :
-    R.stepView c s1 (.handler h args t) ch = .ok (.step { s1 with pc, st := st' }) := by
+    R.stepView c s1 (.handler h args t) ch = .ok (.step { s1 with pc, st := st'' }) := by
   unfold R.stepView
-  simp only [hv, bind, Except.bind, beq_iff_eq, hres, hun, ↓reduceIte, hop, hp, pure, Except.pure]
+  simp only [hv, bind, Except.bind, beq_iff_eq, hres, hun, ↓reduceIte, hop, hcl, hp, pure,
+    Except.pure]
 
 theorem stepView_none {c : R.Code} {s1 : R.RState} {ch : OpSem.Choice} {h : Full.Opcode}
     {args : List R.Arg} {t : R.Then Nat} {vals : Operands} {ctl : Control} {st' : OpSem.State}
@@ -123,9 +167,14 @@ theorem stepView_none {c : R.Code} {s1 : R.RState} {ch : OpSem.Choice} {h : Full
     (hp : t.succ s1.pc ctl = none) :
     ∃ e, R.stepView c s1 (.handler h args t) ch = .error e := by
   unfold R.stepView
-  simp only [hv, bind, Except.bind, beq_iff_eq, hres, hun, ↓reduceIte, hop, hp, illFormed,
-    throw, throwThe, MonadExceptOf.throw]
-  exact ⟨_, rfl⟩
+  cases hcl : R.clearHome c.mode.pe args.length (-(c.d.frameSize : Int)) st' with
+  | error e =>
+    simp only [hv, bind, Except.bind, beq_iff_eq, hres, hun, ↓reduceIte, hop, hcl]
+    exact ⟨_, rfl⟩
+  | ok st'' =>
+    simp only [hv, bind, Except.bind, beq_iff_eq, hres, hun, ↓reduceIte, hop, hcl, hp, illFormed,
+      throw, throwThe, MonadExceptOf.throw]
+    exact ⟨_, rfl⟩
 
 theorem opSem_of_stepView {c : R.Code} {s1 : R.RState} {ch : OpSem.Choice} {h : Full.Opcode}
     {args : List R.Arg} {t : R.Then Nat} {vals : Operands} {o : R.Out}
@@ -153,35 +202,43 @@ theorem handler_core (ctx : Ctx) {c : R.Code} {s s1 : R.RState} {x : X86.State}
     (hs : setupItems c.mode args = some items) (hreg : args.length ≤ (handlerRegs c.mode.pe).length)
     (hr : RRel s x) (hm : MemRel s.st x) (hsz : ∀ sc ∈ c.scopesAt s.pc, sc.size < 2 ^ 62)
     (hsc : (c.scopesAt s.pc).foldlM R.applyScope s = .ok s1)
-    (hno : NoUB h vals s1.st) (hap : StackApart lo s1.st x) (hlo : lo.toNat + 8 ≤ x.rsp.toNat) :
+    (hno : NoUB h vals s1.st) (hap : StackApart lo s1.st x) (hlo : lo.toNat + 8 ≤ x.rsp.toNat)
+    (hho : fpAddr x (-(c.d.frameSize : Int)) = x.rsp)
+    (hown : FrameOwn (-(c.d.frameSize : Int))
+      (-(c.d.frameSize : Int) + R.handlerHome c.mode.pe args.length) s1.st x) :
     ∃ x1, execItems ctx (items ++ [Item.call (.handler n)]) x = .ok x1 ∧
       ((∃ ch o, R.step c s ch = .ok o) → ∃ x', Ret h x1 x') ∧
-      ∀ x', Ret h x1 x' → ∃ ch ctl st', opSem h vals s1.st ch = .ok (ctl, st') ∧
-        HRel st' x' ∧ EscWF st' ∧ CtlIn ctl x' ∧ CtlFits h.info.shape ctl ∧
+      ∀ x', Ret h x1 x' → ∃ ch ctl st' st'', opSem h vals s1.st ch = .ok (ctl, st') ∧
+        R.clearHome c.mode.pe args.length (-(c.d.frameSize : Int)) st' = .ok st'' ∧
+        HRel st'' x' ∧ EscWF st'' ∧ CtlIn ctl x' ∧ CtlFits h.info.shape ctl ∧
         x'.reg .rbp = BitVec.ofNat 64 s1.fp ∧ s1.pc = s.pc ∧
         x'.rsp = x.rsp ∧
         x'.rip = x.rip + BitVec.ofNat 64 ((items ++ [Item.call (.handler n)]).map Item.size).sum ∧
         (∀ i, CalleeSaved i → x'.regs i = x.regs i) ∧
         (∀ pc, t.succ s.pc ctl = some pc →
-          R.step c s ch = .ok (.step { s1 with pc, st := st' })) ∧
+          R.step c s ch = .ok (.step { s1 with pc, st := st'' })) ∧
         (t.succ s.pc ctl = none → ∃ e, R.step c s ch = .error e) := by
   obtain ⟨hr1, hm1⟩ := memRel_foldlM _ hsz hr hm hsc
   have hpc : s1.pc = s.pc := (scopes_keeps _ hsc).pc
   obtain ⟨x1, hx1, hret, hsound⟩ :=
-    handler_op_sound ctx hC hl hn hh hu hs hreg ⟨hr1.rel, hm1⟩ hno hap hlo
+    handler_op_sound ctx hC hl hn hh hu hs hreg ⟨hr1.rel, hm1⟩ hno hap hlo hho hown
   refine ⟨x1, hx1, fun ⟨ch, o, ho⟩ => hret ?_, fun x' hR => ?_⟩
   · rw [step_handler hi hsc] at ho
     obtain ⟨r, hop⟩ := opSem_of_stepView hv hres hun ho
     exact ⟨ch, r, hop⟩
   · obtain ⟨ch, ctl, st', hop, hH, hctl, hsp, hrip, hsaved⟩ := hsound x' hR
     have hstep := step_handler (ch := ch) hi hsc
-    refine ⟨ch, ctl, st', hop, hH, hF.escWF vals s1.st ch ctl st' hop hr1.wf, hctl,
+    have hwf := hF.escWF vals s1.st ch ctl st' hop hr1.wf
+    obtain ⟨st'', hcl⟩ :=
+      clearHome_ok (pe := c.mode.pe) (n := args.length) (off := -(c.d.frameSize : Int)) hwf
+    obtain ⟨hesc, hsz⟩ := clearHome_keeps hcl
+    refine ⟨ch, ctl, st', st'', hop, hcl, hH st'' hcl, hwf.of_sizes hesc hsz, hctl,
       ?_, ?_, hpc, hsp, hrip, hsaved, fun pc hp => ?_, fun hp => ?_⟩
     · exact hF.ctl vals s1.st ch ctl st' hop
     · show x'.regs 5 = _
       rw [hsaved 5 (by simp [CalleeSaved])]
       exact hr1.rbp
-    · rw [hstep]; exact stepView_succ hv hres hun hop (by rw [hpc]; exact hp)
+    · rw [hstep]; exact stepView_succ hv hres hun hop hcl (by rw [hpc]; exact hp)
     · rw [hstep]; exact stepView_none hv hres hun hop (by rw [hpc]; exact hp)
 
 /-! ### The shapes -/
@@ -198,7 +255,10 @@ theorem handler_step_op (ctx : Ctx) {c : R.Code} {s s1 : R.RState} {x : X86.Stat
     (hs : setupItems c.mode args = some items) (hreg : args.length ≤ (handlerRegs c.mode.pe).length)
     (hr : RRel s x) (hm : MemRel s.st x) (hsz : ∀ sc ∈ c.scopesAt s.pc, sc.size < 2 ^ 62)
     (hsc : (c.scopesAt s.pc).foldlM R.applyScope s = .ok s1)
-    (hno : NoUB h vals s1.st) (hap : StackApart lo s1.st x) (hlo : lo.toNat + 8 ≤ x.rsp.toNat) :
+    (hno : NoUB h vals s1.st) (hap : StackApart lo s1.st x) (hlo : lo.toNat + 8 ≤ x.rsp.toNat)
+    (hho : fpAddr x (-(c.d.frameSize : Int)) = x.rsp)
+    (hown : FrameOwn (-(c.d.frameSize : Int))
+      (-(c.d.frameSize : Int) + R.handlerHome c.mode.pe args.length) s1.st x) :
     ∃ x1, execItems ctx (items ++ [Item.call (.handler n)]) x = .ok x1 ∧
       ((∃ ch o, R.step c s ch = .ok o) → ∃ x', Ret h x1 x') ∧
       ∀ x', Ret h x1 x' → ∃ ch s', R.step c s ch = .ok (.step s') ∧ RRel s' x' ∧
@@ -212,9 +272,10 @@ theorem handler_step_op (ctx : Ctx) {c : R.Code} {s s1 : R.RState} {x : X86.Stat
   have hv : R.view c.mode c.ρ (.handler h args .next) = some ⟨h, vals, some .next⟩ := by
     rcases hsh with hsh | hsh <;> simp [R.view, hh, hu, hsh]
   obtain ⟨x1, hx1, hret, hall⟩ := handler_core ctx hC hl hn hh hF hres hun hi hu hv hs hreg hr hm hsz
-    hsc hno hap hlo
+    hsc hno hap hlo hho hown
   refine ⟨x1, hx1, hret, fun x' hR => ?_⟩
-  obtain ⟨ch, ctl, st', -, hH, hwf, -, hfit, hrbp, -, hsp, hrip, hsaved, hok, -⟩ := hall x' hR
+  obtain ⟨ch, ctl, st', st'', -, -, hH, hwf, -, hfit, hrbp, -, hsp, hrip, hsaved, hok, -⟩ :=
+    hall x' hR
   have hctl : ctl = .next := hfit.1 hsh
   subst hctl
   exact ⟨ch, _, hok _ rfl, ⟨hH.rel, hrbp, hwf⟩, hH.mem, rfl, hsp, hrip, hsaved⟩
@@ -234,7 +295,10 @@ theorem handler_step_br (ctx : Ctx) {c : R.Code} {s s1 : R.RState} {x : X86.Stat
     (hs : setupItems c.mode args = some items) (hreg : args.length ≤ (handlerRegs c.mode.pe).length)
     (hr : RRel s x) (hm : MemRel s.st x) (hsz : ∀ sc ∈ c.scopesAt s.pc, sc.size < 2 ^ 62)
     (hsc : (c.scopesAt s.pc).foldlM R.applyScope s = .ok s1)
-    (hno : NoUB h vals s1.st) (hap : StackApart lo s1.st x) (hlo : lo.toNat + 8 ≤ x.rsp.toNat) :
+    (hno : NoUB h vals s1.st) (hap : StackApart lo s1.st x) (hlo : lo.toNat + 8 ≤ x.rsp.toNat)
+    (hho : fpAddr x (-(c.d.frameSize : Int)) = x.rsp)
+    (hown : FrameOwn (-(c.d.frameSize : Int))
+      (-(c.d.frameSize : Int) + R.handlerHome c.mode.pe args.length) s1.st x) :
     ∃ x1, execItems ctx (items ++ [Item.call (.handler n)]) x = .ok x1 ∧
       ((∃ ch o, R.step c s ch = .ok o) → ∃ x', Ret h x1 x') ∧
       ∀ x', Ret h x1 x' → ∃ ch s' x'' b, R.step c s ch = .ok (.step s') ∧
@@ -251,9 +315,10 @@ theorem handler_step_br (ctx : Ctx) {c : R.Code} {s s1 : R.RState} {x : X86.Stat
       some ⟨h, vals, some (.branch neg t)⟩ := by
     simp [R.view, hh, hu, hsh]
   obtain ⟨x1, hx1, hret, hall⟩ := handler_core ctx hC hl hn hh hF hres hun hi hu hv hs hreg hr hm hsz
-    hsc hno hap hlo
+    hsc hno hap hlo hho hown
   refine ⟨x1, hx1, hret, fun x' hR => ?_⟩
-  obtain ⟨ch, ctl, st', -, hH, hwf, hcin, hfit, hrbp, -, hsp, hrip, hsaved, hok, -⟩ := hall x' hR
+  obtain ⟨ch, ctl, st', st'', -, -, hH, hwf, hcin, hfit, hrbp, -, hsp, hrip, hsaved, hok, -⟩ :=
+    hall x' hR
   obtain ⟨b, rfl⟩ := hfit.2 hsh
   obtain ⟨x'', hx'', hregs, hmem, -, hrip''⟩ := br_tail ctx b neg tgt long x' hcin
   have hrsp : x''.rsp = x'.rsp := by simp [State.rsp, State.reg, hregs]
@@ -278,7 +343,10 @@ theorem handler_step_trap (ctx : Ctx) {c : R.Code} {s s1 : R.RState} {x : X86.St
     (hs : setupItems c.mode args = some items) (hreg : args.length ≤ (handlerRegs c.mode.pe).length)
     (hr : RRel s x) (hm : MemRel s.st x) (hsz : ∀ sc ∈ c.scopesAt s.pc, sc.size < 2 ^ 62)
     (hsc : (c.scopesAt s.pc).foldlM R.applyScope s = .ok s1)
-    (hno : NoUB h vals s1.st) (hap : StackApart lo s1.st x) (hlo : lo.toNat + 8 ≤ x.rsp.toNat) :
+    (hno : NoUB h vals s1.st) (hap : StackApart lo s1.st x) (hlo : lo.toNat + 8 ≤ x.rsp.toNat)
+    (hho : fpAddr x (-(c.d.frameSize : Int)) = x.rsp)
+    (hown : FrameOwn (-(c.d.frameSize : Int))
+      (-(c.d.frameSize : Int) + R.handlerHome c.mode.pe args.length) s1.st x) :
     ∃ x1, execItems ctx (items ++ [Item.call (.handler n)]) x = .ok x1 ∧
       ((∃ ch o, R.step c s ch = .ok o) → ∃ x', Ret h x1 x') ∧
       ∀ x', Ret h x1 x' → execItems ctx [.ud2] x' = .error .ud ∧
@@ -286,9 +354,9 @@ theorem handler_step_trap (ctx : Ctx) {c : R.Code} {s s1 : R.RState} {x : X86.St
   have hv : R.view c.mode c.ρ (.handler h args .trap) = some ⟨h, vals, some .trap⟩ := by
     simp [R.view, hh, hu, hsh]
   obtain ⟨x1, hx1, hret, hall⟩ := handler_core ctx hC hl hn hh hF hres hun hi hu hv hs hreg hr hm hsz
-    hsc hno hap hlo
+    hsc hno hap hlo hho hown
   refine ⟨x1, hx1, hret, fun x' hR => ⟨ud2_fault ctx x', ?_⟩⟩
-  obtain ⟨ch, ctl, st', hop, -, -, -, -, -, -, -, -, -, -, herr⟩ := hall x' hR
+  obtain ⟨ch, ctl, st', st'', hop, -, -, -, -, -, -, -, -, -, -, -, herr⟩ := hall x' hR
   exact ⟨ch, ctl, st', hop, herr (by cases ctl <;> rfl)⟩
 
 /-- A native `jmp t` against `jmp tgt` (`pos t = tgt`). -/

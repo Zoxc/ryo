@@ -1348,6 +1348,10 @@ theorem bodySim_call' (hD : Decodes S code relocs rodata callSites dropped scope
       · rw [heq]; exact ⟨hsep1, fun id a h => ⟨a, h, rfl, rfl, rfl⟩, rfl⟩
       · exact call_sep_uninit hsep1 hw
     obtain ⟨hsep', hshp, hesc'⟩ := hS'
+    have hslots' : Discharge.PeStackArg.ArgSlots S.c s'.st := by
+      rcases hsret with heq | ⟨nn, dst, hw⟩
+      · rw [heq]; exact H.slots_scopes hfi hsc
+      · exact (H.slots_scopes hfi hsc).writeFrame_uninit hw
     have hap : Handler.StackApart S.lo s'.st x :=
       Handler.FrameSep.stackApart hsep'
         (Handler.stack_off_window (by rw [hrbpN, hrspN]; omega) (by rw [hrbpN]; omega))
@@ -1441,12 +1445,16 @@ theorem bodySim_call' (hD : Decodes S code relocs rodata callSites dropped scope
       have hsvX : ∀ i, Saved S.c.mode.pe i → x''.regs i = x.regs i := fun i hi => by
         rw [hsv'' i hi, hcr.saved i hi, hsv1 i hi]
       have hpcK : s''.pc = k + 1 := by rw [hpc'', hpcS, hs]
+      have hsl'' : Discharge.PeStackArg.ArgSlots S.c s''.st :=
+        Discharge.PeStackArg.ArgSlots.parts (Discharge.PeStackArg.result_lo H.boundsOk hi hf hsh)
+          regsR parts' ((hslots'.congr (st' := (s'.withWorld a'.world).st) rfl
+            (fun _ _ _ => rfl)).writeRanges hw1 (H.areaMiss hi' hf hsh)) hfold
       have hFI : FrameInv S s'' x'' := by
         refine ⟨hrr'', hmr'', hsepX, by rw [hfp'', hfpS]; exact hwinT,
           by rw [hfp'', hfpS]; exact hfpF, by rw [hrspX, hrbpX]; exact hfi.rsp,
           by rw [hrspX]; exact hfi.room, island_link_kept hfi.code hmemK'',
           island_ro_kept hfi.ro hmemK'', ?_,
-          island_frame_kept hfi.frame hmemK'' hrbpX (fun i hi _ => hsvX i hi)⟩
+          island_frame_kept hfi.frame hmemK'' hrbpX (fun i hi _ => hsvX i hi), hsl''⟩
         rintro ⟨hlt', ha⟩
         change s''.pc < S.r.protos.size at hlt'
         change S.args (s''.pc + 1) = true at ha
@@ -1529,7 +1537,10 @@ theorem bodySim_call' (hD : Decodes S code relocs rodata callSites dropped scope
         by show S.c.d.frameSize ≤ s'.fp; rw [hfpS]; exact hfpF,
         by rw [hrspY, hrbpY]; exact hfi.rsp, by rw [hrspY]; exact hfi.room,
         island_link_kept hfi.code hmemKy, island_ro_kept hfi.ro hmemKy, ?_,
-        island_frame_kept hfi.frame hmemKy hrbpY (fun i hi _ => hsvY i hi)⟩, .inr ⟨hyrip, ?_⟩⟩
+        island_frame_kept hfi.frame hmemKy hrbpY (fun i hi _ => hsvY i hi),
+        ((hslots'.congr (st' := (s'.withWorld a'.world).st) rfl (fun _ _ _ => rfl)).writeRanges
+          hw1 (H.areaMiss hi' hf hsh)).congr (st' := { st1 with exception := exc }) rfl
+          (fun _ _ _ => rfl)⟩, .inr ⟨hyrip, ?_⟩⟩
       · intro h
         exact absurd h (pad_not_leadArg hD hcl)
       · change CacheInv (S.used pad) y

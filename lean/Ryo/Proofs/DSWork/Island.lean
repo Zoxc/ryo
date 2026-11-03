@@ -765,7 +765,10 @@ theorem bodySim_island (hD : Decodes S code relocs rodata callSites dropped scop
         by show S.c.d.frameSize ≤ s1.fp; rw [hk.fp]; exact hfpF,
         by rw [hrspX, hrbp'']; exact hrspF, by rw [hrspX]; exact hfi.room,
         hlky, island_ro_kept hfi.ro hmemKy, ?_,
-        island_frame_kept hfi.frame hmemKy hrbp'' (fun i hi _ => hsv'' i hi)⟩
+        island_frame_kept hfi.frame hmemKy hrbp'' (fun i hi _ => hsv'' i hi),
+        (((H.slots_scopes hfi hsc).congr (st' := (s1.withWorld a'.world).st) rfl
+          (fun _ _ _ => rfl)).writeRanges hw (Discharge.PeStackArg.miss_of_ge
+            (Discharge.PeStackArg.lends_lo H.boundsOk s.pc))).writeFrame_uninit hw2⟩
       rintro ⟨hlt', ha⟩
       change s1.pc + 1 < S.r.protos.size at hlt'
       change S.args (s1.pc + 1 + 1) = true at ha
@@ -863,7 +866,11 @@ theorem bodySim_island (hD : Decodes S code relocs rodata callSites dropped scop
       by show S.c.d.frameSize ≤ s1.fp; rw [hk.fp]; exact hfpF,
       by rw [hrspX, hrbpY]; exact hrspF, by rw [hrspX]; exact hfi.room,
       island_link_kept hfi.code hmemKy, island_ro_kept hfi.ro hmemKy, ?_,
-      island_frame_kept hfi.frame hmemKy hrbpY (fun i hi _ => hsvY i hi)⟩,
+      island_frame_kept hfi.frame hmemKy hrbpY (fun i hi _ => hsvY i hi),
+      ((((H.slots_scopes hfi hsc).congr (st' := (s1.withWorld a'.world).st) rfl
+          (fun _ _ _ => rfl)).writeRanges hw (Discharge.PeStackArg.miss_of_ge
+            (Discharge.PeStackArg.lends_lo H.boundsOk s.pc))).writeFrame_uninit hw2).congr
+          (st' := { st with exception := exc }) rfl (fun _ _ _ => rfl)⟩,
       .inr ⟨hyrip, ?_⟩⟩
     · intro h
       exact absurd h (HI.padArgs k pad cat hcl)

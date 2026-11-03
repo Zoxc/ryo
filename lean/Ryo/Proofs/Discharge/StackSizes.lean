@@ -4,6 +4,8 @@ Ryo.Proofs.Discharge.StackSizes — the `StackSizes` fields and `Hyps.peShadow` 
 
 - `of_check`: the check, `stackSize` zero past the instructions (`stackSizeOut`) and
   `F ≤ 2 ^ 31` (`FrameBounds.F_le`) give `StackSizes`' three fields and, on PE, `32 ≤ F`.
+- `argSlots_of_check`, `argSlots_call`: its `argSlotsCheck` part (`FrameInv.slots` across a
+  call's answer, `Discharge/PeStackArg.lean`).
 - `imageStackSize_out`: `imageProgram`'s `stackSize` is zero past the instructions (no
   `imageCallee` there), so `stackSizeOut` holds of the image's codes.
 
@@ -31,7 +33,7 @@ theorem of_check {c : R.Code} (h : stackSizesCheck c = true)
     (c.mode.pe = true → 32 ≤ c.d.frameSize) := by
   unfold stackSizesCheck at h
   simp only [Bool.and_eq_true] at h
-  obtain ⟨h0, hall⟩ := h
+  obtain ⟨⟨h0, hall⟩, -⟩ := h
   have hpeF : c.mode.pe = true → 32 ≤ c.d.frameSize := by
     intro hpe
     rw [hpe] at h0
@@ -60,6 +62,31 @@ theorem of_check {c : R.Code} (h : stackSizesCheck c = true)
     have hc : R.Insn.isCall (.native op ops) = true := by
       unfold R.Insn.isCall; dsimp only; rw [hf]; dsimp only; rw [hsh]; rfl
     rw [hi, hpe] at h2
+    simp only [Option.map_some, Option.getD_some, hc, Bool.not_true, Bool.false_or] at h2
+    exact of_decide_eq_true h2
+
+/-- `stackSizesCheck` includes `argSlotsCheck`. -/
+theorem argSlots_of_check {c : R.Code} (h : stackSizesCheck c = true) : argSlotsCheck c = true := by
+  unfold stackSizesCheck at h
+  rw [Bool.and_eq_true] at h
+  exact h.2
+
+/-- `argSlotsCheck`'s success: no handler call's stack argument (`shadowSize ≤ 32`), or a call's
+area is at most the shadow space. -/
+theorem argSlots_call {c : R.Code} (h : argSlotsCheck c = true) {k : Nat} {op : Reduced.Opcode}
+    {ops : List (R.Opnd Nat)} {f : Full.Opcode} (hi : c.d.insns[k]? = some (.native op ops))
+    (hf : op.full = some f) (hsh : f.info.shape = .call) :
+    c.d.shadowSize c.mode ≤ 32 ∨ c.stackSize k ≤ 32 := by
+  unfold argSlotsCheck at h
+  rw [Bool.or_eq_true] at h
+  rcases h with h | h
+  · exact .inl (of_decide_eq_true h)
+  · right
+    have hk : k < c.d.insns.size := (Array.getElem?_eq_some_iff.1 hi).1
+    have h2 := List.all_eq_true.1 h k (List.mem_range.2 hk)
+    have hc : R.Insn.isCall (.native op ops) = true := by
+      unfold R.Insn.isCall; dsimp only; rw [hf]; dsimp only; rw [hsh]; rfl
+    rw [hi] at h2
     simp only [Option.map_some, Option.getD_some, hc, Bool.not_true, Bool.false_or] at h2
     exact of_decide_eq_true h2
 

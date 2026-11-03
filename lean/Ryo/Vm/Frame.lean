@@ -116,6 +116,7 @@ import Ryo.Vm.FrameSizes
 import Ryo.Vm.CallSitesCheck
 import Ryo.Vm.RelocsInCheck
 import Ryo.Vm.CacheClearedCheck
+import Ryo.Vm.ArgsLeadCheck
 import Ryo.Vm.OpSem.Footprint
 import Ryo.Vm.R.Islands
 import Std.Data.HashMap
@@ -836,7 +837,8 @@ def incomingExtents (decoded : Array (Option Decoded)) (mode : Mode) : Array (Op
 
 /-- `decodeBounded` (`decodeReducedWith` with the frame bounds), accepting the code only if
 `tablesCheck` accepts its switch tables (with relocations), `callSitesCheck` its call sites,
-`relocsInCheck` its relocations, `cacheClearedCheck` the cache at targets and landing pads, and
+`relocsInCheck` its relocations, `cacheClearedCheck` the cache at targets and landing pads,
+`argsLeadCheck` the leading `arg`s, and
 `droppedNotDead` shows every dropped
 store dead (given `facts`): the decoding, or an error
 naming the first store it doesn't (its word offset). -/
@@ -864,6 +866,10 @@ def decodeChecked (code : ByteArray) (fields : Fields) (rodata : ByteArray)
     -- `CacheCleared`).
     if !cacheClearedCheck code rs rodata callSites dropped scopes mode then
       throw "branch target outside the first pass's, or a landing pad after an inline instruction"
+    -- The leading `arg`s read distinct registers and aren't branch targets (`argsLeadCheck`,
+    -- for `ArgsOk`).
+    if !argsLeadCheck code rs rodata callSites dropped scopes mode then
+      throw "two leading args read the same register, or a branch targets a leading arg"
   checkDropped d mode facts
 
 where

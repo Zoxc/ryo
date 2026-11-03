@@ -266,9 +266,11 @@ follows the decoder's structure:
   argument setup puts each argument's value in its register (`exec_setup`), the call reaches
   the handler with the relations kept across the push (`StackApart`), and every return the
   contract allows (`HandlerContract`: `opSem` for one of its choices, `Rel` and `MemRel`
-  kept, the control result in `al`/`rax`, `rsp` and the callee-saved registers kept, x86
-  memory changed only at the footprint's writes, live allocations, runtime-owned bytes and the
-  stack below `rsp`) is at the next item (`handler_op_sound`); `br`'s `test al; jz/jnz` takes
+  kept of its state with PE's home space `Uninit` (`R.clearHome`, as R's step does), the
+  control result in `al`/`rax`, `rsp` and the callee-saved registers kept, x86 memory changed
+  only at the footprint's writes, live allocations, runtime-owned bytes, the stack below `rsp`
+  and PE's home space and stack argument above the return address) is at the next item
+  (`handler_op_sound`); `br`'s `test al; jz/jnz` takes
   the branch exactly when `Then.succ` does (`br_tail`). The full R step of a handler
   call (scopes, `view`, `opSem`, `Then.succ`) for shapes `op`, `lpad`, `br` and `trap` (a
   returning trap handler faults at the `ud2`), and `jmp` and a bare `unreachable`, are
@@ -454,10 +456,11 @@ follows the decoder's structure:
   `Call.Saved`), and the PE `nop` after a call with a landing pad is part of the iteration
   (`NopRead`). The open prerequisites are
   named hypotheses (`Hyps`): of the decoded code, checkable (`FrameBounds`, `MoreBounds`: handler
-  writes and call result slots in the window, `ArgsOk`: the leading `arg`s read distinct
-  argument registers of the convention and no branch target is one; `RelocsIn`, relocated
-  fields within the code, follows from `decodeChecked`'s `relocsInCheck`, and `CacheCleared`,
-  the cache empty at branch targets and landing pads, from its `cacheClearedCheck`); privacy
+  writes and call result slots in the window; `RelocsIn`, relocated
+  fields within the code, follows from `decodeChecked`'s `relocsInCheck`, `CacheCleared`,
+  the cache empty at branch targets and landing pads, from its `cacheClearedCheck`, and
+  `ArgsOk`, the leading `arg`s reading distinct argument registers of the convention with no
+  branch target at one, from its `argsLeadCheck`); privacy
   after the scopes (`LoadPrivate`, `ArgPrivate`, `ResultPrivate`, `LinkPrivate`: the link slots in no
   escaped object or `Lend` extent); the environment and layout (`SepAcross`, `EnvApart`: the
   window not runtime-owned, live allocations neither runtime-owned nor below `rsp`, symbol slots

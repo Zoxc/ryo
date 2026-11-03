@@ -321,7 +321,8 @@ variable {S : Setup} {code : ByteArray} {relocs : Array Reloc} {rodata : ByteArr
 theorem arg_regRel (hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S) {k : Nat} {r : R.Reg} {args : R.Regs} {x : X86.State}
     (hl : ArgsLive S k args x) (hk : LeadArg S k) (hr : ArgRegAt S k r) :
     ArgRet.RegRel S.c.mode.pe args x r :=
-  hl r (argsOk_conv hD H.inlineOk k r hk hr) (fun j hj hj' => H.argsOk.distinct j k r hj hk hj' hr)
+  hl r (argsOk_conv hD H.inlineOk k r hk hr)
+    (fun j hj hj' => (H.argsOk hD).distinct j k r hj hk hj' hr)
 
 /-- After `arg` at `k` (register `a`, a convention register), the registers no `arg` up to `k`
 read stay related. Proof: `r ≠ .ofArgReg a`, so `ArgsLive` at `k` gives `RegRel r` at `x`;
@@ -669,7 +670,8 @@ theorem bodySim_arg (hD : Decodes S code relocs rodata callSites dropped scopes 
   have hconv := argsOk_conv hD H.inlineOk k _ hlead hRA
   refine Reach.steps hsteps (.done (.inl ⟨_, .step hstep, ⟨⟨hr', hmem', hsep', hk1.fp ▸ hf.win,
     hk1.fp ▸ hf.fpF, by rw [hrsp, hrbp]; exact hf.rsp, by rw [hrsp]; exact hf.room, hLk', hro',
-    fun _ => ?_, hframe'⟩, .inl ⟨?_, ?_⟩⟩⟩))
+    fun _ => ?_, hframe', (H.slots_scopes hf hsc).writeFrame_above hw
+      (Discharge.PeStackArg.arg_lo H.boundsOk hik hf' arg_shape hof)⟩, .inl ⟨?_, ?_⟩⟩⟩))
   · show ArgsLive S (s1.pc + 1) s1.args x'
     rw [hk1.pc, hk1.args, hs]
     exact arg_argsLive_succ hlive hRA hconv hregs hxm

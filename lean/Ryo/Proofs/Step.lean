@@ -80,7 +80,7 @@ theorem stepView_native {c : R.Code} {s : R.RState} {ch : OpSem.Choice} {op : Re
     | error e => simp [ho] at h
     | ok r =>
       obtain ⟨ctl, st'⟩ := r
-      simp only [ho] at h
+      simp only [ho, pure, Except.pure] at h
       cases hp : t.succ s.pc ctl with
       | none => simp [hp, illFormed, throw, throwThe, MonadExceptOf.throw] at h
       | some pc' =>
