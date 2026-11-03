@@ -8,6 +8,9 @@ import Ryo.Proofs.CacheEmitWrites
 import Ryo.Proofs.CacheEmitFrame
 import Ryo.Proofs.CacheEmitRanges
 import Ryo.Proofs.MemPost
+import Ryo.Proofs.DSWork.InlineVirt
+import Ryo.Proofs.DecodeSound.NoFp
+import Ryo.Proofs.Discharge.SpDisp
 
 set_option linter.constructorNameAsVariable false
 
@@ -1131,6 +1134,77 @@ theorem inline_inCode_dec {ctx : Ctx} {m : Mem} {c : Cursor} {rs : Array Reloc}
       exact ⟨p + j, by simp at hle; omega, addrAt_add' ctx p j⟩
     · rw [hsz] at ha; exact ih hb' a ha
 
+/-- `inline_inCode_dec` in either frame form (`nf_inCode_dec`): the bytes of items read from the
+cursor, as they are in memory, are code bytes. -/
+theorem inline_inCode_dec_fb {ctx : Ctx} {m : Mem} {c : Cursor} {rs : Array Reloc}
+    {mode : Ryo.Obj.Mode} (hk : LinkOkF ctx m c rs mode) :
+    ∀ {p q : Nat} {items : List Item}, Dec c p items q → Boundary rs p →
+      ∀ a, InCode ctx (items.map (FForm.item c.spFrame)) p a →
+        ∃ j, j < c.code.size ∧ a = addrAt ctx j := by
+  intro p q items hd
+  induction hd with
+  | nil => intro _ a h; exact absurd h id
+  | @cons p n q i is hdi _ ih =>
+    intro hb a ha
+    obtain ⟨-, hsz, hle, hb'⟩ := nf_decodeItem_itemAt hk hb hdi
+    rw [List.map_cons] at ha
+    rcases ha with ⟨j, hj, rfl⟩ | ha
+    · rw [inline_linkedAt_length, hsz] at hj
+      exact ⟨p + j, by omega, addrAt_add' ctx p j⟩
+    · rw [hsz] at ha; exact ih hb' a ha
+
+/-- The run of an inline instruction's emitted items, for a class other than `store`, keeps the
+code bytes (`inline_fetch'`): each item writes at most a frame write of the instruction, in the
+window and off the code. Holds on any state with the frame relation (the virtual one too). -/
+theorem inline_fetchRun' (H : Hyps S) (hcls : ∀ f cls, (f, cls) ∈ inlineOps →
+      shapeOk f cls = true ∧ CacheStep.clsOk cls = true)
+    {s s' : R.RState} {x : X86.State} {ch : OpSem.Choice}
+    {op : Reduced.Opcode} {ops : List (R.Opnd Nat)} {f : Full.Opcode} {cls : Class}
+    {cand : List Item} {br : Option Cond} {cache : Cache}
+    (hf : FrameInv S s x) (hci : CacheInv cache x)
+    (hi : S.c.d.insns[s.pc]? = some (.native op ops)) (hfull : op.full = some f)
+    (hmem : (f, cls) ∈ inlineOps)
+    (hseq : sequence cls ops = some (cand, br))
+    (hstep : R.step S.c s ch = .ok (.step s')) (hns : ∀ w, cls ≠ .store w) :
+    FetchRun S.ctx (fun a => ∃ j, j < S.body.code.size ∧ a = addrAt S.ctx j)
+      (cache.emit cand).1 x := by
+  have hok := H.inlineOk f cls hmem
+  have hfb := H.frameBounds
+  obtain ⟨-, hext, -⟩ := inline_class_of hmem
+  have hsafeC : ∀ it ∈ cand, cacheSafe it = true := fun it hit =>
+    (CacheStep.sequence_ok2 hext hseq it hit).1
+  have hsafe := CacheStep.emit_safe hci.1 hsafeC
+  obtain ⟨s1, hsc, hv⟩ := Step.step_native hi hfull hok.opShape hstep
+  obtain ⟨vals, _, _, _, _, hn, _, _, _, _⟩ :=
+    Step.stepView_native hfull hok.opShape hok.notResume hok.notUnreachable hv
+  have hwin : WrIn (-(S.F : Int)) S.K f vals := hfb.writes s.pc op ops f vals hi hfull hn
+  exact
+    inline_fetchRun (fun y => y.reg .rbp = x.reg .rbp) (fun e he y y' hy hey => by
+      obtain ⟨h1, h2⟩ := CacheStep.exec_writes (hsafe e he) hey
+      refine ⟨h1, fun a ha => h2 a (fun m n hw => ?_), (CacheStep.exec_rbp (hsafe e he) hey).trans hy⟩
+      obtain ⟨it, hit, m', hw', hm⟩ := CacheStep.emit_writes hci.1 e he m n hw
+      have hbase : m'.base = .rbp := by
+        rcases CacheStep.sequence_writes_frame hseq it hit m' n hw' with h | ⟨w, h⟩
+        · exact h
+        · exact absurd h (hns w)
+      obtain ⟨r, hr, hr1, hr2⟩ := CacheStep.sequence_writes_in (hcls f cls hmem).1 hseq hn it hit m' n hw' hbase
+      have hw := hwin r hr
+      have hea : y.ea m = fpAddr x m'.disp.toInt := by
+        rw [hm, hbase]
+        simp only [show (Reg.rbp == Ryo.Vm.Asm.R) = false by decide, Bool.false_eq_true, ↓reduceIte]
+        show fpAddr y m'.disp.toInt = _
+        simp only [fpAddr, hy]
+      obtain ⟨jj, hjj, rfl⟩ := ha
+      obtain ⟨-, -, hwa, -⟩ := H.codeApart _ (.inl ⟨jj, hjj, rfl⟩)
+      rw [hea]
+      apply Nat.le_of_not_lt
+      intro hlt
+      have e : fpAddr x (m'.disp.toInt + ((addrAt S.ctx jj - fpAddr x m'.disp.toInt).toNat : Nat))
+          = addrAt S.ctx jj := by
+        rw [fpAddr_add, bv_add_sub_toNat]
+      exact hwa (m'.disp.toInt + ((addrAt S.ctx jj - fpAddr x m'.disp.toInt).toNat : Nat))
+        (by omega) (by omega) (by rw [← hf.fpAddr_eq]; exact e.symm)) x rfl
+
 /-- The run of an inline instruction's emitted items is fetched. The emitted items are canonical
 (`CacheStep.emit_canonical`); each keeps `rbp` (`CacheStep.exec_rbp`) and writes memory only at
 its write (`CacheStep.exec_writes`): for a class other than `store` a frame write
@@ -1172,37 +1246,8 @@ theorem inline_fetch' (H : Hyps S) (hcls : ∀ f cls, (f, cls) ∈ inlineOps →
         cases hw) x trivial
     exact steps_of_run_last hcan hcode hrip (fun _ _ => trivial) hrun hx
   · have hns : ∀ w, cls ≠ .store w := fun w h => hst ⟨w, h⟩
-    obtain ⟨s1, hsc, hv⟩ := Step.step_native hi hfull hok.opShape hstep
-    obtain ⟨vals, _, _, _, _, hn, _, _, _, _⟩ :=
-      Step.stepView_native hfull hok.opShape hok.notResume hok.notUnreachable hv
-    have hwin : WrIn (-(S.F : Int)) S.K f vals := hfb.writes s.pc op ops f vals hi hfull hn
-    have hrun : FetchRun S.ctx (InCode S.ctx (cache.emit cand).1 p) (cache.emit cand).1 x :=
-      inline_fetchRun (fun y => y.reg .rbp = x.reg .rbp) (fun e he y y' hy hey => by
-        obtain ⟨h1, h2⟩ := CacheStep.exec_writes (hsafe e he) hey
-        refine ⟨h1, fun a ha => h2 a (fun m n hw => ?_), (CacheStep.exec_rbp (hsafe e he) hey).trans hy⟩
-        obtain ⟨it, hit, m', hw', hm⟩ := CacheStep.emit_writes hci.1 e he m n hw
-        have hbase : m'.base = .rbp := by
-          rcases CacheStep.sequence_writes_frame hseq it hit m' n hw' with h | ⟨w, h⟩
-          · exact h
-          · exact absurd h (hns w)
-        obtain ⟨r, hr, hr1, hr2⟩ := CacheStep.sequence_writes_in (hcls f cls hmem).1 hseq hn it hit m' n hw' hbase
-        have hw := hwin r hr
-        have hea : y.ea m = fpAddr x m'.disp.toInt := by
-          rw [hm, hbase]
-          simp only [show (Reg.rbp == Ryo.Vm.Asm.R) = false by decide, Bool.false_eq_true, ↓reduceIte]
-          show fpAddr y m'.disp.toInt = _
-          simp only [fpAddr, hy]
-        obtain ⟨jj, hjj, rfl⟩ := hin a ha
-        obtain ⟨-, -, hwa, -⟩ := H.codeApart _ (.inl ⟨jj, hjj, rfl⟩)
-        rw [hea]
-        apply Nat.le_of_not_lt
-        intro hlt
-        have e : fpAddr x (m'.disp.toInt + ((addrAt S.ctx jj - fpAddr x m'.disp.toInt).toNat : Nat))
-            = addrAt S.ctx jj := by
-          rw [fpAddr_add, bv_add_sub_toNat]
-        exact hwa (m'.disp.toInt + ((addrAt S.ctx jj - fpAddr x m'.disp.toInt).toNat : Nat))
-          (by omega) (by omega) (by rw [← hf.fpAddr_eq]; exact e.symm)) x rfl
-    exact (steps_of_run hcan hcode hrip (fun _ h => h) hrun hx).1
+    have hrun := inline_fetchRun' H hcls hf hci hi hfull hmem hseq hstep hns
+    exact (steps_of_run hcan hcode hrip hin hrun hx).1
 
 /-- The x86 effects of an inline instruction's emitted items outside R's state: `rsp`, the
 callee-saved registers, the code, the rodata and the link words kept. By class, the `_cached_regs`
@@ -1472,6 +1517,65 @@ theorem inline_memSep' (H : Hyps S) (heb : InlineEscBounded S)
   | shiftVar | div | count | cmp3 | bswap =>
     exact cached (inline_soundC_all _ (.inr (.inr rfl))) (fun _ h => by cases h)
 
+/-- `inline_run'` without the fetch: the frame relation after the run, `rbp` and `rsp` kept (either
+frame form; `x` may be the virtual state). -/
+theorem inline_frame' (H : Hyps S) (hbl : InlineBelowLink S) (heb : InlineEscBounded S)
+    (hcls : ∀ f cls, (f, cls) ∈ inlineOps →
+      shapeOk f cls = true ∧ CacheStep.clsOk cls = true)
+    (s s' : R.RState) (x x' : X86.State) (ch : OpSem.Choice)
+    (items : List Item) : FrameInv S s x → (∃ y, BInv S s y) →
+    (∃ (op : Reduced.Opcode) (ops : List (R.Opnd Nat)) (f : Full.Opcode) (cls : Class)
+      (cand : List Item) (br : Option Cond) (cache : Cache),
+      S.c.d.insns[s.pc]? = some (.native op ops) ∧ op.full = some f ∧ (f, cls) ∈ inlineOps ∧
+      sequence cls ops = some (cand, br) ∧ CacheInv cache x ∧ CacheRegsOk S cache ∧
+      (cache.emit cand).1 = items) →
+    ¬ LeadArg S s'.pc →
+    R.step S.c s ch = .ok (.step s') → execItems S.ctx items x = .ok x' → RRel s' x' →
+    FrameInv S s' x' ∧ x'.reg .rbp = x.reg .rbp ∧ x'.rsp = x.rsp := by
+  intro hf hbi hex hnl hstep hx hrr
+  obtain ⟨op, ops, f, cls, cand, br, cache, hi, hfull, hmem, hseq, hci, hcro, hemit⟩ := hex
+  subst hemit
+  have hok := H.inlineOk f cls hmem
+  -- R's step keeps `fp`.
+  obtain ⟨s1, hsc, hv⟩ := Step.step_native hi hfull hok.opShape hstep
+  obtain ⟨vals, _, _, st', _, hn, _, ho, _, he⟩ :=
+    Step.stepView_native hfull hok.opShape hok.notResume hok.notUnreachable hv
+  have hfp' : s'.fp = s.fp := by
+    rw [R.Out.step.inj he]
+    exact (scopes_keeps _ hsc).fp
+  have hrbp : x'.reg .rbp = x.reg .rbp := by
+    rw [hrr.rbp, hf.rrel.rbp, hfp']
+  obtain ⟨hm', hs'⟩ := inline_memSep' H heb hf hbi hci hi hfull hmem hseq hstep hx
+  obtain ⟨hrsp, hsaved, hcodeK, hroK, hl0, hl8⟩ :=
+    inline_effects' H hbl hf hbi hci hcro hi hfull hmem hseq hstep hx
+  have hLk' : LinkOkF S.ctx x'.mem S.body S.rs S.c.mode := by
+    obtain ⟨hfl, hso, ⟨hl1, hl2⟩, hsm, hfp0⟩ := hf.code
+    refine ⟨hfl, hso, ⟨fun j hj hr => ?_, fun r hr kk hkk => ?_⟩, hsm, hfp0⟩
+    · rw [hcodeK j hj]; exact hl1 j hj hr
+    · rw [hcodeK _ (by have := H.relocsIn r hr; omega)]; exact hl2 r hr kk hkk
+  have hro' : RoLoaded S.ctx x'.mem S.ro := by
+    obtain ⟨base, h1, h2⟩ := hf.ro
+    refine ⟨base, h1, fun j hj => ?_⟩
+    have e := hroK j hj
+    rw [h1] at e
+    rw [e]
+    exact h2 j hj
+  obtain ⟨f1, f2, f3, f4⟩ := hf.frame
+  have hframe' : FrameFacts S x' :=
+    ⟨by rw [hrbp]; exact f1, by rw [hrbp, hl8]; exact f2, fun hfp3 => by rw [hrbp, hl0]; exact f3 hfp3,
+      fun i hi5 h5 => by rw [hsaved i hi5 h5]; exact f4 i hi5 h5⟩
+  refine ⟨⟨hrr, hm', hs', ?_, ?_, ?_, ?_, hLk', hro', fun hl => absurd hl hnl, hframe',
+    ?_, ?_⟩, hrbp, hrsp⟩
+  · rw [hfp']; exact hf.win
+  · rw [hfp']; exact hf.fpF
+  · rw [hrsp, hrbp]; exact hf.rsp
+  · rw [hrsp]; exact hf.room
+  · rw [R.Out.step.inj he]
+    exact (H.slots_scopes hf hsc).opSem ho (Discharge.PeStackArg.native_lo H.boundsOk hi hfull hn)
+  · have hnl' := hnl
+    rw [R.Out.step.inj he] at hnl' ⊢
+    exact ((hf.esc.scopes hsc).of_not hnl').congr (Ryo.Proofs.OpFacts.opSem_out ho).2.1
+
 /-- The x86 side of an inline step that the step lemmas don't give: from a frame relation at an
 inline instruction, its emitted items `items` in memory at `rip`, and the R step to `s'` matched
 by `items`' run to `x'` (`RRel s' x'`), the run is fetched (`Steps`) and the frame relation
@@ -1496,49 +1600,10 @@ theorem inline_run' (H : Hyps S) (hbl : InlineBelowLink S) (heb : InlineEscBound
     R.step S.c s ch = .ok (.step s') → execItems S.ctx items x = .ok x' → RRel s' x' →
     Steps S.ctx x x' ∧ FrameInv S s' x' := by
   intro hf hbi hrip hcode hin hex hnl hstep hx hrr
-  obtain ⟨op, ops, f, cls, cand, br, cache, hi, hfull, hmem, hseq, hci, hcro, hemit⟩ := hex
+  refine ⟨?_, (inline_frame' H hbl heb hcls s s' x x' ch items hf hbi hex hnl hstep hx hrr).1⟩
+  obtain ⟨op, ops, f, cls, cand, br, cache, hi, hfull, hmem, hseq, hci, -, hemit⟩ := hex
   subst hemit
-  have hok := H.inlineOk f cls hmem
-  -- R's step keeps `fp`.
-  obtain ⟨s1, hsc, hv⟩ := Step.step_native hi hfull hok.opShape hstep
-  obtain ⟨vals, _, _, st', _, hn, _, ho, _, he⟩ :=
-    Step.stepView_native hfull hok.opShape hok.notResume hok.notUnreachable hv
-  have hfp' : s'.fp = s.fp := by
-    rw [R.Out.step.inj he]
-    exact (scopes_keeps _ hsc).fp
-  have hrbp : x'.reg .rbp = x.reg .rbp := by
-    rw [hrr.rbp, hf.rrel.rbp, hfp']
-  have hsteps := inline_fetch' H hcls hf hci hi hfull hmem hseq hrip hcode hin hstep hx
-  obtain ⟨hm', hs'⟩ := inline_memSep' H heb hf hbi hci hi hfull hmem hseq hstep hx
-  obtain ⟨hrsp, hsaved, hcodeK, hroK, hl0, hl8⟩ :=
-    inline_effects' H hbl hf hbi hci hcro hi hfull hmem hseq hstep hx
-  have hLk' : LinkOk S.ctx x'.mem S.body S.rs := by
-    obtain ⟨hfl, hso, ⟨hl1, hl2⟩, hsm, hfp0⟩ := hf.code
-    refine ⟨hfl, hso, ⟨fun j hj hr => ?_, fun r hr kk hkk => ?_⟩, hsm, hfp0⟩
-    · rw [hcodeK j hj]; exact hl1 j hj hr
-    · rw [hcodeK _ (by have := H.relocsIn r hr; omega)]; exact hl2 r hr kk hkk
-  have hro' : RoLoaded S.ctx x'.mem S.ro := by
-    obtain ⟨base, h1, h2⟩ := hf.ro
-    refine ⟨base, h1, fun j hj => ?_⟩
-    have e := hroK j hj
-    rw [h1] at e
-    rw [e]
-    exact h2 j hj
-  obtain ⟨f1, f2, f3, f4⟩ := hf.frame
-  have hframe' : FrameFacts S x' :=
-    ⟨by rw [hrbp]; exact f1, by rw [hrbp, hl8]; exact f2, by rw [hrbp, hl0]; exact f3,
-      fun i hi5 h5 => by rw [hsaved i hi5 h5]; exact f4 i hi5 h5⟩
-  refine ⟨hsteps, ⟨hrr, hm', hs', ?_, ?_, ?_, ?_, hLk', hro', fun hl => absurd hl hnl, hframe',
-    ?_, ?_⟩⟩
-  · rw [hfp']; exact hf.win
-  · rw [hfp']; exact hf.fpF
-  · rw [hrsp, hrbp]; exact hf.rsp
-  · rw [hrsp]; exact hf.room
-  · rw [R.Out.step.inj he]
-    exact (H.slots_scopes hf hsc).opSem ho (Discharge.PeStackArg.native_lo H.boundsOk hi hfull hn)
-  · have hnl' := hnl
-    rw [R.Out.step.inj he] at hnl' ⊢
-    exact ((hf.esc.scopes hsc).of_not hnl').congr (Ryo.Proofs.OpFacts.opSem_out ho).2.1
+  exact inline_fetch' H hcls hf hci hi hfull hmem hseq hrip hcode hin hstep hx
 
 /-- An inline instruction's R step with the default choice is not `noBehavior`: the scopes never
 stop with `noBehavior` (`noNB_scopes`), the view is native (`Step.view_native`, by `InlineOk`'s
@@ -1645,7 +1710,10 @@ theorem inline_not_leadArg' (hD : Decodes S code relocs rodata callSites dropped
 
 set_option maxRecDepth 100000 in
 /-- `bodySim_inline'` (`inline_run'`, `inline_progress'`, `branch_canonical`), with the frame
-writes off the link slots (`InlineBelowLink`). -/
+writes off the link slots (`InlineBelowLink`), in both frame forms: without a frame pointer the
+items run on `FForm.virtAt` (`inline_cls_step`, `inline_frame'`) and are fetched in their `spFrame`
+form (`steps_of_run_fb`, `steps_of_run_last_fb` for `store`; `CacheStep.emit_virt`), the `jcc`
+on the real state. -/
 theorem bodySim_inline' (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (H : Hyps S) (hbl : InlineBelowLink S)
     (heb : InlineEscBounded S)
@@ -1659,6 +1727,240 @@ theorem bodySim_inline' (hD : Decodes S code relocs rodata callSites dropped sco
     (hr : (inlineInsn (S.used k) (S.dr k) true).run cur' = .ok (some (q, cache', dr'), c'))
     (hq : q.dropped = false) :
     BodySim S k p (S.used k) := by
+  cases hfp : S.c.mode.framePointer
+  · -- Without a frame pointer: the items run on the virtual state `FForm.virtAt` (`rbp := rsp + F`,
+    -- `rip` shifted), fetched in their `spFrame` form (`steps_of_run_fb`, `steps_of_run_last_fb`
+    -- for `store`, with `emit_virt`'s facts); the real state after is the virtual one with the
+    -- entry's `rbp` (`FForm.real`).
+    intro s x hs hfr hrip hci hsafe
+    obtain ⟨hf0, hrb⟩ := hfr
+    obtain ⟨F, hspF⟩ : ∃ F, S.body.spFrame = some F := ⟨_, nf_spFrame_of_nofp hD hfp⟩
+    have hvx : ∀ y, S.virt y = FForm.virt (some F) y := fun y => by
+      unfold Setup.virt Setup.fb; rw [hspF]
+    rw [hvx] at hf0 hci
+    have e1 := callInsn_none hc
+    subst e1
+    have hcur := noArg_inline hn hc hr hq
+    subst hcur
+    obtain ⟨hpos, hh, cand, br, hdi, ⟨cls, hmem, hseq⟩, hemit, hd⟩ := inlineInsn_read hr hq
+    have hk := hP.lt
+    obtain ⟨i, hi, hio⟩ := hP.insn
+    obtain ⟨p1, counter, hpk⟩ := hP.proto
+    have hpk' : S.r.protos[k] = { q with pos := p1, counter } := by
+      rw [Array.getElem?_eq_getElem hk] at hpk; exact Option.some.inj hpk
+    have hio' := hio hk
+    rw [hpk'] at hio'
+    unfold InsnOf at hio'
+    simp only [hh] at hio'
+    obtain ⟨op, ops, hof, rfl, hops⟩ := hio'
+    have hfull := inline_full_of hof
+    have hseqR : sequence cls ops = some (cand, br.map (·.1)) := by
+      rw [← inline_seq_map (posOf S.r), hops]; exact hseq
+    have hok := H.inlineOk _ _ hmem
+    have hi' : S.c.d.insns[s.pc]? = some (.native op ops) := hs ▸ hi
+    obtain ⟨s', hstep⟩ : ∃ s', R.step S.c s {} = .ok (.step s') := by
+      cases h : R.step S.c s {} with
+      | error e =>
+        obtain ⟨m, rfl⟩ := hsafe.1 _ _ h
+        exact absurd h (inline_progress' H s op ops _ cls m hi' hfull hmem)
+      | ok o =>
+        obtain ⟨s1, -, hv⟩ := Step.step_native hi' hfull hok.opShape h
+        obtain ⟨_, _, _, _, _, _, _, _, _, rfl⟩ :=
+          Step.stepView_native hfull hok.opShape hok.notResume hok.notUnreachable hv
+        exact ⟨_, rfl⟩
+    have hnl := inline_not_leadArg' hD hP hs hi' hfull hmem hstep H
+    -- A boundary relation at `s` (`CodeApart`'s live allocations).
+    have hbi : BInv S s (x.jump (addrAt S.ctx (posOf S.r k))) := by
+      refine ⟨⟨?_, fun h => hrb h⟩, .inr ⟨(by rw [hs]; rfl), ?_⟩⟩
+      · rw [hvx]; exact hf0.congr rfl rfl rfl
+      · rw [hvx, hs]; exact hci
+    -- The virtual state the items run from.
+    have hfv : FrameInv S s (FForm.virtAt (some F) q.items x) := hf0.congr rfl rfl rfl
+    have hciv : CacheInv (S.used k) (FForm.virtAt (some F) q.items x) := hci
+    obtain ⟨x', hx', hrr, hcc, hrip', hbr⟩ :=
+      inline_cls_step H hfv hciv hi' hfull hmem hseqR hstep
+    rw [hemit] at hx' hcc hrip'
+    simp only at hx' hcc hrip'
+    have hex : ∃ op ops f cls cand br, ∃ cache : Cache, S.c.d.insns[s.pc]? = some (.native op ops) ∧
+        op.full = some f ∧ (f, cls) ∈ inlineOps ∧ sequence cls ops = some (cand, br) ∧
+        CacheInv cache (FForm.virtAt (some F) q.items x) ∧ CacheRegsOk S cache ∧
+        (cache.emit cand).1 = q.items :=
+      ⟨op, ops, q.op, cls, cand, _, S.used k, hi', hfull, hmem, hseqR, hciv, hcro, by rw [hemit]⟩
+    obtain ⟨hf', hrbp', hrsp'⟩ :=
+      inline_frame' H hbl heb hcls s s' _ x' {} q.items hfv ⟨_, hbi⟩ hex hnl hstep hx' hrr
+    -- What the bridge needs of the emitted items.
+    obtain ⟨-, hext, -⟩ := inline_class_of hmem
+    have hev : ∀ e ∈ q.items, e.RbpFree ∧ e.RipFree S.ctx ∧ e.RspKept S.ctx ∧
+        ∀ p, (FForm.item (some F) e).Canonical p := by
+      have h := CacheStep.emit_virt S.ctx F hci.1 hext (hcls _ _ hmem).2 hseqR
+      rw [hemit] at h
+      exact h
+    have hcs : ∀ e ∈ q.items, cacheSafe e = true := by
+      have h := CacheStep.emit_safe hci.1 (fun it hit => (CacheStep.sequence_ok2 hext hseqR it hit).1)
+      rw [hemit] at h
+      exact h
+    -- The real state after: the virtual one with the entry's `rbp`.
+    have e1v : (FForm.virtAt (some F) q.items x).reg .rbp = x.rsp + F.setWidth 64 :=
+      X86.State.reg_setReg x .rbp (x.rsp + F.setWidth 64)
+    have e2v : (FForm.virtAt (some F) q.items x).rsp = x.rsp :=
+      FForm.rsp_setReg_rbp x (x.rsp + F.setWidth 64)
+    have hvy : FForm.virt (some F) (FForm.real (some F) (x.reg .rbp) x') = x' := by
+      show (x'.setReg .rbp (x.reg .rbp)).setReg .rbp
+        ((x'.setReg .rbp (x.reg .rbp)).rsp + F.setWidth 64) = x'
+      rw [FForm.rsp_setReg_rbp, FForm.setReg_setReg, hrsp', e2v, ← e1v, ← hrbp',
+        X86.State.setReg_reg_self]
+    have hrbR : RbpOk S (FForm.real (some F) (x.reg .rbp) x') := fun h =>
+      (X86.State.reg_setReg x' .rbp (x.reg .rbp)).trans (hrb h)
+    have hxr : x'.rip = addrAt S.ctx (p + codeSize (q.items.map (FForm.item (some F)))) := by
+      rw [hrip']
+      show x.rip + FForm.delta (some F) q.items + BitVec.ofNat 64 (codeSize q.items) = _
+      rw [hrip, FForm.delta, BitVec.add_assoc, BitVec.sub_add_cancel, addrAt_add']
+    -- The machine fetches the items in their `spFrame` form.
+    have hsteps_of : CodeAt S.ctx x.mem (q.items.map (FForm.item (some F))) p →
+        (∀ a, InCode S.ctx (q.items.map (FForm.item (some F))) p a →
+          ∃ j, j < S.body.code.size ∧ a = addrAt S.ctx j) →
+        (∀ i ∈ q.items, i.SpDispOk F) →
+        Steps S.ctx x (FForm.real (some F) (x.reg .rbp) x') := by
+      intro hcode hin hsd
+      by_cases hst : ∃ w, cls = .store w
+      · obtain ⟨w, rfl⟩ := hst
+        obtain ⟨init, j, hsplit, hnone, hjm⟩ := CacheStep.emit_store_virt hci.1 hseqR
+        rw [hemit] at hsplit
+        simp only at hsplit
+        have hmi : ∀ i ∈ init, i ∈ q.items := fun i hi => by
+          rw [hsplit]; exact List.mem_append_left _ hi
+        have hmj : ∀ i ∈ init ++ [j], i ∈ q.items := fun i hi => by rw [hsplit]; exact hi
+        have hrun : FetchRun S.ctx (fun _ => True) init (FForm.virtAt (some F) (init ++ [j]) x) :=
+          inline_fetchRun (fun _ => True) (fun e he y y' _ hey => by
+            obtain ⟨h1, h2⟩ := CacheStep.exec_writes (hcs e (hmi e he)) hey
+            refine ⟨h1, fun a _ => h2 a (fun m n hw => ?_), trivial⟩
+            rw [hnone e he] at hw
+            cases hw) _ trivial
+        exact steps_of_run_last_fb (ctx := S.ctx) (fb := some F) (S := fun _ => True)
+          (items := init) (j := j) (pos := p) (x := x) (xv' := x')
+          (fun i hi => (hev i (hmj i hi)).1)
+          (fun F' hF' => by
+            obtain rfl := Option.some.inj hF'
+            exact fun i hi => hsd i (hmj i hi))
+          (fun i hi => (hev i (hmi i hi)).2.1) hjm
+          (fun i hi => (hev i (hmi i hi)).2.2.1)
+          (CacheStep.canon_map_of (fun i hi => (hev i (hmj i hi)).2.2.2) p)
+          (by rw [← hsplit]; exact hcode) hrip (fun _ _ => trivial) hrun
+          (by rw [← hsplit]; exact hx')
+      · have hns : ∀ w, cls ≠ .store w := fun w h => hst ⟨w, h⟩
+        have hrun : FetchRun S.ctx (fun a => ∃ j, j < S.body.code.size ∧ a = addrAt S.ctx j)
+            q.items (FForm.virtAt (some F) q.items x) := by
+          have h := inline_fetchRun' H hcls hfv hciv hi' hfull hmem hseqR hstep hns
+          rw [hemit] at h
+          exact h
+        exact (steps_of_run_fb (ctx := S.ctx) (fb := some F)
+          (S := fun a => ∃ j, j < S.body.code.size ∧ a = addrAt S.ctx j)
+          (items := q.items) (pos := p) (x := x) (xv' := x')
+          (fun i hi => (hev i hi).1)
+          (fun F' hF' => by
+            obtain rfl := Option.some.inj hF'
+            exact hsd)
+          (fun i hi => (hev i hi).2.1) (fun i hi => (hev i hi).2.2.1)
+          (CacheStep.canon_map_of (fun i hi => (hev i hi).2.2.2) p)
+          hcode hrip hin hrun hx').1
+    have hb := hP.bound
+    have hstop : S.start (k + 1) = c'.pos := inline_nop_none (inline_read_bare hr) hP.nop
+    rcases hd with ⟨hbrn, hdec⟩ | ⟨cond, tgt, long, hbrs, hdec⟩
+    · -- No branch: fall through to `k + 1`.
+      subst hbrn
+      have hdec' := Dec.at_iff.1 hdec
+      obtain ⟨hcode, hcpos, -⟩ := hf0.code.dec hdec' hb
+      rw [hspF] at hcode hcpos
+      have hin := inline_inCode_dec_fb hf0.code hdec' hb
+      rw [hspF] at hin
+      have hsd : ∀ i ∈ q.items, i.SpDispOk F := H.spDisp F hspF S.body rfl hspF _ _ _ hdec'
+      have hpc : s'.pc = k + 1 := by simp only [BrOk, Option.map_none] at hbr; rw [hbr, hs]
+      refine Reach.steps (hsteps_of hcode hin hsd)
+        (.done (.inl ⟨s', .step hstep, ⟨⟨(by rw [hvx, hvy]; exact hf'), hrbR⟩, .inl ⟨?_, ?_⟩⟩⟩))
+      · show x'.rip = _
+        rw [hpc, hstop, hcpos]; exact hxr
+      · rw [hvx, hvy, hpc, hP.cache]; exact hcc
+    · -- A branch class: the `jcc` after the items, run on the real state.
+      subst hbrs
+      have hdec' := Dec.at_iff.1 hdec
+      have hmapb : [Item.branch cond tgt long].map (FForm.item (some F)) =
+          [Item.branch cond tgt long] := rfl
+      obtain ⟨hcode, hcpos, -⟩ := hf0.code.dec hdec' hb
+      rw [hspF, List.map_append, hmapb, codeAt_append] at hcode
+      rw [hspF, List.map_append, hmapb] at hcpos
+      have hin0 := inline_inCode_dec_fb hf0.code hdec' hb
+      rw [hspF, List.map_append, hmapb] at hin0
+      have hin : ∀ a, InCode S.ctx (q.items.map (FForm.item (some F))) p a →
+          ∃ j, j < S.body.code.size ∧ a = addrAt S.ctx j :=
+        fun a h => hin0 a ((inCode_append _ _ _ _).2 (.inl h))
+      have hsd : ∀ i ∈ q.items, i.SpDispOk F := fun i hi =>
+        H.spDisp F hspF S.body rfl hspF _ _ _ hdec' i (List.mem_append_left _ hi)
+      have hsteps := hsteps_of hcode.1 hin hsd
+      obtain ⟨hcode', -, -⟩ := hf'.code.dec hdec' hb
+      rw [hspF, List.map_append, hmapb, codeAt_append] at hcode'
+      obtain ⟨m, hd1, hd2⟩ := inline_dec_split hdec'
+      obtain ⟨-, hm, -⟩ := hf0.code.dec hd1 hb
+      rw [hspF] at hm
+      have hcan : (Item.branch cond tgt long).Canonical
+          (p + codeSize (q.items.map (FForm.item (some F)))) := by
+        cases hd2 with
+        | cons hdi2 hnil => rw [← hm]; exact nf_branch_canonical hdi2
+      have hyr : (FForm.real (some F) (x.reg .rbp) x').rip =
+          addrAt S.ctx (p + codeSize (q.items.map (FForm.item (some F)))) := hxr
+      simp only [BrOk, Option.map_some] at hbr
+      obtain ⟨neg, t, b, hctl, heval, hpc⟩ := hbr
+      have htgt : posOf S.r t = tgt.toNat :=
+        inline_branch_index (inline_targets hdi) hops hctl
+      have heval' : cond.eval (FForm.real (some F) (x.reg .rbp) x').flags = .ok b := heval
+      have hexec : (Item.branch cond tgt long).exec S.ctx (FForm.real (some F) (x.reg .rbp) x') =
+          .ok ((FForm.real (some F) (x.reg .rbp) x').jump
+            (if b then S.ctx.base + tgt.setWidth 64
+              else (FForm.real (some F) (x.reg .rbp) x').rip +
+                BitVec.ofNat 64 (Item.branch cond tgt long).size)) := by
+        cases b <;> simp [Item.exec, State.jump, heval', bind, Except.bind, pure, Except.pure]
+      have hfj : ∀ a, FrameInvR S s' ((FForm.real (some F) (x.reg .rbp) x').jump a) := fun a =>
+        ⟨(by
+          rw [hvx]
+          exact hf'.congr (by rw [← congrArg X86.State.regs hvy]; rfl)
+            (by rw [← congrArg X86.State.xmm hvy]; rfl)
+            (by rw [← congrArg X86.State.mem hvy]; rfl)), hrbR⟩
+      have hcj : ∀ (c : Cache) a, CacheInv c x' →
+          CacheInv c (S.virt ((FForm.real (some F) (x.reg .rbp) x').jump a)) := fun c a h => by
+        rw [hvx]
+        have h' : CacheInv c (FForm.virt (some F) (FForm.real (some F) (x.reg .rbp) x')) := by
+          rw [hvy]; exact h
+        exact h'
+      refine Reach.steps hsteps (.step (.exec (x := FForm.real (some F) (x.reg .rbp) x') _ _ hcan hcode'.2.1 hyr hexec)
+        (.done (.inl ⟨s', .step hstep, hfj _, ?_⟩)))
+      cases b with
+      | false =>
+        simp only [Bool.false_eq_true, ↓reduceIte] at hpc ⊢
+        refine .inl ⟨?_, ?_⟩
+        · show x'.rip + _ = _
+          rw [hpc, hs, hstop, hcpos, hxr, ← addrAt_add, codeSize_append, codeSize_cons,
+            codeSize_nil, Nat.add_zero, Nat.add_assoc]
+        · rw [hpc, hs, hP.cache]; exact hcj _ _ hcc
+      | true =>
+        simp only [↓reduceIte] at hpc ⊢
+        refine .inr ⟨?_, ?_⟩
+        · show _ = addrAt S.ctx _
+          rw [hpc, htgt]
+          simp only [addrAt]
+          congr 1
+          apply BitVec.eq_of_toNat_eq
+          simp
+        · rw [hpc]
+          have hmemt : posOf S.r t ∈ S.r.protos[k].targets := by
+            rw [hpk']
+            simp only [Proto.targets, hh, List.append_nil, List.mem_flatMap]
+            refine ⟨.target (posOf S.r t), ?_, by simp [Opnd.targetsOf]⟩
+            rw [← hops]
+            exact List.mem_map_of_mem (nativeCtl_target hctl)
+          have := H.cacheTargets k hk _ hmemt
+          unfold Setup.used
+          rw [ite_eq_left_iff.mpr (fun h => absurd this h)]
+          exact CacheInv.empty _
+  refine bodySim_of_fp hfp ?_
   intro s x hs hf hrip hci hsafe
   have e1 := callInsn_none hc
   subst e1
@@ -1695,7 +1997,7 @@ theorem bodySim_inline' (hD : Decodes S code relocs rodata callSites dropped sco
   have hnl := inline_not_leadArg' hD hP hs hi' hfull hmem hstep H
   -- The boundary relation at the position (`CodeApart`'s live allocations).
   have hbi : BInv S s (x.jump (addrAt S.ctx (posOf S.r k))) :=
-    ⟨hf.congr rfl rfl rfl, .inr ⟨by rw [hs]; rfl, by rw [hs]; exact hci⟩⟩
+    (bInv_iff hfp).2 ⟨hf.congr rfl rfl rfl, .inr ⟨by rw [hs]; rfl, by rw [hs]; exact hci⟩⟩
   obtain ⟨x', hx', hrr, hcc, hrip', hbr⟩ :=
     inline_cls_step H hf hci hi' hfull hmem hseqR hstep
   rw [hemit] at hx' hcc hrip'
@@ -1710,29 +2012,29 @@ theorem bodySim_inline' (hD : Decodes S code relocs rodata callSites dropped sco
   · -- No branch: fall through to `k + 1`.
     subst hbrn
     have hdec' := Dec.at_iff.1 hdec
-    obtain ⟨hcode, hcpos, -⟩ := hf.code.dec hdec' hb
+    obtain ⟨hcode, hcpos, -⟩ := (hf.code.toLinkOk hfp).dec hdec' hb
     obtain ⟨hsteps, hf'⟩ :=
       inline_run' H hbl heb hcls s s' x x' {} p q.items hf ⟨_, hbi⟩ hrip hcode
-        (inline_inCode_dec hf.code hdec' hb) hex hnl hstep hx' hrr
+        (inline_inCode_dec (hf.code.toLinkOk hfp) hdec' hb) hex hnl hstep hx' hrr
     have hpc : s'.pc = k + 1 := by simp only [BrOk, Option.map_none] at hbr; rw [hbr, hs]
-    refine Reach.steps hsteps (.done (.inl ⟨s', .step hstep, hf', .inl ⟨?_, ?_⟩⟩))
+    refine Reach.steps hsteps (.done (.inl ⟨s', .step hstep, (bInv_iff hfp).2 ⟨hf', .inl ⟨?_, ?_⟩⟩⟩))
     · rw [hpc, hstop, hcpos, hrip', hrip, addrAt_add]; rfl
     · rw [hpc, hP.cache]; exact hcc
   · -- A branch class: the `jcc` after the items.
     subst hbrs
     have hdec' := Dec.at_iff.1 hdec
-    obtain ⟨hcode, hcpos, -⟩ := hf.code.dec hdec' hb
+    obtain ⟨hcode, hcpos, -⟩ := (hf.code.toLinkOk hfp).dec hdec' hb
     rw [codeAt_append] at hcode
     obtain ⟨hsteps, hf'⟩ :=
       inline_run' H hbl heb hcls s s' x x' {} p q.items hf ⟨_, hbi⟩ hrip hcode.1
-        (fun a h => inline_inCode_dec hf.code hdec' hb a ((inCode_append _ _ _ _).2 (.inl h))) hex hnl hstep hx' hrr
-    obtain ⟨hcode', -, -⟩ := hf'.code.dec hdec' hb
+        (fun a h => inline_inCode_dec (hf.code.toLinkOk hfp) hdec' hb a ((inCode_append _ _ _ _).2 (.inl h))) hex hnl hstep hx' hrr
+    obtain ⟨hcode', -, -⟩ := (hf'.code.toLinkOk hfp).dec hdec' hb
     rw [codeAt_append] at hcode'
     obtain ⟨m, hd1, hd2⟩ := inline_dec_split hdec'
-    obtain ⟨-, hm, -⟩ := hf.code.dec hd1 hb
+    obtain ⟨-, hm, -⟩ := (hf.code.toLinkOk hfp).dec hd1 hb
     have hcan : (Item.branch cond tgt long).Canonical (p + codeSize q.items) := by
       cases hd2 with
-      | cons hdi2 hnil => rw [← hm]; exact branch_canonical hf.code.fp hdi2
+      | cons hdi2 hnil => rw [← hm]; exact branch_canonical (hf.code.fp hfp) hdi2
     have hxr : x'.rip = addrAt S.ctx (p + codeSize q.items) := by
       rw [hrip', hrip, addrAt_add]; rfl
     simp only [BrOk, Option.map_some] at hbr
@@ -1744,7 +2046,7 @@ theorem bodySim_inline' (hD : Decodes S code relocs rodata callSites dropped sco
           else x'.rip + BitVec.ofNat 64 (Item.branch cond tgt long).size)) := by
       cases b <;> simp [Item.exec, State.jump, heval, bind, Except.bind, pure, Except.pure]
     refine Reach.steps hsteps (.step (.exec _ _ hcan hcode'.2.1 hxr hexec)
-      (.done (.inl ⟨s', .step hstep, hf'.congr rfl rfl rfl, ?_⟩)))
+      (.done (.inl ⟨s', .step hstep, (bInv_iff hfp).2 ⟨hf'.congr rfl rfl rfl, ?_⟩⟩)))
     cases b with
     | false =>
       simp only [Bool.false_eq_true, ↓reduceIte] at hpc ⊢

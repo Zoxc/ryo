@@ -10,3 +10,4 @@ import Ryo.X86.Exec
 import Ryo.X86.Extra
 import Ryo.X86.Cosim
 import Ryo.X86.Fetch
+import Ryo.X86.VirtFp

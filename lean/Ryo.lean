@@ -10,6 +10,7 @@ import Ryo.Vm.FrameSizes
 import Ryo.Vm.StackSizes
 import Ryo.Vm.CallSitesCheck
 import Ryo.Vm.RelocsInCheck
+import Ryo.Vm.SpDispCheck
 import Ryo.Vm.CacheClearedCheck
 import Ryo.Vm.ArgsLeadCheck
 import Ryo.Vm.DecodeObj
@@ -46,6 +47,7 @@ import Ryo.Proofs.Discharge.Nounwind
 import Ryo.Proofs.Discharge.StackSizes
 import Ryo.Proofs.Discharge.PeStackArg
 import Ryo.Proofs.Discharge.RelocsIn
+import Ryo.Proofs.Discharge.SpDisp
 import Ryo.Proofs.Discharge.CacheCleared
 import Ryo.Proofs.HandlerStackArg
 import Ryo.Proofs.Island
@@ -53,3 +55,7 @@ import Ryo.Proofs.DecodeLink
 import Ryo.Proofs.ArgPeBound
 import Ryo.Proofs.DecodeSound
 import Ryo.Proofs.DecodeSound.Entry
+import Ryo.Proofs.DecodeSound.NoFp
+import Ryo.Proofs.DSWork.Virt
+import Ryo.Proofs.DeadStore.Fix
+import Ryo.Proofs.DeadStore.Esc

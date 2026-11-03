@@ -4,6 +4,7 @@ import Ryo.Proofs.DSWork.Ret
 import Ryo.Proofs.DSWork.Island
 import Ryo.Proofs.DSWork.Arg
 import Ryo.Proofs.Discharge.PadsLinked
+import Ryo.Proofs.DSWork.CallVirt
 
 set_option linter.constructorNameAsVariable false
 
@@ -540,6 +541,21 @@ theorem call_dec_inCode {ctx : Ctx} {m : Mem} {c : Cursor} {rs : Array Reloc}
     · rw [hn] at h
       exact call_dec_inCode hk hrest hb' a h
 
+/-- `call_dec_inCode` in either frame form: the items as they are in memory. -/
+theorem call_dec_inCodeF {ctx : Ctx} {m : Mem} {c : Cursor} {rs : Array Reloc}
+    {mode : Ryo.Obj.Mode} (hk : LinkOkF ctx m c rs mode) :
+    ∀ {p q : Nat} {items : List Item}, Dec c p items q → Boundary rs p → ∀ a,
+      InCode ctx (items.map (FForm.item c.spFrame)) p a → ∃ j, j < c.code.size ∧ a = addrAt ctx j
+  | _, _, _, .nil p, _, a, h => absurd h (by simp [InCode])
+  | _, _, _, .cons (p := p) (n := n) (i := i) hd hrest, hb, a, h => by
+    obtain ⟨-, hn, hle, hb'⟩ := nf_decodeItem_itemAt hk hb hd
+    rw [List.map_cons] at h
+    rcases h with ⟨j, hj, rfl⟩ | h
+    · rw [call_linkedAt_length] at hj
+      exact ⟨p + j, by omega, (addrAt_add' ctx p j)⟩
+    · rw [hn] at h
+      exact call_dec_inCodeF hk hrest hb' a h
+
 /-! #### Canonical items -/
 
 theorem call_canon_of {i : Item} (hw : ∀ p, i.wf p = true) (ht : ∀ b e, i ≠ .tableEntry b e)
@@ -888,6 +904,116 @@ theorem call_paramItems_shape {pe : Bool} :
 theorem call_ldFrame_shape (p : BitVec 32) : CallShape (.ld .q false .rax (M.frame p)) :=
   .inl (.inl ⟨_, _, _, _, rfl⟩)
 
+/-! #### The loads before a call without a frame pointer -/
+
+/-- `call_paramItem_canon`'s encodability, at every position. -/
+theorem call_paramItem_wf {pe : Bool} {s w : BitVec 32} {L : List Item}
+    (h : Call.paramItem pe s w = some L) : ∀ i ∈ L, ∀ p, i.wf p = true := by
+  unfold Call.paramItem at h
+  simp only at h
+  split at h
+  · cases h
+  rename_i a ha
+  have hx := call_argReg_of_spec ha
+  have hsx := (Call.argReg_of_false ha).2.2
+  cases pe <;> cases hB : (w.toNat &&& argAddr != 0) <;> cases hX : a.xmm <;> simp [hB, hX] at h
+  all_goals first
+    | obtain ⟨hc, rfl⟩ := h
+    | (by_cases h2 : a.size = 2 <;> simp [h2] at h <;> subst h)
+    | subst h
+    | (obtain ⟨hc, rfl⟩ := h.symm)
+  all_goals intro i hi p
+  all_goals (try simp at hi)
+  all_goals (try rcases hi with rfl | rfl)
+  all_goals (try subst hi)
+  all_goals (try rw [call_wf_ld_widthOf _ _ _ hsx])
+  all_goals clear hsx
+  all_goals simp [Item.wf, call_intArg_usable, Item.memWf, M.frame, *]
+  all_goals first | (have := (hx hX).1; omega) | decide | simp [Reg.usable]
+
+theorem call_paramItem_cv (ctx : Ctx) (F : BitVec 32) {pe : Bool} {s w : BitVec 32}
+    {L : List Item} (h : Call.paramItem pe s w = some L) : ∀ i ∈ L, CvItem ctx F i := by
+  have hw := call_paramItem_wf h
+  have h' := h
+  unfold Call.paramItem at h'
+  simp only at h'
+  split at h'
+  · cases h'
+  rename_i a ha
+  have hx := call_argReg_of_spec ha
+  rcases Call.paramItem_cases h ha with ⟨-, -, -, rfl⟩ | ⟨-, -, -, rfl⟩ | ⟨-, hX, h2, rfl⟩ |
+    ⟨-, -, -, rfl⟩
+  · intro i hi; simp only [List.mem_singleton] at hi; subst hi
+    exact cv_leaM ctx F (call_intArg_usable _ _) (hw _ (by simp))
+  · intro i hi
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hi
+    rcases hi with rfl | rfl
+    · exact cv_ld ctx F (by decide) (hw _ (by simp))
+    · exact cv_movd ctx F (hw _ (by simp))
+  · intro i hi; simp only [List.mem_singleton] at hi; subst hi
+    have hs : a.size = 4 ∨ a.size = 8 ∨ a.size = 16 := by have := (hx hX).1; omega
+    exact cv_sse ctx F hs (hw _ (by simp))
+  · intro i hi; simp only [List.mem_singleton] at hi; subst hi
+    exact cv_ld ctx F (call_intArg_usable _ _) (hw _ (by simp))
+
+theorem call_paramItems_cv (ctx : Ctx) (F : BitVec 32) {pe : Bool} :
+    ∀ {ws : List (BitVec 32)} {L : List Item}, Call.paramItems pe ws = some L →
+      ∀ i ∈ L, CvItem ctx F i
+  | [], L, h => by cases h; simp
+  | [_], L, h => by cases h
+  | s :: w :: rest, L, h => by
+    simp only [Call.paramItems, bind, Option.bind, pure] at h
+    cases h1 : Call.paramItem pe s w with
+    | none => simp [h1] at h
+    | some L1 =>
+      cases h2 : Call.paramItems pe rest with
+      | none => simp [h1, h2] at h
+      | some L2 =>
+        simp only [h1, h2, Option.some.injEq] at h
+        subst h
+        intro i hi
+        rcases List.mem_append.1 hi with hi | hi
+        · exact call_paramItem_cv ctx F h1 i hi
+        · exact call_paramItems_cv ctx F h2 i hi
+
+/-- A call's head without a frame pointer: the load before the call fetched as `CvItem`, the
+call itself without a memory operand. -/
+theorem call_head_cv (ctx : Ctx) (F : BitVec 32) {f : Full.Opcode} {fo : R.Opnd Nat}
+    {pre : List Item} {ci : Item} (h : Call.callHead f fo = some (pre, ci)) :
+    (∀ it ∈ pre, CvItem ctx F it) ∧ ci.mem? = none ∧ ci.RbpFree := by
+  rcases call_head_cases h with ⟨g, -, -, rfl, rfl⟩ | ⟨s, -, -, rfl, rfl⟩ |
+    ⟨s, -, -, rfl, rfl⟩ | ⟨p, -, -, rfl, rfl⟩
+  · exact ⟨fun it hit => (by cases hit), rfl, rfl⟩
+  · exact ⟨fun it hit => (by cases hit), rfl, rfl⟩
+  · refine ⟨fun it hit => ?_, rfl, rfl⟩
+    simp only [List.mem_singleton] at hit; subst hit
+    exact cv_loadRip ctx F _ (fun _ => by first | rfl | simp [Item.wf])
+  · refine ⟨fun it hit => ?_, rfl, rfl⟩
+    simp only [List.mem_singleton] at hit; subst hit
+    exact cv_ld ctx F (by decide) (fun _ => by simp [Item.wf, Item.memWf, M.frame, Reg.usable])
+
+/-- A tail call's head without a frame pointer. -/
+theorem call_tailHead_cv (ctx : Ctx) (F : BitVec 32) {w : Bool} {f : Full.Opcode}
+    {fo : R.Opnd Nat} {pre : List Item} {j : Item} (h : Call.tailHead w f fo = some (pre, j)) :
+    (∀ it ∈ pre, CvItem ctx F it) ∧ j.mem? = none ∧ j.RbpFree := by
+  have hj : (∃ g, j = .jmp (.func g)) ∨ j = .jmpRax ∨ j = .jmpRaxW := by
+    rcases call_tail_cases h with ⟨g, rfl, rfl, -⟩ | ⟨p, rfl, rfl, -⟩
+    · simp only [Call.tailHead, beq_self_eq_true, ↓reduceIte, Option.some.injEq,
+        Prod.mk.injEq] at h
+      exact .inl ⟨g, h.2.symm⟩
+    · simp only [Call.tailHead, beq_self_eq_true, ↓reduceIte, Option.some.injEq,
+        Prod.mk.injEq] at h
+      cases w
+      · exact .inr (.inl h.2.symm)
+      · exact .inr (.inr h.2.symm)
+  refine ⟨?_, by rcases hj with ⟨g, rfl⟩ | rfl | rfl <;> rfl,
+    by rcases hj with ⟨g, rfl⟩ | rfl | rfl <;> rfl⟩
+  rcases call_tail_cases h with ⟨g, -, -, rfl⟩ | ⟨p, -, -, rfl⟩
+  · intro it hit; cases hit
+  · intro it hit
+    simp only [List.mem_singleton] at hit; subst hit
+    exact cv_ld ctx F (by decide) (fun _ => by simp [Item.wf, Item.memWf, M.frame, Reg.usable])
+
 /-! #### The `sret` write and the state after a call's step -/
 
 /-- An `Uninit` write anywhere keeps `FrameSep` (no new initialized private byte, the
@@ -1166,13 +1292,83 @@ theorem call_stores_steps (H : Hyps S) {s : R.RState} {x y y' : X86.State} {k : 
       exact call_kept_off H hf (by omega) (by omega) hoffq b hb) y hrb
   exact steps_of_run hcan hca hrip hinC hrun he
 
+/-- `call_stores_steps` without a frame pointer: fetched in the `spFrame` form from the real
+state `y`, run from its virtual one `yv` (`rbp = rsp + F`, `rip` the real one's); the real state
+after is the virtual run's moved to the stores' end, with `y`'s `rbp`. -/
+theorem call_stores_steps_sp (H : Hyps S) {F : BitVec 32} {s : R.RState} {x y yv y' : X86.State}
+    {k : Nat} {d : BitVec 32} {parts : List (RetPart × R.Reg)} {q0 : Nat} (hf : FrameInv S s x)
+    (hp : R.retRegs k false = .ok parts) (hdb : -(S.F : Int) ≤ d.toInt ∧ d.toInt + 16 ≤ S.K)
+    (hoff : ∀ q ∈ parts, OffLink (d.toInt + q.1.off, q.1.size))
+    (hsd : ∀ i ∈ resultStores k d, i.SpDispOk F)
+    (hca : CodeAt S.ctx y.mem ((resultStores k d).map (FForm.item (some F))) q0)
+    (hinC : ∀ b, InCode S.ctx ((resultStores k d).map (FForm.item (some F))) q0 b →
+      IslandKept S x b)
+    (hrip : y.rip = addrAt S.ctx q0) (hyv : yv = y.setReg .rbp (y.rsp + F.setWidth 64))
+    (hrb : yv.reg .rbp = x.reg .rbp)
+    (he : execItems S.ctx (resultStores k d) yv = .ok y') :
+    ∃ a, Steps S.ctx y ((y'.jump a).setReg .rbp (y.reg .rbp)) ∧
+      a = addrAt S.ctx (q0 + codeSize ((resultStores k d).map (FForm.item (some F)))) ∧
+      ∀ b, IslandKept S x b → y'.mem b = y.mem b := by
+  obtain ⟨hst, hpq, -⟩ := CallLemmas.retRegsS_parts hp d
+  have hKl := H.frameBounds.K_le
+  have hdb' := toInt_bounds d
+  have hmem : ∀ i ∈ resultStores k d, ∃ q ∈ parts,
+      ArgItemForm (d + BitVec.ofNat 32 q.1.off) q.1.size i ∧
+      (d + BitVec.ofNat 32 q.1.off).toInt = d.toInt + q.1.off ∧ 1 ≤ q.1.size ∧
+      q.1.off + q.1.size ≤ 16 := by
+    intro i hi
+    rw [hst, List.mem_flatMap] at hi
+    obtain ⟨⟨pp, rr⟩, hq, hi⟩ := hi
+    obtain ⟨hok, hfor, hle⟩ := hpq _ hq
+    simp only at hok hfor hle
+    have h1 : 1 ≤ pp.size := by unfold CallLemmas.partOkS at hok; split at hok <;> omega
+    exact ⟨(pp, rr), hq, call_storeR_form hok hfor i hi,
+      CallLemmas.toInt_disp d pp.off (by omega) (by omega), h1, hle⟩
+  have hcan : Canon ((resultStores k d).map (FForm.item (some F))) q0 :=
+    call_canon_list (fun i hi pos => by
+      obtain ⟨i0, hi0, rfl⟩ := List.mem_map.1 hi
+      obtain ⟨q, -, hform, -⟩ := hmem i0 hi0
+      exact arg_item_canonical_fb (some F) hform pos) q0
+  have hv : FForm.virtAt (some F) (resultStores k d) y =
+      yv.jump (y.rip + FForm.delta (some F) (resultStores k d)) := by
+    subst hyv; rfl
+  have hrun : FetchRun S.ctx (IslandKept S x) (resultStores k d)
+      (FForm.virtAt (some F) (resultStores k d) y) := by
+    rw [hv]
+    exact arg_fetchRun (fun z => z.reg .rbp = x.reg .rbp) (fun i hi z z' hz hez => by
+      obtain ⟨q, hq, hform, hdisp, h1, hle⟩ := hmem i hi
+      have hoffq := hoff q hq
+      obtain ⟨r1, r2, r3⟩ := arg_item_exec S.ctx hform (by rw [hdisp]; omega) (by omega) hez
+      refine ⟨r1, fun b hb => r3 b ?_, r2.trans hz⟩
+      have e : fpAddr z (d + BitVec.ofNat 32 q.1.off).toInt =
+          fpAddr x (d.toInt + q.1.off) := by simp [fpAddr, hz, hdisp]
+      rw [e]
+      exact call_kept_off H hf (by omega) (by omega) hoffq b hb) _ hrb
+  have he' : execItems S.ctx (resultStores k d) (FForm.virtAt (some F) (resultStores k d) y) =
+      .ok (y'.jump (y.rip + FForm.delta (some F) (resultStores k d) +
+        BitVec.ofNat 64 (codeSize (resultStores k d)))) := by
+    rw [hv]
+    exact cv_execItems_jump (fun i hi => by
+      obtain ⟨q, -, hform, -⟩ := hmem i hi
+      exact arg_item_ripFree S.ctx hform) _ he
+  obtain ⟨h1, h2, h3⟩ := steps_of_run_fb (fb := some F) (S := IslandKept S x)
+    (items := resultStores k d) (pos := q0) (x := y)
+    (fun i hi => by obtain ⟨q, -, hform, -⟩ := hmem i hi; exact arg_item_rbpFree hform)
+    (fun F' hF' => by obtain rfl := Option.some.inj hF'; exact hsd)
+    (fun i hi => by obtain ⟨q, -, hform, -⟩ := hmem i hi; exact arg_item_ripFree S.ctx hform)
+    (fun i hi => by obtain ⟨q, -, hform, -⟩ := hmem i hi; exact arg_item_rspKept S.ctx hform)
+    hcan hca hrip hinC hrun he'
+  exact ⟨y.rip + FForm.delta (some F) (resultStores k d) +
+    BitVec.ofNat 64 (codeSize (resultStores k d)), h1, h2, h3⟩
+
 /-! #### What the callee leaves alone -/
 
 /-- The bytes `IslandKept` names are off the stack below `rsp` and not where the callee may
 write: the outgoing area ends at `fp` (`n ≤ F`), the code and rodata are apart (`CodeApart`),
-the link slots private (`LinkPrivate`, `FrameOwn`) and not runtime-owned (`EnvApart.window`). -/
-theorem call_kept_callee (H : Hyps S) {s s1 s' : R.RState} {x : X86.State} (hf : FrameInv S s x)
-    (hci : CacheInv (S.used s.pc) x)
+the link slots private (`LinkPrivate`, `FrameOwn`) and not runtime-owned (`EnvApart.window`).
+`hbi` is any boundary of `s` (for `CodeApart`'s live allocations). -/
+theorem call_kept_callee (H : Hyps S) {s s1 s' : R.RState} {x xb : X86.State} (hf : FrameInv S s x)
+    (hbi : BInv S s xb)
     (hsc : (S.c.scopesAt s.pc).foldlM R.applyScope s = .ok s1)
     (hsh : AllocShape s1.st.mem s'.st.mem) (hesc : s'.st.escaped = s1.st.escaped)
     (hsep' : FrameSep (-(S.F : Int)) S.K s'.st x) (n : Nat) (hn : n ≤ S.F)
@@ -1195,8 +1391,6 @@ theorem call_kept_callee (H : Hyps S) {s s1 s' : R.RState} {x : X86.State} (hf :
     omega
   have hspn : (BitVec.ofNat 64 (s.fp - S.F + n)).toNat = s.fp - S.F + n := by
     rw [BitVec.toNat_ofNat]; exact Nat.mod_eq_of_lt (by omega)
-  have hbi : BInv S s (x.jump (addrAt S.ctx (posOf S.r s.pc))) :=
-    ⟨hf.congr rfl rfl rfl, .inr ⟨rfl, hci⟩⟩
   rcases call_kept_cases H hb with hcode | ⟨o, ho1, ho2, rfl⟩
   · obtain ⟨hown, hstk, hnw, hal⟩ := H.codeApart b hcode
     refine ⟨fun h => hstk ⟨h.1, by have := h.2; omega⟩, ?_⟩
@@ -1266,17 +1460,19 @@ the callee leaves the code, rodata and link slots alone (`call_kept_callee`). A 
 `Call.tail_call_step` and `ExitRel`'s `tailCall` from `FrameFacts`. The outgoing area fits in
 the frame (`hstk`, `StackSizes.frame`: callee writes below `sp + n` would otherwise reach the
 link slots, and the answer's area write would leave the window). -/
-theorem bodySim_call' (hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
+theorem bodySim_call_fp (hfp : S.c.mode.framePointer = true)
+    (hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
     {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
     (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
     (hr : (callInsn S.fr (S.dr k)).run cur = .ok (some q, c')) :
     BodySim S k p (S.used k) := by
+  refine bodySim_of_fp hfp ?_
   have hstk : ∀ k, S.c.stackSize k + (if S.c.mode.pe then 16 else 0) ≤ S.F :=
     H.stackSizes.frame
   intro s x hs hfi hrip hci hsafe
   have hcur := noArg_call hn hr
   subst hcur
-  have hlk : LinkOk S.ctx x.mem (atPos S.body p) S.rs := bs_linkOk_at hfi.code p
+  have hlk : LinkOk S.ctx x.mem (atPos S.body p) S.rs := bs_linkOk_at (hfi.code.toLinkOk hfp) p
   have eF : (S.F : Int) = S.c.d.frameSize := rfl
   have hfb := H.frameBounds
   have hwinT : (s.fp : Int) + S.K ≤ 2 ^ 64 := hfi.win
@@ -1388,7 +1584,9 @@ theorem bodySim_call' (hD : Decodes S code relocs rodata callSites dropped scope
         (fun o h1 h2 => by rw [hfi.fpAddr_eq]; exact H.envApart.window o h1 h2)
     have hcaX1 := Call.callApart_congr hcaX hrbp1
     have hci' : CacheInv (S.used s.pc) x := by rw [hs]; exact hci
-    have hkept := call_kept_callee H hfi hci' hsc hshp hesc' hsep' (S.c.stackSize s.pc) hstkF
+    have hbi : BInv S s (x.jump (addrAt S.ctx (posOf S.r s.pc))) :=
+      (bInv_iff hfp).2 ⟨hfi.congr rfl rfl rfl, .inr ⟨rfl, hci'⟩⟩
+    have hkept := call_kept_callee H hfi hbi hsc hshp hesc' hsep' (S.c.stackSize s.pc) hstkF
     have hdb := hfb.result s.pc op d fo _ ws f hi hf hsh
     have hi' : S.c.d.insns[s'.pc]? = some (.native op [.slot d, fo, .imm (BitVec.ofNat 64 kk),
         .words ws]) := by rw [hpcS]; exact hi
@@ -1412,7 +1610,7 @@ theorem bodySim_call' (hD : Decodes S code relocs rodata callSites dropped scope
       have hmemKy : ∀ b, IslandKept S x b → y.mem b = x.mem b := fun b hb => by
         obtain ⟨h1, h2⟩ := hkept b hb
         rw [hcr.mem b h2, hmem1 b h1]
-      have hlky := island_link_kept hfi.code hmemKy
+      have hlky := island_link_kept (hfi.code.toLinkOk hfp) hmemKy
       have hlk' : LinkOk S.ctx y.mem (atPos S.body p) S.rs := bs_linkOk_at hlky p
       obtain ⟨s'', x'', hans, hx'', hrr'', hmr'', hpc'', hfp'', hrip'', hrsp'', hrbp'', hsv'',
           st1, parts', regsR, hw1, hp', hfold⟩ :=
@@ -1459,21 +1657,21 @@ theorem bodySim_call' (hD : Decodes S code relocs rodata callSites dropped scope
       have hFI : FrameInv S s'' x'' :=
         ⟨hrr'', hmr'', hsepX, by rw [hfp'', hfpS]; exact hwinT,
           by rw [hfp'', hfpS]; exact hfpF, by rw [hrspX, hrbpX]; exact hfi.rsp,
-          by rw [hrspX]; exact hfi.room, island_link_kept hfi.code hmemK'',
+          by rw [hrspX]; exact hfi.room, (island_link_kept (hfi.code.toLinkOk hfp) hmemK'').toF _,
           island_ro_kept hfi.ro hmemK'', fun h => absurd h hNL,
           island_frame_kept hfi.frame hmemK'' hrbpX (fun i hi _ => hsvX i hi), hsl'',
           ((hfi.esc.scopes hsc).of_not hNL).congr hE⟩
       have fin : ∀ z : X86.State, z.regs = x''.regs → z.xmm = x''.xmm → z.mem = x''.mem →
           z.rip = addrAt S.ctx (S.start (k + 1)) → Reach S.ctx S.E (SNext S s) z := by
         intro z hzr hzx hzm hzrip
-        refine .done (.inl ⟨_, .answer hstep hans, hFI.congr hzr hzx hzm, .inl ⟨?_, ?_⟩⟩)
+        refine .done (.inl ⟨_, .answer hstep hans, (bInv_iff hfp).2 ⟨hFI.congr hzr hzx hzm, .inl ⟨?_, ?_⟩⟩⟩)
         · change z.rip = addrAt S.ctx (S.start s''.pc)
           rw [hpcK]; exact hzrip
         · change CacheInv (S.cache s''.pc) z
           rw [hpcK, hcache]; exact CacheInv.emptyPe _ _
       refine Reach.steps hsteps2 ?_
       have hxrip : x''.rip = addrAt S.ctx c'.pos := by rw [hrip2, hcpos]
-      have hlkX := island_link_kept hfi.code hmemK''
+      have hlkX := island_link_kept (hfi.code.toLinkOk hfp) hmemK''
       generalize hE : S.start (k + 1) = pE at hnop fin
       generalize hC : c'.pos = pC at hnop hxrip hbE
       cases hnop with
@@ -1501,7 +1699,7 @@ theorem bodySim_call' (hD : Decodes S code relocs rodata callSites dropped scope
       rw [hcl] at hl
       have hyrip : y.rip = addrAt S.ctx (posOf S.r pad) := by
         rw [← Option.some.inj hl]
-        have h32 := posOf_lt_32 hD hfi.code (pad_lpad hD hcl).1
+        have h32 := posOf_lt_32 hD (hfi.code.toLinkOk hfp) (pad_lpad hD hcl).1
         have e : (pos32 S.r pad).setWidth 64 = BitVec.ofNat 64 (posOf S.r pad) := by
           apply BitVec.eq_of_toNat_eq
           rw [BitVec.toNat_setWidth, pos32, BitVec.toNat_ofNat, BitVec.toNat_ofNat,
@@ -1530,11 +1728,12 @@ theorem bodySim_call' (hD : Decodes S code relocs rodata callSites dropped scope
       have hsvY : ∀ i, Saved S.c.mode.pe i → y.regs i = x.regs i := fun i hi => by
         rw [hland.saved i hi, hsv1 i hi]
       refine .done (.inl ⟨_, .answer hstep hans, ?_⟩)
+      refine (bInv_iff hfp).2 ?_
       refine ⟨⟨hrrY, hmrY, ⟨hsepY.own, hsepY.init, hsepY.dis, hsepY.space, hsepY.esc⟩,
         by show (s'.fp : Int) + _ ≤ _; rw [hfpS]; exact hwinT,
         by show S.c.d.frameSize ≤ s'.fp; rw [hfpS]; exact hfpF,
         by rw [hrspY, hrbpY]; exact hfi.rsp, by rw [hrspY]; exact hfi.room,
-        island_link_kept hfi.code hmemKy, island_ro_kept hfi.ro hmemKy, ?_,
+        (island_link_kept (hfi.code.toLinkOk hfp) hmemKy).toF _, island_ro_kept hfi.ro hmemKy, ?_,
         island_frame_kept hfi.frame hmemKy hrbpY (fun i hi _ => hsvY i hi),
         ((hslots'.congr (st' := (s'.withWorld a'.world).st) rfl (fun _ _ _ => rfl)).writeRanges
           hw1 (H.areaMiss hi' hf hsh)).congr (st' := { st1 with exception := exc }) rfl
@@ -1576,7 +1775,7 @@ theorem bodySim_call' (hD : Decodes S code relocs rodata callSites dropped scope
         (fun h1 => ⟨hfi.rsp, by
           rcases h1 with h1 | h1
           · exact H.peFrame h1
-          · exact absurd (h1.symm.trans H.fp) (by decide)⟩)
+          · exact absurd (h1.symm.trans hfp) (by decide)⟩)
         (by have := H.stackSizes.stack s.pc; omega) hstep
     rw [← List.append_assoc] at hx' hca
     have hcanon : Canon (pre ++ ps ++ epilogue S.c.d.frameSize S.c.mode ++ [j]) p :=
@@ -1609,8 +1808,511 @@ theorem bodySim_call' (hD : Decodes S code relocs rodata callSites dropped scope
     · intro i hsv
       by_cases h5 : i = 5
       · subst h5
-        exact (hrbp' (.inr H.fp)).trans hfi.frame.savedRbp
+        exact (hrbp' (.inr hfp)).trans (hfi.frame.savedRbp hfp)
       · rw [hsv' i hsv h5]; exact hfi.frame.saved i hsv h5
+
+set_option maxHeartbeats 2000000 in
+/-- `bodySim_call_fp` without a frame pointer. The body runs on the virtual state
+`xv = FForm.virtAt` of the real `xr` (`rbp := rsp + F`, `rip` shifted by the sp form's extra
+length, `FrameInv` its relation); the machine fetches the loads and the call in the `spFrame`
+form by `steps_of_run_last_fb` (`CvItem`; the call has no memory operand) and reaches the real
+callee entry `x1` with the real `rbp` (`entryAt_setRbp`). The callee runs from that real entry;
+its return, unwind end and landing are carried to the virtual entry `x1` and `yv = y` with
+`rbp := x1.rbp` (`callReturn_back`, `callEnd_back`, `landed_back`), where `call_return_at`,
+`call_unwind_at` and the result stores (`call_stores_steps_sp`) run as with a frame pointer; the
+relation at the next boundary is the virtual one of the real state (`cv_frameInvR`, `rbp` the
+entry's by `RbpOk`). PE is excluded (`Mode.valid`), so no `nop` follows. A tail call: the loads by
+`steps_of_run_fb`, then `add rsp, F + 8` and the jump (no memory operand) on the real state
+(`nf_execItems_commute`); `ExitRel`'s `rbp` from `RbpOk`. -/
+theorem bodySim_call_nofp (hfpm : S.c.mode.framePointer = false)
+    (hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
+    {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
+    (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
+    (hr : (callInsn S.fr (S.dr k)).run cur = .ok (some q, c')) :
+    BodySim S k p (S.used k) := by
+  have hsp0 : S.body.spFrame = some (BitVec.ofNat 32 S.F) := nf_spFrame_of_nofp hD hfpm
+  have hpeF : S.c.mode.pe = false := nf_pe_of_nofp hD hfpm
+  generalize BitVec.ofNat 32 S.F = F at hsp0
+  have hsp := hsp0
+  have hstk : ∀ k, S.c.stackSize k + (if S.c.mode.pe then 16 else 0) ≤ S.F :=
+    H.stackSizes.frame
+  intro s xr hs hfR hrip hci hsafe
+  have hcur := noArg_call hn hr
+  subst hcur
+  have hsp' : (atPos S.body p).spFrame = some F := hsp
+  have hlkR : LinkOkF S.ctx xr.mem (atPos S.body p) S.rs S.c.mode := hfR.code'.atPos p
+  have hbi : BInv S s (xr.jump (addrAt S.ctx (posOf S.r s.pc))) :=
+    vt_bInv_used hfR (by rw [hs]; exact hci)
+  have hrb : RbpOk S xr := hfR.2
+  have hrbX : xr.reg .rbp = S.x0.reg .rbp := hrb (by simp [Setup.fb, hsp])
+  have eF : (S.F : Int) = S.c.d.frameSize := rfl
+  have hfb := H.frameBounds
+  have hK : (16 : Int) ≤ S.K := by have := H.argSizeK; omega
+  have hFl := hfb.F_le
+  have hKl := hfb.K_le
+  have hstkF : S.c.stackSize s.pc ≤ S.F := by have := hstk s.pc; split at this <;> omega
+  obtain ⟨hlt, ⟨p1, ctr, hpq⟩, ⟨i, hi, hio⟩, hbd, hnop, hcache, hargs⟩ := hP
+  have hpk := (Array.getElem?_eq_some_iff.1 hpq).2
+  have hio' := hpk ▸ hio hlt
+  cases call_read_site hr with
+  | @call f fo pre ps ci ws d kk p3 n c'' hhead hd hn1 hd2 hc' hps hk32 hrax =>
+    -- The instruction.
+    simp only [InsnOf] at hio'
+    obtain ⟨op, ops, hof, rfl, hops⟩ := hio'
+    obtain ⟨hf, hsh, hfoT, hfa, hci0⟩ := call_head_op hhead hof
+    have hops' : ops = [.slot d, fo, .imm (BitVec.ofNat 64 kk), .words ws] :=
+      opnds_plain hops (by
+        intro o ho
+        simp only [List.mem_cons, List.not_mem_nil, or_false] at ho
+        rcases ho with rfl | rfl | rfl | rfl
+        · rfl
+        · exact hfoT
+        · rfl
+        · rfl)
+    subst hops'
+    have hkk : (BitVec.ofNat 64 kk).toNat = kk := by
+      rw [BitVec.toNat_ofNat]; exact Nat.mod_eq_of_lt (by omega)
+    have hxok : ∀ it ∈ ps, XmmOk it := fun it hit => hd.xmmOk it (by simp [hit])
+    have hpsOk : Call.paramItems S.c.mode.pe ws = some ps := hps hxok
+    have hseq : Call.callSeq S.c.mode.pe f fo ws = some (pre ++ ps ++ [ci]) := by
+      simp [Call.callSeq, hhead, hpsOk, bind, Option.bind, pure]
+    -- The code, in the `spFrame` form.
+    have hdA : Dec (atPos S.body p) p (pre ++ ps ++ [ci]) (p3 + n) := hd.append (Dec.single hn1)
+    obtain ⟨hcv0, hcm, hciR⟩ := call_head_cv S.ctx F hhead
+    have hcv : ∀ it ∈ pre ++ ps, CvItem S.ctx F it := fun it hit => by
+      rcases List.mem_append.1 hit with hit | hit
+      · exact hcv0 it hit
+      · exact call_paramItems_cv S.ctx F hpsOk it hit
+    obtain ⟨hca, hq3, hb3⟩ := hlkR.dec hdA hbd
+    rw [hsp'] at hca hq3
+    have hn0 : 0 < n := by
+      obtain ⟨-, hq3', -⟩ := hlkR.dec hd hbd
+      rw [hsp'] at hq3'
+      have e1 : codeSize ((pre ++ ps ++ [ci]).map (FForm.item (some F))) =
+          codeSize ((pre ++ ps).map (FForm.item (some F))) + ci.size := by
+        rw [List.map_append, codeSize_append, List.map_cons, List.map_nil,
+          fb_item_noMem (some F) hcm, codeSize_cons, codeSize_nil]
+        all_goals omega
+      have epos : (atPos S.body p).pos = p := rfl
+      omega
+    -- The virtual state the loads and the call run from.
+    obtain ⟨xv, hxv⟩ : ∃ z, z = FForm.virtAt (some F) (pre ++ ps ++ [ci]) xr := ⟨_, rfl⟩
+    have hfi : FrameInv S s xv := by
+      have h0 := hfR.1
+      rw [nf_virt_some hsp] at h0
+      rw [hxv]; exact h0.congr rfl rfl rfl
+    have hxvrbp : xv.reg .rbp = xr.rsp + F.setWidth 64 := by
+      rw [hxv]; exact X86.State.reg_setReg xr .rbp _
+    have hxvrsp : xv.rsp = xr.rsp := by rw [hxv]; exact Handler.setRbp_rsp xr (xr.rsp + F.setWidth 64)
+    have hxvrip : xv.rip = xr.rip + FForm.delta (some F) (pre ++ ps ++ [ci]) := by
+      rw [hxv]; rfl
+    have hwinT : (s.fp : Int) + S.K ≤ 2 ^ 64 := hfi.win
+    have hwin := hfb.window hwinT
+    have hfpF : S.F ≤ s.fp := hfi.fpF
+    have hfp64 : s.fp < 2 ^ 64 := by omega
+    -- R's step.
+    rw [← hs] at hi
+    obtain ⟨qq, s', hstep⟩ := call_step_ext hi hf hsh hsafe
+    have hsafeQ := hsafe.2 {} qq s' hstep
+    obtain ⟨s1, parts, -, -, -, hsc, hp, -, -, -, -, hsret, hpc', hfp', -, -⟩ :=
+      CallLemmas.step_call hi hf hsh hstep
+    have hk1 := scopes_keeps _ hsc
+    have hpcS : s'.pc = s.pc := hpc'.trans hk1.pc
+    have hfpS : s'.fp = s.fp := hfp'.trans hk1.fp
+    have hsep1 := (sep_foldlM _ (hfb.scopesIn _) hwin hfi.rrel hfi.sep hsc).2
+    have hrbpN : (xv.reg .rbp).toNat = s.fp := by
+      rw [hfi.rrel.rbp, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hfp64]
+    have hrspN : xv.rsp.toNat = s.fp - S.F := island_rsp_toNat hfi.rrel.rbp hfp64 hfpF hfi.rsp
+    have hS' : FrameSep (-(S.F : Int)) S.K s'.st xv ∧ AllocShape s1.st.mem s'.st.mem ∧
+        s'.st.escaped = s1.st.escaped := by
+      rcases hsret with heq | ⟨nn, dst, hw⟩
+      · rw [heq]; exact ⟨hsep1, fun id a h => ⟨a, h, rfl, rfl, rfl⟩, rfl⟩
+      · exact call_sep_uninit hsep1 hw
+    obtain ⟨hsep', hshp, hesc'⟩ := hS'
+    have hslots' : Discharge.PeStackArg.ArgSlots S.c s'.st := by
+      rcases hsret with heq | ⟨nn, dst, hw⟩
+      · rw [heq]; exact H.slots_scopes hfi hsc
+      · exact (H.slots_scopes hfi hsc).writeFrame_uninit hw
+    have hap : Handler.StackApart S.lo s'.st xv :=
+      Handler.FrameSep.stackApart hsep'
+        (Handler.stack_off_window (by rw [hrbpN, hrspN]; omega) (by rw [hrbpN]; omega))
+        (call_allocsApart_shape (island_allocs' H hfi hsc) hshp)
+    have hb62 : S.c.d.frameSize + S.c.stackSize s.pc < 2 ^ 62 := H.stackSizes.stack s.pc
+    have hlo : S.lo.toNat + 8 ≤ xv.rsp.toNat := by have := hfi.room; omega
+    obtain ⟨cal, regs, stack, x1, hq, hx1, he1, hstl, -, hrr1, -, -, -, -, hrsp1, hret1, hsv1,
+        hmem1⟩ :=
+      Call.call_query S.ctx hi hf hsh hseq
+        hrax hfi.rrel hfi.mem (hfb.scope_size _) hfi.rsp hb62 hlo
+        (H.envApart.syms s xv hfi) hstep hap
+    have hrbp1 : x1.reg .rbp = xv.reg .rbp := by
+      show x1.regs 5 = xv.regs 5; exact hsv1 5 (Island.saved_rbp _)
+    -- Fetching the call, from the real state.
+    have hshapes : ∀ it ∈ pre ++ ps, it.FallsThrough S.ctx ∧ it.MemKept S.ctx := by
+      intro it hit
+      refine call_shape_ok S.ctx ?_
+      rcases List.mem_append.1 hit with hit | hit
+      · rcases call_head_cases hhead with ⟨_, -, -, rfl, -⟩ | ⟨_, -, -, rfl, -⟩ |
+          ⟨_, -, -, rfl, -⟩ | ⟨_, -, -, rfl, -⟩
+        · cases hit
+        · cases hit
+        · simp only [List.mem_singleton] at hit; subst hit; exact .inr (.inr ⟨_, _, rfl⟩)
+        · simp only [List.mem_singleton] at hit; subst hit; exact call_ldFrame_shape _
+      · exact call_paramItems_shape hpsOk it hit
+    have hcan : Canon ((pre ++ ps ++ [ci]).map (FForm.item (some F))) p :=
+      call_canon_list (fun it hit pos => by
+        obtain ⟨it0, hit0, rfl⟩ := List.mem_map.1 hit
+        rcases List.mem_append.1 hit0 with h0 | h0
+        · exact (hcv it0 h0).can pos
+        · simp only [List.mem_singleton] at h0
+          rw [h0, fb_item_noMem (some F) hcm]
+          exact (call_head_canon hhead).2 pos) p
+    have hsteps1 : Steps S.ctx xr (x1.setReg .rbp (xr.reg .rbp)) :=
+      steps_of_run_last_fb (fb := some F) (S := fun _ => True) (items := pre ++ ps) (j := ci)
+        (fun it hit => by
+          rcases List.mem_append.1 hit with h0 | h0
+          · exact (hcv it h0).rbp
+          · simp only [List.mem_singleton] at h0; rw [h0]; exact hciR)
+        (fun F' hF' => by
+          obtain rfl := Option.some.inj hF'
+          exact H.spDisp F hsp (atPos S.body p) rfl hsp' _ _ _ hdA)
+        (fun it hit => (hcv it hit).rip) (fun m hm => by rw [hcm] at hm; cases hm)
+        (fun it hit => (hcv it hit).rsp) hcan hca hrip (fun _ _ => trivial)
+        (fetchRun_of_forall hshapes _) (by rw [← hxv]; exact hx1)
+    -- The callee.
+    have hsafeQ' : S.Safe ⟨.call cal regs (s.fp - S.c.d.frameSize) stack, s'.world⟩ := hq ▸ hsafeQ
+    have hshad : S.c.mode.pe = true → 32 ≤ stack.length := fun hpe => by
+      rw [hstl]; exact H.stackSizes.shadow hpe s.pc op _ f hi hf hsh
+    have hcaX : Call.CallApart S.Owned S.lo S.c.d.frameSize (S.c.stackSize s.pc)
+        (s.fp - S.c.d.frameSize) s'.st xv :=
+      Call.FrameSep.callApart hsep' hwin (by omega) hfi.rrel.rbp hfpF
+        (fun o h1 h2 => by rw [hfi.fpAddr_eq]; exact H.envApart.window o h1 h2)
+    have hcaX1 := Call.callApart_congr hcaX hrbp1
+    have hkept := call_kept_callee H hfi hbi hsc hshp hesc' hsep' (S.c.stackSize s.pc) hstkF
+    have hdb := hfb.result s.pc op d fo _ ws f hi hf hsh
+    have hi' : S.c.d.insns[s'.pc]? = some (.native op [.slot d, fo, .imm (BitVec.ofNat 64 kk),
+        .words ws]) := by rw [hpcS]; exact hi
+    have hra : x1.mem.read64 x1.rsp = addrAt S.ctx (p3 + n) := by
+      rw [hret1, hxvrip, hrip]
+      show addrAt S.ctx p + FForm.delta (some F) (pre ++ ps ++ [ci]) +
+        BitVec.ofNat 64 (codeSize (pre ++ ps ++ [ci])) = _
+      rw [FForm.delta, BitVec.add_assoc, BitVec.sub_add_cancel, addrAt_add', hq3]
+    have he1r := entryAt_setRbp (xr.reg .rbp) he1
+    refine Reach.steps hsteps1 (Reach.env (H.envOutside.call _ _ _ _ _ _ he1r) fun y hy => ?_)
+    have hsa := H.sepAcross.call cal regs (s.fp - S.c.d.frameSize) stack s'.st
+      (x1.setReg .rbp (xr.reg .rbp)) y xv he1r hsafeQ' hshad hsep'
+    by_cases hry : y.rip =
+        (x1.setReg .rbp (xr.reg .rbp)).mem.read64 (x1.setReg .rbp (xr.reg .rbp)).rsp
+    · -- It returns.
+      obtain ⟨a', hcr, hal⟩ := hsa.1 ⟨hy, hry⟩
+      rw [hstl] at hcr
+      have hyrb : y.reg .rbp = xr.reg .rbp := by
+        show y.regs 5 = _
+        rw [hcr.saved 5 (Island.saved_rbp _)]
+        exact X86.State.reg_setReg x1 .rbp _
+      have hyrsp : y.rsp = xr.rsp := by
+        rw [hcr.rsp, Handler.setRbp_rsp, hrsp1, hxvrsp]; exact BitVec.sub_add_cancel _ _
+      obtain ⟨yv, hyv0⟩ : ∃ z, z = y.setReg .rbp (x1.reg .rbp) := ⟨_, rfl⟩
+      have hcrV := callReturn_back hcr
+      rw [← hyv0] at hcrV
+      have hyvm : yv.mem = y.mem := by rw [hyv0]; rfl
+      have hyv : yv = y.setReg .rbp (y.rsp + F.setWidth 64) := by
+        rw [hyv0, hrbp1, hxvrbp, hyrsp]
+      have hrbpY : yv.reg .rbp = xv.reg .rbp := by
+        rw [hyv0, X86.State.reg_setReg]; exact hrbp1
+      have hsepW : FrameSep (-(S.F : Int)) S.K (s'.withWorld a'.world).st yv :=
+        FrameSep.extend hsep' hrbpY rfl hal.1 hsep'.init hal.2.1 hal.2.2
+      have hresA : Call.ResultApart (BitVec.ofNat 64 kk).toNat d (s'.withWorld a'.world).st yv :=
+        call_resultApart' H hi hf hsh hsepW
+      have hcr' : Call.CallReturn S.c.mode.pe S.Owned S.lo (s'.fp - S.c.d.frameSize)
+          (S.c.stackSize s'.pc) s'.world x1 yv a' := by rw [hpcS, hfpS]; exact hcrV
+      have hmemKy : ∀ b, IslandKept S xv b → yv.mem b = xv.mem b := fun b hb => by
+        obtain ⟨h1, h2⟩ := hkept b hb
+        rw [hcrV.mem b h2, hmem1 b h1]
+      have hmemKyR : ∀ b, IslandKept S xv b → y.mem b = xv.mem b := fun b hb => by
+        rw [← hyvm]; exact hmemKy b hb
+      have hlky : LinkOkF S.ctx y.mem S.body S.rs S.c.mode := island_link_keptF hfi.code hmemKyR
+      obtain ⟨s'', x'', hans, hx'', hrr'', hmr'', hpc'', hfp'', -, hrsp'', hrbp'', hsv'',
+          st1, parts', regsR, hw1, hp', hfold⟩ :=
+        call_return_at S.ctx hi' hf hsh hcr' (by rw [hfpS]; exact hfpF) hrr1
+          (by rw [hpcS]; exact hb62) (by omega) (by rw [hpcS, hfpS]; exact hcaX1) ⟨parts, hp⟩ hresA
+      have hoff := hfb.resultOff s.pc op d fo _ ws f hi hf hsh parts hp
+      rw [hkk] at hp hx''
+      have hyrip : y.rip = addrAt S.ctx (p3 + n) := by
+        rw [hry, Handler.setRbp_rsp]; exact hra
+      obtain ⟨hca2, hcpos, -⟩ := (hlky.atPos p).dec hd2 hb3
+      rw [hsp'] at hca2 hcpos
+      obtain ⟨a2, hsteps2, ha2, hmem2⟩ := call_stores_steps_sp H hfi hp hdb hoff
+        (H.spDisp F hsp (atPos S.body p) rfl hsp' _ _ _ hd2) hca2
+        (fun b hb => by
+          obtain ⟨j, hj, rfl⟩ :=
+            call_dec_inCodeF (hlky.atPos p) hd2 hb3 b (by rw [hsp']; exact hb)
+          exact .inl ⟨j, hj, rfl⟩) hyrip hyv hrbpY hx''
+      have hmemK'' : ∀ b, IslandKept S xv b → x''.mem b = xv.mem b :=
+        fun b hb => (hmem2 b hb).trans (hmemKyR b hb)
+      have hsepX : FrameSep (-(S.F : Int)) S.K s''.st x'' :=
+        FrameSep.congr hrbp'' (call_sep_answer H hsepW (by rw [hpcS]; exact hstkF) hw1 hdb hp'
+          hfold)
+      have hrbpX : x''.reg .rbp = xv.reg .rbp := hrbp''.trans hrbpY
+      have hrspX : x''.rsp = xv.rsp := by
+        rw [hrsp'', hcrV.rsp, hrsp1]; exact BitVec.sub_add_cancel _ _
+      have hsvX : ∀ i, Saved S.c.mode.pe i → x''.regs i = xv.regs i := fun i hi => by
+        rw [hsv'' i hi, hcrV.saved i hi, hsv1 i hi]
+      have hpcK : s''.pc = k + 1 := by rw [hpc'', hpcS, hs]
+      have hsl'' : Discharge.PeStackArg.ArgSlots S.c s''.st :=
+        Discharge.PeStackArg.ArgSlots.parts (Discharge.PeStackArg.result_lo H.boundsOk hi hf hsh)
+          regsR parts' ((hslots'.congr (st' := (s'.withWorld a'.world).st) rfl
+            (fun _ _ _ => rfl)).writeRanges hw1 (H.areaMiss hi' hf hsh)) hfold
+      have hNL : ¬ LeadArg S s''.pc := by
+        rintro ⟨hlt', ha⟩
+        change s''.pc < S.r.protos.size at hlt'
+        change S.args (s''.pc + 1) = true at ha
+        rw [hpcK] at hlt' ha
+        have h1 : S.args (k + 1) = false := by
+          rw [hargs]; show (S.args k && (f == Full.Opcode.arg)) = false
+          rw [hfa, Bool.and_false]
+        have h2 := hD.argsSucc (k + 1) (by simpa using hlt')
+        rw [h1] at h2
+        simp [h2] at ha
+      have hE : s''.st.escaped = s1.st.escaped := by
+        rw [Discharge.EscFrom.foldlM_keep _ (fun _ _ _ h => writeFrame_escaped h) _ hfold,
+          Discharge.EscFrom.writeRanges_escaped hw1]
+        exact hesc'
+      have hFI : FrameInv S s'' x'' :=
+        ⟨hrr'', hmr'', hsepX, by rw [hfp'', hfpS]; exact hwinT,
+          by rw [hfp'', hfpS]; exact hfpF, by rw [hrspX, hrbpX]; exact hfi.rsp,
+          by rw [hrspX]; exact hfi.room, island_link_keptF hfi.code hmemK'',
+          island_ro_kept hfi.ro hmemK'', fun h => absurd h hNL,
+          island_frame_kept hfi.frame hmemK'' hrbpX (fun i hi _ => hsvX i hi), hsl'',
+          ((hfi.esc.scopes hsc).of_not hNL).congr hE⟩
+      have hFIR : FrameInvR S s'' ((x''.jump a2).setReg .rbp (y.reg .rbp)) :=
+        cv_frameInvR (z := x''.jump a2) hsp (y.reg .rbp) (hFI.congr rfl rfl rfl)
+          (by show x''.reg .rbp = x''.rsp + F.setWidth 64; rw [hrbpX, hrspX, hxvrbp, hxvrsp])
+          (fun h => (X86.State.reg_setReg _ .rbp _).trans (hyrb.trans (hrb h)))
+      have hxrip : ((x''.jump a2).setReg .rbp (y.reg .rbp)).rip = addrAt S.ctx c'.pos := by
+        show a2 = _
+        rw [ha2, hcpos]
+      have fin : ∀ z : X86.State, z.regs = ((x''.jump a2).setReg .rbp (y.reg .rbp)).regs →
+          z.xmm = ((x''.jump a2).setReg .rbp (y.reg .rbp)).xmm →
+          z.mem = ((x''.jump a2).setReg .rbp (y.reg .rbp)).mem →
+          z.rip = addrAt S.ctx (S.start (k + 1)) → Reach S.ctx S.E (SNext S s) z := by
+        intro z hzr hzx hzm hzrip
+        refine .done (.inl ⟨_, .answer hstep hans, ⟨hFIR.congr' hzr hzx hzm, .inl ⟨?_, ?_⟩⟩⟩)
+        · change z.rip = addrAt S.ctx (S.start s''.pc)
+          rw [hpcK]; exact hzrip
+        · change CacheInv (S.cache s''.pc) (S.virt z)
+          rw [hpcK, hcache]; exact CacheInv.emptyPe _ _
+      refine Reach.steps hsteps2 ?_
+      generalize hE' : S.start (k + 1) = pE at hnop fin
+      generalize hC : c'.pos = pC at hnop hxrip
+      cases hnop with
+      | none _ => exact fin _ rfl rfl rfl hxrip
+      | nop hna _ _ =>
+        exfalso
+        have hpe1 : S.c.mode.pe = true := by
+          unfold nopAfter at hna
+          simp only [Bool.and_eq_true] at hna
+          exact hna.1.1
+        rw [hpeF] at hpe1
+        cases hpe1
+    · -- It unwinds.
+      obtain ⟨a', exc, hres, hend, hland, hal⟩ := hsa.2 ⟨hy, hry⟩
+      rw [hstl] at hend
+      have hpads := (H.padsLinked hD hfi.code.small) k hlt (p3, n) (by rw [hpk]; simp) (p3 + n)
+        (by show p3 < p3 + n; omega) (by show p3 + n ≤ p3 + n; omega)
+      have hyrb : y.reg .rbp = xr.reg .rbp := by
+        show y.regs 5 = _
+        rw [hland.saved 5 (Island.saved_rbp _)]
+        exact X86.State.reg_setReg x1 .rbp _
+      obtain ⟨yv, hyv0⟩ : ∃ z, z = y.setReg .rbp (x1.reg .rbp) := ⟨_, rfl⟩
+      have hendV := callEnd_back hend
+      have hlandV := landed_back hland
+      rw [← hyv0] at hendV hlandV
+      rw [Handler.setRbp_rsp] at hlandV
+      have hl := hlandV.rip
+      rw [hra, hpads] at hl
+      cases hcl : S.c.cleanupAt k with
+      | none => rw [hcl] at hl; cases hl
+      | some e =>
+      obtain ⟨pad?, cat⟩ := e
+      cases pad? with
+      | none => rw [hcl] at hl; cases hl
+      | some pad =>
+      rw [hcl] at hl
+      have hyrip : yv.rip = addrAt S.ctx (posOf S.r pad) := by
+        rw [← Option.some.inj hl]
+        have h32 : posOf S.r pad < 2 ^ 32 :=
+          Nat.lt_of_le_of_lt (posOf_le_size hD (pad_lpad hD hcl).1) hfi.code.small
+        have e : (pos32 S.r pad).setWidth 64 = BitVec.ofNat 64 (posOf S.r pad) := by
+          apply BitVec.eq_of_toNat_eq
+          rw [BitVec.toNat_setWidth, pos32, BitVec.toNat_ofNat, BitVec.toNat_ofNat,
+            Nat.mod_eq_of_lt h32]
+        rw [e]; rfl
+      have hrbpY : yv.reg .rbp = xv.reg .rbp := by
+        rw [hyv0, X86.State.reg_setReg]; exact hrbp1
+      have hsepW : FrameSep (-(S.F : Int)) S.K (s'.withWorld a'.world).st yv :=
+        FrameSep.extend hsep' hrbpY rfl hal.1 hsep'.init hal.2.1 hal.2.2
+      have hpad' : S.c.cleanupAt s'.pc = some (some pad, cat) := by rw [hpcS, hs]; exact hcl
+      have hend' : Call.CallEnd S.Owned S.lo (s'.fp - S.c.d.frameSize) (S.c.stackSize s'.pc)
+          s'.world x1 yv a' := by rw [hpcS, hfpS]; exact hendV
+      obtain ⟨st1, hw1, hans, hrrY, hmrY⟩ := call_unwind_at hi' hf hsh hres hend' hlandV
+        (by rw [hfpS]; exact hfpF) hrr1 (by rw [hpcS]; exact hb62)
+        (by rw [hpcS, hfpS]; exact hcaX1) hpad'
+      have hsepY : FrameSep (-(S.F : Int)) S.K st1 yv := island_sep_writeRanges hsepW
+        (fun r hr => by
+          simp only [List.mem_singleton] at hr; subst hr
+          refine ⟨Int.le_refl _, ?_⟩
+          show -(S.c.d.frameSize : Int) + (S.c.stackSize s'.pc : Int) ≤ S.K
+          rw [hpcS]; omega) hw1
+      have hmemKy : ∀ b, IslandKept S xv b → yv.mem b = xv.mem b := fun b hb => by
+        obtain ⟨h1, h2⟩ := hkept b hb
+        rw [hendV.mem b h2, hmem1 b h1]
+      have hrspY : yv.rsp = xv.rsp := by rw [hlandV.rsp, hrsp1]; exact BitVec.sub_add_cancel _ _
+      have hsvY : ∀ i, Saved S.c.mode.pe i → yv.regs i = xv.regs i := fun i hi => by
+        rw [hlandV.saved i hi, hsv1 i hi]
+      have hyback : yv.setReg .rbp (y.reg .rbp) = y := by
+        rw [hyv0, vt_setReg_setReg, X86.State.setReg_reg_self]
+      refine .done (.inl ⟨_, .answer hstep hans, ?_⟩)
+      rw [← hyback]
+      refine ⟨cv_frameInvR (z := yv) hsp (y.reg .rbp) ?_ (by rw [hrbpY, hrspY, hxvrbp, hxvrsp])
+        (by rw [hyback]; exact fun h => hyrb.trans (hrb h)), .inr ⟨hyrip, ?_⟩⟩
+      · exact ⟨hrrY, hmrY, ⟨hsepY.own, hsepY.init, hsepY.dis, hsepY.space, hsepY.esc⟩,
+          by show (s'.fp : Int) + _ ≤ _; rw [hfpS]; exact hwinT,
+          by show S.c.d.frameSize ≤ s'.fp; rw [hfpS]; exact hfpF,
+          by rw [hrspY, hrbpY]; exact hfi.rsp, by rw [hrspY]; exact hfi.room,
+          island_link_keptF hfi.code hmemKy, island_ro_kept hfi.ro hmemKy,
+          fun h => absurd h (pad_not_leadArg hD hcl),
+          island_frame_kept hfi.frame hmemKy hrbpY (fun i hi _ => hsvY i hi),
+          ((hslots'.congr (st' := (s'.withWorld a'.world).st) rfl (fun _ _ _ => rfl)).writeRanges
+            hw1 (H.areaMiss hi' hf hsh)).congr (st' := { st1 with exception := exc }) rfl
+            (fun _ _ _ => rfl),
+          ((hfi.esc.scopes hsc).of_not (pad_not_leadArg hD hcl)).congr
+            (by show st1.escaped = _; rw [Discharge.EscFrom.writeRanges_escaped hw1]; exact hesc')⟩
+      · change CacheInv (S.used pad) (S.virt (yv.setReg .rbp (y.reg .rbp)))
+        rw [(H.cacheCleared hD).pads k pad cat hcl]; exact CacheInv.emptyPe _ _
+  | @tail w f fo pre ps j ws c'' hhead hd hc' hps hrax =>
+    simp only [InsnOf] at hio'
+    obtain ⟨op, ops, hof, rfl, hops⟩ := hio'
+    obtain ⟨hf, hsh, hfoT⟩ := call_tail_op hhead hof
+    have hops' : ops = [fo, .words ws] :=
+      opnds_plain hops (by
+        intro o ho
+        simp only [List.mem_cons, List.not_mem_nil, or_false] at ho
+        rcases ho with rfl | rfl
+        · exact hfoT
+        · rfl)
+    subst hops'
+    have hxok : ∀ it ∈ ps, XmmOk it := fun it hit => hd.xmmOk it (by simp [hit])
+    have hpsOk : Call.paramItems S.c.mode.pe ws = some ps := hps hxok
+    have eE : S.fr.epilogue = epilogue S.c.d.frameSize S.c.mode := by
+      show epilogue S.r.frameSize S.c.mode = _
+      rw [reducedOf_frameSize hD.reduced]
+    rw [eE] at hd
+    have hseq : Call.tailSeq S.c.d.frameSize S.c.mode w f fo ws =
+        some (pre ++ ps ++ (epilogue S.c.d.frameSize S.c.mode ++ [j])) := by
+      simp [Call.tailSeq, hhead, hpsOk, bind, Option.bind, pure]
+    obtain ⟨hcv0, hjm, hjR⟩ := call_tailHead_cv S.ctx F hhead
+    have hcv : ∀ it ∈ pre ++ ps, CvItem S.ctx F it := fun it hit => by
+      rcases List.mem_append.1 hit with hit | hit
+      · exact hcv0 it hit
+      · exact call_paramItems_cv S.ctx F hpsOk it hit
+    -- The virtual state the loads run from.
+    obtain ⟨xv, hxv⟩ : ∃ z, z = FForm.virtAt (some F) (pre ++ ps) xr := ⟨_, rfl⟩
+    have hfi : FrameInv S s xv := by
+      have h0 := hfR.1
+      rw [nf_virt_some hsp] at h0
+      rw [hxv]; exact h0.congr rfl rfl rfl
+    obtain ⟨hca, -, -⟩ := hlkR.dec hd hbd
+    rw [hsp'] at hca
+    rw [← hs] at hi
+    obtain ⟨fin, hstep⟩ := tail_step_done hi hf hsh hsafe
+    obtain ⟨s1, cal, regs, stack, x', hfin, -, -, -, -, hx', hent, -, hrsp', -, -, hsv'⟩ :=
+      Call.tail_call_step S.ctx hi hf hsh hseq
+        hrax hfi.rrel hfi.mem (hfb.scope_size _) (fun _ => ⟨hfi.rsp, nf_frame8 H hfpm⟩)
+        (by have := H.stackSizes.stack s.pc; omega) hstep
+    rw [X86.execItems_append] at hx'
+    obtain ⟨y1, hy1, hy2⟩ := except_bind_ok hx'
+    have hca' := hca
+    rw [List.map_append, codeAt_append] at hca'
+    obtain ⟨hcL, hcE⟩ := hca'
+    -- The loads, fetched in the `spFrame` form.
+    have hshapes : ∀ it ∈ pre ++ ps, it.FallsThrough S.ctx ∧ it.MemKept S.ctx := by
+      intro it hit
+      refine call_shape_ok S.ctx ?_
+      rcases List.mem_append.1 hit with hit | hit
+      · rcases call_tail_cases hhead with ⟨_, -, -, rfl⟩ | ⟨_, -, -, rfl⟩
+        · cases hit
+        · simp only [List.mem_singleton] at hit; subst hit; exact call_ldFrame_shape _
+      · exact call_paramItems_shape hpsOk it hit
+    have hcanL : Canon ((pre ++ ps).map (FForm.item (some F))) p :=
+      call_canon_list (fun it hit pos => by
+        obtain ⟨it0, hit0, rfl⟩ := List.mem_map.1 hit
+        exact (hcv it0 hit0).can pos) p
+    obtain ⟨hs1, hy1rip, hmy⟩ := steps_of_run_fb (fb := some F) (S := fun _ => True)
+      (items := pre ++ ps) (pos := p) (x := xr) (xv' := y1)
+      (fun it hit => (hcv it hit).rbp)
+      (fun F' hF' => by
+        obtain rfl := Option.some.inj hF'
+        exact fun i hi => H.spDisp F hsp (atPos S.body p) rfl hsp' _ _ _ hd i
+          (List.mem_append_left _ hi))
+      (fun it hit => (hcv it hit).rip) (fun it hit => (hcv it hit).rsp)
+      hcanL hcL hrip (fun _ _ => trivial) (fetchRun_of_forall hshapes _)
+      (by rw [← hxv]; exact hy1)
+    have hs1' : Steps S.ctx xr (y1.setReg .rbp (xr.reg .rbp)) := hs1
+    have hym : y1.mem = xr.mem := funext fun a => hmy a trivial
+    -- `add rsp, F + 8` and the jump, on the real state.
+    have hE : epilogue S.c.d.frameSize S.c.mode =
+        [.addRsp (BitVec.ofNat 32 (S.c.d.frameSize + 8))] := by
+      simp [epilogue, hpeF, hfpm]
+    have hnm : ∀ i ∈ epilogue S.c.d.frameSize S.c.mode ++ [j], i.mem? = none := by
+      rw [hE]; exact nf_noMem_cons rfl (nf_noMem_cons hjm nf_noMem_nil)
+    have hrf : ∀ i ∈ epilogue S.c.d.frameSize S.c.mode ++ [j], i.RbpFree := by
+      rw [hE]; intro i hi
+      rcases List.mem_cons.mp hi with rfl | hi
+      · exact rfl
+      · rcases List.mem_cons.mp hi with rfl | hi
+        · exact hjR
+        · cases hi
+    rw [fb_map_noMem _ hnm] at hcE
+    have hex3 : execItems S.ctx (epilogue S.c.d.frameSize S.c.mode ++ [j])
+        (y1.setReg .rbp (xr.reg .rbp)) = .ok (x'.setReg .rbp (xr.reg .rbp)) := by
+      (rw [nf_execItems_commute hrf hnm y1 (xr.reg .rbp), hy2]) <;> rfl
+    rw [hE] at hex3 hcE
+    have hs2 : Steps S.ctx (y1.setReg .rbp (xr.reg .rbp)) (x'.setReg .rbp (xr.reg .rbp)) := by
+      refine steps_of_run_last (S := fun _ => True) (x := y1.setReg .rbp (xr.reg .rbp))
+        (items := [.addRsp (BitVec.ofNat 32 (S.c.d.frameSize + 8))]) (j := j) ?_ ?_ hy1rip
+        (fun _ _ => trivial) ?_ hex3
+      · exact ret_canon_list (fun i hi pos => by
+          rcases List.mem_cons.mp hi with rfl | hi
+          · exact ret_canon_of (fun _ => rfl) (fun _ _ h => by cases h) pos
+          · rcases List.mem_cons.mp hi with rfl | hi
+            · exact (call_tailHead_canon hhead).2 pos
+            · cases hi) _
+      · rw [show (y1.setReg .rbp (xr.reg .rbp)).mem = xr.mem from hym]; exact hcE
+      · refine fetchRun_of_forall (fun i hi => ret_shape_ok S.ctx ?_) _
+        rcases List.mem_cons.mp hi with rfl | hi
+        · exact .inr (.inr (.inr (.inr (.inr ⟨_, rfl⟩))))
+        · cases hi
+    subst hfin
+    have hentR := entryAt_setRbp (xr.reg .rbp) hent
+    refine Reach.steps hs1' (Reach.steps hs2
+      (.done (.inr ⟨_, .step hstep, hentR.world, hentR, ?_, ?_⟩)))
+    · rw [Handler.setRbp_rsp, hrsp']; have := hfi.frame.rbp; bv_omega
+    · intro i hsv
+      by_cases h5 : i = 5
+      · subst h5
+        show (x'.setReg .rbp (xr.reg .rbp)).reg .rbp = S.x0.reg .rbp
+        rw [X86.State.reg_setReg]; exact hrbX
+      · rw [nf_setReg_rbp_regs x' _ h5, hsv' i hsv h5]; exact hfi.frame.saved i hsv h5
+
+/-- `bodySim_call_fp` in both frame forms. -/
+theorem bodySim_call' (hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
+    {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
+    (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
+    (hr : (callInsn S.fr (S.dr k)).run cur = .ok (some q, c')) :
+    BodySim S k p (S.used k) := by
+  by_cases hfp : S.c.mode.framePointer = true
+  · exact bodySim_call_fp hfp hD H hP hn hr
+  · exact bodySim_call_nofp (by simpa using hfp) hD H hP hn hr
 
 end Insn
 

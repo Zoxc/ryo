@@ -447,7 +447,8 @@ follows the decoder's structure:
   `unreachable` and `jmp`. Also proved (`Ryo/Proofs/DSWork/`):
   `arg`, `ret`, calls, handler calls, islands, the counter check and the decoder facts. Inline sequences too
   (`DSWork/Inline.lean`, with the emitted items' facts in `CacheEmit*.lean`); no `sorry`
-  ([assumptions.md](assumptions.md) §1.1). The frame-pointer mode only, without a PE pad region
+  ([assumptions.md](assumptions.md) §1.1). Both frame modes (without a frame pointer through the virtual state `rbp := rsp + F`,
+  `Ryo/X86/VirtFp.lean`, and `spDispCheck`), without a PE pad region
   (`Decodes.noRegion`: PE's cleanup code after the body, entered by the exception dispatcher on
   its own stack, is decoded but not simulated), and `resume` with its arguments in
   registers (`Hyps.regArgs`; other handler calls may have PE's stack argument, whose bytes at

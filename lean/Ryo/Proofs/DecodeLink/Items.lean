@@ -25,6 +25,7 @@ fixes `rbp = fp`, and `Shapes`, `CacheStep`, `CacheMem`, `Call`, `ArgRet` (but f
 = fp` in place of `rbp = fp`) is what the mode still needs; it isn't a decoder link.
 -/
 import Ryo.Proofs.DecodeLink.Call
+import Ryo.X86.VirtFp
 
 set_option linter.constructorNameAsVariable false
 set_option linter.unusedSimpArgs false
@@ -381,5 +382,150 @@ theorem LinkOkSp.dec {ctx : Ctx} {m : Mem} {c : Cursor} {rs : Array Reloc} {F : 
 theorem LinkOkSp.atPos {ctx : Ctx} {m : Mem} {c : Cursor} {rs : Array Reloc} {F : BitVec 32}
     (hk : LinkOkSp ctx m c rs F) (p : Nat) : LinkOkSp ctx m (atPos c p) rs F :=
   ⟨hk.fields, hk.sorted, hk.loaded, hk.small, hk.sp⟩
+
+/-- `LinkOk` in either frame form (`LinkOk` without its `fp`): the cursor reads an object's code
+with its sorted relocations, below `2 ^ 32` bytes, memory holds that code linked, and in a mode
+with a frame pointer the cursor is in the frame-pointer form. `dec` gives the items as they are in
+memory, `items.map (FForm.item c.spFrame)` (the items themselves in the frame-pointer form,
+`FForm.item_none`). -/
+structure LinkOkF (ctx : Ctx) (m : Mem) (c : Cursor) (rs : Array Reloc) (mode : Ryo.Obj.Mode) :
+    Prop where
+  fields : c.fields = .relocs rs
+  sorted : Sorted rs
+  loaded : RelocLoaded ctx m c.code rs
+  small : c.code.size < 2 ^ 32
+  fp : mode.framePointer = true → c.spFrame = none
+
+theorem LinkOkF.dec {ctx : Ctx} {m : Mem} {c : Cursor} {rs : Array Reloc} {mode : Ryo.Obj.Mode}
+    (hk : LinkOkF ctx m c rs mode) {p q : Nat} {items : List Item} (hd : Dec c p items q)
+    (hb : Boundary rs p) :
+    CodeAt ctx m (items.map (FForm.item c.spFrame)) p ∧
+      q = p + codeSize (items.map (FForm.item c.spFrame)) ∧ Boundary rs q := by
+  cases hsp : c.spFrame with
+  | none =>
+    simp only [FForm.map_item_none]
+    exact codeAt_of_dec hk.fields hk.sorted hk.loaded hk.small hsp hd hb
+  | some F =>
+    exact codeAt_of_dec_sp hk.fields hk.sorted hk.loaded hk.small hsp hd hb
+
+/-- The frame-pointer `LinkOk`. -/
+theorem LinkOkF.toLinkOk {ctx : Ctx} {m : Mem} {c : Cursor} {rs : Array Reloc}
+    {mode : Ryo.Obj.Mode} (hk : LinkOkF ctx m c rs mode) (h : mode.framePointer = true) :
+    LinkOk ctx m c rs :=
+  ⟨hk.fields, hk.sorted, hk.loaded, hk.small, hk.fp h⟩
+
+theorem LinkOk.toF {ctx : Ctx} {m : Mem} {c : Cursor} {rs : Array Reloc} (hk : LinkOk ctx m c rs)
+    (mode : Ryo.Obj.Mode) : LinkOkF ctx m c rs mode :=
+  ⟨hk.fields, hk.sorted, hk.loaded, hk.small, fun _ => hk.fp⟩
+
+theorem LinkOkSp.toF {ctx : Ctx} {m : Mem} {c : Cursor} {rs : Array Reloc} {F : BitVec 32}
+    {mode : Ryo.Obj.Mode} (hk : LinkOkSp ctx m c rs F) (h : mode.framePointer = false) :
+    LinkOkF ctx m c rs mode :=
+  ⟨hk.fields, hk.sorted, hk.loaded, hk.small, fun h' => by rw [h] at h'; cases h'⟩
+
+theorem LinkOkF.atPos {ctx : Ctx} {m : Mem} {c : Cursor} {rs : Array Reloc} {mode : Ryo.Obj.Mode}
+    (hk : LinkOkF ctx m c rs mode) (p : Nat) : LinkOkF ctx m (atPos c p) rs mode :=
+  ⟨hk.fields, hk.sorted, hk.loaded, hk.small, hk.fp⟩
+
+/-! ### Items only the base candidate reads
+
+The entry's code (the counter check, the prologue, the stub) consists of items only
+`baseCandidate` returns: `decodeItem` reads them alike whatever the cursor's frame form, so the
+decoder's read with the code's cursor (`readFrame`) is also one with the body's. -/
+
+/-- Items `sseCandidate` and `nativeCandidate` never return. -/
+def entryKind : Item → Bool
+  | .subRsp _ | .setReg .. | .call _ | .ctrInc _ | .branch .. | .pushRbp | .mov .. => true
+  | _ => false
+
+theorem entryKind_mapMem (f : M → M) (i : Item) : entryKind (i.mapMem f) = entryKind i := by
+  cases i <;> first
+    | rfl
+    | (rename_i rm; cases rm <;> rfl)
+    | (rename_i rm _; cases rm <;> rfl)
+
+/-- `nativeCandidate` returns no `entryKind` item (as `nativeCandidate_noXmm`). -/
+theorem nativeCandidate_notEntry {c : Cursor} {i : Item} (h : c.nativeCandidate = some i) :
+    entryKind i = false := by
+  suffices hs : OptAll (fun i => entryKind i = false) c.nativeCandidate from hs i h
+  unfold Cursor.nativeCandidate
+  extract_lets g mem reg rmReg immAt dq byteW post body
+  have hpost : ∀ it, entryKind it = false → OptAll (fun i => entryKind i = false) (post it) := by
+    intro it hit
+    unfold post
+    split <;> (try split) <;> first | exact optAll_none | exact optAll_some hit
+  have hbody : ∀ x, OptAll (fun i => entryKind i = false) (body x) := by
+    intro x
+    unfold body
+    split
+    apply optAll_bind; intro op
+    dsimp -zeta -zetaDelta only
+    extract_lets i1 modrm dqw
+    clear_value g mem reg rmReg immAt dq byteW modrm
+    split
+    all_goals
+      repeat' (first
+        | exact optAll_none
+        | exact optAll_some rfl
+        | (apply optAll_bind_item _ hpost)
+        | refine optAll_bind fun _ => ?_
+        | split)
+  clear_value body
+  repeat' (first
+    | exact optAll_none
+    | exact hbody _
+    | refine optAll_bind fun _ => ?_
+    | split)
+
+/-- An `entryKind` item `decodeItem` reads, it reads alike from a cursor with the same code,
+position and fields (any frame form): only `baseCandidate` returns it. -/
+theorem decodeItem_of_entryKind {c c' : Cursor} (h1 : c'.code = c.code) (h2 : c'.pos = c.pos)
+    (h3 : c'.fields = c.fields) {i : Item} {n : Nat} (hk : entryKind i = true)
+    (h : decodeItem c = some (i, n)) : decodeItem c' = some (i, n) := by
+  have hb : c'.baseCandidate = c.baseCandidate := by
+    cases c; cases c'; simp only at h1 h2 h3; subst h1 h2 h3; rfl
+  have ha : c'.accept some = c.accept some := by
+    funext k; cases c; cases c'; simp only at h1 h2 h3; subst h1 h2 h3; rfl
+  have hacc : ∀ (post : Item → Option Item) (k : Item), c.accept post k = some (i, n) →
+      post k = some i := by
+    intro post k ha
+    unfold Cursor.accept at ha
+    split at ha
+    · rename_i hp; cases ha; exact hp
+    · cases ha
+  unfold decodeItem at h ⊢
+  rcases Option.orElse_some' h with h | h
+  · rw [hb, ha, h]; rfl
+  exfalso
+  rcases Option.orElse_some' h with h | h
+  · obtain ⟨k, hk', h⟩ := Option.bind_eq_some_iff.mp h
+    obtain ⟨s, z, x, m, rfl, -, -, hm⟩ := sseCandidate_ok hk'
+    obtain ⟨m', hj, -⟩ := fromSpFrame_sse hm (hacc _ _ h)
+    rw [hj] at hk; exact Bool.false_ne_true hk
+  · obtain ⟨k, hk', h⟩ := Option.bind_eq_some_iff.mp h
+    have hn := nativeCandidate_notEntry hk'
+    rcases fromSpFrame_cases (hacc _ _ h) with ⟨f, m, -, -, -, rfl⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩
+    · rw [entryKind_mapMem] at hk; rw [hn] at hk; cases hk
+    · rw [hn] at hk; cases hk
+    · rw [hn] at hk; cases hk
+
+/-- `Dec` of `entryKind` items carries over to a cursor with the same code and fields. -/
+theorem Dec.of_entryKind {c c' : Cursor} (h1 : c'.code = c.code) (h3 : c'.fields = c.fields) :
+    ∀ {p : Nat} {L : List Item} {q : Nat}, Dec c p L q → L.all entryKind = true → Dec c' p L q
+  | _, _, _, .nil p, _ => .nil p
+  | p, _, _, .cons hd hr, ha => by
+    simp only [List.all_cons, Bool.and_eq_true] at ha
+    exact .cons (decodeItem_of_entryKind (c := atPos c p) (c' := atPos c' p) h1 rfl h3 ha.1 hd)
+      (Dec.of_entryKind h1 h3 hr ha.2)
+
+/-- The prologue's items are `entryKind`. -/
+theorem prologue_entryKind (fs : Nat) (m : Ryo.Obj.Mode) :
+    (prologue fs m).all entryKind = true := by
+  unfold prologue
+  cases m.framePointer
+  all_goals
+    simp only [Bool.false_eq_true, ↓reduceIte]
+    repeat' split
+    all_goals first | rfl | simp [entryKind]
 
 end Ryo.Proofs.DecodeLink

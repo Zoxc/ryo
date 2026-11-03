@@ -2,6 +2,8 @@ import Ryo.Proofs.DecodeSound.Basic
 import Ryo.Proofs.NoArgCursor
 import Ryo.Proofs.Discharge.RelocsIn
 import Ryo.Proofs.Discharge.ArgsOk
+import Ryo.Proofs.Discharge.SpDisp
+import Ryo.Proofs.DecodeSound.NoFp
 
 set_option linter.constructorNameAsVariable false
 
@@ -115,16 +117,74 @@ theorem arg_item_exec (ctx : Ctx) {d : BitVec 32} {n : Nat} {i : Item} (hf : Arg
     exact ⟨hrip, by simp only [State.reg]; exact hr _ (arg_usable_ne_rbp hu).symm,
       fun b _ => by rw [hm]⟩
 
+theorem arg_item_wf {d : BitVec 32} {n : Nat} {i : Item} (hf : ArgItemForm d n i) (p : Nat) :
+    i.wf (BitVec.ofNat 32 p) = true := by
+  rcases hf with ⟨w, r, o, rfl, -, hu⟩ | ⟨x, rfl, hs, hx⟩ | ⟨x, rfl, hx⟩ | ⟨r, amt, rfl, hu⟩
+  · simp [Item.wf, hu, Item.memWf]
+  · rcases hs with rfl | rfl | rfl <;> simp [Item.wf, hx, M.frame]
+  · simp [Item.wf, hx, X86.Reg.usable]
+  · simp [Item.wf, hu, Sh.isShift]
+
 theorem arg_item_canonical {d : BitVec 32} {n : Nat} {i : Item} (hf : ArgItemForm d n i) (p : Nat) :
     i.Canonical p := by
-  refine ⟨?_, .inl ?_⟩
-  · rcases hf with ⟨w, r, o, rfl, -⟩ | ⟨x, rfl, -⟩ | ⟨x, rfl, -⟩ | ⟨r, amt, rfl, -⟩ <;>
+  refine ⟨?_, .inl (arg_item_wf hf p)⟩
+  rcases hf with ⟨w, r, o, rfl, -⟩ | ⟨x, rfl, -⟩ | ⟨x, rfl, -⟩ | ⟨r, amt, rfl, -⟩ <;>
+    intro _ _ h <;> cases h
+
+/-- An `argStore` item in memory, in either frame form, is canonical (the `spFrame` disjunct
+without a frame pointer). -/
+theorem arg_item_canonical_fb (fb : FForm) {d : BitVec 32} {n : Nat} {i : Item}
+    (hf : ArgItemForm d n i) (p : Nat) : (FForm.item fb i).Canonical p := by
+  cases fb with
+  | none => exact arg_item_canonical hf p
+  | some F =>
+    refine ⟨?_, .inr ⟨i, F, arg_item_wf hf p, rfl⟩⟩
+    rcases hf with ⟨w, r, o, rfl, -⟩ | ⟨x, rfl, -⟩ | ⟨x, rfl, -⟩ | ⟨r, amt, rfl, -⟩ <;>
       intro _ _ h <;> cases h
-  · rcases hf with ⟨w, r, o, rfl, -, hu⟩ | ⟨x, rfl, hs, hx⟩ | ⟨x, rfl, hx⟩ | ⟨r, amt, rfl, hu⟩
-    · simp [Item.wf, hu, Item.memWf]
-    · rcases hs with rfl | rfl | rfl <;> simp [Item.wf, hx, M.frame]
-    · simp [Item.wf, hx, X86.Reg.usable]
-    · simp [Item.wf, hu, Sh.isShift]
+
+theorem arg_item_rbpFree {d : BitVec 32} {n : Nat} {i : Item} (hf : ArgItemForm d n i) :
+    i.RbpFree := by
+  have hw := arg_item_wf hf 0
+  rcases hf with ⟨w, r, o, rfl, -⟩ | ⟨x, rfl, -⟩ | ⟨x, rfl, -⟩ | ⟨r, amt, rfl, -⟩ <;> exact hw
+
+theorem arg_usable_ne_rsp {r : X86.Reg} (h : r.usable = true) : r.idx ≠ Reg.rsp.idx := by
+  cases r <;> simp_all [X86.Reg.usable] <;> decide
+
+theorem arg_item_rspKept (ctx : Ctx) {d : BitVec 32} {n : Nat} {i : Item}
+    (hf : ArgItemForm d n i) : i.RspKept ctx := by
+  intro y y' he
+  rcases hf with ⟨w, r, o, rfl, -, -⟩ | ⟨x, rfl, hs, -⟩ | ⟨x, rfl, -⟩ | ⟨r, amt, rfl, hu⟩
+  · obtain ⟨z, e, -, hr, -, -⟩ := ArgRet.exec_st ctx w r ⟨.rbp, d + BitVec.ofNat 32 o⟩ y
+    rw [he] at e; cases e
+    simp [State.rsp, State.reg, hr]
+  · obtain ⟨z, e, -, hr, -, -⟩ := ArgRet.exec_sse_st ctx n x (M.frame d) y hs
+    rw [he] at e; cases e
+    simp [State.rsp, State.reg, hr]
+  · obtain ⟨z, e, -, -, hr, -, -⟩ := ArgRet.exec_movd_from ctx x .r11 y
+    rw [he] at e; cases e
+    simp only [State.rsp, State.reg]; exact hr _ (by decide)
+  · obtain ⟨z, e, -, -, hr, -, -⟩ := ArgRet.exec_shr ctx r amt y
+    rw [he] at e; cases e
+    simp only [State.rsp, State.reg]; exact hr _ (arg_usable_ne_rsp hu).symm
+
+theorem arg_shr_ripFree (ctx : Ctx) (r : X86.Reg) (amt : BitVec 8) :
+    (Item.shift .shr .q r amt).RipFree ctx := by
+  intro s a
+  rw [exec_shift, exec_shift]
+  have e1 : ∀ b : BitVec 64, ((s.jump a).jump b).regW W.q r = s.regW W.q r := fun _ => rfl
+  have e2 : ∀ b : BitVec 64, (s.jump b).regW W.q r = s.regW W.q r := fun _ => rfl
+  simp only [e1, e2]
+  generalize (shiftF _ _ _) = pr
+  obtain ⟨v, f⟩ := pr
+  cases f <;> rfl
+
+theorem arg_item_ripFree (ctx : Ctx) {d : BitVec 32} {n : Nat} {i : Item}
+    (hf : ArgItemForm d n i) : i.RipFree ctx := by
+  rcases hf with ⟨w, r, o, rfl, -⟩ | ⟨x, rfl, -⟩ | ⟨x, rfl, -⟩ | ⟨r, amt, rfl, -⟩
+  · intro s a; cases w <;> first | rfl | (simp only [Item.exec]; split <;> rfl)
+  · intro s a; first | rfl | (simp only [Item.exec]; split <;> rfl)
+  · intro s a; first | rfl | (simp only [Item.exec]; split <;> rfl)
+  · exact arg_shr_ripFree ctx r amt
 
 theorem arg_canon {items : List Item} (h : ∀ i ∈ items, ∀ p, i.Canonical p) :
     ∀ pos, Canon items pos := by
@@ -173,6 +233,49 @@ theorem arg_inCode_dec {ctx : Ctx} {m : Mem} {c : Cursor} {rs : Array Reloc} (hk
     · rw [arg_linkedAt_length, hsz] at hj
       exact ⟨p + j, by simp at hle; omega, addrAt_add' ctx p j⟩
     · rw [hsz] at ha; exact ih hb' a ha
+
+/-- `arg_inCode_dec` in either frame form (the items as they are in memory). -/
+theorem arg_inCode_decF {ctx : Ctx} {m : Mem} {c : Cursor} {rs : Array Reloc}
+    {mode : Ryo.Obj.Mode} (hk : LinkOkF ctx m c rs mode) :
+    ∀ {p q : Nat} {items : List Item}, Dec c p items q → Boundary rs p →
+      ∀ a, InCode ctx (items.map (FForm.item c.spFrame)) p a →
+        ∃ j, j < c.code.size ∧ a = addrAt ctx j := by
+  intro p q items hd
+  induction hd with
+  | nil => intro _ a h; exact absurd h id
+  | @cons p n q i is hdi _ ih =>
+    intro hb a ha
+    obtain ⟨-, hsz, hle, hb'⟩ := nf_decodeItem_itemAt hk hb hdi
+    rw [List.map_cons] at ha
+    rcases ha with ⟨j, hj, rfl⟩ | ha
+    · rw [arg_linkedAt_length, hsz] at hj
+      exact ⟨p + j, by omega, addrAt_add' ctx p j⟩
+    · rw [hsz] at ha; exact ih hb' a ha
+
+/-- Back from the virtual state after the stores to the real one: `rsp` kept and `rbp` the
+virtual one's, so the real state's virtual state is `xv'`, its `rbp` the real one's. -/
+theorem arg_virt_real {S : Setup} {xr xv' : X86.State} (hrsp : xv'.rsp = xr.rsp)
+    (hrbp : xv'.reg .rbp = (S.virt xr).reg .rbp) :
+    S.virt (FForm.real S.body.spFrame (xr.reg .rbp) xv') = xv' := by
+  cases hsp : S.body.spFrame with
+  | none => exact S.virt_eq hsp
+  | some F =>
+    rw [nf_virt_some hsp]
+    show ((xv'.setReg .rbp (xr.reg .rbp)).setReg .rbp
+      ((xv'.setReg .rbp (xr.reg .rbp)).rsp + F.setWidth 64)) = xv'
+    rw [FForm.rsp_setReg_rbp, FForm.setReg_setReg, hrsp]
+    have e : xr.rsp + F.setWidth 64 = xv'.reg .rbp := by
+      rw [hrbp, nf_virt_some hsp, X86.State.reg_setReg]
+    rw [e, X86.State.setReg_reg_self]
+
+theorem arg_rbpOk {S : Setup} {xr xv' : X86.State} (h : RbpOk S xr) :
+    RbpOk S (FForm.real S.body.spFrame (xr.reg .rbp) xv') := by
+  intro hs
+  cases hsp : S.body.spFrame with
+  | none => exact absurd hs (by simp [Setup.fb, hsp])
+  | some F =>
+    show (xv'.setReg .rbp (xr.reg .rbp)).reg .rbp = S.x0.reg .rbp
+    rw [X86.State.reg_setReg]; exact h hs
 
 /-- A byte of the written range `[R + D, R + D + n)` (`D ∈ [-F, -n]`) is on the stack between
 `R - F` and `R + 8`. -/
@@ -493,10 +596,21 @@ theorem bodySim_arg (hD : Decodes S code relocs rodata callSites dropped scopes 
     (hr : (argInsn S.fr.mode).run (atPos S.body p) = .ok (some q, c')) :
     BodySim S k p (S.used k) := by
   have hce := arg_used_empty hD H hP.lt ha
-  intro s x hs hf hrip _ hsafe
+  intro s xr hs hfR hrip _ hsafe
   obtain ⟨a, d, hq, hs32, hi24, hofs, hdec, -⟩ := argInsn_bounds hr
-  have hL := bs_linkOk_at hf.code p
-  obtain ⟨hca, hc'pos, -⟩ := hL.dec hdec hP.bound
+  -- The virtual state the stores run from (`FForm.virtAt`; with a frame pointer `xr` itself).
+  obtain ⟨x, hxa0⟩ : ∃ x, x = FForm.virtAt S.body.spFrame (argStore a d S.c.mode.pe) xr :=
+    ⟨_, rfl⟩
+  obtain ⟨ja, hxa⟩ := nf_virtAt_jump S (argStore a d S.c.mode.pe) xr
+  rw [← hxa0] at hxa
+  have hf : FrameInv S s x := by subst hxa; exact hfR.1.congr rfl rfl rfl
+  have hxam : x.mem = xr.mem := by subst hxa; exact nf_virt_mem S xr
+  have hxrsp : x.rsp = xr.rsp := by subst hxa; exact nf_virt_rsp S xr
+  have hxrbp : x.reg .rbp = (S.virt xr).reg .rbp := by subst hxa; rfl
+  have hspP : (atPos S.body p).spFrame = S.body.spFrame := rfl
+  have hLF := hf.code.atPos p
+  obtain ⟨hca, hc'pos, -⟩ := hLF.dec hdec hP.bound
+  rw [hspP] at hca hc'pos
   have hof : ArgReg.of? (BitVec.ofNat 64 a.word).toNat true = some a := by
     have hw : (BitVec.ofNat 64 a.word).toNat = a.word := by
       rw [BitVec.toNat_ofNat]; exact Nat.mod_eq_of_lt (by have := word_lt a; omega)
@@ -571,7 +685,7 @@ theorem bodySim_arg (hD : Decodes S code relocs rodata callSites dropped scopes 
     exact hb (d.toInt + t) (by omega) (by omega) (hf.fpAddr_eq _)
   have hcode : ∀ j, j < S.body.code.size → x'.mem (addrAt S.ctx j) = x.mem (addrAt S.ctx j) :=
     fun j hj => hwinApart _ (H.codeApart _ (.inl ⟨j, hj, rfl⟩)).2.2.1
-  have hLk' : LinkOk S.ctx x'.mem S.body S.rs := by
+  have hLk' : LinkOkF S.ctx x'.mem S.body S.rs S.c.mode := by
     obtain ⟨hfl, hso, ⟨hl1, hl2⟩, hsm, hfp0⟩ := hf.code
     refine ⟨hfl, hso, ⟨fun j hj hr => ?_, fun r hr kk hkk => ?_⟩, hsm, hfp0⟩
     · rw [hcode j hj]; exact hl1 j hj hr
@@ -583,25 +697,36 @@ theorem bodySim_arg (hD : Decodes S code relocs rodata callSites dropped scopes 
     exact h2 j hj
   -- fetching
   have hform := arg_items_form a d S.c.mode.pe hv
-  have hcan : Canon (argStore a d S.c.mode.pe) p :=
-    arg_canon (fun i hi pos => arg_item_canonical (hform i hi) pos) p
-  have hInCode : ∀ b, InCode S.ctx (argStore a d S.c.mode.pe) p b →
+  have hcan : Canon ((argStore a d S.c.mode.pe).map (FForm.item S.body.spFrame)) p :=
+    arg_canon (fun j hj pos => by
+      obtain ⟨i, hi, rfl⟩ := List.mem_map.mp hj
+      exact arg_item_canonical_fb _ (hform i hi) pos) p
+  have hInCode : ∀ b, InCode S.ctx ((argStore a d S.c.mode.pe).map (FForm.item S.body.spFrame)) p b →
       a.size ≤ (b - fpAddr x d.toInt).toNat := by
     intro b hb
-    obtain ⟨j, hj, rfl⟩ := arg_inCode_dec hL hdec hP.bound b hb
+    obtain ⟨j, hj, rfl⟩ := arg_inCode_decF hLF hdec hP.bound b hb
     apply Classical.byContradiction
     intro hlt
     obtain ⟨t, ht, he⟩ := arg_in_range (Nat.lt_of_not_le hlt)
     exact (H.codeApart _ (.inl ⟨j, hj, rfl⟩)).2.2.1 (d.toInt + t) (by omega) (by omega)
       (he.trans (hf.fpAddr_eq _))
-  have hrun : FetchRun S.ctx (InCode S.ctx (argStore a d S.c.mode.pe) p)
+  have hrun : FetchRun S.ctx
+      (InCode S.ctx ((argStore a d S.c.mode.pe).map (FForm.item S.body.spFrame)) p)
       (argStore a d S.c.mode.pe) x :=
     arg_fetchRun (fun y => y.reg .rbp = x.reg .rbp) (fun i hi y y' hy he => by
       obtain ⟨h1, h2, h3⟩ := arg_item_exec S.ctx (hform i hi) hdisp hn16 he
       refine ⟨h1, fun b hb => h3 b ?_, h2.trans hy⟩
       have e : fpAddr y d.toInt = fpAddr x d.toInt := by simp [fpAddr, hy]
       rw [e]; exact hInCode b hb) x rfl
-  obtain ⟨hsteps, hripE, -⟩ := steps_of_run hcan hca hrip (fun _ h => h) hrun hx
+  obtain ⟨hsteps, hripE, -⟩ := steps_of_run_fb (ctx := S.ctx) (fb := S.body.spFrame)
+    (S := InCode S.ctx ((argStore a d S.c.mode.pe).map (FForm.item S.body.spFrame)) p)
+    (items := argStore a d S.c.mode.pe) (pos := p) (x := xr) (xv' := x')
+    (fun i hi => arg_item_rbpFree (hform i hi))
+    (fun F hF i hi => H.spDisp F hF (atPos S.body p) rfl hF _ _ _ hdec i hi)
+    (fun i hi => arg_item_ripFree S.ctx (hform i hi))
+    (fun i hi => arg_item_rspKept S.ctx (hform i hi))
+    hcan (by rw [← hxam]; exact hca) hrip (fun _ h => h)
+    (by rw [← hxa0]; exact hrun) (by rw [← hxa0]; exact hx)
   -- R's state after the scopes and the write
   have hk1 := scopes_keeps _ hsc
   obtain ⟨-, hsep1⟩ := sep_foldlM _ (H.frameBounds.scopesIn s.pc) (H.frameBounds.window hf.win)
@@ -657,7 +782,7 @@ theorem bodySim_arg (hD : Decodes S code relocs rodata callSites dropped scopes 
     have e0 : x.reg .rbp = fpAddr x 0 := by simp [fpAddr]
     refine ⟨by rw [hrbp]; exact f1, ?_, ?_, fun i hi h5 => ?_⟩
     · rw [hrbp, e8, hread 8 (by omega) (by omega), ← e8]; exact f2
-    · rw [hrbp, e0, hread 0 (by omega) (by omega), ← e0]; exact f3
+    · intro hfp3; rw [hrbp, e0, hread 0 (by omega) (by omega), ← e0]; exact f3 hfp3
     · rcases hi with hcs | ⟨hpe, h67⟩
       · rw [hregs i (fun g hg h => (arg_clobbers_ok a _ g hg).2.2 (h ▸ hcs))]
         exact f4 i (.inl hcs) h5
@@ -668,21 +793,29 @@ theorem bodySim_arg (hD : Decodes S code relocs rodata callSites dropped scopes 
             first | exact this.1 h | exact this.1 h.symm | exact this.2 h | exact this.2 h.symm)]
         exact f4 i (.inr ⟨hpe, h67⟩) h5
   have hconv := argsOk_conv hD H.inlineOk k _ hlead hRA
-  refine Reach.steps hsteps (.done (.inl ⟨_, .step hstep, ⟨⟨hr', hmem', hsep', hk1.fp ▸ hf.win,
-    hk1.fp ▸ hf.fpF, by rw [hrsp, hrbp]; exact hf.rsp, by rw [hrsp]; exact hf.room, hLk', hro',
-    fun _ => ?_, hframe', (H.slots_scopes hf hsc).writeFrame_above hw
-      (Discharge.PeStackArg.arg_lo H.boundsOk hik hf' arg_shape hof),
-    (((hf.esc.scopes hsc).mono (pc' := s1.pc + 1) (fun _ => hs ▸ hlead) (by have := hk1.pc; omega)).congr hescEq :)⟩,
-    .inl ⟨?_, ?_⟩⟩⟩))
-  · show ArgsLive S (s1.pc + 1) s1.args x'
-    rw [hk1.pc, hk1.args, hs]
-    exact arg_argsLive_succ hlive hRA hconv hregs hxm
-  · show x'.rip = addrAt S.ctx (S.start (s1.pc + 1))
+  have hFI : FrameInv S { s1 with pc := s1.pc + 1, st := st' } x' :=
+    ⟨hr', hmem', hsep', hk1.fp ▸ hf.win, hk1.fp ▸ hf.fpF, by rw [hrsp, hrbp]; exact hf.rsp,
+      by rw [hrsp]; exact hf.room, hLk', hro',
+      (fun _ => by
+        show ArgsLive S (s1.pc + 1) s1.args x'
+        rw [hk1.pc, hk1.args, hs]
+        exact arg_argsLive_succ hlive hRA hconv hregs hxm),
+      hframe', (H.slots_scopes hf hsc).writeFrame_above hw
+        (Discharge.PeStackArg.arg_lo H.boundsOk hik hf' arg_shape hof),
+      (((hf.esc.scopes hsc).mono (pc' := s1.pc + 1) (fun _ => hs ▸ hlead)
+        (by have := hk1.pc; omega)).congr hescEq :)⟩
+  have hripN : x'.rip = addrAt S.ctx (S.start (s1.pc + 1)) := by
     rw [hk1.pc, hs, hstop, hc'pos]
     exact hripE
-  · show CacheInv (S.cache (s1.pc + 1)) x'
+  have hcacheN : CacheInv (S.cache (s1.pc + 1)) x' := by
     rw [hk1.pc, hs, hcache, hce]
     exact CacheInv.emptyPe _ _
+  -- Back to the real state.
+  have hvr : S.virt (FForm.real S.body.spFrame (xr.reg .rbp) x') = x' :=
+    arg_virt_real (hrsp.trans hxrsp) (hrbp.trans hxrbp)
+  refine Reach.steps hsteps (.done (.inl ⟨_, .step hstep,
+    ⟨⟨by rw [hvr]; exact hFI, arg_rbpOk hfR.2⟩,
+      .inl ⟨by rw [nf_real_rip]; exact hripN, by rw [hvr]; exact hcacheN⟩⟩⟩))
 
 end Insn
 

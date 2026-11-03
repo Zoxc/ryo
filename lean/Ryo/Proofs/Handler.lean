@@ -47,6 +47,7 @@ not fetched from memory: the composition into `decode_sound` places them at thei
 import Ryo.Proofs.Inline.Mem
 import Ryo.Proofs.ScopeMem
 import Ryo.Proofs.Counter
+import Ryo.X86.VRet
 
 set_option linter.constructorNameAsVariable false
 
@@ -189,6 +190,115 @@ structure HandlerContract (ctx : Ctx) (ρ : R.Addrs) (mode : Ryo.Obj.Mode) (Owne
       (∀ i, CalleeSaved i → x'.regs i = x.regs i) ∧
       ∀ a, ¬ MayWrite Owned lo (R.handlerHome mode.pe args.length) h vals st x a →
         x'.mem a = x.mem a
+
+/-- The handler contract with the frame pointer `b` explicit (trusted; what `Hyps` assumes): as
+`HandlerContract`, with every relation read with `rbp := b` (`x.setReg .rbp b`: `fp`'s argument
+value, the frame relation, the write ranges). A handler reads `fp` from its argument register
+(`mode.fpArg`) or from `rbp` (`fpIn`); without a frame pointer `fp` is `rsp + F`, not `rbp`.
+`toContract` is the frame-pointer case (`b := x.reg .rbp`); `virt` reads it on virtual states. -/
+structure HandlerContractB (ctx : Ctx) (ρ : R.Addrs) (mode : Ryo.Obj.Mode)
+    (Owned : BitVec 64 → Prop) (lo : BitVec 64) (Ret : Full.Opcode → X86.State → X86.State → Prop) :
+    Prop where
+  returns : ∀ h args vals st x b, h.hasHandler = true → R.unpack ρ h mode args = some vals →
+    AtHandler ctx h x → (mode.fpArg = false → x.reg .rbp = b) →
+    ArgsIn ρ mode.pe (x.setReg .rbp b) x args → HRel st (x.setReg .rbp b) → NoUB h vals st →
+    (∃ ch r, opSem h vals st ch = .ok r) → ∃ x', Ret h x x'
+  sound : ∀ h args vals st x x' b, h.hasHandler = true → R.unpack ρ h mode args = some vals →
+    AtHandler ctx h x → (mode.fpArg = false → x.reg .rbp = b) →
+    ArgsIn ρ mode.pe (x.setReg .rbp b) x args → HRel st (x.setReg .rbp b) → NoUB h vals st →
+    ∀ ho : Int, fpAddr (x.setReg .rbp b) ho = x.rsp + 8 →
+    ScopeMem.FrameOwn ho (ho + R.handlerHome mode.pe args.length) st (x.setReg .rbp b) →
+    Ret h x x' →
+    ∃ ch ctl st', opSem h vals st ch = .ok (ctl, st') ∧
+      (∀ st'', R.clearHome mode.pe args.length ho st' = .ok st'' →
+        HRel st'' (x'.setReg .rbp b)) ∧
+      CtlIn ctl x' ∧ x'.rsp = x.rsp + 8 ∧ x'.rip = x.mem.read64 x.rsp ∧
+      (∀ i, CalleeSaved i → x'.regs i = x.regs i) ∧
+      ∀ a, ¬ MayWrite Owned lo (R.handlerHome mode.pe args.length) h vals st (x.setReg .rbp b) a →
+        x'.mem a = x.mem a
+
+/-- The frame-pointer case: `b` is `rbp`. -/
+theorem HandlerContractB.toContract {ctx : Ctx} {ρ : R.Addrs} {mode : Ryo.Obj.Mode}
+    {Owned : BitVec 64 → Prop} {lo : BitVec 64} {Ret : Full.Opcode → X86.State → X86.State → Prop}
+    (hC : HandlerContractB ctx ρ mode Owned lo Ret) : HandlerContract ctx ρ mode Owned lo Ret := by
+  refine ⟨fun h args vals st x hh hu hat hA hH hno hex => ?_,
+    fun h args vals st x x' hh hu hat hA hH hno ho hho hown hret => ?_⟩
+  · have e := X86.State.setReg_reg_self x .rbp
+    exact hC.returns h args vals st x (x.reg .rbp) hh hu hat (fun _ => rfl) (by rw [e]; exact hA)
+      (by rw [e]; exact hH) hno hex
+  · have e := X86.State.setReg_reg_self x .rbp
+    obtain ⟨ch, ctl, st', h1, h2, h3, h4, h5, h6, h7⟩ := hC.sound h args vals st x x' (x.reg .rbp)
+      hh hu hat (fun _ => rfl) (by rw [e]; exact hA) (by rw [e]; exact hH) hno ho
+      (by rw [e]; exact hho) (by rw [e]; exact hown) hret
+    refine ⟨ch, ctl, st', h1, fun st'' hc => ?_, h3, h4, h5, h6, fun a ha => h7 a (by rw [e]; exact ha)⟩
+    have hrbp : x'.reg .rbp = x.reg .rbp := h6 5 (Or.inr (Or.inl rfl))
+    have := h2 st'' hc
+    rw [← hrbp, X86.State.setReg_reg_self] at this
+    exact this
+
+/-! ### Replacing `rbp` -/
+
+theorem setRbp_reg (x : X86.State) (v : BitVec 64) (r : Reg) (h : r ≠ .rbp) :
+    (x.setReg .rbp v).reg r = x.reg r :=
+  X86.State.reg_setReg_other x .rbp r v (by cases r <;> first | exact absurd rfl h | decide)
+
+theorem setRbp_rsp (x : X86.State) (v : BitVec 64) : (x.setReg .rbp v).rsp = x.rsp :=
+  setRbp_reg x v .rsp (by decide)
+
+/-- Registers kept across a call stay kept with `rbp` replaced alike on both ends. -/
+theorem setRbp_saved {x x' : X86.State} {v : BitVec 64} {P : Fin 16 → Prop}
+    (h : ∀ i, P i → x'.regs i = x.regs i) :
+    ∀ i, P i → (x'.setReg .rbp v).regs i = (x.setReg .rbp v).regs i := by
+  intro i hi
+  show (if i = Reg.rbp.idx then v else x'.regs i) = (if i = Reg.rbp.idx then v else x.regs i)
+  rw [h i hi]
+
+theorem handlerRegs_ne_rbp (pe : Bool) : ∀ r ∈ handlerRegs pe, r ≠ .rbp := by
+  intro r hr
+  cases pe <;> simp [handlerRegs, Ryo.X86.argRegs] at hr <;>
+    rcases hr with rfl | rfl | rfl | rfl | rfl | rfl <;> decide
+
+theorem ctlIn_setRbp {c : Control} {x : X86.State} (v : BitVec 64) (h : CtlIn c x) :
+    CtlIn c (x.setReg .rbp v) := by
+  cases c with
+  | next => trivial
+  | branch b =>
+    show ((x.setReg .rbp v).reg .rax).setWidth _ = _
+    rw [setRbp_reg x v .rax (by decide)]; exact h
+  | index i =>
+    show (x.setReg .rbp v).reg .rax = _
+    rw [setRbp_reg x v .rax (by decide)]; exact h
+
+/-- On virtual states (`VRet`, `rbp` replaced by `fp` before and after the handler): the contract
+in the frame-pointer form. Only when `fp` is passed in a register (`mode.fpArg`; without a frame
+pointer always, `Mode.valid`): `VRet` forgets the real `rbp`, which a handler reading `fp` from
+`rbp` would need. With a frame pointer and no `fpArg` the virtual state is the real one, use
+`toContract`. -/
+theorem HandlerContractB.virt {ctx : Ctx} {ρ : R.Addrs} {mode : Ryo.Obj.Mode}
+    {Owned : BitVec 64 → Prop} {lo : BitVec 64} {Ret : Full.Opcode → X86.State → X86.State → Prop}
+    (hC : HandlerContractB ctx ρ mode Owned lo Ret) (hm : mode.fpArg = true) :
+    HandlerContract ctx ρ mode Owned lo (fun h => VRet (Ret h)) := by
+  refine ⟨fun h args vals st xv hh hu hat hA hH hno hex => ?_,
+    fun h args vals st xv xv' hh hu hat hA hH hno ho hho hown hret => ?_⟩
+  · have e := X86.State.setReg_reg_self xv .rbp
+    obtain ⟨x', hR⟩ := hC.returns h args vals st xv (xv.reg .rbp) hh hu hat (fun _ => rfl)
+      (by rw [e]; exact hA) (by rw [e]; exact hH) hno hex
+    exact ⟨x'.setReg .rbp (xv.reg .rbp), xv.reg .rbp, xv, x', hR, e.symm, rfl⟩
+  · obtain ⟨v, x, x', hR, rfl, rfl⟩ := hret
+    have hat' : AtHandler ctx h x := hat
+    have hA' : ArgsIn ρ mode.pe (x.setReg .rbp v) x args := by
+      refine ⟨fun i h1 h2 => ?_, fun h1 hpe => ?_⟩
+      · rw [hA.1 i h1 h2, setRbp_reg x v _
+          (handlerRegs_ne_rbp mode.pe _ (List.getElem_mem h2))]
+      · obtain ⟨w, hw1, hw2, hw3⟩ := hA.2 h1 hpe
+        rw [setRbp_rsp] at hw3
+        exact ⟨w, hw1, hw2, hw3⟩
+    obtain ⟨ch, ctl, st', h1, h2, h3, h4, h5, h6, h7⟩ := hC.sound h args vals st x x' v hh hu
+      hat' (fun hf => by rw [hm] at hf; cases hf) hA' hH hno ho (by rw [hho, setRbp_rsp]) hown hR
+    refine ⟨ch, ctl, st', h1, h2, ctlIn_setRbp v h3, ?_, ?_, setRbp_saved h6, fun a ha => h7 a ha⟩
+    · rw [setRbp_rsp, setRbp_rsp]; exact h4
+    · show x'.rip = x.mem.read64 (x.setReg .rbp v).rsp
+      rw [setRbp_rsp]; exact h5
 
 /-! ### The setup -/
 

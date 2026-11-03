@@ -149,6 +149,147 @@ structure IslandContract (ctx : Ctx) (pe : Bool) (Owned : BitVec 64 → Prop) (l
     ∃ a exc, a.result = .unwind exc ∧ IslandEnd pe Owned lo fp lends w x x' a ∧
       Landed pe padOf (x.rsp + 8) x x' exc
 
+/-- The template's entry with the frame pointer explicit (what `IslandContractB` and
+`EnvOutside` assume): as `IslandAt` without `rbp = fp`, the frame relation read with
+`rbp := fp`. Without a frame pointer `rbp` is the caller's, `fp` only in the argument register. -/
+structure IslandAtB (ctx : Ctx) (pe : Bool) (isl fp : Nat) (ops : List Int) (st : OpSem.State)
+    (w : R.World) (x : X86.State) : Prop where
+  target : x.rip = x.mem.read64 (ctx.addrOf (.sym isl))
+  fpArg : x.reg (islandRegs pe).1 = BitVec.ofNat 64 fp
+  ops : OpsAt x.mem (x.reg (islandRegs pe).2) ops
+  frame : Rel st (x.setReg .rbp (BitVec.ofNat 64 fp))
+  world : WorldRel w x
+
+theorem IslandAt.toB {ctx : Ctx} {pe : Bool} {isl fp : Nat} {ops : List Int} {st : OpSem.State}
+    {w : R.World} {x : X86.State} (h : IslandAt ctx pe isl fp ops st w x) :
+    IslandAtB ctx pe isl fp ops st w x :=
+  ⟨h.target, h.fpArg, h.ops, by rw [← h.rbp, X86.State.setReg_reg_self]; exact h.frame, h.world⟩
+
+/-- The environment's contract for islands with the frame pointer explicit (trusted; what `Hyps`
+assumes): as `IslandContract`, from every `IslandAtB` entry. `toContract`: the frame-pointer
+case; `virt`: on virtual states. -/
+structure IslandContractB (ctx : Ctx) (pe : Bool) (Owned : BitVec 64 → Prop) (lo : BitVec 64)
+    (padOf : BitVec 64 → Option (BitVec 64)) (Safe : R.Query → Prop)
+    (Ret Unw : X86.State → X86.State → Prop) : Prop where
+  ret : ∀ isl tpl fp ops lends st w x x', IslandAtB ctx pe isl fp ops st w x →
+    Safe ⟨.island isl tpl fp ops lends, w⟩ → Ret x x' →
+    ∃ a, IslandReturn pe Owned lo fp lends w x x' a
+  unwind : ∀ isl tpl fp ops lends st w x x', IslandAtB ctx pe isl fp ops st w x →
+    Safe ⟨.island isl tpl fp ops lends, w⟩ → Unw x x' →
+    ∃ a exc, a.result = .unwind exc ∧ IslandEnd pe Owned lo fp lends w x x' a ∧
+      Landed pe padOf (x.rsp + 8) x x' exc
+
+theorem IslandContractB.toContract {ctx : Ctx} {pe : Bool} {Owned : BitVec 64 → Prop}
+    {lo : BitVec 64} {padOf : BitVec 64 → Option (BitVec 64)} {Safe : R.Query → Prop}
+    {Ret Unw : X86.State → X86.State → Prop}
+    (hC : IslandContractB ctx pe Owned lo padOf Safe Ret Unw) :
+    IslandContract ctx pe Owned lo padOf Safe Ret Unw :=
+  ⟨fun isl tpl fp ops lends st w x x' h => hC.ret isl tpl fp ops lends st w x x' h.toB,
+    fun isl tpl fp ops lends st w x x' h => hC.unwind isl tpl fp ops lends st w x x' h.toB⟩
+
+theorem islandEnd_setRbp {pe : Bool} {Owned : BitVec 64 → Prop} {lo : BitVec 64} {fp : Nat}
+    {lends : List (Int × Nat)} {w : R.World} {x x' : X86.State} {a : R.Answer} (v : BitVec 64)
+    (h : IslandEnd pe Owned lo fp lends w x x' a) :
+    IslandEnd pe Owned lo fp lends w (x.setReg .rbp v) (x'.setReg .rbp v) a :=
+  ⟨h.frameLen, h.frame, h.world, h.grows, fun b hb => h.mem b (by rwa [Handler.setRbp_rsp] at hb)⟩
+
+theorem landed_setRbp {pe : Bool} {padOf : BitVec 64 → Option (BitVec 64)} {sp0 : BitVec 64}
+    {x x' : X86.State} {exc : ThinPointer} (v : BitVec 64) (h : Landed pe padOf sp0 x x' exc) :
+    Landed pe padOf sp0 (x.setReg .rbp v) (x'.setReg .rbp v) exc := by
+  refine ⟨?_, ?_, ?_, Handler.setRbp_saved h.saved⟩
+  · rw [Handler.setRbp_rsp]; exact h.rip
+  · rw [Handler.setRbp_reg x' v .rax (by decide)]; exact h.rax
+  · rw [Handler.setRbp_rsp]; exact h.rsp
+
+/-- On virtual states (`VRet`): the contract in the frame-pointer form. -/
+theorem IslandContractB.virt {ctx : Ctx} {pe : Bool} {Owned : BitVec 64 → Prop}
+    {lo : BitVec 64} {padOf : BitVec 64 → Option (BitVec 64)} {Safe : R.Query → Prop}
+    {Ret Unw : X86.State → X86.State → Prop}
+    (hC : IslandContractB ctx pe Owned lo padOf Safe Ret Unw) :
+    IslandContract ctx pe Owned lo padOf Safe (VRet Ret) (VRet Unw) := by
+  have hB : ∀ {isl fp ops st w x} (v : BitVec 64),
+      IslandAt ctx pe isl fp ops st w (x.setReg .rbp v) → IslandAtB ctx pe isl fp ops st w x := by
+    intro isl fp ops st w x v hAt
+    have hv : v = BitVec.ofNat 64 fp := by rw [← hAt.rbp, X86.State.reg_setReg]
+    have h1 : (islandRegs pe).1 ≠ .rbp := by cases pe <;> decide
+    have h2 : (islandRegs pe).2 ≠ .rbp := by cases pe <;> decide
+    refine ⟨hAt.target, (Handler.setRbp_reg x v _ h1).symm.trans hAt.fpArg, ?_, ?_, hAt.world⟩
+    · rw [← Handler.setRbp_reg x v _ h2]; exact hAt.ops
+    · rw [← hv]; exact hAt.frame
+  refine ⟨fun isl tpl fp ops lends st w xv xv' hAt hS hret => ?_,
+    fun isl tpl fp ops lends st w xv xv' hAt hS hret => ?_⟩
+  · obtain ⟨v, x, x', hR, rfl, rfl⟩ := hret
+    obtain ⟨a, hr⟩ := hC.ret isl tpl fp ops lends st w x x' (hB v hAt) hS hR
+    refine ⟨a, islandEnd_setRbp v hr.toIslandEnd, hr.result, ?_, ?_, Handler.setRbp_saved hr.saved⟩
+    · show x'.rip = x.mem.read64 (x.setReg .rbp v).rsp
+      rw [Handler.setRbp_rsp]; exact hr.rip
+    · rw [Handler.setRbp_rsp, Handler.setRbp_rsp]; exact hr.rsp
+  · obtain ⟨v, x, x', hR, rfl, rfl⟩ := hret
+    obtain ⟨a, exc, h1, h2, h3⟩ := hC.unwind isl tpl fp ops lends st w x x' (hB v hAt) hS hR
+    refine ⟨a, exc, h1, islandEnd_setRbp v h2, ?_⟩
+    rw [Handler.setRbp_rsp]; exact landed_setRbp v h3
+
+theorem intArg_ne_rbp (pe : Bool) (i : Nat) : Ryo.Vm.Asm.intArg pe i ≠ .rbp := by
+  unfold Ryo.Vm.Asm.intArg
+  rcases i with _ | _ | _ | _ | _ | _ | i <;> cases pe <;> simp
+
+theorem callEnd_setRbp {Owned : BitVec 64 → Prop} {lo : BitVec 64} {sp n : Nat} {w : R.World}
+    {x x' : X86.State} {a : R.Answer} (v : BitVec 64) (h : Call.CallEnd Owned lo sp n w x x' a) :
+    Call.CallEnd Owned lo sp n w (x.setReg .rbp v) (x'.setReg .rbp v) a :=
+  ⟨h.frame, h.world, h.grows, h.mem⟩
+
+/-- A callee's contract on virtual states (`VRet`). -/
+theorem _root_.Ryo.Proofs.Call.CallContract.virt {ctx : Ctx} {pe : Bool}
+    {Owned : BitVec 64 → Prop} {lo : BitVec 64} {padOf : BitVec 64 → Option (BitVec 64)}
+    {Safe : R.Query → Prop} {Ret Unw : X86.State → X86.State → Prop}
+    (hC : Call.CallContract ctx pe Owned lo padOf Safe Ret Unw) :
+    Call.CallContract ctx pe Owned lo padOf Safe (VRet Ret) (VRet Unw) := by
+  have hE : ∀ {cal regs sp stack w x} (v : BitVec 64),
+      Call.EntryAt ctx pe cal regs sp stack w (x.setReg .rbp v) →
+      Call.EntryAt ctx pe cal regs sp stack w x := by
+    intro cal regs sp stack w x v h
+    refine ⟨h.target, fun r hr => ArgRet.RegRel.congr (h.args r hr)
+      (fun i _ => (Handler.setRbp_reg x v _ (intArg_ne_rbp pe i)).symm) (fun _ _ => rfl),
+      ?_, h.stack, h.world⟩
+    rw [← Handler.setRbp_rsp x v]; exact h.rsp
+  refine ⟨fun cal regs sp stack w xv xv' hAt hS hpe hret => ?_,
+    fun cal regs sp stack w xv xv' hAt hS hpe hret => ?_⟩
+  · obtain ⟨v, x, x', hR, rfl, rfl⟩ := hret
+    obtain ⟨a, hr⟩ := hC.ret cal regs sp stack w x x' (hE v hAt) hS hpe hR
+    obtain ⟨rs, hrs, hrr⟩ := hr.regs
+    refine ⟨a, callEnd_setRbp v hr.toCallEnd, ⟨rs, hrs, fun r hm => ?_⟩, ?_, ?_,
+      Handler.setRbp_saved hr.saved⟩
+    · have := hrr r hm
+      cases r with
+      | gpr i =>
+        simp only [ArgRet.retBytes] at this ⊢
+        rw [Handler.setRbp_reg x' v (if i = 0 then .rax else .rdx) (by split <;> decide)]
+        exact this
+      | xmm i => exact this
+    · show x'.rip = x.mem.read64 (x.setReg .rbp v).rsp
+      rw [Handler.setRbp_rsp]; exact hr.rip
+    · rw [Handler.setRbp_rsp, Handler.setRbp_rsp]; exact hr.rsp
+  · obtain ⟨v, x, x', hR, rfl, rfl⟩ := hret
+    obtain ⟨a, exc, h1, h2, h3⟩ := hC.unwind cal regs sp stack w x x' (hE v hAt) hS hpe hR
+    refine ⟨a, exc, h1, callEnd_setRbp v h2, ?_⟩
+    rw [Handler.setRbp_rsp]; exact landed_setRbp v h3
+
+/-- A trip's contract on virtual states (`VRet`). -/
+theorem _root_.Ryo.Proofs.Counter.TripContract.virt {Owned : BitVec 64 → Prop} {lo : BitVec 64}
+    {Returns : X86.State → X86.State → Prop} (hC : Counter.TripContract Owned lo Returns) :
+    Counter.TripContract Owned lo (VRet Returns) := by
+  refine ⟨fun s s' h => ?_, fun s s' h => ?_, fun s s' h => ?_, fun s s' h hlo a ha hs => ?_⟩
+  · obtain ⟨v, x, x', hR, rfl, rfl⟩ := h
+    show x'.rip = x.mem.read64 (x.setReg .rbp v).rsp
+    rw [Handler.setRbp_rsp]; exact hC.ret_rip x x' hR
+  · obtain ⟨v, x, x', hR, rfl, rfl⟩ := h
+    rw [Handler.setRbp_rsp, Handler.setRbp_rsp]; exact hC.ret_rsp x x' hR
+  · obtain ⟨v, x, x', hR, rfl, rfl⟩ := h
+    exact Handler.setRbp_saved (hC.ret_saved x x' hR)
+  · obtain ⟨v, x, x', hR, rfl, rfl⟩ := h
+    rw [Handler.setRbp_rsp] at hlo hs
+    exact hC.ret_mem x x' hR hlo a ha hs
+
 /-- No initialized private frame byte outside the `Lend` extents and the range `sh` (the
 shadow space, which R's answer makes `Uninit`: `Code.islandWrites`) is where the template may
 write. Only initialized ones: an `Uninit` byte relates to any x86 byte, and over all private

@@ -310,7 +310,8 @@ abbrev ctr_Keeps (S : Setup) (x : X86.State) (m : Mem) : Prop :=
   ∀ a, ¬ S.Owned a → ¬ InStack S.lo x.rsp a → m a = x.mem a
 
 theorem ctr_linkOk (H : Hyps S) (HC : CounterApart S) {s : R.RState} {x : X86.State}
-    (hf : FrameInv S s x) {m : Mem} (hm : ctr_Keeps S x m) : LinkOk S.ctx m S.body S.rs := by
+    (hf : FrameInv S s x) {m : Mem} (hm : ctr_Keeps S x m) :
+    LinkOkF S.ctx m S.body S.rs S.c.mode := by
   have hc : ∀ j, j < S.body.code.size → m (addrAt S.ctx j) = x.mem (addrAt S.ctx j) := by
     intro j hj
     obtain ⟨ho, hst, -⟩ := H.codeApart (addrAt S.ctx j) (.inl ⟨j, hj, rfl⟩)
@@ -415,7 +416,7 @@ theorem ctr_frameInv (H : Hyps S) (HC : CounterApart S) {s : R.RState} {x y : X8
         · rw [g6]; exact f5 _ (Or.inr ⟨hpe, Or.inl rfl⟩) h5
         · rw [g7]; exact f5 _ (Or.inr ⟨hpe, Or.inr rfl⟩) h5
     · rw [hrbp, e8, ctr_read64 H HC hf hm (by omega) (by omega), ← e8]; exact f2
-    · rw [hrbp, e0, ctr_read64 H HC hf hm (by omega) (by omega), ← e0]; exact f3
+    · intro hfp3; rw [hrbp, e0, ctr_read64 H HC hf hm (by omega) (by omega), ← e0]; exact f3 hfp3
 
 theorem ctr_link_length (addr : BitVec 64) (addrOf : RefAddr) :
     ∀ (relocs : List X86.Reloc) (code : List UInt8), (link addr addrOf code relocs).length = code.length
@@ -448,14 +449,62 @@ theorem ctr_inCode_dec {ctx : Ctx} {m : Mem} {c : Cursor} {rs : Array Reloc} (hk
       exact ⟨p + j, by simp at hle; omega, addrAt_add' ctx p j⟩
     · rw [hsz] at ha; exact ih hb' a ha
 
-/-- Code bytes are neither runtime-owned nor on the stack below a boundary's `rsp`. -/
-theorem ctr_code_apart (H : Hyps S) {s : R.RState} {x : X86.State} (hf : FrameInv S s x)
+/-- `ctr_inCode_dec` in either frame form: the addresses of the items in memory. -/
+theorem ctr_inCode_decF {ctx : Ctx} {m : Mem} {c : Cursor} {rs : Array Reloc} {mode : Ryo.Obj.Mode}
+    (hk : LinkOkF ctx m c rs mode) :
+    ∀ {p q : Nat} {items : List Item}, Dec c p items q → Boundary rs p →
+      ∀ a, InCode ctx (items.map (FForm.item c.spFrame)) p a → ∃ j, j < c.code.size ∧ a = addrAt ctx j := by
+  intro p q items hd
+  induction hd with
+  | nil => intro _ a h; exact absurd h id
+  | @cons p n q i is hdi _ ih =>
+    intro hb a ha
+    obtain ⟨-, hsz, hle, hb'⟩ := decodeItem_itemAt_F (c := atPos c p) (hk.atPos p) hb hdi
+    have e : (atPos c p).spFrame = c.spFrame := rfl
+    rw [e] at hsz
+    rw [List.map_cons] at ha
+    rcases ha with ⟨j, hj, rfl⟩ | ha
+    · rw [ctr_linkedAt_length, hsz] at hj
+      exact ⟨p + j, by simp at hle; omega, addrAt_add' ctx p j⟩
+    · rw [hsz] at ha; exact ih hb' a ha
+
+/-- `ctr_code_apart` in either frame form, from the virtual state's `FrameInv`, for the real
+state (`rsp` is the same). -/
+theorem ctr_code_apartF {s : R.RState} {x : X86.State} (H : Hyps S) (hf : FrameInv S s (S.virt x))
     {p q : Nat} {items : List Item} (hd : Dec S.body p items q) (hb : Boundary S.rs p) :
-    ∀ a, InCode S.ctx items p a → ¬ S.Owned a ∧ ¬ InStack S.lo x.rsp a := by
+    ∀ a, InCode S.ctx (items.map (FForm.item S.body.spFrame)) p a →
+      ¬ S.Owned a ∧ ¬ InStack S.lo x.rsp a := by
   intro a ha
-  obtain ⟨j, hj, rfl⟩ := ctr_inCode_dec hf.code hd hb a ha
+  obtain ⟨j, hj, rfl⟩ := ctr_inCode_decF hf.code hd hb a ha
   obtain ⟨ho, hst, -⟩ := H.codeApart _ (.inl ⟨j, hj, rfl⟩)
-  exact ⟨ho, ctr_inStack_lift H hf hst⟩
+  have := ctr_inStack_lift H hf hst
+  rw [setup_virt_rsp] at this
+  exact ⟨ho, this⟩
+
+/-- `Counter.Agree` carries over to the virtual states (`virt` reads only `rsp`). -/
+theorem ctr_agree_virt {S : Setup} {Owned : BitVec 64 → Prop} {lo : BitVec 64} {x y : X86.State}
+    (h : Counter.Agree Owned lo x y) : Counter.Agree Owned lo (S.virt x) (S.virt y) := by
+  obtain ⟨h1, h2, h3⟩ := h
+  refine ⟨by rw [setup_virt_rsp, setup_virt_rsp, h1], setup_virt_regs_congr S h2 h1,
+    fun a ha hs => ?_⟩
+  rw [setup_virt_mem, setup_virt_mem]
+  rw [setup_virt_rsp] at hs
+  exact h3 a ha hs
+
+/-- `ctr_frameInv` on real states: `FrameInvR` survives a state that agrees with `x` (`rbp`, a
+callee-saved register, included). -/
+theorem ctr_frameInvR (H : Hyps S) (HC : CounterApart S) {s : R.RState} {x y : X86.State}
+    (hf : FrameInvR S s x) (hag : Counter.Agree S.Owned S.lo x y) (ha : ¬ LeadArg S s.pc)
+    (hsv : S.c.mode.pe = true → y.regs 6 = x.regs 6 ∧ y.regs 7 = x.regs 7) :
+    FrameInvR S s y := by
+  obtain ⟨hfv, hok⟩ := hf
+  have hr5 : y.reg .rbp = x.reg .rbp := hag.2.1 5 (Or.inr (Or.inl rfl))
+  refine ⟨ctr_frameInv H HC hfv (ctr_agree_virt hag) ha fun hpe => ?_, fun h => hr5.trans (hok h)⟩
+  rw [setup_virt_regs_ne S y (by decide : (6 : Fin 16) ≠ 5),
+    setup_virt_regs_ne S y (by decide : (7 : Fin 16) ≠ 5),
+    setup_virt_regs_ne S x (by decide : (6 : Fin 16) ≠ 5),
+    setup_virt_regs_ne S x (by decide : (7 : Fin 16) ≠ 5)]
+  exact hsv hpe
 
 theorem ctr_push_other (lo sp a : BitVec 64) (hlo : lo.toNat + 8 ≤ sp.toNat)
     (ha : ¬ InStack lo sp a) : 8 ≤ (a - (sp - 8)).toNat := by
@@ -480,36 +529,44 @@ through to `p2`; a trip branches to the stub (`stubsLinked_of_decodes`), whose `
 environment step (`H.envOutside.trip`) returning to its `jmp back` (`back = p2`); `ctr_frameInv`
 with `ctr_apart hD H` keeps `FrameInv` (a loop head isn't a leading `arg`, `CounterApart.heads`),
 and the cache there is empty (`heads`, `CacheInv.empty`); on PE the trip keeps `rsi`/`rdi`
-(`H.peSaved`). -/
+(`H.peSaved`). In either frame form: the check and the stub have no frame operand, so they are
+the same items in memory and run on the real state; the relation is the virtual state's
+(`ctr_frameInvR`, `ctr_agree_virt`). -/
 theorem reach_counter (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (H : Hyps S) {k p1 p2 stub : Nat} (hk : k < S.r.protos.size)
     (hq : S.r.protos[k].counter = some (stub, p2))
     (hctr : CounterRead S.fr S.body p1 (some (stub, p2)) p2) (hb : Boundary S.rs p1)
     {Q : X86.State → Prop} {s : R.RState} {x : X86.State} (hs : s.pc = k)
-    (hf : FrameInv S s x) (hrip : x.rip = addrAt S.ctx p1) (_hci : CacheInv (S.used k) x)
-    (kont : ∀ y, FrameInv S s y → y.rip = addrAt S.ctx p2 → CacheInv (S.used k) y →
+    (hfR : FrameInvR S s x) (hrip : x.rip = addrAt S.ctx p1)
+    (_hci : CacheInv (S.used k) (S.virt x))
+    (kont : ∀ y, FrameInvR S s y → y.rip = addrAt S.ctx p2 → CacheInv (S.used k) (S.virt y) →
       Reach S.ctx S.E Q y) :
     Reach S.ctx S.E Q x := by
+  have hf := hfR.1
   have htrip : S.c.mode.pe = true → ∀ a b, S.E.ret a b → b.regs 6 = a.regs 6 ∧ b.regs 7 = a.regs 7 :=
     H.peSaved
   have HC := ctr_apart hD H
   obtain ⟨huk, hnl⟩ := HC.heads k hk (by rw [hq]; rfl)
   have hci0 : ∀ y, CacheInv (S.used k) y := fun y => by rw [huk]; exact CacheInv.empty y
   have hnl' : ¬ LeadArg S s.pc := by rw [hs]; exact hnl
-  obtain ⟨hbs, n, t', long', q, ht', hdecs⟩ := stubsLinked_of_decodes hD (stubsBoundary_of_decodes hD H.fp hf.code) k hk stub p2 hq
-  have hsp : S.body.spFrame = none := hf.code.fp
+  obtain ⟨hbs, n, t', long', q, ht', hdecs⟩ := stubsLinked_of_decodes hD (stubsBoundary_of_decodes hD hf.code) k hk stub p2 hq
   cases hctr with
   | @check _ t long hcnt hdec =>
   obtain ⟨hca, hp2, -⟩ := hf.code.dec hdec hb
+  simp only [List.map_cons, List.map_nil, fform_item_ctrInc, fform_item_branch,
+    setup_virt_mem] at hca
   have hdec0 := hdec
   rcases hdec0 with _ | ⟨hd1, _ | ⟨hd2, _ | _⟩⟩
-  obtain ⟨-, hs1, -, hb1⟩ := decodeItem_itemAt (c := atPos S.body p1) hf.code.fields hf.code.sorted
-    hf.code.loaded hf.code.small hf.code.fp hb hd1
+  obtain ⟨-, hs1, -, hb1⟩ := decodeItem_itemAt_F (c := atPos S.body p1) (hf.code.atPos p1) hb hd1
+  simp only [fform_item_ctrInc] at hs1
   rename_i n1 n2
-  have hcan2 := branch_canonical hsp hd2
+  have hcan2 := branch_canonical_any hd2
   rw [← hs1] at hcan2
   obtain ⟨x', hx⟩ := Counter.check_ok S.ctx true t long x
-  have hap := ctr_code_apart H hf hdec hb
+  have hap : ∀ a, InCode S.ctx (Counter.check true t long) p1 a →
+      ¬ S.Owned a ∧ ¬ InStack S.lo x.rsp a := fun a ha =>
+    ctr_code_apartF H hf hdec hb a (by
+      simp only [List.map_cons, List.map_nil, fform_item_ctrInc, fform_item_branch]; exact ha)
   have hrun : FetchRun S.ctx (InCode S.ctx (Counter.check true t long) p1) [.ctrInc true] x := by
     intro y hy
     rw [Counter.exec_ctrInc] at hy
@@ -527,21 +584,23 @@ theorem reach_counter (hD : Decodes S code relocs rodata callSites dropped scope
     steps_of_run_last (items := [.ctrInc true]) (j := .branch .ns t long)
       ⟨ctr_simple_canonical _ rfl (fun _ _ => rfl) (fun _ _ h => by cases h) _, hcan2, trivial⟩
       hca hrip (fun _ h => h) hrun hx
-  obtain ⟨-, hs2, -, -⟩ := decodeItem_itemAt (c := atPos S.body (p1 + n1)) hf.code.fields
-    hf.code.sorted hf.code.loaded hf.code.small hf.code.fp hb1 hd2
+  obtain ⟨-, hs2, -, -⟩ := decodeItem_itemAt_F (c := atPos S.body (p1 + n1))
+    (hf.code.atPos (p1 + n1)) hb1 hd2
+  simp only [fform_item_branch] at hs2
   have hafter : Counter.after x.rip true t long = addrAt S.ctx (p1 + n1 + n2) := by
     rw [hrip]
     simp only [Counter.after, Counter.checkLen, hs1, hs2]
     rw [addrAt_add' S.ctx p1, Nat.add_assoc]
   have hback : S.ctx.base + t'.setWidth 64 = Counter.after x.rip true t long := by
     rw [hafter, ctr_base_setWidth, ht']
-  have hlo : S.lo.toNat + 8 ≤ x.rsp.toNat := by have := hf.room; omega
+  have hlo : S.lo.toNat + 8 ≤ x.rsp.toNat := by
+    have := hf.room; rw [setup_virt_rsp] at this; omega
   obtain ⟨hregs, -, hmem, -⟩ := Counter.check_effect S.ctx true t long x x' hx
   rcases Counter.counter_noop H.trip S.ctx true t long (headStub (BitVec.ofNat 64 n) t' long')
       (BitVec.ofNat 64 n) t' long' (.inr rfl) x x' hback (fun j hj => HC.ctrOwned j hj) hlo hx with
     ⟨hrip', hag⟩ | ⟨hrip', hstub⟩
-  · exact Reach.steps hsteps (kont x' (ctr_frameInv H HC hf hag hnl' (fun _ => by rw [hregs]; exact ⟨rfl, rfl⟩))
-    (hrip'.trans hafter) (hci0 x'))
+  · exact Reach.steps hsteps (kont x' (ctr_frameInvR H HC hfR hag hnl' (fun _ => by rw [hregs]; exact ⟨rfl, rfl⟩))
+    (hrip'.trans hafter) (hci0 _))
   have hag' : Counter.Agree S.Owned S.lo x x' := by
     refine ⟨by simp [State.rsp, State.reg, hregs], fun i _ => by rw [hregs], fun a ha _ => hmem a ?_⟩
     apply Classical.byContradiction
@@ -551,18 +610,26 @@ theorem reach_counter (hD : Decodes S code relocs rodata callSites dropped scope
       rw [BitVec.ofNat_toNat, BitVec.setWidth_eq]; bv_omega
     rw [e]
     exact HC.ctrOwned _ (by omega)
-  have hL' := ctr_linkOk H HC hf hag'.2.2
+  have hL' := ctr_linkOk H HC hf (m := x'.mem) (fun a ha hs => by
+    rw [setup_virt_mem]; rw [setup_virt_rsp] at hs; exact hag'.2.2 a ha hs)
   obtain ⟨hcs, -, -⟩ := hL'.dec hdecs hbs
-  have hap' := ctr_code_apart H hf hdecs hbs
+  simp only [List.map_cons, List.map_nil, fform_item_lea, fform_item_setReg, fform_item_callR11,
+    fform_item_branch] at hcs
+  have hap' : ∀ a, InCode S.ctx [.lea .r11 .record, .setReg .rax (BitVec.ofNat 64 n), .callR11 16,
+      .branch .always t' long'] t.toNat a → ¬ S.Owned a ∧ ¬ InStack S.lo x.rsp a := fun a ha =>
+    ctr_code_apartF H hf hdecs hbs a (by
+      simp only [List.map_cons, List.map_nil, fform_item_lea, fform_item_setReg,
+        fform_item_callR11, fform_item_branch]; exact ha)
   rcases hdecs with _ | ⟨hs1d, _ | ⟨hs2d, _ | ⟨hs3d, _ | ⟨hs4d, _ | _⟩⟩⟩⟩
   rename_i m1 m2 m3 m4
-  obtain ⟨-, e1, -, b1⟩ := decodeItem_itemAt (c := atPos S.body t.toNat) hf.code.fields
-    hf.code.sorted hf.code.loaded hf.code.small hf.code.fp hbs hs1d
-  obtain ⟨-, e2, -, b2⟩ := decodeItem_itemAt (c := atPos S.body (t.toNat + m1)) hf.code.fields
-    hf.code.sorted hf.code.loaded hf.code.small hf.code.fp b1 hs2d
-  obtain ⟨-, e3, -, -⟩ := decodeItem_itemAt (c := atPos S.body (t.toNat + m1 + m2)) hf.code.fields
-    hf.code.sorted hf.code.loaded hf.code.small hf.code.fp b2 hs3d
-  have hcan4 := branch_canonical hsp hs4d
+  obtain ⟨-, e1, -, b1⟩ := decodeItem_itemAt_F (c := atPos S.body t.toNat) (hf.code.atPos _)
+    hbs hs1d
+  obtain ⟨-, e2, -, b2⟩ := decodeItem_itemAt_F (c := atPos S.body (t.toNat + m1))
+    (hf.code.atPos _) b1 hs2d
+  obtain ⟨-, e3, -, -⟩ := decodeItem_itemAt_F (c := atPos S.body (t.toNat + m1 + m2))
+    (hf.code.atPos _) b2 hs3d
+  simp only [fform_item_lea, fform_item_setReg, fform_item_callR11] at e1 e2 e3
+  have hcan4 := branch_canonical_any hs4d
   rw [← e1, ← e2, ← e3] at hcan4
   obtain ⟨i1, i2, i3, i4, -⟩ := hcs
   have scan : ∀ i : Item, i.wf 0 = true → (∀ p q, i.wf p = i.wf q) → (∀ b e, i ≠ .tableEntry b e) →
@@ -625,7 +692,9 @@ theorem reach_counter (hD : Decodes S code relocs rodata callSites dropped scope
   have hout : S.E.out y3 := by
     have hrd : y2.mem.readNat (S.ctx.addrOf .record + BitVec.ofNat 64 16) 8 =
         y3.mem.readNat (S.ctx.addrOf .record + BitVec.ofNat 64 16) 8 :=
-      readNat_congr _ _ _ _ (fun i hi => (hy3m _ (ctr_inStack_lift H hf (HC.slotOff i hi))).symm)
+      readNat_congr _ _ _ _ (fun i hi => (hy3m _ (by
+        have := ctr_inStack_lift H hf (HC.slotOff i hi)
+        rwa [setup_virt_rsp] at this)).symm)
     refine H.envOutside.trip y3 ⟨16, ?_⟩
     rw [hy3rip]
     unfold Mem.read64
@@ -663,6 +732,6 @@ theorem reach_counter (hD : Decodes S code relocs rodata callSites dropped scope
     obtain ⟨r6, r7⟩ := htrip hpe y3 y4 hret
     rw [hy5sv.1, hy5sv.2, r6, r7, hy3sv.1, hy3sv.2, hy2sv.1, hy2sv.2, hy1sv.1, hy1sv.2, hregs]
     exact ⟨rfl, rfl⟩
-  exact .step st5 (kont y5 (ctr_frameInv H HC hf hag5 hnl' hsv5) (hr5.trans hafter) (hci0 y5))
+  exact .step st5 (kont y5 (ctr_frameInvR H HC hfR hag5 hnl' hsv5) (hr5.trans hafter) (hci0 _))
 
 end Insn

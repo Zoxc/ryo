@@ -1,9 +1,10 @@
 /-
-Ryo.Proofs.DecodeSound.Entry — the entry step of `decode_sound` (aot.md §C2), frame-pointer
-mode only: from the function's entry state `S.x0` (the caller's `call` done, `rip` at the
+Ryo.Proofs.DecodeSound.Entry — the entry step of `decode_sound` (aot.md §C2), in both frame
+forms: from the function's entry state `S.x0` (the caller's `call` done, `rip` at the
 function's first byte, `rsp` at the return address), the code the decoder read before the body
 (`readFrame`: the entry's counter check `inc qword [rip + record]; jns stub` with its stub, then
-`prologue F mode` = `push rbp; mov rbp, rsp; [mov eax, F; call probe]; [sub rsp, F]`), run by
+`prologue F mode` = `push rbp; mov rbp, rsp; [mov eax, F; call probe]; [sub rsp, F]`, without a
+frame pointer `[mov eax, F + 8; call probe]; sub rsp, F + 8`, `rbp` untouched), run by
 the fetching machine, reaches a state related (`BInv`) to R's entry state
 `R.entry S.c fp args stack w`, with `fp = x0.rsp - 8`, `args` the incoming argument registers,
 `stack` the incoming stack arguments at `x0.rsp + 8` and `w` the world (`EntryAt`, as a caller's
@@ -27,12 +28,14 @@ the fetching machine, reaches a state related (`BInv`) to R's entry state
   comment), the entry trip keeping the argument registers (`EntryTripKeeps`: jit.md's entry trip
   keeps every register but `rax`, `r11` and the flags; `TripContract` only gives the
   callee-saved ones), the entry counter runtime-owned and the entry slot off the stack, and
-  `F < 2 ^ 31` (`sub rsp, F`'s immediate sign-extends to `F`).
+  `F < 2 ^ 31` (`sub rsp, F`'s immediate sign-extends to `F`; without a frame pointer
+  `F + 8 < 2 ^ 31`).
 
 **Proved**: the R entry state (`entry_ok`), the relation from a state past the prologue
-(`frameInv_entry`, `binv_entry`: all 13 `FrameInv` fields), the counter check with its stub and
-trip (`reach_entryCheck`), the prologue with the probe (`reach_prologue`: `entry_pushMov`,
-`entry_probe`, `entry_sub`), and the composition (`reach_entry`, `entry_sound`). Nothing is open.
+(`frameInv_entry` on the virtual state, `binv_entry`: all 13 `FrameInv` fields), the counter
+check with its stub and trip (`reach_entryCheck`), the prologue with the probe (`reach_prologue`:
+`entry_pushMov`, `entry_probe`, `entry_sub`; without a frame pointer `entry_probe_nofp`,
+`entry_sub_nofp`), and the composition (`reach_entry`, `entry_sound`).
 -/
 import Ryo.Proofs.DecodeSound
 
@@ -92,6 +95,9 @@ structure EntryContract (S : Setup) : Prop where
   /-- `sub rsp, F`'s 32-bit immediate sign-extends to `F` (checkable: `FrameBounds.F_le` gives
   only `F ≤ 2 ^ 31`; on PE `Hyps.peFrame` gives it). -/
   frameSmall : S.F < 2 ^ 31
+  /-- Without a frame pointer, `sub rsp, F + 8`'s immediate sign-extends to `F + 8`
+  (checkable, like `frameSmall`). -/
+  frameSmall8 : S.c.mode.framePointer = false → S.F + 8 < 2 ^ 31
 
 /-- The caller's side of the entry (see the module comment). `args`, `stack`, `w`: R's entry
 registers, incoming stack bytes and world. -/
@@ -111,7 +117,7 @@ structure EntryEnv (S : Setup) (args : R.Regs) (stack : List AbstractByte) (w : 
   /-- The incoming area is within the address space. -/
   top : S.x0.rsp.toNat + 8 + S.c.argSize ≤ 2 ^ 64
   /-- The code and the rodata linked at entry. -/
-  code : LinkOk S.ctx S.x0.mem S.body S.rs
+  code : LinkOkF S.ctx S.x0.mem S.body S.rs S.c.mode
   ro : RoLoaded S.ctx S.x0.mem S.ro
   /-- No live allocation is runtime-owned or on the stack below the entry `rsp` (`EnvApart.allocs`
   at the entry). -/
@@ -142,8 +148,14 @@ structure AtBody (S : Setup) (x : X86.State) : Prop where
   rsp : x.rsp = S.x0.rsp - 8 - BitVec.ofNat 64 S.F
   regs : ∀ i : Fin 16, i ≠ 0 → i ≠ 4 → i ≠ 5 → i ≠ 11 → x.regs i = S.x0.regs i
   xmm : ∀ i, x.xmm i = S.x0.xmm i
-  savedRbp : x.mem.read64 (S.x0.rsp - 8) = S.x0.reg .rbp
+  savedRbp : S.c.mode.framePointer = true → x.mem.read64 (S.x0.rsp - 8) = S.x0.reg .rbp
   mem : Keeps S x.mem
+
+/-- A real state past the prologue: its virtual state (`Setup.virt`) is `AtBody`, and `rbp` is the
+entry's without a frame pointer. -/
+structure AtBodyR (S : Setup) (x : X86.State) : Prop where
+  virt : AtBody S (S.virt x)
+  rbpOk : RbpOk S x
 
 /-! ## R's entry state -/
 
@@ -233,8 +245,8 @@ variable {S : Setup} {code : ByteArray} {relocs : Array Reloc} {rodata : ByteArr
   {mode : Ryo.Obj.Mode}
 
 /-- The code stays linked in memory that `Keeps` the entry's. -/
-theorem entry_linkOk (H : Hyps S) {m : Mem} (hL : LinkOk S.ctx S.x0.mem S.body S.rs)
-    (hm : Keeps S m) : LinkOk S.ctx m S.body S.rs := by
+theorem entry_linkOk (H : Hyps S) {m : Mem} (hL : LinkOkF S.ctx S.x0.mem S.body S.rs S.c.mode)
+    (hm : Keeps S m) : LinkOkF S.ctx m S.body S.rs S.c.mode := by
   have hc : ∀ j, j < S.body.code.size → m (addrAt S.ctx j) = S.x0.mem (addrAt S.ctx j) := by
     intro j hj
     obtain ⟨ho, hst, -⟩ := H.codeApart (addrAt S.ctx j) (.inl ⟨j, hj, rfl⟩)
@@ -251,12 +263,31 @@ theorem entry_roLoaded (H : Hyps S) {m : Mem} (hR : RoLoaded S.ctx S.x0.mem S.ro
   obtain ⟨ho, hst, -⟩ := H.codeApart (base + BitVec.ofNat 64 j) (.inr ⟨j, hj, (h1 j).symm⟩)
   rw [hm _ ho hst]; exact h2 j hj
 
+/-- `ctr_inCode_dec` in either frame form: the bytes of items read from the body cursor, as
+they are in memory, are code bytes. -/
+theorem nf_inCode_dec {ctx : Ctx} {m : Mem} {c : Cursor} {rs : Array Reloc} {mode : Ryo.Obj.Mode}
+    (hk : LinkOkF ctx m c rs mode) :
+    ∀ {p q : Nat} {items : List Item}, Dec c p items q → Boundary rs p →
+      ∀ a, InCode ctx (items.map (FForm.item c.spFrame)) p a →
+        ∃ j, j < c.code.size ∧ a = addrAt ctx j := by
+  intro p q items hd
+  induction hd with
+  | nil => intro _ a h; exact absurd h id
+  | @cons p n q i is hdi _ ih =>
+    intro hb a ha
+    obtain ⟨-, hsz, hle, hb'⟩ := nf_decodeItem_itemAt hk hb hdi
+    rw [List.map_cons] at ha
+    rcases ha with ⟨j, hj, rfl⟩ | ha
+    · rw [ctr_linkedAt_length, hsz] at hj
+      exact ⟨p + j, by omega, addrAt_add' ctx p j⟩
+    · rw [hsz] at ha; exact ih hb' a ha
+
 /-- The code before the body stays in memory that `Keeps` the entry's. -/
-theorem entry_codeAt (H : Hyps S) (hL : LinkOk S.ctx S.x0.mem S.body S.rs) {p q : Nat}
+theorem entry_codeAt (H : Hyps S) (hL : LinkOkF S.ctx S.x0.mem S.body S.rs S.c.mode) {p q : Nat}
     {items : List Item} (hd : Dec S.body p items q) (hb : Boundary S.rs p) {m : Mem}
-    (hm : Keeps S m) : CodeAt S.ctx m items p := by
+    (hm : Keeps S m) : CodeAt S.ctx m (items.map (FForm.item S.body.spFrame)) p := by
   refine codeAt_of_agree (hL.dec hd hb).1 fun a ha => ?_
-  obtain ⟨j, hj, rfl⟩ := ctr_inCode_dec hL hd hb a ha
+  obtain ⟨j, hj, rfl⟩ := nf_inCode_dec hL hd hb a ha
   obtain ⟨h1, h2, -⟩ := H.codeApart _ (.inl ⟨j, hj, rfl⟩)
   exact hm _ h1 h2
 
@@ -393,7 +424,7 @@ theorem frameInv_entry (H : Hyps S) {args : R.Regs} {stack : List AbstractByte} 
       (H.envApart.window ((8 + j : Nat) : Int) (by omega) (by omega))
       (hns (8 + j) (by omega) (by omega))
   -- frame.savedRbp
-  · rw [hx.rbp]; exact hx.savedRbp
+  · intro h; rw [hx.rbp]; exact hx.savedRbp h
   -- frame.saved
   · have hne : i ≠ 0 ∧ i ≠ 4 ∧ i ≠ 11 := by
       unfold Saved CalleeSaved at hi
@@ -410,18 +441,18 @@ theorem frameInv_entry (H : Hyps S) {args : R.Regs} {stack : List AbstractByte} 
 theorem binv_entry (hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
     {args : R.Regs} {stack : List AbstractByte} {w : R.World} {s0 : R.RState} {x : X86.State}
     (hE : EntryEnv S args stack w) (hs0 : R.entry S.c (entryFp S) args stack w = .ok s0)
-    (hx : AtBody S x) (hrip : x.rip = addrAt S.ctx S.body.pos) : BInv S s0 x := by
+    (hx : AtBodyR S x) (hrip : x.rip = addrAt S.ctx S.body.pos) : BInv S s0 x := by
   obtain ⟨hpc, -⟩ := entry_ok hs0
-  refine ⟨frameInv_entry H hE hs0 hx, .inl ⟨?_, ?_⟩⟩
+  refine ⟨⟨frameInv_entry H hE hs0 hx.virt, hx.rbpOk⟩, .inl ⟨?_, ?_⟩⟩
   · rw [hpc, hD.start0]; exact hrip
   · rw [hpc, hD.cache0]; exact CacheInv.emptyPe _ _
 
 /-! ## The machine's run -/
 
 /-- The decoder's entry layout, from `Decodes.entry` (`read_instructions_entry`). -/
-theorem entryRead_of_decodes (hD : Decodes S code relocs rodata callSites dropped scopes mode)
-    (hfp : S.c.mode.framePointer = true) : EntryRead S :=
-  hD.entry hfp
+theorem entryRead_of_decodes (hD : Decodes S code relocs rodata callSites dropped scopes mode) :
+    EntryRead S :=
+  hD.entry
 
 /-! ### Single items of the entry code -/
 
@@ -430,10 +461,9 @@ theorem entryRead_of_decodes (hD : Decodes S code relocs rodata callSites droppe
 theorem entry_itemAt (H : Hyps S) {args : R.Regs} {stack : List AbstractByte} {w : R.World}
     (hE : EntryEnv S args stack w) {p n : Nat} {i : Item}
     (hdi : decodeItem (atPos S.body p) = some (i, n)) (hb : Boundary S.rs p) {m : Mem}
-    (hm : Keeps S m) : ItemAt S.ctx m i p ∧ i.size = n ∧ Boundary S.rs (p + n) := by
+    (hm : Keeps S m) (hm0 : i.mem? = none) : ItemAt S.ctx m i p ∧ i.size = n ∧ Boundary S.rs (p + n) := by
   have hL := entry_linkOk H hE.code hm
-  obtain ⟨h1, h2, -, h4⟩ := decodeItem_itemAt (c := atPos S.body p) hL.fields hL.sorted
-    hL.loaded hL.small hL.fp hb hdi
+  obtain ⟨h1, h2, -, h4⟩ := nf_decodeItem_itemAtN hL hb hdi hm0
   exact ⟨h1, h2, h4⟩
 
 theorem entry_canon {i : Item} (hw : ∀ p, i.wf p = true) (ht : ∀ b e, i ≠ .tableEntry b e)
@@ -500,7 +530,7 @@ structure AtFrame (S : Setup) (z : X86.State) : Prop where
 
 theorem atBody_of_atFrame_zero {z : X86.State} (hz : AtFrame S z) (hF : S.F = 0) : AtBody S z :=
   ⟨hz.rbp, by rw [hz.rsp, hF]; simp, fun i h0 h4 h5 h11 => hz.regs i h0 h4 h5 h11, hz.xmm,
-    hz.savedRbp, hz.mem⟩
+    fun _ => hz.savedRbp, hz.mem⟩
 
 /-- `push rbp; mov rbp, rsp`. -/
 theorem entry_pushMov (H : Hyps S) {args : R.Regs} {stack : List AbstractByte} {w : R.World}
@@ -515,7 +545,7 @@ theorem entry_pushMov (H : Hyps S) {args : R.Regs} {stack : List AbstractByte} {
   rename_i n1 n2
   have hy4 : y.rsp = S.x0.rsp := hy.regs 4 (by decide) (by decide)
   have hy5 : y.reg .rbp = S.x0.reg .rbp := hy.regs 5 (by decide) (by decide)
-  obtain ⟨hi1, hs1, hb1⟩ := entry_itemAt H hE hd1 hb hy.mem
+  obtain ⟨hi1, hs1, hb1⟩ := entry_itemAt H hE hd1 hb hy.mem rfl
   -- `push rbp`
   obtain ⟨y1, hy1⟩ : ∃ y1, y1 =
       (y.jump (y.rip + BitVec.ofNat 64 Item.pushRbp.size)).push (y.reg .rbp) := ⟨_, rfl⟩
@@ -530,7 +560,7 @@ theorem entry_pushMov (H : Hyps S) {args : R.Regs} {stack : List AbstractByte} {
   have hk1 : Keeps S y1.mem := fun a ho hs => by
     rw [m1, Mem.write_other _ _ _ _ _ (ctr_push_other _ _ _ hlo8 hs)]; exact hy.mem a ho hs
   -- `mov rbp, rsp`
-  obtain ⟨hi2, hs2, hb2⟩ := entry_itemAt H hE hd2 hb1 hk1
+  obtain ⟨hi2, hs2, hb2⟩ := entry_itemAt H hE hd2 hb1 hk1 rfl
   obtain ⟨y2, hy2⟩ : ∃ y2, y2 = (y1.jump (y1.rip + BitVec.ofNat 64 (Item.mov .rbp .rsp).size)).setReg
       .rbp (y1.reg .rsp) := ⟨_, rfl⟩
   have he2 : Item.exec S.ctx (.mov .rbp .rsp) y1 = .ok y2 := by rw [hy2]; rfl
@@ -567,13 +597,13 @@ theorem entry_probe (H : Hyps S) (hC : EntryContract S) {args : R.Regs}
     rw [BitVec.toNat_sub, show (8 : BitVec 64).toNat = 8 from rfl]; omega
   rcases hd with _ | ⟨hd1, _ | ⟨hd2, _ | _⟩⟩
   rename_i n1 n2
-  obtain ⟨hi1, hs1, hb1⟩ := entry_itemAt H hE hd1 hb hz.mem
+  obtain ⟨hi1, hs1, hb1⟩ := entry_itemAt H hE hd1 hb hz.mem rfl
   -- `mov eax, v`
   obtain ⟨z1, he1⟩ : ∃ z1, Item.exec S.ctx (.setReg .rax v) z = .ok z1 := by
     simp only [Item.exec]; split <;> exact ⟨_, rfl⟩
   obtain ⟨r1, g1, x1, m1⟩ := exec_setReg_rax S.ctx v z z1 he1
   have hk1 : Keeps S z1.mem := by rw [m1]; exact hz.mem
-  obtain ⟨hi2, hs2, hb2⟩ := entry_itemAt H hE hd2 hb1 hk1
+  obtain ⟨hi2, hs2, hb2⟩ := entry_itemAt H hE hd2 hb1 hk1 rfl
   have r1' : z1.rip = addrAt S.ctx (p + n1) := by rw [r1, hrip, hs1, addrAt_add]
   have z1rsp : z1.rsp = S.x0.rsp - 8 := by
     show z1.regs 4 = _; rw [g1 4 (by decide)]; exact hz.rsp
@@ -637,7 +667,7 @@ theorem entry_sub (H : Hyps S) (hC : EntryContract S) {args : R.Regs}
     Reach S.ctx S.E Q z := by
   rcases hd with _ | ⟨hd1, _ | _⟩
   rename_i n1
-  obtain ⟨hi1, hs1, -⟩ := entry_itemAt H hE hd1 hb hz.mem
+  obtain ⟨hi1, hs1, -⟩ := entry_itemAt H hE hd1 hb hz.mem rfl
   obtain ⟨z1, hz1⟩ : ∃ z1, z1 = ((z.jump (z.rip + BitVec.ofNat 64
       (Item.subRsp (BitVec.ofNat 32 S.F)).size)).setReg .rsp
       (z.rsp - (BitVec.ofNat 32 S.F).signExtend 64)).setFlags
@@ -653,7 +683,7 @@ theorem entry_sub (H : Hyps S) (hC : EntryContract S) {args : R.Regs}
     rw [e, hsx, hz.rsp]
   · rw [g1 i h4]; exact hz.regs i h0 h4 h5 h11
   · rw [hz1]; exact hz.xmm i
-  · rw [hz1]; exact hz.savedRbp
+  · intro _; rw [hz1]; exact hz.savedRbp
   · rw [hz1]; exact hz.mem
   · rw [hz1]; show z.rip + BitVec.ofNat 64 _ = _; rw [hrip, hs1, addrAt_add]
 
@@ -675,20 +705,23 @@ theorem reach_entryCheck (H : Hyps S) (hC : EntryContract S) {args : R.Regs}
     have hbs : Boundary S.rs t.toNat := hbs' _ hL
     have hroom := hE.room
     have hlo8 : S.lo.toNat + 8 ≤ S.x0.rsp.toNat := by omega
-    have hsp : S.body.spFrame = none := hL.fp
+    have hchkm : ∀ i ∈ Counter.check false t l, i.mem? = none :=
+      nf_noMem_cons rfl (nf_noMem_cons rfl nf_noMem_nil)
+    have hstubm : ∀ i ∈ entryStub tb bl, i.mem? = none :=
+      nf_noMem_cons rfl (nf_noMem_cons rfl (nf_noMem_cons rfl nf_noMem_nil))
     obtain ⟨hca, -, hbp1⟩ := hL.dec hdec (boundary_zero _)
+    rw [fb_map_noMem _ hchkm] at hca
     have hap : ∀ a, InCode S.ctx (Counter.check false t l) 0 a → ¬ S.Owned a := by
       intro a ha
-      obtain ⟨j, hj, rfl⟩ := ctr_inCode_dec hL hdec (boundary_zero _) a ha
+      obtain ⟨j, hj, rfl⟩ := nf_inCode_dec hL hdec (boundary_zero _) a
+        (by rw [fb_map_noMem _ hchkm]; exact ha)
       exact (H.codeApart _ (.inl ⟨j, hj, rfl⟩)).1
     have hdec0 := hdec
     rcases hdec0 with _ | ⟨hd1, _ | ⟨hd2, _ | _⟩⟩
     rename_i n1 n2
-    obtain ⟨-, hs1, -, hb1⟩ := decodeItem_itemAt (c := atPos S.body 0) hL.fields hL.sorted
-      hL.loaded hL.small hL.fp (boundary_zero _) hd1
-    obtain ⟨-, hs2, -, -⟩ := decodeItem_itemAt (c := atPos S.body (0 + n1)) hL.fields hL.sorted
-      hL.loaded hL.small hL.fp hb1 hd2
-    have hcan2 := branch_canonical hsp hd2
+    obtain ⟨-, hs1, -, hb1⟩ := nf_decodeItem_itemAtN hL (boundary_zero _) hd1 rfl
+    obtain ⟨-, hs2, -, -⟩ := nf_decodeItem_itemAtN hL hb1 hd2 rfl
+    have hcan2 := nf_branch_canonical hd2
     rw [← hs1] at hcan2
     -- The counter is runtime-owned: everything else is kept by the check.
     have hctr : ∀ a, ¬ S.Owned a → 8 ≤ (a - Counter.ctrAddr S.ctx false).toNat := by
@@ -727,14 +760,13 @@ theorem reach_entryCheck (H : Hyps S) (hC : EntryContract S) {args : R.Regs}
       rw [hrip', if_neg hmsb, ctr_base_setWidth]
     have hxsp : x'.rsp = S.x0.rsp := by show x'.regs 4 = _; rw [hregs]; rfl
     obtain ⟨hcs, -, -⟩ := (entry_linkOk H hE.code hk').dec hdecs hbs
+    rw [fb_map_noMem _ hstubm] at hcs
     have hdecs0 := hdecs
     rcases hdecs0 with _ | ⟨hs1d, _ | ⟨hs2d, _ | ⟨hs3d, _ | _⟩⟩⟩
     rename_i m1 m2 m3
-    obtain ⟨-, e1, -, b1⟩ := decodeItem_itemAt (c := atPos S.body t.toNat) hL.fields hL.sorted
-      hL.loaded hL.small hL.fp hbs hs1d
-    obtain ⟨-, e2, -, -⟩ := decodeItem_itemAt (c := atPos S.body (t.toNat + m1)) hL.fields
-      hL.sorted hL.loaded hL.small hL.fp b1 hs2d
-    have hcan3 := branch_canonical hsp hs3d
+    obtain ⟨-, e1, -, b1⟩ := nf_decodeItem_itemAtN hL hbs hs1d rfl
+    obtain ⟨-, e2, -, -⟩ := nf_decodeItem_itemAtN hL b1 hs2d rfl
+    have hcan3 := nf_branch_canonical hs3d
     rw [← e1, ← e2] at hcan3
     obtain ⟨i1, i2, -, -⟩ := hcs
     have hlea := ctr_simple_canonical (.lea .r11 .record) rfl (fun _ _ => rfl)
@@ -797,7 +829,9 @@ theorem reach_entryCheck (H : Hyps S) (hC : EntryContract S) {args : R.Regs}
       rw [H.trip.ret_mem _ _ hret (by rw [hy2sp8]; exact hlo8) a ho (by rw [hy2sp8]; exact hs),
         hkeep2 a hs]
       exact hk' a ho hs
-    obtain ⟨⟨-, -, i3, -⟩, -, -⟩ := (entry_linkOk H hE.code hk3).dec hdecs hbs
+    have hc3 := ((entry_linkOk H hE.code hk3).dec hdecs hbs).1
+    rw [fb_map_noMem _ hstubm] at hc3
+    obtain ⟨-, -, i3, -⟩ := hc3
     obtain ⟨y4, he4, hy4⟩ : ∃ y4, (Item.branch .always tb bl).exec S.ctx y3 = .ok y4 ∧
         y4 = y3.jump (S.ctx.base + tb.setWidth 64) :=
       ⟨_, by first
@@ -818,7 +852,7 @@ theorem reach_entryCheck (H : Hyps S) (hC : EntryContract S) {args : R.Regs}
     exact kont S.x0 ⟨fun _ _ _ => rfl, fun _ => rfl, fun _ _ _ => rfl⟩ hE.rip (boundary_zero _)
 
 /-- The prologue `push rbp; mov rbp, rsp; [mov eax, F; call probe]; [sub rsp, F]` (frame-
-pointer form, `H.fp`) from a state `AtCheck` at `p1` reaches the body's start in a state
+pointer form) from a state `AtCheck` at `p1` reaches the body's start in a state
 `AtBody` (whatever the probe does): each item is canonical (`Item.wf` is `true` for all
 five), in memory by `entry_codeAt`, and executed by `Step.exec`; `push rbp` writes
 `[x0.rsp - 8, x0.rsp)` (on the stack below `x0.rsp`, so `Keeps`, and apart from the code by
@@ -827,12 +861,12 @@ five), in memory by `entry_codeAt`, and executed by `Step.exec`; `push rbp` writ
 at `sub rsp, F` (`ProbeContract.rip` and the pushed return address) with `rbp`, the saved `rbp`
 (window offsets `[0, 8)`, `H.envApart.window`) and the other registers kept; `sub rsp, F`'s
 immediate sign-extends to `F` (`EntryContract.frameSmall`). -/
-theorem reach_prologue (H : Hyps S) (hC : EntryContract S) {args : R.Regs}
-    {stack : List AbstractByte} {w : R.World} (hE : EntryEnv S args stack w) {p1 : Nat}
+theorem reach_prologue_fp (H : Hyps S) (hC : EntryContract S) {args : R.Regs}
+    {stack : List AbstractByte} {w : R.World} (hE : EntryEnv S args stack w)
+    (hfp : S.c.mode.framePointer = true) {p1 : Nat}
     (hpro : Dec S.body p1 (prologue S.F S.c.mode) S.body.pos) (hb : Boundary S.rs p1)
     {y : X86.State} (hy : AtCheck S y) (hrip : y.rip = addrAt S.ctx p1) :
     Reach S.ctx S.E (fun x => AtBody S x ∧ x.rip = addrAt S.ctx S.body.pos) y := by
-  have hfp := H.fp
   unfold prologue at hpro
   simp only [hfp, ↓reduceIte] at hpro
   obtain ⟨q, hAB, hC'⟩ := dec_split hpro
@@ -850,9 +884,163 @@ theorem reach_prologue (H : Hyps S) (hC : EntryContract S) {args : R.Regs}
   · exact entry_probe H hC hE hB hb2 hz hz2 kfin
   · exact kfin z hz (by rw [hB.nil_eq]; exact hz2) (by rw [hB.nil_eq]; exact hb2)
 
+/-! ### Without a frame pointer -/
+
+/-- `mov eax, v; call probe` without a frame pointer (`rsp` still the entry's), and the probe's
+return: back at `q` with every register but `rax` and `r11` as at entry. -/
+theorem entry_probe_nofp (H : Hyps S) (hC : EntryContract S) {args : R.Regs}
+    {stack : List AbstractByte} {w : R.World} (hE : EntryEnv S args stack w) {p q : Nat}
+    {v : BitVec 64} (hd : Dec S.body p [.setReg .rax v, .call .probe] q) (hb : Boundary S.rs p)
+    {z : X86.State} (hz : AtCheck S z) (hrip : z.rip = addrAt S.ctx p) {Q : X86.State → Prop}
+    (k : ∀ z', AtCheck S z' → z'.rip = addrAt S.ctx q → Boundary S.rs q → Reach S.ctx S.E Q z') :
+    Reach S.ctx S.E Q z := by
+  have hroom := hE.room
+  have hr64 := S.x0.rsp.isLt
+  have hlo8 : S.lo.toNat + 8 ≤ S.x0.rsp.toNat := by omega
+  rcases hd with _ | ⟨hd1, _ | ⟨hd2, _ | _⟩⟩
+  rename_i n1 n2
+  obtain ⟨hi1, hs1, hb1⟩ := entry_itemAt H hE hd1 hb hz.mem rfl
+  -- `mov eax, v`
+  obtain ⟨z1, he1⟩ : ∃ z1, Item.exec S.ctx (.setReg .rax v) z = .ok z1 := by
+    simp only [Item.exec]; split <;> exact ⟨_, rfl⟩
+  obtain ⟨r1, g1, x1, m1⟩ := exec_setReg_rax S.ctx v z z1 he1
+  have hk1 : Keeps S z1.mem := by rw [m1]; exact hz.mem
+  obtain ⟨hi2, hs2, hb2⟩ := entry_itemAt H hE hd2 hb1 hk1 rfl
+  have r1' : z1.rip = addrAt S.ctx (p + n1) := by rw [r1, hrip, hs1, addrAt_add]
+  have z1rsp : z1.rsp = S.x0.rsp := by
+    show z1.regs 4 = _; rw [g1 4 (by decide)]; exact hz.regs 4 (by decide) (by decide)
+  -- `call probe`
+  obtain ⟨z2, hz2⟩ : ∃ z2, z2 = ((z1.jump (z1.rip + BitVec.ofNat 64 (Item.call .probe).size)).push
+      (z1.rip + BitVec.ofNat 64 (Item.call .probe).size)).jump (S.ctx.addrOf .probe) := ⟨_, rfl⟩
+  have he2 : Item.exec S.ctx (.call .probe) z1 = .ok z2 := by rw [hz2]; rfl
+  have nxt : z1.rip + BitVec.ofNat 64 (Item.call .probe).size = addrAt S.ctx (p + n1 + n2) := by
+    rw [r1', hs2, addrAt_add']
+  have z2rip : z2.rip = S.ctx.addrOf .probe := by rw [hz2]; rfl
+  have z2rsp : z2.rsp = z1.rsp - 8 := by
+    rw [hz2]; rfl
+  have z2regs : ∀ i : Fin 16, i ≠ 4 → z2.regs i = z1.regs i := by
+    intro i hi; rw [hz2]; show (if i = 4 then _ else z1.regs i) = _; rw [if_neg hi]
+  have z2x : z2.xmm = z1.xmm := by rw [hz2]; rfl
+  have z2m : z2.mem = z1.mem.write (z1.rsp - 8) 8 (addrAt S.ctx (p + n1 + n2)).toNat := by
+    rw [hz2, ← nxt]; rfl
+  have z2ret : z2.mem.read64 z2.rsp = addrAt S.ctx (p + n1 + n2) := by
+    rw [z2m, z2rsp]; exact Ryo.Proofs.IslandLemmas.read64_write_self _ _ _
+  have z2rsp8 : z2.rsp + 8 = S.x0.rsp := by
+    rw [z2rsp, z1rsp]; exact BitVec.sub_add_cancel _ _
+  refine Reach.step (.exec _ p (entry_canon (fun _ => by simp [Item.wf]) (fun _ _ h => by cases h) _)
+    hi1 hrip he1) ?_
+  refine Reach.step (.exec _ (p + n1)
+    (entry_canon (fun _ => by simp [Item.wf]) (fun _ _ h => by cases h) _) hi2 r1' he2) ?_
+  refine .env (hC.probe.out z2 z2rip) fun z3 hret => ?_
+  have P := hC.probe
+  have r3 : z3.rip = addrAt S.ctx (p + n1 + n2) := by rw [P.rip z2 z3 z2rip hret, z2ret]
+  have rsp3 : z3.rsp = S.x0.rsp := by rw [P.rsp z2 z3 z2rip hret, z2rsp8]
+  have g3 : ∀ i : Fin 16, i ≠ 0 → i ≠ 4 → i ≠ 11 → z3.regs i = z.regs i := fun i h0 h4 h11 => by
+    rw [P.regs z2 z3 z2rip hret i h4 h11, z2regs i h4, g1 i h0]
+  refine k z3 ⟨fun i h0 h11 => ?_, fun i => ?_, fun a ho hs => ?_⟩ r3 hb2
+  · by_cases h4 : i = 4
+    · subst h4; exact rsp3
+    · rw [g3 i h0 h4 h11]; exact hz.regs i h0 h11
+  · rw [P.xmm z2 z3 z2rip hret i, z2x, x1]; exact hz.xmm i
+  · rw [P.mem z2 z3 z2rip hret (by rw [z2rsp8]; exact hlo8) a ho (by rw [z2rsp8]; exact hs),
+      z2m, z1rsp, Mem.write_other _ _ _ _ _ (ctr_push_other _ _ _ hlo8 hs), m1]
+    exact hz.mem a ho hs
+
+/-- `sub rsp, F + 8` without a frame pointer: the state past it is `AtBodyR` (its virtual state
+has `rbp = rsp + F = x0.rsp - 8`; the real `rbp` is the entry's). -/
+theorem entry_sub_nofp (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    (H : Hyps S) (hC : EntryContract S) {args : R.Regs} {stack : List AbstractByte}
+    {w : R.World} (hE : EntryEnv S args stack w) (hfp : S.c.mode.framePointer = false)
+    {p q : Nat} (hd : Dec S.body p [.subRsp (BitVec.ofNat 32 (S.F + 8))] q)
+    (hb : Boundary S.rs p) {z : X86.State} (hz : AtCheck S z) (hrip : z.rip = addrAt S.ctx p) :
+    Reach S.ctx S.E (fun x => AtBodyR S x ∧ x.rip = addrAt S.ctx q) z := by
+  have hF8 := hC.frameSmall8 hfp
+  have hsp := nf_spFrame_of_nofp hD hfp
+  rcases hd with _ | ⟨hd1, _ | _⟩
+  rename_i n1
+  obtain ⟨hi1, hs1, -⟩ := entry_itemAt H hE hd1 hb hz.mem rfl
+  obtain ⟨z1, hz1⟩ : ∃ z1, z1 = ((z.jump (z.rip + BitVec.ofNat 64
+      (Item.subRsp (BitVec.ofNat 32 (S.F + 8))).size)).setReg .rsp
+      (z.rsp - (BitVec.ofNat 32 (S.F + 8)).signExtend 64)).setFlags
+      (subF z.rsp ((BitVec.ofNat 32 (S.F + 8)).signExtend 64)).2 := ⟨_, rfl⟩
+  have he1 : Item.exec S.ctx (.subRsp (BitVec.ofNat 32 (S.F + 8))) z = .ok z1 := by
+    rw [hz1]; rfl
+  have hsx := signExtend_F (F := S.F + 8) hF8
+  have g1 : ∀ i : Fin 16, i ≠ 4 → z1.regs i = z.regs i := fun i hi => by
+    rw [hz1]; show (if i = 4 then _ else z.regs i) = _; rw [if_neg hi]
+  have z1rsp : z1.rsp = S.x0.rsp - BitVec.ofNat 64 (S.F + 8) := by
+    have e : z1.rsp = z.rsp - (BitVec.ofNat 32 (S.F + 8)).signExtend 64 := by rw [hz1]; rfl
+    rw [e, hsx, show z.rsp = S.x0.rsp from hz.regs 4 (by decide) (by decide)]
+  have z1rip : z1.rip = addrAt S.ctx (p + n1) := by
+    rw [hz1]; show z.rip + BitVec.ofNat 64 _ = _; rw [hrip, hs1, addrAt_add]
+  refine Reach.step (.exec _ p (entry_canon (fun _ => by simp [Item.wf]) (fun _ _ h => by cases h) _)
+    hi1 hrip he1) (.done ⟨?_, z1rip⟩)
+  have hF32 : (BitVec.ofNat 32 S.F).setWidth 64 = BitVec.ofNat 64 S.F := by
+    apply BitVec.eq_of_toNat_eq
+    rw [BitVec.toNat_setWidth, BitVec.toNat_ofNat, BitVec.toNat_ofNat]
+    omega
+  have e8 : BitVec.ofNat 64 (S.F + 8) = BitVec.ofNat 64 S.F + 8 := BitVec.ofNat_add _ _
+  have hv : S.virt z1 = z1.setReg .rbp (z1.rsp + BitVec.ofNat 64 S.F) := by
+    rw [nf_virt_some hsp, hF32]
+  have vrbp : (S.virt z1).reg .rbp = S.x0.rsp - 8 := by
+    rw [hv, State.reg_setReg, z1rsp, e8]
+    generalize S.x0.rsp = r
+    generalize BitVec.ofNat 64 S.F = f
+    bv_decide
+  have vrsp : (S.virt z1).rsp = S.x0.rsp - 8 - BitVec.ofNat 64 S.F := by
+    rw [nf_virt_rsp, z1rsp, e8]
+    generalize S.x0.rsp = r
+    generalize BitVec.ofNat 64 S.F = f
+    bv_decide
+  refine ⟨⟨vrbp, vrsp, fun i h0 h4 h5 h11 => ?_, fun i => ?_, fun h => ?_, ?_⟩, fun _ => ?_⟩
+  · rw [nf_virt_regs S z1 h5, g1 i h4]; exact hz.regs i h0 h11
+  · rw [nf_virt_xmm, hz1]; exact hz.xmm i
+  · rw [hfp] at h; cases h
+  · rw [nf_virt_mem, hz1]; exact hz.mem
+  · show z1.regs 5 = _
+    rw [g1 5 (by decide)]; exact hz.regs 5 (by decide) (by decide)
+
+/-- The prologue without a frame pointer, `[mov eax, F + 8; call probe]; sub rsp, F + 8`
+(`F + 8 < 2 ^ 31`, `EntryContract.frameSmall8`, so `u32` doesn't wrap and the `sub` is there),
+from a state `AtCheck` at `p1`: `rbp` is never touched. -/
+theorem reach_prologue_nofp (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    (H : Hyps S) (hC : EntryContract S) {args : R.Regs} {stack : List AbstractByte}
+    {w : R.World} (hE : EntryEnv S args stack w) (hfp : S.c.mode.framePointer = false)
+    {p1 : Nat} (hpro : Dec S.body p1 (prologue S.F S.c.mode) S.body.pos) (hb : Boundary S.rs p1)
+    {y : X86.State} (hy : AtCheck S y) (hrip : y.rip = addrAt S.ctx p1) :
+    Reach S.ctx S.E (fun x => AtBodyR S x ∧ x.rip = addrAt S.ctx S.body.pos) y := by
+  have hF8 := hC.frameSmall8 hfp
+  have e : prologue S.F S.c.mode =
+      (if S.F ≥ Asm.probeFrom then [Item.setReg .rax (BitVec.ofNat 64 (S.F + 8)), .call .probe]
+        else []) ++ [.subRsp (BitVec.ofNat 32 (S.F + 8))] := by
+    have hA : Ryo.Vm.R.u32 (S.F + 8) = S.F + 8 := Nat.mod_eq_of_lt (by omega)
+    have hA0 : (S.F + 8 != 0) = true := bne_iff_ne.mpr (by omega)
+    simp only [prologue, hfp, Bool.false_eq_true, ↓reduceIte, hA, hA0, List.nil_append]
+  rw [e] at hpro
+  obtain ⟨q, hA', hB'⟩ := dec_split hpro
+  have kfin : ∀ z, AtCheck S z → z.rip = addrAt S.ctx q → Boundary S.rs q →
+      Reach S.ctx S.E (fun x => AtBodyR S x ∧ x.rip = addrAt S.ctx S.body.pos) z :=
+    fun z hz hzr hzb => entry_sub_nofp hD H hC hE hfp hB' hzb hz hzr
+  split at hA'
+  · exact entry_probe_nofp H hC hE hA' hb hy hrip kfin
+  · exact kfin y hy (by rw [hA'.nil_eq]; exact hrip) (by rw [hA'.nil_eq]; exact hb)
+
+/-- The prologue in either frame form, to a state `AtBodyR` at the body's start. -/
+theorem reach_prologue (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    (H : Hyps S) (hC : EntryContract S) {args : R.Regs} {stack : List AbstractByte}
+    {w : R.World} (hE : EntryEnv S args stack w) {p1 : Nat}
+    (hpro : Dec S.body p1 (prologue S.F S.c.mode) S.body.pos) (hb : Boundary S.rs p1)
+    {y : X86.State} (hy : AtCheck S y) (hrip : y.rip = addrAt S.ctx p1) :
+    Reach S.ctx S.E (fun x => AtBodyR S x ∧ x.rip = addrAt S.ctx S.body.pos) y := by
+  cases hfp : S.c.mode.framePointer
+  · exact reach_prologue_nofp hD H hC hE hfp hpro hb hy hrip
+  · have hsp : S.body.spFrame = none := hE.code.fp hfp
+    exact (reach_prologue_fp H hC hE hfp hpro hb hy hrip).mono fun x ⟨hx, hxr⟩ =>
+      ⟨⟨by rw [S.virt_eq hsp]; exact hx, rbpOk_of_sp hsp⟩, hxr⟩
+
 /-! ## The entry step -/
 
-/-- **The entry step** (frame-pointer mode, `H.fp`): from the function's entry `x0`, whatever
+/-- **The entry step** (either frame form): from the function's entry `x0`, whatever
 the environment does (the entry trip, the probe), the fetching machine reaches a state related
 (`BInv`) to R's entry state `R.entry S.c (x0.rsp - 8) args stack w`, given the decoder's entry
 layout (`EntryRead`), the environment's contracts (`EntryContract`) and the caller's call
@@ -864,7 +1052,7 @@ theorem reach_entry (hD : Decodes S code relocs rodata callSites dropped scopes 
     Reach S.ctx S.E (BInv S s0) S.x0 := by
   obtain ⟨p1, hchk, hpro⟩ := hR
   refine reach_entryCheck H hC hE hchk fun y hy hrip hb => ?_
-  exact (reach_prologue H hC hE hpro hb hy hrip).mono fun x ⟨hx, hxr⟩ =>
+  exact (reach_prologue hD H hC hE hpro hb hy hrip).mono fun x ⟨hx, hxr⟩ =>
     binv_entry hD H hE hs0 hx hxr
 
 /-- `reach_entry` with the decoder's layout from `Decodes` (`entryRead_of_decodes`). -/
@@ -873,7 +1061,7 @@ theorem reach_entry' (hD : Decodes S code relocs rodata callSites dropped scopes
     {w : R.World} {s0 : R.RState} (hE : EntryEnv S args stack w)
     (hs0 : R.entry S.c (entryFp S) args stack w = .ok s0) :
     Reach S.ctx S.E (BInv S s0) S.x0 :=
-  reach_entry hD H (entryRead_of_decodes hD H.fp) hC hE hs0
+  reach_entry hD H (entryRead_of_decodes hD) hC hE hs0
 
 /-- The function from its entry: the entry step, then `decode_sound` from the boundary it
 reaches, for R runs from the entry state that are safe. -/

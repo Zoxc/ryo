@@ -115,6 +115,7 @@ import Ryo.Vm.DecodeReduced
 import Ryo.Vm.FrameSizes
 import Ryo.Vm.CallSitesCheck
 import Ryo.Vm.RelocsInCheck
+import Ryo.Vm.SpDispCheck
 import Ryo.Vm.CacheClearedCheck
 import Ryo.Vm.ArgsLeadCheck
 import Ryo.Vm.PrivCheck
@@ -469,9 +470,38 @@ def escapeSteps (d : Decoded) : Array (Int × Int × Nat) × Array (Array (Bool 
       steps := steps.modify k (·.push (false, covered))
   return (escapes, steps)
 
+/-- Steps (as `escapeSteps` gives them) applied to `st`, in order. -/
+def applyStepsL (steps : List (Bool × Nat)) (st : Nat) : Nat :=
+  steps.foldl (fun st (add, b) => if add then st ||| b else diff st b) st
+
+/-- `coveredBy`'s step: scope `i` added to `b` if it is an `Escape` that `[lo, hi)` covers. -/
+def coverStep (d : Decoded) (lo hi : Int) (b i : Nat) : Nat :=
+  match d.scopes[i]? with
+  | some (_, sc) => match sc.kind with
+    | .escape _ =>
+      if lo ≤ sc.frameOffset.toInt ∧ sc.frameOffset.toInt + sc.size ≤ hi then b ||| 1 <<< i else b
+    | _ => b
+  | none => b
+
+/-- The `Escape` scopes (by index) whose range `[lo, hi)` covers whole. -/
+def coveredBy (d : Decoded) (lo hi : Int) : Nat :=
+  (List.range d.scopes.size).foldl (coverStep d lo hi) 0
+
+/-- What scope `j` (`sc`) does to the set of escaped objects: `escapeSteps`' step. -/
+def scopeStep (d : Decoded) (sc : Scope) (j : Nat) : Option (Bool × Nat) :=
+  match sc.kind with
+  | .escape _ => some (true, 1 <<< j)
+  | .lend => none
+  | .end => some (false, coveredBy d sc.frameOffset.toInt (sc.frameOffset.toInt + sc.size))
+
+/-- The steps of the scopes before instruction `k`, in order: `(escapeSteps d).2[k]!`, defined
+directly for the proofs (`escOk` uses it). -/
+def stepsAt (d : Decoded) (k : Nat) : List (Bool × Nat) :=
+  (d.scopes.toList.zipIdx.filter (·.1.1 == k)).filterMap fun ((_, sc), j) => scopeStep d sc j
+
 /-- `escapeSteps`' steps applied to `st`. -/
 def applySteps (steps : Array (Bool × Nat)) (st : Nat) : Nat :=
-  steps.foldl (fun st (add, b) => if add then st ||| b else diff st b) st
+  applyStepsL steps.toList st
 
 /-- The frame objects that may be escaped at each instruction (after the scopes before it), as
 a bitset over `Escape` scopes (`d.scopes`' indices): a forward dataflow over `edges` (successors
@@ -548,6 +578,12 @@ structure Flow where
   readsAll : Array Bool
   /-- The bytes `End` scopes before it make `Uninit`. -/
   ends : Array Ranges
+  /-- `escapedAt`'s result over `Flow.edges` (the may-escaped `Escape` scopes at each
+  instruction), which `pointer` was computed from. -/
+  esc : Array Nat := #[]
+
+/-- Each instruction's successors and landing pads (`escapedAt`'s edges). -/
+def Flow.edges (fl : Flow) : Array (List Nat) := (fl.succ.zip fl.pad).map fun (s, p) => s ++ p
 
 /-- The bytes instruction `k` reads by its operands and stack arguments. -/
 def Flow.direct (fl : Flow) (k : Nat) : Nat := (fl.operand[k]! ++ fl.stack[k]!).bits
@@ -586,83 +622,133 @@ def scopesAt (d : Decoded) : Array (List (Nat × Scope)) :=
   d.scopes.zipIdx.foldr (fun ((k, sc), j) a => if k < a.size then a.modify k ((j, sc) :: ·) else a)
     (Array.replicate d.insns.size [])
 
-def Flow.of (d : Decoded) (mode : Mode) (facts : Facts := {}) : Except String Flow := do
-  let n := d.insns.size
+/-- The bytes of `Escape` scope `j` if it is in `st` (a bitset over scope indices). -/
+def escBit (d : Decoded) (st j : Nat) : Nat :=
+  if st.testBit j then
+    let sc := d.scopes[j]!.2
+    bitsOf (range d.frameSize sc.frameOffset sc.size).1 (range d.frameSize sc.frameOffset sc.size).2
+  else 0
+
+/-- The bytes of the `Escape` scopes in `st`: a fold over the scopes, so that the proofs can see
+it. -/
+def escBytesOf (d : Decoded) (st : Nat) : Nat :=
+  (List.range d.scopes.size).foldl (fun b j => b ||| escBit d st j) 0
+
+/-- One instruction's part of a `Flow`. -/
+structure Flow.Row where
+  operand : Ranges
+  stack : Ranges
+  pointer : Nat
+  uninit : Ranges
+  kill : Ranges
+  readsAll : Bool
+  ends : Ranges
+
+/-- The `Lend` extents before instruction `k` (`scopes` is `scopesAt d`). -/
+def Flow.lendsOf (scopes : Array (List (Nat × Scope))) (k : Nat) : List (BitVec 32 × Nat) :=
+  scopes[k]!.filterMap fun (_, sc) =>
+    if sc.kind == .lend then some (sc.frameOffset, sc.size) else none
+
+/-- Whether instruction `i` is a call or tail call, a call, and its argument list. -/
+def Flow.callInfo (i : Insn) : Bool × Bool × List (BitVec 32) :=
+  match i with
+  | .native op ops => (op.info.shape == .call || op.info.shape == .tailCall,
+      op.info.shape == .call, callArgs ops)
+  | _ => (false, false, [])
+
+/-- The operand reads (`.1`) and sure writes (`.2`) of accesses `opnds` (`eb`: the bytes of the
+escaped objects). -/
+def Flow.opndRanges (f : Nat) (isCall : Bool) (eb : Nat) (opnds : List (BitVec 32 × Access)) :
+    Ranges × Ranges := Id.run do
+  let all : Ranges := [(0, f)]
+  let mut g : Ranges := []
+  let mut kl : Ranges := []
+  for (off, acc) in opnds do
+    match acc with
+    | .read m => g := range f off m :: g
+    | .write m => kl := range f off m :: kl
+    | .opaque => g := all
+    -- A by-address argument no escape covers: its object's extent is unknown.
+    | .addr =>
+      let (lo, hi) := range f off 1
+      if isCall && lo < hi && !eb.testBit lo then g := all
+    | _ => pure ()
+  return (g, kl)
+
+/-- Instruction `k`'s row from its effects `e` and escaped bytes `eb`. -/
+def Flow.rowOf (d : Decoded) (facts : Facts) (scopes : Array (List (Nat × Scope))) (k : Nat)
+    (e : Effects) (eb : Nat) : Flow.Row :=
   let f := d.frameSize
   let all : Ranges := [(0, f)]
-  let (succ, pad) := flow d
-  let esc := escapedAt d ((succ.zip pad).map fun (s, p) => s ++ p)
-  let scopes : Array (List (Nat × Scope)) := scopesAt d
-  -- The bytes of the objects escaped at `k`, computed once per set of escapes.
-  let mut escBytes : Std.HashMap BitsKey Nat := {}
-  let mut operand : Array Ranges := #[]
-  let mut stack : Array Ranges := #[]
-  let mut pointer : Array Nat := #[]
-  let mut uninit : Array Ranges := #[]
-  let mut kill : Array Ranges := #[]
-  let mut readsAll : Array Bool := #[]
-  let mut ends : Array Ranges := #[]
-  for h : k in [0:n] do
-    let i : Insn := d.insns[k]
-    let lends := scopes[k]!.filterMap fun (_, sc) =>
-      if sc.kind == .lend then some (sc.frameOffset, sc.size) else none
-    let e ← effects i (d.items[k]?.getD []) mode lends (facts.islandTemplate k)
-    let mut eb := 0
-    if e.pointer || e.opnds.any (·.2 == .addr) then
-      let key : BitsKey := ⟨esc[k]!⟩
-      match escBytes[key]? with
-      | some b => eb := b
-      | none =>
-        let mut st := esc[k]!
-        while st != 0 do
-          let j := st.log2
-          st := st ^^^ (1 <<< j)
-          let sc := d.scopes[j]!.2
-          let (lo, hi) := range f sc.frameOffset sc.size
-          eb := eb ||| bitsOf lo hi
-        escBytes := escBytes.insert key eb
-    let (isCall, call, ws) : Bool × Bool × List (BitVec 32) := match i with
-      | .native op ops => (op.info.shape == .call || op.info.shape == .tailCall,
-          op.info.shape == .call, callArgs ops)
-      | _ => (false, false, [])
-    -- A call that may have stack arguments: the callee reads at most `stackArgs` bytes of the
-    -- outgoing area, at `fp - F` (frame byte 0), if known; else any byte.
-    let gs : Ranges := if !e.readsAll then [] else match call, facts.stackArgs k with
-      | true, some m => [range f (BitVec.ofInt 32 (-(f : Int))) m]
-      | _, _ => all
-    let mut g : Ranges := []
-    let mut kl : Ranges := []
-    for (off, acc) in e.opnds do
-      match acc with
-      | .read m => g := range f off m :: g
-      | .write m => kl := range f off m :: kl
-      | .opaque => g := all
-      -- A by-address argument no escape covers: its object's extent is unknown.
-      | .addr =>
-        let (lo, hi) := range f off 1
-        if isCall && lo < hi && !eb.testBit lo then g := all
-      | _ => pure ()
-    -- An sret destination is `Uninit` once the call has read its arguments (reduced.md §C0.4):
-    -- what the callee reads of it through pointers is that.
-    let un : Ranges := match call, facts.sretSize k, sretDest ws with
-      | true, some m, some s => [range f s m]
-      | _, _, _ => []
-    let gen := (g ++ gs).bits ||| (if e.pointer then diff eb un.bits else 0)
-    operand := operand.push g
-    stack := stack.push gs
-    pointer := pointer.push (if e.pointer then eb else 0)
-    uninit := uninit.push un
-    -- What it writes and also reads is live into it all the same: `gen` is added after `kill`.
-    kill := kill.push kl
-    readsAll := readsAll.push (gen == bitsOf 0 f)
-    ends := ends.push (scopes[k]!.filterMap fun (_, sc) =>
-      if sc.kind == .end then some (range f sc.frameOffset sc.size) else none)
-  return { succ, pad, operand, stack, pointer, uninit, kill, readsAll, ends }
+  let ci := Flow.callInfo d.insns[k]!
+  -- A call that may have stack arguments: the callee reads at most `stackArgs` bytes of the
+  -- outgoing area, at `fp - F` (frame byte 0), if known; else any byte.
+  let gs : Ranges := if !e.readsAll then [] else match ci.2.1, facts.stackArgs k with
+    | true, some m => [range f (BitVec.ofInt 32 (-(f : Int))) m]
+    | _, _ => all
+  let gk := Flow.opndRanges f ci.1 eb e.opnds
+  -- An sret destination is `Uninit` once the call has read its arguments (reduced.md §C0.4):
+  -- what the callee reads of it through pointers is that.
+  let un : Ranges := match ci.2.1, facts.sretSize k, sretDest ci.2.2 with
+    | true, some m, some s => [range f s m]
+    | _, _, _ => []
+  let gen := (gk.1 ++ gs).bits ||| (if e.pointer then diff eb un.bits else 0)
+  -- What it writes and also reads is live into it all the same: `gen` is added after `kill`.
+  { operand := gk.1, stack := gs, pointer := if e.pointer then eb else 0, uninit := un,
+    kill := gk.2, readsAll := gen == bitsOf 0 f,
+    ends := scopes[k]!.filterMap fun (_, sc) =>
+      if sc.kind == .end then some (range f sc.frameOffset sc.size) else none }
 
-/-- The frame bytes live into each instruction: some path from it reads them before an
-instruction writes them for sure (unwinding to a landing pad past nothing it writes). A
-worklist, in reverse order, from nothing live. -/
-def Flow.liveIn (fl : Flow) : Array Nat := Id.run do
+/-- Instruction `k`'s row (`esc`: `escapedAt`'s result). -/
+def Flow.row (d : Decoded) (mode : Mode) (facts : Facts) (esc : Array Nat)
+    (scopes : Array (List (Nat × Scope))) (k : Nat) : Except String Flow.Row := do
+  let e ← effects d.insns[k]! (d.items[k]?.getD []) mode (Flow.lendsOf scopes k)
+    (facts.islandTemplate k)
+  let eb := if e.pointer || e.opnds.any (·.2 == .addr) then escBytesOf d esc[k]! else 0
+  return Flow.rowOf d facts scopes k e eb
+
+def Flow.of (d : Decoded) (mode : Mode) (facts : Facts := {}) : Except String Flow := do
+  let sp := flow d
+  let esc := escapedAt d ((sp.1.zip sp.2).map fun (s, p) => s ++ p)
+  let scopes : Array (List (Nat × Scope)) := scopesAt d
+  let rows ← (List.range d.insns.size).mapM (Flow.row d mode facts esc scopes)
+  let succ := sp.1
+  let pad := sp.2
+  let operand := (rows.map Flow.Row.operand).toArray
+  let stack := (rows.map Flow.Row.stack).toArray
+  let pointer := (rows.map Flow.Row.pointer).toArray
+  let uninit := (rows.map Flow.Row.uninit).toArray
+  let kill := (rows.map Flow.Row.kill).toArray
+  let readsAll := (rows.map Flow.Row.readsAll).toArray
+  let ends := (rows.map Flow.Row.ends).toArray
+  return { succ, pad, operand, stack, pointer, uninit, kill, readsAll, ends, esc }
+
+/-- One backward transfer of the liveness at `k` from `live` (the bytes live into each
+instruction), with `gen` the bytes `k` reads: what is live out of it (into its successors) but
+for what it writes for sure (`kill`), plus what is live into its landing pads (unwinding writes
+nothing), but for what it makes `Uninit` after reading its operands (`uninit`), plus what it
+reads; and with `ends`, but for what an `End` before it covers (R reads that as `Uninit`). -/
+def Flow.transferWith (fl : Flow) (gen : Nat) (ends : Bool) (live : Array Nat) (k : Nat) : Nat :=
+  let out := fl.succ[k]!.foldl (fun a s => a ||| live[s]!) 0
+  let v := diff out fl.kill[k]!.bits
+  let v := fl.pad[k]!.foldl (fun a s => a ||| live[s]!) v
+  -- What `k` makes `Uninit` after reading its operands is dead into it, but what it reads.
+  let v := diff v fl.uninit[k]!.bits ||| gen
+  -- What R reads of the bytes an `End` before `k` covers is `Uninit`.
+  if ends then diff v fl.ends[k]!.bits else v
+
+/-- `liveIn`'s transfer at `k`. -/
+def Flow.transfer (fl : Flow) (live : Array Nat) (k : Nat) : Nat :=
+  fl.transferWith (fl.gen k) true live k
+
+/-- The precise liveness' transfer at `k`: only operand reads generate (no pointer, stack or
+read-everything over-approximation beyond what `operand` holds), and `End`s kill nothing. -/
+def Flow.preciseTransfer (fl : Flow) (live : Array Nat) (k : Nat) : Nat :=
+  fl.transferWith fl.operand[k]!.bits false live k
+
+/-- The least fixpoint of a backward transfer `tr` over `succ`/`pad`: a worklist, in reverse
+order, from nothing live. -/
+def Flow.solve (fl : Flow) (tr : Array Nat → Nat → Nat) : Array Nat := Id.run do
   let n := fl.succ.size
   let mut preds : Array (List Nat) := Array.replicate n []
   for k in [0:n] do
@@ -677,18 +763,49 @@ def Flow.liveIn (fl : Flow) : Array Nat := Id.run do
       let k := n - 1 - k'
       if !dirty[k]! then continue
       dirty := dirty.set! k false
-      let out := fl.succ[k]!.foldl (fun a s => a ||| liveIn[s]!) 0
-      let v := diff out fl.kill[k]!.bits
-      let v := fl.pad[k]!.foldl (fun a s => a ||| liveIn[s]!) v
-      -- What `k` makes `Uninit` after reading its operands is dead into it, but what it reads.
-      let v := diff v fl.uninit[k]!.bits ||| fl.gen k
-      -- What R reads of the bytes an `End` before `k` covers is `Uninit`.
-      let v := diff v fl.ends[k]!.bits ||| liveIn[k]!
+      let v := tr liveIn k ||| liveIn[k]!
       if v != liveIn[k]! then
         liveIn := liveIn.set! k v
         for p in preds[k]! do dirty := dirty.set! p true
         more := true
   return liveIn
+
+/-- The frame bytes live into each instruction: some path from it reads them before an
+instruction writes them for sure (unwinding to a landing pad past nothing it writes). -/
+def Flow.liveIn (fl : Flow) : Array Nat := fl.solve fl.transfer
+
+/-- The bytes some path from each instruction reads (by an operand) before a write, ignoring
+`End`s: the precise liveness `endsUnread` uses. -/
+def Flow.preciseLive (fl : Flow) : Array Nat := fl.solve fl.preciseTransfer
+
+/-- `live` is a post-fixpoint of `tr` (each `tr live k ⊆ live[k]`), with one entry per
+instruction, as many landing-pad lists as successor lists, and every successor and landing pad
+in range. `solve` is a `while` loop (`partial`), so the proofs use this check, not the loop:
+any post-fixpoint over-approximates the liveness. -/
+def Flow.postFix (fl : Flow) (tr : Array Nat → Nat → Nat) (live : Array Nat) : Bool :=
+  live.size == fl.succ.size && fl.pad.size == fl.succ.size &&
+  (List.range fl.succ.size).all fun k =>
+    (fl.succ[k]! ++ fl.pad[k]!).all (· < fl.succ.size) &&
+    diff (tr live k) live[k]! == 0
+
+/-- `live` is a post-fixpoint of `liveIn`'s transfer. -/
+def Flow.liveOk (fl : Flow) (live : Array Nat) : Bool := fl.postFix fl.transfer live
+
+/-- `live` is a post-fixpoint of the precise transfer. -/
+def Flow.preciseOk (fl : Flow) (live : Array Nat) : Bool := fl.postFix fl.preciseTransfer live
+
+/-- `at_` (a bitset over `Escape` scopes per instruction) is a forward post-fixpoint of
+`escapedAt`'s dataflow over `edges`: the scopes before instruction 0 applied to nothing are in
+`at_[0]`, and for each edge `k → s` the scopes before `s` applied to `at_[k]` are in `at_[s]`
+(edges in range). `escapedAt` is a `while` loop, so the proofs use this. The steps are
+`stepsAt`'s (the same as `escapeSteps`', recomputed per instruction: quadratic, but simple to
+reason about). -/
+def escOk (d : Decoded) (edges : Array (List Nat)) (at_ : Array Nat) : Bool :=
+  let n := d.insns.size
+  at_.size == n &&
+  (n == 0 || diff (applyStepsL (stepsAt d 0) 0) at_[0]! == 0) &&
+  (List.range n).all fun k => edges[k]!.all fun s =>
+    s < n && diff (applyStepsL (stepsAt d s) at_[k]!) at_[s]! == 0
 
 /-- The store instruction `k` dropped: its destination (`mov.w128`'s low half) and width. -/
 def droppedStore (d : Decoded) (k : Nat) : Option (BitVec 32 × Nat) :=
@@ -717,25 +834,50 @@ def flagSlot (d : Decoded) (k : Nat) : Option (BitVec 32) :=
     | _ => none
   | _ => none
 
-/-- The dropped stores `droppedNotDead` can't show dead: their instruction indices. -/
+/-- The bytes live out of `k` (into its successors) by `live`. -/
+def Flow.liveOut (fl : Flow) (live : Array Nat) (k : Nat) : Nat :=
+  fl.succ[k]!.foldl (fun a s => a ||| live[s]!) 0
+
+/-- The bytes dropped store `k` writes (`droppedStore`'s range), as a bitset. -/
+def droppedBitsAt (d : Decoded) (k : Nat) : Nat :=
+  match droppedStore d k with
+  | some (s, w) => bitsOf (range d.frameSize s w).1 (range d.frameSize s w).2
+  | none => 0
+
+/-- The bytes the dropped stores write, as a bitset. -/
+def droppedBits (d : Decoded) : Nat := d.dropped.foldl (fun b k => b ||| droppedBitsAt d k) 0
+
+/-- No byte an `End` before `k` covers that a dropped store writes is precise-live (`plive`)
+out of `k`: such a byte, diverging after the drop, is never read by R before a write. -/
+def endsUnread (d : Decoded) (fl : Flow) (plive : Array Nat) : Bool :=
+  let db := droppedBits d
+  (List.range d.insns.size).all fun k => fl.ends[k]!.bits &&& db &&& fl.liveOut plive k == 0
+
+/-- An overflow op's flag byte, which its flag store writes after the (dropped) result's. -/
+def flagBits (d : Decoded) (k : Nat) : Nat :=
+  match flagSlot d k with
+  | some o => bitsOf (range d.frameSize o 1).1 (range d.frameSize o 1).2
+  | none => 0
+
+/-- Dropped store `k` is shown dead by `live`: no byte it writes is live out of it, but for an
+overflow op's flag byte (`flagBits`, written for sure after it). -/
+def droppedOk (d : Decoded) (fl : Flow) (live : Array Nat) (k : Nat) : Bool :=
+  match droppedStore d k with
+  | some (s, w) =>
+    diff (fl.liveOut live k) (flagBits d k) &&& bitsOf (range d.frameSize s w).1 (range d.frameSize s w).2 == 0
+  | none => false
+
+/-- The dropped stores `droppedNotDead` can't show dead: their instruction indices (all of them
+if a fixpoint check or `endsUnread` fails). -/
 def droppedNotDead (d : Decoded) (mode : Mode) (facts : Facts := {}) : Except String (List Nat) := do
   if d.dropped.isEmpty then return []
-  let f := d.frameSize
   let fl ← Flow.of d mode facts
   let liveIn := fl.liveIn
-  let mut bad : List Nat := []
-  for k in d.dropped do
-    let liveOut := fl.succ[k]!.foldl (fun a s => a ||| liveIn[s]!) 0
-    -- An overflow op's flag store, after its (dropped) result's, writes `o`'s byte for sure.
-    let liveOut := match flagSlot d k with
-      | some o => let (lo, hi) := range f o 1; diff liveOut (bitsOf lo hi)
-      | none => liveOut
-    match droppedStore d k with
-    | some (s, w) =>
-      let (lo, hi) := range f s w
-      if liveOut &&& bitsOf lo hi != 0 then bad := bad ++ [k]
-    | none => bad := bad ++ [k]
-  return bad
+  let plive := fl.preciseLive
+  -- The fixpoints checked (the proofs can't look into the loops), and the `End` check.
+  if !(fl.liveOk liveIn && escOk d fl.edges fl.esc && fl.preciseOk plive && endsUnread d fl plive) then
+    return d.dropped.toList
+  return d.dropped.toList.filter fun k => !droppedOk d fl liveIn k
 
 /-- How `firstReader`'s instruction reads the bytes. -/
 inductive ReadBy
@@ -857,6 +999,10 @@ def decodeChecked (code : ByteArray) (fields : Fields) (rodata : ByteArray)
   -- `ArgPrivate`).
   if !privCheck d then
     throw "an Escape or Lend scope covers the link slots, or an Escape one an arg's destination"
+  -- Without a frame pointer, no frame operand's displacement wraps (`spDispCheck`, for
+  -- `Item.SpDispOk`).
+  if !spDispCheck code.data d mode then
+    throw "a frame operand's displacement wraps off rsp"
   -- The switch tables' starts and the targets (`tablesCheck`, for `HdlTables`); the call sites
   -- sorted by start and aligned with the calls (`callSitesCheck`, for `PadsLinked`); every
   -- relocated field within the code (`relocsInCheck`, for `RelocsIn`).

@@ -142,13 +142,16 @@ theorem padding_read {c c' : Cursor} {pad : Nat} (h : DM.padding.run c = .ok (pa
 
 /-- Padding in memory: `nop` items (`Item.nop n`, `1 ≤ n ≤ 9`, canonical) from `p`. -/
 theorem padRead_codeAt {ctx : Ctx} {m : Mem} {c : Cursor} {rs : Array Reloc}
-    (hk : LinkOk ctx m c rs) {p q : Nat} (h : PadRead c p q) (hb : Boundary rs p) :
+    {mode : Ryo.Obj.Mode} (hk : LinkOkF ctx m c rs mode) {p q : Nat} (h : PadRead c p q) (hb : Boundary rs p) :
     ∃ ns : List Nat, (∀ n ∈ ns, 1 ≤ n ∧ n ≤ 9) ∧ CodeAt ctx m (ns.map Item.nop) p ∧
       q = p + codeSize (ns.map Item.nop) ∧ Boundary rs q := by
+  -- `nop`s have no memory operand: the frame form doesn't matter, read them in the fp form.
+  have hk0 : LinkOk ctx m { c with spFrame := none } rs :=
+    ⟨hk.fields, hk.sorted, hk.loaded, hk.small, rfl⟩
   induction h with
   | nil p => exact ⟨[], by simp, trivial, by simp [codeSize], hb⟩
   | nop h1 h9 hby hr _ ih =>
-    obtain ⟨hi, hs, hb'⟩ := nop_itemAt hk h1 h9 hby hr hb
+    obtain ⟨hi, hs, hb'⟩ := nop_itemAt hk0 h1 h9 hby hr hb
     obtain ⟨ns, hns, hc, hq, hbq⟩ := ih hb'
     refine ⟨_ :: ns, ?_, ⟨hi, by rw [hs]; exact hc⟩, ?_, hbq⟩
     · intro k hk'
