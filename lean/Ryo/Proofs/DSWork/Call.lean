@@ -1533,7 +1533,7 @@ theorem bodySim_call' (hD : Decodes S code relocs rodata callSites dropped scope
       · intro h
         exact absurd h (pad_not_leadArg hD hcl)
       · change CacheInv (S.used pad) y
-        rw [H.cacheCleared.pads k pad cat hcl]; exact CacheInv.emptyPe _ _
+        rw [(H.cacheCleared hD).pads k pad cat hcl]; exact CacheInv.emptyPe _ _
   | @tail w f fo pre ps j ws c'' hhead hd hc' hps hrax =>
     simp only [InsnOf] at hio'
     obtain ⟨op, ops, hof, rfl, hops⟩ := hio'

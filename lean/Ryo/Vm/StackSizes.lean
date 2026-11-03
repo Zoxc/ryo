@@ -4,7 +4,7 @@ Ryo.Vm.StackSizes — a Lean-only check of the calls' stack-argument areas again
 areas (`Code.stackSize`, in `imageProgram` the callee's `FuncEntry::arg_size`) come from the
 image, which the decoder doesn't see, so `Frame.decodeChecked` can't run it; check-image (or
 whatever builds the `R.Code`s) does. `Ryo.Proofs.Discharge.StackSizes` turns its success into
-`StackSizes` (and `peShadow`'s `32 ≤ F`).
+`StackSizes` (and `Hyps.peShadow`, `32 ≤ F`).
 
 It checks: on PE `32 ≤ F`; for every instruction `k`, its area fits in the frame with PE's 16
 bytes of return address and alignment (`StackSizes.frame`), and on PE a call's holds the

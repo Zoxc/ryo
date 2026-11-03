@@ -86,16 +86,15 @@ discharged later:
   `frameK` (`frameTop ≤ K ≤ 2 ^ 31`; with `boundsOk`, checked by `decodeBounded`, it gives
   `Hyps.frameBounds`, `Discharge/FrameBounds.lean`),
   `argSizeK` (the window holds the incoming area, `16 + argSize ≤ K`),
-  `relocsIn` (`RelocsIn`: relocated fields within the code), `argsOk` (`ArgsOk`:
-  the leading `arg`s read distinct argument registers of the convention, and no branch target
-  is one);
+  `argsOk` (`ArgsOk`: the leading `arg`s read distinct argument registers of the convention,
+  and no branch target is one);
 - privacy after the scopes (checkable with the scopes, as an invariant): `loadPrivate` (a
   `load`'s destination, `LoadPrivate`), `argPrivate` (an `arg`'s, `ArgPrivate`),
   `resultPrivate` (a call's result slots, `ResultPrivate`), `linkPrivate` (the frame's link
-  slots, in no escaped object or `Lend` extent, `LinkPrivate`), `peShadow` (on PE the island
-  templates' 32-byte shadow space at the frame's bottom holds no private byte), `peStackArg`
-  (on PE a handler call's stack argument, `[-F + 32, -F + 36)`, is private and `Uninit`, and
-  `36 ≤ F`);
+  slots, in no escaped object or `Lend` extent, `LinkPrivate`), `peArgSlots`
+  (the frame bytes in `[-F + 32, frameLo)`, on PE a handler call's stack argument, are private
+  and `Uninit` at every boundary; with `frameSizesCheck`, which gives `36 ≤ F`, and `boundsOk`
+  it gives `Hyps.peStackArg`, `Discharge/PeStackArg.lean`);
 - the environment and the layout (not checkable from the function): `sepAcross` (the frame
   separation across handler calls, calls and islands, `SepAcross`: `FrameSep.extend`'s
   allocation facts, not yet in the contracts), `envApart` (`EnvApart`: the frame window not
@@ -103,11 +102,16 @@ discharged later:
   the JIT record off the stack), `codeApart` (`CodeApart`: nothing the function or its environment writes is code or
   rodata), `envOutside` (`EnvOutside`: the environment's entries are `Env.out` states);
 - facts of the decoder and linker not yet exposed: `deadStore` (`DeadStoreSim`: the steps of
-  dropped stores), `cacheCleared` (`CacheCleared`: the cache is empty at branch targets and
-  landing pads). The LSDA as linked against `cleanupAt` (`PadsLinked`) is derived by `Hyps.padsLinked`
+  dropped stores). The LSDA as linked against `cleanupAt` (`PadsLinked`) is derived by `Hyps.padsLinked`
   (`Discharge/PadsLinked.lean`) from `callSitesCheck` (`Decodes.callSitesOk`, run by
   `decodeChecked`: call sites sorted by start and aligned with the calls) and the trusted
-  `unwinderReadsLsda`.
+  `unwinderReadsLsda`. Relocated fields within the code (`RelocsIn`) are checked too:
+  `decodeChecked` runs `relocsInCheck`, whose success (`Hyps.relocsInOk`,
+  `relocsInOk_of_decodes`) gives `Hyps.relocsIn` (`Discharge/RelocsIn.lean`). So is the cache
+  the decoder used being empty at branch targets and landing pads (`CacheCleared`):
+  `decodeChecked` runs `cacheClearedCheck` (`Hyps.cacheOk`, `cacheOk_of_decodes`, with
+  `Decodes.targetsRead`, the first pass's targets), which gives `Hyps.cacheTargets` and
+  `Hyps.cacheCleared` (`Discharge/CacheCleared.lean`).
 
 Not covered: the prologue (R's `entry` against the entry's counter check, the prologue and the
 stack probe: the simulation starts at instruction 0's boundary) and the trip's `Done` outcome (a
@@ -127,6 +131,8 @@ import Ryo.Proofs.DecodeLink.Bounds
 import Ryo.Vm.Frame
 import Ryo.Proofs.DecodeLink.Tables
 import Ryo.Proofs.DecodeLink.CacheRegs
+import Ryo.Proofs.Discharge.RelocsIn
+import Ryo.Proofs.Discharge.CacheCleared
 
 set_option linter.constructorNameAsVariable false
 set_option linter.unusedSimpArgs false
@@ -526,7 +532,7 @@ theorem bodySim_dense (_hD : Decodes S code relocs rodata callSites dropped scop
   · show x''.rip = addrAt S.ctx (posOf S.r pc)
     rw [hrip'', hpe]
   · show CacheInv (S.used pc) x''
-    have hc := H.cacheCleared.targets k hlt _ htg
+    have hc := H.cacheTargets k hlt _ htg
     simp only [Setup.used, hpe, hc, ↓reduceIte]
     exact CacheInv.emptyPe _ _
 
@@ -658,6 +664,7 @@ theorem decodes_of_ok {code : ByteArray} {relocs : Array Reloc} {rodata : ByteAr
     (hdec : decodeReduced code relocs rodata callSites dropped scopes mode = .ok d)
     (hnr : regionPad mode callSites = none)
     (hcs : callSitesCheck code relocs rodata callSites dropped scopes mode = true)
+    (hcc : cacheClearedCheck code relocs rodata callSites dropped scopes mode = true)
     (c : R.Code) (hc : c.d = d) (hm : c.mode = mode) (ctx : Ctx) (E : Env) (K : Int)
     (x0 : X86.State) (Owned : BitVec 64 → Prop) (lo : BitVec 64)
     (padOf : BitVec 64 → Option (BitVec 64)) (Safe : R.Query → Prop) :
@@ -665,14 +672,15 @@ theorem decodes_of_ok {code : ByteArray} {relocs : Array Reloc} {rodata : ByteAr
       S.ctx = ctx ∧ S.E = E ∧ S.K = K ∧ S.x0 = x0 ∧ S.Owned = Owned ∧ S.lo = lo ∧
       S.padOf = padOf ∧ S.Safe = Safe := by
   obtain ⟨r, c', hread, hred⟩ := decodeReduced_read hdec
-  obtain ⟨c0, c1, targets, stub, padded, hc0, hrun, hpro⟩ := read_instructions_prologue hread hnr
+  obtain ⟨targets, cT, hT⟩ := readTargets_of_check hcc
+  obtain ⟨c0, c1, stub, padded, hc0, hrun, hpro⟩ := read_instructions_targets hread hT hnr
   obtain ⟨hit, -, -, -⟩ := instructions_read hrun
   obtain ⟨st, ca, drs, ar, h0, hc0', hd0, ha0, -, -, har, hix⟩ := iters_indexed hit
   have hsz : c0.code.size = code.data.size := by rw [hc0]; rfl
   refine ⟨Setup.mk ctx E c r c0 relocs rodata callSites targets st ca drs ar K x0 Owned lo padOf
     Safe, ⟨⟨c', hread⟩,
     hc ▸ hred, hm, rfl, rfl, rfl, hnr, hc0, ?_, h0, hc0', hd0, ha0, har, ?_,
-    fun hfp => hpro (hm ▸ hfp), hcs⟩, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    fun hfp => hpro (hm ▸ hfp), hcs, ⟨cT, hT⟩⟩, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
   · exact ⟨stub, padded, c1, by simpa [Setup.fr, hm, hsz] using hrun⟩
   · simpa [Setup.fr, hm] using hix
 
@@ -712,6 +720,7 @@ theorem decode_sound_of_ok {code : ByteArray} {relocs : Array Reloc} {rodata : B
     (hnr : regionPad mode callSites = none)
     (htc : tablesCheck code relocs rodata callSites dropped scopes mode = true)
     (hcs : callSitesCheck code relocs rodata callSites dropped scopes mode = true)
+    (hcc : cacheClearedCheck code relocs rodata callSites dropped scopes mode = true)
     (c : R.Code) (hc : c.d = d) (hm : c.mode = mode) (ctx : Ctx) (E : Env) (K : Int)
     (x0 : X86.State) (Owned : BitVec 64 → Prop) (lo : BitVec 64)
     (padOf : BitVec 64 → Option (BitVec 64)) (Safe : R.Query → Prop) :
@@ -720,13 +729,15 @@ theorem decode_sound_of_ok {code : ByteArray} {relocs : Array Reloc} {rodata : B
       S.padOf = padOf ∧ S.Safe = Safe ∧
       (Hyps S → ∀ s x, BInv S s x → SafeFrom Safe c s → FnSim ctx E c (BInv S) (ExitRel S) s x) := by
   obtain ⟨S, hD, h1, h2, h3, h4, h5, h6, h7, h8, h9⟩ :=
-    decodes_of_ok hdec hnr hcs c hc hm ctx E K x0 Owned lo padOf Safe
+    decodes_of_ok hdec hnr hcs hcc c hc hm ctx E K x0 Owned lo padOf Safe
   refine ⟨S, hD, h1, h2, h3, h4, h5, h6, h7, h8, h9, fun H => ?_⟩
   subst h1 h2 h3 h9
   exact decode_sound hD H htc
 
 /-- What `Frame.decodeChecked` accepting a function gives: `decodeReduced`'s acceptance, the
-bound check (`Decoded.boundsOk`) and `tablesCheck`. -/
+bound check (`Decoded.boundsOk`), `tablesCheck`, `frameSizesCheck`, `callSitesCheck`,
+`relocsInCheck` (`Hyps.relocsInOk` by `relocsInOk_of_decodes`) and `cacheClearedCheck`
+(`Hyps.cacheOk` by `cacheOk_of_decodes`). -/
 theorem decodeChecked_ok {code : ByteArray} {relocs : Array Reloc} {rodata : ByteArray}
     {callSites : Array CallSite} {dropped : Array DroppedStore} {scopes : Array R.Scope}
     {mode : Ryo.Obj.Mode} {facts : Frame.Facts} {d : Decoded}
@@ -735,7 +746,9 @@ theorem decodeChecked_ok {code : ByteArray} {relocs : Array Reloc} {rodata : Byt
     decodeReduced code relocs rodata callSites dropped scopes mode = .ok d ∧
       d.boundsOk mode = true ∧ tablesCheck code relocs rodata callSites dropped scopes mode = true ∧
       frameSizesCheck d mode = true ∧
-      callSitesCheck code relocs rodata callSites dropped scopes mode = true := by
+      callSitesCheck code relocs rodata callSites dropped scopes mode = true ∧
+      relocsInCheck code.data relocs = true ∧
+      cacheClearedCheck code relocs rodata callSites dropped scopes mode = true := by
   unfold Frame.decodeChecked Frame.decodeChecked.checkDropped at h
   cases hb : decodeBounded code (.relocs relocs) rodata callSites dropped scopes mode with
   | error e => simp [hb, bind, Except.bind, throw, throwThe, MonadExceptOf.throw] at h
@@ -753,20 +766,29 @@ theorem decodeChecked_ok {code : ByteArray} {relocs : Array Reloc} {rodata : Byt
     | false => simp [hb, hfs, ht, hcs, bind, Except.bind, pure, Except.pure, throw, throwThe,
         MonadExceptOf.throw] at h
     | true =>
+    cases hri : relocsInCheck code.data relocs with
+    | false => simp [hb, hfs, ht, hcs, hri, bind, Except.bind, pure, Except.pure, throw, throwThe,
+        MonadExceptOf.throw] at h
+    | true =>
+    cases hcc : cacheClearedCheck code relocs rodata callSites dropped scopes mode with
+    | false => simp [hb, hfs, ht, hcs, hri, hcc, bind, Except.bind, pure, Except.pure, throw,
+        throwThe, MonadExceptOf.throw] at h
+    | true =>
       cases hdn : Frame.droppedNotDead d0 mode facts with
-      | error e => simp [hb, hfs, ht, hcs, hdn, bind, Except.bind, pure, Except.pure] at h
+      | error e => simp [hb, hfs, ht, hcs, hri, hcc, hdn, bind, Except.bind, pure, Except.pure] at h
       | ok l =>
         cases l with
         | nil =>
-          simp [hb, hfs, ht, hcs, hdn, bind, Except.bind, pure, Except.pure] at h
+          simp [hb, hfs, ht, hcs, hri, hcc, hdn, bind, Except.bind, pure, Except.pure] at h
           subst h
-          exact ⟨hd, hbo, rfl, hfs, rfl⟩
+          exact ⟨hd, hbo, rfl, hfs, rfl, rfl, rfl⟩
         | cons k rest =>
-          simp [hb, hfs, ht, hcs, hdn, bind, Except.bind, pure, Except.pure, throw, throwThe,
-            MonadExceptOf.throw] at h
+          simp [hb, hfs, ht, hcs, hri, hcc, hdn, bind, Except.bind, pure, Except.pure, throw,
+            throwThe, MonadExceptOf.throw] at h
 
 /-- `decode_sound_of_ok` from the checked decoder's acceptance (`Frame.decodeChecked`: the
-bound check, `tablesCheck`, `frameSizesCheck` and `callSitesCheck` included). -/
+bound check, `tablesCheck`, `frameSizesCheck`, `callSitesCheck`, `relocsInCheck` and
+`cacheClearedCheck` included). -/
 theorem decode_sound_of_checked {code : ByteArray} {relocs : Array Reloc} {rodata : ByteArray}
     {callSites : Array CallSite} {dropped : Array DroppedStore} {scopes : Array R.Scope}
     {mode : Ryo.Obj.Mode} {facts : Frame.Facts} {d : Decoded}
@@ -781,6 +803,7 @@ theorem decode_sound_of_checked {code : ByteArray} {relocs : Array Reloc} {rodat
       S.padOf = padOf ∧ S.Safe = Safe ∧
       (Hyps S → ∀ s x, BInv S s x → SafeFrom Safe c s → FnSim ctx E c (BInv S) (ExitRel S) s x) :=
   have h := decodeChecked_ok hdec
-  decode_sound_of_ok h.1 hnr h.2.2.1 h.2.2.2.2 c hc hm ctx E K x0 Owned lo padOf Safe
+  decode_sound_of_ok h.1 hnr h.2.2.1 h.2.2.2.2.1 h.2.2.2.2.2.2 c hc hm ctx E K x0 Owned lo padOf
+    Safe
 
 end Ryo.Proofs.DecodeSound

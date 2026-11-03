@@ -114,6 +114,8 @@ any later use (a value-flow, not liveness, question).
 import Ryo.Vm.DecodeReduced
 import Ryo.Vm.FrameSizes
 import Ryo.Vm.CallSitesCheck
+import Ryo.Vm.RelocsInCheck
+import Ryo.Vm.CacheClearedCheck
 import Ryo.Vm.OpSem.Footprint
 import Ryo.Vm.R.Islands
 import Std.Data.HashMap
@@ -833,7 +835,9 @@ def incomingExtents (decoded : Array (Option Decoded)) (mode : Mode) : Array (Op
 /-! ### The checked decoding -/
 
 /-- `decodeBounded` (`decodeReducedWith` with the frame bounds), accepting the code only if
-`tablesCheck` accepts its switch tables (with relocations) and `droppedNotDead` shows every dropped
+`tablesCheck` accepts its switch tables (with relocations), `callSitesCheck` its call sites,
+`relocsInCheck` its relocations, `cacheClearedCheck` the cache at targets and landing pads, and
+`droppedNotDead` shows every dropped
 store dead (given `facts`): the decoding, or an error
 naming the first store it doesn't (its word offset). -/
 def decodeChecked (code : ByteArray) (fields : Fields) (rodata : ByteArray)
@@ -842,16 +846,24 @@ def decodeChecked (code : ByteArray) (fields : Fields) (rodata : ByteArray)
   let d ← match decodeBounded code fields rodata callSites dropped scopes mode with
     | .ok d => pure d
     | .error e => throw s!"{e.what} at {e.at_}"
-  -- On PE the frame size and the return address fit a signed 32-bit displacement.
+  -- On PE the frame size and the return address fit a signed 32-bit displacement, and the
+  -- frame holds the shadow space and a handler call's stack argument (`peStackArgCheck`).
   if !frameSizesCheck d mode then
-    throw "PE frame size + 8 past 2^31"
+    throw "PE frame size + 8 past 2^31, or the frame smaller than its shadow space"
   -- The switch tables' starts and the targets (`tablesCheck`, for `HdlTables`); the call sites
-  -- sorted by start and aligned with the calls (`callSitesCheck`, for `PadsLinked`).
+  -- sorted by start and aligned with the calls (`callSitesCheck`, for `PadsLinked`); every
+  -- relocated field within the code (`relocsInCheck`, for `RelocsIn`).
   if let .relocs rs := fields then
     if !tablesCheck code rs rodata callSites dropped scopes mode then
       throw "switch table start off a relocation boundary, or code or targets over 2 GiB"
     if !callSitesCheck code rs rodata callSites dropped scopes mode then
       throw "call sites not sorted by start, or a call site misaligned with a call"
+    if !relocsInCheck code.data rs then
+      throw "relocated field past the end of the code"
+    -- The cache empty at branch targets and landing pads (`cacheClearedCheck`, for
+    -- `CacheCleared`).
+    if !cacheClearedCheck code rs rodata callSites dropped scopes mode then
+      throw "branch target outside the first pass's, or a landing pad after an inline instruction"
   checkDropped d mode facts
 
 where

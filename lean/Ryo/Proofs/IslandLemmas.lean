@@ -136,19 +136,29 @@ theorem step_island {c : R.Code} {s : R.RState} {ch : OpSem.Choice} {op : Reduce
     simp only [hsc, hf, hsh, pure, Except.pure, Except.ok.injEq] at h
     exact ⟨s1, rfl, h.symm⟩
 
-/-- R's answer at an island: the world, the writes over the `Lend` extents, then the result. -/
+/-- R's answer at an island: the world, the writes over the `Lend` extents and the shadow
+space (`Code.islandWrites`), then the result. -/
 theorem answer_island {c : R.Code} {s : R.RState} {op : Reduced.Opcode} {f : Full.Opcode}
     {isl : Nat} {ws : List (BitVec 32)} (a : R.Answer)
     (hi : c.d.insns[s.pc]? = some (.native op [.sym isl, .words ws])) (hf : op.full = some f)
     (hsh : f.info.shape = .island) :
     R.answer c s a = (do
-      let st ← R.writeRanges (s.withWorld a.world).st (c.lendsAt s.pc) a.frame
+      let st ← c.islandWrites s.pc (s.withWorld a.world).st a.frame
       match a.result with
       | .unwind exc => R.unwindAt c { s.withWorld a.world with st } exc
       | .ret _ => pure (.step { s.withWorld a.world with st, pc := s.pc + 1 })) := by
   unfold R.answer
   simp only [hi, hf, hsh]
   rfl
+
+/-- `Code.islandWrites` from its two steps. -/
+theorem islandWrites_ok {c : R.Code} {k : Nat} {st0 st1 st : OpSem.State}
+    {new : List (List AbstractByte)} (h1 : R.writeRanges st0 (c.lendsAt k) new = .ok st1)
+    (h2 : st1.writeFrame (-(c.d.frameSize : Int)) (List.replicate c.islandShadow .uninit) = .ok st) :
+    c.islandWrites k st0 new = .ok st := by
+  unfold R.Code.islandWrites
+  rw [h1]
+  exact h2
 
 /-! ### The frame after the template's writes -/
 
@@ -296,12 +306,13 @@ theorem inv_fold {st0 : OpSem.State} {fp : Nat} {L : List (Int × Nat)} {m : X86
     simp only [bind, Except.bind, hw]
     exact hf
 
-theorem inv_writeRanges {st0 st : OpSem.State} {fp : Nat} {L : List (Int × Nat)} {m : X86.Mem}
-    {new : List (List AbstractByte)} (h : Inv st0 fp L [] m st) (hlen : new.length = L.length)
+/-- The writes over the extents `L` (of all the extents `A`) keep the invariant, `L` now done. -/
+theorem inv_writeRanges {st0 st : OpSem.State} {fp : Nat} {A L : List (Int × Nat)} {m : X86.Mem}
+    {new : List (List AbstractByte)} (h : Inv st0 fp A [] m st) (hlen : new.length = L.length)
     (hnew : ∀ j (h1 : j < L.length) (h2 : j < new.length),
       BytesRel new[j] (bytesAt m (la fp L[j].1) L[j].2))
     (hb : ∀ l ∈ L, -2 ^ 62 < l.1 ∧ l.1 + l.2 < 2 ^ 62) :
-    ∃ st', R.writeRanges st L new = .ok st' ∧ Inv st0 fp L L m st' := by
+    ∃ st', R.writeRanges st L new = .ok st' ∧ Inv st0 fp A L m st' := by
   unfold R.writeRanges
   by_cases he : new.isEmpty = true
   · have : new = [] := List.isEmpty_iff.1 he
@@ -321,6 +332,17 @@ theorem inv_writeRanges {st0 st : OpSem.State} {fp : Nat} {L : List (Int × Nat)
     · have : (L.zip new).map (·.1) = L := by
         rw [List.map_fst_zip]; omega
       simpa [this] using h'
+
+/-- Bytes made `Uninit` (an island's shadow space, `Code.islandWrites`) keep the invariant, their
+range now done. -/
+theorem inv_clobber {st0 st : OpSem.State} {fp : Nat} {A D : List (Int × Nat)} {m : X86.Mem}
+    {off : Int} {n : Nat} (hinv : Inv st0 fp A D m st) (hb : -2 ^ 62 < off ∧ off + n < 2 ^ 62) :
+    ∃ st', st.writeFrame off (List.replicate n .uninit) = .ok st' ∧
+      Inv st0 fp A (D ++ [(off, n)]) m st' := by
+  have hbs : BytesRel (List.replicate n .uninit) (bytesAt m (la fp off) n) := by
+    have := Ryo.Proofs.ArgRet.BytesRel.uninit (bytesAt m (la fp off) n)
+    rwa [bytesAt_length] at this
+  exact inv_write hinv hbs hb
 
 /-- At the end of the writes: the frame relation, the memory relation and `EscWF`, for an x86
 state with memory `m` and `fp` in `rbp`. -/

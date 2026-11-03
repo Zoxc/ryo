@@ -1,6 +1,8 @@
 import Ryo.Proofs.DSWork.Boundary
 import Ryo.Proofs.NoArgCursor
+import Ryo.Proofs.Discharge.RelocsIn
 import Ryo.Proofs.Discharge.PadsLinked
+import Ryo.Proofs.Discharge.CacheCleared
 
 set_option linter.constructorNameAsVariable false
 
@@ -566,18 +568,21 @@ set_option maxHeartbeats 1000000 in
 `island_return`/`island_unwind` against the answers `SepAcross.island` gives, with
 `DecodeLink.link_island`'s reads and `opsAt_of_opsArray`; on PE the `nop` after the call,
 `NopRead`). On PE the template's 32-byte shadow space at the frame's bottom,
-`[fp - F, fp - F + 32)`, lies below the link slots (`32 ≤ F`) and holds no initialized private
-byte after the scopes (the frame separation with the lower bound `-F + 32`) (`hshadow`,
-`H.peShadow`): `Island.FrameSep.islandApart` needs both, `island_kept'` only `32 ≤ F`. -/
+`[fp - F, fp - F + 32)`, lies below the link slots (`32 ≤ F`, `H.peShadow`, for
+`island_kept'`); R's answer makes it `Uninit` (`R.Code.islandWrites`), so
+`Island.FrameSep.islandApart` leaves it out. -/
 theorem bodySim_island (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (H : Hyps S) {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
     (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
     (hr : InsnRead S.fr S.ro cur q c') (hop : q.op = .island) :
     BodySim S k p (S.used k) := by
-  have hshadow : S.c.mode.pe = true → 32 ≤ S.F ∧ ∀ s x s1, FrameInv S s x →
-      (S.c.scopesAt s.pc).foldlM R.applyScope s = .ok s1 →
-      FrameSep (-(S.F : Int) + 32) S.K s1.st x := H.peShadow
-  have HI := island_hyps hD H (fun h => (hshadow h).1)
+  have hF32 : S.c.mode.pe = true → 32 ≤ S.F := H.peShadow
+  have HI := island_hyps hD H hF32
+  have hshF : S.c.islandShadow ≤ S.c.d.frameSize ∧ S.c.islandShadow ≤ 32 := by
+    unfold R.Code.islandShadow; split
+    · exact ⟨hF32 (by assumption), by omega⟩
+    · omega
+  have hshE : (S.c.islandShadow : Int) = Island.shadow S.c.mode.pe := rfl
   intro s x hs hfi hrip hci hsafe
   have hcur := noArg_insn hn hr
   subst hcur
@@ -648,7 +653,7 @@ theorem bodySim_island (hD : Decodes S code relocs rodata callSites dropped scop
   have hrspSh : x.rsp.toNat ≤ (x.rsp + BitVec.ofNat 64 (Island.shadow S.c.mode.pe)).toNat := by
     have hsh : Island.shadow S.c.mode.pe ≤ S.c.d.frameSize ∧ Island.shadow S.c.mode.pe ≤ 32 := by
       unfold Island.shadow; split
-      · have := (hshadow (by assumption)).1; exact ⟨this, by omega⟩
+      · have := hF32 (by assumption); exact ⟨this, by omega⟩
       · omega
     rw [BitVec.toNat_add, BitVec.toNat_ofNat,
       Nat.mod_eq_of_lt (show Island.shadow S.c.mode.pe < 2 ^ 64 by omega), hrspN,
@@ -699,23 +704,25 @@ theorem bodySim_island (hD : Decodes S code relocs rodata callSites dropped scop
     intro l hl
     have := hlendsIn l hl; have := hfb.F_le; have := hfb.K_le
     omega
+  have hFle : (S.c.d.frameSize : Int) ≤ 2 ^ 31 := hfb.F_le
+  have hshB : -2 ^ 62 < -(S.c.d.frameSize : Int) ∧
+      -(S.c.d.frameSize : Int) + S.c.islandShadow < 2 ^ 62 := ⟨by omega, by omega⟩
+  -- The template's writes below `fp - F + shadow`: only the shadow space, which R's answer
+  -- makes `Uninit`, is left out.
   have hiap : Island.IslandApart S.Owned S.lo (x1.rsp + 8 + BitVec.ofNat 64
-      (Island.shadow S.c.mode.pe)) s1.fp (S.c.lendsAt s.pc) s1.st := by
+      (Island.shadow S.c.mode.pe)) s1.fp (S.c.lendsAt s.pc)
+      (-(S.c.d.frameSize : Int), S.c.islandShadow) s1.st := by
     rw [hrsp1, hk.fp]
-    have hsepL : FrameSep (-(S.c.d.frameSize : Int) + Island.shadow S.c.mode.pe) S.K s1.st x := by
-      cases hpe : S.c.mode.pe
-      · simpa [Island.shadow] using hsep1
-      · have := (hshadow hpe).2 s x s1 hfi hsc
-        exact this
-    have hsh32 : Island.shadow S.c.mode.pe ≤ 32 := by unfold Island.shadow; split <;> omega
-    have hFle : (S.c.d.frameSize : Int) ≤ 2 ^ 31 := hfb.F_le
-    refine Island.FrameSep.islandApart hsepL ⟨by omega, hwin.hi_le, hwin.top⟩ (by omega)
-      hfi.rrel.rbp (by omega) ?_ hlends
-      (fun o h1 h2 => HI.owned s x hfi o (by have eF : (S.F : Int) = S.c.d.frameSize := rfl; omega) h2)
-    have : (x.rsp + BitVec.ofNat 64 (Island.shadow S.c.mode.pe)).toNat ≤
+    have hrspT : (x.rsp + BitVec.ofNat 64 (Island.shadow S.c.mode.pe)).toNat ≤
         x.rsp.toNat + Island.shadow S.c.mode.pe := by
       rw [BitVec.toNat_add, BitVec.toNat_ofNat]
       exact Nat.le_trans (Nat.mod_le _ _) (Nat.add_le_add_left (Nat.mod_le _ _) _)
+    refine Island.FrameSep.islandApart hsep1 ⟨by omega, hwin.hi_le, hwin.top⟩ (by omega)
+      hfi.rrel.rbp (by omega) ?_ hlends
+      (fun o h1 h2 => HI.owned s x hfi o (by have eF : (S.F : Int) = S.c.d.frameSize := rfl; omega) h2)
+    intro o h1 _ hn
+    have hn' : ¬ (-(S.c.d.frameSize : Int) ≤ o ∧
+        o < -(S.c.d.frameSize : Int) + S.c.islandShadow) := hn
     omega
   have hi1 : S.c.d.insns[s1.pc]? = some (.native op [.sym isl, .words ws]) := by
     rw [hk.pc]; exact hi
@@ -729,7 +736,7 @@ theorem bodySim_island (hD : Decodes S code relocs rodata callSites dropped scop
       hsep1).1 ⟨hy, hry⟩
     have hret' : Island.IslandReturn S.c.mode.pe S.Owned S.lo s1.fp (S.c.lendsAt s.pc) s1.world
         x1 y a' := by rw [hk.fp]; exact hret
-    obtain ⟨st, hw, hrel⟩ := Island.answer_core hret'.toIslandEnd hrr1 hlends hiap
+    obtain ⟨st1, st, hw, hw2, hrel⟩ := Island.answer_core hret'.toIslandEnd hrr1 hlends hshB hiap
     obtain ⟨regs, hres⟩ := hret.result
     have hmemKy : ∀ b, IslandKept S x b → y.mem b = x.mem b := by
       intro b hb
@@ -740,16 +747,17 @@ theorem bodySim_island (hD : Decodes S code relocs rodata callSites dropped scop
       rw [hret.saved 5 (Island.saved_rbp _)]; exact hrbp1
     have hrbpS : y.reg .rbp = BitVec.ofNat 64 s1.fp := by rw [hrbp'', hfi.rrel.rbp, hk.fp]
     obtain ⟨hR'', hM'', hW''⟩ := hrel y rfl hrbpS
-    have hw1 : R.writeRanges (s1.withWorld a'.world).st (S.c.lendsAt s1.pc) a'.frame = .ok st := by
+    have hw1 : R.writeRanges (s1.withWorld a'.world).st (S.c.lendsAt s1.pc) a'.frame = .ok st1 := by
       rw [hk.pc]; exact hw
     have hans : R.answer S.c s1 a' = .ok (.step { s1.withWorld a'.world with st, pc := s1.pc + 1 }) := by
-      rw [IslandLemmas.answer_island a' hi1 hf hsh, hw1, hres]; rfl
+      rw [IslandLemmas.answer_island a' hi1 hf hsh, IslandLemmas.islandWrites_ok hw1 hw2, hres]; rfl
     have hrspX : y.rsp = x.rsp := by rw [hret.rsp, hrsp1]
     have hsv'' : ∀ i, Saved S.c.mode.pe i → y.regs i = x.regs i := fun i hi => by
       rw [hret.saved i hi, hsv1 i hi]
     have hsepW : FrameSep (-(S.c.d.frameSize : Int)) S.K (s1.withWorld a'.world).st y :=
       FrameSep.extend hsep1 hrbp'' rfl hal.1 hsep1.init hal.2.1 hal.2.2
-    have hsep'' := island_sep_writeRanges hsepW hlendsIn hw
+    have hsep'' := island_sep_writeFrame (island_sep_writeRanges hsepW hlendsIn hw) hw2
+      (Int.le_refl _) (by rw [List.length_replicate]; omega)
     have hpc'' : s1.pc + 1 = k + 1 := by rw [hk.pc, hs]
     have hlky := island_link_kept hfi.code hmemKy
     have hFI : FrameInv S { s1.withWorld a'.world with st, pc := s1.pc + 1 } y := by
@@ -822,7 +830,7 @@ theorem bodySim_island (hD : Decodes S code relocs rodata callSites dropped scop
     have hpad' : S.c.cleanupAt s1.pc = some (some pad, cat) := by rw [hk.pc, hs]; exact hcl
     have hend' : Island.IslandEnd S.c.mode.pe S.Owned S.lo s1.fp (S.c.lendsAt s.pc) s1.world
         x1 y a' := by rw [hk.fp]; exact hend
-    obtain ⟨st, hw, hrel⟩ := Island.answer_core hend' hrr1 hlends hiap
+    obtain ⟨st1, st, hw, hw2, hrel⟩ := Island.answer_core hend' hrr1 hlends hshB hiap
     have hmemKy : ∀ b, IslandKept S x b → y.mem b = x.mem b := by
       intro b hb
       have hnw := hkept b hb
@@ -832,11 +840,11 @@ theorem bodySim_island (hD : Decodes S code relocs rodata callSites dropped scop
       rw [hland.saved 5 (Island.saved_rbp _)]; exact hrbp1
     have hrbpS : y.reg .rbp = BitVec.ofNat 64 s1.fp := by rw [hrbpY, hfi.rrel.rbp, hk.fp]
     obtain ⟨hR1, hM1, hW1⟩ := hrel y rfl hrbpS
-    have hw1 : R.writeRanges (s1.withWorld a'.world).st (S.c.lendsAt s1.pc) a'.frame = .ok st := by
+    have hw1 : R.writeRanges (s1.withWorld a'.world).st (S.c.lendsAt s1.pc) a'.frame = .ok st1 := by
       rw [hk.pc]; exact hw
     have hans : R.answer S.c s1 a' = .ok (.step { s1.withWorld a'.world with
         st := { st with exception := exc }, pc := pad }) := by
-      rw [IslandLemmas.answer_island a' hi1 hf hsh, hw1, hres]
+      rw [IslandLemmas.answer_island a' hi1 hf hsh, IslandLemmas.islandWrites_ok hw1 hw2, hres]
       simp only [bind, Except.bind]
       unfold R.unwindAt
       simp only [R.RState.withWorld, hpad']
@@ -846,7 +854,8 @@ theorem bodySim_island (hD : Decodes S code relocs rodata callSites dropped scop
       rw [hland.saved i hi, hsv1 i hi]
     have hsepW : FrameSep (-(S.c.d.frameSize : Int)) S.K (s1.withWorld a'.world).st y :=
       FrameSep.extend hsep1 hrbpY rfl hal.1 hsep1.init hal.2.1 hal.2.2
-    have hsepY := island_sep_writeRanges hsepW hlendsIn hw
+    have hsepY := island_sep_writeFrame (island_sep_writeRanges hsepW hlendsIn hw) hw2
+      (Int.le_refl _) (by rw [List.length_replicate]; omega)
     refine .done (.inl ⟨_, .answer hstep hans, ?_⟩)
     refine ⟨⟨⟨⟨hR1.frame, hR1.layout, hR1.zeroSized⟩, hrbpS, ⟨hW1.idLt, hW1.idInj, hW1.size, hW1.disj⟩⟩, hM1,
       ⟨hsepY.own, hsepY.init, hsepY.dis, hsepY.space, hsepY.esc⟩,
@@ -859,7 +868,7 @@ theorem bodySim_island (hD : Decodes S code relocs rodata callSites dropped scop
     · intro h
       exact absurd h (HI.padArgs k pad cat hcl)
     · change CacheInv (S.used pad) y
-      rw [H.cacheCleared.pads k pad cat hcl]; exact CacheInv.emptyPe _ _
+      rw [(H.cacheCleared hD).pads k pad cat hcl]; exact CacheInv.emptyPe _ _
 
 end Insn
 

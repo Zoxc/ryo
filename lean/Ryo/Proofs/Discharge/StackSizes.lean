@@ -1,5 +1,5 @@
 /-
-Ryo.Proofs.Discharge.StackSizes — the `StackSizes` fields and `peShadow`'s `32 ≤ F` from
+Ryo.Proofs.Discharge.StackSizes — the `StackSizes` fields and `Hyps.peShadow` (`32 ≤ F`) from
 `stackSizesCheck` (`Ryo/Vm/StackSizes.lean`).
 
 - `of_check`: the check, `stackSize` zero past the instructions (`stackSizeOut`) and

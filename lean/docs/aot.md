@@ -454,13 +454,15 @@ follows the decoder's structure:
   `Call.Saved`), and the PE `nop` after a call with a landing pad is part of the iteration
   (`NopRead`). The open prerequisites are
   named hypotheses (`Hyps`): of the decoded code, checkable (`FrameBounds`, `MoreBounds`: handler
-  writes and call result slots in the window, `RelocsIn`, `ArgsOk`: the leading `arg`s read
-  distinct argument registers of the convention and no branch target is one); privacy after the
-  scopes (`LoadPrivate`, `ArgPrivate`, `ResultPrivate`, `LinkPrivate`: the link slots in no
+  writes and call result slots in the window, `ArgsOk`: the leading `arg`s read distinct
+  argument registers of the convention and no branch target is one; `RelocsIn`, relocated
+  fields within the code, follows from `decodeChecked`'s `relocsInCheck`, and `CacheCleared`,
+  the cache empty at branch targets and landing pads, from its `cacheClearedCheck`); privacy
+  after the scopes (`LoadPrivate`, `ArgPrivate`, `ResultPrivate`, `LinkPrivate`: the link slots in no
   escaped object or `Lend` extent); the environment and layout (`SepAcross`, `EnvApart`: the
   window not runtime-owned, live allocations neither runtime-owned nor below `rsp`, symbol slots
   and the JIT record off the stack; `CodeApart`, `EnvOutside`; `StackSizes` follows from check-image's `stackSizesCheck`); facts of the
-  decoder and linker not yet exposed (`DeadStoreSim`, `CacheCleared`, `PadsLinked`,
+  decoder and linker not yet exposed (`DeadStoreSim`, `PadsLinked`,
   `StubsLinked`); trusted, beside the other contracts, `ResumeContract` (`resume`'s handler is
   assembly, outside `opSem`: it comes back only at a landing pad). Not covered: the prologue (the
   simulation starts at instruction 0's boundary).

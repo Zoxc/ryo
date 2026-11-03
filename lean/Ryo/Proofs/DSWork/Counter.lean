@@ -1,5 +1,6 @@
 import Ryo.Proofs.DecodeSound.Basic
 import Ryo.Proofs.NoArgCursor
+import Ryo.Proofs.Discharge.RelocsIn
 import Ryo.Proofs.Discharge.StubsLinked
 
 set_option linter.constructorNameAsVariable false
@@ -246,7 +247,7 @@ theorem ctr_apart (hD : Decodes S code relocs rodata callSites dropped scopes mo
   · obtain ⟨k', hk', hmem⟩ := ctr_head_target hD hk hc
     refine ⟨?_, H.argsOk.untargeted k' hk' _ hmem k rfl⟩
     unfold Setup.used
-    rw [ite_eq_left_iff.mpr (fun h => absurd (H.cacheCleared.targets k' hk' _ hmem) h)]
+    rw [ite_eq_left_iff.mpr (fun h => absurd (H.cacheTargets k' hk' _ hmem) h)]
 
 end Heads
 

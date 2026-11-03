@@ -1,5 +1,6 @@
 import Ryo.Proofs.DecodeSound.Basic
 import Ryo.Proofs.NoArgCursor
+import Ryo.Proofs.Discharge.RelocsIn
 import Ryo.Proofs.Discharge.ArgsOk
 
 set_option linter.constructorNameAsVariable false

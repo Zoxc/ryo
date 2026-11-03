@@ -62,18 +62,22 @@ provenance at `fp + off`, good only for zero-sized accesses; anything else is UB
    - `island isl, ops`: a `Query` with the template (if known), `fp`, the operand slots and
      the `Lend` extents before it; the answer gives the new bytes of those extents and the memory (what the template does
      is its contract's: `Ryo.Vm.R.Islands` has the operand roles, the rest is to come), or
-     unwinds as a call does.
+     unwinds as a call does. On PE the template may write its 32-byte shadow space, the
+     frame's bottom `[fp - F, fp - F + 32)` (`Code.islandShadow`): after the answer's extents
+     those bytes are `Uninit` (the code never reads them; a call's answer may have left
+     initialized bytes there).
    - `lpad x` stores the exception register (`opSem`).
    At the end of the function (return, tail call, unwinding out) every escaped object is
    deallocated.
 
 The answer's `world` (memory and exposed allocations) replaces the state's: the environment
 sees and changes memory, escaped frame objects included, but not the private frame bytes,
-which only the answer's outgoing-area and `Lend` bytes write. What an answer may be (that a
-callee keeps its convention, that an island keeps its contract) is the environment's
-specification, not this file's. An environment may also give no answer: a callee or island
-that aborts (a panic in a `nounwind` context, `process::abort`, a failed runtime check of
-`ryo_rt` going to `fatal`) or never returns. That is divergence of the whole program, not a
+which only the answer's outgoing-area and `Lend` bytes write (and an island's PE shadow
+space, made `Uninit`). What an answer may be (that a callee keeps its convention, that an
+island keeps its contract) is the environment's specification, not this file's. An
+environment may also give no answer: a callee or island that aborts (a panic in a `nounwind`
+context, `process::abort`, a failed runtime check of `ryo_rt` going to `fatal`) or never
+returns. That is divergence of the whole program, not a
 behavior of this function; `Ryo.Vm.R.Run` reports it as a halt. The handlers themselves don't
 panic (`interp.rs`: wrapping offset arithmetic, unchecked indexing, errors through `fatal`):
 their only failures are `opSem`'s `Stop`s (`abort` for `abort`'s handler, UB otherwise).
@@ -213,6 +217,10 @@ structure Code where
   zeroSized : List Int := []
 
 instance : Inhabited Code := ⟨{ d := default, mode := default, ρ := fun _ => none }⟩
+
+/-- The bytes at the frame's bottom an island's template may write: on PE its 32-byte shadow
+space, else none. -/
+def Code.islandShadow (c : Code) : Nat := if c.mode.pe then 32 else 0
 
 /-- The cleanup entry of instruction `k`: `some (some pad, catch)`, `some (none, _)` to
 continue unwinding, `none` if it has none. -/
@@ -437,6 +445,13 @@ def writeRanges (st : OpSem.State) (rs : List (Int × Nat)) (new : List (List Ab
     if bs.length != n then illFormed s!"an answer's bytes for [{off}, {off + n}) have the wrong length"
     st.writeFrame off bs
 
+/-- An island answer's frame writes at instruction `k`: the new bytes of the `Lend` extents, then
+the template's shadow space (`islandShadow` bytes at `-F`) made `Uninit`. -/
+def Code.islandWrites (c : Code) (k : Nat) (st : OpSem.State) (new : List (List AbstractByte)) :
+    M OpSem.State := do
+  let st ← writeRanges st (c.lendsAt k) new
+  st.writeFrame (-(c.d.frameSize : Int)) (List.replicate c.islandShadow .uninit)
+
 /-- Continue the state `s` waiting at a call or island (`step`'s `ext`) with the answer `a`. -/
 def answer (c : Code) (s : RState) (a : Answer) : M Out := do
   let some (.native op ops) := c.d.insns[s.pc]? | illFormed s!"no call at {s.pc}"
@@ -454,7 +469,7 @@ def answer (c : Code) (s : RState) (a : Answer) : M Out := do
         st.writeFrame (d.toInt + p.off) ((regs.get r).take p.size)
       pure (.step { s with pc := s.pc + 1, st })
   | .island, _ =>
-    let st ← writeRanges s.st (c.lendsAt s.pc) a.frame
+    let st ← c.islandWrites s.pc s.st a.frame
     let s := { s with st }
     match a.result with
     | .unwind exc => unwindAt c s exc

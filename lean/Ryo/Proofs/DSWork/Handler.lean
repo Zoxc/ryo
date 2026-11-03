@@ -905,7 +905,7 @@ theorem handler_resume' (hD : Decodes S code relocs rodata callSites dropped sco
   have hstep' : R.step S.c s {} = .ok (.step s2) := hstep.trans rfl
   refine .done (.inl ⟨s2, .step hstep', hfin, .inr ⟨hpad', ?_⟩⟩)
   show CacheInv (S.used pad) x'
-  rw [H.cacheCleared.pads k pad cat hcl]
+  rw [(H.cacheCleared hD).pads k pad cat hcl]
   exact CacheInv.emptyPe _ _
 
 /-! ### The general handler call (not `resume`) -/
@@ -1370,7 +1370,7 @@ theorem hdl_br (H : Hyps S) {k pT j pc : Nat} {q : Proto} {c3 : Cursor} {s s1 : 
     · show x''.rip = addrAt S.ctx (posOf S.r j)
       rw [hrip2, hdl_base_setWidth, hj]
     · show CacheInv (S.used j) x''
-      have hc := H.cacheCleared.targets k hlt _ htg
+      have hc := H.cacheTargets k hlt _ htg
       simp only [Setup.used, hj, hc, ↓reduceIte]
       exact CacheInv.emptyPe _ _
   · -- Not taken: falling through.
@@ -1426,7 +1426,7 @@ theorem hdl_switch (H : Hyps S) {k pT pc i pE : Nat} {s s1 : R.RState}
   · show x''.rip = addrAt S.ctx (posOf S.r pc)
     rw [hrip'', hpe]
   · show CacheInv (S.used pc) x''
-    have hc := H.cacheCleared.targets k hlt _ htg
+    have hc := H.cacheTargets k hlt _ htg
     simp only [Setup.used, hpe, hc, ↓reduceIte]
     exact CacheInv.emptyPe _ _
 

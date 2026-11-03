@@ -13,7 +13,10 @@ import Ryo.Proofs.FrameBounds
 import Ryo.Proofs.Discharge.FrameBounds
 import Ryo.Proofs.Discharge.FrameSizes
 import Ryo.Proofs.Discharge.StackSizes
+import Ryo.Proofs.Discharge.PeStackArg
 import Ryo.Vm.CallSitesCheck
+import Ryo.Vm.RelocsInCheck
+import Ryo.Vm.CacheClearedCheck
 import Ryo.Proofs.Shapes
 import Ryo.Proofs.Call
 import Ryo.Proofs.Island
@@ -361,6 +364,10 @@ structure Decodes (S : Setup) (code : ByteArray) (relocs : Array Reloc) (rodata 
   /-- The call sites' check (`callSitesCheck`, run by `Frame.decodeChecked`): `StartsDistinct`
   and `SitesAligned` (`Discharge/CallSites.lean`). -/
   callSitesOk : callSitesCheck code relocs rodata callSites dropped scopes mode = true
+  /-- The targets are the first pass's (`readTargets`, `read`'s code up to them): what
+  `cacheClearedCheck` checks the second pass against (`Discharge/CacheCleared.lean`). -/
+  targetsRead : ∃ c', (readTargets rodata callSites dropped.toList mode).run
+    { code := code.data, pos := 0, fields := .relocs relocs } = .ok (S.targets, c')
 
 theorem reducedOf_frameSize {r : ReadResult} {pe : Bool} {d : Decoded} (h : reducedOf r pe = .ok d) :
     d.frameSize = r.frameSize := by
@@ -436,11 +443,14 @@ structure DeadStoreSim (S : Setup) : Prop where
     (inlineInsn (S.used k) (S.dr k) true).run cur' = .ok (some (q, cache', dr'), c') →
     q.dropped = true → BodySim S k p (S.used k)
 
-/-- Open: the cache the decoder used is empty wherever control arrives other than by falling
-through: every branch target of the second pass is one of the first pass's, where the cache is
-cleared (the second pass, whose inline sequences may differ, isn't checked to jump only there),
-and at every landing pad (the decoder doesn't clear it there; the instruction before a pad is
-normally a terminator or a call, which leave it empty). -/
+/-- The cache the decoder used is empty wherever control arrives other than by falling through:
+every branch target of the second pass is one of the first pass's, where the cache is cleared
+(the decoder doesn't check that the second pass, whose inline sequences may differ, jumps only
+there), and at every landing pad (the decoder doesn't clear it there). Checked:
+`Frame.decodeChecked` runs `cacheClearedCheck` (`Hyps.cacheOk`, `cacheOk_of_decodes`); a pad is
+a target, instruction 0 or after an instruction that empties the cache (a call or a terminator,
+normally). `Hyps.cacheTargets` derives `targets`, `Hyps.cacheCleared`
+(`Discharge/CacheCleared.lean`) both. -/
 structure CacheCleared (S : Setup) : Prop where
   targets : ∀ k (hk : k < S.r.protos.size), ∀ t ∈ S.r.protos[k].targets,
     sortedContains S.targets t = true
@@ -576,8 +586,9 @@ structure StackSizes (S : Setup) : Prop where
   otherwise reach the link slots). -/
   frame : ∀ k, S.c.stackSize k + (if S.c.mode.pe then 16 else 0) ≤ S.F
 
-/-- Open (checkable): every relocated field lies within the code (the decoder doesn't check
-it; the image checks of the relocations, §C4, or the decoder could). -/
+/-- Every relocated field lies within the code. Checked: the decoder doesn't check it, so
+`Frame.decodeChecked` runs `relocsInCheck`; `Hyps.relocsIn` (`Discharge/RelocsIn.lean`) derives
+it from `Hyps.relocsInOk`. -/
 def RelocsIn (S : Setup) : Prop := ∀ r ∈ S.rs.toList, r.pos + 4 ≤ S.body.code.size
 
 /-- Open (checkable, code layout): every switch table the decoder reads from the function's code
@@ -656,8 +667,10 @@ structure Hyps (S : Setup) : Prop where
   /-- The window's end lies between `frameTop` and `2 ^ 31` (`checkSignature`:
   `frameTop ≤ 16 + argSize ≤ 2 ^ 31`, so `K = 16 + argSize` qualifies). -/
   frameK : S.c.d.frameTop S.c.mode ≤ S.K ∧ S.K ≤ 2 ^ 31
+  /-- Checked by `Frame.decodeChecked` (`relocsInCheck`; `relocsInOk_of_decodes`): gives
+  `Hyps.relocsIn` (`Discharge/RelocsIn.lean`). -/
+  relocsInOk : relocsInCheck S.body.code S.rs = true
   -- Open prerequisites: the decoded code (checkable).
-  relocsIn : RelocsIn S
   argsOk : ArgsOk S
   /-- Checked by `Frame.decodeChecked` (`frameSizesCheck`): gives `Hyps.peFrame`. -/
   frameSizes : frameSizesCheck S.c.d S.c.mode = true
@@ -666,24 +679,15 @@ structure Hyps (S : Setup) : Prop where
   argPrivate : ArgPrivate S
   resultPrivate : ResultPrivate S
   linkPrivate : LinkPrivate S
-  /-- On PE, an island template's 32-byte shadow space at the frame's bottom, `[-F, -F + 32)`,
-  lies below the link slots (`32 ≤ F`) and holds no initialized private byte after the scopes
-  (the frame separation with the lower bound `-F + 32`; `bodySim_island`). A check could
-  discharge it with the scopes (no private slot in the shadow space). -/
-  peShadow : S.c.mode.pe = true → 32 ≤ S.F ∧ ∀ s x s1, FrameInv S s x →
-    (S.c.scopesAt s.pc).foldlM R.applyScope s = .ok s1 → FrameSep (-(S.F : Int) + 32) S.K s1.st x
-  /-- On PE, a handler call with a stack argument (five arguments, the `atomic.cxchg`
-  handlers') stores it at `[rsp + 32, rsp + 36)`, the frame offsets `[-F + 32, -F + 36)`: they
-  lie below the link slots (`36 ≤ F`) and are private and `Uninit` after the scopes
-  (`HandlerStackArg.stackArg_apart`, `hdl_call_reach`). A check could discharge it with the
-  scopes (`shadowSize` is 40 then, so no frame range starts below `-F + 40`; no `Escape` scope
-  there). -/
-  peStackArg : S.c.mode.pe = true → ∀ (k : Nat) (h : Full.Opcode) (args : List R.Arg)
-    (t : R.Then Nat), S.c.d.insns[k]? = some (.handler h args t) → args.length = 5 →
-    36 ≤ S.F ∧ ∀ s x s1, FrameInv S s x → s.pc = k →
-      (S.c.scopesAt s.pc).foldlM R.applyScope s = .ok s1 →
-      ∀ o : Int, -(S.F : Int) + 32 ≤ o → o < -(S.F : Int) + 36 →
-        s1.st.escapedAt o = none ∧ s1.st.frame o = .uninit
+  /-- Open (a state invariant, not a fact of the decoded code): the frame bytes from `-F + 32`
+  up to `frameLo` (on PE with a handler call's stack argument the 8 bytes above the shadow
+  space, `[-F + 32, -F + 40)`; empty otherwise) are private and `Uninit` at every boundary.
+  `FrameInv` doesn't record it (its `FrameInit` allows initialized private bytes anywhere in
+  `[-F, K)`), so it is stated over all of `FrameInv`'s states; its place is a
+  `FrameInv` field. With `frameSizesCheck` and `boundsOk` it gives `Hyps.peStackArg`
+  (`Discharge/PeStackArg.lean`). -/
+  peArgSlots : ∀ s x, FrameInv S s x → ∀ o : Int, -(S.F : Int) + 32 ≤ o →
+    o < S.c.d.frameLo S.c.mode → s.st.escapedAt o = none ∧ s.st.frame o = .uninit
   -- Open prerequisites: the environment and the layout.
   sepAcross : SepAcross S
   envApart : EnvApart S
@@ -696,7 +700,9 @@ structure Hyps (S : Setup) : Prop where
   envOutside : EnvOutside S
   -- Open prerequisites: the decoder's and linker's facts not yet exposed.
   deadStore : DeadStoreSim S
-  cacheCleared : CacheCleared S
+  /-- Checked by `Frame.decodeChecked` (`cacheClearedCheck`; `cacheOk_of_decodes`): gives
+  `Hyps.cacheTargets` and `Hyps.cacheCleared` (`CacheCleared`, `Discharge/CacheCleared.lean`). -/
+  cacheOk : cacheClearedOk S.r.protos S.c.d.cleanup S.targets = true
   -- The landing pads: `PadsLinked` follows from this and `Decodes.callSitesOk`
   -- (`Hyps.padsLinked`, `Discharge/PadsLinked.lean`).
   /-- Trusted (environment contract): the personality's call-site lookup gives the LSDA's pad. -/
@@ -717,10 +723,49 @@ theorem Hyps.stackSizes {S : Setup} (H : Hyps S) : StackSizes S :=
   have h := Discharge.StackSizes.of_check H.stackSizesOk H.stackSizeOut H.frameBounds.F_le
   ⟨h.1, h.2.1, h.2.2.1⟩
 
+/-- On PE an island template's 32-byte shadow space at the frame's bottom, `[-F, -F + 32)`, lies
+below the link slots (`bodySim_island`), from `stackSizesCheck`. The template may write it: R's
+answer makes those bytes `Uninit` (`R.Code.islandWrites`), so no privacy fact about them is
+needed. -/
+theorem Hyps.peShadow {S : Setup} (H : Hyps S) : S.c.mode.pe = true → 32 ≤ S.F :=
+  (Discharge.StackSizes.of_check H.stackSizesOk H.stackSizeOut H.frameBounds.F_le).2.2.2
+
+/-- Every branch target of the second pass is one of the first pass's, where the cache is
+cleared (`CacheCleared.targets`, from `cacheClearedCheck`'s `targetsIn`). -/
+theorem Hyps.cacheTargets {S : Setup} (H : Hyps S) :
+    ∀ k (hk : k < S.r.protos.size), ∀ t ∈ S.r.protos[k].targets,
+      sortedContains S.targets t = true := by
+  intro k hk t ht
+  have h := H.cacheOk
+  simp only [cacheClearedOk, Bool.and_eq_true, targetsIn, List.all_eq_true] at h
+  exact h.1 S.r.protos[k] (Array.getElem_mem_toList hk) t ht
+
 /-- On PE the frame size and the return address fit a signed 32-bit displacement, as PE's
 epilogue (`ArgRet.ret_step`, `bodySim_ret`) needs (`frameSizesCheck`). -/
 theorem Hyps.peFrame {S : Setup} (H : Hyps S) : S.c.mode.pe = true → S.F + 8 < 2 ^ 31 :=
   Discharge.FrameSizes.peFrame_of_check H.frameSizes
+
+/-- On PE, a handler call with a stack argument (five arguments, the `atomic.cxchg`
+handlers') stores it at `[rsp + 32, rsp + 36)`, the frame offsets `[-F + 32, -F + 36)`: they
+lie below the link slots (`36 ≤ F`) and are private and `Uninit` after the scopes
+(`HandlerStackArg.stackArg_apart`, `hdl_call_reach`). `shadowSize` is 40 then, so `frameLo` is
+`-F + 40`: `frameSizesCheck` gives `40 ≤ F`, and the scopes, which start at or above
+`frameLo` (`boundsOk`), keep `peArgSlots` (`Discharge/PeStackArg.lean`). -/
+theorem Hyps.peStackArg {S : Setup} (H : Hyps S) : S.c.mode.pe = true →
+    ∀ (k : Nat) (h : Full.Opcode) (args : List R.Arg)
+    (t : R.Then Nat), S.c.d.insns[k]? = some (.handler h args t) → args.length = 5 →
+    36 ≤ S.F ∧ ∀ s x s1, FrameInv S s x → s.pc = k →
+      (S.c.scopesAt s.pc).foldlM R.applyScope s = .ok s1 →
+      ∀ o : Int, -(S.F : Int) + 32 ≤ o → o < -(S.F : Int) + 36 →
+        s1.st.escapedAt o = none ∧ s1.st.frame o = .uninit := by
+  intro hpe k h args t hi h5
+  have hF : S.F = S.c.d.frameSize := rfl
+  have hlo := Discharge.PeStackArg.frameLo_of_five hpe hi h5
+  refine ⟨?_, fun s x s1 hf _ hsc o h1 h2 => ?_⟩
+  · have := Discharge.PeStackArg.F_ge_of_check H.frameSizes hpe hi h5
+    omega
+  · exact Discharge.PeStackArg.below_frameLo_scopes H.boundsOk (H.peArgSlots s x hf) hsc o h1
+      (by omega)
 
 /-! ## 4. Per instruction -/
 
@@ -1288,7 +1333,7 @@ theorem bodySim_jmp (_hD : Decodes S code relocs rodata callSites dropped scopes
         simp only [addrAt, BitVec.ofNat_toNat]
         congr 1
       · show CacheInv (S.used t') x'
-        have hc := H.cacheCleared.targets k hlt t.toNat (by
+        have hc := H.cacheTargets k hlt t.toNat (by
           rw [hpk]; simp [Proto.targets, Opnd.targetsOf])
         simp only [Setup.used, ht', hc, ↓reduceIte]
         exact CacheInv.emptyPe _ x'

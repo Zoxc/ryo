@@ -1,6 +1,7 @@
 import Lean
 import Ryo.Proofs.DecodeSound.Basic
 import Ryo.Proofs.NoArgCursor
+import Ryo.Proofs.Discharge.RelocsIn
 import Ryo.Proofs.Inline.All
 import Ryo.Proofs.CacheEmit
 import Ryo.Proofs.CacheEmitWrites
@@ -1770,7 +1771,7 @@ theorem bodySim_inline' (hD : Decodes S code relocs rodata callSites dropped sco
           refine ⟨.target (posOf S.r t), ?_, by simp [Opnd.targetsOf]⟩
           rw [← hops]
           exact List.mem_map_of_mem (nativeCtl_target hctl)
-        have := H.cacheCleared.targets k hk _ hmemt
+        have := H.cacheTargets k hk _ hmemt
         unfold Setup.used
         rw [ite_eq_left_iff.mpr (fun h => absurd this h)]
         exact CacheInv.empty _

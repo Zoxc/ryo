@@ -18,13 +18,14 @@ namespace Ryo.Proofs.Discharge.FrameSizes
 
 open Ryo.Vm
 
-/-- `frameSizesCheck`'s success: on PE, `F + 8 < 2 ^ 31`. -/
+/-- `frameSizesCheck`'s success: on PE, `F + 8 < 2 ^ 31` (its `peStackArgCheck` part:
+`Discharge.PeStackArg.peStackArgCheck_of_frameSizes`). -/
 theorem peFrame_of_check {c : R.Code} (h : frameSizesCheck c.d c.mode = true) :
     c.mode.pe = true → c.d.frameSize + 8 < 2 ^ 31 := by
   intro hpe
   unfold frameSizesCheck at h
-  rw [hpe] at h
-  simpa using h
+  rw [Bool.and_eq_true, hpe] at h
+  simpa using h.1
 
 /-- The window `K = 16 + argSize` holds the incoming area. -/
 theorem argSizeK_of_window {c : R.Code} {K : Int} (hK : K = 16 + c.argSize) :
