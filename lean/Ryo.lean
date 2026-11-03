@@ -52,3 +52,4 @@ import Ryo.Proofs.Island
 import Ryo.Proofs.DecodeLink
 import Ryo.Proofs.ArgPeBound
 import Ryo.Proofs.DecodeSound
+import Ryo.Proofs.DecodeSound.Entry

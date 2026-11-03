@@ -340,6 +340,27 @@ def BodySim (S : Setup) (k p : Nat) (cache : Cache) : Prop :=
 def InsnSimAt (S : Setup) (k : Nat) : Prop :=
   ∀ s x, s.pc = k → BInv S s x → RSafe S.Safe S.c s → Reach S.ctx S.E (SNext S s) x
 
+/-! ### The entry's code -/
+
+/-- The entry's counter check read by cursor `c` (from position 0) ending at `p1`: none without
+counters; with them `inc qword [rip + record]; jns stub`, and at `stub` (a position with the
+property `B`) the entry stub `lea r11, [rip + record]; call [r11 + 8]; jmp p1`. -/
+def CheckReadC (c : Cursor) (mode : Ryo.Obj.Mode) (B : Nat → Prop) (p1 : Nat) : Prop :=
+  (mode.counters = false → p1 = 0) ∧
+  (mode.counters = true → ∃ (t : BitVec 32) (l : Bool) (tb : BitVec 32) (bl : Bool) (q : Nat),
+    Dec c 0 (Counter.check false t l) p1 ∧ tb.toNat = p1 ∧ B t.toNat ∧
+    Dec c t.toNat (entryStub tb bl) q)
+
+/-- The entry's counter check as the decoder read it from the body's cursor, ending at `p1`
+(`CheckReadC`), the stub at a relocation boundary in memory holding the linked code. -/
+def CheckRead (S : Setup) (p1 : Nat) : Prop :=
+  CheckReadC S.body S.c.mode (fun s => ∀ m, LinkOk S.ctx m S.body S.rs → Boundary S.rs s) p1
+
+/-- The code before the body: the entry's counter check (`CheckRead`) and then the prologue of
+the frame size, read item by item to the body's start (`Decodes.entry`). -/
+def EntryRead (S : Setup) : Prop :=
+  ∃ p1, CheckRead S p1 ∧ Dec S.body p1 (prologue S.F S.c.mode) S.body.pos
+
 /-! ### `S` is the decoder's read -/
 
 /-- `S` is `decodeReduced`'s read of a function (see the module comment): the R code is
@@ -381,6 +402,9 @@ structure Decodes (S : Setup) (code : ByteArray) (relocs : Array Reloc) (rodata 
   `cacheClearedCheck` checks the second pass against (`Discharge/CacheCleared.lean`). -/
   targetsRead : ∃ c', (readTargets rodata callSites dropped.toList mode).run
     { code := code.data, pos := 0, fields := .relocs relocs } = .ok (S.targets, c')
+  /-- The code before the body exactly as `readFrame` and `checkStubs` read it (frame-pointer
+  form): `EntryRead` (`read_instructions_entry`). -/
+  entry : S.c.mode.framePointer = true → EntryRead S
 
 theorem reducedOf_frameSize {r : ReadResult} {pe : Bool} {d : Decoded} (h : reducedOf r pe = .ok d) :
     d.frameSize = r.frameSize := by
