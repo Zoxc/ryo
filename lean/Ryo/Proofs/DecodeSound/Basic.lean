@@ -392,14 +392,6 @@ theorem reducedOf_frameSize {r : ReadResult} {pe : Bool} {d : Decoded} (h : redu
 
 /-! ## 3. Hypotheses -/
 
-/-- Open: `Private` of a `load`'s destination after the scopes, at each boundary
-(`CacheMem.load_step_sep` takes it; reduced.md §C0.3: `load` into an escaped object is not
-yet stepped). -/
-def LoadPrivate (S : Setup) : Prop :=
-  ∀ s x s1 op ops f w vals, BInv S s x → S.c.d.insns[s.pc]? = some (.native op ops) →
-    op.full = some f → shapeOk f (.load w) = true → nativeVals S.c.ρ f ops = some vals →
-    (S.c.scopesAt s.pc).foldlM R.applyScope s = .ok s1 → Private f vals s1.st
-
 /-- The environment's returns from a call or island: to the return address, or (an unwind)
 elsewhere. -/
 def RetAt (E : Env) (x x' : X86.State) : Prop := E.ret x x' ∧ x'.rip = x.mem.read64 x.rsp
@@ -566,19 +558,6 @@ def ArgPrivate (S : Setup) : Prop :=
     (S.c.scopesAt s.pc).foldlM R.applyScope s = .ok s1 →
     ∀ i < a.size, s1.st.escapedAt (d.toInt + i) = none
 
-/-- Open: a call's result slots are private after the scopes (`Call.call_return`'s
-`ResultApart`: with `SepAcross.call`'s allocation facts, `FrameOwn` then puts them in no live
-allocation), like `LoadPrivate`. A check could discharge it with the scopes (no `Escape` covers
-a call's result slot while it is live). -/
-def ResultPrivate (S : Setup) : Prop :=
-  ∀ (s : R.RState) (x : X86.State) (s1 : R.RState) (op : Reduced.Opcode) (d : BitVec 32)
-    (fo : R.Opnd Nat) (k : BitVec 64) (ws : List (BitVec 32)) (f : Full.Opcode), FrameInv S s x →
-    S.c.d.insns[s.pc]? = some (.native op [.slot d, fo, .imm k, .words ws]) →
-    op.full = some f → f.info.shape = .call →
-    (S.c.scopesAt s.pc).foldlM R.applyScope s = .ok s1 →
-    ∀ parts, R.retRegs k.toNat false = .ok parts → ∀ q ∈ parts, ∀ i < q.1.size,
-      s1.st.escapedAt (d.toInt + q.1.off + i) = none
-
 /-- The frame's link slots `[0, 16)` are private after the scopes and in no `Lend` extent (so
 no callee, handler or template may write them: `FrameOwn` puts private window bytes in no live
 allocation; `FrameFacts` is kept). Checked: `Hyps.linkPrivate`, from `privCheck` and
@@ -686,9 +665,6 @@ structure Hyps (S : Setup) : Prop where
   argsChecked : argsLeadOk S.r.protos = true
   /-- Checked by `Frame.decodeChecked` (`frameSizesCheck`): gives `Hyps.peFrame`. -/
   frameSizes : frameSizesCheck S.c.d S.c.mode = true
-  -- Open prerequisites: privacy of frame bytes after the scopes.
-  loadPrivate : LoadPrivate S
-  resultPrivate : ResultPrivate S
   /-- Checked by `Frame.decodeChecked` (`privCheck`): with `FrameInv.esc` gives
   `Hyps.linkPrivate` and `Hyps.argPrivate`. -/
   privOk : privCheck S.c.d = true

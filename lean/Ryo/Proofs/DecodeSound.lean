@@ -91,11 +91,9 @@ discharged later:
   `windowOk` (`windowCheck`: `frameTop ≤ 16 + argSize ≤ 2 ^ 31`, run by check-image;
   with `boundsOk`, checked by `decodeBounded`, it gives `Hyps.frameBounds` for the window
   `[-F, K)`, `K = 16 + argSize`, `Discharge/FrameBounds.lean`);
-- privacy after the scopes: `loadPrivate` (a `load`'s destination, `LoadPrivate`) and
-  `resultPrivate` (a call's result slots, `ResultPrivate`); real code loads into and returns
-  into escaped objects, so these need the steps generalized to escaped destinations, not a
-  check. The link slots (`LinkPrivate`: in no escaped object or `Lend` extent) and the `arg`
-  destinations (`ArgPrivate`) are checked: `decodeChecked` runs `privCheck` (`Hyps.privOk`),
+- privacy after the scopes: none open (a call's result slots may be in escaped objects:
+  `CallLemmas.exec_stores` writes them like a `load` does, `sound_load_esc`). The link slots
+  (`LinkPrivate`: in no escaped object or `Lend` extent) and the `arg` destinations (`ArgPrivate`) are checked: `decodeChecked` runs `privCheck` (`Hyps.privOk`),
   which with `FrameInv.esc` gives `Hyps.linkPrivate` and `Hyps.argPrivate`
   (`Discharge/PrivCheck.lean`);
 - the environment and the layout (not checkable from the function): `sepAcross` (the frame

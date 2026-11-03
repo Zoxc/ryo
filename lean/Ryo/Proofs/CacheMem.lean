@@ -18,8 +18,9 @@ registers and memory outside the writes.
 - `load_step_sep`, `store_step_sep`, `rip_step_sep` (and `_cached`): the same from facts before
   the scopes: `FrameSep` over a frame window (kept by the scopes, `ScopeMem`, and given back
   after the step when its frame writes lie in the window, `WrIn`), `Globals`' layout part and
-  `MemRel` (`afterScopes_globals`); `Private` stays a hypothesis after the scopes
-  (`afterScopes_private` gives it from before them). `FrameBounds.lean` derives the window
+  `MemRel` (`afterScopes_globals`). The `load` forms need no `Private`: the destination may
+  be in an escaped object (`sound_load_esc`), and `MemRel` after is `MemPost.memRel_of_post`
+  (`FrameOwn` and `EscIn` from `FrameSep`, the writes in the window, `WrIn`). `FrameBounds.lean` derives the window
   facts from one property of the decoded code.
 - `cached_of`: from a run of the sequence on every `swapS xr x` (`xr` the register `emit`
   picks), a run of `emit`'s output from `x` with `CacheInv` after, for any conclusion `Q` that
@@ -39,11 +40,12 @@ registers and memory outside the writes.
 
 Left as hypotheses: `InlineOk f cls` (discharged by `inlineOps_ok`, `RyoProofs/InlineOk.lean`,
 for `(f, cls) ∈ inlineOps`), `ripAddr cls` for the rip classes (by `decide` once `cls` is
-known); `Private` of a `load`'s destination; `MemRel` after a rip-relative address step (its
+known); `MemRel` after a rip-relative address step (its
 frame write is like `load`'s, but isn't proved here).
 -/
 import Ryo.Proofs.CacheStep
 import Ryo.Proofs.ScopeMem
+import Ryo.Proofs.MemPost
 import Ryo.Proofs.OpFacts
 
 set_option linter.constructorNameAsVariable false
@@ -558,7 +560,6 @@ theorem load_step_sep (ctx : Ctx) {wl wh : Int} {c : R.Code} {s s' : R.RState} {
     {w : W} {items : List Item} {br : Option Cond} (hr : RRel s x) (hm : MemRel s.st x)
     (hs : FrameSep wl wh s.st x) (hw : Window wl wh s.fp) (hin : ScopesIn wl wh (c.scopesAt s.pc))
     (hsz : ∀ sc ∈ c.scopesAt s.pc, sc.size < 2 ^ 62)
-    (hpriv : ∀ vals, nativeVals c.ρ f ops = some vals → AfterScopes c s (Private f vals))
     (hwin : ∀ vals, nativeVals c.ρ f ops = some vals → WrIn wl wh f vals)
     (hi : c.d.insns[s.pc]? = some (.native op ops)) (hf : op.full = some f)
     (hok : InlineOk f (.load w)) (hseq : sequence (.load w) ops = some (items, br))
@@ -572,10 +573,12 @@ theorem load_step_sep (ctx : Ctx) {wl wh : Int} {c : R.Code} {s s' : R.RState} {
       fun s1 vals st' ctl hsc hr1 hn ho => by
         have hm1 := (memRel_foldlM _ hsz hr hm hsc).2
         have hs1 := afterScopes_sep hr hs hw hin s1 hsc
-        have hp1 := hpriv vals hn s1 hsc
-        obtain ⟨x', hx, hpost, hm'⟩ := sound_load w ctx c.ρ f ops items br vals s1.st st' ctl ch x
-          hok.shape hseq hn ho hr1.rel hp1 hm1 (hs1.wrApart hp1 (hwin vals hn))
-        exact ⟨x', hx, hpost.rel, rbp_of_regs hpost.regs, escWF_of_sameButWrites hr1.wf hpost.same,
+        obtain ⟨x', hx, hpost⟩ := sound_load_esc w ctx c.ρ f ops items br vals s1.st st' ctl ch x
+          hok.shape hseq hn ho hr1.rel hm1
+        have hwf' := escWF_of_sameButWrites hr1.wf hpost.same
+        have hm' : MemRel st' x' := MemPost.memRel_of_post hm1 hwf' hpost.rel hpost.same.1
+          hpost.same.2.1 hs1.own (hwin vals hn) hpost.memOut (by rw [hpost.same.1]; exact hs1.esc)
+        exact ⟨x', hx, hpost.rel, rbp_of_regs hpost.regs, hwf',
           ⟨hm', sep_of_opSem hs1 hpost.same hfp ho (hwin vals hn) (rbp_of_regs hpost.regs)⟩,
           hpost.rip, ctlOk_of_post hpost⟩
   exact ⟨x', hx, hr', hm', hs', hrip, hbr⟩
@@ -643,7 +646,6 @@ theorem load_step_sep_cached (ctx : Ctx) {wl wh : Int} {c : R.Code} {s s' : R.RS
     (hinv : CacheInv cache x) (hr : RRel s x) (hm : MemRel s.st x)
     (hs : FrameSep wl wh s.st x) (hw : Window wl wh s.fp) (hin : ScopesIn wl wh (c.scopesAt s.pc))
     (hsz : ∀ sc ∈ c.scopesAt s.pc, sc.size < 2 ^ 62)
-    (hpriv : ∀ vals, nativeVals c.ρ f ops = some vals → AfterScopes c s (Private f vals))
     (hwin : ∀ vals, nativeVals c.ρ f ops = some vals → WrIn wl wh f vals)
     (hi : c.d.insns[s.pc]? = some (.native op ops)) (hf : op.full = some f)
     (hok : InlineOk f (.load w)) (hseq : sequence (.load w) ops = some (cand, br))
@@ -660,7 +662,7 @@ theorem load_step_sep_cached (ctx : Ctx) {wl wh : Int} {c : R.Code} {s s' : R.RS
     fun xr hb => by
       obtain ⟨x1, hx1, hr1, hm1, hs1, -, hbr⟩ := load_step_sep ctx (x := swapS xr x)
         (rrel_congr hr (swapS_rbp hb x) rfl) (memRel_congr rfl hm) (hs.congr (swapS_rbp hb x))
-        hw hin hsz hpriv hwin hi hf hok hseq h
+        hw hin hsz hwin hi hf hok hseq h
       exact ⟨x1, hx1, hr1, hm1, hs1, hbr⟩
   exact ⟨y, hy, hr', hm', hs', hcy, hrip, hbr⟩
 
@@ -786,7 +788,6 @@ theorem load_step_sep_regs (ctx : Ctx) {wl wh : Int} {c : R.Code} {s s' : R.RSta
     (hm : MemRel s.st x)
     (hs : FrameSep wl wh s.st x) (hw : Window wl wh s.fp) (hin : ScopesIn wl wh (c.scopesAt s.pc))
     (hsz : ∀ sc ∈ c.scopesAt s.pc, sc.size < 2 ^ 62)
-    (hpriv : ∀ vals, nativeVals c.ρ f ops = some vals → AfterScopes c s (Private f vals))
     (hwin : ∀ vals, nativeVals c.ρ f ops = some vals → WrIn wl wh f vals)
     (hi : c.d.insns[s.pc]? = some (.native op ops)) (hf : op.full = some f)
     (hok : InlineOk f (.load w)) (hseq : sequence (.load w) ops = some (items, br))
@@ -802,10 +803,12 @@ theorem load_step_sep_regs (ctx : Ctx) {wl wh : Int} {c : R.Code} {s s' : R.RSta
       fun s1 vals st' ctl hsc hr1 hn ho => by
         have hm1 := (memRel_foldlM _ hsz hr hm hsc).2
         have hs1 := afterScopes_sep hr hs hw hin s1 hsc
-        have hp1 := hpriv vals hn s1 hsc
-        obtain ⟨x', hx, hpost, hm'⟩ := sound_load w ctx c.ρ f ops items br vals s1.st st' ctl ch x
-          hok.shape hseq hn ho hr1.rel hp1 hm1 (hs1.wrApart hp1 (hwin vals hn))
-        exact ⟨x', hx, hpost.rel, rbp_of_regs hpost.regs, escWF_of_sameButWrites hr1.wf hpost.same,
+        obtain ⟨x', hx, hpost⟩ := sound_load_esc w ctx c.ρ f ops items br vals s1.st st' ctl ch x
+          hok.shape hseq hn ho hr1.rel hm1
+        have hwf' := escWF_of_sameButWrites hr1.wf hpost.same
+        have hm' : MemRel st' x' := MemPost.memRel_of_post hm1 hwf' hpost.rel hpost.same.1
+          hpost.same.2.1 hs1.own (hwin vals hn) hpost.memOut (by rw [hpost.same.1]; exact hs1.esc)
+        exact ⟨x', hx, hpost.rel, rbp_of_regs hpost.regs, hwf',
           ⟨hm', sep_of_opSem hs1 hpost.same hfp ho (hwin vals hn) (rbp_of_regs hpost.regs),
             hpost.regs, memOutW_of hn hpost.memOut⟩,
           hpost.rip, ctlOk_of_post hpost⟩
@@ -894,7 +897,6 @@ theorem load_step_sep_cached_regs (ctx : Ctx) {wl wh : Int} {c : R.Code} {s s' :
     (hinv : CacheInv cache x) (hr : RRel s x) (hm : MemRel s.st x)
     (hs : FrameSep wl wh s.st x) (hw : Window wl wh s.fp) (hin : ScopesIn wl wh (c.scopesAt s.pc))
     (hsz : ∀ sc ∈ c.scopesAt s.pc, sc.size < 2 ^ 62)
-    (hpriv : ∀ vals, nativeVals c.ρ f ops = some vals → AfterScopes c s (Private f vals))
     (hwin : ∀ vals, nativeVals c.ρ f ops = some vals → WrIn wl wh f vals)
     (hi : c.d.insns[s.pc]? = some (.native op ops)) (hf : op.full = some f)
     (hok : InlineOk f (.load w)) (hseq : sequence (.load w) ops = some (cand, br))
@@ -916,7 +918,7 @@ theorem load_step_sep_cached_regs (ctx : Ctx) {wl wh : Int} {c : R.Code} {s s' :
       obtain ⟨x1, hx1, hr1, hm1, hs1, hk1, ho1, -, hbr⟩ := load_step_sep_regs ctx
         (x := swapS xr x)
         (rrel_congr hr (swapS_rbp hb x) rfl) (memRel_congr rfl hm) (hs.congr (swapS_rbp hb x))
-        hw hin hsz hpriv hwin hi hf hok hseq h
+        hw hin hsz hwin hi hf hok hseq h
       exact ⟨x1, hx1, ⟨hr1, hm1, hs1, hbr, memOutW_swap hb ho1⟩, keptRegs_swap hk1⟩
   exact ⟨y, hy, hr', hm', hs', hcy, hrip, hbr, hk, ho'⟩
 

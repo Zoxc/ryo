@@ -461,7 +461,7 @@ follows the decoder's structure:
   the cache empty at branch targets and landing pads, from its `cacheClearedCheck`, and
   `ArgsOk`, the leading `arg`s reading distinct argument registers of the convention with no
   branch target at one, from its `argsLeadCheck`); privacy
-  after the scopes (`LoadPrivate`, `ResultPrivate`; `ArgPrivate` and `LinkPrivate`, the link
+  after the scopes (`ArgPrivate` and `LinkPrivate`, the link
   slots in no escaped object or `Lend` extent, follow from `decodeChecked`'s `privCheck` with
   the invariant that escaped objects are `Escape` scopes' ranges, `FrameInv.esc`); the environment and layout (`SepAcross`, `EnvApart`: the
   window not runtime-owned, live allocations neither runtime-owned nor below `rsp`, symbol slots

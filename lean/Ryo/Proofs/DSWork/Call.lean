@@ -673,29 +673,21 @@ variable {S : Setup} {code : ByteArray} {relocs : Array Reloc} {rodata : ByteArr
   {callSites : Array CallSite} {dropped : Array DroppedStore} {scopes : Array R.Scope}
   {mode : Ryo.Obj.Mode}
 
-/-- A call's result slots are apart after its return (`Call.call_return`'s `hres`):
-`ResultPrivate` gives them private after the scopes, and so in `st` (the state after the
-answer, with the same escaped objects, `hesc`); the given `FrameSep` of `st` (`hsep`) has
-`FrameOwn`, so a private window byte (`FrameBounds.result`: the slots are in the window) is in
-no live allocation. -/
-theorem call_resultApart' (H : Hyps S) {s s1 : R.RState} {x x' : X86.State} {op : Reduced.Opcode}
+/-- A call's result slots are apart after its return (`Call.call_return`'s `hres`): they are
+in the window (`FrameBounds.result`), over which the given `FrameSep` of `st` (`hsep`) has
+`FrameOwn` and `EscIn`. The slots may be in escaped objects. -/
+theorem call_resultApart' (H : Hyps S) {s : R.RState} {op : Reduced.Opcode}
     {d : BitVec 32} {fo : R.Opnd Nat} {k : BitVec 64} {ws : List (BitVec 32)} {f : Full.Opcode}
-    (hf : FrameInv S s x)
+    {x' : X86.State}
     (hi : S.c.d.insns[s.pc]? = some (.native op [.slot d, fo, .imm k, .words ws]))
-    (hof : op.full = some f) (hsh : f.info.shape = .call)
-    (hsc : (S.c.scopesAt s.pc).foldlM R.applyScope s = .ok s1) {st : OpSem.State}
-    (hesc : st.escaped = s1.st.escaped) (hsep : FrameSep (-(S.F : Int)) S.K st x') :
+    (hof : op.full = some f) (hsh : f.info.shape = .call) {st : OpSem.State}
+    (hsep : FrameSep (-(S.F : Int)) S.K st x') :
     Call.ResultApart k.toNat d st x' := by
-  intro parts hp q hq i hil
-  have hpriv := H.resultPrivate s x s1 op d fo k ws f hf hi hof hsh hsc parts hp q hq i hil
-  have hpe : st.escapedAt (d.toInt + q.1.off + i) = none := by
-    unfold OpSem.State.escapedAt at hpriv ⊢; rw [hesc]; exact hpriv
   have hb : -(S.F : Int) ≤ d.toInt ∧ d.toInt + 16 ≤ S.K :=
     H.frameBounds.result s.pc op d fo k ws f hi hof hsh
+  refine ⟨-(S.F : Int), S.K, hsep.own, hsep.esc, fun parts hp q hq => ?_⟩
   have h16 := ((CallLemmas.retRegsS_parts hp d).2.1 q hq).2.2
-  refine ⟨hpe, fun id al hg hl hin => ?_⟩
-  obtain ⟨e, hem, h1, h2, -⟩ := hsep.own id al _ hg hl (by omega) (by omega) hin
-  exact escapedAt_none hpe e hem ⟨h1, h2⟩
+  omega
 
 /-! #### The opcodes and heads -/
 
@@ -975,10 +967,10 @@ theorem call_return_at (ctx : Ctx) {c : R.Code} {s : R.RState} {x1 x' : X86.Stat
   obtain ⟨regsR, hresR, hRet⟩ := hcr.regs
   obtain ⟨parts, hp⟩ := hk
   obtain ⟨hstores, hpq, hnd⟩ := CallLemmas.retRegsS_parts hp d
-  have hra : ∀ q ∈ parts, CallLemmas.RangeApart st1 x' (d.toInt + q.1.off) q.1.size :=
-    fun q hq => (hres parts hp q hq).of_escOnly (by rw [he1]; rfl) heo
+  obtain ⟨lo', hi', hown, hesc, hin⟩ := hres.of_escOnly (by rw [he1]; rfl) heo
   obtain ⟨st2, x'', hfold, hx, hrel2, hmr2, g1, g2, -, -, -, rs2, p2⟩ :=
-    CallLemmas.exec_stores ctx d regsR hd parts st1 x' hpq hnd hrel hmr hra (fun q hq => by
+    CallLemmas.exec_stores ctx d regsR hd parts st1 x' hpq hnd hrel hmr hwf hown hesc
+      (hin parts hp) (fun q hq => by
       apply hRet
       obtain ⟨_, hfor, _⟩ := hpq q hq
       rcases hfor with ⟨_, h | h⟩ | ⟨_, h | h⟩ <;> rw [h] <;> simp [ArgRet.retRegList])
@@ -986,7 +978,7 @@ theorem call_return_at (ctx : Ctx) {c : R.Code} {s : R.RState} {x1 x' : X86.Stat
   refine ⟨⟨s.pc + 1, s.fp, st2, s.args⟩, x'', CallLemmas.answer_ret hi hf hsh hresR hw hp hfold,
     by rw [hstores]; exact hx, ⟨hrel2, by rw [hrbp2, hrbp]; exact hr.rbp, ?_⟩, hmr2, rfl, rfl,
     by rw [p2, hstores], ?_, hrbp2, fun i hi' => ?_, st1, parts, regsR, hw, hp, hfold⟩
-  · exact hwf.of_sizes g1 (by rw [g2]; exact SizesKept.refl _)
+  · exact hwf.of_sizes g1 (SizesKept.of_escOnly g2)
   · show x''.regs 4 = x'.regs 4
     exact rs2 4 (by decide) (by decide) (by decide)
   · obtain ⟨h0, h2, h11, -⟩ := Call.saved_ne hi'
@@ -1414,7 +1406,7 @@ theorem bodySim_call' (hD : Decodes S code relocs rodata callSites dropped scope
       have hsepW : FrameSep (-(S.F : Int)) S.K (s'.withWorld a'.world).st y :=
         FrameSep.extend hsep' hrbpY rfl hal.1 hsep'.init hal.2.1 hal.2.2
       have hresA : Call.ResultApart (BitVec.ofNat 64 kk).toNat d (s'.withWorld a'.world).st y :=
-        call_resultApart' H hfi hi hf hsh hsc hesc' hsepW
+        call_resultApart' H hi hf hsh hsepW
       have hcr' : Call.CallReturn S.c.mode.pe S.Owned S.lo (s'.fp - S.c.d.frameSize)
           (S.c.stackSize s'.pc) s'.world x1 y a' := by rw [hpcS, hfpS]; exact hcr
       have hmemKy : ∀ b, IslandKept S x b → y.mem b = x.mem b := fun b hb => by

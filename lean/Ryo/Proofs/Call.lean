@@ -89,8 +89,8 @@ bytes; both from `FrameSep`, `FrameSep.stackApart`/`FrameSep.callApart`), the sy
 frame and stack sizes below `2^62`, and the result stores' displacements without 32-bit
 overflow (`d.toInt + 16 ≤ 2^31`). `call_return` also takes a valid return kind (`hk`: `answer`
 reads it; `call_sound` has it from the step) and `ResultApart` of each answer's world (`hres`):
-the bytes the result stores write are private and at no live allocation's address, else the
-x86 store would change an allocation's bytes R's private write leaves alone (`MemRel`). The tail
+the bytes the result stores write lie in a window of `FrameOwn` (a live allocation holds their
+addresses only as an escaped object's own bytes, which R's write changes alike: `MemRel`). The tail
 call says nothing of `rsi`/`rdi` without PE: they are argument registers there, which the loads
 set (`EntryAt.args`).
 
@@ -571,11 +571,20 @@ theorem _root_.Ryo.Proofs.CallLemmas.RangeApart.of_escOnly {st st' st'' : OpSem.
   have hs : al.size = a0.size := hsz
   rw [haddr, hs]; exact this
 
-/-- The bytes the result stores write (the parts of return kind `k`, at `d`) are private and at
-no live allocation's address. -/
+/-- The bytes the result stores write (the parts of return kind `k`, at `d`) lie in a window
+`[lo, hi)` of `FrameOwn` (a live allocation holds their addresses only as an escaped object's
+own bytes, which the R write changes alike), and the escaped objects in `Rel.frame`'s range. -/
 def ResultApart (k : Nat) (d : BitVec 32) (st : OpSem.State) (x : X86.State) : Prop :=
-  ∀ parts, R.retRegs k false = .ok parts → ∀ q ∈ parts,
-    CallLemmas.RangeApart st x (d.toInt + q.1.off) q.1.size
+  ∃ lo hi : Int, ScopeMem.FrameOwn lo hi st x ∧ ScopeMem.EscIn st ∧
+    ∀ parts, R.retRegs k false = .ok parts → ∀ q ∈ parts,
+      lo ≤ d.toInt + q.1.off ∧ d.toInt + q.1.off + q.1.size ≤ hi
+
+theorem ResultApart.of_escOnly {k : Nat} {d : BitVec 32} {st st' st'' : OpSem.State}
+    {x : X86.State} (h : ResultApart k d st x) (he : st'.escaped = st.escaped)
+    (hm : EscOnly st'' st.mem st'.mem) : ResultApart k d st' x := by
+  obtain ⟨lo, hi, hown, hesc, hin⟩ := h
+  exact ⟨lo, hi, CallLemmas.frameOwn_escOnly hown he hm rfl,
+    fun e he' => hesc e (by rw [he] at he'; exact he'), hin⟩
 
 theorem saved_ne {pe : Bool} {i : Fin 16} (h : Saved pe i) : i ≠ 0 ∧ i ≠ 2 ∧ i ≠ 11 ∧ i ≠ 4 := by
   rcases h with h | ⟨-, h | h⟩
@@ -1567,10 +1576,10 @@ theorem call_return (ctx : Ctx) {c : R.Code} {s : R.RState} {x1 x' : X86.State}
   obtain ⟨regsR, hresR, hRet⟩ := hcr.regs
   obtain ⟨parts, hp⟩ := hk
   obtain ⟨hstores, hpq, hnd⟩ := retRegsS_parts hp d
-  have hra : ∀ q ∈ parts, CallLemmas.RangeApart st1 x' (d.toInt + q.1.off) q.1.size :=
-    fun q hq => (hres a hcr parts hp q hq).of_escOnly (by rw [he1]; rfl) heo
+  obtain ⟨lo', hi', hown, hesc, hin⟩ := (hres a hcr).of_escOnly (by rw [he1]; rfl) heo
   obtain ⟨st2, x'', hfold, hx, hrel2, hmr2, g1, g2, -, -, -, rs2, p2⟩ :=
-    exec_stores ctx d regsR hd parts st1 x' hpq hnd hrel hmr hra (fun q hq => by
+    exec_stores ctx d regsR hd parts st1 x' hpq hnd hrel hmr hwf hown hesc (hin parts hp)
+      (fun q hq => by
       apply hRet
       obtain ⟨_, hfor, _⟩ := hpq q hq
       rcases hfor with ⟨_, h | h⟩ | ⟨_, h | h⟩ <;> rw [h] <;> simp [ArgRet.retRegList])
@@ -1578,7 +1587,7 @@ theorem call_return (ctx : Ctx) {c : R.Code} {s : R.RState} {x1 x' : X86.State}
   refine ⟨a, ⟨s.pc + 1, s.fp, st2, s.args⟩, x'', hcr, answer_ret hi hf hsh hresR hw hp hfold,
     by rw [hstores]; exact hx, ⟨hrel2, by rw [hrbp2, hrbp]; exact hr.rbp, ?_⟩, hmr2, rfl, rfl, rfl,
     by rw [p2, hcr.rip, hstores], ?_, fun i hi' => ?_⟩
-  · exact hwf.of_sizes g1 (by rw [g2]; exact SizesKept.refl _)
+  · exact hwf.of_sizes g1 (SizesKept.of_escOnly g2)
   · show x''.regs 4 = _
     rw [rs2 4 (by decide) (by decide) (by decide)]; exact hcr.rsp
   · obtain ⟨h0, h2, h11, -⟩ := saved_ne hi'

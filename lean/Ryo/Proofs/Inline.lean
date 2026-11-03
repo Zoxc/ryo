@@ -22,8 +22,8 @@ Where `opSem` fails (UB: an `Uninit` integer read, `addr` of a non-escaped objec
 is required. Reads and writes may be of private or escaped bytes: a write into an escaped object
 writes its allocation in `opSem` (`writeEscaped`), and `rel_writeFrame` (`Inline/Rel.lean`)
 keeps `Rel` for both (under `Rel`, escaped objects sit at their frame addresses, so two frame
-offsets never write the same allocation byte, `esc_inj`). Only `load` still assumes its
-destination private (`Private`), for `MemRel` (see `Inline/Mem.lean`).
+offsets never write the same allocation byte, `esc_inj`). `load`'s destination may be escaped
+too (`sound_load_esc`, `Inline/Mem.lean`; `MemRel` after from `MemPost.memRel_of_post`).
 
 Classes: `mov`, `mov128`, `imm`, `addr`, `ptrAdd`, `ptrIndex`, `bin`, `binImm`, `mul`, `mulImm`,
 `shiftImm` (shifts only: no inline opcode is an immediate rotate), `cmp`, `cmpImm`, `br`, `brCmp`,

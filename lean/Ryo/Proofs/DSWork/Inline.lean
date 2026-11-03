@@ -797,8 +797,6 @@ theorem inline_cls_step (H : Hyps S) {s s' : R.RState} {x : X86.State} {ch : OpS
     {op : Reduced.Opcode} {ops : List (R.Opnd Nat)} {f : Full.Opcode} {cls : Class}
     {cand : List Item} {br : Option Cond} {cache : Cache}
     (hf : FrameInv S s x) (hci : CacheInv cache x)
-    (hpriv : ∀ w vals, shapeOk f (.load w) = true → nativeVals S.c.ρ f ops = some vals →
-      AfterScopes S.c s (Private f vals))
     (hi : S.c.d.insns[s.pc]? = some (.native op ops)) (hfull : op.full = some f)
     (hmem : (f, cls) ∈ inlineOps)
     (hseq : sequence cls ops = some (cand, br))
@@ -820,7 +818,7 @@ theorem inline_cls_step (H : Hyps S) {s s' : R.RState} {x : X86.State} {ch : OpS
   cases cls with
   | load w =>
     obtain ⟨x', h1, h2, -, -, h3, h4, h5⟩ := load_step_fb S.ctx hfb hf.win hci hf.rrel hf.mem
-      hf.sep (fun vals hv => hpriv w vals hok.shape hv) hi hfull hok hseq h
+      hf.sep hi hfull hok hseq h
     exact ⟨x', h1, h2, h3, h4, h5⟩
   | store w =>
     obtain ⟨x', h1, h2, -, -, h3, h4, h5⟩ := store_step_fb S.ctx hfb hf.win hci hf.rrel hf.mem
@@ -868,7 +866,7 @@ theorem inline_cls_step (H : Hyps S) {s s' : R.RState} {x : X86.State} {ch : OpS
 /-- An inline instruction's frame writes miss the frame's link slots `[0, 16)` (the saved
 `rbp`, the return address): `FrameBounds.writesOff` for the inline opcodes
 (`inlineBelowLink_of`). `FrameBounds.writes` only bounds them by the window `[-F, K)`, and
-neither `LoadPrivate` nor `LinkPrivate` keeps them apart (both only say the bytes are private),
+`LinkPrivate` doesn't keep them apart (it only says the bytes are private),
 so without it a `mov.w64` to slot `0` (`mov [rbp], rax`) overwrites the saved `rbp` and breaks
 `FrameFacts.savedRbp` after the step, while R's step (a private frame write) succeeds: the
 conclusion of `inline_run'` is false. -/
@@ -1278,7 +1276,6 @@ theorem inline_effects' (H : Hyps S) (hbl : InlineBelowLink S) {s s' : R.RState}
   | load w =>
     obtain ⟨x1, hx1, -, -, -, -, -, -, hk, ho⟩ := load_step_sep_cached_regs S.ctx hci hf.rrel
       hf.mem hf.sep (hfb.window hf.win) (hfb.scopesIn s.pc) (hfb.scope_size s.pc)
-      (fun vals hv s1 hsc => H.loadPrivate s y s1 op ops f w vals hby hi hfull hok.shape hv hsc)
       (hfb.wrIn hi hfull) hi hfull hok hseq hstep
     cases hx.symm.trans hx1
     exact fin (Clob := fun i => i = 0 ∨ i = 1) hcl01 hk (hmW ho)
@@ -1404,7 +1401,7 @@ theorem inline_memSep' (H : Hyps S) (heb : InlineEscBounded S)
     {s s' : R.RState} {x x' : X86.State} {ch : OpSem.Choice}
     {op : Reduced.Opcode} {ops : List (R.Opnd Nat)} {f : Full.Opcode} {cls : Class}
     {cand : List Item} {br : Option Cond} {cache : Cache}
-    (hf : FrameInv S s x) (hbi : ∃ y, BInv S s y) (hci : CacheInv cache x)
+    (hf : FrameInv S s x) (_hbi : ∃ y, BInv S s y) (hci : CacheInv cache x)
     (hi : S.c.d.insns[s.pc]? = some (.native op ops)) (hfull : op.full = some f)
     (hmem : (f, cls) ∈ inlineOps)
     (hseq : sequence cls ops = some (cand, br))
@@ -1413,7 +1410,6 @@ theorem inline_memSep' (H : Hyps S) (heb : InlineEscBounded S)
     MemRel s'.st x' ∧ FrameSep (-(S.F : Int)) S.K s'.st x' := by
   have hok := H.inlineOk f cls hmem
   have hfb := H.frameBounds
-  obtain ⟨y, hby⟩ := hbi
   obtain ⟨hovf, hext, hshi⟩ := inline_class_of hmem
   have cached : SoundC cls → (∀ w, cls ≠ .store w) →
       MemRel s'.st x' ∧ FrameSep (-(S.F : Int)) S.K s'.st x' := fun hsd _ => by
@@ -1439,7 +1435,6 @@ theorem inline_memSep' (H : Hyps S) (heb : InlineEscBounded S)
   cases cls with
   | load w =>
     obtain ⟨x1, hx1, -, hm1, hs1, -⟩ := load_step_fb S.ctx hfb hf.win hci hf.rrel hf.mem hf.sep
-      (fun vals hv s1 hsc => H.loadPrivate s y s1 op ops f w vals hby hi hfull hok.shape hv hsc)
       hi hfull hok hseq hstep
     cases hx.symm.trans hx1
     exact ⟨hm1, hs1⟩
@@ -1482,7 +1477,7 @@ inline instruction, its emitted items `items` in memory at `rip`, and the R step
 by `items`' run to `x'` (`RRel s' x'`), the run is fetched (`Steps`) and the frame relation
 holds after. With a cache keeping PE's `rsi`/`rdi`
 out (`CacheRegsOk`), and some boundary relation at `s` (`hbi`, for `CodeApart`'s live
-allocations and `LoadPrivate`). Proof: `inline_fetch'` (`Steps`), `inline_memSep'` (`MemRel`,
+allocations). Proof: `inline_fetch'` (`Steps`), `inline_memSep'` (`MemRel`,
 `FrameSep`), `inline_effects'` (`rsp`, the callee-saved registers, the code, the rodata and the
 link words kept); `rbp` from `RRel` (the step keeps `fp`); `ArgsLive` is vacuous (`¬ LeadArg`). -/
 theorem inline_run' (H : Hyps S) (hbl : InlineBelowLink S) (heb : InlineEscBounded S)
@@ -1698,14 +1693,11 @@ theorem bodySim_inline' (hD : Decodes S code relocs rodata callSites dropped sco
         Step.stepView_native hfull hok.opShape hok.notResume hok.notUnreachable hv
       exact ⟨_, rfl⟩
   have hnl := inline_not_leadArg' hD hP hs hi' hfull hmem hstep H
-  -- `load`'s destination is private (`LoadPrivate`, at the boundary at the position).
+  -- The boundary relation at the position (`CodeApart`'s live allocations).
   have hbi : BInv S s (x.jump (addrAt S.ctx (posOf S.r k))) :=
     ⟨hf.congr rfl rfl rfl, .inr ⟨by rw [hs]; rfl, by rw [hs]; exact hci⟩⟩
-  have hpriv : ∀ w vals, shapeOk q.op (.load w) = true → nativeVals S.c.ρ q.op ops = some vals →
-      AfterScopes S.c s (Private q.op vals) :=
-    fun w vals hsh hv s1 hsc => H.loadPrivate s _ s1 op ops q.op w vals hbi hi' hfull hsh hv hsc
   obtain ⟨x', hx', hrr, hcc, hrip', hbr⟩ :=
-    inline_cls_step H hf hci hpriv hi' hfull hmem hseqR hstep
+    inline_cls_step H hf hci hi' hfull hmem hseqR hstep
   rw [hemit] at hx' hcc hrip'
   simp only at hx' hcc hrip'
   have hb := hP.bound

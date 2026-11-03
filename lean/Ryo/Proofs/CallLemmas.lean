@@ -7,6 +7,7 @@ answers, and the result stores.
 import Ryo.Proofs.ArgRet
 import Ryo.Proofs.Handler
 import Ryo.Proofs.ScopeMem
+import Ryo.Proofs.MemPost
 
 set_option linter.constructorNameAsVariable false
 
@@ -800,23 +801,45 @@ theorem writeFrame_ok_private {st : OpSem.State} {off : Int} {bs : List Abstract
   rw [writeEscaped_private hp]
   exact ⟨_, rfl⟩
 
+/-- `FrameOwn` survives a memory change of only allocation data (`EscOnly`), with the same
+escaped objects and frame pointer. -/
+theorem frameOwn_escOnly {lo hi : Int} {st st' st'' : OpSem.State} {x x' : X86.State}
+    (h : ScopeMem.FrameOwn lo hi st x) (he : st'.escaped = st.escaped)
+    (hm : EscOnly st'' st.mem st'.mem) (hb : x'.reg .rbp = x.reg .rbp) :
+    ScopeMem.FrameOwn lo hi st' x' := by
+  intro id a' o hg hl h1 h2 hin
+  obtain ⟨a, ha, hae, hsz, -⟩ := hm.2 id a' hg
+  have hfp : fpAddr x' o = fpAddr x o := by simp [fpAddr, hb]
+  have hl0 : a.live = true := by rw [hae] at hl; exact hl
+  have haddr : a'.addr = a.addr := by rw [hae]
+  have hs : a'.size = a.size := hsz
+  have hin' := hin
+  rw [hfp, haddr, hs] at hin'
+  rw [he]
+  exact h id a o ha hl0 h1 h2 hin'
+
 open Ryo.Proofs.ArgRet in
-/-- The result stores of parts `L` against `answer`'s fold of frame writes. -/
-theorem exec_stores (ctx : Ctx) (d : BitVec 32) (regs : R.Regs) (hd : d.toInt + 16 ≤ 2 ^ 31) :
+/-- The result stores of parts `L` against `answer`'s fold of frame writes. A part may land in
+an escaped object: R's write then changes its allocation's bytes (`EscOnly`) and the x86 store
+the same addresses, so `MemRel` is kept by `MemPost.memRel_of_post` (the parts in the window
+`[lo, hi)` of `FrameOwn`). -/
+theorem exec_stores (ctx : Ctx) (d : BitVec 32) (regs : R.Regs) (hd : d.toInt + 16 ≤ 2 ^ 31)
+    {lo hi : Int} :
     ∀ (L : List (RetPart × R.Reg)) (st : OpSem.State) (y : X86.State),
       (∀ q ∈ L, partOkS q.1 ∧ RegFor q.1 q.2 ∧ q.1.off + q.1.size ≤ 16) → (L.map (·.2)).Nodup →
-      Rel st y → MemRel st y → (∀ q ∈ L, RangeApart st y (d.toInt + q.1.off) q.1.size) →
+      Rel st y → MemRel st y → EscWF st → ScopeMem.FrameOwn lo hi st y → ScopeMem.EscIn st →
+      (∀ q ∈ L, lo ≤ d.toInt + q.1.off ∧ d.toInt + q.1.off + q.1.size ≤ hi) →
       (∀ q ∈ L, BytesRel (regs.get q.2) (retBytes y q.2)) →
       ∃ st' y', L.foldlM (init := st) (fun st (q : RetPart × R.Reg) =>
           st.writeFrame (d.toInt + q.1.off) ((regs.get q.2).take q.1.size)) = .ok st' ∧
         execItems ctx (L.flatMap (storeR d)) y = .ok y' ∧ Rel st' y' ∧ MemRel st' y' ∧
-        st'.escaped = st.escaped ∧ st'.mem = st.mem ∧ st'.exposed = st.exposed ∧
+        st'.escaped = st.escaped ∧ EscOnly st st.mem st'.mem ∧ st'.exposed = st.exposed ∧
         st'.exception = st.exception ∧ st'.zeroSized = st.zeroSized ∧
         (∀ i : Fin 16, i ≠ 0 → i ≠ 2 → i ≠ 11 → y'.regs i = y.regs i) ∧
         y'.rip = y.rip + BitVec.ofNat 64 ((L.flatMap (storeR d)).map Item.size).sum
-  | [], st, y, _, _, hr, hm, _, _ =>
-    ⟨st, y, rfl, rfl, hr, hm, rfl, rfl, rfl, rfl, rfl, fun _ _ _ _ => rfl, by simp⟩
-  | (p, rr) :: L, st, y, hL, hnd, hr, hm, hap, hrr => by
+  | [], st, y, _, _, hr, hm, _, _, _, _, _ =>
+    ⟨st, y, rfl, rfl, hr, hm, rfl, EscOnly.refl _ _, rfl, rfl, rfl, fun _ _ _ _ => rfl, by simp⟩
+  | (p, rr) :: L, st, y, hL, hnd, hr, hm, hwf, hown, hesc, hwin, hrr => by
     obtain ⟨hp, hfor, hoff⟩ := hL (p, rr) (by simp)
     simp only at hp hfor hoff
     have hb := toInt_bounds d
@@ -833,22 +856,28 @@ theorem exec_stores (ctx : Ctx) (d : BitVec 32) (regs : R.Regs) (hd : d.toInt + 
       rw [← hV]; exact BytesRel.take _ hrel
     have hlen : ((regs.get rr).take p.size).length = p.size := by
       rw [hbs.length, leEncode_length]
-    have hap0 := hap (p, rr) (by simp)
-    simp only at hap0
-    obtain ⟨st1, hw1⟩ := writeFrame_ok_private (st := st) (off := d.toInt + p.off)
-      (bs := (regs.get rr).take p.size) (fun i hi => (hap0 i (by omega)).1)
+    have hwin0 := hwin (p, rr) (by simp)
+    simp only at hwin0
+    obtain ⟨st1, hw1⟩ := writeFrame_ok (st := st) (d.toInt + p.off)
+      ((regs.get rr).take p.size) hwf.idLt
     have hrbp : y1.reg .rbp = y.reg .rbp := rs1 5 (by decide) (by decide) (by decide)
     obtain ⟨hrel1, h1, h2, h3, h4, h5⟩ := rel_store hr hw1 (by omega) (by omega)
       (by rw [hlen]; exact hbs) hrbp (by rw [m1, hlen])
-    have hmem1 : st1.mem = st.mem :=
-      writeFrame_mem_private hw1 (fun i hi => (hap0 i (by omega)).1)
-    have hm1 : MemRel st1 y1 := memRel_frame' hm hmem1 hap0 (fun b hb' => by
-      rw [m1]; exact X86.Mem.write_other _ _ _ _ _ hb')
+    have hwf1 : EscWF st1 := hwf.of_sizes h2 (SizesKept.of_escOnly h1)
+    have hesc1 : ScopeMem.EscIn st1 := fun e he => hesc e (by rw [h2] at he; exact he)
+    have hm1 : MemRel st1 y1 :=
+      MemPost.memRel_of_post (ws := [(d.toInt + p.off, p.size)]) hm hwf1 hrel1 h2 h1 hown
+        (fun r hr' => by
+          rw [List.mem_singleton] at hr'; subst hr'; exact hwin0)
+        (fun q hq => by
+          rw [m1]; exact X86.Mem.write_other _ _ _ _ _ (hq _ (List.mem_singleton_self _)))
+        hesc1
+    have hown1 : ScopeMem.FrameOwn lo hi st1 y1 := frameOwn_escOnly hown h2 h1 hrbp
     have hnd' : (L.map (·.2)).Nodup := (List.nodup_cons.1 hnd).2
     have hnot : rr ∉ L.map (·.2) := (List.nodup_cons.1 hnd).1
     obtain ⟨st2, y2, f2, e2, hr2, hm2, g1, g2, g3, g4, g5, rs2, p2⟩ := exec_stores ctx d regs hd L
-      st1 y1 (fun q hq => hL q (by simp [hq])) hnd' hrel1 hm1
-      (fun q hq => (hap q (by simp [hq])).congr h2 hmem1 hrbp)
+      st1 y1 (fun q hq => hL q (by simp [hq])) hnd' hrel1 hm1 hwf1 hown1 hesc1
+      (fun q hq => hwin q (by simp [hq]))
       (fun q hq => by
         have hne : q.2 ≠ rr := fun h => hnot (List.mem_map.2 ⟨q, hq, h⟩)
         have hq' := hrr q (by simp [hq])
@@ -856,8 +885,8 @@ theorem exec_stores (ctx : Ctx) (d : BitVec 32) (regs : R.Regs) (hd : d.toInt + 
           obtain ⟨_, hf, _⟩ := hL q (by simp [hq])
           rcases hf with ⟨_, h | h⟩ | ⟨_, h | h⟩ <;> rw [h] <;> simp [retRegList]
         rw [ro1 _ hmem hne]; exact hq')
-    refine ⟨st2, y2, ?_, ?_, hr2, hm2, g1.trans h2, g2.trans hmem1, g3.trans h3, g4.trans h4,
-      g5.trans h5, fun i h0 h2' h11 => by rw [rs2 i h0 h2' h11, rs1 i h0 h2' h11], ?_⟩
+    refine ⟨st2, y2, ?_, ?_, hr2, hm2, g1.trans h2, h1.trans (g2.of_escaped h2), g3.trans h3,
+      g4.trans h4, g5.trans h5, fun i h0 h2' h11 => by rw [rs2 i h0 h2' h11, rs1 i h0 h2' h11], ?_⟩
     · simp only [List.foldlM_cons, hw1, bind, Except.bind]; exact f2
     · rw [List.flatMap_cons, ArgRet.execItems_append, e1]; exact e2
     · rw [p2, p1]; simp [BitVec.add_assoc, BitVec.ofNat_add]

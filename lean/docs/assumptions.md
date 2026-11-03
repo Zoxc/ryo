@@ -54,8 +54,7 @@ Its output at this commit: the seven opaque instances of §1.2 and the `sorry`s 
 `Ryo` has no `sorry`. M3's `decode_sound` (`Ryo/Proofs/DecodeSound.lean`, aot.md §C2
 "Composition") is proved from the per-shape bodies in `Ryo/Proofs/DSWork/`; its open
 prerequisites are hypotheses (`Hyps`), listed in its module doc: trusted contracts, checkable
-facts checked by `decodeChecked` or check-image (e.g. `windowOk`, `privOk`), open privacy invariants
-(`loadPrivate`, `resultPrivate`) and `inlineClsOk`, which
+facts checked by `decodeChecked` or check-image (e.g. `windowOk`, `privOk`) and `inlineClsOk`, which
 `RyoProofs/InlineOk.lean` proves (`inlineClsOk_holds`) by kernel evaluation outside the
 default build. The switch tables are checked (`decodeChecked` runs `tablesCheck`;
 `DecodeLink/Tables.lean`'s `hdlTables_of_check`), so `decode_sound` takes that check's result.

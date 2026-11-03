@@ -158,7 +158,6 @@ theorem load_step_fb (ctx : Ctx) {s s' : R.RState} {x : X86.State} {ch : OpSem.C
     {cand : List Item} {br : Option Cond} {cache : Cache} (hb : FrameBounds c K)
     (hfp : (s.fp : Int) + K ≤ 2 ^ 64) (hinv : CacheInv cache x) (hr : RRel s x)
     (hm : MemRel s.st x) (hs : FrameSep (-(c.d.frameSize : Int)) K s.st x)
-    (hpriv : ∀ vals, nativeVals c.ρ f ops = some vals → AfterScopes c s (Private f vals))
     (hi : c.d.insns[s.pc]? = some (.native op ops)) (hf : op.full = some f)
     (hok : InlineOk f (.load w)) (hseq : sequence (.load w) ops = some (cand, br))
     (h : R.step c s ch = .ok (.step s')) :
@@ -167,7 +166,7 @@ theorem load_step_fb (ctx : Ctx) {s s' : R.RState} {x : X86.State} {ch : OpSem.C
       x'.rip = x.rip + BitVec.ofNat 64 ((cache.emit cand).1.map Item.size).sum ∧
       BrOk f ops s s' br x' :=
   load_step_sep_cached ctx hinv hr hm hs (hb.window hfp) (hb.scopesIn s.pc) (hb.scope_size s.pc)
-    hpriv (hb.wrIn hi hf) hi hf hok hseq h
+    (hb.wrIn hi hf) hi hf hok hseq h
 
 /-- `store_step_sep_cached` with the frame-offset facts from `FrameBounds`. -/
 theorem store_step_fb (ctx : Ctx) {s s' : R.RState} {x : X86.State} {ch : OpSem.Choice}

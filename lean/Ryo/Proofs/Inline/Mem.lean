@@ -12,7 +12,8 @@ Besides `Rel` (the frame), they relate L0 memory to x86 memory:
   (non-overlapping modulo `2^64`; an allocation wrapping around the address space isn't
   excluded).
 
-`load` gives `Post` and keeps `MemRel`. `store` changes L0 memory, so `Post`'s frame clauses
+`load` gives `Post` and keeps `MemRel` (`sound_load`, destination private); `sound_load_esc`
+gives `Post` alone for a destination that may be in an escaped object. `store` changes L0 memory, so `Post`'s frame clauses
 don't apply: it gives `PostMem` (both relations after, `st'` differs from `st` only in its
 memory, x86 memory changed only inside live allocations).
 -/
@@ -336,6 +337,52 @@ theorem sound_load (w : W) : ∀ (ctx : Ctx) (ρ : R.Addrs) (op : Full.Opcode)
     (fun i hi => hap (s0.toInt, wbytes w) (by rw [hwr']; simp) (s0.toInt + i)
       (by simp only [inRange, decide_eq_true_eq]; omega)) fun b hb => ?_⟩
   exact hpost.memOut b (by simp [hwr']; exact hb)
+
+/-- `sound_load` for a destination that may lie in an escaped object: no `Private` or
+`WrApart`, only `Post` (`rel_writeFrame` through `post_mem`: `SameButWrites`, the x86 write only
+at the destination). The source bytes are read before the destination is written, so a source
+aliasing the destination's object is harmless. `MemRel` after comes from the caller
+(`MemPost.memRel_of_post`). -/
+theorem sound_load_esc (w : W) : ∀ (ctx : Ctx) (ρ : R.Addrs) (op : Full.Opcode)
+    (ops : List (R.Opnd Nat)) (items : List Item) (br : Option Cond) (vals : Operands)
+    (st st' : OpSem.State) (ctl : Control) (ch : OpSem.Choice) (x : Ryo.X86.State),
+    shapeOk op (.load w) = true → sequence (.load w) ops = some (items, br) →
+    nativeVals ρ op ops = some vals → opSem op vals st ch = .ok (ctl, st') → Rel st x →
+    MemRel st x →
+    ∃ x', execItems ctx items x = .ok x' ∧ Post op ops vals items br st st' ctl x x' := by
+  intro ctx ρ op ops items br vals st st' ctl ch x hs hseq hv hsem hr hm
+  obtain ⟨⟨r, hh⟩, ho⟩ := shapeOk_spec hs
+  simp only [classHandler, classOperands] at hh ho
+  obtain ⟨o0, o1, v0, v1, rfl, rfl, h0, h1⟩ := nvs2 ho hv
+  obtain ⟨s0, rfl, rfl⟩ := nv_slot.1 h0
+  obtain ⟨pp, k, rfl, rfl⟩ := nv_mem.1 h1
+  simp only [sequence, Option.pure_def, Option.bind_eq_bind, Option.bind_some,
+    Option.some.injEq, Prod.mk.injEq, List.getElem?_cons_zero, List.getElem?_cons_succ] at hseq
+  obtain ⟨hits, rfl⟩ := hseq
+  have hty := (tyName_parse w).1
+  obtain ⟨bp, q, bs, hrp, hq, hl, hwr, rfl⟩ := opSem_load hh hty ho hsem
+  have hwr' : wranges op [.slot s0.toInt, .mem pp.toInt k.toInt] = [(s0.toInt, wbytes w)] :=
+    wranges_eq hh (fp_load (ps := []) (tySize_of_parse hty)).1 (by simp [opndVal, ho])
+  have hbp := toInt_bounds pp
+  have hb0 := toInt_bounds s0
+  have hqa := asPtr_rel (readFrame_rel hr hrp (by omega) (by omega)) hq
+  have hn0 : wbytes w ≠ 0 := by cases w <;> decide
+  obtain ⟨id, a, hg, hlv, ha1, ha2, rfl⟩ := load_ok hn0 hl
+  have hbs : BytesRel (a.data.extract ((q.wrappingOffset k.toInt).addr - a.addr)
+      ((q.wrappingOffset k.toInt).addr - a.addr + wbytes w)).toList
+      (bytesAt x.mem (BitVec.ofNat 64 (leDecode (bytesAt x.mem (fpAddr x pp.toInt) 8)) +
+        k.signExtend 64) (wbytes w)) := by
+    have := bytesRel_alloc hm hg hlv (off := (q.wrappingOffset k.toInt).addr - a.addr)
+      (n := wbytes w) (by omega)
+    rwa [Nat.add_sub_cancel' ha1, wrappingOffset_bv, hqa, ← sext_eq] at this
+  have hlen : (a.data.extract ((q.wrappingOffset k.toInt).addr - a.addr)
+      ((q.wrappingOffset k.toInt).addr - a.addr + wbytes w)).toList.length = wbytes w := by
+    simp only [Array.length_toList, Array.size_extract, Allocation.size] at ha2 ⊢; omega
+  subst hits
+  cases w <;> xrun <;>
+    refine post_mem hr hwr (by rw [hlen]; rfl) (by decide) (by rw [hwr']; rfl)
+      (bytesRel_val hbs (bytesAt_length ..) ?_) ?_ ?_ ?_ ?_ ?_ rfl
+  all_goals xobs
 
 /-! ### Stores through a pointer -/
 
