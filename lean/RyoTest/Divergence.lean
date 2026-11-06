@@ -239,6 +239,19 @@ def atomics (misaligned : Bool) : Program := program do
     call (.inst load) [p] (place 0)
     ret
 
+/-- A failing `atomic_cxchg` on an immutable static: still a store access, so UB. -/
+def cxchgReadOnly : Program := program do
+  let cxchg ← addIntrinsic "atomic_cxchg"
+  let g ← addGlobal { bytes := [some 5, some 0, some 0, some 0], align := Align.ofBytes 4,
+                      kind := .static false }
+  addFn "main" <| body unit [] do
+    let p ← newLocal (rawTo u32 true)
+    storageLive p
+    assignL p (.use (.const (.ptr (.alloc g) 0) (rawTo u32 true)))
+    let pairTy := tuple [(0, u32), (4, .bool)] 8 4
+    let _ ← callTmp cxchg pairTy [copyL p, cint u32 7, cint u32 8]
+    ret
+
 /-! ### D21: heap -/
 
 def heapProg (doubleFree : Bool) : Program := program do
@@ -342,6 +355,7 @@ def tests : List TestCase := [
   ⟨"D13/uninit_int", fun _ => expectUb uninitInt "violates the language invariant"⟩,
   ⟨"D17/atomics", fun _ => expectReturnValue (atomics false) (.int 10)⟩,
   ⟨"D17/atomics_misaligned", fun _ => expectUb (atomics true) "misaligned"⟩,
+  ⟨"D17/cxchg_fail_read_only", fun _ => expectUb cxchgReadOnly "store to read-only memory"⟩,
   ⟨"D21/use_after_free", fun _ => expectUb (heapProg false) "dead allocation"⟩,
   ⟨"D21/double_free", fun _ => expectUb (heapProg true) "double-free"⟩,
   ⟨"D22/thread_local", fun _ => expectReturnValue threadLocal (.int 3)⟩,

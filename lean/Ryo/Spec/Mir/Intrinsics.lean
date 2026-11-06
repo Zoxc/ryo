@@ -421,7 +421,11 @@ def evalIntrinsic (name : String) (args : List (Value × Ty)) (destTy : Ty) : Se
     let same := match old, expected with
       | .ptr x, .ptr y => x.thin.addr == y.thin.addr
       | x, y => x == y
+    -- A failing compare-exchange is still a read-modify-write access: on read-only memory it
+    -- is UB (core's "Atomic accesses to read-only memory"; Miri), so it writes the old bytes
+    -- back, which only adds `Memory.store`'s checks.
     if same then memUpdate (typedStore · p.thin new vt al)
+    else memUpdate fun m => do m.store p.thin (← m.load p.thin vt.size al) al
     pure (.tuple [old, .bool same])
   | "atomic_xadd", [a, (v, vt)] | "atomic_xsub", [a, (v, vt)] | "atomic_and", [a, (v, vt)]
   | "atomic_nand", [a, (v, vt)] | "atomic_or", [a, (v, vt)] | "atomic_xor", [a, (v, vt)]
