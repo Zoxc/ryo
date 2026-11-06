@@ -15,7 +15,8 @@ theorem State.setReg_reg_self (x : State) (r : Reg) : x.setReg r (x.reg r) = x :
   split <;> simp_all
 
 /-- `Ret` read on virtual states: both ends are real states with `rbp` replaced by the same
-value. With `v := x.reg .rbp` it is `Ret` itself (`vRet_of`). -/
+value. `Ret x x'` gives `VRet Ret x x'` (with `v := x.reg .rbp`) only when `Ret` keeps `rbp`, and
+the converse fails: `VRet` forgets the real `rbp` (`HandlerContractB.virt`). -/
 def VRet (Ret : State → State → Prop) (xv xv' : State) : Prop :=
   ∃ v x x', Ret x x' ∧ xv = x.setReg .rbp v ∧ xv' = x'.setReg .rbp v
 
