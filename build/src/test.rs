@@ -850,8 +850,10 @@ fn gate_variants(opts: &Options, sel: &Sel, info: &crate::utils::RustcInfo, root
     Ok(variants)
 }
 
-/// Runs `run`'s cargo command, skipping the slow and codegen tests unless selected; its output is
-/// printed only if it fails.
+/// Runs `run`'s cargo command, skipping the slow and codegen tests unless selected; its output
+/// (stdout and stderr in the order cargo and the tests wrote them) is printed only if it
+/// fails, and the error names the failed tests, so that the `FAILED` line says which even
+/// when the output scrolled away among the corpus's.
 fn cargo_run(run: &CargoRun, sel: &Sel, root: &Path) -> Result<(), String> {
     let mut c = cmd("cargo");
     c.current_dir(root.join("vm")).args(run.args).envs(run.env.iter().copied());
@@ -871,12 +873,14 @@ fn cargo_run(run: &CargoRun, sel: &Sel, root: &Path) -> Result<(), String> {
             c.args(["--skip", t]);
         }
     }
-    let r = crate::utils::capture(&mut c)?;
-    if r.status.success() {
+    let (status, out) = crate::utils::capture_merged(c)?;
+    if status.success() {
         return Ok(());
     }
-    eprint!("{}{}", r.stdout, r.stderr);
-    Err(format!("`cargo {}` failed with {}", run.args.join(" "), r.status))
+    eprint!("{out}");
+    let failed: Vec<&str> = out.lines().filter_map(|l| l.strip_prefix("test ")?.strip_suffix(" ... FAILED")).collect();
+    let tests = if failed.is_empty() { String::new() } else { format!(" (failed: {})", failed.join(", ")) };
+    Err(format!("`cargo {}` failed with {status}{tests}", run.args.join(" ")))
 }
 
 impl Variant {

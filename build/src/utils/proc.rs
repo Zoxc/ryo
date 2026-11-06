@@ -52,6 +52,23 @@ pub fn capture(cmd: &mut Command) -> Result<Captured, String> {
     })
 }
 
+/// Runs `cmd` with its stdout and stderr captured together through one pipe (lossily
+/// decoded), so that they read in the order it wrote them; failing only if it can't be
+/// spawned. Takes `cmd`, which holds the pipe's write ends until dropped.
+pub fn capture_merged(mut cmd: Command) -> Result<(std::process::ExitStatus, String), String> {
+    use std::io::Read;
+    let what = describe(&cmd);
+    let err = |e: std::io::Error| format!("failed to run `{what}`: {e}");
+    let (mut r, w) = std::io::pipe().map_err(err)?;
+    cmd.stdin(Stdio::null()).stdout(w.try_clone().map_err(err)?).stderr(w);
+    let mut child = cmd.spawn().map_err(err)?;
+    drop(cmd);
+    let mut out = Vec::new();
+    r.read_to_end(&mut out).map_err(err)?;
+    let status = child.wait().map_err(err)?;
+    Ok((status, String::from_utf8_lossy(&out).into_owned()))
+}
+
 /// [`capture`], failing with the output if `cmd` doesn't exit successfully.
 pub fn capture_ok(cmd: &mut Command) -> Result<Captured, String> {
     let res = capture(cmd)?;
