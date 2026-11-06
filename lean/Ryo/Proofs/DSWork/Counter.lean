@@ -467,8 +467,8 @@ theorem ctr_inCode_decF {ctx : Ctx} {m : Mem} {c : Cursor} {rs : Array Reloc} {m
       exact ⟨p + j, by simp at hle; omega, addrAt_add' ctx p j⟩
     · rw [hsz] at ha; exact ih hb' a ha
 
-/-- `ctr_code_apart` in either frame form, from the virtual state's `FrameInv`, for the real
-state (`rsp` is the same). -/
+/-- The decoded items' code bytes are neither runtime-owned nor on the stack, in either frame
+form, from the virtual state's `FrameInv`, for the real state (`rsp` is the same). -/
 theorem ctr_code_apartF {s : R.RState} {x : X86.State} (H : Hyps S) (hf : FrameInv S s (S.virt x))
     {p q : Nat} {items : List Item} (hd : Dec S.body p items q) (hb : Boundary S.rs p) :
     ∀ a, InCode S.ctx (items.map (FForm.item S.body.spFrame)) p a →
