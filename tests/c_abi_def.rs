@@ -1,6 +1,7 @@
 //! `extern "C"` functions compiled by the VM called back from native code: a libc `qsort`
 //! comparator, `pthread_create` (Windows: `CreateThread`) start routines and a `std::thread`
-//! body through an `extern "C"` trampoline, a `#[no_mangle]` export called through a declared
+//! body through an `extern "C"` trampoline, a `pthread_exit` (a forced unwind) through VM
+//! frames without landing pads, a `#[no_mangle]` export called through a declared
 //! `extern` block, and VM callers of all of them. A panic out of an `extern "C"` fn aborts
 //! (the last thing the program does; the exit status is compared too).
 use std::arch::asm;
@@ -134,6 +135,51 @@ fn pthreads() -> Vec<u64> {
         .collect()
 }
 
+#[cfg(target_os = "linux")]
+unsafe extern "C" {
+    fn pthread_exit(v: *mut c_void) -> !;
+}
+
+#[cfg(target_os = "linux")]
+#[inline(never)]
+fn not_for_u32() {
+    println!("ZST");
+}
+
+#[cfg(target_os = "linux")]
+/// Ends its thread with `pthread_exit`, whose forced unwind passes through this frame as
+/// through cg_llvm's, which has no landing pad for `T = u32`: the call that would need a
+/// terminate pad is mono-unreachable, and the drop of `x` emits no call. (No other calls:
+/// they would get terminate pads.)
+extern "C" fn exit_thread<T>(arg: *mut c_void) -> *mut c_void {
+    let x: Option<T> = None;
+    if const { size_of::<T>() == 0 } {
+        not_for_u32();
+    }
+    {
+        let _x = x;
+    }
+    unsafe { pthread_exit(arg) }
+}
+
+#[cfg(target_os = "linux")]
+#[inline(never)]
+fn exit_threads() -> u32 {
+    let mut v = 42u32;
+    let mut t: pthread_t = 0;
+    let arg = &raw mut v as *mut c_void;
+    assert_eq!(unsafe { pthread_create(&mut t, std::ptr::null(), exit_thread::<u32>, arg) }, 0);
+    let mut r = std::ptr::null_mut();
+    assert_eq!(unsafe { pthread_join(t, &mut r) }, 0);
+    assert_eq!(r, arg);
+    v
+}
+
+#[cfg(not(target_os = "linux"))]
+fn exit_threads() -> u32 {
+    42
+}
+
 // --- std::thread through an extern "C" trampoline ----------------------------------------
 
 /// A C-style callback with a context pointer, as a C library would take it.
@@ -254,6 +300,7 @@ fn main() {
     println!("qsort: {:?}", sort_items());
     println!("cmp_bytes: {:?} {}", native_cmp_bytes(black_box(cmp_bytes)), cmp_bytes(black_box(3), black_box(4)));
     println!("pthreads: {:?}", pthreads());
+    println!("exit_threads: {}", exit_threads());
     println!("threads: {:?}", threads());
     println!("export: {:?}", export_calls());
     println!("catches: {} {}", catches(black_box(1)), catches(black_box(5)));

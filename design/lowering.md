@@ -406,14 +406,17 @@ by its code offset, which the encoder turns into the function's LSDA call-site t
 - `UnwindAction::Continue` → a `CONTINUE` entry: the call is a call site without a landing
   pad, so unwinding leaves the frame. `resume` always has it; tail calls leave no frame
   and have no entry.
-- `UnwindAction::Cleanup(bb)` → the landing pad of `bb`.
+- `UnwindAction::Cleanup(bb)` → the landing pad of `bb`, or `CONTINUE` if `bb` is a no-op
+  landing pad after monomorphization (cg_ssa's `find_noop_landing_pads`).
 - `UnwindAction::Terminate(reason)` → a catch-all landing pad (`CATCH`), as cg_llvm's
   terminate pads, so it runs even when nothing up the stack catches. It jumps to a stub
   after the function's blocks that calls the reason's lang item (`panic_cannot_unwind`,
   `panic_in_cleanup`), like cg_ssa's terminate block, so the message and the panic hook run
   as natively. One stub per reason the function uses.
 - `UnwindAction::Unreachable` (and a `C` callee, `nounwind` in cg_ssa) → as cg_llvm's
-  call-site table: in a function without landing pads (which has no LSDA there) a
+  call-site table, which has only the landing pads of the calls emitted (cg_ssa makes them
+  lazily, so mono-unreachable blocks, drops without glue and folded asserts add none): in a
+  function without landing pads (which has no LSDA there) a
   `Continue` entry, so an exception that leaves the callee anyway (a foreign one, or a panic
   past a Rust callee's cleanup, whose own terminate pad aborts in the cleanup phase) passes
   the search phase through the frame; in one with landing pads no entry (LLVM's gap), so

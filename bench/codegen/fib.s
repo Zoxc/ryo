@@ -61,7 +61,7 @@ L1:
 
 fn <{closure@std::rt::lang_start<()>::{closure#0}} as std::ops::FnOnce<()>>::call_once - shim
     inc     qword ptr [jit_record]
-    jns     L4
+    jns     L1
 L0:
     sub     rsp,28h
     mov     [rsp+10h],rdi
@@ -73,27 +73,11 @@ L0:
     mov     eax,[rsp+1Ch]
     add     rsp,28h
     ret
-    nop     [rax+rax]
-    nop     [rax]
-L1:
-    inc     qword ptr [jit_record.ctr_l]
-    jns     L3
-L2:
     lea     rdi,[rsp+20h]
     mov     esi,0FFFFFFE0h
     call    ryo_h_Resume
     ud2
-    lea     rdi,[rsp+20h]
-    mov     rsi,rax
-    mov     edx,0FFFFFFE0h
-    call    ryo_h_Lpad
-    jmp     L1
-L3:
-    lea     r11,[jit_record]
-    xor     eax,eax
-    call    qword ptr [r11+10h]
-    jmp     L2
-L4:
+L1:
     lea     r11,[jit_record]
     call    qword ptr [r11+8]
     jmp     L0

@@ -88,7 +88,7 @@ L1:
 
 fn <bool as std::vec::spec_from_elem::SpecFromElem>::from_elem::<std::alloc::Global> [hint]
     inc     qword ptr [jit_record]
-    jns     L31
+    jns     L29
 L0:
     sub     rsp,0B8h
     mov     [rsp+70h],rdi
@@ -116,7 +116,7 @@ L0:
     mov     rcx,[rsp]
     mov     r8,[rsp+8]
     call    qword ptr [sym2]
-    jmp     L17
+    jmp     L16
 L1:
     mov     byte ptr [rsp+87h],0
     lea     rdi,[rsp+0B0h]
@@ -130,11 +130,11 @@ L1:
     call    fn4
     mov     [rsp+38h],rax
     mov     [rsp+40h],rdx
-    jmp     L20
+    jmp     L19
     nop     [rax+rax]
 L2:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L23
+    jns     L22
 L3:
     mov     rax,[rsp+58h]
     mov     [rsp+98h],rax
@@ -146,7 +146,7 @@ L3:
     nop     [rax]
 L4:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L24
+    jns     L23
 L5:
     lea     rdi,[rsp+0B0h]
     mov     esi,0FFFFFFC0h
@@ -160,7 +160,7 @@ L5:
     nop     [rax]
 L6:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L25
+    jns     L24
 L7:
     lea     rax,[rsp+58h]
     mov     [rsp+10h],rax
@@ -171,14 +171,14 @@ L7:
     nop     [rax]
 L8:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L26
+    jns     L25
 L9:
     test    byte ptr [rsp+86h],0FFh
-    jne     L16
+    jne     L15
     nop     [rax+rax]
 L10:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L27
+    jns     L26
 L11:
     lea     rdi,[rsp+0B0h]
     mov     esi,0FFFFFFC8h
@@ -188,27 +188,23 @@ L11:
     nop     [rax+rax]
 L12:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L28
+    jns     L27
 L13:
     jmp     L8
-    nop
 L14:
-    inc     qword ptr [jit_record.ctr_l]
-    jns     L29
-L15:
     test    byte ptr [rsp+87h],0FFh
     je      L8
     jmp     L12
-L16:
+L15:
     jmp     L10
-L17:
+L16:
     mov     rax,[rsp+30h]
     mov     [rsp+28h],rax
     cmp     rax,0
-    je      L19
-    jmp     L18
+    je      L18
+    jmp     L17
     ud2
-L18:
+L17:
     mov     rax,[rsp+38h]
     mov     rcx,[rsp+40h]
     mov     [rsp+20h],rcx
@@ -217,7 +213,7 @@ L18:
     mov     rsi,[rsp+20h]
     call    qword ptr [sym6]
     ud2
-L19:
+L18:
     mov     rax,[rsp+38h]
     mov     rcx,[rsp+40h]
     mov     [rsp+50h],rcx
@@ -229,7 +225,7 @@ L19:
     mov     rdx,[rsp+88h]
     mov     [rsp+0A8h],rdx
     jmp     L4
-L20:
+L19:
     mov     rax,[rsp+38h]
     mov     rcx,[rsp+40h]
     mov     [rsp+50h],rcx
@@ -247,69 +243,59 @@ L20:
     movzx   edx,byte ptr [rsp+4Fh]
     call    fn7
     jmp     L2
-    nop     [rax+rax]
-L21:
+    nop     [rax]
+L20:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L30
-L22:
+    jns     L28
+L21:
     call    qword ptr [sym8]
     ud2
     lea     rdi,[rsp+0B0h]
     mov     rsi,rax
     mov     edx,0FFFFFFC8h
     call    ryo_h_Lpad
-    jmp     L14
-    lea     rdi,[rsp+0B0h]
-    mov     rsi,rax
-    mov     edx,0FFFFFFC8h
-    call    ryo_h_Lpad
-    jmp     L21
+    jmp     L20
     lea     rdi,[rsp+0B0h]
     mov     rsi,rax
     mov     edx,0FFFFFFC8h
     call    ryo_h_Lpad
     jmp     L6
-L23:
+L22:
     lea     r11,[jit_record]
     xor     eax,eax
     call    qword ptr [r11+10h]
     jmp     L3
-L24:
+L23:
     lea     r11,[jit_record]
     mov     eax,1
     call    qword ptr [r11+10h]
     jmp     L5
-L25:
+L24:
     lea     r11,[jit_record]
     mov     eax,2
     call    qword ptr [r11+10h]
     jmp     L7
-L26:
+L25:
     lea     r11,[jit_record]
     mov     eax,3
     call    qword ptr [r11+10h]
     jmp     L9
-L27:
+L26:
     lea     r11,[jit_record]
     mov     eax,4
     call    qword ptr [r11+10h]
     jmp     L11
-L28:
+L27:
     lea     r11,[jit_record]
     mov     eax,5
     call    qword ptr [r11+10h]
     jmp     L13
-L29:
+L28:
     lea     r11,[jit_record]
     mov     eax,6
     call    qword ptr [r11+10h]
-    jmp     L15
-L30:
-    lea     r11,[jit_record]
-    mov     eax,7
-    call    qword ptr [r11+10h]
-    jmp     L22
-L31:
+    jmp     L21
+L29:
     lea     r11,[jit_record]
     call    qword ptr [r11+8]
     jmp     L0
@@ -331,7 +317,7 @@ L1:
 
 fn <std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize::<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}
     inc     qword ptr [jit_record]
-    jns     L4
+    jns     L1
 L0:
     sub     rsp,48h
     mov     [rsp+30h],rdi
@@ -349,34 +335,18 @@ L0:
     mov     rax,[rsp+38h]
     add     rsp,48h
     ret
-    nop     [rax+rax]
-    nop
-L1:
-    inc     qword ptr [jit_record.ctr_l]
-    jns     L3
-L2:
     lea     rdi,[rsp+40h]
     mov     esi,0FFFFFFE0h
     call    ryo_h_Resume
     ud2
-    lea     rdi,[rsp+40h]
-    mov     rsi,rax
-    mov     edx,0FFFFFFE0h
-    call    ryo_h_Lpad
-    jmp     L1
-L3:
-    lea     r11,[jit_record]
-    xor     eax,eax
-    call    qword ptr [r11+10h]
-    jmp     L2
-L4:
+L1:
     lea     r11,[jit_record]
     call    qword ptr [r11+8]
     jmp     L0
 
 fn <std::iter::Filter<std::slice::Iter<'_, bool>, {closure@bench/sieve.rs:24:37: 24:42}> as std::iter::Iterator>::count [hint]
     inc     qword ptr [jit_record]
-    jns     L25
+    jns     L22
 L0:
     sub     rsp,78h
     mov     [rsp+58h],rdi
@@ -394,13 +364,13 @@ L0:
     mov     [rsp+30h],rax
     mov     [rsp+10h],rax
     cmp     rax,0
-    je      L15
-    jmp     L16
+    je      L13
+    jmp     L14
     nop     [rax+rax]
     nop
 L1:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L18
+    jns     L16
 L2:
     mov     rax,[rsp+30h]
     mov     rcx,[rsp+38h]
@@ -412,11 +382,11 @@ L2:
     mov     rdx,[rsp+8]
     call    fn1
     mov     [rsp+68h],rax
-    jmp     L17
+    jmp     L15
     nop     [rax+rax]
 L3:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L19
+    jns     L17
 L4:
     mov     rax,[rsp+68h]
     add     rsp,78h
@@ -424,7 +394,7 @@ L4:
     nop     [rax+rax]
 L5:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L20
+    jns     L18
 L6:
     lea     rdi,[rsp+70h]
     mov     esi,0FFFFFFD0h
@@ -433,7 +403,7 @@ L6:
     xchg    ax,ax
 L7:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L21
+    jns     L19
 L8:
     test    byte ptr [rsp+4Fh],0FFh
     je      L5
@@ -442,23 +412,17 @@ L8:
     nop
 L9:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L22
+    jns     L20
 L10:
     jmp     L7
-    nop
-L11:
-    inc     qword ptr [jit_record.ctr_l]
-    jns     L23
-L12:
     test    byte ptr [rsp+4Eh],0FFh
     je      L7
     jmp     L9
     nop     [rax+rax]
-    nop
-L13:
+L11:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L24
-L14:
+    jns     L21
+L12:
     mov     byte ptr [rsp+4Eh],0
     mov     rdx,[rsp+58h]
     mov     rcx,[rsp+60h]
@@ -472,59 +436,49 @@ L14:
     mov     [rsp+38h],rdx
     jmp     L1
     ud2
-L15:
+L13:
     mov     qword ptr [rsp+50h],0FFFFFFFFFFFFFFFFh
-    jmp     L13
-L16:
+    jmp     L11
+L14:
     mov     rax,[rsp+38h]
     mov     [rsp+50h],rax
-    jmp     L13
-L17:
+    jmp     L11
+L15:
     mov     rdi,[rsp+68h]
     mov     rsi,[rsp+50h]
     call    fn3
     jmp     L3
-    lea     rdi,[rsp+70h]
-    mov     rsi,rax
-    mov     edx,0FFFFFFD0h
-    call    ryo_h_Lpad
-    jmp     L11
-L18:
+L16:
     lea     r11,[jit_record]
     xor     eax,eax
     call    qword ptr [r11+10h]
     jmp     L2
-L19:
+L17:
     lea     r11,[jit_record]
     mov     eax,1
     call    qword ptr [r11+10h]
     jmp     L4
-L20:
+L18:
     lea     r11,[jit_record]
     mov     eax,2
     call    qword ptr [r11+10h]
     jmp     L6
-L21:
+L19:
     lea     r11,[jit_record]
     mov     eax,3
     call    qword ptr [r11+10h]
     jmp     L8
-L22:
+L20:
     lea     r11,[jit_record]
     mov     eax,4
     call    qword ptr [r11+10h]
     jmp     L10
-L23:
+L21:
     lea     r11,[jit_record]
     mov     eax,5
     call    qword ptr [r11+10h]
     jmp     L12
-L24:
-    lea     r11,[jit_record]
-    mov     eax,6
-    call    qword ptr [r11+10h]
-    jmp     L14
-L25:
+L22:
     lea     r11,[jit_record]
     call    qword ptr [r11+8]
     jmp     L0
@@ -718,7 +672,7 @@ L1:
 
 fn <std::ops::RangeInclusive<usize> as std::iter::range::RangeInclusiveIteratorImpl>::spec_try_rfold::<(), {closure@std::iter::DoubleEndedIterator::rfind::check<usize, {closure@bench/sieve.rs:25:39: 25:43}>::{closure#0}}, std::ops::ControlFlow<usize>> [hint]
     inc     qword ptr [jit_record]
-    jns     L35
+    jns     L32
 L0:
     sub     rsp,0A8h
     mov     [rsp+88h],rdi
@@ -728,12 +682,12 @@ L0:
     movzx   edx,byte ptr [rdx+10h]
     mov     [rsp+56h],dl
     test    byte ptr [rsp+56h],0FFh
-    je      L26
-    jmp     L25
+    je      L24
+    jmp     L23
     nop     [rax]
 L1:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L27
+    jns     L25
 L2:
     mov     byte ptr [rsp+66h],0
     call    fn0
@@ -743,14 +697,14 @@ L2:
     nop     [rax]
 L3:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L28
+    jns     L26
 L4:
     mov     byte ptr [rsp+66h],0
     mov     byte ptr [rsp+67h],1
     nop     [rax+rax]
 L5:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L29
+    jns     L27
 L6:
     mov     rax,[rsp+88h]
     mov     [rsp+48h],rax
@@ -870,13 +824,13 @@ L13:
     nop
 L14:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L30
+    jns     L28
 L15:
-    jmp     L24
+    jmp     L22
     nop
 L16:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L31
+    jns     L29
 L17:
     lea     rdi,[rsp+0A0h]
     mov     esi,0FFFFFFB8h
@@ -886,31 +840,25 @@ L17:
     nop     [rax+rax]
 L18:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L32
+    jns     L30
 L19:
     jmp     L14
-    nop
-L20:
-    inc     qword ptr [jit_record.ctr_l]
-    jns     L33
-L21:
     test    byte ptr [rsp+67h],0FFh
     je      L14
     jmp     L18
     nop     [rax+rax]
-    nop
-L22:
+L20:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L34
-L23:
+    jns     L31
+L21:
     jmp     L16
-L24:
+L22:
     test    byte ptr [rsp+66h],0FFh
     je      L16
-    jmp     L22
-L25:
+    jmp     L20
+L23:
     jmp     L1
-L26:
+L24:
     mov     rax,[rsp+88h]
     mov     [rsp+48h],rax
     mov     rdx,[rsp+88h]
@@ -926,57 +874,42 @@ L26:
     test    byte ptr [rsp+57h],0FFh
     je      L3
     jmp     L1
-    lea     rdi,[rsp+0A0h]
-    mov     rsi,rax
-    mov     edx,0FFFFFFB8h
-    call    ryo_h_Lpad
-    jmp     L14
-    lea     rdi,[rsp+0A0h]
-    mov     rsi,rax
-    mov     edx,0FFFFFFB8h
-    call    ryo_h_Lpad
-    jmp     L20
-L27:
+L25:
     lea     r11,[jit_record]
     xor     eax,eax
     call    qword ptr [r11+10h]
     jmp     L2
-L28:
+L26:
     lea     r11,[jit_record]
     mov     eax,1
     call    qword ptr [r11+10h]
     jmp     L4
-L29:
+L27:
     lea     r11,[jit_record]
     mov     eax,2
     call    qword ptr [r11+10h]
     jmp     L6
-L30:
+L28:
     lea     r11,[jit_record]
     mov     eax,3
     call    qword ptr [r11+10h]
     jmp     L15
-L31:
+L29:
     lea     r11,[jit_record]
     mov     eax,4
     call    qword ptr [r11+10h]
     jmp     L17
-L32:
+L30:
     lea     r11,[jit_record]
     mov     eax,5
     call    qword ptr [r11+10h]
     jmp     L19
-L33:
+L31:
     lea     r11,[jit_record]
     mov     eax,6
     call    qword ptr [r11+10h]
     jmp     L21
-L34:
-    lea     r11,[jit_record]
-    mov     eax,7
-    call    qword ptr [r11+10h]
-    jmp     L23
-L35:
+L32:
     lea     r11,[jit_record]
     call    qword ptr [r11+8]
     jmp     L0
@@ -1003,7 +936,7 @@ L1:
 
 fn <std::slice::Iter<'_, bool> as std::iter::Iterator>::fold::<usize, {closure@std::iter::adapters::map::map_fold<&bool, usize, usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}, {closure@<usize as std::iter::Sum>::sum<std::iter::Map<std::slice::Iter<'_, bool>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}>>::{closure#0}}>::{closure#0}}> [hint]
     inc     qword ptr [jit_record]
-    jns     L38
+    jns     L35
 L0:
     sub     rsp,0D8h
     mov     [rsp+0B8h],rdi
@@ -1045,11 +978,11 @@ L3:
     mov     [rsp+48h],rsi
     mov     byte ptr [rsp+17h],1
     test    byte ptr [rsp+17h],0FFh
-    je      L25
-    jmp     L24
+    je      L23
+    jmp     L22
 L4:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L29
+    jns     L27
 L5:
     lea     rax,[rsp+0B0h]
     mov     [rsp+60h],rax
@@ -1070,11 +1003,11 @@ L5:
     mov     [rsp+70h],rax
     mov     byte ptr [rsp+17h],1
     test    byte ptr [rsp+17h],0FFh
-    je      L28
-    jmp     L27
+    je      L26
+    jmp     L25
 L6:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L30
+    jns     L28
 L7:
     mov     rax,[rsp+70h]
     mov     [rsp+0C8h],rax
@@ -1082,7 +1015,7 @@ L7:
     nop     [rax]
 L8:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L31
+    jns     L29
 L9:
     jmp     L4
 L10:
@@ -1093,13 +1026,13 @@ L10:
     nop     [rax+rax]
 L11:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L32
+    jns     L30
 L12:
-    jmp     L21
+    jmp     L19
     nop
 L13:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L33
+    jns     L31
 L14:
     lea     rdi,[rsp+0D0h]
     mov     esi,0FFFFFFA8h
@@ -1109,34 +1042,29 @@ L14:
     nop     [rax+rax]
 L15:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L34
+    jns     L32
 L16:
     jmp     L11
-    nop
-L17:
-    inc     qword ptr [jit_record.ctr_l]
-    jns     L35
-L18:
     test    byte ptr [rsp+87h],0FFh
     je      L11
     jmp     L15
-    nop     [rax]
-L19:
+    nop     [rax+rax]
+L17:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L36
-L20:
+    jns     L33
+L18:
     jmp     L13
-L21:
+L19:
     test    byte ptr [rsp+86h],0FFh
     je      L13
-    jmp     L19
+    jmp     L17
     nop     [rax+rax]
-L22:
+L20:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L37
-L23:
+    jns     L34
+L21:
     jmp     L4
-L24:
+L22:
     mov     rax,[rsp+68h]
     mov     [rsp+40h],rax
     mov     rdx,[rsp+60h]
@@ -1147,24 +1075,24 @@ L24:
     mov     rsi,[rsp+38h]
     mov     rdx,[rsp+10h]
     call    fn2
-L25:
+L23:
     mov     qword ptr [rsp+10h],0
     cmp     qword ptr [rsp+10h],1
     setb    [rsp+47h]
     test    byte ptr [rsp+47h],0FFh
-    je      L26
+    je      L24
     mov     qword ptr [rsp+10h],1
     mov     r8,[rsp+10h]
     mov     rcx,7FFFFFFFFFFFFFFFh
     cmp     r8,rcx
     setbe   [rsp+46h]
     test    byte ptr [rsp+46h],0FFh
-    je      L26
+    je      L24
     mov     r10,[rsp+48h]
     sub     r10,[rsp+50h]
     mov     [rsp+90h],r10
-    jmp     L22
-L26:
+    jmp     L20
+L24:
     lea     rax,[k3]
     mov     [rsp+8],rax
     mov     qword ptr [rsp+10h],49h
@@ -1175,7 +1103,7 @@ L26:
     mov     rdx,[rsp]
     call    qword ptr [sym5]
     ud2
-L27:
+L25:
     mov     qword ptr [rsp+10h],1
     lea     rdx,[k6]
     mov     [rsp+8],rdx
@@ -1183,7 +1111,7 @@ L27:
     mov     rsi,[rsp+10h]
     mov     rdx,[rsp+8]
     call    fn7
-L28:
+L26:
     mov     rax,[rsp+98h]
     add     rax,1
     mov     [rsp+98h],rax
@@ -1193,57 +1121,47 @@ L28:
     cmp     rax,rdx
     je      L6
     jmp     L8
-    lea     rdi,[rsp+0D0h]
-    mov     rsi,rax
-    mov     edx,0FFFFFFA8h
-    call    ryo_h_Lpad
-    jmp     L17
-L29:
+L27:
     lea     r11,[jit_record]
     xor     eax,eax
     call    qword ptr [r11+10h]
     jmp     L5
-L30:
+L28:
     lea     r11,[jit_record]
     mov     eax,1
     call    qword ptr [r11+10h]
     jmp     L7
-L31:
+L29:
     lea     r11,[jit_record]
     mov     eax,2
     call    qword ptr [r11+10h]
     jmp     L9
-L32:
+L30:
     lea     r11,[jit_record]
     mov     eax,3
     call    qword ptr [r11+10h]
     jmp     L12
-L33:
+L31:
     lea     r11,[jit_record]
     mov     eax,4
     call    qword ptr [r11+10h]
     jmp     L14
-L34:
+L32:
     lea     r11,[jit_record]
     mov     eax,5
     call    qword ptr [r11+10h]
     jmp     L16
-L35:
+L33:
     lea     r11,[jit_record]
     mov     eax,6
     call    qword ptr [r11+10h]
     jmp     L18
-L36:
+L34:
     lea     r11,[jit_record]
     mov     eax,7
     call    qword ptr [r11+10h]
-    jmp     L20
-L37:
-    lea     r11,[jit_record]
-    mov     eax,8
-    call    qword ptr [r11+10h]
-    jmp     L23
-L38:
+    jmp     L21
+L35:
     lea     r11,[jit_record]
     call    qword ptr [r11+8]
     jmp     L0
@@ -1651,7 +1569,7 @@ L2:
 
 fn <{closure@std::rt::lang_start<()>::{closure#0}} as std::ops::FnOnce<()>>::call_once - shim
     inc     qword ptr [jit_record]
-    jns     L4
+    jns     L1
 L0:
     sub     rsp,28h
     mov     [rsp+10h],rdi
@@ -1663,27 +1581,11 @@ L0:
     mov     eax,[rsp+1Ch]
     add     rsp,28h
     ret
-    nop     [rax+rax]
-    nop     [rax]
-L1:
-    inc     qword ptr [jit_record.ctr_l]
-    jns     L3
-L2:
     lea     rdi,[rsp+20h]
     mov     esi,0FFFFFFE0h
     call    ryo_h_Resume
     ud2
-    lea     rdi,[rsp+20h]
-    mov     rsi,rax
-    mov     edx,0FFFFFFE0h
-    call    ryo_h_Lpad
-    jmp     L1
-L3:
-    lea     r11,[jit_record]
-    xor     eax,eax
-    call    qword ptr [r11+10h]
-    jmp     L2
-L4:
+L1:
     lea     r11,[jit_record]
     call    qword ptr [r11+8]
     jmp     L0
@@ -2540,7 +2442,7 @@ L1:
 
 fn std::iter::DoubleEndedIterator::rfind::check::<usize, {closure@bench/sieve.rs:25:39: 25:43}>::{closure#0}
     inc     qword ptr [jit_record]
-    jns     L6
+    jns     L3
 L0:
     sub     rsp,58h
     mov     [rsp+38h],rdi
@@ -2566,34 +2468,18 @@ L2:
     mov     rdx,[rsp+48h]
     add     rsp,58h
     ret
-    nop     [rax+rax]
-    nop
-L3:
-    inc     qword ptr [jit_record.ctr_l]
-    jns     L5
-L4:
     lea     rdi,[rsp+50h]
     mov     esi,0FFFFFFD8h
     call    ryo_h_Resume
     ud2
-    lea     rdi,[rsp+50h]
-    mov     rsi,rax
-    mov     edx,0FFFFFFD8h
-    call    ryo_h_Lpad
-    jmp     L3
-L5:
-    lea     r11,[jit_record]
-    xor     eax,eax
-    call    qword ptr [r11+10h]
-    jmp     L4
-L6:
+L3:
     lea     r11,[jit_record]
     call    qword ptr [r11+8]
     jmp     L0
 
 fn std::iter::adapters::map::map_fold::<&bool, usize, usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}, {closure@<usize as std::iter::Sum>::sum<std::iter::Map<std::slice::Iter<'_, bool>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}>>::{closure#0}}>::{closure#0}
     inc     qword ptr [jit_record]
-    jns     L10
+    jns     L7
 L0:
     sub     rsp,78h
     mov     [rsp+60h],rdi
@@ -2628,7 +2514,7 @@ L0:
     nop     [rax]
 L1:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L7
+    jns     L5
 L2:
     lea     rdi,[rsp+70h]
     mov     esi,0FFFFFFD0h
@@ -2637,38 +2523,23 @@ L2:
     nop     [rax+rax]
 L3:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L8
+    jns     L6
 L4:
     jmp     L1
-    nop     [rax+rax]
-L5:
-    inc     qword ptr [jit_record.ctr_l]
-    jns     L9
-L6:
     test    byte ptr [rsp+4Fh],0FFh
     je      L1
     jmp     L3
-    lea     rdi,[rsp+70h]
-    mov     rsi,rax
-    mov     edx,0FFFFFFD0h
-    call    ryo_h_Lpad
-    jmp     L5
-L7:
+L5:
     lea     r11,[jit_record]
     xor     eax,eax
     call    qword ptr [r11+10h]
     jmp     L2
-L8:
+L6:
     lea     r11,[jit_record]
     mov     eax,1
     call    qword ptr [r11+10h]
     jmp     L4
-L9:
-    lea     r11,[jit_record]
-    mov     eax,2
-    call    qword ptr [r11+10h]
-    jmp     L6
-L10:
+L7:
     lea     r11,[jit_record]
     call    qword ptr [r11+8]
     jmp     L0
@@ -3019,7 +2890,7 @@ L1:
 
 fn std::vec::Vec::<bool>::extend_with
     inc     qword ptr [jit_record]
-    jns     L37
+    jns     L35
 L0:
     sub     rsp,0A8h
     mov     [rsp+98h],rdi
@@ -3053,19 +2924,19 @@ L0:
     nop     [rax]
 L1:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L27
+    jns     L26
 L2:
     mov     rax,[rsp+70h]
     mov     rdx,[rsp+78h]
     cmp     rax,rdx
     setb    [rsp+27h]
     test    byte ptr [rsp+27h],0FFh
-    je      L21
-    jmp     L20
+    je      L20
+    jmp     L19
     nop
 L3:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L28
+    jns     L27
 L4:
     mov     rax,[rsp+20h]
     movzx   ecx,byte ptr [rsp+1Fh]
@@ -3082,7 +2953,7 @@ L4:
     nop     [rax+rax]
 L5:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L29
+    jns     L28
 L6:
     mov     byte ptr [rsp+57h],0
     movzx   edx,byte ptr [rsp+8Fh]
@@ -3097,12 +2968,12 @@ L6:
     mov     [rsp+8],r8
     mov     rdi,[rsp+8]
     call    fn1
-    jmp     L24
+    jmp     L23
     nop     [rax+rax]
     nop     [rax]
 L7:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L30
+    jns     L29
 L8:
     lea     rax,[rsp+28h]
     mov     [rsp+8],rax
@@ -3113,7 +2984,7 @@ L8:
     nop     [rax+rax]
 L9:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L31
+    jns     L30
 L10:
     add     rsp,0A8h
     ret
@@ -3121,7 +2992,7 @@ L10:
     xchg    ax,ax
 L11:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L32
+    jns     L31
 L12:
     lea     rax,[rsp+28h]
     mov     [rsp+8],rax
@@ -3132,7 +3003,7 @@ L12:
     nop     [rax]
 L13:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L33
+    jns     L32
 L14:
     lea     rdi,[rsp+0A0h]
     mov     esi,0FFFFFF98h
@@ -3144,29 +3015,25 @@ L15:
     nop     [rax]
 L16:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L34
+    jns     L33
 L17:
     jmp     L13
-    nop
 L18:
-    inc     qword ptr [jit_record.ctr_l]
-    jns     L35
-L19:
     test    byte ptr [rsp+57h],0FFh
     je      L13
     jmp     L16
-L20:
+L19:
     mov     rax,[rsp+70h]
     mov     [rsp+18h],rax
     mov     byte ptr [rsp+0Fh],1
     test    byte ptr [rsp+0Fh],0FFh
-    je      L23
-    jmp     L22
-L21:
+    je      L22
+    jmp     L21
+L20:
     cmp     qword ptr [rsp+90h],0
     ja      L5
     jmp     L7
-L22:
+L21:
     mov     qword ptr [rsp+8],1
     lea     rdx,[k4]
     mov     [rsp],rdx
@@ -3174,7 +3041,7 @@ L22:
     mov     rsi,[rsp+8]
     mov     rdx,[rsp]
     call    fn5
-L23:
+L22:
     mov     rax,[rsp+18h]
     add     rax,1
     mov     [rsp+70h],rax
@@ -3186,81 +3053,71 @@ L23:
     call    fn6
     mov     [rsp+1Fh],al
     jmp     L3
-L24:
+L23:
     jmp     L9
-    nop     [rax]
-L25:
+    nop     [rax+rax]
+L24:
     inc     qword ptr [jit_record.ctr_l]
-    jns     L36
-L26:
+    jns     L34
+L25:
     call    qword ptr [sym7]
     ud2
     lea     rdi,[rsp+0A0h]
     mov     rsi,rax
     mov     edx,0FFFFFF98h
     call    ryo_h_Lpad
-    jmp     L18
-    lea     rdi,[rsp+0A0h]
-    mov     rsi,rax
-    mov     edx,0FFFFFF98h
-    call    ryo_h_Lpad
-    jmp     L25
+    jmp     L24
     lea     rdi,[rsp+0A0h]
     mov     rsi,rax
     mov     edx,0FFFFFF98h
     call    ryo_h_Lpad
     jmp     L11
-L27:
+L26:
     lea     r11,[jit_record]
     xor     eax,eax
     call    qword ptr [r11+10h]
     jmp     L2
-L28:
+L27:
     lea     r11,[jit_record]
     mov     eax,1
     call    qword ptr [r11+10h]
     jmp     L4
-L29:
+L28:
     lea     r11,[jit_record]
     mov     eax,2
     call    qword ptr [r11+10h]
     jmp     L6
-L30:
+L29:
     lea     r11,[jit_record]
     mov     eax,3
     call    qword ptr [r11+10h]
     jmp     L8
-L31:
+L30:
     lea     r11,[jit_record]
     mov     eax,4
     call    qword ptr [r11+10h]
     jmp     L10
-L32:
+L31:
     lea     r11,[jit_record]
     mov     eax,5
     call    qword ptr [r11+10h]
     jmp     L12
-L33:
+L32:
     lea     r11,[jit_record]
     mov     eax,6
     call    qword ptr [r11+10h]
     jmp     L14
-L34:
+L33:
     lea     r11,[jit_record]
     mov     eax,7
     call    qword ptr [r11+10h]
     jmp     L17
-L35:
+L34:
     lea     r11,[jit_record]
     mov     eax,8
     call    qword ptr [r11+10h]
-    jmp     L19
-L36:
-    lea     r11,[jit_record]
-    mov     eax,9
-    call    qword ptr [r11+10h]
-    jmp     L26
-L37:
+    jmp     L25
+L35:
     lea     r11,[jit_record]
     call    qword ptr [r11+8]
     jmp     L0

@@ -516,10 +516,7 @@ L2:
     resume $-72
 L3:
     jmp L1
-L4:
-    lpad $-72
-    jmp L2
-  cleanup L0 -> L4
+  cleanup L0 -> continue
   cleanup L2 -> continue
   fn0 = hashbrown::raw::RawIterRange::<(u64, u64)>::fold_impl::<{closure@<hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@bench/hashmap.rs:28:43: 28:50}>::{closure#0}}>::{closure#0}}, u64>
 
@@ -701,10 +698,7 @@ L2:
     resume $-64
 L3:
     jmp L1
-L4:
-    lpad $-64
-    jmp L2
-  cleanup L0 -> L4
+  cleanup L0 -> continue
   cleanup L2 -> continue
   fn0 = <hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@bench/hashmap.rs:28:43: 28:50}>::{closure#0}}>
 
@@ -757,15 +751,9 @@ L2:
     ret $-8, 8
 L3:
     resume $-32
-L4:
-    lpad $-32
-    jmp L3
-L5:
-    lpad $-32
-    jmp L3
-  cleanup L0 -> L4
-  cleanup L1 -> L5
-  cleanup L2 -> L5
+  cleanup L0 -> continue
+  cleanup L1 -> continue
+  cleanup L2 -> continue
   cleanup L3 -> continue
   fn0 = <std::hash::BuildHasherDefault<std::hash::DefaultHasher> as std::hash::BuildHasher>::build_hasher
   fn1 = core::hash::impls::<impl std::hash::Hash for &std::string::String>::hash::<std::hash::DefaultHasher>
@@ -791,15 +779,9 @@ L2:
     ret $-8, 8
 L3:
     resume $-32
-L4:
-    lpad $-32
-    jmp L3
-L5:
-    lpad $-32
-    jmp L3
-  cleanup L0 -> L4
-  cleanup L1 -> L5
-  cleanup L2 -> L5
+  cleanup L0 -> continue
+  cleanup L1 -> continue
+  cleanup L2 -> continue
   cleanup L3 -> continue
   fn0 = <std::hash::BuildHasherDefault<std::hash::DefaultHasher> as std::hash::BuildHasher>::build_hasher
   fn1 = core::hash::impls::<impl std::hash::Hash for &u64>::hash::<std::hash::DefaultHasher>
@@ -1150,20 +1132,16 @@ L1:
     mov.w64 $-8, $-24
 L2:
     ret $-8, 8
-L3:
-    jmp L6
-L4:
-    resume $-40
-L5:
-    jmp L4
-L6:
-    br! $-25, L4
     jmp L5
-L7:
-    lpad $-40
+L3:
+    resume $-40
+L4:
     jmp L3
-  cleanup L0 -> L7
-  cleanup L4 -> continue
+L5:
+    br! $-25, L3
+    jmp L4
+  cleanup L0 -> continue
+  cleanup L3 -> continue
   fn0 = std::cmp::impls::<impl std::cmp::PartialOrd for usize>::lt
 
 fn <usize as std::cmp::Ord>::min (frame 64, args 0, ret 8) [hint]
@@ -1184,20 +1162,16 @@ L1:
     mov.w64 $-8, $-16
 L2:
     ret $-8, 8
-L3:
-    jmp L6
-L4:
-    resume $-40
-L5:
-    jmp L4
-L6:
-    br! $-25, L4
     jmp L5
-L7:
-    lpad $-40
+L3:
+    resume $-40
+L4:
     jmp L3
-  cleanup L0 -> L7
-  cleanup L4 -> continue
+L5:
+    br! $-25, L3
+    jmp L4
+  cleanup L0 -> continue
+  cleanup L3 -> continue
   fn0 = std::cmp::impls::<impl std::cmp::PartialOrd for usize>::lt
 
 fn <usize as std::default::Default>::default (frame 16, args 0, ret 8) [always]
@@ -1246,10 +1220,7 @@ L0:
     ret $-1, 1
 L1:
     resume $-48
-L2:
-    lpad $-48
-    jmp L1
-  cleanup L0 -> L2
+  cleanup L0 -> continue
   cleanup L1 -> continue
   fn0 = hashbrown::raw::RawTable::<(std::string::String, usize)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry::{closure#0}}>::{closure#0}
 
@@ -1274,10 +1245,7 @@ L0:
     ret $-8, 8
 L1:
     resume $-48
-L2:
-    lpad $-48
-    jmp L1
-  cleanup L0 -> L2
+  cleanup L0 -> continue
   cleanup L1 -> continue
   fn0 = hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>::{closure#0}
 
@@ -1300,10 +1268,7 @@ L0:
     ret $0, 0
 L1:
     resume $-24
-L2:
-    lpad $-24
-    jmp L1
-  cleanup L0 -> L2
+  cleanup L0 -> continue
   cleanup L1 -> continue
   fn0 = hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>::{closure#1}
 
@@ -1318,10 +1283,7 @@ L0:
     ret $-1, 1
 L1:
     resume $-48
-L2:
-    lpad $-48
-    jmp L1
-  cleanup L0 -> L2
+  cleanup L0 -> continue
   cleanup L1 -> continue
   fn0 = hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::map::equivalent_key<u64, u64, u64>::{closure#0}}>::{closure#0}
 
@@ -1346,10 +1308,7 @@ L0:
     ret $-1, 1
 L1:
     resume $-48
-L2:
-    lpad $-48
-    jmp L1
-  cleanup L0 -> L2
+  cleanup L0 -> continue
   cleanup L1 -> continue
   fn0 = hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry::{closure#0}}>::{closure#0}
 
@@ -1374,10 +1333,7 @@ L0:
     ret $-8, 8
 L1:
     resume $-48
-L2:
-    lpad $-48
-    jmp L1
-  cleanup L0 -> L2
+  cleanup L0 -> continue
   cleanup L1 -> continue
   fn0 = hashbrown::raw::RawTable::<(u64, u64)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>::{closure#0}
 
@@ -1401,10 +1357,7 @@ L0:
     ret $-4, 4
 L1:
     resume $-32
-L2:
-    lpad $-32
-    jmp L1
-  cleanup L0 -> L2
+  cleanup L0 -> continue
   cleanup L1 -> continue
   fn0 = std::rt::lang_start::<()>::{closure#0}
 
@@ -2084,14 +2037,11 @@ L22:
     imm.w64 $-216, 18446744073709551615
     ptr.index $-168, $-176, $-216, 16
     jmp L20
-L23:
-    lpad $-104
-    jmp L8
-  cleanup L5 -> L23
+  cleanup L5 -> continue
   cleanup L8 -> continue
-  cleanup L12 -> L23
-  cleanup L15 -> L23
-  cleanup L17 -> L23
+  cleanup L12 -> continue
+  cleanup L15 -> continue
+  cleanup L17 -> continue
   fn0 = hashbrown::raw::RawTable::<(u64, u64)>::erase
   fn1 = hashbrown::raw::RawIterRange::<(u64, u64)>::new
   fn2 = hashbrown::raw::RawIterRange::<(u64, u64)>::next_impl::<false>
@@ -2362,8 +2312,8 @@ fn hashbrown::raw::RawIterRange::<(u64, u64)>::fold_impl::<{closure@<hashbrown::
 L0:
     mov.w16 $-244, $-16
     mov.w16 $-218, $-244
-    br.eq.imm.w16 $-218, 0, L11
-    jmp L10
+    br.eq.imm.w16 $-218, 0, L10
+    jmp L9
 L1:
     imm.w8 $-105, 1
     mov.w64 $-56, $-224
@@ -2380,33 +2330,32 @@ L3:
 L4:
     ; escape align 16 $-176, 16 bytes
     call $0, fn0, 0, [4294967120, 72, 4294967088, 264]
-    jmp L19
+    jmp L18
 L5:
     ret $-8, 8
-L6:
-    jmp L9
-L7:
-    resume $-184
-L8:
-    jmp L7
-L9:
-    br! $-105, L7
     jmp L8
+L6:
+    resume $-184
+L7:
+    jmp L6
+L8:
+    br! $-105, L6
+    jmp L7
     unreachable
-L10:
+L9:
     mov.w16 $-220, $-218
     mov.w16 $-242, $-220
     cttz.w16 $-268, $-242
     mov.w32 $-224, $-268
-    jmp L12
-L11:
+    jmp L11
+L10:
     const $-216, k1, 16
     imm.w64 $-208, 0
     eq.imm.w64 $-209, $-208, 0
     mov.w64 $-192, $-48
     br.eq.imm.w64 $-192, 0, L2
     jmp L3
-L12:
+L11:
     zext.w32.w64 $-240, $-224
     mov.w64 $-208, $-240
     imm.w64 $-216, 1
@@ -2420,15 +2369,15 @@ L12:
     imm.w64 $-200, 1
     mov.w64 $-208, $-192
     imm.w8 $-265, 0
-    br! $-265, L13
+    br! $-265, L12
     unreachable
-L13:
+L12:
     mov.w64 $-240, $-40
     mov.w64 $-232, $-240
     imm.w8 $-265, 0
-    br! $-265, L18
-    jmp L17
-L14:
+    br! $-265, L17
+    jmp L16
+L13:
     mov.w64 $-232, $-224
     ; escape align 8 $-64, 8 bytes
     mov.w64 $-216, $-232
@@ -2437,22 +2386,22 @@ L14:
     mov.w64 $-256, $-56
     mov.w64 $-248, $-256
     mov.w64 $-240, $-216
-L15:
+L14:
     call $-224, fn2, 8, [4294967064, 8, 4294967048, 264, 4294967056, 520]
     jmp L1
+L15:
+    jmp L13
 L16:
-    jmp L14
-L17:
     unreachable
-L18:
+L17:
     mov.w64 $-248, $-208
     imm.w64 $-272, 0
     sub.w64 $-240, $-272, $-248
     ptr.index $-224, $-232, $-240, 16
-    jmp L16
-L19:
+    jmp L15
+L18:
     mov.w128 $-288, $-176
-L20:
+L19:
     ; escape align 16 $-288, 16 bytes
     call $-196, fn3, 4, [4294967008, 72]
     ; end $-288, 24 bytes
@@ -2462,15 +2411,15 @@ L20:
     mov.w16 $-186, $-188
     mov.w16 $-16, $-186
     imm.w8 $-265, 0
-    br! $-265, L21
+    br! $-265, L20
     unreachable
-L21:
+L20:
     mov.w64 $-216, $-40
     mov.w64 $-208, $-216
     imm.w8 $-265, 0
-    br! $-265, L25
-    jmp L24
-L22:
+    br! $-265, L24
+    jmp L23
+L21:
     mov.w64 $-208, $-200
     mov.w64 $-192, $-208
     mov.w64 $-40, $-192
@@ -2479,21 +2428,18 @@ L22:
     ptr.index $-192, $-200, $-272, 1
     mov.w64 $-32, $-192
     jmp L0
+L22:
+    jmp L21
 L23:
-    jmp L22
-L24:
     unreachable
-L25:
+L24:
     imm.w64 $-272, 18446744073709551600
     ptr.index $-200, $-208, $-272, 16
-    jmp L23
-L26:
-    lpad $-184
-    jmp L6
-  cleanup L4 -> L26
-  cleanup L7 -> continue
-  cleanup L15 -> L26
-  cleanup L20 -> L26
+    jmp L22
+  cleanup L4 -> continue
+  cleanup L6 -> continue
+  cleanup L14 -> continue
+  cleanup L19 -> continue
   fn0 = std::arch::x86_64::_mm_load_si128
   k1 = const allocation + 0
   fn2 = <hashbrown::map::Iter<'_, u64, u64> as std::iter::Iterator>::fold::<u64, {closure@<std::collections::hash_map::Values<'_, u64, u64> as std::iter::Iterator>::fold<u64, {closure@bench/hashmap.rs:28:43: 28:50}>::{closure#0}}>::{closure#0}
@@ -2707,10 +2653,7 @@ L10:
     sub.w64 $-152, $-168, $-160
     ptr.index $-136, $-144, $-152, 32
     jmp L8
-L11:
-    lpad $-80
-    jmp L4
-  cleanup L0 -> L11
+  cleanup L0 -> continue
   cleanup L4 -> continue
   k0 = const allocation + 0
   fn1 = hashbrown::raw::RawTableInner::find_inner
@@ -2896,8 +2839,8 @@ fn hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve::<{closure@
     arg $-24, 520
     load.w64 $-80, [$-8 + 16]
     lt.u.w64 $-65, $-80, $-16
-    br! $-65, L7
-    jmp L5
+    br! $-65, L6
+    jmp L4
 L0:
     ne.imm.w64 $-89, $-80, 18446744073709551615
     zext.w8.w64 $-88, $-89
@@ -2908,23 +2851,19 @@ L2:
     resume $-64
 L3:
     jmp L2
-L4:
     br! $-25, L2
     jmp L3
-L5:
+L4:
     imm.w8 $-25, 0
     mov.w64 $-88, $-24
     imm.w8 $-89, 1
-L6:
+L5:
     call $-80, fn0, 526344, [4294967288, 8, 4294967280, 264, 4294967208, 520, 4294967207, 769]
     jmp L0
-L7:
+L6:
     jmp L1
-L8:
-    lpad $-64
-    jmp L4
   cleanup L2 -> continue
-  cleanup L6 -> L8
+  cleanup L5 -> continue
   fn0 = hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>
 
 fn hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}> (frame 176, args 0, ret 16) [never, cold]
@@ -2959,10 +2898,7 @@ L2:
     ret $-16, 526344
 L3:
     resume $-56
-L4:
-    lpad $-56
-    jmp L3
-  cleanup L2 -> L4
+  cleanup L2 -> continue
   cleanup L3 -> continue
   k0 = const allocation + 0
   sym1 = <{closure@hashbrown::raw::RawTable<(std::string::String, usize)>::reserve_rehash<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>::{closure#1}} as std::ops::FnOnce<(*mut u8,)>>::call_once - shim
@@ -3180,10 +3116,7 @@ L10:
     sub.w64 $-152, $-168, $-160
     ptr.index $-136, $-144, $-152, 16
     jmp L8
-L11:
-    lpad $-80
-    jmp L4
-  cleanup L0 -> L11
+  cleanup L0 -> continue
   cleanup L4 -> continue
   k0 = const allocation + 0
   fn1 = hashbrown::raw::RawTableInner::find_inner
@@ -3305,10 +3238,7 @@ L10:
     sub.w64 $-152, $-168, $-160
     ptr.index $-136, $-144, $-152, 16
     jmp L8
-L11:
-    lpad $-80
-    jmp L4
-  cleanup L0 -> L11
+  cleanup L0 -> continue
   cleanup L4 -> continue
   k0 = const allocation + 0
   fn1 = hashbrown::raw::RawTableInner::find_inner
@@ -3379,12 +3309,11 @@ fn hashbrown::raw::RawTable::<(u64, u64)>::insert_no_grow (frame 192, args 0, re
     mov.w64 $-136, $-16
 L0:
     call $-72, fn0, 8, [4294967160, 8, 4294967272, 264]
-    jmp L3
+    jmp L2
 L1:
     resume $-128
-L2:
     jmp L1
-L3:
+L2:
     load.w64 $-160, [$-16 + 0]
     mov.w64 $-152, $-160
     ptr.index $-144, $-152, $-72, 1
@@ -3411,14 +3340,14 @@ L3:
     load.w64 $-144, [$-16 + 0]
     mov.w64 $-136, $-144
     imm.w8 $-177, 0
-    br! $-177, L4
+    br! $-177, L3
     unreachable
-L4:
+L3:
     mov.w64 $-160, $-144
     imm.w8 $-177, 0
-    br! $-177, L8
-    jmp L7
-L5:
+    br! $-177, L7
+    jmp L6
+L4:
     mov.w64 $-112, $-152
     mov.w64 $-8, $-112
     and.imm.w8 $-138, $-113, 1
@@ -3429,43 +3358,40 @@ L5:
     store.w64 [$-16 + 16], $-192
     mov.w128 $-144, $-40
     imm.w8 $-177, 0
-    br! $-177, L11
-    jmp L10
+    br! $-177, L10
+    jmp L9
+L5:
+    jmp L4
 L6:
-    jmp L5
-L7:
     unreachable
-L8:
+L7:
     mov.w64 $-176, $-72
     imm.w64 $-184, 0
     sub.w64 $-168, $-184, $-176
     ptr.index $-152, $-160, $-168, 16
-    jmp L6
-L9:
+    jmp L5
+L8:
     store.w128 [$-152 + 0], $-144
     load.w64 $-184, [$-16 + 24]
     add.imm.w64 $-192, $-184, 1
     store.w64 [$-16 + 24], $-192
     ret $-8, 8
-L10:
+L9:
     unreachable
-L11:
+L10:
     mov.w64 $-160, $-112
     imm.w8 $-177, 0
-    br! $-177, L14
-    jmp L13
+    br! $-177, L13
+    jmp L12
+L11:
+    jmp L8
 L12:
-    jmp L9
-L13:
     unreachable
-L14:
+L13:
     imm.w64 $-184, 18446744073709551615
     ptr.index $-152, $-160, $-184, 16
-    jmp L12
-L15:
-    lpad $-128
-    jmp L2
-  cleanup L0 -> L15
+    jmp L11
+  cleanup L0 -> continue
   cleanup L1 -> continue
   fn0 = hashbrown::raw::RawTableInner::find_insert_index
 
@@ -3475,8 +3401,8 @@ fn hashbrown::raw::RawTable::<(u64, u64)>::reserve::<{closure@hashbrown::map::ma
     arg $-24, 520
     load.w64 $-80, [$-8 + 16]
     lt.u.w64 $-65, $-80, $-16
-    br! $-65, L7
-    jmp L5
+    br! $-65, L6
+    jmp L4
 L0:
     ne.imm.w64 $-89, $-80, 18446744073709551615
     zext.w8.w64 $-88, $-89
@@ -3487,23 +3413,19 @@ L2:
     resume $-64
 L3:
     jmp L2
-L4:
     br! $-25, L2
     jmp L3
-L5:
+L4:
     imm.w8 $-25, 0
     mov.w64 $-88, $-24
     imm.w8 $-89, 1
-L6:
+L5:
     call $-80, fn0, 526344, [4294967288, 8, 4294967280, 264, 4294967208, 520, 4294967207, 769]
     jmp L0
-L7:
+L6:
     jmp L1
-L8:
-    lpad $-64
-    jmp L4
   cleanup L2 -> continue
-  cleanup L6 -> L8
+  cleanup L5 -> continue
   fn0 = hashbrown::raw::RawTable::<(u64, u64)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>
 
 fn hashbrown::raw::RawTable::<(u64, u64)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}> (frame 176, args 0, ret 16) [never, cold]
@@ -3535,10 +3457,7 @@ L1:
     ret $-16, 526344
 L2:
     resume $-56
-L3:
-    lpad $-56
-    jmp L2
-  cleanup L1 -> L3
+  cleanup L1 -> continue
   cleanup L2 -> continue
   k0 = const allocation + 0
   k1 = const allocation + 0
@@ -5807,13 +5726,10 @@ L8:
     mov.w64 $-8, $-80
     jmp L4
     unreachable
-L9:
-    lpad $-56
-    jmp L5
-  cleanup L0 -> L9
-  cleanup L3 -> L9
+  cleanup L0 -> continue
+  cleanup L3 -> continue
   cleanup L5 -> continue
-  cleanup L7 -> L9
+  cleanup L7 -> continue
   fn0 = <std::hash::BuildHasherDefault<std::hash::DefaultHasher> as std::hash::BuildHasher>::hash_one::<&u64>
   fn1 = hashbrown::raw::RawTable::<(u64, u64)>::reserve::<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>
   fn2 = hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry::{closure#0}}>
@@ -6885,69 +6801,65 @@ L0:
     mov.w64 $-104, $-88
 L1:
     call $-96, fn0, 8, [4294967144, 8, 4294967160, 264, 4294967184, 520, 4294967192, 776]
-    jmp L7
+    jmp L6
 L2:
     mov.w64 $-120, $-24
     mov.w64 $-112, $-16
     imm.w8 $-161, 0
-    br! $-161, L16
-    jmp L15
+    br! $-161, L15
+    jmp L14
 L3:
     ret $-8, 8
 L4:
     resume $-80
 L5:
     jmp L4
-L6:
     br! $-49, L4
     jmp L5
-L7:
+L6:
     imm.w8 $-161, 0
-    br! $-161, L10
-    jmp L9
-L8:
+    br! $-161, L9
+    jmp L8
+L7:
     mov.w64 $-104, $-112
     ptr.add $-8, $-104, 8
     jmp L3
-L9:
+L8:
     unreachable
-L10:
+L9:
     mov.w64 $-128, $-96
     mov.w64 $-120, $-128
     imm.w8 $-161, 0
-    br! $-161, L13
-    jmp L12
+    br! $-161, L12
+    jmp L11
+L10:
+    jmp L7
 L11:
-    jmp L8
-L12:
     unreachable
-L13:
+L12:
     imm.w64 $-168, 18446744073709551615
     ptr.index $-112, $-120, $-168, 16
-    jmp L11
-L14:
+    jmp L10
+L13:
     mov.w64 $-88, $-96
     ptr.add $-8, $-88, 8
     jmp L3
-L15:
+L14:
     unreachable
-L16:
+L15:
     mov.w64 $-104, $-120
     imm.w8 $-161, 0
-    br! $-161, L19
-    jmp L18
+    br! $-161, L18
+    jmp L17
+L16:
+    jmp L13
 L17:
-    jmp L14
-L18:
     unreachable
-L19:
+L18:
     imm.w64 $-168, 18446744073709551615
     ptr.index $-96, $-104, $-168, 16
-    jmp L17
-L20:
-    lpad $-80
-    jmp L6
-  cleanup L1 -> L20
+    jmp L16
+  cleanup L1 -> continue
   cleanup L4 -> continue
   fn0 = hashbrown::raw::RawTable::<(u64, u64)>::insert_no_grow
 
@@ -7162,14 +7074,10 @@ L4:
     resume $-72
 L5:
     jmp L4
-L6:
     br! $-57, L4
     jmp L5
-L7:
-    lpad $-72
-    jmp L6
-  cleanup L0 -> L7
-  cleanup L2 -> L7
+  cleanup L0 -> continue
+  cleanup L2 -> continue
   cleanup L4 -> continue
   fn0 = std::iter::adapters::step_by::step_by_spec::<impl std::iter::adapters::step_by::SpecRangeSetup<std::ops::Range<u64>> for std::ops::Range<u64>>::setup
   k1 = const allocation + 0
@@ -7206,14 +7114,10 @@ L4:
     resume $-72
 L5:
     jmp L4
-L6:
     br! $-57, L4
     jmp L5
-L7:
-    lpad $-72
-    jmp L6
-  cleanup L0 -> L7
-  cleanup L2 -> L7
+  cleanup L0 -> continue
+  cleanup L2 -> continue
   cleanup L4 -> continue
   fn0 = std::iter::adapters::step_by::step_by_spec::<impl std::iter::adapters::step_by::SpecRangeSetup<std::ops::Range<usize>> for std::ops::Range<usize>>::setup
   k1 = const allocation + 0
@@ -7443,21 +7347,17 @@ L4:
     store.copy [$-80 + 0], $-24, 24
     ret $-80, 8
 L5:
-    br $-58, L9
+    br $-58, L8
 L6:
     resume $-72
 L7:
     jmp L5
-L8:
     br! $-57, L5
     jmp L7
-L9:
+L8:
     jmp L6
-L10:
-    lpad $-72
-    jmp L8
-  cleanup L1 -> L10
-  cleanup L3 -> L10
+  cleanup L1 -> continue
+  cleanup L3 -> continue
   cleanup L6 -> continue
   fn0 = std::fmt::format::{closure#0}
   fn1 = <for<'a> fn(&'a str) -> <str as std::borrow::ToOwned>::Owned {<str as std::borrow::ToOwned>::to_owned} as std::ops::FnOnce<(&str,)>>::call_once - shim(for<'a> fn(&'a str) -> <str as std::borrow::ToOwned>::Owned {<str as std::borrow::ToOwned>::to_owned})

@@ -1,3 +1,48 @@
+fn <core::hash::sip::Hasher<core::hash::sip::Sip13Rounds> as std::hash::Hasher>::finish
+a0: $-88, 8 bytes, Promoted
+a1: $-80, 8 bytes, Promoted
+a2: $-72, 8 bytes, Promoted
+a3: $-64, 8 bytes, Promoted
+a4: $-56, 8 bytes, Promoted
+a5: $-48, 32 bytes, Memory, escaped
+a6: $-16, 8 bytes, Promoted
+a7: $-8, 8 bytes, Promoted
+b0(v0:8): ; Entry
+    v1:8 = Load(8, 0) (v0)
+    AStore(AllocaId(5), 0, 8) (v1)
+    v2:8 = Load(8, 8) (v0)
+    AStore(AllocaId(5), 8, 8) (v2)
+    v3:8 = Load(8, 16) (v0)
+    AStore(AllocaId(5), 16, 8) (v3)
+    v4:8 = Load(8, 24) (v0)
+    AStore(AllocaId(5), 24, 8) (v4)
+    v5:8 = Load(8, 48) (v0)
+    v7:8 = Bin(And, 8) (v5, 0xff)
+    v9:8 = Bin(Shl, 8) (v7, 0x38)
+    v10:8 = Load(8, 56) (v0)
+    v11:8 = Bin(Or, 8) (v9, v10)
+    v12:8 = ALoad(AllocaId(5), 24, 8) ()
+    v13:8 = Bin(Xor, 8) (v12, v11)
+    AStore(AllocaId(5), 24, 8) (v13)
+    v14:8 = AllocaAddr(AllocaId(5), 0) ()
+    Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }], parts: [], site: Continue }) (v14)
+    v15:8 = ALoad(AllocaId(5), 0, 8) ()
+    v16:8 = Bin(Xor, 8) (v15, v11)
+    AStore(AllocaId(5), 0, 8) (v16)
+    v17:8 = ALoad(AllocaId(5), 8, 8) ()
+    v19:8 = Bin(Xor, 8) (v17, 0xff)
+    AStore(AllocaId(5), 8, 8) (v19)
+    v20:8 = AllocaAddr(AllocaId(5), 0) ()
+    Call(Call { target: fn1, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }], parts: [], site: Continue }) (v20)
+    v21:8 = ALoad(AllocaId(5), 0, 8) ()
+    v22:8 = ALoad(AllocaId(5), 16, 8) ()
+    v23:8 = Bin(Xor, 8) (v21, v22)
+    v24:8 = ALoad(AllocaId(5), 8, 8) ()
+    v25:8 = Bin(Xor, 8) (v23, v24)
+    v26:8 = ALoad(AllocaId(5), 24, 8) ()
+    v27:8 = Bin(Xor, 8) (v25, v26)
+    ret 0x8 (v27)
+
 fn <core::hash::sip::Hasher<core::hash::sip::Sip13Rounds> as std::hash::Hasher>::write
 a0: $-152, 8 bytes, Promoted
 a1: $-144, 8 bytes, Promoted
@@ -468,41 +513,16 @@ a6: $-8, 8 bytes, Promoted
 b0(v0:8, v1:8): ; Entry
     AStore(AllocaId(4), 0, 8) (v1)
     v2:8 = AllocaAddr(AllocaId(2), 0) ()
-    Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }], parts: [], site: Pad { catch: false } }) (v2, v0)
-    invoke -> b7() unwind b8()
-b1(): ; Body
-    v4:8 = AllocaAddr(AllocaId(4), 0) ()
+    Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }], parts: [], site: Continue }) (v2, v0)
+    v3:8 = AllocaAddr(AllocaId(4), 0) ()
+    v4:8 = AllocaAddr(AllocaId(2), 0) ()
+    Call(Call { target: fn1, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }], parts: [], site: Continue }) (v3, v4)
     v5:8 = AllocaAddr(AllocaId(2), 0) ()
-    Call(Call { target: fn1, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }], parts: [], site: Pad { catch: false } }) (v4, v5)
-    invoke -> b9() unwind b10()
-b2(): ; Body
-    v7:8 = AllocaAddr(AllocaId(2), 0) ()
-    v8:8 = Call(Call { target: fn2, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v7)
-    invoke -> b11() unwind b12()
-b3(): ; Body
-    ret 0x8 (v8)
-b4(v10:8): ; Body head 0
-    hcall resume [(Fp, [None, None]), (Imm(4294967264), [Some(Scratch(0)), None])] ins [0] outs [] (v10)
+    v6:8 = Call(Call { target: fn2, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Continue }) (v5)
+    ret 0x8 (v6)
+b1(): ; Body
+    hcall resume [(Fp, [None, None]), (Imm(4294967264), [Some(Scratch(0)), None])] ins [0] outs [] (undef)
     trap
-b5(): ; Body
-    jmp b4(v3)
-b6(v11:8): ; Body
-    jmp b4(v11)
-b7(): ; Body
-    jmp b1()
-b8(): ; Stub
-    v3:8 = LandingPad ()
-    jmp b5()
-b9(): ; Body
-    jmp b2()
-b10(): ; Stub
-    v6:8 = LandingPad ()
-    jmp b6(v6)
-b11(): ; Body
-    jmp b3()
-b12(): ; Stub
-    v9:8 = LandingPad ()
-    jmp b6(v9)
 
 fn <std::hash::BuildHasherDefault<std::hash::DefaultHasher> as std::hash::BuildHasher>::hash_one::<&u64>
 a0: $-120, 8 bytes, Promoted
@@ -515,41 +535,82 @@ a6: $-8, 8 bytes, Promoted
 b0(v0:8, v1:8): ; Entry
     AStore(AllocaId(4), 0, 8) (v1)
     v2:8 = AllocaAddr(AllocaId(2), 0) ()
-    Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }], parts: [], site: Pad { catch: false } }) (v2, v0)
-    invoke -> b7() unwind b8()
-b1(): ; Body
-    v4:8 = AllocaAddr(AllocaId(4), 0) ()
+    Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }], parts: [], site: Continue }) (v2, v0)
+    v3:8 = AllocaAddr(AllocaId(4), 0) ()
+    v4:8 = AllocaAddr(AllocaId(2), 0) ()
+    Call(Call { target: fn1, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }], parts: [], site: Continue }) (v3, v4)
     v5:8 = AllocaAddr(AllocaId(2), 0) ()
-    Call(Call { target: fn1, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }], parts: [], site: Pad { catch: false } }) (v4, v5)
-    invoke -> b9() unwind b10()
-b2(): ; Body
-    v7:8 = AllocaAddr(AllocaId(2), 0) ()
-    v8:8 = Call(Call { target: fn2, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v7)
-    invoke -> b11() unwind b12()
-b3(): ; Body
-    ret 0x8 (v8)
-b4(v10:8): ; Body head 0
-    hcall resume [(Fp, [None, None]), (Imm(4294967264), [Some(Scratch(0)), None])] ins [0] outs [] (v10)
+    v6:8 = Call(Call { target: fn2, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Continue }) (v5)
+    ret 0x8 (v6)
+b1(): ; Body
+    hcall resume [(Fp, [None, None]), (Imm(4294967264), [Some(Scratch(0)), None])] ins [0] outs [] (undef)
     trap
-b5(): ; Body
-    jmp b4(v3)
-b6(v11:8): ; Body
-    jmp b4(v11)
-b7(): ; Body
-    jmp b1()
-b8(): ; Stub
-    v3:8 = LandingPad ()
-    jmp b5()
-b9(): ; Body
-    jmp b2()
-b10(): ; Stub
-    v6:8 = LandingPad ()
-    jmp b6(v6)
-b11(): ; Body
-    jmp b3()
-b12(): ; Stub
-    v9:8 = LandingPad ()
-    jmp b6(v9)
+
+fn <std::hash::DefaultHasher as std::default::Default>::default
+a0: $-328, 8 bytes, Promoted
+a1: $-320, 8 bytes, Promoted
+a2: $-312, 8 bytes, Promoted
+a3: $-304, 8 bytes, Promoted
+a4: $-296, 72 bytes, Memory, escaped
+a5: $-224, 8 bytes, Promoted
+a6: $-216, 8 bytes, Promoted
+a7: $-208, 8 bytes, Promoted
+a8: $-200, 8 bytes, Promoted
+a9: $-192, 8 bytes, Promoted
+a10: $-184, 8 bytes, Promoted
+a11: $-176, 8 bytes, Promoted
+a12: $-168, 8 bytes, Promoted
+a13: $-160, 8 bytes, Promoted
+a14: $-152, 8 bytes, Promoted
+a15: $-144, 8 bytes, Promoted
+a16: $-136, 8 bytes, Promoted
+a17: $-128, 8 bytes, Promoted
+a18: $-120, 8 bytes, Promoted
+a19: $-112, 8 bytes, Promoted
+a20: $-104, 8 bytes, Promoted
+a21: $-96, 8 bytes, Promoted
+a22: $-88, 8 bytes, Promoted
+a23: $-80, 8 bytes, Promoted
+a24: $-72, 8 bytes, Promoted
+a25: $-64, 8 bytes, Promoted
+a26: $-56, 8 bytes, Promoted
+a27: $-48, 8 bytes, Promoted
+a28: $-40, 8 bytes, Promoted
+a29: $-32, 8 bytes, Promoted
+a30: $-24, 8 bytes, Promoted
+a31: $-16, 8 bytes, Promoted
+a32: $-8, 8 bytes, Promoted
+b0(v0:8): ; Entry
+    AStore(AllocaId(4), 32, 8) (0x0)
+    AStore(AllocaId(4), 40, 8) (0x0)
+    AStore(AllocaId(4), 48, 8) (0x0)
+    AStore(AllocaId(4), 0, 8) (0x0)
+    AStore(AllocaId(4), 8, 8) (0x0)
+    AStore(AllocaId(4), 16, 8) (0x0)
+    AStore(AllocaId(4), 24, 8) (0x0)
+    AStore(AllocaId(4), 56, 8) (0x0)
+    AStore(AllocaId(4), 64, 8) (0x0)
+    v10:8 = AllocaAddr(AllocaId(4), 0) ()
+    Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }], parts: [], site: Continue }) (v10)
+    v11:8 = ALoad(AllocaId(4), 0, 8) ()
+    v12:8 = ALoad(AllocaId(4), 8, 8) ()
+    v13:8 = ALoad(AllocaId(4), 16, 8) ()
+    v14:8 = ALoad(AllocaId(4), 24, 8) ()
+    v15:8 = ALoad(AllocaId(4), 32, 8) ()
+    v16:8 = ALoad(AllocaId(4), 40, 8) ()
+    v17:8 = ALoad(AllocaId(4), 48, 8) ()
+    v18:8 = ALoad(AllocaId(4), 56, 8) ()
+    v19:8 = ALoad(AllocaId(4), 64, 8) ()
+    Store(8, 0) (v0, v11)
+    Store(8, 8) (v0, v12)
+    Store(8, 16) (v0, v13)
+    Store(8, 24) (v0, v14)
+    Store(8, 32) (v0, v15)
+    Store(8, 40) (v0, v16)
+    Store(8, 48) (v0, v17)
+    Store(8, 56) (v0, v18)
+    Store(8, 64) (v0, v19)
+    ret 0x8 (v0)
 
 fn <std::hash::DefaultHasher as std::hash::Hasher>::finish
 a0: $-32, 8 bytes, Promoted
@@ -558,6 +619,15 @@ a2: $-8, 8 bytes, Promoted
 b0(v0:8): ; Entry
     v1:8 = Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Continue }) (v0)
     ret 0x8 (v1)
+
+fn <std::hash::DefaultHasher as std::hash::Hasher>::write
+a0: $-40, 8 bytes, Promoted
+a1: $-24, 8 bytes, Promoted
+a2: $-16, 8 bytes, Promoted
+a3: $-8, 8 bytes, Promoted
+b0(v0:8, v1:8, v2:8): ; Entry
+    Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }], parts: [], site: Continue }) (v0, v1, v2)
+    ret 0x0 ()
 
 fn core::hash::sip::u8to64_le
 a0: $-184, 8 bytes, Promoted
@@ -737,15 +807,15 @@ b1(): ; Body
     jmp b15()
 b2(): ; Body head 0
     v4:8 = ALoad(AllocaId(9), 32, 8) ()
-    br Eq.w8 v4, 0x0 ? b18() : b3()
+    br Eq.w8 v4, 0x0 ? b17() : b3()
 b3(): ; Body
-    jmp b19()
+    jmp b18()
 b4(): ; Body
     trap
 b5(v6:8): ; Body head 1
-    br 0x0 ? b6() : b25()
+    br 0x0 ? b6() : b22()
 b6(): ; Body
-    jmp b24()
+    jmp b21()
 b7(): ; Body head 2
     jmp b12()
 b8(v8:1, v10:8): ; Body head 3
@@ -754,117 +824,89 @@ b9(): ; Body
     jmp b11()
 b10(): ; Body
     v9:8 = ALoad(AllocaId(16), 0, 8) ()
-    Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }], parts: [], site: Pad { catch: false } }) (v9, v10)
-    invoke -> b36() unwind b37()
+    Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }], parts: [], site: Continue }) (v9, v10)
+    jmp b11()
 b11(): ; Body
     jmp b2()
 b12(): ; Body
     ret 0x0 ()
-b13(): ; Body head 4
-    hcall resume [(Fp, [None, None]), (Imm(4294967192), [Some(Scratch(0)), None])] ins [0] outs [] (v55)
+b13(): ; Body
+    hcall resume [(Fp, [None, None]), (Imm(4294967192), [Some(Scratch(0)), None])] ins [0] outs [] (undef)
     trap
-b14(): ; Body head 5
-    v13:8 = ALoad(AllocaId(16), 0, 8) ()
-    v14:8 = Load(8, 24) (v13)
-    v15:8 = ALoad(AllocaId(9), 0, 8) ()
-    v16:8 = ALoad(AllocaId(9), 8, 8) ()
-    v17:8 = ALoad(AllocaId(9), 16, 8) ()
-    v18:8 = ALoad(AllocaId(9), 24, 8) ()
-    AStore(AllocaId(9), 0, 8) (v15)
-    AStore(AllocaId(9), 8, 8) (v16)
-    AStore(AllocaId(9), 16, 8) (v17)
-    AStore(AllocaId(9), 24, 8) (v18)
-    AStore(AllocaId(9), 32, 8) (v14)
+b14(): ; Body head 4
+    v12:8 = ALoad(AllocaId(16), 0, 8) ()
+    v13:8 = Load(8, 24) (v12)
+    v14:8 = ALoad(AllocaId(9), 0, 8) ()
+    v15:8 = ALoad(AllocaId(9), 8, 8) ()
+    v16:8 = ALoad(AllocaId(9), 16, 8) ()
+    v17:8 = ALoad(AllocaId(9), 24, 8) ()
+    AStore(AllocaId(9), 0, 8) (v14)
+    AStore(AllocaId(9), 8, 8) (v15)
+    AStore(AllocaId(9), 16, 8) (v16)
+    AStore(AllocaId(9), 24, 8) (v17)
+    AStore(AllocaId(9), 32, 8) (v13)
     jmp b2()
 b15(): ; Body
     trap
 b16(): ; Body
     AStore(AllocaId(9), 16, 8) (v2)
-    v19:8 = ALoad(AllocaId(9), 16, 8) ()
-    AStore(AllocaId(9), 32, 8) (v19)
-    v20:8 = ALoad(AllocaId(16), 0, 8) ()
-    v21:8 = Load(8, 0) (v20)
-    v22:8 = ALoad(AllocaId(16), 0, 8) ()
-    v23:8 = Load(8, 8) (v22)
-    v25:8 = Bin(Add, 8) (v23, 0x1)
-    v26:8 = AllocaAddr(AllocaId(9), 0) ()
-    v27:8 = ALoad(AllocaId(9), 32, 8) ()
-    Call(Call { target: fn1, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }, ArgReg { xmm: false, size: 8, index: 3, sext: false }], parts: [], site: Pad { catch: false } }) (v26, v21, v27, v25)
-    invoke -> b38() unwind b39()
-b17(): ; Body
+    v18:8 = ALoad(AllocaId(9), 16, 8) ()
+    AStore(AllocaId(9), 32, 8) (v18)
+    v19:8 = ALoad(AllocaId(16), 0, 8) ()
+    v20:8 = Load(8, 0) (v19)
+    v21:8 = ALoad(AllocaId(16), 0, 8) ()
+    v22:8 = Load(8, 8) (v21)
+    v24:8 = Bin(Add, 8) (v22, 0x1)
+    v25:8 = AllocaAddr(AllocaId(9), 0) ()
+    v26:8 = ALoad(AllocaId(9), 32, 8) ()
+    Call(Call { target: fn1, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }, ArgReg { xmm: false, size: 8, index: 3, sext: false }], parts: [], site: Continue }) (v25, v20, v26, v24)
     jmp b14()
-b18(): ; Body
+b17(): ; Body
     jmp b7()
+b18(): ; Body
+    v28:8 = AllocaAddr(AllocaId(9), 0) ()
+    v29:8 = Call(Call { target: fn2, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Continue }) (v28)
+    v30:8 = ALoad(AllocaId(9), 32, 8) ()
+    v32:8 = Bin(Sub, 8) (v30, 0x1)
+    AStore(AllocaId(9), 32, 8) (v32)
+    br Eq.w8 v29, 0x0 ? b7() : b19()
 b19(): ; Body
-    v30:8 = AllocaAddr(AllocaId(9), 0) ()
-    v31:8 = Call(Call { target: fn2, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v30)
-    invoke -> b40() unwind b41()
-b20(): ; Body
-    v33:8 = ALoad(AllocaId(9), 32, 8) ()
-    v35:8 = Bin(Sub, 8) (v33, 0x1)
-    AStore(AllocaId(9), 32, 8) (v35)
-    br Eq.w8 v31, 0x0 ? b7() : b21()
+    jmp b5(v29)
+b20(v35:8, v41:8): ; Body head 5
+    v36:8 = PtrAdd(8) (v35)
+    v37:8 = AllocaAddr(AllocaId(16), 0) ()
+    v38:1 = Call(Call { target: fn3, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }], parts: [RetPart { xmm: false, size: 1, off: 0 }], site: Continue }) (v37, v35, v36)
+    jmp b8(v38, v41)
 b21(): ; Body
-    jmp b5(v31)
-b22(v38:8, v45:8): ; Body head 6
-    v39:8 = PtrAdd(8) (v38)
-    v40:8 = AllocaAddr(AllocaId(16), 0) ()
-    v41:1 = Call(Call { target: fn3, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }], parts: [RetPart { xmm: false, size: 1, off: 0 }], site: Pad { catch: false } }) (v40, v38, v39)
-    invoke -> b42() unwind b43()
+    trap
+b22(): ; Body
+    br 0x0 ? b23() : b26()
 b23(): ; Body
-    jmp b8(v41, v45)
-b24(): ; Body
-    trap
+    jmp b25()
+b24(v44:8, v46:8): ; Body head 6
+    jmp b20(v44, v46)
 b25(): ; Body
-    br 0x0 ? b26() : b29()
-b26(): ; Body
-    jmp b28()
-b27(v48:8, v50:8): ; Body head 7
-    jmp b22(v48, v50)
-b28(): ; Body
     trap
-b29(): ; Body
-    v52:8 = PtrIndex(16) (v6, 0xffffffffffffffff)
-    jmp b27(v52, v6)
-b30(v55:8): ; Body
-    jmp b13()
-b31(): ; Osr(0)
+b26(): ; Body
+    v48:8 = PtrIndex(16) (v6, 0xffffffffffffffff)
+    jmp b24(v48, v6)
+b27(): ; Osr(0)
     jmp b2()
-b32(): ; Osr(1)
-    v37:8 = OsrLoad(-152, 8) ()
-    jmp b5(v37)
-b33(): ; Osr(3)
-    v43:1 = OsrLoad(-177, 1) ()
-    v44:8 = OsrLoad(-160, 8) ()
-    jmp b8(v43, v44)
-b34(): ; Osr(6)
-    v47:8 = OsrLoad(-168, 8) ()
-    v49:8 = OsrLoad(-160, 8) ()
-    jmp b22(v47, v49)
-b35(): ; Osr(7)
-    v53:8 = OsrLoad(-168, 8) ()
-    v54:8 = OsrLoad(-160, 8) ()
-    jmp b27(v53, v54)
-b36(): ; Body
-    jmp b11()
-b37(): ; Stub
-    v11:8 = LandingPad ()
-    jmp b30(v11)
-b38(): ; Body
-    jmp b17()
-b39(): ; Stub
-    v28:8 = LandingPad ()
-    jmp b30(v28)
-b40(): ; Body
-    jmp b20()
-b41(): ; Stub
-    v32:8 = LandingPad ()
-    jmp b30(v32)
-b42(): ; Body
-    jmp b23()
-b43(): ; Stub
-    v42:8 = LandingPad ()
-    jmp b30(v42)
+b28(): ; Osr(1)
+    v34:8 = OsrLoad(-152, 8) ()
+    jmp b5(v34)
+b29(): ; Osr(3)
+    v39:1 = OsrLoad(-177, 1) ()
+    v40:8 = OsrLoad(-160, 8) ()
+    jmp b8(v39, v40)
+b30(): ; Osr(5)
+    v43:8 = OsrLoad(-168, 8) ()
+    v45:8 = OsrLoad(-160, 8) ()
+    jmp b20(v43, v45)
+b31(): ; Osr(6)
+    v49:8 = OsrLoad(-168, 8) ()
+    v50:8 = OsrLoad(-160, 8) ()
+    jmp b24(v49, v50)
 
 fn hashbrown::raw::FullBucketsIndices::next_impl
 a0: $-192, 16 bytes, Memory, escaped
@@ -1107,178 +1149,151 @@ b0(v0:8, v1:8, v2:8, v3:8): ; Entry
     v7:2 = Load(2, 24) (v0)
     v8:4 = Load(4, 26) (v0)
     v9:2 = Load(2, 30) (v0)
-    jmp b1(v7, v1, v2, v5, v4, 0x1)
-b1(v11:2, v40:8, v42:8, v44:8, v52:8, v140:1): ; Body head 0
-    br Eq.w2 v11, 0x0 ? b15() : b2()
+    jmp b1(v7, v1, v2, v5, v4)
+b1(v11:2, v37:8, v39:8, v41:8, v49:8): ; Body head 0
+    br Eq.w2 v11, 0x0 ? b14() : b2()
 b2(): ; Body
-    jmp b14()
-b3(v14:8, v15:8, v91:2, v103:8, v110:8): ; Body head 1
+    jmp b13()
+b3(v14:8, v15:8, v86:2, v98:8, v105:8): ; Body head 1
     v17:8 = Bin(Sub, 8) (v15, 0x1)
-    jmp b1(v91, v17, v14, v103, v110, 0x1)
+    jmp b1(v86, v17, v14, v98, v105)
 b4(): ; Body head 2
-    jmp b7()
-b5(v20:8, v83:8, v132:8, v135:8, v138:1): ; Body head 3
-    v21:8 = AllocaAddr(AllocaId(13), 0) ()
-    Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }], parts: [], site: Pad { catch: false } }) (v21, v20)
-    invoke -> b43() unwind b44()
-b6(): ; Body
-    jmp b26()
-b7(): ; Body
-    ret 0x8 (v42)
-b8(): ; Body head 4
-    jmp b11()
-b9(): ; Body head 5
-    hcall resume [(Fp, [None, None]), (Imm(4294967112), [Some(Scratch(0)), None])] ins [0] outs [] (v146)
-    trap
-b10(): ; Body head 6
-    jmp b9()
-b11(): ; Body
-    br v137 ? b12() : b9()
-b12(): ; Body
-    jmp b10()
-b13(): ; Body
-    trap
-b14(): ; Body
-    v27:4 = Count { lz: false, w: 2 } (v11)
-    jmp b17()
-b15(): ; Body
-    v28:8 = RefAddr(k1, false) ()
-    v29:4 = Load(4, 0) (v28)
-    v30:2 = Load(2, 4) (v28)
-    v31:1 = Load(1, 6) (v28)
-    v32:1 = Load(1, 7) (v28)
-    v33:2 = Load(2, 8) (v28)
-    v34:2 = Load(2, 10) (v28)
-    v35:2 = Load(2, 12) (v28)
-    v36:2 = Load(2, 14) (v28)
-    v39:1 = Cmp(Eq, 8) (0x0, 0x0)
-    br Eq.w8 v40, 0x0 ? b4() : b16()
-b16(): ; Body
-    jmp b5(v44, v52, v40, v42, v140)
-b17(): ; Body
-    v45:8 = Ext { from: 4, to: 8, sx: false } (v27)
-    v48:2 = Bin(Sub, 2) (v11, 0x1)
-    v49:2 = Bin(And, 2) (v11, v48)
-    br 0x0 ? b18() : b19()
-b18(): ; Body
-    trap
-b19(): ; Body
-    br 0x0 ? b20() : b25()
-b20(): ; Body
-    jmp b24()
-b21(v54:8, v57:8, v62:8, v93:2, v105:8, v112:8): ; Body head 7
-    v55:8 = AllocaAddr(AllocaId(17), 0) ()
-    v58:8 = Call(Call { target: fn2, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v55, v57, v54)
-    invoke -> b45() unwind b46()
-b22(): ; Body
-    jmp b3(v58, v62, v93, v105, v112)
-b23(v64:8, v66:8, v68:8, v95:2, v107:8, v114:8): ; Body head 8
-    jmp b21(v64, v66, v68, v95, v107, v114)
-b24(): ; Body
-    trap
-b25(): ; Body
-    v70:8 = Bin(Sub, 8) (0x0, v45)
-    v71:8 = PtrIndex(16) (v52, v70)
-    jmp b23(v71, v42, v40, v49, v44, v52)
-b26(): ; Body
-    v75:8 = ALoad(AllocaId(13), 0, 8) ()
-    v76:8 = ALoad(AllocaId(13), 8, 8) ()
-    AStore(AllocaId(0), 0, 8) (v75)
-    AStore(AllocaId(0), 8, 8) (v76)
-    v77:8 = AllocaAddr(AllocaId(0), 0) ()
-    v78:4 = Call(Call { target: fn3, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }], parts: [RetPart { xmm: false, size: 4, off: 0 }], site: Pad { catch: false } }) (v77)
-    invoke -> b47() unwind b48()
-b27(): ; Body
-    v80:2 = Ext { from: 4, to: 2, sx: false } (v78)
-    v81:2 = hcall.reg not.w16 [(Fp, [None, None]), (Imm(4294967106), [Some(Scratch(0)), None]), (Imm(4294967104), [Some(Scratch(8)), None])] outs 1 (v80)
-    br 0x0 ? b28() : b29()
-b28(): ; Body
-    trap
-b29(): ; Body
-    br 0x0 ? b30() : b34()
-b30(): ; Body
-    jmp b33()
-b31(v86:8, v87:8, v97:2, v99:8, v101:8, v142:1): ; Body head 9
-    v89:8 = PtrIndex(1) (v87, 0x10)
-    jmp b1(v97, v99, v101, v89, v86, v142)
-b32(v117:8, v119:8, v121:2, v123:8, v125:8, v144:1): ; Body head 10
-    jmp b31(v117, v119, v121, v123, v125, v144)
-b33(): ; Body
-    trap
-b34(): ; Body
-    v127:8 = PtrIndex(16) (v83, 0xfffffffffffffff0)
-    jmp b32(v127, v20, v81, v132, v135, v138)
-b35(v137:1, v146:8): ; Body
-    jmp b8()
-b36(): ; Osr(0)
-    v90:2 = OsrLoad(-16, 2) ()
-    v98:8 = OsrLoad(-48, 8) ()
-    v100:8 = OsrLoad(-56, 8) ()
-    v102:8 = OsrLoad(-32, 8) ()
-    v109:8 = OsrLoad(-40, 8) ()
-    v141:1 = OsrLoad(-105, 1) ()
-    jmp b1(v90, v98, v100, v102, v109, v141)
-b37(): ; Osr(1)
-    v60:8 = OsrLoad(-224, 8) ()
-    v61:8 = OsrLoad(-48, 8) ()
-    v92:2 = OsrLoad(-16, 2) ()
-    v104:8 = OsrLoad(-32, 8) ()
-    v111:8 = OsrLoad(-40, 8) ()
-    jmp b3(v60, v61, v92, v104, v111)
-b38(): ; Osr(3)
-    v43:8 = OsrLoad(-32, 8) ()
-    v84:8 = OsrLoad(-40, 8) ()
-    v133:8 = OsrLoad(-48, 8) ()
-    v136:8 = OsrLoad(-56, 8) ()
-    v139:1 = OsrLoad(-105, 1) ()
-    jmp b5(v43, v84, v133, v136, v139)
-b39(): ; Osr(7)
-    v63:8 = OsrLoad(-224, 8) ()
-    v65:8 = OsrLoad(-56, 8) ()
-    v67:8 = OsrLoad(-48, 8) ()
-    v94:2 = OsrLoad(-16, 2) ()
-    v106:8 = OsrLoad(-32, 8) ()
-    v113:8 = OsrLoad(-40, 8) ()
-    jmp b21(v63, v65, v67, v94, v106, v113)
-b40(): ; Osr(8)
-    v72:8 = OsrLoad(-224, 8) ()
-    v73:8 = OsrLoad(-56, 8) ()
-    v74:8 = OsrLoad(-48, 8) ()
-    v96:2 = OsrLoad(-16, 2) ()
-    v108:8 = OsrLoad(-32, 8) ()
-    v115:8 = OsrLoad(-40, 8) ()
-    jmp b23(v72, v73, v74, v96, v108, v115)
-b41(): ; Osr(9)
-    v116:8 = OsrLoad(-200, 8) ()
-    v118:8 = OsrLoad(-32, 8) ()
-    v120:2 = OsrLoad(-16, 2) ()
-    v122:8 = OsrLoad(-48, 8) ()
-    v124:8 = OsrLoad(-56, 8) ()
-    v143:1 = OsrLoad(-105, 1) ()
-    jmp b31(v116, v118, v120, v122, v124, v143)
-b42(): ; Osr(10)
-    v128:8 = OsrLoad(-200, 8) ()
-    v129:8 = OsrLoad(-32, 8) ()
-    v130:2 = OsrLoad(-16, 2) ()
-    v131:8 = OsrLoad(-48, 8) ()
-    v134:8 = OsrLoad(-56, 8) ()
-    v145:1 = OsrLoad(-105, 1) ()
-    jmp b32(v128, v129, v130, v131, v134, v145)
-b43(): ; Body
     jmp b6()
-b44(): ; Stub
-    v22:8 = LandingPad ()
-    jmp b35(v138, v22)
-b45(): ; Body
+b5(v20:8, v78:8, v127:8, v130:8): ; Body head 3
+    v21:8 = AllocaAddr(AllocaId(13), 0) ()
+    Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }], parts: [], site: Continue }) (v21, v20)
+    jmp b24()
+b6(): ; Body
+    ret 0x8 (v39)
+b7(): ; Body
+    jmp b10()
+b8(): ; Body head 4
+    hcall resume [(Fp, [None, None]), (Imm(4294967112), [Some(Scratch(0)), None])] ins [0] outs [] (undef)
+    trap
+b9(): ; Body head 5
+    jmp b8()
+b10(): ; Body
+    br undef ? b11() : b8()
+b11(): ; Body
+    jmp b9()
+b12(): ; Body
+    trap
+b13(): ; Body
+    v24:4 = Count { lz: false, w: 2 } (v11)
+    jmp b16()
+b14(): ; Body
+    v25:8 = RefAddr(k1, false) ()
+    v26:4 = Load(4, 0) (v25)
+    v27:2 = Load(2, 4) (v25)
+    v28:1 = Load(1, 6) (v25)
+    v29:1 = Load(1, 7) (v25)
+    v30:2 = Load(2, 8) (v25)
+    v31:2 = Load(2, 10) (v25)
+    v32:2 = Load(2, 12) (v25)
+    v33:2 = Load(2, 14) (v25)
+    v36:1 = Cmp(Eq, 8) (0x0, 0x0)
+    br Eq.w8 v37, 0x0 ? b4() : b15()
+b15(): ; Body
+    jmp b5(v41, v49, v37, v39)
+b16(): ; Body
+    v42:8 = Ext { from: 4, to: 8, sx: false } (v24)
+    v45:2 = Bin(Sub, 2) (v11, 0x1)
+    v46:2 = Bin(And, 2) (v11, v45)
+    br 0x0 ? b17() : b18()
+b17(): ; Body
+    trap
+b18(): ; Body
+    br 0x0 ? b19() : b23()
+b19(): ; Body
     jmp b22()
-b46(): ; Stub
-    v59:8 = LandingPad ()
-    jmp b35(0x0, v59)
-b47(): ; Body
-    jmp b27()
-b48(): ; Stub
-    v79:8 = LandingPad ()
-    jmp b35(v138, v79)
+b20(v51:8, v54:8, v58:8, v88:2, v100:8, v107:8): ; Body head 6
+    v52:8 = AllocaAddr(AllocaId(17), 0) ()
+    v55:8 = Call(Call { target: fn2, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Continue }) (v52, v54, v51)
+    jmp b3(v55, v58, v88, v100, v107)
+b21(v60:8, v62:8, v64:8, v90:2, v102:8, v109:8): ; Body head 7
+    jmp b20(v60, v62, v64, v90, v102, v109)
+b22(): ; Body
+    trap
+b23(): ; Body
+    v66:8 = Bin(Sub, 8) (0x0, v42)
+    v67:8 = PtrIndex(16) (v49, v66)
+    jmp b21(v67, v39, v37, v46, v41, v49)
+b24(): ; Body
+    v71:8 = ALoad(AllocaId(13), 0, 8) ()
+    v72:8 = ALoad(AllocaId(13), 8, 8) ()
+    AStore(AllocaId(0), 0, 8) (v71)
+    AStore(AllocaId(0), 8, 8) (v72)
+    v73:8 = AllocaAddr(AllocaId(0), 0) ()
+    v74:4 = Call(Call { target: fn3, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }], parts: [RetPart { xmm: false, size: 4, off: 0 }], site: Continue }) (v73)
+    v75:2 = Ext { from: 4, to: 2, sx: false } (v74)
+    v76:2 = hcall.reg not.w16 [(Fp, [None, None]), (Imm(4294967106), [Some(Scratch(0)), None]), (Imm(4294967104), [Some(Scratch(8)), None])] outs 1 (v75)
+    br 0x0 ? b25() : b26()
+b25(): ; Body
+    trap
+b26(): ; Body
+    br 0x0 ? b27() : b31()
+b27(): ; Body
+    jmp b30()
+b28(v81:8, v82:8, v92:2, v94:8, v96:8): ; Body head 8
+    v84:8 = PtrIndex(1) (v82, 0x10)
+    jmp b1(v92, v94, v96, v84, v81)
+b29(v112:8, v114:8, v116:2, v118:8, v120:8): ; Body head 9
+    jmp b28(v112, v114, v116, v118, v120)
+b30(): ; Body
+    trap
+b31(): ; Body
+    v122:8 = PtrIndex(16) (v78, 0xfffffffffffffff0)
+    jmp b29(v122, v20, v76, v127, v130)
+b32(): ; Osr(0)
+    v85:2 = OsrLoad(-16, 2) ()
+    v93:8 = OsrLoad(-48, 8) ()
+    v95:8 = OsrLoad(-56, 8) ()
+    v97:8 = OsrLoad(-32, 8) ()
+    v104:8 = OsrLoad(-40, 8) ()
+    jmp b1(v85, v93, v95, v97, v104)
+b33(): ; Osr(1)
+    v56:8 = OsrLoad(-224, 8) ()
+    v57:8 = OsrLoad(-48, 8) ()
+    v87:2 = OsrLoad(-16, 2) ()
+    v99:8 = OsrLoad(-32, 8) ()
+    v106:8 = OsrLoad(-40, 8) ()
+    jmp b3(v56, v57, v87, v99, v106)
+b34(): ; Osr(3)
+    v40:8 = OsrLoad(-32, 8) ()
+    v79:8 = OsrLoad(-40, 8) ()
+    v128:8 = OsrLoad(-48, 8) ()
+    v131:8 = OsrLoad(-56, 8) ()
+    jmp b5(v40, v79, v128, v131)
+b35(): ; Osr(6)
+    v59:8 = OsrLoad(-224, 8) ()
+    v61:8 = OsrLoad(-56, 8) ()
+    v63:8 = OsrLoad(-48, 8) ()
+    v89:2 = OsrLoad(-16, 2) ()
+    v101:8 = OsrLoad(-32, 8) ()
+    v108:8 = OsrLoad(-40, 8) ()
+    jmp b20(v59, v61, v63, v89, v101, v108)
+b36(): ; Osr(7)
+    v68:8 = OsrLoad(-224, 8) ()
+    v69:8 = OsrLoad(-56, 8) ()
+    v70:8 = OsrLoad(-48, 8) ()
+    v91:2 = OsrLoad(-16, 2) ()
+    v103:8 = OsrLoad(-32, 8) ()
+    v110:8 = OsrLoad(-40, 8) ()
+    jmp b21(v68, v69, v70, v91, v103, v110)
+b37(): ; Osr(8)
+    v111:8 = OsrLoad(-200, 8) ()
+    v113:8 = OsrLoad(-32, 8) ()
+    v115:2 = OsrLoad(-16, 2) ()
+    v117:8 = OsrLoad(-48, 8) ()
+    v119:8 = OsrLoad(-56, 8) ()
+    jmp b28(v111, v113, v115, v117, v119)
+b38(): ; Osr(9)
+    v123:8 = OsrLoad(-200, 8) ()
+    v124:8 = OsrLoad(-32, 8) ()
+    v125:2 = OsrLoad(-16, 2) ()
+    v126:8 = OsrLoad(-48, 8) ()
+    v129:8 = OsrLoad(-56, 8) ()
+    jmp b29(v123, v124, v125, v126, v129)
 
 fn hashbrown::raw::RawIterRange::<(u64, u64)>::next_impl::<false>
 a0: $-224, 16 bytes, Memory, escaped
@@ -1404,80 +1419,6 @@ b31(): ; Osr(7)
     v59:8 = OsrLoad(-144, 8) ()
     v60:8 = OsrLoad(-16, 8) ()
     jmp b25(v59, v60)
-
-fn hashbrown::raw::RawTable::<(std::string::String, usize)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry::{closure#0}}>
-a0: $-168, 8 bytes, Promoted
-a1: $-160, 8 bytes, Promoted
-a2: $-152, 8 bytes, Promoted
-a3: $-144, 16 bytes, Memory, escaped
-a4: $-128, 8 bytes, Promoted
-a5: $-120, 8 bytes, Promoted
-a6: $-112, 8 bytes, Promoted
-a7: $-104, 8 bytes, Promoted
-a8: $-96, 8 bytes, Promoted
-a9: $-88, 8 bytes, Promoted
-a10: $-80, 8 bytes, Promoted
-a11: $-40, 8 bytes, Promoted
-a12: $-32, 8 bytes, Memory, escaped
-a13: $-24, 8 bytes, Promoted
-a14: $-16, 8 bytes, Promoted
-a15: $-8, 8 bytes, Promoted
-b0(v0:8, v1:8, v2:8): ; Entry
-    AStore(AllocaId(12), 0, 8) (v2)
-    v3:8 = AllocaAddr(AllocaId(12), 0) ()
-    AStore(AllocaId(3), 0, 8) (v3)
-    AStore(AllocaId(3), 8, 8) (v0)
-    v4:8 = AllocaAddr(AllocaId(3), 0) ()
-    v5:8 = RefAddr(k0, false) ()
-    v6:8, v7:8 = Call(Call { target: fn1, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }, ArgReg { xmm: false, size: 8, index: 3, sext: false }], parts: [RetPart { xmm: false, size: 8, off: 0 }, RetPart { xmm: false, size: 8, off: 8 }], site: Pad { catch: false } }) (v0, v1, v4, v5)
-    invoke -> b17() unwind b18()
-b1(): ; Body
-    br Eq.w8 v6, 0x0 ? b4() : b2()
-b2(): ; Body
-    jmp b5()
-b3(): ; Body
-    trap
-b4(): ; Body
-    jmp b7(0x0)
-b5(): ; Body
-    v11:8 = Load(8, 0) (v0)
-    br 0x0 ? b6() : b10()
-b6(): ; Body
-    jmp b9()
-b7(v13:8): ; Body head 0
-    ret 0x8 (v13)
-b8(): ; Body head 1
-    hcall resume [(Fp, [None, None]), (Imm(4294967216), [Some(Scratch(0)), None])] ins [0] outs [] (v8)
-    trap
-b9(): ; Body
-    trap
-b10(): ; Body
-    AStore(AllocaId(3), 0, 8) (v11)
-    br 0x0 ? b11() : b15()
-b11(): ; Body
-    jmp b14()
-b12(): ; Body head 2
-    v16:8 = ALoad(AllocaId(3), 8, 8) ()
-    AStore(AllocaId(3), 0, 8) (v16)
-    v17:8 = ALoad(AllocaId(3), 0, 8) ()
-    jmp b7(v17)
-b13(): ; Body head 3
-    jmp b12()
-b14(): ; Body
-    trap
-b15(): ; Body
-    v19:8 = Bin(Sub, 8) (0x0, v7)
-    v20:8 = ALoad(AllocaId(3), 0, 8) ()
-    v21:8 = PtrIndex(32) (v20, v19)
-    AStore(AllocaId(3), 8, 8) (v21)
-    jmp b13()
-b16(): ; Body
-    jmp b8()
-b17(): ; Body
-    jmp b1()
-b18(): ; Stub
-    v8:8 = LandingPad ()
-    jmp b16()
 
 fn hashbrown::raw::RawTable::<(std::string::String, usize)>::insert_no_grow
 a0: $-224, 8 bytes, Promoted
@@ -1606,54 +1547,6 @@ b27(): ; Stub
     v11:8 = LandingPad ()
     jmp b23()
 
-fn hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve::<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>
-a0: $-89, 1 bytes, Promoted
-a1: $-88, 8 bytes, Promoted
-a2: $-80, 8 bytes, Promoted
-a3: $-72, 8 bytes, Promoted
-a4: $-64, 8 bytes, Promoted
-a5: $-49, 1 bytes, Promoted
-a6: $-25, 1 bytes, Promoted
-a7: $-24, 8 bytes, Promoted
-a8: $-16, 8 bytes, Promoted
-a9: $-8, 8 bytes, Promoted
-b0(v0:8, v1:8, v2:8): ; Entry
-    v3:8 = Load(8, 16) (v0)
-    v4:1 = Cmp(LtU, 8) (v3, v1)
-    br v4 ? b1() : b10()
-b1(): ; Body
-    jmp b8()
-b2(): ; Body head 0
-    v7:1 = Cmp(Ne, 8) (v17, 0xffffffffffffffff)
-    v8:8 = Ext { from: 1, to: 8, sx: false } (v7)
-    v10:1 = Cmp(Eq, 8) (v8, 0x0)
-    jmp b3()
-b3(): ; Body head 1
-    ret 0x0 ()
-b4(): ; Body head 2
-    hcall resume [(Fp, [None, None]), (Imm(4294967232), [Some(Scratch(0)), None])] ins [0] outs [] (v19)
-    trap
-b5(): ; Body head 3
-    jmp b4()
-b6(): ; Body head 4
-    br 0x0 ? b7() : b4()
-b7(): ; Body
-    jmp b5()
-b8(): ; Body
-    v17:8, v18:8 = Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }, ArgReg { xmm: false, size: 1, index: 3, sext: false }], parts: [RetPart { xmm: false, size: 8, off: 0 }, RetPart { xmm: false, size: 8, off: 8 }], site: Pad { catch: false } }) (v0, v1, v2, 0x1)
-    invoke -> b12() unwind b13()
-b9(): ; Body
-    jmp b2()
-b10(): ; Body
-    jmp b3()
-b11(): ; Body
-    jmp b6()
-b12(): ; Body
-    jmp b9()
-b13(): ; Stub
-    v19:8 = LandingPad ()
-    jmp b11()
-
 fn hashbrown::raw::RawTable::<(std::string::String, usize)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>::{closure#0}
 a0: $-160, 8 bytes, Promoted
 a1: $-152, 8 bytes, Promoted
@@ -1745,317 +1638,6 @@ b8(): ; Body
     jmp b6()
 b9(): ; Body
     ret 0x0 ()
-
-fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::map::equivalent_key<u64, u64, u64>::{closure#0}}>
-a0: $-168, 8 bytes, Promoted
-a1: $-160, 8 bytes, Promoted
-a2: $-152, 8 bytes, Promoted
-a3: $-144, 16 bytes, Memory, escaped
-a4: $-128, 8 bytes, Promoted
-a5: $-120, 8 bytes, Promoted
-a6: $-112, 8 bytes, Promoted
-a7: $-104, 8 bytes, Promoted
-a8: $-96, 8 bytes, Promoted
-a9: $-88, 8 bytes, Promoted
-a10: $-80, 8 bytes, Promoted
-a11: $-40, 8 bytes, Promoted
-a12: $-32, 8 bytes, Memory, escaped
-a13: $-24, 8 bytes, Promoted
-a14: $-16, 8 bytes, Promoted
-a15: $-8, 8 bytes, Promoted
-b0(v0:8, v1:8, v2:8): ; Entry
-    AStore(AllocaId(12), 0, 8) (v2)
-    v3:8 = AllocaAddr(AllocaId(12), 0) ()
-    AStore(AllocaId(3), 0, 8) (v3)
-    AStore(AllocaId(3), 8, 8) (v0)
-    v4:8 = AllocaAddr(AllocaId(3), 0) ()
-    v5:8 = RefAddr(k0, false) ()
-    v6:8, v7:8 = Call(Call { target: fn1, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }, ArgReg { xmm: false, size: 8, index: 3, sext: false }], parts: [RetPart { xmm: false, size: 8, off: 0 }, RetPart { xmm: false, size: 8, off: 8 }], site: Pad { catch: false } }) (v0, v1, v4, v5)
-    invoke -> b17() unwind b18()
-b1(): ; Body
-    br Eq.w8 v6, 0x0 ? b4() : b2()
-b2(): ; Body
-    jmp b5()
-b3(): ; Body
-    trap
-b4(): ; Body
-    jmp b7(0x0)
-b5(): ; Body
-    v11:8 = Load(8, 0) (v0)
-    br 0x0 ? b6() : b10()
-b6(): ; Body
-    jmp b9()
-b7(v13:8): ; Body head 0
-    ret 0x8 (v13)
-b8(): ; Body head 1
-    hcall resume [(Fp, [None, None]), (Imm(4294967216), [Some(Scratch(0)), None])] ins [0] outs [] (v8)
-    trap
-b9(): ; Body
-    trap
-b10(): ; Body
-    AStore(AllocaId(3), 0, 8) (v11)
-    br 0x0 ? b11() : b15()
-b11(): ; Body
-    jmp b14()
-b12(): ; Body head 2
-    v16:8 = ALoad(AllocaId(3), 8, 8) ()
-    AStore(AllocaId(3), 0, 8) (v16)
-    v17:8 = ALoad(AllocaId(3), 0, 8) ()
-    jmp b7(v17)
-b13(): ; Body head 3
-    jmp b12()
-b14(): ; Body
-    trap
-b15(): ; Body
-    v19:8 = Bin(Sub, 8) (0x0, v7)
-    v20:8 = ALoad(AllocaId(3), 0, 8) ()
-    v21:8 = PtrIndex(16) (v20, v19)
-    AStore(AllocaId(3), 8, 8) (v21)
-    jmp b13()
-b16(): ; Body
-    jmp b8()
-b17(): ; Body
-    jmp b1()
-b18(): ; Stub
-    v8:8 = LandingPad ()
-    jmp b16()
-
-fn hashbrown::raw::RawTable::<(u64, u64)>::find::<{closure@hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry::{closure#0}}>
-a0: $-168, 8 bytes, Promoted
-a1: $-160, 8 bytes, Promoted
-a2: $-152, 8 bytes, Promoted
-a3: $-144, 16 bytes, Memory, escaped
-a4: $-128, 8 bytes, Promoted
-a5: $-120, 8 bytes, Promoted
-a6: $-112, 8 bytes, Promoted
-a7: $-104, 8 bytes, Promoted
-a8: $-96, 8 bytes, Promoted
-a9: $-88, 8 bytes, Promoted
-a10: $-80, 8 bytes, Promoted
-a11: $-40, 8 bytes, Promoted
-a12: $-32, 8 bytes, Memory, escaped
-a13: $-24, 8 bytes, Promoted
-a14: $-16, 8 bytes, Promoted
-a15: $-8, 8 bytes, Promoted
-b0(v0:8, v1:8, v2:8): ; Entry
-    AStore(AllocaId(12), 0, 8) (v2)
-    v3:8 = AllocaAddr(AllocaId(12), 0) ()
-    AStore(AllocaId(3), 0, 8) (v3)
-    AStore(AllocaId(3), 8, 8) (v0)
-    v4:8 = AllocaAddr(AllocaId(3), 0) ()
-    v5:8 = RefAddr(k0, false) ()
-    v6:8, v7:8 = Call(Call { target: fn1, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }, ArgReg { xmm: false, size: 8, index: 3, sext: false }], parts: [RetPart { xmm: false, size: 8, off: 0 }, RetPart { xmm: false, size: 8, off: 8 }], site: Pad { catch: false } }) (v0, v1, v4, v5)
-    invoke -> b17() unwind b18()
-b1(): ; Body
-    br Eq.w8 v6, 0x0 ? b4() : b2()
-b2(): ; Body
-    jmp b5()
-b3(): ; Body
-    trap
-b4(): ; Body
-    jmp b7(0x0)
-b5(): ; Body
-    v11:8 = Load(8, 0) (v0)
-    br 0x0 ? b6() : b10()
-b6(): ; Body
-    jmp b9()
-b7(v13:8): ; Body head 0
-    ret 0x8 (v13)
-b8(): ; Body head 1
-    hcall resume [(Fp, [None, None]), (Imm(4294967216), [Some(Scratch(0)), None])] ins [0] outs [] (v8)
-    trap
-b9(): ; Body
-    trap
-b10(): ; Body
-    AStore(AllocaId(3), 0, 8) (v11)
-    br 0x0 ? b11() : b15()
-b11(): ; Body
-    jmp b14()
-b12(): ; Body head 2
-    v16:8 = ALoad(AllocaId(3), 8, 8) ()
-    AStore(AllocaId(3), 0, 8) (v16)
-    v17:8 = ALoad(AllocaId(3), 0, 8) ()
-    jmp b7(v17)
-b13(): ; Body head 3
-    jmp b12()
-b14(): ; Body
-    trap
-b15(): ; Body
-    v19:8 = Bin(Sub, 8) (0x0, v7)
-    v20:8 = ALoad(AllocaId(3), 0, 8) ()
-    v21:8 = PtrIndex(16) (v20, v19)
-    AStore(AllocaId(3), 8, 8) (v21)
-    jmp b13()
-b16(): ; Body
-    jmp b8()
-b17(): ; Body
-    jmp b1()
-b18(): ; Stub
-    v8:8 = LandingPad ()
-    jmp b16()
-
-fn hashbrown::raw::RawTable::<(u64, u64)>::insert_no_grow
-a0: $-192, 8 bytes, Promoted
-a1: $-184, 8 bytes, Promoted
-a2: $-176, 8 bytes, Promoted
-a3: $-168, 8 bytes, Promoted
-a4: $-160, 8 bytes, Promoted
-a5: $-152, 8 bytes, Promoted
-a6: $-144, 8 bytes, Promoted
-a7: $-136, 8 bytes, Promoted
-a8: $-128, 8 bytes, Promoted
-a9: $-113, 1 bytes, Promoted
-a10: $-112, 8 bytes, Promoted
-a11: $-72, 8 bytes, Promoted
-a12: $-40, 8 bytes, Memory
-a13: $-32, 8 bytes, Memory
-a14: $-24, 8 bytes, Promoted
-a15: $-16, 8 bytes, Promoted
-a16: $-8, 8 bytes, Promoted
-b0(v0:8, v1:8, v2:8, v3:8): ; Entry
-    AStore(AllocaId(12), 0, 8) (v2)
-    AStore(AllocaId(13), 0, 8) (v3)
-    v4:8 = Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v0, v1)
-    invoke -> b21() unwind b22()
-b1(): ; Body
-    jmp b4()
-b2(): ; Body head 0
-    hcall resume [(Fp, [None, None]), (Imm(4294967168), [Some(Scratch(0)), None])] ins [0] outs [] (v5)
-    trap
-b3(): ; Body head 1
-    jmp b2()
-b4(): ; Body
-    v8:8 = Load(8, 0) (v0)
-    v9:8 = PtrIndex(1) (v8, v4)
-    v10:1 = Load(1, 0) (v9)
-    v12:8 = Bin(ShrU, 8) (v1, 0x39)
-    v14:8 = Bin(And, 8) (v12, 0x7f)
-    v15:1 = Ext { from: 8, to: 1, sx: false } (v14)
-    v17:8 = Bin(Sub, 8) (v4, 0x10)
-    v18:8 = Load(8, 8) (v0)
-    v19:8 = Bin(And, 8) (v17, v18)
-    v21:8 = Bin(Add, 8) (v19, 0x10)
-    v22:8 = Load(8, 0) (v0)
-    v23:8 = PtrIndex(1) (v22, v4)
-    Store(1, 0) (v23, v15)
-    v24:8 = Load(8, 0) (v0)
-    v25:8 = PtrIndex(1) (v24, v21)
-    Store(1, 0) (v25, v15)
-    v26:8 = Load(8, 0) (v0)
-    br 0x0 ? b5() : b6()
-b5(): ; Body
-    trap
-b6(): ; Body
-    br 0x0 ? b7() : b12()
-b7(): ; Body
-    jmp b11()
-b8(): ; Body head 2
-    v32:1 = Bin(And, 1) (v10, 0x1)
-    v34:1 = Cmp(Ne, 1) (v32, 0x0)
-    v35:8 = Ext { from: 1, to: 8, sx: false } (v34)
-    v37:8 = Load(8, 16) (v0)
-    v38:8 = Bin(Sub, 8) (v37, v35)
-    Store(8, 16) (v0, v38)
-    v39:4 = ALoad(AllocaId(12), 0, 4) ()
-    v40:2 = ALoad(AllocaId(12), 4, 2) ()
-    v41:1 = ALoad(AllocaId(12), 6, 1) ()
-    v42:1 = ALoad(AllocaId(12), 7, 1) ()
-    v43:4 = ALoad(AllocaId(13), 0, 4) ()
-    v44:2 = ALoad(AllocaId(13), 4, 2) ()
-    v45:1 = ALoad(AllocaId(13), 6, 1) ()
-    v46:1 = ALoad(AllocaId(13), 7, 1) ()
-    br 0x0 ? b9() : b15()
-b9(): ; Body
-    jmp b14()
-b10(): ; Body head 3
-    jmp b8()
-b11(): ; Body
-    trap
-b12(): ; Body
-    v52:8 = Bin(Sub, 8) (0x0, v4)
-    v53:8 = PtrIndex(16) (v26, v52)
-    jmp b10()
-b13(): ; Body head 4
-    Store(4, 0) (v81, v39)
-    Store(2, 4) (v81, v40)
-    Store(1, 6) (v81, v41)
-    Store(1, 7) (v81, v42)
-    Store(4, 8) (v81, v43)
-    Store(2, 12) (v81, v44)
-    Store(1, 14) (v81, v45)
-    Store(1, 15) (v81, v46)
-    v64:8 = Load(8, 24) (v0)
-    v66:8 = Bin(Add, 8) (v64, 0x1)
-    Store(8, 24) (v0, v66)
-    ret 0x8 (v53)
-b14(): ; Body
-    trap
-b15(): ; Body
-    br 0x0 ? b16() : b19()
-b16(): ; Body
-    jmp b18()
-b17(): ; Body head 5
-    jmp b13()
-b18(): ; Body
-    trap
-b19(): ; Body
-    v81:8 = PtrIndex(16) (v53, 0xffffffffffffffff)
-    jmp b17()
-b20(): ; Body
-    jmp b3()
-b21(): ; Body
-    jmp b1()
-b22(): ; Stub
-    v5:8 = LandingPad ()
-    jmp b20()
-
-fn hashbrown::raw::RawTable::<(u64, u64)>::reserve::<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>
-a0: $-89, 1 bytes, Promoted
-a1: $-88, 8 bytes, Promoted
-a2: $-80, 8 bytes, Promoted
-a3: $-72, 8 bytes, Promoted
-a4: $-64, 8 bytes, Promoted
-a5: $-49, 1 bytes, Promoted
-a6: $-25, 1 bytes, Promoted
-a7: $-24, 8 bytes, Promoted
-a8: $-16, 8 bytes, Promoted
-a9: $-8, 8 bytes, Promoted
-b0(v0:8, v1:8, v2:8): ; Entry
-    v3:8 = Load(8, 16) (v0)
-    v4:1 = Cmp(LtU, 8) (v3, v1)
-    br v4 ? b1() : b10()
-b1(): ; Body
-    jmp b8()
-b2(): ; Body head 0
-    v7:1 = Cmp(Ne, 8) (v17, 0xffffffffffffffff)
-    v8:8 = Ext { from: 1, to: 8, sx: false } (v7)
-    v10:1 = Cmp(Eq, 8) (v8, 0x0)
-    jmp b3()
-b3(): ; Body head 1
-    ret 0x0 ()
-b4(): ; Body head 2
-    hcall resume [(Fp, [None, None]), (Imm(4294967232), [Some(Scratch(0)), None])] ins [0] outs [] (v19)
-    trap
-b5(): ; Body head 3
-    jmp b4()
-b6(): ; Body head 4
-    br 0x0 ? b7() : b4()
-b7(): ; Body
-    jmp b5()
-b8(): ; Body
-    v17:8, v18:8 = Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }, ArgReg { xmm: false, size: 1, index: 3, sext: false }], parts: [RetPart { xmm: false, size: 8, off: 0 }, RetPart { xmm: false, size: 8, off: 8 }], site: Pad { catch: false } }) (v0, v1, v2, 0x1)
-    invoke -> b12() unwind b13()
-b9(): ; Body
-    jmp b2()
-b10(): ; Body
-    jmp b3()
-b11(): ; Body
-    jmp b6()
-b12(): ; Body
-    jmp b9()
-b13(): ; Stub
-    v19:8 = LandingPad ()
-    jmp b11()
 
 fn hashbrown::raw::RawTable::<(u64, u64)>::reserve_rehash::<{closure@hashbrown::map::make_hasher<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::{closure#0}}>::{closure#0}
 a0: $-160, 8 bytes, Promoted
@@ -3061,178 +2643,6 @@ b39(): ; Stub
     v176:8 = LandingPad ()
     jmp b24(v176)
 
-fn hashbrown::rustc_entry::<impl hashbrown::map::HashMap<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry
-a0: $-192, 8 bytes, Promoted
-a1: $-184, 8 bytes, Promoted
-a2: $-176, 8 bytes, Promoted
-a3: $-168, 8 bytes, Promoted
-a4: $-160, 8 bytes, Promoted
-a5: $-152, 8 bytes, Promoted
-a6: $-144, 8 bytes, Promoted
-a7: $-136, 8 bytes, Promoted
-a8: $-128, 8 bytes, Promoted
-a9: $-120, 8 bytes, Promoted
-a10: $-112, 8 bytes, Promoted
-a11: $-104, 8 bytes, Promoted
-a12: $-96, 8 bytes, Promoted
-a13: $-88, 8 bytes, Promoted
-a14: $-72, 24 bytes, Memory, escaped
-a15: $-48, 8 bytes, Promoted
-a16: $-40, 8 bytes, Promoted
-a17: $-32, 8 bytes, Promoted
-a18: $-24, 8 bytes, Promoted
-a19: $-16, 8 bytes, Promoted
-a20: $-8, 8 bytes, Promoted
-b0(v0:8, v1:8, v2:8): ; Entry
-    v3:8 = Load(8, 0) (v2)
-    v4:8 = Load(8, 8) (v2)
-    v5:8 = Load(8, 16) (v2)
-    AStore(AllocaId(14), 0, 8) (v3)
-    AStore(AllocaId(14), 8, 8) (v4)
-    AStore(AllocaId(14), 16, 8) (v5)
-    v6:8 = PtrAdd(32) (v1)
-    v7:8 = AllocaAddr(AllocaId(14), 0) ()
-    v8:8 = Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v6, v7)
-    invoke -> b16() unwind b17()
-b1(): ; Body
-    jmp b9()
-b2(): ; Body head 0
-    br Eq.w8 v28, 0x0 ? b4() : b3()
-b3(): ; Body
-    v14:8 = AllocaAddr(AllocaId(14), 0) ()
-    Call(Call { target: fn1, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }], parts: [], site: Continue }) (v14)
-    jmp b6(0xffffffffffffffff, v28, v1, undef, undef)
-b4(): ; Body
-    v15:8 = PtrAdd(32) (v1)
-    Call(Call { target: fn2, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }], parts: [], site: Pad { catch: false } }) (v1, 0x1, v15)
-    invoke -> b18() unwind b19()
-b5(): ; Body
-    jmp b11()
-b6(v19:8, v20:8, v21:8, v22:8, v23:8): ; Body head 1
-    Store(8, 0) (v0, v19)
-    Store(8, 8) (v0, v20)
-    Store(8, 16) (v0, v21)
-    Store(8, 24) (v0, v22)
-    Store(8, 32) (v0, v23)
-    ret 0x8 (v0)
-b7(): ; Body head 2
-    v24:8 = AllocaAddr(AllocaId(14), 0) ()
-    Call(Call { target: fn1, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }], parts: [], site: Pad { catch: true } }) (v24)
-    invoke -> b20() unwind b21()
-b8(): ; Body
-    hcall resume [(Fp, [None, None]), (Imm(4294967208), [Some(Scratch(0)), None])] ins [0] outs [] (v34)
-    trap
-b9(): ; Body
-    v27:8 = AllocaAddr(AllocaId(14), 0) ()
-    v28:8 = Call(Call { target: fn4, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v1, v8, v27)
-    invoke -> b22() unwind b23()
-b10(): ; Body
-    jmp b2()
-b11(): ; Body
-    v30:8 = ALoad(AllocaId(14), 0, 8) ()
-    v31:8 = ALoad(AllocaId(14), 8, 8) ()
-    v32:8 = ALoad(AllocaId(14), 16, 8) ()
-    jmp b6(v30, v31, v32, v1, v8)
-b12(): ; Body
-    trap
-b13(): ; Body head 3
-    Call(Call { target: sym5, regs: [], parts: [], site: None }) ()
-    trap
-b14(v34:8): ; Body
-    jmp b7()
-b15(): ; Body
-    jmp b13()
-b16(): ; Body
-    jmp b1()
-b17(): ; Stub
-    v9:8 = LandingPad ()
-    jmp b14(v9)
-b18(): ; Body
-    jmp b5()
-b19(): ; Stub
-    v17:8 = LandingPad ()
-    jmp b14(v17)
-b20(): ; Body
-    jmp b8()
-b21(): ; Stub
-    v25:8 = LandingPad ()
-    jmp b15()
-b22(): ; Body
-    jmp b10()
-b23(): ; Stub
-    v29:8 = LandingPad ()
-    jmp b14(v29)
-
-fn hashbrown::rustc_entry::<impl hashbrown::map::HashMap<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>>::rustc_entry
-a0: $-120, 8 bytes, Promoted
-a1: $-112, 8 bytes, Promoted
-a2: $-104, 8 bytes, Promoted
-a3: $-96, 8 bytes, Promoted
-a4: $-88, 8 bytes, Promoted
-a5: $-80, 8 bytes, Promoted
-a6: $-72, 8 bytes, Promoted
-a7: $-64, 8 bytes, Promoted
-a8: $-56, 8 bytes, Promoted
-a9: $-40, 8 bytes, Memory, escaped
-a10: $-32, 8 bytes, Promoted
-a11: $-24, 8 bytes, Promoted
-a12: $-16, 8 bytes, Promoted
-a13: $-8, 8 bytes, Promoted
-b0(v0:8, v1:8, v2:8): ; Entry
-    AStore(AllocaId(9), 0, 8) (v2)
-    v3:8 = PtrAdd(32) (v1)
-    v4:8 = AllocaAddr(AllocaId(9), 0) ()
-    v5:8 = Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v3, v4)
-    invoke -> b13() unwind b14()
-b1(): ; Body
-    jmp b8()
-b2(): ; Body head 0
-    br Eq.w8 v20, 0x0 ? b4() : b3()
-b3(): ; Body
-    jmp b6(0x0, v20, v1)
-b4(): ; Body
-    v11:8 = PtrAdd(32) (v1)
-    Call(Call { target: fn1, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }], parts: [], site: Pad { catch: false } }) (v1, 0x1, v11)
-    invoke -> b15() unwind b16()
-b5(): ; Body
-    jmp b10()
-b6(v15:8, v16:8, v17:8): ; Body head 1
-    Store(8, 0) (v0, v15)
-    Store(8, 8) (v0, v16)
-    Store(8, 16) (v0, v17)
-    ret 0x8 (v0)
-b7(): ; Body head 2
-    hcall resume [(Fp, [None, None]), (Imm(4294967240), [Some(Scratch(0)), None])] ins [0] outs [] (v23)
-    trap
-b8(): ; Body
-    v19:8 = AllocaAddr(AllocaId(9), 0) ()
-    v20:8 = Call(Call { target: fn2, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v1, v5, v19)
-    invoke -> b17() unwind b18()
-b9(): ; Body
-    jmp b2()
-b10(): ; Body
-    v22:8 = ALoad(AllocaId(9), 0, 8) ()
-    jmp b6(v1, v5, v22)
-b11(): ; Body
-    trap
-b12(v23:8): ; Body
-    jmp b7()
-b13(): ; Body
-    jmp b1()
-b14(): ; Stub
-    v6:8 = LandingPad ()
-    jmp b12(v6)
-b15(): ; Body
-    jmp b5()
-b16(): ; Stub
-    v13:8 = LandingPad ()
-    jmp b12(v13)
-b17(): ; Body
-    jmp b9()
-b18(): ; Stub
-    v21:8 = LandingPad ()
-    jmp b12(v21)
-
 fn main
 a0: $-1344, 8 bytes, Promoted
 a1: $-1336, 40 bytes, Memory, pinned, escaped
@@ -4154,6 +3564,66 @@ b0(v0:8, v1:1): ; Entry
     Store(8, 8) (v0, v8)
     ret 0x8 (v0)
 
+fn std::collections::HashMap::<std::string::String, usize, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::entry
+a0: $-240, 24 bytes, Memory, escaped
+a1: $-216, 8 bytes, Promoted
+a2: $-208, 8 bytes, Promoted
+a3: $-200, 8 bytes, Promoted
+a4: $-192, 8 bytes, Promoted
+a5: $-184, 8 bytes, Promoted
+a6: $-176, 8 bytes, Promoted
+a7: $-168, 8 bytes, Promoted
+a8: $-160, 8 bytes, Promoted
+a9: $-152, 8 bytes, Promoted
+a10: $-144, 8 bytes, Promoted
+a11: $-136, 8 bytes, Promoted
+a12: $-128, 8 bytes, Promoted
+a13: $-120, 40 bytes, Memory, escaped
+a14: $-80, 8 bytes, Promoted
+a15: $-72, 8 bytes, Promoted
+a16: $-64, 8 bytes, Promoted
+a17: $-56, 8 bytes, Promoted
+a18: $-48, 8 bytes, Promoted
+a19: $-40, 8 bytes, Promoted
+a20: $-32, 8 bytes, Promoted
+a21: $-24, 8 bytes, Promoted
+a22: $-16, 8 bytes, Promoted
+a23: $-8, 8 bytes, Promoted
+b0(v0:8, v1:8, v2:8): ; Entry
+    v3:8 = Load(8, 0) (v2)
+    v4:8 = Load(8, 8) (v2)
+    v5:8 = Load(8, 16) (v2)
+    AStore(AllocaId(0), 0, 8) (v3)
+    AStore(AllocaId(0), 8, 8) (v4)
+    AStore(AllocaId(0), 16, 8) (v5)
+    v6:8 = AllocaAddr(AllocaId(13), 0) ()
+    v7:8 = AllocaAddr(AllocaId(0), 0) ()
+    Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }], parts: [], site: Continue }) (v6, v1, v7)
+    v8:8 = ALoad(AllocaId(13), 0, 8) ()
+    br Eq.w8 v8, 0xffffffffffffffff ? b5() : b1()
+b1(): ; Body
+    jmp b4()
+b2(v11:8, v12:8, v13:8, v14:8, v15:8): ; Body head 0
+    Store(8, 0) (v0, v11)
+    Store(8, 8) (v0, v12)
+    Store(8, 16) (v0, v13)
+    Store(8, 24) (v0, v14)
+    Store(8, 32) (v0, v15)
+    ret 0x8 (v0)
+b3(): ; Body
+    trap
+b4(): ; Body
+    v16:8 = ALoad(AllocaId(13), 0, 8) ()
+    v17:8 = ALoad(AllocaId(13), 8, 8) ()
+    v18:8 = ALoad(AllocaId(13), 16, 8) ()
+    v19:8 = ALoad(AllocaId(13), 24, 8) ()
+    v20:8 = ALoad(AllocaId(13), 32, 8) ()
+    jmp b2(v16, v17, v18, v19, v20)
+b5(): ; Body
+    v21:8 = ALoad(AllocaId(13), 8, 8) ()
+    v22:8 = ALoad(AllocaId(13), 16, 8) ()
+    jmp b2(0xffffffffffffffff, v21, v22, undef, undef)
+
 fn std::collections::HashMap::<u64, u64, std::hash::BuildHasherDefault<std::hash::DefaultHasher>>::entry
 a0: $-128, 8 bytes, Promoted
 a1: $-120, 8 bytes, Promoted
@@ -4382,74 +3852,65 @@ b0(v0:8, v1:8): ; Entry
     v2:8 = Load(8, 0) (v0)
     v3:8 = Load(8, 8) (v0)
     v4:8 = Load(8, 16) (v0)
-    br Eq.w8 v2, 0x0 ? b5() : b1()
+    br Eq.w8 v2, 0x0 ? b4() : b1()
 b1(): ; Body
     jmp b3()
 b2(): ; Body
     trap
 b3(): ; Body
-    v7:8 = Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }, ArgReg { xmm: false, size: 8, index: 3, sext: false }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Pad { catch: false } }) (v2, v3, v4, v1)
-    invoke -> b29() unwind b30()
+    v7:8 = Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }, ArgReg { xmm: false, size: 8, index: 3, sext: false }], parts: [RetPart { xmm: false, size: 8, off: 0 }], site: Continue }) (v2, v3, v4, v1)
+    jmp b11()
 b4(): ; Body
-    jmp b12()
+    br 0x0 ? b5() : b22()
 b5(): ; Body
-    br 0x0 ? b6() : b23()
-b6(): ; Body
-    jmp b22()
-b7(v10:8): ; Body head 0
-    ret 0x8 (v10)
-b8(): ; Body head 1
-    hcall resume [(Fp, [None, None]), (Imm(4294967216), [Some(Scratch(0)), None])] ins [0] outs [] (v8)
-    trap
-b9(): ; Body head 2
-    jmp b8()
-b10(): ; Body head 3
-    br 0x0 ? b11() : b8()
-b11(): ; Body
-    jmp b9()
-b12(): ; Body
-    br 0x0 ? b13() : b16()
-b13(): ; Body
-    jmp b15()
-b14(): ; Body head 4
-    v17:8 = PtrAdd(8) (v21)
-    jmp b7(v17)
-b15(): ; Body
-    trap
-b16(): ; Body
-    br 0x0 ? b17() : b20()
-b17(): ; Body
-    jmp b19()
-b18(): ; Body head 5
-    jmp b14()
-b19(): ; Body
-    trap
-b20(): ; Body
-    v21:8 = PtrIndex(16) (v7, 0xffffffffffffffff)
-    jmp b18()
-b21(): ; Body head 6
-    v23:8 = PtrAdd(8) (v27)
-    jmp b7(v23)
-b22(): ; Body
-    trap
-b23(): ; Body
-    br 0x0 ? b24() : b27()
-b24(): ; Body
-    jmp b26()
-b25(): ; Body head 7
     jmp b21()
-b26(): ; Body
+b6(v9:8): ; Body head 0
+    ret 0x8 (v9)
+b7(): ; Body head 1
+    hcall resume [(Fp, [None, None]), (Imm(4294967216), [Some(Scratch(0)), None])] ins [0] outs [] (undef)
     trap
-b27(): ; Body
-    v27:8 = PtrIndex(16) (v3, 0xffffffffffffffff)
+b8(): ; Body head 2
+    jmp b7()
+b9(): ; Body
+    br undef ? b10() : b7()
+b10(): ; Body
+    jmp b8()
+b11(): ; Body
+    br 0x0 ? b12() : b15()
+b12(): ; Body
+    jmp b14()
+b13(): ; Body head 3
+    v14:8 = PtrAdd(8) (v18)
+    jmp b6(v14)
+b14(): ; Body
+    trap
+b15(): ; Body
+    br 0x0 ? b16() : b19()
+b16(): ; Body
+    jmp b18()
+b17(): ; Body head 4
+    jmp b13()
+b18(): ; Body
+    trap
+b19(): ; Body
+    v18:8 = PtrIndex(16) (v7, 0xffffffffffffffff)
+    jmp b17()
+b20(): ; Body head 5
+    v20:8 = PtrAdd(8) (v24)
+    jmp b6(v20)
+b21(): ; Body
+    trap
+b22(): ; Body
+    br 0x0 ? b23() : b26()
+b23(): ; Body
     jmp b25()
-b28(): ; Body
-    jmp b10()
-b29(): ; Body
-    jmp b4()
-b30(): ; Stub
-    v8:8 = LandingPad ()
-    jmp b28()
+b24(): ; Body head 6
+    jmp b20()
+b25(): ; Body
+    trap
+b26(): ; Body
+    v24:8 = PtrIndex(16) (v3, 0xffffffffffffffff)
+    jmp b24()
 
 fn std::iter::range::<impl std::iter::Iterator for std::ops::Range<u64>>::next
 a0: $-24, 8 bytes, Promoted
@@ -4458,71 +3919,6 @@ a2: $-8, 8 bytes, Promoted
 b0(v0:8): ; Entry
     v1:8, v2:8 = Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }], parts: [RetPart { xmm: false, size: 8, off: 0 }, RetPart { xmm: false, size: 8, off: 8 }], site: Continue }) (v0)
     ret 0x80808 (v1, v2)
-
-fn std::option::Option::<&str>::map_or_else::<std::string::String, {closure@std::fmt::format::{closure#0}}, for<'a> fn(&'a str) -> <str as std::borrow::ToOwned>::Owned {<str as std::borrow::ToOwned>::to_owned}>
-a0: $-112, 8 bytes, Promoted
-a1: $-104, 8 bytes, Promoted
-a2: $-96, 8 bytes, Promoted
-a3: $-88, 8 bytes, Promoted
-a4: $-80, 8 bytes, Promoted
-a5: $-72, 8 bytes, Promoted
-a6: $-58, 1 bytes, Promoted
-a7: $-57, 1 bytes, Promoted
-a8: $-48, 8 bytes, Promoted
-a9: $-40, 8 bytes, Promoted
-a10: $-32, 8 bytes, Promoted
-a11: $-24, 24 bytes, Memory, escaped
-b0(v0:8, v1:8, v2:8, v3:8): ; Entry
-    br Eq.w8 v1, 0x0 ? b3() : b1()
-b1(): ; Body
-    jmp b5()
-b2(): ; Body
-    trap
-b3(): ; Body
-    v8:8 = AllocaAddr(AllocaId(11), 0) ()
-    Call(Call { target: fn0, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }], parts: [], site: Pad { catch: false } }) (v8, v3)
-    invoke -> b15() unwind b16()
-b4(): ; Body
-    jmp b7()
-b5(): ; Body
-    v11:8 = AllocaAddr(AllocaId(11), 0) ()
-    Call(Call { target: fn1, regs: [ArgReg { xmm: false, size: 8, index: 0, sext: false }, ArgReg { xmm: false, size: 8, index: 1, sext: false }, ArgReg { xmm: false, size: 8, index: 2, sext: false }], parts: [], site: Pad { catch: false } }) (v11, v1, v2)
-    invoke -> b17() unwind b18()
-b6(): ; Body
-    jmp b7()
-b7(): ; Body
-    v14:8 = ALoad(AllocaId(11), 0, 8) ()
-    v15:8 = ALoad(AllocaId(11), 8, 8) ()
-    v16:8 = ALoad(AllocaId(11), 16, 8) ()
-    Store(8, 0) (v0, v14)
-    Store(8, 8) (v0, v15)
-    Store(8, 16) (v0, v16)
-    ret 0x8 (v0)
-b8(): ; Body head 0
-    br v25 ? b13() : b9()
-b9(): ; Body head 1
-    hcall resume [(Fp, [None, None]), (Imm(4294967224), [Some(Scratch(0)), None])] ins [0] outs [] (v26)
-    trap
-b10(): ; Body head 2
-    jmp b8()
-b11(): ; Body head 3
-    br v24 ? b12() : b8()
-b12(): ; Body
-    jmp b10()
-b13(): ; Body
-    jmp b9()
-b14(v24:1, v25:1, v26:8): ; Body
-    jmp b11()
-b15(): ; Body
-    jmp b4()
-b16(): ; Stub
-    v9:8 = LandingPad ()
-    jmp b14(0x1, 0x0, v9)
-b17(): ; Body
-    jmp b6()
-b18(): ; Stub
-    v12:8 = LandingPad ()
-    jmp b14(0x0, 0x1, v12)
 
 fn std::ptr::const_ptr::<impl *const ()>::is_aligned_to
 a0: $-128, 8 bytes, Promoted

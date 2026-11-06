@@ -33,10 +33,7 @@ L0:
     ret $-4, 4
 L1:
     resume $-32
-L2:
-    lpad $-32
-    jmp L1
-  cleanup L0 -> L2
+  cleanup L0 -> continue
   cleanup L1 -> continue
   fn0 = std::rt::lang_start::<()>::{closure#0}
 

@@ -369,11 +369,8 @@ L2:
     ret $-8, 8
 L3:
     resume $-56
-L4:
-    lpad $-56
-    jmp L3
   cleanup L0 -> continue
-  cleanup L1 -> L4
+  cleanup L1 -> continue
   cleanup L3 -> continue
   fn0 = checksum::{closure#0}
   k1 = const allocation + 0
@@ -594,14 +591,11 @@ L11:
     jmp L9
 L12:
     lpad $-72
-    jmp L7
-L13:
-    lpad $-72
     jmp L10
   cleanup L1 -> L11
   cleanup L2 -> L11
-  cleanup L4 -> L12
-  cleanup L6 -> L13 (catch)
+  cleanup L4 -> continue
+  cleanup L6 -> L12 (catch)
   cleanup L7 -> continue
   fn0 = std::iter::range::<impl std::iter::Iterator for std::ops::Range<usize>>::next
   fn1 = std::iter::adapters::map::map_fold::<usize, u32, (), {closure@bench/sort.rs:52:37: 52:40}, {closure@std::iter::Iterator::for_each::call<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}}>::{closure#0}
@@ -960,19 +954,16 @@ L24:
     unreachable
 L25:
     lpad $-96
-    jmp L16
+    jmp L14
 L26:
     lpad $-96
-    jmp L14
-L27:
-    lpad $-96
     jmp L24
-  cleanup L1 -> L25
-  cleanup L5 -> L26
-  cleanup L7 -> L25
-  cleanup L11 -> L27 (catch)
+  cleanup L1 -> continue
+  cleanup L5 -> L25
+  cleanup L7 -> continue
+  cleanup L11 -> L26 (catch)
   cleanup L12 -> continue
-  cleanup L21 -> L26
+  cleanup L21 -> L25
   fn0 = std::ptr::drop_glue::<{closure@std::iter::adapters::map::map_fold<&u32, (u32, u32), (), {closure@bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> - shim(Some({closure@std::iter::adapters::map::map_fold<&u32, (u32, u32), (), {closure@bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}}))
   fn1 = std::iter::adapters::map::map_fold::<&u32, (u32, u32), (), {closure@bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}
   fn2 = std::ptr::drop_glue::<{closure@std::iter::adapters::map::map_fold<&u32, (u32, u32), (), {closure@bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}}> - shim(Some({closure@std::iter::adapters::map::map_fold<&u32, (u32, u32), (), {closure@bench/sort.rs:59:50: 59:54}, {closure@std::iter::Iterator::for_each::call<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}}>::{closure#0}}))
@@ -1022,7 +1013,7 @@ L2:
     mov.w64 $-144, $-112
     imm.w8 $-193, 1
     br! $-193, L16
-    jmp L15
+    jmp L14
 L3:
     ; escape align 8 $-40, 8 bytes
     addr $-120, $-40
@@ -1041,7 +1032,7 @@ L4:
     call $-112, fn0, 8, [4294967176, 8, 4294967160, 264, 4294967168, 520]
     mov.w64 $-104, $-112
     imm.w8 $-193, 1
-    br! $-193, L20
+    br! $-193, L21
     jmp L19
 L5:
     mov.w64 $-8, $-104
@@ -1051,25 +1042,25 @@ L6:
 L7:
     ret $-8, 8
 L8:
-    jmp L13
+    jmp L12
 L9:
     resume $-96
 L10:
     jmp L8
-L11:
     br! $-81, L8
     jmp L10
-L12:
+L11:
     jmp L9
-L13:
+L12:
     br! $-82, L9
-    jmp L12
-L14:
+    jmp L11
+L13:
     jmp L3
-L15:
+L14:
     mov.w64 $-152, $-112
     mov.w64 $-160, $-120
     addr.const $-200, k1
+L15:
     call $0, fn2, 0, [4294967144, 8, 4294967136, 264, 4294967096, 520]
 L16:
     imm.w64 $-200, 0
@@ -1080,7 +1071,7 @@ L16:
     br! $-146, L17
     sub.w64 $-72, $-144, $-136
     shr.u.imm.w64 $-72, $-72, 2
-    jmp L14
+    jmp L13
 L17:
     addr.const $-208, k3
     imm.w64 $-200, 73
@@ -1091,20 +1082,20 @@ L18:
 L19:
     imm.w64 $-200, 1
     addr.const $-208, k6
-    call $0, fn7, 0, [4294967232, 8, 4294967096, 264, 4294967088, 520]
 L20:
+    call $0, fn7, 0, [4294967232, 8, 4294967096, 264, 4294967088, 520]
+L21:
     add.imm.w64 $-112, $-64, 1
     mov.w64 $-64, $-112
     mov.w64 $-120, $-64
     mov.w64 $-128, $-72
     br.eq.w64 $-120, $-128, L5
     jmp L6
-L21:
-    lpad $-96
-    jmp L11
-  cleanup L4 -> L21
+  cleanup L4 -> continue
   cleanup L9 -> continue
-  cleanup L18 -> L21
+  cleanup L15 -> continue (nounwind)
+  cleanup L18 -> continue
+  cleanup L20 -> continue (nounwind)
   fn0 = <std::iter::Enumerate<I> as std::iter::Iterator>::fold::enumerate::<&u32, u64, {closure@bench/sort.rs:46:37: 46:51}>::{closure#0}
   k1 = const allocation + 0
   fn2 = std::ptr::const_ptr::<impl *const T>::offset_from_unsigned::precondition_check
@@ -1364,19 +1355,16 @@ L13:
     unreachable
 L14:
     lpad $-64
-    jmp L10
+    jmp L13
 L15:
     lpad $-64
-    jmp L13
-L16:
-    lpad $-64
     jmp L6
-  cleanup L0 -> L14
-  cleanup L2 -> L14
-  cleanup L4 -> L14
-  cleanup L7 -> L15 (catch)
+  cleanup L0 -> continue
+  cleanup L2 -> continue
+  cleanup L4 -> continue
+  cleanup L7 -> L14 (catch)
   cleanup L8 -> continue
-  cleanup L12 -> L16
+  cleanup L12 -> L15
   fn0 = <std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}> as std::iter::Iterator>::size_hint
   k1 = const allocation + 0
   k2 = const allocation + 0
@@ -1625,19 +1613,16 @@ L13:
     unreachable
 L14:
     lpad $-72
-    jmp L10
+    jmp L13
 L15:
     lpad $-72
-    jmp L13
-L16:
-    lpad $-72
     jmp L6
-  cleanup L0 -> L14
-  cleanup L2 -> L14
-  cleanup L4 -> L14
-  cleanup L7 -> L15 (catch)
+  cleanup L0 -> continue
+  cleanup L2 -> continue
+  cleanup L4 -> continue
+  cleanup L7 -> L14 (catch)
   cleanup L8 -> continue
-  cleanup L12 -> L16
+  cleanup L12 -> L15
   fn0 = <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}> as std::iter::Iterator>::size_hint
   k1 = const allocation + 0
   k2 = const allocation + 0
@@ -1834,20 +1819,16 @@ L1:
     mov.w64 $-8, $-24
 L2:
     ret $-8, 8
-L3:
-    jmp L6
-L4:
-    resume $-40
-L5:
-    jmp L4
-L6:
-    br! $-25, L4
     jmp L5
-L7:
-    lpad $-40
+L3:
+    resume $-40
+L4:
     jmp L3
-  cleanup L0 -> L7
-  cleanup L4 -> continue
+L5:
+    br! $-25, L3
+    jmp L4
+  cleanup L0 -> continue
+  cleanup L3 -> continue
   fn0 = std::cmp::impls::<impl std::cmp::PartialOrd for usize>::lt
 
 fn <usize as std::cmp::Ord>::min (frame 64, args 0, ret 8) [hint]
@@ -1868,20 +1849,16 @@ L1:
     mov.w64 $-8, $-16
 L2:
     ret $-8, 8
-L3:
-    jmp L6
-L4:
-    resume $-40
-L5:
-    jmp L4
-L6:
-    br! $-25, L4
     jmp L5
-L7:
-    lpad $-40
+L3:
+    resume $-40
+L4:
     jmp L3
-  cleanup L0 -> L7
-  cleanup L4 -> continue
+L5:
+    br! $-25, L3
+    jmp L4
+  cleanup L0 -> continue
+  cleanup L3 -> continue
   fn0 = std::cmp::impls::<impl std::cmp::PartialOrd for usize>::lt
 
 fn <usize as std::iter::Step>::forward_unchecked (frame 32, args 0, ret 8) [hint]
@@ -1978,10 +1955,7 @@ L0:
     ret $-4, 4
 L1:
     resume $-32
-L2:
-    lpad $-32
-    jmp L1
-  cleanup L0 -> L2
+  cleanup L0 -> continue
   cleanup L1 -> continue
   fn0 = std::rt::lang_start::<()>::{closure#0}
 
@@ -9998,15 +9972,9 @@ L7:
     ret $-8, 8
 L8:
     resume $-48
-L9:
-    lpad $-48
-    jmp L8
-L10:
-    lpad $-48
-    jmp L8
   cleanup L0 -> continue
-  cleanup L2 -> L9
-  cleanup L4 -> L10
+  cleanup L2 -> continue
+  cleanup L4 -> continue
   cleanup L8 -> continue
   fn0 = <std::slice::Iter<'_, u32> as std::iter::IntoIterator>::into_iter
   fn1 = <std::slice::Iter<'_, u32> as std::iter::Iterator>::next
@@ -10430,14 +10398,10 @@ L2:
     resume $-32
 L3:
     jmp L2
-L4:
     br! $-17, L2
     jmp L3
-L5:
-    lpad $-32
-    jmp L4
-  cleanup L0 -> L5
-  cleanup L1 -> L5
+  cleanup L0 -> continue
+  cleanup L1 -> continue
   cleanup L2 -> continue
   fn0 = main::{closure#1}
   fn1 = std::iter::Iterator::for_each::call::<(u32, u32), {closure@std::vec::Vec<(u32, u32)>::extend_trusted<std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}>>::{closure#0}}>::{closure#0}
@@ -10460,14 +10424,10 @@ L2:
     resume $-32
 L3:
     jmp L2
-L4:
     br! $-17, L2
     jmp L3
-L5:
-    lpad $-32
-    jmp L4
-  cleanup L0 -> L5
-  cleanup L1 -> L5
+  cleanup L0 -> continue
+  cleanup L1 -> continue
   cleanup L2 -> continue
   fn0 = main::{closure#0}
   fn1 = std::iter::Iterator::for_each::call::<u32, {closure@std::vec::Vec<u32>::extend_trusted<std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}>>::{closure#0}}>::{closure#0}
@@ -11464,10 +11424,7 @@ L0:
     ret $0, 0
 L1:
     resume $-24
-L2:
-    lpad $-24
-    jmp L1
-  cleanup L0 -> L2
+  cleanup L0 -> continue
   cleanup L1 -> continue
   fn0 = std::slice::stable_sort::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
 
@@ -11494,15 +11451,9 @@ L2:
     ret $-1, 1
 L3:
     resume $-56
-L4:
-    lpad $-56
-    jmp L3
-L5:
-    lpad $-56
-    jmp L3
   cleanup L0 -> continue
-  cleanup L1 -> L4
-  cleanup L2 -> L5
+  cleanup L1 -> continue
+  cleanup L2 -> continue
   cleanup L3 -> continue
   fn0 = main::{closure#2}
   fn1 = main::{closure#2}
@@ -11831,12 +11782,9 @@ L9:
     jmp L4
 L10:
     jmp L5
-L11:
-    lpad $-32
-    jmp L1
   cleanup L1 -> continue
-  cleanup L8 -> L11
-  cleanup L9 -> L11
+  cleanup L8 -> continue
+  cleanup L9 -> continue
   fn0 = core::slice::sort::shared::smallsort::insertion_sort_shift_left::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}>
   fn1 = core::slice::sort::stable::driftsort_main::<(u32, u32), {closure@std::slice::<impl [(u32, u32)]>::sort_by_key<u32, {closure@bench/sort.rs:60:19: 60:28}>::{closure#0}}, std::vec::Vec<(u32, u32)>>
 
@@ -11912,17 +11860,13 @@ L5:
     resume $-120
 L6:
     jmp L5
-L7:
     br! $-97, L5
     jmp L6
     unreachable
-L8:
-    lpad $-120
-    jmp L7
-  cleanup L0 -> L8
-  cleanup L1 -> L8
-  cleanup L2 -> L8
-  cleanup L4 -> L8
+  cleanup L0 -> continue
+  cleanup L1 -> continue
+  cleanup L2 -> continue
+  cleanup L4 -> continue
   cleanup L5 -> continue
   fn0 = <std::iter::Map<std::slice::Iter<'_, u32>, {closure@bench/sort.rs:59:50: 59:54}> as std::iter::Iterator>::size_hint
   fn1 = std::vec::Vec::<(u32, u32)>::reserve
@@ -12157,17 +12101,13 @@ L5:
     resume $-128
 L6:
     jmp L5
-L7:
     br! $-105, L5
     jmp L6
     unreachable
-L8:
-    lpad $-128
-    jmp L7
-  cleanup L0 -> L8
-  cleanup L1 -> L8
-  cleanup L2 -> L8
-  cleanup L4 -> L8
+  cleanup L0 -> continue
+  cleanup L1 -> continue
+  cleanup L2 -> continue
+  cleanup L4 -> continue
   cleanup L5 -> continue
   fn0 = <std::iter::Map<std::ops::Range<usize>, {closure@bench/sort.rs:52:37: 52:40}> as std::iter::Iterator>::size_hint
   fn1 = std::vec::Vec::<u32>::reserve
@@ -12203,8 +12143,8 @@ fn std::vec::Vec::<u32>::push_mut (frame 96, args 0, ret 8) [hint]
     arg $-20, 260
     load.w64 $-64, [$-16 + 16]
     imm.w64 $-96, 4
-    br.eq.imm.w64 $-96, 0, L6
-    jmp L7
+    br.eq.imm.w64 $-96, 0, L5
+    jmp L6
 L0:
     mov.w64 $-80, $-16
 L1:
@@ -12222,21 +12162,17 @@ L2:
     ret $-8, 8
 L3:
     resume $-56
-L4:
     jmp L3
-L5:
+L4:
     br.eq.w64 $-64, $-80, L0
     jmp L2
-L6:
+L5:
     unreachable
-L7:
+L6:
     load.w64 $-88, [$-16 + 0]
     mov.w64 $-80, $-88
-    jmp L5
-L8:
-    lpad $-56
     jmp L4
-  cleanup L1 -> L8
+  cleanup L1 -> continue
   cleanup L3 -> continue
   fn0 = alloc::raw_vec::RawVec::<u32>::grow_one
 

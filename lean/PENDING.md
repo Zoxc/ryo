@@ -30,3 +30,13 @@ remove it once a Lean session has handled it.
   `FnCx::unwind_entry`. Left: no Lean checker derives cleanup entries from MIR, so that the
   decoded entries are `unwindEntry` of the body's actions is unproved; non-unwinding `C`
   callees are treated as `Unreachable`.
+
+- When a body has landing pads (follow-up to the `UnwindAction::Unreachable` entry above;
+  commit "Backend: Decide nounwind entries by the landing pads actually emitted"):
+  `FnCx::unwind_entry`'s `has_pads` is no longer "some MIR terminator has a `Cleanup`/
+  `Terminate` action" but "some emitted call-like instruction got a landing pad", known only
+  once the body is lowered (`Unreachable` sites are collected and get their `NOUNWIND` entries
+  at the end of `FnCx::blocks`). Mono-unreachable blocks, drops without glue and folded asserts
+  no longer count. Also, `Cleanup(bb)` to a post-mono no-op landing pad (rustc's
+  `find_noop_landing_pads`, as cg_ssa) is now a plain `CONTINUE` entry. `unwindEntry` in
+  `Proofs/Discharge/Nounwind.lean` and `docs/aot.md` (Unwinding) state the old rule.

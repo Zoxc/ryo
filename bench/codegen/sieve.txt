@@ -122,20 +122,17 @@ L19:
     unreachable
 L20:
     lpad $-56
-    jmp L11
+    jmp L19
 L21:
     lpad $-56
-    jmp L19
-L22:
-    lpad $-56
     jmp L6
-  cleanup L0 -> L20
-  cleanup L1 -> L20
-  cleanup L3 -> L20
-  cleanup L7 -> L21 (catch)
+  cleanup L0 -> continue
+  cleanup L1 -> continue
+  cleanup L3 -> continue
+  cleanup L7 -> L20 (catch)
   cleanup L9 -> continue
-  cleanup L15 -> L20
-  cleanup L18 -> L22
+  cleanup L15 -> continue
+  cleanup L18 -> L21
   fn0 = <bool as std::vec::is_zero::IsZero>::is_zero
   k1 = const allocation + 0
   sym2 = alloc::raw_vec::RawVecInner::try_allocate_in
@@ -166,10 +163,7 @@ L0:
     ret $-8, 8
 L1:
     resume $-32
-L2:
-    lpad $-32
-    jmp L1
-  cleanup L0 -> L2
+  cleanup L0 -> continue
   cleanup L1 -> continue
   fn0 = main::{closure#0}
 
@@ -185,15 +179,15 @@ L0:
     call $0, fn0, 0, [4294967208, 72, 4294967200, 264]
     mov.w128 $-64, $-80
     mov.w64 $-96, $-64
-    br.eq.imm.w64 $-96, 0, L10
-    jmp L11
+    br.eq.imm.w64 $-96, 0, L9
+    jmp L10
 L1:
     ; end $-80, 16 bytes
     mov.w128 $-80, $-64
     imm.w64 $-104, 0
 L2:
     call $-8, fn1, 8, [4294967216, 8, 4294967224, 264, 4294967192, 520]
-    jmp L12
+    jmp L11
 L3:
     ret $-8, 8
 L4:
@@ -203,36 +197,32 @@ L5:
     jmp L4
 L6:
     jmp L5
-L7:
     br! $-34, L5
     jmp L6
-L8:
+L7:
     ; end $-88, 24 bytes
     imm.w8 $-34, 0
     mov.w128 $-80, $-24
     imm.w8 $-33, 0
-L9:
+L8:
     call $-64, fn2, 526344, [4294967216, 8, 4294967224, 264]
     jmp L1
     unreachable
-L10:
+L9:
     imm.w64 $-32, 18446744073709551615
-    jmp L8
-L11:
+    jmp L7
+L10:
     mov.w64 $-32, $-56
-    jmp L8
-L12:
+    jmp L7
+L11:
     ; end $-80, 16 bytes
     call $0, fn3, 0, [4294967288, 8, 4294967264, 264]
     jmp L3
-L13:
-    lpad $-48
-    jmp L7
-  cleanup L0 -> L13
-  cleanup L2 -> L13
+  cleanup L0 -> continue
+  cleanup L2 -> continue
   cleanup L4 -> continue
-  cleanup L9 -> L13
-  cleanup L12 -> L13
+  cleanup L8 -> continue
+  cleanup L11 -> continue
   fn0 = <std::slice::Iter<'_, bool> as std::iter::Iterator>::size_hint
   fn1 = <std::slice::Iter<'_, bool> as std::iter::Iterator>::fold::<usize, {closure@std::iter::adapters::map::map_fold<&bool, usize, usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}, {closure@<usize as std::iter::Sum>::sum<std::iter::Map<std::slice::Iter<'_, bool>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}>>::{closure#0}}>::{closure#0}}>
   fn2 = <std::slice::Iter<'_, bool> as std::iter::Iterator>::map::<usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}>
@@ -323,8 +313,8 @@ fn <std::ops::RangeInclusive<usize> as std::iter::range::RangeInclusiveIteratorI
     arg $-32, 264
     imm.w8 $-58, 1
     load.w8 $-74, [$-24 + 16]
-    br! $-74, L28
-    jmp L27
+    br! $-74, L27
+    jmp L26
 L0:
     imm.w8 $-58, 0
 L1:
@@ -400,48 +390,41 @@ L19:
 L20:
     ret $-16, 526344
 L21:
-    jmp L26
+    jmp L25
 L22:
     resume $-72
 L23:
     jmp L21
-L24:
     br! $-57, L21
     jmp L23
-L25:
+L24:
     jmp L22
-L26:
+L25:
     br! $-58, L22
-    jmp L25
-L27:
+    jmp L24
+L26:
     jmp L0
-L28:
+L27:
     mov.w64 $-88, $-24
     ptr.add $-96, $-24, 8
-L29:
+L28:
     call $-75, fn11, 1, [4294967208, 8, 4294967200, 264]
     xor.imm.w8 $-73, $-75, 1
     br! $-73, L2
     jmp L0
-L30:
-    lpad $-72
-    jmp L21
-L31:
-    lpad $-72
-    jmp L24
-  cleanup L1 -> L30
-  cleanup L4 -> L31
-  cleanup L5 -> L31
-  cleanup L6 -> L31
-  cleanup L7 -> L31
-  cleanup L10 -> L31
-  cleanup L12 -> L31
-  cleanup L13 -> L31
-  cleanup L14 -> L31
-  cleanup L17 -> L31
-  cleanup L19 -> L31
+  cleanup L1 -> continue
+  cleanup L4 -> continue
+  cleanup L5 -> continue
+  cleanup L6 -> continue
+  cleanup L7 -> continue
+  cleanup L10 -> continue
+  cleanup L12 -> continue
+  cleanup L13 -> continue
+  cleanup L14 -> continue
+  cleanup L17 -> continue
+  cleanup L19 -> continue
   cleanup L22 -> continue
-  cleanup L29 -> L30
+  cleanup L28 -> continue
   fn0 = <std::ops::ControlFlow<usize> as std::ops::Try>::from_output
   fn1 = std::cmp::impls::<impl std::cmp::PartialOrd for usize>::lt
   fn2 = <usize as std::iter::Step>::backward_unchecked
@@ -496,7 +479,7 @@ L2:
     mov.w64 $-136, $-104
     imm.w8 $-185, 1
     br! $-185, L16
-    jmp L15
+    jmp L14
 L3:
     addr $-112, $-32
     imm.w8 $-73, 0
@@ -514,7 +497,7 @@ L4:
     call $-104, fn0, 8, [4294967184, 8, 4294967168, 264, 4294967176, 520]
     mov.w64 $-96, $-104
     imm.w8 $-185, 1
-    br! $-185, L20
+    br! $-185, L21
     jmp L19
 L5:
     mov.w64 $-8, $-96
@@ -524,25 +507,25 @@ L6:
 L7:
     ret $-8, 8
 L8:
-    jmp L13
+    jmp L12
 L9:
     resume $-88
 L10:
     jmp L8
-L11:
     br! $-73, L8
     jmp L10
-L12:
+L11:
     jmp L9
-L13:
+L12:
     br! $-74, L9
-    jmp L12
-L14:
+    jmp L11
+L13:
     jmp L3
-L15:
+L14:
     mov.w64 $-144, $-104
     mov.w64 $-152, $-112
     addr.const $-192, k1
+L15:
     call $0, fn2, 0, [4294967152, 8, 4294967144, 264, 4294967104, 520]
 L16:
     imm.w64 $-192, 0
@@ -552,7 +535,7 @@ L16:
     le.u.imm.w64 $-138, $-192, 9223372036854775807
     br! $-138, L17
     sub.w64 $-64, $-136, $-128
-    jmp L14
+    jmp L13
 L17:
     addr.const $-200, k3
     imm.w64 $-192, 73
@@ -563,20 +546,20 @@ L18:
 L19:
     imm.w64 $-192, 1
     addr.const $-200, k6
-    call $0, fn7, 0, [4294967240, 8, 4294967104, 264, 4294967096, 520]
 L20:
+    call $0, fn7, 0, [4294967240, 8, 4294967104, 264, 4294967096, 520]
+L21:
     add.imm.w64 $-104, $-56, 1
     mov.w64 $-56, $-104
     mov.w64 $-112, $-56
     mov.w64 $-120, $-64
     br.eq.w64 $-112, $-120, L5
     jmp L6
-L21:
-    lpad $-88
-    jmp L11
-  cleanup L4 -> L21
+  cleanup L4 -> continue
   cleanup L9 -> continue
-  cleanup L18 -> L21
+  cleanup L15 -> continue (nounwind)
+  cleanup L18 -> continue
+  cleanup L20 -> continue (nounwind)
   fn0 = std::iter::adapters::map::map_fold::<&bool, usize, usize, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}, {closure@<usize as std::iter::Sum>::sum<std::iter::Map<std::slice::Iter<'_, bool>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}>>::{closure#0}}>::{closure#0}
   k1 = const allocation + 0
   fn2 = std::ptr::const_ptr::<impl *const T>::offset_from_unsigned::precondition_check
@@ -805,10 +788,7 @@ L0:
     ret $-4, 4
 L1:
     resume $-32
-L2:
-    lpad $-32
-    jmp L1
-  cleanup L0 -> L2
+  cleanup L0 -> continue
   cleanup L1 -> continue
   fn0 = std::rt::lang_start::<()>::{closure#0}
 
@@ -1364,10 +1344,7 @@ L2:
     ret $-16, 526344
 L3:
     resume $-40
-L4:
-    lpad $-40
-    jmp L3
-  cleanup L0 -> L4
+  cleanup L0 -> continue
   cleanup L3 -> continue
   fn0 = main::{closure#1}
 
@@ -1392,14 +1369,10 @@ L2:
     resume $-48
 L3:
     jmp L2
-L4:
     br! $-33, L2
     jmp L3
-L5:
-    lpad $-48
-    jmp L4
-  cleanup L0 -> L5
-  cleanup L1 -> L5
+  cleanup L0 -> continue
+  cleanup L1 -> continue
   cleanup L2 -> continue
   fn0 = <std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize::<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}
   fn1 = <usize as std::iter::Sum>::sum::<std::iter::Map<std::slice::Iter<'_, bool>, {closure@<std::iter::Filter<I, P> as std::iter::Iterator>::count::to_usize<&bool, {closure@bench/sieve.rs:24:37: 24:42}>::{closure#0}}>>::{closure#0}
@@ -1688,19 +1661,16 @@ L20:
     unreachable
 L21:
     lpad $-104
-    jmp L13
+    jmp L20
 L22:
     lpad $-104
-    jmp L20
-L23:
-    lpad $-104
     jmp L8
-  cleanup L0 -> L21
-  cleanup L4 -> L21
-  cleanup L6 -> L21
-  cleanup L9 -> L22 (catch)
+  cleanup L0 -> continue
+  cleanup L4 -> continue
+  cleanup L6 -> continue
+  cleanup L9 -> L21 (catch)
   cleanup L10 -> continue
-  cleanup L18 -> L23
+  cleanup L18 -> L22
   fn0 = std::vec::Vec::<bool>::reserve
   fn1 = std::ptr::drop_glue::<std::vec::set_len_on_drop::SetLenOnDrop<'_>> - shim(Some(std::vec::set_len_on_drop::SetLenOnDrop<'_>))
   fn2 = std::ptr::drop_glue::<std::vec::set_len_on_drop::SetLenOnDrop<'_>> - shim(Some(std::vec::set_len_on_drop::SetLenOnDrop<'_>))
