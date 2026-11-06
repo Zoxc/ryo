@@ -19,7 +19,8 @@ Checked:
   `fnPtr` callee is a pointer and a virtual one has a receiver (calls and tail calls);
 - cleanup-block discipline: unwind edges go to cleanup blocks, normal edges stay within the
   same kind of block (cleanup → cleanup, normal → normal), `UnwindResume` only in cleanup
-  blocks, and calls in cleanup blocks do not use `UnwindAction::{Continue, Cleanup}`;
+  blocks, `Return` and `TailCall` only in normal blocks, and calls in cleanup blocks do not
+  use `UnwindAction::{Continue, Cleanup}`;
 - rvalues against their destination (rustc `TypeChecker::visit_rvalue` and `Rvalue::ty`), up to
   the type's *shape* (constructor, integer/float type, pointer metadata kind, size; see
   `sameShape`): operand kinds of each `BinOp`/`UnOp` (homogeneous operands, comparisons to
@@ -550,6 +551,8 @@ def checkTerminator (b : Body) (nInst : Nat) (cleanup : Bool) : Terminator → W
     if let some t := target then edge b cleanup t
     unwindEdge b cleanup unwind
   | .tailCall f args loc _ => do
+    -- It leaves the frame like `Return`, which would drop the frame's unwind payload.
+    ensure (!cleanup) "TailCall in a cleanup block"
     match f with
     | .inst i => ensure (i < nInst) "TailCall: instance out of range"
     | .fnPtr o => do ensure (isPtr (← operandTy b o)) "TailCall through a non-pointer"

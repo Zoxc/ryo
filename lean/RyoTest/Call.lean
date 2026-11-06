@@ -266,6 +266,15 @@ def abortInCleanup : Program := program do
       term .unreachable
     raise r (.cleanup cleanup)
 
+/-- A tail call leaves the frame like `Return`: ill-formed in a cleanup block. -/
+def tailCallInCleanup : Program := program do
+  let r ← rt
+  let g ← addFn "g" <| body unit [] ret
+  addFn "main" <| body unit [] do
+    let cleanup ← cleanupBlock do
+      term (.tailCall (.inst g) [])
+    raise r (.cleanup cleanup)
+
 /-- MiniRust `unwind_recursive_func`: prints on the way down and in the cleanups. -/
 def unwindRecursive : Program := program do
   let r ← rt
@@ -430,6 +439,8 @@ def tests : List TestCase := [
       | some (.extCall "panic_in_cleanup" [] _) => .ok ()
       | e => .error s!"expected a final call of panic_in_cleanup, got {repr e}"⟩,
   ⟨"unwinding/abort_in_cleanup", fun _ => expectAbort abortInCleanup⟩,
+  ⟨"unwinding/tail_call_in_cleanup", fun _ =>
+    expectIllFormed tailCallInCleanup "TailCall in a cleanup block"⟩,
   ⟨"unwinding/recursive", fun _ =>
     expectPrinted unwindRecursive [6, 5, 4, 3, 2, 1, 0, 1, 2, 3, 4, 5, 6]
       (fun r => r.result matches .ok (.unwound _))⟩,
