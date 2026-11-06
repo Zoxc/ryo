@@ -40,3 +40,10 @@ remove it once a Lean session has handled it.
   no longer count. Also, `Cleanup(bb)` to a post-mono no-op landing pad (rustc's
   `find_noop_landing_pads`, as cg_ssa) is now a plain `CONTINUE` entry. `unwindEntry` in
   `Proofs/Discharge/Nounwind.lean` and `docs/aot.md` (Unwinding) state the old rule.
+
+- Scopes after code-less instructions (commit ba1600cf, "JIT: Map a scope past instructions
+  without code at its position"): the decoder's `read` now maps each scope to the first instruction with code
+  at or after the scope's byte offset, skipping instructions with no code at that position
+  (before, an island's `Lend` landed on the code-less instruction before the island). `read`
+  in `Ryo/Vm/DecodeReduced.lean` (around line 1118) still maps a scope to the first
+  instruction at its offset.
