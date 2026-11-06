@@ -44,9 +44,11 @@ Flags (SDM Vol. 2, per instruction; `none` = undefined, see `Ryo.X86.State`):
   SSE moves: no flags.
 
 Faults: `ud2` (`Fault.ud`), `int3` (`Fault.breakpoint`), `div`/`idiv` by zero or with an
-out-of-range quotient (including `MIN / -1`, `Fault.divide`), reading an undefined flag, and
-executing data or an item the encoder doesn't emit stop execution (`Except.error`; `Faults` in
-`Ryo.X86.Fetch`). Not modeled as faults: memory is flat and total (`Ryo.X86.State`'s `Mem`),
+out-of-range quotient (including `MIN / -1`, `Fault.divide`) and reading an undefined flag stop
+execution (`Except.error`). `Item.exec` also throws for a `tableEntry`, `div` at `B`/`W` and
+`sse` of an odd size, but runs other items the encoder doesn't emit (not `Item.wf`); executing
+data or such an item doesn't fault, it is stuck: `Ryo.X86.Fetch`'s `Step` and `Faults` take
+canonical items only. Not modeled as faults: memory is flat and total (`Ryo.X86.State`'s `Mem`),
 so no access raises `#PF`/`#GP` (that the code only touches its frame and the memory its
 operands give is the frame-bounds proofs' obligation, `Ryo.Proofs.FrameBounds`), and a `call`
 only pushes and jumps: what the callee does (a handler that panics, aborts or unwinds) is the
