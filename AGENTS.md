@@ -156,3 +156,13 @@ code that calls the VM's handlers; cg_llvm compiles everything else. Start at
 - Toolchain is pinned to stable 1.99.1 with `RUSTC_BOOTSTRAP=1` (`rust-toolchain.toml`,
   `design/build.md#toolchain`).
 - The JIT is built for Linux, Windows and x86_64 macOS; it has run on Linux and Windows, never on a Mac.
+- Lean memory. The machine has ~16 GiB; keep every Lean declaration well under ~4 GiB.
+  `decide +kernel` over a whole generated table (e.g. `Full.all`, 905 opcodes) keeps every
+  intermediate term alive and can pass 12 GiB in one theorem: check such tables in chunks
+  (`opsIn` / `all_opsIn_append` in `lean/Ryo/Proofs/DeadStore/RStep.lean`). Splitting a module
+  doesn't help when one declaration is the cost. Don't run Lean builds alongside Rust builds
+  or tests, and build only the modules you need. To find a heavy declaration, cap the build
+  (`systemd-run --user --scope -p MemoryMax=12G -p MemorySwapMax=0 lake env lean
+  -DElab.async=false -Dprofiler=true F.lean`) and run it under a pty (through a pipe, Lean's
+  messages are buffered until exit): the declaration after the last one reported is the one
+  growing.
