@@ -423,7 +423,8 @@ pub struct Header {
     /// it to tell pointer fields from integers when it folds loads from the pool.
     pub const_relocs: Span,
     /// Identifies the image among its crate's: a hash of rustc's codegen unit name
-    /// ([`cgu_hash`]). The registry rejects two images with the same crate and CGU hashes.
+    /// ([`cgu_hash`]). The registry rejects two images of one link unit (one [`Header::anchor`])
+    /// with the same crate and CGU hashes.
     pub cgu_hash: u64,
     /// [`crate::ABI`] of the ryo build that wrote the image: registration rejects images of
     /// another build (design/vm.md, "Image format": Registry).

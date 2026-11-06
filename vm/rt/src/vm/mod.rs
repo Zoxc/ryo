@@ -43,7 +43,8 @@ pub(crate) type RegisterFn = unsafe extern "C" fn(*const *const u8, *const *cons
 /// at run time. Images of another anchor belong to another runtime in the same link unit
 /// (staticlibs combined with `ld -r` and localized), whose stub registers them. Images already
 /// registered are skipped. Aborts on an invalid image, an image of another ryo build
-/// (`Header::abi`), or on two images with the same crate and CGU hashes.
+/// (`Header::abi`), or on two images of one link unit (one anchor) with the same crate and
+/// CGU hashes.
 ///
 /// Its symbol is internal (`#[rustc_std_internal_symbol]`) and tagged
 /// (`ryo_vm_register_<tag>`, mangled): a cdylib doesn't export it, so no other module's stub

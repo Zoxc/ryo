@@ -942,7 +942,9 @@ calls it by name, local otherwise (backtraces, profilers) ([backend.md](backend.
 - The crate hash is the 32-bit fold of the `StableCrateId`
   (`ryo_bytecode::image::crate_hash`). It is stored in the header, which also keeps the full
   `StableCrateId`, so the registry can detect collisions. With the CGU hash, it identifies
-  the image: two images with the same crate and CGU hashes are rejected.
+  the image in its link unit: two images of one link unit (one registry anchor) with the same
+  crate and CGU hashes are rejected. Images of different link units may share them: a merged
+  runtime registers each module's copy of a crate both modules link statically.
 - **Images are trusted**: they are produced by the backend, and the VM doesn't validate
   code. `Image::parse` checks the header (with the mode: known bits, `Mode::valid`) and
   part bounds, and `Image::validate` checks the tables only (functions with their scope and

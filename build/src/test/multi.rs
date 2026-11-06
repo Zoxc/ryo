@@ -175,7 +175,9 @@ fn jit_threads(stdout: &str) -> Option<usize> {
 /// - sibling Rust dylibs (neither depends on the other) under an executable, with
 ///   `-Cprefer-dynamic`: they build (each module links a private runtime copy), export
 ///   nothing of the runtime, and merge into one instance (one JIT thread), or stay three with
-///   `RYO_JIT_MERGE=0`; `dlclose`d by a C program after merging, they stay loaded.
+///   `RYO_JIT_MERGE=0`; `dlclose`d by a C program after merging, they stay loaded;
+/// - a Rust dylib `dlopen`ed by an executable, both linking one rlib: the merged runtime
+///   registers both copies of its images.
 pub(super) fn multi_dylib(info: &RustcInfo, root: &Path, rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
     if !applies() {
         return Ok(());
@@ -226,6 +228,21 @@ pub(super) fn multi_dylib(info: &RustcInfo, root: &Path, rustc_ryo: &Path, src: 
         if first_line(&jit) != first_line(&plain) || jit_threads(&jit) != Some(threads) {
             return Err(format!("sibling dylibs, RYO_JIT_MERGE={merge}: with the JIT {jit:?}, without {plain:?} (expected {threads} JIT threads)"));
         }
+    }
+    // A dlopened dylib with its own copy of an rlib the executable links too: the merged
+    // registry takes both copies' images (same crate and CGU hashes, other link units).
+    let shared = dir.join("libshared.rlib");
+    rustc(&["--crate-type=rlib"], "shared.rs", &shared)?;
+    let ext_shared = format!("shared={}", shared.display());
+    let splugin = dir.join("libsplugin.so");
+    rustc(&[&dy[..], &["--extern", &ext_shared]].concat(), "splugin.rs", &splugin)?;
+    let shost = dir.join("shost");
+    rustc(&["-Cprefer-dynamic", "--extern", &ext_shared], "shost.rs", &shost)?;
+    let splugin = splugin.to_str().ok_or("non-UTF-8 path")?;
+    let plain = run_libs(&shost, &[splugin], JIT_OFF)?;
+    let jit = run_libs(&shost, &[splugin], JIT_SYNC)?;
+    if plain != jit || plain.is_empty() {
+        return Err(format!("a crate linked by the executable and a dlopened dylib: with the JIT {jit:?}, without {plain:?}"));
     }
     // Merged copies closed again: both the winner (closed before its JIT starts) and a joiner
     // stay loaded.

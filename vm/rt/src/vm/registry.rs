@@ -133,8 +133,8 @@ pub unsafe fn ensure(h: *const u8) {
 
 /// The admission checks for header `h` against the images already registered (`existing`):
 /// `None` to skip it (a null entry, an image registered before, or one linked against another
-/// anchor than a non-null `anchor`); aborts on an image of another ryo build, an invalid,
-/// duplicate or unlinked image. Applies the image's fixups.
+/// anchor than a non-null `anchor`); aborts on an image of another ryo build, an invalid or
+/// unlinked image, or a duplicate in its link unit. Applies the image's fixups.
 ///
 /// # Safety
 /// `h` is null or a linked image's header, valid forever (as for `ryo_vm_register`), and the
@@ -167,7 +167,12 @@ unsafe fn admit(h: *const u8, anchor: *const u8, existing: &[Image<'static>]) ->
         Err(_) => fatal("ryo_vm_register: invalid image"),
     };
     let hdr = view.header();
-    if let Some(o) = existing.iter().find(|im| im.crate_hash() == view.crate_hash() && im.header().cgu_hash == hdr.cgu_hash) {
+    // Only within a link unit (one anchor): a merged runtime also registers other modules'
+    // images, and a module may statically link a crate the host links too, a copy of its own
+    // (design/vm.md#several-ryo-runtimes-in-one-process). Nothing looks images up by hash.
+    let same =
+        |im: &&Image<'static>| im.header().anchor == hdr.anchor && im.crate_hash() == view.crate_hash() && im.header().cgu_hash == hdr.cgu_hash;
+    if let Some(o) = existing.iter().find(same) {
         if o.header().stable_crate_id == hdr.stable_crate_id {
             fatal("ryo_vm_register: an image is registered twice (two copies of one crate)");
         }
