@@ -2,7 +2,9 @@
 Ryo.Vm.Asm — the pieces of `vm/bytecode/src/asm` the decoder shares with the encoder, ported:
 
 - `DroppedStore` (`asm/encode.rs`; `Mode` and `CallSite` are `Ryo.Obj`'s);
-- return kinds and argument registers (`ret_parts`, `ret_kind`, `ArgReg`, `param_reg`);
+- return kinds and argument registers (`ret_parts`, `ret_kind`, `ArgReg`; `param_reg` has no
+  port, its checks are written out where argument words are read: `DecodeReduced.paramsOk`,
+  `R/Sem.lean` and `Frame.lean`'s `argRegs`);
 - the fixed sequences: `prologue`, `epilogue`, `fp_item`, `int_arg`, `ret_loads`,
   `result_stores`, `arg_store`;
 - the inline sequences and the register cache (`asm/inline.rs`): `Class`, `sequence`,
