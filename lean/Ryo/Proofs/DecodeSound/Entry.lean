@@ -92,8 +92,9 @@ structure EntryContract (S : Setup) : Prop where
   doesn't change the trip's target; like `EnvApart.slotOff`). -/
   slotOff : ∀ j < 8,
     ¬ InStack S.lo S.x0.rsp (S.ctx.addrOf .record + BitVec.ofNat 64 8 + BitVec.ofNat 64 j)
-  /-- `sub rsp, F`'s 32-bit immediate sign-extends to `F` (checkable: `FrameBounds.F_le` gives
-  only `F ≤ 2 ^ 31`; on PE `Hyps.peFrame` gives it). -/
+  /-- `sub rsp, F`'s 32-bit immediate sign-extends to `F` (checked: `FrameBounds.F_le` gives
+  only `F ≤ 2 ^ 31`, `frameSizesCheck` gives it in every mode, `Discharge.FrameSizes.frame_of_check`;
+  not yet derived from it here). -/
   frameSmall : S.F < 2 ^ 31
   /-- Without a frame pointer, `sub rsp, F + 8`'s immediate sign-extends to `F + 8`
   (checkable, like `frameSmall`). -/

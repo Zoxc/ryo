@@ -1125,10 +1125,10 @@ def decodeChecked (code : ByteArray) (fields : Fields) (rodata : ByteArray)
   let d ← match decodeBounded code fields rodata callSites dropped scopes mode with
     | .ok d => pure d
     | .error e => throw s!"{e.what} at {e.at_}"
-  -- On PE the frame size and the return address fit a signed 32-bit displacement, and the
-  -- frame holds the shadow space and a handler call's stack argument (`peStackArgCheck`).
+  -- The frame size and the return address fit a signed 32-bit displacement, and the frame
+  -- holds PE's shadow space and a handler call's stack argument (`peStackArgCheck`).
   if !frameSizesCheck d mode then
-    throw "PE frame size + 8 past 2^31, or the frame smaller than its shadow space"
+    throw "frame size + 8 past 2^31, or the frame smaller than its shadow space"
   -- The link slots and the `arg` destinations private (`privCheck`, for `LinkPrivate` and
   -- `ArgPrivate`).
   if !privCheck d then

@@ -1,9 +1,9 @@
 /-
 Ryo.Vm.FrameSizes — a check of the decoded frame size that `Frame.decodeChecked` runs:
-`frameSizesCheck`, on PE and without a frame pointer `F + 8 < 2 ^ 31` (PE's epilogue
+`frameSizesCheck`, `F + 8 < 2 ^ 31` in every mode (the prologue's `sub rsp, F`, PE's epilogue
 `add rsp, F` and the return address above the saved `rbp`, or the no-frame-pointer prologue's
-and epilogue's `sub/add rsp, F + 8`, as signed 32-bit immediates; `Decoded.boundsOk` gives `F ≤ 2 ^ 31`
-only), and `peStackArgCheck`: the frame holds PE's bytes at its bottom (`shadowSize`: the
+and epilogue's `sub/add rsp, F + 8`, as signed 32-bit immediates; `Decoded.boundsOk` gives
+`F ≤ 2 ^ 31` only, and `readFrame` reads the immediate unsigned), and `peStackArgCheck`: the frame holds PE's bytes at its bottom (`shadowSize`: the
 32-byte shadow space, and with a handler call's stack argument the 8 bytes above it).
 `Ryo.Proofs.Discharge.FrameSizes` turns its success into `Hyps.peFrame`,
 `Ryo.Proofs.Discharge.PeStackArg` into `Hyps.peStackArg`'s `36 ≤ F`.
@@ -19,9 +19,11 @@ PE, so true there). -/
 def peStackArgCheck (d : R.Decoded) (mode : Mode) : Bool :=
   decide (d.shadowSize mode ≤ d.frameSize)
 
-/-- On PE and without a frame pointer, the frame size and the return address fit a signed 32-bit displacement; and the frame
-holds PE's shadow space and stack argument (`peStackArgCheck`). -/
+/-- The frame size and the return address fit a signed 32-bit displacement (needed on PE or
+without a frame pointer; with one off PE, `sub rsp, F` needs `F < 2 ^ 31`, and the backend's
+frames stay far below either bound); and the frame holds PE's shadow space and stack argument
+(`peStackArgCheck`). -/
 def frameSizesCheck (d : R.Decoded) (mode : Mode) : Bool :=
-  (!(mode.pe || !mode.framePointer) || decide (d.frameSize + 8 < 2 ^ 31)) && peStackArgCheck d mode
+  decide (d.frameSize + 8 < 2 ^ 31) && peStackArgCheck d mode
 
 end Ryo.Vm

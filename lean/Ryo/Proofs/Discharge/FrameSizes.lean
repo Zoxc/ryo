@@ -1,9 +1,9 @@
 /-
 Ryo.Proofs.Discharge.FrameSizes — the `Hyps` fields on the frame's sizes.
 
-- `peFrame_of_check`: `frameSizesCheck` (`Ryo/Vm/FrameSizes.lean`, run by
-  `Frame.decodeChecked`) gives `peFrame`, on PE `F + 8 < 2 ^ 31`;
-  `frame8_of_check` also without a frame pointer.
+- `frame_of_check`: `frameSizesCheck` (`Ryo/Vm/FrameSizes.lean`, run by
+  `Frame.decodeChecked`) gives `F + 8 < 2 ^ 31` in every mode; `peFrame_of_check` (`peFrame`)
+  and `frame8_of_check` restate it on PE and without a frame pointer.
 - `16 + argSize ≤ K` holds by definition (`Setup.K = 16 + argSize`, `Hyps.argSizeK`); the
   window's `FrameBounds` comes from `windowCheck` (`Discharge/FrameBounds.lean`).
 
@@ -16,16 +16,17 @@ namespace Ryo.Proofs.Discharge.FrameSizes
 
 open Ryo.Vm
 
-/-- `frameSizesCheck`'s success: on PE or without a frame pointer, `F + 8 < 2 ^ 31`. -/
-theorem frame8_of_check {c : R.Code} (h : frameSizesCheck c.d c.mode = true) :
-    (c.mode.pe = true ∨ c.mode.framePointer = false) → c.d.frameSize + 8 < 2 ^ 31 := by
-  intro hm
+/-- `frameSizesCheck`'s success: `F + 8 < 2 ^ 31`. -/
+theorem frame_of_check {c : R.Code} (h : frameSizesCheck c.d c.mode = true) :
+    c.d.frameSize + 8 < 2 ^ 31 := by
   unfold frameSizesCheck at h
   rw [Bool.and_eq_true] at h
-  have e : (c.mode.pe || !c.mode.framePointer) = true := by
-    rcases hm with hm | hm <;> simp [hm]
-  rw [e] at h
   simpa using h.1
+
+/-- `frameSizesCheck`'s success: on PE or without a frame pointer, `F + 8 < 2 ^ 31`. -/
+theorem frame8_of_check {c : R.Code} (h : frameSizesCheck c.d c.mode = true) :
+    (c.mode.pe = true ∨ c.mode.framePointer = false) → c.d.frameSize + 8 < 2 ^ 31 :=
+  fun _ => frame_of_check h
 
 /-- `frameSizesCheck`'s success: on PE, `F + 8 < 2 ^ 31` (its `peStackArgCheck` part:
 `Discharge.PeStackArg.peStackArgCheck_of_frameSizes`). -/
