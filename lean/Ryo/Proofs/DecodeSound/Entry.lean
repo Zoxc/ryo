@@ -1064,15 +1064,20 @@ theorem reach_entry' (hD : Decodes S code relocs rodata callSites dropped scopes
   reach_entry hD H (entryRead_of_decodes hD) hC hE hs0
 
 /-- The function from its entry: the entry step, then `decode_sound` from the boundary it
-reaches, for R runs from the entry state that are safe. -/
+reaches, for R runs from the entry state that are safe. The entry is in the body
+(`RegionFacts.entryBody`), where `RBInv` is `BInv` (`rbInv_body`). -/
 theorem entry_sound (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (H : Hyps S) (htc : tablesCheck code relocs rodata callSites dropped scopes mode = true)
     (hC : EntryContract S) {args : R.Regs} {stack : List AbstractByte} {w : R.World}
     {s0 : R.RState} (hE : EntryEnv S args stack w)
     (hs0 : R.entry S.c (entryFp S) args stack w = .ok s0) (hsafe : SafeFrom S.Safe S.c s0) :
-    Reach S.ctx S.E (fun x => BInv S s0 x ∧ FnSim S.ctx S.E S.c (BInv S) (ExitRel S) s0 x)
-      S.x0 :=
-  (reach_entry' hD H hC hE hs0).mono fun x hx => ⟨hx, decode_sound hD H htc s0 x hx hsafe⟩
+    Reach S.ctx S.E (fun x => RBInv S s0 x ∧ FnSim S.ctx S.E S.c (RBInv S) (ExitRel S) s0 x)
+      S.x0 := by
+  have hreg : S.c.inRegion s0.pc = false := by
+    rw [(entry_ok hs0).1]; exact hD.region.entryBody
+  exact (reach_entry' hD H hC hE hs0).mono fun x hx =>
+    have hrx := (rbInv_body hreg).2 hx
+    ⟨hrx, decode_sound hD H htc s0 x hrx hsafe⟩
 
 end Entry
 

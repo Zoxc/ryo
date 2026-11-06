@@ -62,7 +62,7 @@ def SitesLinked (S : Setup) : Prop :=
 theorem padsLinked_of {S : Setup} (hU : UnwinderReadsLsda S) (hB : SitesLinked S) :
     PadsLinked S := by
   intro k hk site hs p h1 h2
-  rw [hU p, hB k hk site hs p h1 h2]
+  rw [hU.1 p, hB k hk site hs p h1 h2]
   generalize S.c.cleanupAt k = c
   rcases c with _ | ⟨_ | pad, cat⟩ <;> rfl
 
@@ -313,6 +313,13 @@ theorem pl_actionsOf {callSites : Array CallSite} {protos : Array Proto} {rs : N
         exact Or.inl ⟨cs, hcs, hl, some j, by rw [hc], Or.inr ⟨bb, j, hp, rfl, hj⟩⟩
   rcases pl_ite_ok h with ⟨-, h⟩ | ⟨-, h⟩
   · pl_err h
+  try dsimp only at h
+  rcases pl_ite_ok h with ⟨-, h⟩ | ⟨-, h⟩
+  · pl_err h
+  try dsimp only at h
+  rcases pl_ite_ok h with ⟨-, h⟩ | ⟨-, h⟩
+  · pl_err h
+  try dsimp only at h
   obtain ⟨he, -⟩ := pure_ok h
   subst he
   intro k hk
@@ -465,6 +472,67 @@ theorem Hyps.padsLinked (H : Hyps S) (hD : Decodes S code relocs rodata callSite
   have hcs := callSites_of_check hD hD.callSitesOk
   padsLinked_of_decodes hD H.unwinderReadsLsda (by rw [← hD.callSitesEq]; exact hcs.1)
     hcs.2 hsmall
+
+/-- PE-T5: `CleansLinked` from the decoder and `unwinderReadsLsda`'s cleanup conjunct, as
+`Hyps.padsLinked` (`sitesLinked_of_decodes`' case split: the call site found for the return
+address gives `k`'s action `(pad, catches)`). -/
+theorem Hyps.cleansLinked (H : Hyps S)
+    (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    (hsmall : S.body.code.size < 2 ^ 32) : CleansLinked S := by
+  have hcs0 := callSites_of_check hD hD.callSitesOk
+  have hdist : StartsDistinct callSites := by rw [← hD.callSitesEq]; exact hcs0.1
+  have hal : SitesAligned S := hcs0.2
+  intro k hk site hs p h1 h2
+  rw [H.unwinderReadsLsda.2.1 p]
+  obtain ⟨c', hr⟩ := hD.read
+  obtain ⟨rs, c0, c1, hA⟩ := pl_read_actions hr
+  have hcl : S.c.cleanupAt k = S.r.actions[k]! := pl_cleanupAt (reducedOf_cleanup hD.reduced) k
+  have hs' : site ∈ S.r.protos[k]!.sites := by rw [getElem!_pos S.r.protos k hk]; exact hs
+  have hcsS : ∀ e, e ∈ callSites → e ∈ S.callSites := fun e he => by
+    rw [hD.callSitesEq]; exact he
+  unfold lsdaCleans
+  rw [hcl, hD.callSitesEq]
+  rcases pl_actionsOf hA k hk site hs' with ⟨cs, hf, hlen, pad', hact, hpad⟩ | ⟨hf, hnone⟩
+  · have hcs := Array.mem_of_find?_eq_some hf
+    have hst : cs.start = site.1 := by simpa using Array.find?_some hf
+    have hsite : siteAt callSites p = some cs := by
+      unfold siteAt
+      cases he : callSites.find? (fun s => decide (s.start < p) && decide (p ≤ s.start + s.len))
+        with
+      | none =>
+        rw [Array.find?_eq_none] at he
+        exact absurd (by simp only [Bool.and_eq_true, decide_eq_true_eq]; exact
+          ⟨by omega, by omega⟩) (he cs hcs)
+      | some e =>
+        have hem := Array.mem_of_find?_eq_some he
+        have hep := Array.find?_some he
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at hep
+        have := hal k hk site hs e (hcsS e hem) p h1 h2 hep.1 hep.2
+        rw [hdist e hem cs hcs (by omega)]
+    rw [hsite, hact]
+    rcases hpad with ⟨hpn, rfl⟩ | ⟨b, j, hpb, rfl, hj⟩
+    · show (cs.pad.isSome && !cs.catches) = false
+      rw [hpn]; rfl
+    · show (cs.pad.isSome && !cs.catches) = (match some (some j, cs.catches) with
+        | some (some _, false) => true
+        | _ => false)
+      rw [hpb]
+      cases cs.catches <;> rfl
+  · have hsite : siteAt callSites p = none := by
+      unfold siteAt
+      cases he : callSites.find? (fun s => decide (s.start < p) && decide (p ≤ s.start + s.len))
+        with
+      | none => rfl
+      | some e =>
+        exfalso
+        have hem := Array.mem_of_find?_eq_some he
+        have hep := Array.find?_some he
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at hep
+        have := hal k hk site hs e (hcsS e hem) p h1 h2 hep.1 hep.2
+        rw [Array.find?_eq_none] at hf
+        exact hf e hem (by simp [this])
+    rw [hsite]
+    rcases hnone with h | h <;> rw [h] <;> rfl
 
 end Discharge
 

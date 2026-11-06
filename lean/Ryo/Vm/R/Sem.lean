@@ -57,7 +57,10 @@ provenance at `fp + off`, good only for zero-sized accesses; anything else is UB
      §C0.4), then the `Query`. The answer returns or unwinds: a return stores its registers'
      parts by `k` (`Asm.retParts k false`) at `d`; unwinding lands at the call's landing pad
      (its cleanup entry), or leaves the function for a `continue` entry; with no entry it is
-     UB (the lowering emits none only where L0 has UB).
+     UB (the lowering emits none only where L0 has UB). In PE's pad region (`Code.inRegion`,
+     the cleanup code the exception dispatcher runs on its own stack) the outgoing area is
+     there, not in the frame: the query's `sp` is the choice's and its bytes `Uninit`, and the
+     answer's bytes for it are dropped.
    - `tail_call`/`tail_call.ptr`: the argument registers and the stack arguments
      `[fp + 16, fp + 16 + n)` (the incoming area, which becomes the callee's), and the
      function ends (`Exit.tailCall`).
@@ -237,6 +240,18 @@ def Code.catchesAt (c : Code) (k : Nat) : Bool :=
   match c.cleanupAt k with
   | some (some _, true) => true
   | _ => false
+
+/-- PE: the index of the pad region's first instruction (`read`'s `rs`), the least landing pad
+of a cleanup (non-catching) entry, if there is one: `read` lays out the cleanup pads and
+everything after the first after the body and the counter stubs, run by the exception
+dispatcher's language handler on its own stack (`ryo_seh_call_pad`). -/
+def Decoded.regionStart (d : Decoded) : Option Nat :=
+  ((d.cleanup.toList.filter (!·.2.2)).filterMap (·.2.1)).min?
+
+/-- Instruction `k` is in PE's pad region: its calls' outgoing areas are on the dispatcher's
+stack, not at the frame's bottom (`step`, `answer`). Never off PE. -/
+def Code.inRegion (c : Code) (k : Nat) : Bool :=
+  c.mode.pe && c.d.regionStart.any (· ≤ k)
 
 /-- An R function's state (see the module comment). -/
 structure RState where
@@ -439,8 +454,11 @@ def step (c : Code) (s : RState) (ch : OpSem.Choice := {}) : M Out := do
     let _ ← retRegs k.toNat false
     let cal ← callee s.st f fo
     let regs ← argRegs s.st ws
-    let sp ← frameAddr s.fp (-(c.d.frameSize : Int))
-    let stack ← s.st.readFrame (-(c.d.frameSize : Int)) (c.stackSize s.pc)
+    -- In PE's pad region the outgoing area is on the dispatcher's stack (the choice's `sp`),
+    -- its bytes unknown here.
+    let sp ← if c.inRegion s.pc then pure ch.sp else frameAddr s.fp (-(c.d.frameSize : Int))
+    let stack ← if c.inRegion s.pc then pure (List.replicate (c.stackSize s.pc) .uninit)
+      else s.st.readFrame (-(c.d.frameSize : Int)) (c.stackSize s.pc)
     let st ← match c.sretSize s.pc, Frame.sretDest ws with
       | some n, some dst => s.st.writeFrame dst.toInt (List.replicate n .uninit)
       | _, _ => pure s.st
@@ -479,7 +497,9 @@ def answer (c : Code) (s : RState) (a : Answer) : M Out := do
   let s := s.withWorld a.world
   match f.info.shape, ops with
   | .call, [.slot d, _, .imm k, _] =>
-    let st ← writeRanges s.st [(-(c.d.frameSize : Int), c.stackSize s.pc)] a.frame
+    -- In PE's pad region the outgoing area isn't in the frame: its new bytes are dropped.
+    let st ← if c.inRegion s.pc then pure s.st
+      else writeRanges s.st [(-(c.d.frameSize : Int), c.stackSize s.pc)] a.frame
     let s := { s with st }
     match a.result with
     | .unwind exc => unwindAt c s exc

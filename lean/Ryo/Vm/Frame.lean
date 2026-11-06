@@ -581,6 +581,8 @@ structure Flow where
   /-- `escapedAt`'s result over `Flow.edges` (the may-escaped `Escape` scopes at each
   instruction), which `pointer` was computed from. -/
   esc : Array Nat := #[]
+  /-- The bytes the `Escape` scopes before each instruction copy (`Flow.Row.escRead`). -/
+  escRead : Array Nat := #[]
 
 /-- Each instruction's successors and landing pads (`escapedAt`'s edges). -/
 def Flow.edges (fl : Flow) : Array (List Nat) := (fl.succ.zip fl.pad).map fun (s, p) => s ++ p
@@ -643,6 +645,8 @@ structure Flow.Row where
   kill : Ranges
   readsAll : Bool
   ends : Ranges
+  /-- The bytes the `Escape` scopes before it copy (a part of `operand`). -/
+  escRead : Nat
 
 /-- The `Lend` extents before instruction `k` (`scopes` is `scopesAt d`). -/
 def Flow.lendsOf (scopes : Array (List (Nat × Scope))) (k : Nat) : List (BitVec 32 × Nat) :=
@@ -656,24 +660,25 @@ def Flow.callInfo (i : Insn) : Bool × Bool × List (BitVec 32) :=
       op.info.shape == .call, callArgs ops)
   | _ => (false, false, [])
 
+/-- One access's step of `Flow.opndRanges` on its operand reads (`.1`) and sure writes (`.2`). -/
+def Flow.opndStep (f : Nat) (isCall : Bool) (eb : Nat) (st : Ranges × Ranges)
+    (x : BitVec 32 × Access) : Ranges × Ranges :=
+  match x.2 with
+  | .read m => (range f x.1 m :: st.1, st.2)
+  | .write m => (st.1, range f x.1 m :: st.2)
+  | .opaque => ([(0, f)], st.2)
+  -- A by-address argument no escape covers: its object's extent is unknown.
+  | .addr =>
+    if isCall && (range f x.1 1).1 < (range f x.1 1).2 && !eb.testBit (range f x.1 1).1 then
+      ([(0, f)], st.2)
+    else st
+  | .clobber _ => st
+
 /-- The operand reads (`.1`) and sure writes (`.2`) of accesses `opnds` (`eb`: the bytes of the
 escaped objects). -/
 def Flow.opndRanges (f : Nat) (isCall : Bool) (eb : Nat) (opnds : List (BitVec 32 × Access)) :
-    Ranges × Ranges := Id.run do
-  let all : Ranges := [(0, f)]
-  let mut g : Ranges := []
-  let mut kl : Ranges := []
-  for (off, acc) in opnds do
-    match acc with
-    | .read m => g := range f off m :: g
-    | .write m => kl := range f off m :: kl
-    | .opaque => g := all
-    -- A by-address argument no escape covers: its object's extent is unknown.
-    | .addr =>
-      let (lo, hi) := range f off 1
-      if isCall && lo < hi && !eb.testBit lo then g := all
-    | _ => pure ()
-  return (g, kl)
+    Ranges × Ranges :=
+  opnds.foldl (Flow.opndStep f isCall eb) ([], [])
 
 /-- Instruction `k`'s row from its effects `e` and escaped bytes `eb`. -/
 def Flow.rowOf (d : Decoded) (facts : Facts) (scopes : Array (List (Nat × Scope))) (k : Nat)
@@ -692,12 +697,19 @@ def Flow.rowOf (d : Decoded) (facts : Facts) (scopes : Array (List (Nat × Scope
   let un : Ranges := match ci.2.1, facts.sretSize k, sretDest ci.2.2 with
     | true, some m, some s => [range f s m]
     | _, _, _ => []
-  let gen := (gk.1 ++ gs).bits ||| (if e.pointer then diff eb un.bits else 0)
+  -- An `Escape` before it copies its bytes into the allocation: a read (so no byte the ghost of
+  -- a dropped store differs on is ever escaped, `DeadStore/Defs.lean`'s `PatchOk`).
+  let es : Ranges := scopes[k]!.filterMap fun (_, sc) =>
+    match sc.kind with
+    | .escape _ => some (range f sc.frameOffset sc.size)
+    | _ => none
+  let gen := (gk.1 ++ es ++ gs).bits ||| (if e.pointer then diff eb un.bits else 0)
   -- What it writes and also reads is live into it all the same: `gen` is added after `kill`.
-  { operand := gk.1, stack := gs, pointer := if e.pointer then eb else 0, uninit := un,
+  { operand := gk.1 ++ es, stack := gs, pointer := if e.pointer then eb else 0, uninit := un,
     kill := gk.2, readsAll := gen == bitsOf 0 f,
     ends := scopes[k]!.filterMap fun (_, sc) =>
-      if sc.kind == .end then some (range f sc.frameOffset sc.size) else none }
+      if sc.kind == .end then some (range f sc.frameOffset sc.size) else none,
+    escRead := Ranges.bits es }
 
 /-- Instruction `k`'s row (`esc`: `escapedAt`'s result). -/
 def Flow.row (d : Decoded) (mode : Mode) (facts : Facts) (esc : Array Nat)
@@ -721,21 +733,24 @@ def Flow.of (d : Decoded) (mode : Mode) (facts : Facts := {}) : Except String Fl
   let kill := (rows.map Flow.Row.kill).toArray
   let readsAll := (rows.map Flow.Row.readsAll).toArray
   let ends := (rows.map Flow.Row.ends).toArray
-  return { succ, pad, operand, stack, pointer, uninit, kill, readsAll, ends, esc }
+  let escRead := (rows.map Flow.Row.escRead).toArray
+  return { succ, pad, operand, stack, pointer, uninit, kill, readsAll, ends, esc, escRead }
 
 /-- One backward transfer of the liveness at `k` from `live` (the bytes live into each
 instruction), with `gen` the bytes `k` reads: what is live out of it (into its successors) but
 for what it writes for sure (`kill`), plus what is live into its landing pads (unwinding writes
 nothing), but for what it makes `Uninit` after reading its operands (`uninit`), plus what it
-reads; and with `ends`, but for what an `End` before it covers (R reads that as `Uninit`). -/
+reads; and with `ends`, but for what an `End` before it covers and no `Escape` before it copies
+(R reads the rest as `Uninit`, which relates to any byte). -/
 def Flow.transferWith (fl : Flow) (gen : Nat) (ends : Bool) (live : Array Nat) (k : Nat) : Nat :=
   let out := fl.succ[k]!.foldl (fun a s => a ||| live[s]!) 0
   let v := diff out fl.kill[k]!.bits
   let v := fl.pad[k]!.foldl (fun a s => a ||| live[s]!) v
   -- What `k` makes `Uninit` after reading its operands is dead into it, but what it reads.
   let v := diff v fl.uninit[k]!.bits ||| gen
-  -- What R reads of the bytes an `End` before `k` covers is `Uninit`.
-  if ends then diff v fl.ends[k]!.bits else v
+  -- What R reads of the bytes an `End` before `k` covers is `Uninit`; but what an `Escape`
+  -- before the `End` copies stays live (`DeadStore/RStep.lean`).
+  if ends then diff v (diff fl.ends[k]!.bits fl.escRead[k]!) else v
 
 /-- `liveIn`'s transfer at `k`. -/
 def Flow.transfer (fl : Flow) (live : Array Nat) (k : Nat) : Nat :=
@@ -853,6 +868,18 @@ def endsUnread (d : Decoded) (fl : Flow) (plive : Array Nat) : Bool :=
   let db := droppedBits d
   (List.range d.insns.size).all fun k => fl.ends[k]!.bits &&& db &&& fl.liveOut plive k == 0
 
+/-- Dropped store `k` isn't its overflow op's flag store: its destination misses the flag slot
+`"o"`, or it stores a register other than `rcx` (the flag store is `mov [o], cl`, never dropped;
+the result store at `o`, when the result slot is the flag slot, is, as the flag store overwrites
+it). `DeadStore/DropForm.lean`'s `dropForm_flag` tells the two apart by it. -/
+def flagApart (d : Decoded) (k : Nat) : Bool :=
+  match droppedStore d k, flagSlot d k with
+  | some (s, w), some o => decide (o.toInt + 1 ≤ s.toInt ∨ s.toInt + w ≤ o.toInt) ||
+    (match d.droppedItems[k]? with
+     | some (some (.st _ src _)) => src != .rcx
+     | _ => false)
+  | _, _ => true
+
 /-- An overflow op's flag byte, which its flag store writes after the (dropped) result's. -/
 def flagBits (d : Decoded) (k : Nat) : Nat :=
   match flagSlot d k with
@@ -867,6 +894,103 @@ def droppedOk (d : Decoded) (fl : Flow) (live : Array Nat) (k : Nat) : Bool :=
     diff (fl.liveOut live k) (flagBits d k) &&& bitsOf (range d.frameSize s w).1 (range d.frameSize s w).2 == 0
   | none => false
 
+/-- Dropped store `k` writes no byte of an object that may be escaped at `k` (`fl.esc`): the
+bytes the ghost differs on stay private. -/
+def droppedPrivate (d : Decoded) (fl : Flow) (k : Nat) : Bool :=
+  match droppedStore d k with
+  | some (s, w) =>
+    escBytesOf d fl.esc[k]! &&& bitsOf (range d.frameSize s w).1 (range d.frameSize s w).2 == 0
+  | none => false
+
+/-- Dropped store `k`'s destination is in the frame `[-F, 0)` and misses PE's stack-argument
+slots `[-F + 32, frameLo)`: it is at or above `frameLo`, or ends at or below `-F + 32` (the
+outgoing shadow space). -/
+def droppedInFrame (d : Decoded) (mode : Mode) (k : Nat) : Bool :=
+  match droppedStore d k with
+  | some (s, w) =>
+    decide (-(d.frameSize : Int) ≤ s.toInt ∧ s.toInt + w ≤ 0) &&
+    decide (d.frameLo mode ≤ s.toInt ∨ s.toInt + w ≤ -(d.frameSize : Int) + 32)
+  | none => true
+
+/-- The bytes item `it` reads through its memory operand (0: none, or a store / `lea`;
+`DeadStore/Defs.lean`'s `readBytes`). -/
+def itemReadBytes : Item → Nat
+  | .ld w _ _ _ => w.bits / 8
+  | .alu _ w _ (.mem _) | .aluImm _ w (.mem _) _ | .imul w _ (.mem _) | .imulImm w _ (.mem _) _
+  | .div _ w (.mem _) | .bsf w _ (.mem _) | .bsr w _ (.mem _) | .cmov _ w _ (.mem _) => w.bits / 8
+  | .testM8 _ => 1
+  | .mulQ (.mem _) => 8
+  | .sse st size _ _ => if st then 0 else size
+  | _ => 0
+
+/-- The frame bytes the machine items of instruction `k` (`d.items`: the kept ones, after the
+register cache) read from memory through an `rbp`-based operand. -/
+def keptReads (d : Decoded) (k : Nat) : Ranges :=
+  (d.items[k]?.getD []).filterMap fun it =>
+    match it.mem? with
+    | some m => if m.base = .rbp then some (range d.frameSize m.disp (itemReadBytes it)) else none
+    | none => none
+
+/-- The bytes of the slots `sl` (`(offset, bytes)`, `Decoded.cacheOut`'s), as a bitset. -/
+def slotBits (f : Nat) (sl : List (BitVec 32 × Nat)) : Nat :=
+  sl.foldl (fun b p => b ||| bitsOf (range f p.1 p.2).1 (range f p.1 p.2).2) 0
+
+/-- Instruction `k` is an inline one (`effects` takes it by its items; `DeadStore/Defs.lean`'s
+`InlineAt`). -/
+def isInlineAt (d : Decoded) (k : Nat) : Bool :=
+  match d.insns[k]? with
+  | some (.native op _) => (op.full.bind Asm.classOf).isSome
+  | _ => false
+
+/-- The frame bytes the register cache may cover entering instruction `t` (the decoder's cache
+there, `S.cache t`, before a branch target clears it; `S.used t` is it or empty): what the inline
+instruction before it left (`Decoded.cacheOut`), nothing after another instruction or at the
+entry, every byte if not recorded. -/
+def coveredAt (d : Decoded) (t : Nat) : Nat :=
+  if t = 0 then 0 else
+  match d.cacheOut[t - 1]? with
+  | some (some sl) => slotBits d.frameSize sl
+  | _ => if isInlineAt d (t - 1) then bitsOf 0 d.frameSize else 0
+
+/-- The kept-read liveness' transfer at `k`: the bytes some path from `k` reads from memory by a
+kept `rbp`-based item (`keptReads`) or copies by an `Escape` before it (`Flow.escRead`: an
+`Escape` copies the frame's bytes, so no byte of the patch set may be in one) before a sure
+write. An `End` before `k` makes its bytes `Uninit`; one the cache doesn't cover entering a
+successor `t` (`coveredAt`) leaves the patch set there (the ghost is re-chosen to the real byte,
+`DeadStore/Rel.lean`'s `ghost_drop_uninit`), so it isn't live through that edge. One the cache
+covers stays: the ghost keeps its dropped value there, while a cache miss on an overlapping slot
+reads it from memory (`drop st.q [d]`, `End d`, `mov.d` from `d + 4`). Landing pads see no `End`
+kill. A dropped store kills what it writes like any other: its own `droppedUnread` covers the
+reads after it. -/
+def Flow.keptReadTransfer (d : Decoded) (fl : Flow) (live : Array Nat) (k : Nat) : Nat :=
+  let ends := fl.ends[k]!.bits
+  let out := fl.succ[k]!.foldl (fun a t => a ||| diff live[t]! (diff ends (coveredAt d t))) 0
+  let v := diff out fl.kill[k]!.bits
+  fl.pad[k]!.foldl (fun a s => a ||| live[s]!) v ||| (keptReads d k).bits ||| fl.escRead[k]!
+
+/-- The kept-read liveness (`keptReadTransfer`'s least fixpoint). -/
+def Flow.keptReadLive (d : Decoded) (fl : Flow) : Array Nat := fl.solve (fl.keptReadTransfer d)
+
+/-- `kr` is a post-fixpoint of the kept-read liveness. -/
+def Flow.keptReadOk (d : Decoded) (fl : Flow) (kr : Array Nat) : Bool :=
+  fl.postFix (fl.keptReadTransfer d) kr
+
+/-- No byte dropped store `k` writes (but its flag byte, written for sure after it) is read
+from memory by a kept item later (`kr`: the kept-read liveness), so the bytes where the real
+machine differs from the ghost are never read by the machine code, whatever the cache holds. -/
+def droppedUnread (d : Decoded) (fl : Flow) (kr : Array Nat) (k : Nat) : Bool :=
+  diff (fl.liveOut kr k) (flagBits d k) &&& droppedBitsAt d k == 0
+
+/-- Dropped store `k`'s item as the decoder read it is a store of `droppedStore`'s range (its
+`"d"` slot at the mnemonic's width), and `k`'s read consumed one dropped store (Lean-only: what
+the proofs need to tie the dropped item to the R operation; `DeadStore/DropForm.lean`). -/
+def droppedFormOk (d : Decoded) (k : Nat) : Bool :=
+  d.consumed[k]!  == 1 &&
+  (match d.droppedItems[k]?, droppedStore d k with
+   | some (some it), some (s, n) => Asm.frameWrite it == some (M.frame s, n)
+   | _, _ => false) &&
+  flagApart d k
+
 /-- The dropped stores `droppedNotDead` can't show dead: their instruction indices (all of them
 if a fixpoint check fails). `preciseOk`/`endsUnread` aren't run: `endsUnread` rejects real code
 (a slot re-initialised in part after its `End`, then copied whole: a read of `Uninit` padding). -/
@@ -874,10 +998,14 @@ def droppedNotDead (d : Decoded) (mode : Mode) (facts : Facts := {}) : Except St
   if d.dropped.isEmpty then return []
   let fl ← Flow.of d mode facts
   let liveIn := fl.liveIn
-  -- The fixpoints checked (the proofs can't look into the loops).
-  if !(fl.liveOk liveIn && escOk d fl.edges fl.esc) then
+  let kr := fl.keptReadLive d
+  -- The fixpoints checked (the proofs can't look into the loops). No `End` check: a byte an
+  -- `End` makes `Uninit` relates to any machine byte, so the ghost is re-chosen there
+  -- (`DeadStore/Defs.lean`).
+  if !(fl.liveOk liveIn && escOk d fl.edges fl.esc && fl.keptReadOk d kr) then
     return d.dropped.toList
-  return d.dropped.toList.filter fun k => !droppedOk d fl liveIn k
+  return d.dropped.toList.filter fun k => !(droppedOk d fl liveIn k && droppedPrivate d fl k &&
+    droppedInFrame d mode k && droppedUnread d fl kr k && droppedFormOk d k)
 
 /-- How `firstReader`'s instruction reads the bytes. -/
 inductive ReadBy

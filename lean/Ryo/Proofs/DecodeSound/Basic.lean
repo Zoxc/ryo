@@ -230,6 +230,12 @@ structure Setup where
   Owned : BitVec 64 → Prop
   lo : BitVec 64
   padOf : BitVec 64 → Option (BitVec 64)
+  /-- PE: the exception dispatcher's language handler's test of a return address for a cleanup
+  site (`ryo_seh_handler`'s `decide`), whose pad it runs through the pad region
+  (`Call.Landing`). -/
+  cleans : BitVec 64 → Bool
+  /-- PE: the pad region's entry (`PeHandlerData.region`; unused without a region). -/
+  region : BitVec 64
   Safe : R.Query → Prop
 
 namespace Setup
@@ -242,6 +248,33 @@ def F : Nat := S.c.d.frameSize
 abbrev K : Int := 16 + S.c.argSize
 
 def fr : Vm.Frame := ⟨S.r.frameSize, S.c.mode, false⟩
+
+/-- PE's pad region's frame: `readRegion` reads the region's instructions with it (no padding,
+no counter checks, `add rsp, 40; ret` as `resume`). -/
+def frR : Vm.Frame := { S.fr with region := true }
+
+/-- The exception slot of the function's landing pads as `resumeSlots` reads it: the first
+`lpad`'s last argument (`resumeSlots` rewrites only `resume`s, so the read's protos give the
+same). -/
+def lpadSlot : Option (BitVec 32) :=
+  (S.r.protos.find? (·.op == .lpad)).bind fun p =>
+    match p.handler with
+    | some (args, _) => match args.getLast? with
+      | some (.imm v) => some (v.setWidth 32)
+      | _ => none
+    | none => match p.ops.head? with
+      | some (.slot s) => some s
+      | _ => none
+
+/-- A pad-region proto as `read` leaves it after `resumeSlots`: a `resume` gets the handler
+arguments of the landing pads' slot (`resumeArgs`), every other proto is as its iteration read
+it. -/
+def fixResume (q : Proto) : Proto :=
+  if q.op == .resume then
+    match S.lpadSlot with
+    | some x => { q with handler := some (resumeArgs S.fr x, .trap) }
+    | none => q
+  else q
 
 /-- The cache the decoder used at proto `k`'s position: cleared at a branch target. -/
 def used (k : Nat) : Cache :=
@@ -372,7 +405,38 @@ def BInv (S : Setup) (s : R.RState) (x : X86.State) : Prop :=
     ((x.rip = addrAt S.ctx (S.start s.pc) ∧ CacheInv (S.cache s.pc) (S.virt x)) ∨
       (x.rip = addrAt S.ctx (posOf S.r s.pc) ∧ CacheInv (S.used s.pc) (S.virt x)))
 
-/-- The function's end related to R's (see the module comment). -/
+/-- `FrameInv` without its `rsp`-dependent fields (`rsp`, `room`) and the leading `arg`s'
+(`args`): what PE's pad region keeps too, where `rsp` is the dispatcher's (`RegionInv`). -/
+structure FrameCore (S : Setup) (s : R.RState) (x : X86.State) : Prop where
+  rrel : RRel s x
+  mem : MemRel s.st x
+  sep : FrameSep (-(S.F : Int)) S.K s.st x
+  win : (s.fp : Int) + S.K ≤ 2 ^ 64
+  fpF : S.F ≤ s.fp
+  code : LinkOkF S.ctx x.mem S.body S.rs S.c.mode
+  ro : RoLoaded S.ctx x.mem S.ro
+  frame : FrameFacts S x
+  slots : Discharge.PeStackArg.ArgSlots S.c s.st
+  esc : Discharge.EscFrom.EscFrom S.c (LeadArg S s.pc) s.pc s.st
+
+theorem FrameInv.toCore {S : Setup} {s : R.RState} {x : X86.State} (h : FrameInv S s x) :
+    FrameCore S s x :=
+  ⟨h.rrel, h.mem, h.sep, h.win, h.fpF, h.code, h.ro, h.frame, h.slots, h.esc⟩
+
+theorem FrameInv.ofCore {S : Setup} {s : R.RState} {x : X86.State} (h : FrameCore S s x)
+    (hrsp : x.rsp = x.reg .rbp - BitVec.ofNat 64 S.F) (hroom : S.lo.toNat + 64 ≤ x.rsp.toNat)
+    (hargs : LeadArg S s.pc → ArgsLive S s.pc s.args x) : FrameInv S s x :=
+  ⟨h.rrel, h.mem, h.sep, h.win, h.fpF, hrsp, hroom, h.code, h.ro, hargs, h.frame, h.slots, h.esc⟩
+
+/-- PE: `e` is a state at the pad region's entry as the dispatcher's trampoline calls it
+(`Call.PadCalled`): `rip` the region's entry, `rsp` 8 mod 16 (the trampoline's return address
+at `[rsp]`). The ghost `RegionInv` carries. -/
+def RegionEntered (S : Setup) (e : X86.State) : Prop := e.rip = S.region ∧ e.rsp.toNat % 16 = 8
+
+/-- The function's end related to R's (see the module comment). Unwinding out of the function
+happens only from PE's pad region (`resume` there: `add rsp, 40; ret`), back to the trampoline
+that called the region's entry `e`, with the frame's link (saved `rbp`, return address) intact
+for the dispatcher, which continues the unwind from its own `CONTEXT`. -/
 def ExitRel (S : Setup) (f : R.Final) (x' : X86.State) : Prop :=
   WorldRel f.world x' ∧
     match f.exit with
@@ -381,10 +445,94 @@ def ExitRel (S : Setup) (f : R.Final) (x' : X86.State) : Prop :=
         BytesRel incoming (bytesAt x'.mem (S.x0.rsp + 8) S.c.argSize)
     | .tailCall cal regs sp stack => EntryAt S.ctx S.c.mode.pe cal regs sp stack f.world x' ∧
         x'.rsp = S.x0.rsp ∧ ∀ i, Saved S.c.mode.pe i → x'.regs i = S.x0.regs i
-    | .unwind _ => False
+    | .unwind _ => S.c.mode.pe = true ∧ ∃ e, RegionEntered S e ∧
+        x'.rip = e.mem.read64 e.rsp ∧ x'.rsp = e.rsp + 8 ∧
+        x'.mem.read64 (S.x0.rsp - 8) = S.x0.reg .rbp ∧
+        x'.mem.read64 S.x0.rsp = S.x0.mem.read64 S.x0.rsp
 
 /-- The simulation's targets after instruction `s.pc`. -/
 abbrev SNext (S : Setup) (s : R.RState) : X86.State → Prop := Next S.c (BInv S) (ExitRel S) s
+
+/-! #### PE's pad region
+
+The cleanup code after the body (`Code.inRegion`), entered at `e` (`RegionEntered`, from
+`Call.PadCalled`) by the exception dispatcher on its own stack: the frame as in the body
+(`FrameCore`, `rbp` the frame pointer), `rsp` the region's (`e.rsp - 40`, below the frame), the
+trampoline's return address above its 40 bytes. -/
+
+/-- The relation in PE's pad region, entered at `e` (with a frame pointer: the state itself). -/
+structure RegionInv (S : Setup) (e : X86.State) (s : R.RState) (x : X86.State) : Prop
+    extends FrameCore S s x where
+  inR : S.c.inRegion s.pc = true
+  entered : RegionEntered S e
+  rsp : x.rsp = e.rsp - 40
+  align : x.rsp.toNat % 16 = 0
+  below : x.rsp.toNat + 48 ≤ (x.reg .rbp).toNat - S.F
+  room : S.lo.toNat + 64 ≤ x.rsp.toNat
+  tramp : x.mem.read64 (x.rsp + 40) = e.mem.read64 e.rsp
+
+/-- The relation at an instruction boundary of the whole function: `BInv` in the body,
+`RegionInv` (for some entry `e`) with the same position and cache conjunct in PE's pad
+region. -/
+def RBInv (S : Setup) (s : R.RState) (x : X86.State) : Prop :=
+  if S.c.inRegion s.pc = true then
+    ∃ e, RegionInv S e s x ∧
+      ((x.rip = addrAt S.ctx (S.start s.pc) ∧ CacheInv (S.cache s.pc) x) ∨
+        (x.rip = addrAt S.ctx (posOf S.r s.pc) ∧ CacheInv (S.used s.pc) x))
+  else BInv S s x
+
+theorem rbInv_body {S : Setup} {s : R.RState} {x : X86.State}
+    (h : S.c.inRegion s.pc = false) : RBInv S s x ↔ BInv S s x := by
+  have hn : ¬ (S.c.inRegion s.pc = true) := by rw [h]; exact Bool.false_ne_true
+  unfold RBInv
+  rw [if_neg hn]
+
+theorem rbInv_region {S : Setup} {s : R.RState} {x : X86.State}
+    (h : S.c.inRegion s.pc = true) : RBInv S s x ↔ ∃ e, RegionInv S e s x ∧
+      ((x.rip = addrAt S.ctx (S.start s.pc) ∧ CacheInv (S.cache s.pc) x) ∨
+        (x.rip = addrAt S.ctx (posOf S.r s.pc) ∧ CacheInv (S.used s.pc) x)) := by
+  unfold RBInv
+  rw [if_pos h]
+
+/-- `FrameCore` is kept by a state with the same frame pointer, callee-saved registers and
+memory (it reads no `rsp`, flags or `rip`). -/
+theorem FrameCore.congr {S : Setup} {s : R.RState} {x y : X86.State} (h : FrameCore S s x)
+    (hr5 : y.reg .rbp = x.reg .rbp) (hsv : ∀ i, Saved S.c.mode.pe i → y.regs i = x.regs i)
+    (hm : y.mem = x.mem) : FrameCore S s y := by
+  have hf : ∀ o, fpAddr y o = fpAddr x o := fun o => by simp [fpAddr, hr5]
+  obtain ⟨⟨hrel, hb, hwf⟩, hmem, hsep, hwin, hfpF, hcode, hro, hfr, hsl, hesc⟩ := h
+  refine ⟨⟨⟨fun o h1 h2 b hb' => by rw [hf, hm]; exact hrel.frame o h1 h2 b hb',
+      fun e he a ha => by rw [hf]; exact hrel.layout e he a ha,
+      fun p hp => by rw [hf]; exact hrel.zeroSized p hp⟩, hr5.trans hb, hwf⟩,
+    Shapes.memRel_congr hm hmem, hsep.congr hr5, hwin, hfpF,
+    by rw [hm]; exact hcode, by rw [hm]; exact hro, ?_, hsl, hesc⟩
+  obtain ⟨f1, f2, f3, f5⟩ := hfr
+  exact ⟨by rw [hr5]; exact f1, by rw [hr5, hm]; exact f2,
+    fun hfp3 => by rw [hr5, hm]; exact f3 hfp3, fun i hi h5 => by rw [hsv i hi]; exact f5 i hi h5⟩
+
+/-- `RegionInv` is kept by a state with the same registers and memory (only `rip` or the flags
+changed). -/
+theorem RegionInv.congr {S : Setup} {e : X86.State} {s : R.RState} {x y : X86.State}
+    (h : RegionInv S e s x) (hr : y.regs = x.regs) (hm : y.mem = x.mem) : RegionInv S e s y := by
+  have hrsp : y.rsp = x.rsp := by simp [State.rsp, State.reg, hr]
+  have hrbp : y.reg .rbp = x.reg .rbp := by simp [State.reg, hr]
+  have hc := h.toFrameCore.congr hrbp (fun i _ => (by rw [hr])) hm
+  exact
+    { toFrameCore := hc
+      inR := h.inR
+      entered := h.entered
+      rsp := hrsp.trans h.rsp
+      align := by rw [hrsp]; exact h.align
+      below := by rw [hrsp, hrbp]; exact h.below
+      room := by rw [hrsp]; exact h.room
+      tramp := by rw [hrsp, hm]; exact h.tramp }
+
+/-- The whole function's targets after instruction `s.pc` (`RBInv`). -/
+abbrev RSNext (S : Setup) (s : R.RState) : X86.State → Prop := Next S.c (RBInv S) (ExitRel S) s
+
+/-- Instruction `k` simulated from every boundary at it, in the body or the pad region. -/
+def RInsnSimAt (S : Setup) (k : Nat) : Prop :=
+  ∀ s x, s.pc = k → RBInv S s x → RSafe S.Safe S.c s → Reach S.ctx S.E (RSNext S s) x
 
 /-- Instruction `k`'s body simulated from `rip` at `p` (past the padding and counter check)
 with the cache `cache`. -/
@@ -395,6 +543,37 @@ def BodySim (S : Setup) (k p : Nat) (cache : Cache) : Prop :=
 /-- Instruction `k` simulated from every boundary at it. -/
 def InsnSimAt (S : Setup) (k : Nat) : Prop :=
   ∀ s x, s.pc = k → BInv S s x → RSafe S.Safe S.c s → Reach S.ctx S.E (SNext S s) x
+
+/-- Instruction `k` of PE's pad region simulated from `rip` at `p` (past the padding; the region
+has no counter checks) with the cache `cache`: `BodySimFp` with `RegionInv` (the region is in
+the frame-pointer form: PE has a frame pointer). -/
+def RegionSim (S : Setup) (k p : Nat) (cache : Cache) : Prop :=
+  ∀ e s x, s.pc = k → RegionInv S e s x → x.rip = addrAt S.ctx p → CacheInv cache x →
+    RSafe S.Safe S.c s → Reach S.ctx S.E (RSNext S s) x
+
+/-- `RegionSim` without the cache (the non-inline bodies don't read it). -/
+def RegionSimB (S : Setup) (k p : Nat) : Prop :=
+  ∀ e s x, s.pc = k → RegionInv S e s x → x.rip = addrAt S.ctx p →
+    RSafe S.Safe S.c s → Reach S.ctx S.E (RSNext S s) x
+
+/-- `RSNext` with the successor's boundary cache empty (`CacheEmptyAt`): what a non-inline
+instruction leaves, in the body or the region. -/
+abbrev RSNextE (S : Setup) (s : R.RState) : X86.State → Prop :=
+  Next S.c (fun s' x' => RBInv S s' x' ∧
+    ((x'.rip = addrAt S.ctx (S.start s'.pc) ∧ S.cache s'.pc = { pe := S.c.mode.pe }) ∨
+      (x'.rip = addrAt S.ctx (posOf S.r s'.pc) ∧ S.used s'.pc = { pe := S.c.mode.pe })))
+    (ExitRel S) s
+
+/-- A body instruction (frame-pointer form, without the cache: `BodySimFpBE`) reaching the whole
+function's targets: at a PE cleanup site an unwind comes back through the pad region
+(`Call.PadCalled`), to `RegionInv` at the pad. -/
+def BodySimRB (S : Setup) (k p : Nat) : Prop :=
+  ∀ s x, s.pc = k → FrameInv S s x → x.rip = addrAt S.ctx p → (∃ xb, BInv S s xb) →
+    RSafe S.Safe S.c s → Reach S.ctx S.E (RSNextE S s) x
+
+theorem RegionSimB.used {S : Setup} {k p : Nat} {cache : Cache} (h : RegionSimB S k p) :
+    RegionSim S k p cache :=
+  fun e s x hpc hr hrip _ hsafe => h e s x hpc hr hrip hsafe
 
 /-! #### The frame-pointer form
 
@@ -456,6 +635,55 @@ theorem BodySim.fp {S : Setup} {k p : Nat} {cache : Cache}
   have hsp := hf.code.fp hfp
   exact h s x hpc ((frameInvR_iff hfp).2 hf) hrip (by rw [S.virt_eq hsp]; exact hc) hsafe
 
+/-- `BodySim` without the cache: some boundary relation at `s` (only for `CodeApart`'s live
+allocations, which see `s.world`) instead of the cache invariant. The non-inline bodies hold in
+this form (they don't read the cache); `BodySimB.used` gives `BodySim` with `S.used k`. -/
+def BodySimB (S : Setup) (k p : Nat) : Prop :=
+  ∀ s x, s.pc = k → FrameInvR S s x → x.rip = addrAt S.ctx p → (∃ xb, BInv S s xb) →
+    RSafe S.Safe S.c s → Reach S.ctx S.E (SNext S s) x
+
+/-- `BodySimB` in the frame-pointer form: on the state itself. -/
+def BodySimFpB (S : Setup) (k p : Nat) : Prop :=
+  ∀ s x, s.pc = k → FrameInv S s x → x.rip = addrAt S.ctx p → (∃ xb, BInv S s xb) →
+    RSafe S.Safe S.c s → Reach S.ctx S.E (SNext S s) x
+
+theorem bodySimB_of_fp {S : Setup} {k p : Nat}
+    (hfp : S.c.mode.framePointer = true) (h : BodySimFpB S k p) : BodySimB S k p := by
+  intro s x hpc hf hrip hb hsafe
+  exact h s x hpc ((frameInvR_iff hfp).1 hf) hrip hb hsafe
+
+/-- The cache of the boundary at `k` for `x`'s position is the empty one: what a non-inline
+instruction leaves (the fall-through after it, a branch target's position, a landing pad). -/
+def CacheEmptyAt (S : Setup) (k : Nat) (x : X86.State) : Prop :=
+  (x.rip = addrAt S.ctx (S.start k) ∧ S.cache k = { pe := S.c.mode.pe }) ∨
+    (x.rip = addrAt S.ctx (posOf S.r k) ∧ S.used k = { pe := S.c.mode.pe })
+
+/-- `SNext` with the successor's boundary cache empty (`CacheEmptyAt`). -/
+abbrev SNextE (S : Setup) (s : R.RState) : X86.State → Prop :=
+  Next S.c (fun s' x' => BInv S s' x' ∧ CacheEmptyAt S s'.pc x') (ExitRel S) s
+
+/-- `BodySimB` reaching `SNextE`: the non-inline bodies end at an empty-cache boundary. -/
+def BodySimBE (S : Setup) (k p : Nat) : Prop :=
+  ∀ s x, s.pc = k → FrameInvR S s x → x.rip = addrAt S.ctx p → (∃ xb, BInv S s xb) →
+    RSafe S.Safe S.c s → Reach S.ctx S.E (SNextE S s) x
+
+/-- `BodySimBE` in the frame-pointer form. -/
+def BodySimFpBE (S : Setup) (k p : Nat) : Prop :=
+  ∀ s x, s.pc = k → FrameInv S s x → x.rip = addrAt S.ctx p → (∃ xb, BInv S s xb) →
+    RSafe S.Safe S.c s → Reach S.ctx S.E (SNextE S s) x
+
+theorem bodySimBE_of_fp {S : Setup} {k p : Nat}
+    (hfp : S.c.mode.framePointer = true) (h : BodySimFpBE S k p) : BodySimBE S k p := by
+  intro s x hpc hf hrip hb hsafe
+  exact h s x hpc ((frameInvR_iff hfp).1 hf) hrip hb hsafe
+
+theorem BodySimBE.toB {S : Setup} {k p : Nat} (h : BodySimBE S k p) : BodySimB S k p := by
+  intro s x hpc hf hrip hb hsafe
+  refine (h s x hpc hf hrip hb hsafe).mono ?_
+  rintro x' (⟨s', hn, hb', -⟩ | hd)
+  · exact .inl ⟨s', hn, hb'⟩
+  · exact .inr hd
+
 /-! ### The entry's code -/
 
 /-- The entry's counter check read by cursor `c` (from position 0) ending at `p1`: none without
@@ -481,6 +709,39 @@ def EntryRead (S : Setup) : Prop :=
 
 /-! ### `S` is the decoder's read -/
 
+/-- What `read` lays out for PE's pad region (`regionEntry`, `readParts`, `checkRegionStart`,
+`loopHeads`, `actionsOf`; the region's first instruction is `Decoded.regionStart`, the least
+cleanup pad). `start`: right after the region's entry `sub rsp, 40; jmp r11`; `pads`: every
+cleanup pad is in the region; `catchPads`: a catching pad (a terminate stub) is where its call
+is; `resume`: the region's `resume`s continue unwinding (`actionsOf`); `noCross`: no branch
+crosses the region's start (`loopHeads`); `heads`: no loop head (no counter check) in the
+region; `bodyEnd`: from the body R reaches the region only by unwinding to a cleanup pad (the
+body's last instruction doesn't fall through, the rest from `noCross` and `catchPads`). -/
+structure RegionFacts (S : Setup) (callSites : Array CallSite) (mode : Ryo.Obj.Mode) : Prop where
+  start : ∀ rs, S.c.mode.pe = true → S.c.d.regionStart = some rs →
+    rs < S.r.protos.size ∧ regionPad mode callSites = some (posOf S.r rs) ∧
+    regionEntryLen ≤ posOf S.r rs ∧
+    Dec S.body (posOf S.r rs - regionEntryLen)
+      [.subRsp (BitVec.ofNat 32 peRegionAlloc), .jmpR11] (posOf S.r rs)
+  noStart : S.c.mode.pe = true → S.c.d.regionStart = none → regionPad mode callSites = none
+  pads : ∀ k pad, S.c.mode.pe = true → S.c.cleanupAt k = some (some pad, false) →
+    S.c.inRegion pad = true
+  catchPads : ∀ k pad, S.c.cleanupAt k = some (some pad, true) →
+    S.c.inRegion pad = S.c.inRegion k
+  resume : ∀ k (hk : k < S.r.protos.size), S.c.inRegion k = true → S.r.protos[k].op = .resume →
+    S.c.cleanupAt k = some (none, false)
+  noCross : ∀ k (hk : k < S.r.protos.size), ∀ t ∈ S.r.protos[k].targets, ∀ j,
+    j < S.r.protos.size → posOf S.r j = t → S.c.inRegion j = S.c.inRegion k
+  heads : ∀ k (hk : k < S.r.protos.size), S.r.protos[k].counter.isSome = true →
+    S.c.inRegion k = false
+  bodyEnd : ∀ s s', S.c.inRegion s.pc = false → RNext S.c s s' → S.c.inRegion s'.pc = true →
+    ∃ pad, S.c.mode.pe = true ∧ S.c.cleanupAt s.pc = some (some pad, false) ∧ s'.pc = pad
+  /-- The entry instruction is in the body (`RBInv` is `BInv` at R's entry state). Needs the
+  region's first instruction `rs` to be past instruction 0: `read`'s `checkRegionStart` doesn't
+  reject an empty body (`rs = 0`), so this needs that check (or that an empty body's pad region
+  can't decode). -/
+  entryBody : S.c.inRegion 0 = false
+
 /-- `S` is `decodeReduced`'s read of a function (see the module comment): the R code is
 `reducedOf` of the read, in its mode; the body cursor is the code's with the read's frame; and
 the start positions, caches, dropped stores and `arg` flags are those of the second pass's
@@ -495,9 +756,6 @@ structure Decodes (S : Setup) (code : ByteArray) (relocs : Array Reloc) (rodata 
   rsEq : S.rs = relocs
   roEq : S.ro = rodata
   callSitesEq : S.callSites = callSites
-  /-- No pad region (PE's cleanup code after the body, run by the exception dispatcher on its
-  own stack): not covered. -/
-  noRegion : regionPad mode callSites = none
   bodyEq : S.body = bodyCursor { code := code.data, pos := 0, fields := .relocs relocs } mode
     S.r.frameSize S.body.pos
   run : ∃ stub padded c1, (instructions S.fr rodata dropped.toList (some S.targets) stub
@@ -523,6 +781,30 @@ structure Decodes (S : Setup) (code : ByteArray) (relocs : Array Reloc) (rodata 
   /-- The code before the body exactly as `readFrame` and `checkStubs` read it, in the body's
   cursor (either frame form): `EntryRead` (`read_instructions_entry`). -/
   entry : EntryRead S
+  /-- The loop heads are branch targets (`loopHeads`; `ctr_read_heads`). -/
+  readHeads : ∀ k (hk : k < S.r.protos.size), S.r.protos[k].counter.isSome = true →
+    ∃ k', ∃ hk' : k' < S.r.protos.size, posOf S.r k ∈ S.r.protos[k'].targets
+  /-- The loop heads' counter stubs as `checkStubs` reads them (`sl_read_stubs`). -/
+  readStubs : ∃ c1 c9 : Cursor,
+    c1 = bodyCursor { code := code.data, pos := 0, fields := .relocs relocs } mode
+      S.r.frameSize c1.pos ∧ c9 = atPos c1 c9.pos ∧
+    ∀ k (hk : k < S.r.protos.size) stub back, S.r.protos[k].counter = some (stub, back) →
+      ∃ n t long q, t.toNat = back ∧ Dec c9 stub [.lea .r11 .record,
+        .setReg .rax (BitVec.ofNat 64 n), .callR11 16, .branch .always t long] q
+  /-- The counter stubs come after the body's instructions (`sl_read_stubs_R`). -/
+  readStubsR : ∃ (c0 c7 : Cursor) (targets : Array Nat) (stub : Option Nat) (padded : Array Bool),
+    c0 = bodyCursor { code := code.data, pos := 0, fields := .relocs relocs } mode
+      S.r.frameSize c0.pos ∧
+    (instructions ⟨S.r.frameSize, mode, false⟩ rodata dropped.toList (some targets) stub
+      ({ code := code.data, pos := 0, fields := .relocs relocs } : Cursor).code.size
+      callSites).run c0 = .ok ((S.r.protos, padded), c7) ∧
+    (∃ items, Dec c0 ({ code := code.data, pos := 0, fields := .relocs relocs } : Cursor).pos
+      items c0.pos) ∧
+    ∀ R : Nat → Prop, (∀ p L q, R p → Dec c0 p L q → R q) → R c7.pos →
+      ∀ k (hk : k < S.r.protos.size) stub back, S.r.protos[k].counter = some (stub, back) →
+        R stub
+  /-- PE's pad region as `read` lays it out (`RegionFacts`). -/
+  region : RegionFacts S callSites mode
 
 /-- `readFrame` succeeds only on a valid mode. -/
 theorem readFrame_valid {mode : Ryo.Obj.Mode} {c c' : Cursor} {a : Option (Nat × Nat) × Nat}
@@ -607,6 +889,21 @@ structure SepAcross (S : Setup) : Prop where
       (∀ st'', R.clearHome S.c.mode.pe args.length (-(S.F : Int)) st' = .ok st'' →
         x'.reg .rbp = r → Handler.HRel st'' (x'.setReg .rbp b)) ∧
       Handler.CtlIn ctl x' ∧ AllocFacts S st st' y
+  /-- `handler` with the home space at any frame offset `ho` (`fpAddr … ho = rsp + 8`, the
+  frame's bytes there owned as `HandlerContractB.sound` asks), cleared there: PE's pad region,
+  whose home space is on the dispatcher's stack below the frame (`ho = rsp + 8 - fp`). Body
+  uses keep `handler` (`ho = -F`); `handler` would follow from this given `FrameOwn` at `-F`. -/
+  handlerAt : ∀ (r b : BitVec 64) h args vals st (x x' y : X86.State), x.reg .rbp = r →
+    h.hasHandler = true →
+    R.unpack S.c.ρ h S.c.mode args = some vals → Handler.AtHandler S.ctx h x →
+    Handler.ArgsIn S.c.ρ S.c.mode.pe (x.setReg .rbp b) x args → Handler.HRel st (x.setReg .rbp b) →
+    Handler.NoUB h vals st → S.E.ret x x' →
+    FrameSep (-(S.F : Int)) S.K st y → ∀ ho : Int, fpAddr (x.setReg .rbp b) ho = x.rsp + 8 →
+    FrameOwn ho (ho + R.handlerHome S.c.mode.pe args.length) st (x.setReg .rbp b) →
+    ∃ ch ctl st', opSem h vals st ch = .ok (ctl, st') ∧
+      (∀ st'', R.clearHome S.c.mode.pe args.length ho st' = .ok st'' →
+        x'.reg .rbp = r → Handler.HRel st'' (x'.setReg .rbp b)) ∧
+      Handler.CtlIn ctl x' ∧ AllocFacts S st st' y
   call : ∀ cal regs sp stack (st : OpSem.State) x x' y,
     EntryAt S.ctx S.c.mode.pe cal regs sp stack ⟨st.mem, st.exposed⟩ x →
     S.Safe ⟨.call cal regs sp stack, ⟨st.mem, st.exposed⟩⟩ →
@@ -615,7 +912,8 @@ structure SepAcross (S : Setup) : Prop where
       ⟨st.mem, st.exposed⟩ x x' a ∧ AllocFacts S st (withWorld st a.world) y) ∧
     (UnwAt S.E x x' → ∃ a exc, a.result = .unwind exc ∧
       Call.CallEnd S.Owned S.lo sp stack.length ⟨st.mem, st.exposed⟩ x x' a ∧
-      Call.Landed S.c.mode.pe S.padOf (x.rsp + 8) x x' exc ∧ AllocFacts S st (withWorld st a.world) y)
+      Call.Landing S.c.mode.pe S.padOf S.cleans S.region S.lo (x.rsp + 8) x x' exc ∧
+      AllocFacts S st (withWorld st a.world) y)
   island : ∀ isl tpl fp ops lends (st : OpSem.State) w x x' y,
     Island.IslandAtB S.ctx S.c.mode.pe isl fp ops st w x →
     S.Safe ⟨.island isl tpl fp ops lends, w⟩ → FrameSep (-(S.F : Int)) S.K st y →
@@ -623,7 +921,7 @@ structure SepAcross (S : Setup) : Prop where
       AllocFacts S st (withWorld st a.world) y) ∧
     (UnwAt S.E x x' → ∃ a exc, a.result = .unwind exc ∧
       Island.IslandEnd S.c.mode.pe S.Owned S.lo fp lends w x x' a ∧
-      Call.Landed S.c.mode.pe S.padOf (x.rsp + 8) x x' exc ∧
+      Call.Landing S.c.mode.pe S.padOf S.cleans S.region S.lo (x.rsp + 8) x x' exc ∧
       AllocFacts S st (withWorld st a.world) y)
 
 /-- Open: the dead-store steps, for an iteration that reads a dropped store with no code
@@ -636,6 +934,15 @@ structure DeadStoreSim (S : Setup) : Prop where
     (callInsn S.fr (S.dr k)).run cur = .ok (none, cur') →
     (inlineInsn (S.used k) (S.dr k) true).run cur' = .ok (some (q, cache', dr'), c') →
     q.dropped = true → BodySim S k p (S.used k)
+  /-- `empty` in PE's pad region (`read`'s `droppedRegion`). -/
+  emptyR : ∀ k, k < S.r.protos.size → S.c.inRegion k = true → ∀ d dr, S.dr k = d :: dr →
+    d.at_ = S.start k → RInsnSimAt S k
+  /-- `inline` in PE's pad region (read with `S.frR`). -/
+  inlineR : ∀ k p a cur cur' q c' cache' dr', S.c.inRegion k = true →
+    NoArg S.frR S.body p a cur →
+    (callInsn S.frR (S.dr k)).run cur = .ok (none, cur') →
+    (inlineInsn (S.used k) (S.dr k) true).run cur' = .ok (some (q, cache', dr'), c') →
+    q.dropped = true → RegionSim S k p (S.used k)
 
 /-- The cache the decoder used is empty wherever control arrives other than by falling through:
 every branch target of the second pass is one of the first pass's, where the cache is cleared
@@ -724,6 +1031,24 @@ structure EnvApart (S : Setup) : Prop where
   ctrOwned : ∀ j < 8, S.Owned (S.ctx.addrOf .recordLoopCtr + BitVec.ofNat 64 j)
   slotOff : ∀ j < 8,
     ¬ InStack S.lo S.x0.rsp (S.ctx.addrOf .record + BitVec.ofNat 64 16 + BitVec.ofNat 64 j)
+  /-- The stack below the entry's `rsp` holds no runtime-owned byte (the runtime's owned bytes are
+  the JIT records and its own data, never a thread's stack): PE's pad region keeps the
+  trampoline's return address (`RegionInv.tramp`) across what may write owned bytes. -/
+  stackOff : ∀ a, InStack S.lo S.x0.rsp a → ¬ S.Owned a
+
+/-- Open (layout and environment): `EnvApart`'s `allocs` and `syms` in PE's pad region, below the
+dispatcher's `rsp` (`RegionInv`). -/
+structure EnvApartR (S : Setup) : Prop where
+  allocs : ∀ e s x, RegionInv S e s x → ∀ a, Call.InAlloc s.world a →
+    ¬ S.Owned a ∧ ¬ InStack S.lo x.rsp a
+  syms : ∀ e s x, RegionInv S e s x → Call.SymsApart S.ctx S.lo x.rsp x.mem
+
+/-- Open (layout): `CodeApart`'s last conjunct in PE's pad region: no byte of the code or the
+rodata is in a live allocation of a related state. -/
+def CodeApartR (S : Setup) : Prop :=
+  ∀ a, ((∃ p, p < S.body.code.size ∧ a = addrAt S.ctx p) ∨
+      (∃ j, j < S.ro.size ∧ a = S.ctx.addrOf (.ro j))) →
+    ∀ e s x, RegionInv S e s x → ¬ Call.InAlloc s.world a
 
 /-- Open (checkable): the leading `arg`s. (That each reads an argument register of the convention
 is proved from the decoder, `Discharge/ArgsOk.lean`'s `argsOk_conv`.) No two read the same register (`arg_store`
@@ -772,6 +1097,11 @@ structure StackSizes (S : Setup) : Prop where
   /-- The outgoing area fits in the frame (`bodySim_call'`: callee writes below `sp + n` would
   otherwise reach the link slots). -/
   frame : ∀ k, S.c.stackSize k + (if S.c.mode.pe then 16 else 0) ≤ S.F
+  /-- A call in PE's pad region has no stack arguments: its area (on the dispatcher's stack at
+  the region's `rsp`) is the shadow space only, below the trampoline's return address. -/
+  region : ∀ (k : Nat) (op : Reduced.Opcode) (ops : List (R.Opnd Nat)) (f : Full.Opcode),
+    S.c.d.insns[k]? = some (.native op ops) → op.full = some f → f.info.shape = .call →
+    S.c.inRegion k = true → S.c.stackSize k ≤ 32
 
 /-- Every relocated field lies within the code. Checked: the decoder doesn't check it, so
 `Frame.decodeChecked` runs `relocsInCheck`; `Hyps.relocsIn` (`Discharge/RelocsIn.lean`) derives
@@ -806,10 +1136,20 @@ def siteAt (sites : Array CallSite) (p : Nat) : Option CallSite :=
 def lsdaPad (S : Setup) (p : Nat) : Option (BitVec 64) :=
   ((siteAt S.callSites p).bind (·.pad)).map (BitVec.ofNat 64)
 
-/-- Trusted (environment contract, `rust_eh_personality`'s lookup): the unwinder's pad for a return address in the function is
-the LSDA's. -/
+/-- Whether the LSDA's call site for return address offset `p` is a cleanup (a pad that doesn't
+catch): what PE's language handler runs through the pad region. -/
+def lsdaCleans (S : Setup) (p : Nat) : Bool :=
+  (siteAt S.callSites p).any fun s => s.pad.isSome && !s.catches
+
+/-- Trusted (environment contract, `rust_eh_personality`'s lookup on ELF, `ryo_seh_handler`'s
+`decide` on PE, vm/rt/src/vm/seh.rs): the unwinder's pad for a return address in the function
+is the LSDA's; the language handler's cleanup test (`cleans`, `Call.Landing`) is the LSDA's; and
+the pad region it calls is the image's (`PeHandlerData.region`, written from
+`pe_region_start`: the entry right before the first cleanup pad, `regionEntry`). -/
 def UnwinderReadsLsda (S : Setup) : Prop :=
-  ∀ p, S.padOf (addrAt S.ctx p) = (lsdaPad S p).map (S.ctx.base + ·)
+  (∀ p, S.padOf (addrAt S.ctx p) = (lsdaPad S p).map (S.ctx.base + ·)) ∧
+  (∀ p, S.cleans (addrAt S.ctx p) = lsdaCleans S p) ∧
+  (∀ r, regionPad S.c.mode S.callSites = some r → S.region = addrAt S.ctx (r - regionEntryLen))
 
 /-- Open (checkable; neither `read` nor the image checks verify it yet): no two call sites share a start. -/
 def StartsDistinct (sites : Array CallSite) : Prop :=
@@ -827,9 +1167,15 @@ structure Hyps (S : Setup) : Prop where
   -- Trusted: the environment's contracts and the link map.
   handler : Handler.HandlerContractB S.ctx S.c.ρ S.c.mode S.Owned S.lo (fun _ => S.E.ret)
   resume : ResumeContract S
-  call : CallContract S.ctx S.c.mode.pe S.Owned S.lo S.padOf S.Safe (RetAt S.E) (UnwAt S.E)
-  island : Island.IslandContractB S.ctx S.c.mode.pe S.Owned S.lo S.padOf S.Safe (RetAt S.E)
+  /-- Trusted (runtime): on PE `resume`'s handler never returns (`ryo_h_Resume` aborts there,
+  vm/rt/src/vm/interp.rs; PE unwinds through the pad region, whose `resume` is
+  `add rsp, 40; ret`). `ResumeContract` lands at `padOf`'s pad with the frame's `rsp`, which at
+  a PE cleanup site is in the region with the wrong `rsp`. -/
+  resumePe : S.c.mode.pe = true → ∀ x x', Handler.AtHandler S.ctx .resume x → ¬ S.E.ret x x'
+  call : CallContract S.ctx S.c.mode.pe S.Owned S.lo S.padOf S.cleans S.region S.Safe (RetAt S.E)
     (UnwAt S.E)
+  island : Island.IslandContractB S.ctx S.c.mode.pe S.Owned S.lo S.padOf S.cleans S.region S.Safe
+    (RetAt S.E) (UnwAt S.E)
   trip : TripContract S.Owned S.lo S.E.ret
   linked : Handler.Linked S.ctx S.c.ρ
   globals : ∃ st0 x0, Globals S.ctx S.c.ρ st0 x0
@@ -865,12 +1211,16 @@ structure Hyps (S : Setup) : Prop where
   -- Open prerequisites: the environment and the layout.
   sepAcross : SepAcross S
   envApart : EnvApart S
+  /-- `envApart`'s `allocs` and `syms` in PE's pad region (`rsp` the region's). -/
+  envApartR : EnvApartR S
   /-- Checked by `stackSizesCheck` (ryo-lean, against the image's areas): gives
   `Hyps.stackSizes`. -/
   stackSizesOk : stackSizesCheck S.c = true
   /-- `Code.stackSize` is zero past the instructions (`imageProgram`: `imageStackSize_out`). -/
   stackSizeOut : ∀ k, S.c.d.insns.size ≤ k → S.c.stackSize k = 0
   codeApart : CodeApart S
+  /-- `codeApart`'s last conjunct in PE's pad region. -/
+  codeApartR : CodeApartR S
   envOutside : EnvOutside S
   -- Open prerequisites: the decoder's and linker's facts not yet exposed.
   deadStore : DeadStoreSim S
@@ -887,6 +1237,22 @@ structure Hyps (S : Setup) : Prop where
   `RyoProofs/InlineOk.lean`; outside the default build, hence a field). -/
   inlineClsOk : ∀ (f : Full.Opcode) (cls : Class), (f, cls) ∈ inlineOps →
     shapeOk f cls = true ∧ CacheStep.clsOk cls = true
+
+/-- No byte of the code or the rodata is in a live allocation of `s`'s world (`CodeApart`'s and
+`CodeApartR`'s last conjunct, without the machine state: what the mid-level lemmas use, in the
+body or PE's pad region). -/
+def CodeOff (S : Setup) (s : R.RState) : Prop :=
+  ∀ a, ((∃ p, p < S.body.code.size ∧ a = addrAt S.ctx p) ∨
+      (∃ j, j < S.ro.size ∧ a = S.ctx.addrOf (.ro j))) →
+    ¬ Call.InAlloc s.world a
+
+theorem codeOff_of_bInv {S : Setup} (H : Hyps S) {s : R.RState} {y : X86.State}
+    (h : BInv S s y) : CodeOff S s :=
+  fun a ha => (H.codeApart a ha).2.2.2 s y h
+
+theorem codeOff_of_region {S : Setup} (H : Hyps S) {e : X86.State} {s : R.RState}
+    {x : X86.State} (h : RegionInv S e s x) : CodeOff S s :=
+  fun a ha => H.codeApartR a ha e s x h
 
 /-- The link slots are private and in no `Lend` extent after the scopes: no `Escape` or `Lend`
 scope covers them (`privCheck`), and escaped objects are `Escape` scopes' ranges
@@ -1063,7 +1429,9 @@ theorem Hyps.argSizeK {S : Setup} (_ : Hyps S) : (16 + S.c.argSize : Int) ≤ S.
 /-- The callees' stack areas fit, from `stackSizesCheck` (`Discharge/StackSizes.lean`). -/
 theorem Hyps.stackSizes {S : Setup} (H : Hyps S) : StackSizes S :=
   have h := Discharge.StackSizes.of_check H.stackSizesOk H.stackSizeOut H.frameBounds.F_le
-  ⟨h.1, h.2.1, h.2.2.1⟩
+  ⟨h.1, h.2.1, h.2.2.1, fun _ _ _ _ hi hf hsh hreg =>
+    Discharge.StackSizes.regionCalls_call
+      (Discharge.StackSizes.regionCalls_of_check H.stackSizesOk) hi hf hsh hreg⟩
 
 /-- On PE an island template's 32-byte shadow space at the frame's bottom, `[-F, -F + 32)`, lies
 below the link slots (`bodySim_island`), from `stackSizesCheck`. The template may write it: R's
@@ -1327,7 +1695,7 @@ theorem bs_inline {ctx : Ctx} {m : Mem} {c c' : Cursor} {rs : Array Reloc} {mode
     (hk : LinkOkF ctx m c rs mode) (hb : Boundary rs c.pos)
     (h : (inlineInsn cache dropped true).run c = .ok (some (q, cache', dr'), c')) :
     Boundary rs c'.pos := by
-  obtain ⟨-, -, _, _, _, -, -, hd⟩ := inlineInsn_read_drop h
+  obtain ⟨-, -, _, _, _, -, -, hd, -⟩ := inlineInsn_read_drop h
   rcases hd with ⟨-, hd⟩ | ⟨_, _, _, -, hd⟩ <;> exact bs_decDrop hk hd hb
 
 /-- What `insn` reads ends at a boundary (either frame form). -/
@@ -1621,6 +1989,44 @@ theorem FrameInv.congr {s : R.RState} {x y : X86.State} (h : FrameInv S s x)
   refine ⟨by rw [hrbp]; exact f1, by rw [hrbp, hm]; exact f2, fun hfp3 => by rw [hrbp, hm]; exact f3 hfp3,
     fun i hi h5 => by rw [hr]; exact f5 i hi h5⟩
 
+/-- Instruction `k` has no PE cleanup entry (a landing pad that doesn't catch: on PE, run
+through the pad region). -/
+def NoPeClean (S : Setup) (k : Nat) : Prop :=
+  S.c.mode.pe = true → ∀ pad, S.c.cleanupAt k ≠ some (some pad, false)
+
+/-- At every return address in instruction `k`'s call sites the landing is not through the pad
+region (`Call.Landing`'s test is false). -/
+def NotCleanup (S : Setup) (k : Nat) : Prop :=
+  ∀ hk : k < S.r.protos.size, ∀ site ∈ S.r.protos[k].sites, ∀ p, site.1 < p →
+    p ≤ site.1 + site.2 → (S.c.mode.pe && S.cleans (addrAt S.ctx p)) = false
+
+/-- The language handler's cleanup test at a return address in instruction `k`'s call sites is
+whether `k`'s cleanup entry is a pad that doesn't catch (as `PadsLinked` for the pad;
+`Hyps.cleansLinked`). -/
+def CleansLinked (S : Setup) : Prop :=
+  ∀ k (hk : k < S.r.protos.size), ∀ site ∈ S.r.protos[k].sites, ∀ p, site.1 < p →
+    p ≤ site.1 + site.2 → S.cleans (addrAt S.ctx p) = match S.c.cleanupAt k with
+      | some (some _, false) => true
+      | _ => false
+
+theorem notCleanup_of {S : Setup} {k : Nat} (hCL : CleansLinked S) (hnc : NoPeClean S k) :
+    NotCleanup S k := by
+  intro hk site hs p h1 h2
+  cases hpe : S.c.mode.pe with
+  | false => rfl
+  | true =>
+    rw [hCL k hk site hs p h1 h2]
+    cases hc : S.c.cleanupAt k with
+    | none => rfl
+    | some e =>
+      obtain ⟨pad?, cat⟩ := e
+      cases pad? with
+      | none => cases cat <;> rfl
+      | some pad =>
+        cases cat with
+        | true => rfl
+        | false => exact absurd hc (hnc hpe pad)
+
 /-- What a body lemma knows of proto `k`, read at `p` as `q` ending at `c'` with cache `cache'`:
 the proto (`q` with the iteration's position and counter), its R instruction, the relocation
 boundary at `p`, and where the next iteration starts (after PE's `nop` after a call with a
@@ -1634,6 +2040,50 @@ structure ProtoFacts (S : Setup) (k p : Nat) (q : Proto) (c' : Cursor) (cache' :
   nop : NopRead S.fr S.callSites S.body q c'.pos (S.start (k + 1))
   cache : S.cache (k + 1) = cache'
   args : S.args (k + 1) = (S.args k && q.op == .arg)
+  /-- A body instruction (not in PE's pad region). -/
+  body : S.c.inRegion k = false
+  /-- Not a PE cleanup site: an unwind out of its call comes back at the pad (`NotCleanup`). -/
+  notClean : NotCleanup S k
+
+/-- `ProtoFacts` without `notClean`: what the body lemmas that hold at PE cleanup sites take
+(`bodySim_call_fpRB`, `bodySim_islandRB`, `handler_resume_pe`). To be merged into `ProtoFacts`
+once `notClean` moves to the two lemmas that need it (`bodySim_call_fpB`, `bodySim_islandB`) as
+an explicit hypothesis. -/
+structure ProtoFactsN (S : Setup) (k p : Nat) (q : Proto) (c' : Cursor) (cache' : Cache) : Prop where
+  lt : k < S.r.protos.size
+  proto : ∃ p1 counter, S.r.protos[k]? = some { q with pos := p1, counter }
+  insn : ∃ i, S.c.d.insns[k]? = some i ∧ ∀ hk : k < S.r.protos.size,
+    InsnOf (posOf S.r) S.r.protos[k] i
+  bound : Boundary S.rs p
+  nop : NopRead S.fr S.callSites S.body q c'.pos (S.start (k + 1))
+  cache : S.cache (k + 1) = cache'
+  args : S.args (k + 1) = (S.args k && q.op == .arg)
+  body : S.c.inRegion k = false
+
+theorem ProtoFacts.toN {k p : Nat} {q : Proto} {c' : Cursor} {cache' : Cache}
+    (h : ProtoFacts S k p q c' cache') : ProtoFactsN S k p q c' cache' :=
+  ⟨h.lt, h.proto, h.insn, h.bound, h.nop, h.cache, h.args, h.body⟩
+
+/-- What a pad-region lemma knows of proto `k` (as `ProtoFacts`, read with `S.frR`): the
+iteration's proto is `q` with its position and counter, after `resumeSlots` (`S.fixResume`); no
+`arg` (`region_not_leadArg`) and no `notClean` (the region's unwinds are handled per site). -/
+structure ProtoFactsR (S : Setup) (k p : Nat) (q : Proto) (c' : Cursor) (cache' : Cache) : Prop where
+  lt : k < S.r.protos.size
+  proto : ∃ p1 counter, S.r.protos[k]? = some (S.fixResume { q with pos := p1, counter })
+  insn : ∃ i, S.c.d.insns[k]? = some i ∧ ∀ hk : k < S.r.protos.size,
+    InsnOf (posOf S.r) S.r.protos[k] i
+  bound : Boundary S.rs p
+  nop : NopRead S.frR S.callSites S.body q c'.pos (S.start (k + 1))
+  cache : S.cache (k + 1) = cache'
+  inR : S.c.inRegion k = true
+
+/-- Away from PE cleanup sites the whole function's targets are the body's: a body instruction
+doesn't reach the region but by a cleanup unwind (`RegionFacts.bodyEnd`), so `RBInv` is
+`BInv` at every successor. -/
+theorem bodySimBE_of_RB (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    {k p : Nat} (hb : S.c.inRegion k = false) (hnc : NoPeClean S k) (h : BodySimRB S k p) :
+    BodySimFpBE S k p := by
+  sorry -- PE-P5
 
 theorem protoFacts_insnOf {k p : Nat} {q : Proto} {c' : Cursor} {cache' : Cache}
     (hP : ProtoFacts S k p q c' cache') :
@@ -1646,13 +2096,22 @@ theorem protoFacts_insnOf {k p : Nat} {q : Proto} {c' : Cursor} {cache' : Cache}
     exact hpq.2
   exact ⟨i, p1, ctr, hi, hpk ▸ hio hlt, hlt, hpk⟩
 
+/-- `BodySimB` gives `BodySim` with the cache `S.used k` (the boundary at `posOf`). -/
+theorem BodySimB.used {k p : Nat} (h : BodySimB S k p) : BodySim S k p (S.used k) := by
+  intro s x hpc hf hrip hc hsafe
+  have hj : ∀ a, S.virt (x.jump a) = (S.virt x).jump a := fun a => by
+    unfold Setup.virt; cases S.fb <;> rfl
+  subst hpc
+  refine h s x rfl hf hrip ⟨x.jump (addrAt S.ctx (posOf S.r s.pc)),
+    ⟨(by rw [hj]; exact hf.1.congr rfl rfl rfl), hf.2⟩, .inr ⟨rfl, (by rw [hj]; exact hc)⟩⟩ hsafe
+
 /-- A bare `unreachable` (`Shapes.unreachable_step`: R's step is an error, excluded by
 `RSafe`). -/
-theorem bodySim_unreachable (_hD : Decodes S code relocs rodata callSites dropped scopes mode)
+theorem bodySim_unreachableB (_hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (_H : Hyps S) {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
     (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (_hn : NoArg S.fr S.body p a cur)
     (hr : InsnRead S.fr S.ro cur q c') (hop : q.op = .unreachable) :
-    BodySim S k p (S.used k) := by
+    BodySimBE S k p := by
   intro s x hs _ _ _ hsafe
   exfalso
   obtain ⟨i, p1, ctr, hi, hio, -⟩ := protoFacts_insnOf hP
@@ -1682,6 +2141,13 @@ theorem bodySim_unreachable (_hD : Decodes S code relocs rodata callSites droppe
     | ok s1 =>
       obtain ⟨m, hm⟩ := hsafe.1 {} _ (Shapes.unreachable_step S.ctx (x := x) (ch := {}) hi hf hsc).2
       cases hm
+
+theorem bodySim_unreachable (_hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    (_H : Hyps S) {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
+    (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (_hn : NoArg S.fr S.body p a cur)
+    (hr : InsnRead S.fr S.ro cur q c') (hop : q.op = .unreachable) :
+    BodySim S k p (S.used k) :=
+  (bodySim_unreachableB _hD _H hP _hn hr hop).toB.used
 
 /-- `mapMem` keeps every item but its memory operand: a branch comes from a branch. -/
 theorem mapMem_eq_branch {g : M → M} {i : Item} {c : Cond} {t : BitVec 32} {l : Bool}
@@ -1821,11 +2287,11 @@ set_option maxRecDepth 100000 in
 /-- `jmp t` (`Shapes.jmp_step`, `DecodeLink.link_jmp`, `branch_canonical_any`; the target isn't a
 leading `arg`, `ArgsOk.untargeted`). In either frame form: the branch is the same item in
 memory, and it commutes with `virt` (`setup_virt_jump`). -/
-theorem bodySim_jmp (_hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
+theorem bodySim_jmpB (_hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
     {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
     (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
     (hr : InsnRead S.fr S.ro cur q c') (hop : q.op = .jmp) :
-    BodySim S k p (S.used k) := by
+    BodySimBE S k p := by
   intro s x hs hfR hrip _ hsafe
   obtain ⟨hf, hrbpOk⟩ := hfR
   have hcur := noArg_insn hn hr
@@ -1891,7 +2357,7 @@ theorem bodySim_jmp (_hD : Decodes S code relocs rodata callSites dropped scopes
       have hvr : S.virt (x.jump A) = x' := by rw [hx'e, setup_virt_jump]
       have hxmm : x'.xmm = (S.virt x).xmm := by rw [hx'e]; rfl
       refine .step (.exec _ p (branch_canonical_any hd) hca.1 hrip (hbx x))
-        (.done (.inl ⟨_, .step hstep, ⟨⟨?_, fun h => hrbpOk h⟩, .inr ⟨?_, ?_⟩⟩⟩))
+        (.done (.inl ⟨_, .step hstep, ⟨⟨⟨?_, fun h => hrbpOk h⟩, .inr ⟨?_, ?_⟩⟩, .inr ⟨?_, ?_⟩⟩⟩))
       · rw [hvr]
         have hk := scopes_keeps _ hsc
         have hf0 := hf.congr hregs hxmm hmem
@@ -1914,6 +2380,22 @@ theorem bodySim_jmp (_hD : Decodes S code relocs rodata callSites dropped scopes
           rw [hpk]; simp [Proto.targets, Opnd.targetsOf])
         simp only [Setup.used, ht', hc, ↓reduceIte]
         exact CacheInv.emptyPe _ _
+      · show (x.jump A).rip = addrAt S.ctx (posOf S.r t')
+        have hxr : (x.jump A).rip = x'.rip := by rw [hx'e]; rfl
+        rw [hxr, hrip', ht']
+        simp only [addrAt, BitVec.ofNat_toNat]
+        congr 1
+      · show S.used t' = { pe := S.c.mode.pe }
+        have hc := H.cacheTargets k hlt t.toNat (by
+          rw [hpk]; simp [Proto.targets, Opnd.targetsOf])
+        simp only [Setup.used, ht', hc, ↓reduceIte]
+
+theorem bodySim_jmp (_hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
+    {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
+    (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
+    (hr : InsnRead S.fr S.ro cur q c') (hop : q.op = .jmp) :
+    BodySim S k p (S.used k) :=
+  (bodySim_jmpB _hD H hP hn hr hop).toB.used
 
 /-! #### The iteration's padding, the boundaries, instructions outside the code -/
 
@@ -1940,6 +2422,28 @@ theorem reach_padding {Q : X86.State → Prop} :
     refine .step (.exec (.nop n) p (nop_canonical hn p) hc.1 hrip hy) ?_
     refine reach_padding (fun m hm => hns m (by simp [hm])) hc.2 hyr fun z h1 h2 h3 h4 => ?_
     refine k z h1 h2 h3 ?_
+    rw [h4]
+    simp only [List.map_cons, codeSize_cons, Nat.add_assoc]
+
+/-- `reach_padding` with the flags kept too. -/
+theorem reach_padding_fl {Q : X86.State → Prop} :
+    ∀ {ns : List Nat} {p : Nat} {x : X86.State}, (∀ n ∈ ns, 1 ≤ n ∧ n ≤ 9) →
+      CodeAt S.ctx x.mem (ns.map Item.nop) p → x.rip = addrAt S.ctx p →
+      (∀ y : X86.State, y.regs = x.regs → y.xmm = x.xmm → y.flags = x.flags → y.mem = x.mem →
+        y.rip = addrAt S.ctx (p + codeSize (ns.map Item.nop)) → Reach S.ctx S.E Q y) →
+      Reach S.ctx S.E Q x
+  | [], p, x, _, _, hrip, k => k x rfl rfl rfl rfl (by simp [hrip, codeSize])
+  | n :: ns, p, x, hns, hc, hrip, k => by
+    have hn := hns n (by simp)
+    let y := x.jump (x.rip + BitVec.ofNat 64 (Item.nop n).size)
+    have hy : (Item.nop n).exec S.ctx x = .ok y := rfl
+    have hyr : y.rip = addrAt S.ctx (p + (Item.nop n).size) := by
+      show x.rip + _ = _
+      rw [hrip, addrAt_add]
+    refine .step (.exec (.nop n) p (nop_canonical hn p) hc.1 hrip hy) ?_
+    refine reach_padding_fl (fun m hm => hns m (by simp [hm])) hc.2 hyr
+      fun z h1 h2 h3 h3' h4 => ?_
+    refine k z h1 h2 h3 h3' ?_
     rw [h4]
     simp only [List.map_cons, codeSize_cons, Nat.add_assoc]
 
@@ -1987,6 +2491,34 @@ theorem insnSim_oob (hD : Decodes S code relocs rodata callSites dropped scopes 
     simp only [Array.getElem?_eq_none_iff]; omega
   obtain ⟨m, hm⟩ := hsafe.1 {} _ (by simp [R.step, hnone, illFormed]; rfl)
   cases hm
+
+/-- `insnSim_oob` for `RInsnSimAt`. -/
+theorem rinsnSim_oob (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    {k : Nat} (hk : S.r.protos.size ≤ k) : RInsnSimAt S k := by
+  intro s x hs _ hsafe
+  have hsz := (reducedOf_insns hD.reduced).1
+  have hnone : S.c.d.insns[s.pc]? = none := by
+    simp only [Array.getElem?_eq_none_iff]; omega
+  obtain ⟨m, hm⟩ := hsafe.1 {} _ (by simp [R.step, hnone, illFormed]; rfl)
+  cases hm
+
+/-- A body instruction that isn't a PE cleanup site is simulated for the whole function as in
+the body: its R successors stay in the body (`RegionFacts.bodyEnd`). -/
+theorem rinsnSim_of_insnSim (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    {k : Nat} (hb : S.c.inRegion k = false) (hnc : NoPeClean S k) (h : InsnSimAt S k) :
+    RInsnSimAt S k := by
+  intro s x hs hbi hsafe
+  have hbs : S.c.inRegion s.pc = false := by rw [hs]; exact hb
+  refine (h s x hs ((rbInv_body hbs).1 hbi) hsafe).mono fun x' hx' => ?_
+  rcases hx' with ⟨s', hn, hb'⟩ | hd
+  · refine .inl ⟨s', hn, ?_⟩
+    cases hr : S.c.inRegion s'.pc with
+    | false => exact (rbInv_body hr).2 hb'
+    | true =>
+      obtain ⟨pad, hpe, hcl, -⟩ := hD.region.bodyEnd s s' hbs hn hr
+      rw [hs] at hcl
+      exact absurd hcl (hnc hpe pad)
+  · exact .inr hd
 
 end Insn
 

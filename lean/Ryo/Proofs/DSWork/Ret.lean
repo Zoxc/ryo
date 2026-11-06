@@ -248,11 +248,11 @@ virtual state (`retAddr`, `rbp`, `saved`; `rbp` itself: with a frame pointer the
 `savedRbp`, without one the entry's, `RbpOk`), the incoming area from `Rel` over
 `[16, 16 + argSize)` (`H.argSizeK`, in the window). R's step is safe: no error but `noBehavior`
 (`RSafe`), the scopes never stop so (`noNB_scopes`). -/
-theorem bodySim_ret (hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
+theorem bodySim_retB (hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
     {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
     (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
     (hr : InsnRead S.fr S.ro cur q c') (hop : q.op = .ret) :
-    BodySim S k p (S.used k) := by
+    BodySimBE S k p := by
   have hF8 : S.c.mode.pe = true → S.F + 8 < 2 ^ 31 := H.peFrame
   intro s x hs hfr hrip _ hsafe
   obtain ⟨hf, hrb⟩ := hfr
@@ -434,6 +434,13 @@ theorem bodySim_ret (hD : Decodes S code relocs rodata callSites dropped scopes 
             exact hbr.saved i hsv h5
         · rw [nf_real_mem, hmem, ← e16]
           exact hbytes (by have := H.argSizeK; have := H.frameBounds.K_le; omega)
+
+theorem bodySim_ret (hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
+    {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
+    (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
+    (hr : InsnRead S.fr S.ro cur q c') (hop : q.op = .ret) :
+    BodySim S k p (S.used k) :=
+  (bodySim_retB hD H hP hn hr hop).toB.used
 
 end Insn
 

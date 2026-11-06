@@ -1191,6 +1191,8 @@ theorem readParts_pos {fr : Frame} {ro : ByteArray} {callSites : Array CallSite}
     obtain ⟨-, rfl⟩ := expect_ok h8
     obtain ⟨i2, c9, h9, h5⟩ := bind_ok h5
     obtain ⟨n2, -, rfl⟩ := run_item h9
+    obtain ⟨q, c9', h9', h5⟩ := bind_ok h5
+    obtain ⟨rfl, rfl⟩ := pos_run' h9'
     obtain ⟨u, c10, h10, h5⟩ := bind_ok h5
     obtain ⟨-, rfl⟩ := expect_ok h10
     have e5 := (instructions_read h5).2.1

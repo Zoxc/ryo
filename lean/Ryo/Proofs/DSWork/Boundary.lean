@@ -885,6 +885,10 @@ theorem actionsOf_lpad {callSites : Array CallSite} {protos : Array Proto} {rs :
   · intro y hy pad cat e; subst e; simp [Array.mem_replicate] at hy
   rcases ite_ok h with ⟨-, h⟩ | ⟨-, h⟩
   · obtain ⟨_, _, h', -⟩ := bind_ok h; exact (err_ok h').elim
+  rcases ite_ok h with ⟨-, h⟩ | ⟨-, h⟩
+  · obtain ⟨_, _, h', -⟩ := bind_ok h; exact (err_ok h').elim
+  rcases ite_ok h with ⟨-, h⟩ | ⟨-, h⟩
+  · obtain ⟨_, _, h', -⟩ := bind_ok h; exact (err_ok h').elim
   obtain ⟨he, -⟩ := pure_ok h
   subst he
   exact key.elim id id

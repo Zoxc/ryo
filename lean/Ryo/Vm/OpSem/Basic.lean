@@ -129,11 +129,14 @@ deriving Repr, DecidableEq, Inhabited
 allowed set is `noBehavior`, so a differential test passes the handler's own choice.
 - `nan`: the bits of a NaN result (the default: the first of the candidates RFC 3514 allows).
 - `pickY`: `fmin`/`fmax` of zeros of opposite sign return `b` (else `a`).
-- `spurious`: a weak compare-exchange fails although the values are equal. -/
+- `spurious`: a weak compare-exchange fails although the values are equal.
+- `sp`: a call in PE's pad region (`R.Code.inRegion`): where its outgoing area is, on the
+  exception dispatcher's stack (not a frame address; any value is allowed). -/
 structure Choice where
   nan : Option Nat := none
   pickY : Bool := false
   spurious : Bool := false
+  sp : Nat := 0
 deriving Repr, DecidableEq, Inhabited
 
 abbrev M := Except Stop

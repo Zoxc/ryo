@@ -171,6 +171,17 @@ structure Decoded where
   cache, without a dropped store), empty for the others: what the L2 code reads and writes
   of the frame, which the dead-store check needs. Not part of Rust's `Decoded`. -/
   items : Array (List Ryo.X86.Item) := #[]
+  /-- Each inline instruction's register cache after it, as the slots its entries cache
+  (`(offset, bytes)`; `Proto.cacheOut`), `none` for the others: the cache entering the next
+  instruction, which the dead-store check needs. Not part of Rust's `Decoded`. -/
+  cacheOut : Array (Option (List (BitVec 32 × Nat))) := #[]
+  /-- Each inline instruction's dropped store item (`Proto.droppedItem`), `none` for the others:
+  the dead-store check's `droppedFormOk` checks it against `droppedStore`. Not part of Rust's
+  `Decoded`. -/
+  droppedItems : Array (Option Ryo.X86.Item) := #[]
+  /-- How many dropped stores each instruction's read consumed (`Proto.consumed`):
+  `droppedFormOk` checks at most one. Not part of Rust's `Decoded`. -/
+  consumed : Array Nat := #[]
 deriving Repr, Inhabited
 
 /-! ### Words (`reduced::words`) -/

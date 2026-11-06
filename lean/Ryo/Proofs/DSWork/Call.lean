@@ -197,7 +197,7 @@ macro "call_nonb2" : tactic => `(tactic| repeat (first
 theorem call_step_ok {c : R.Code} {s : R.RState} {ch : OpSem.Choice} {op : Reduced.Opcode}
     {d : BitVec 32} {fo : R.Opnd Nat} {k : BitVec 64} {ws : List (BitVec 32)} {f : Full.Opcode}
     (hi : c.d.insns[s.pc]? = some (.native op [.slot d, fo, .imm k, .words ws]))
-    (hf : op.full = some f) (hsh : f.info.shape = .call) :
+    (hf : op.full = some f) (hsh : f.info.shape = .call) (hreg : c.inRegion s.pc = false) :
     call_NoNB (R.step c s ch) ∧ ∀ out, R.step c s ch = .ok out → ∃ q s', out = .ext q s' := by
   constructor
   · unfold R.step
@@ -211,7 +211,9 @@ theorem call_step_ok {c : R.Code} {s : R.RState} {ch : OpSem.Choice} {op : Reduc
     cases hsc : (c.scopesAt s.pc).foldlM R.applyScope s with
     | error e => simp [hsc] at h
     | ok s1 =>
-    simp only [hsc, hf, hsh] at h
+    have hreg1 : c.inRegion s1.pc = false := by
+      rw [(Ryo.Proofs.Scope.scopes_keeps _ hsc).pc]; exact hreg
+    simp only [hsc, hf, hsh, hreg1, Bool.false_eq_true, ↓reduceIte] at h
     cases hp : R.retRegs k.toNat false with
     | error e => simp [hp] at h
     | ok parts =>
@@ -280,9 +282,10 @@ theorem tail_step_ok {c : R.Code} {s : R.RState} {ch : OpSem.Choice} {op : Reduc
 theorem call_step_ext {Safe : R.Query → Prop} {c : R.Code} {s : R.RState} {op : Reduced.Opcode}
     {d : BitVec 32} {fo : R.Opnd Nat} {k : BitVec 64} {ws : List (BitVec 32)} {f : Full.Opcode}
     (hi : c.d.insns[s.pc]? = some (.native op [.slot d, fo, .imm k, .words ws]))
-    (hf : op.full = some f) (hsh : f.info.shape = .call) (hs : RSafe Safe c s) :
+    (hf : op.full = some f) (hsh : f.info.shape = .call) (hreg : c.inRegion s.pc = false)
+    (hs : RSafe Safe c s) :
     ∃ q s', R.step c s {} = .ok (.ext q s') := by
-  obtain ⟨hnb, hout⟩ := call_step_ok (ch := {}) hi hf hsh
+  obtain ⟨hnb, hout⟩ := call_step_ok (ch := {}) hi hf hsh hreg
   cases h : R.step c s {} with
   | error e =>
     obtain ⟨m, rfl⟩ := hs.1 {} e h
@@ -290,6 +293,16 @@ theorem call_step_ext {Safe : R.Query → Prop} {c : R.Code} {s : R.RState} {op 
   | ok out =>
     obtain ⟨q, s', rfl⟩ := hout out h
     exact ⟨q, s', rfl⟩
+
+/-- `call_step_ext` in PE's pad region, for any outgoing area `sp` (the choice's). -/
+theorem call_step_ext_region {Safe : R.Query → Prop} {c : R.Code} {s : R.RState}
+    {op : Reduced.Opcode} {d : BitVec 32} {fo : R.Opnd Nat} {k : BitVec 64}
+    {ws : List (BitVec 32)} {f : Full.Opcode}
+    (hi : c.d.insns[s.pc]? = some (.native op [.slot d, fo, .imm k, .words ws]))
+    (hf : op.full = some f) (hsh : f.info.shape = .call) (hreg : c.inRegion s.pc = true)
+    (hs : RSafe Safe c s) (sp : Nat) :
+    ∃ q s', R.step c s { sp := sp } = .ok (.ext q s') := by
+  sorry -- PE-P8
 
 /-- Under `RSafe`, R's step of a tail call ends the function. -/
 theorem tail_step_done {Safe : R.Query → Prop} {c : R.Code} {s : R.RState} {op : Reduced.Opcode}
@@ -1068,7 +1081,7 @@ theorem call_return_at (ctx : Ctx) {c : R.Code} {s : R.RState} {x1 x' : X86.Stat
     {op : Reduced.Opcode} {f : Full.Opcode} {d : BitVec 32} {fo : R.Opnd Nat} {k : BitVec 64}
     {ws : List (BitVec 32)} {Owned : BitVec 64 → Prop} {lo : BitVec 64} {a : R.Answer}
     (hi : c.d.insns[s.pc]? = some (.native op [.slot d, fo, .imm k, .words ws]))
-    (hf : op.full = some f) (hsh : f.info.shape = .call)
+    (hf : op.full = some f) (hsh : f.info.shape = .call) (hreg : c.inRegion s.pc = false)
     (hcr : Call.CallReturn c.mode.pe Owned lo (s.fp - c.d.frameSize) (c.stackSize s.pc)
       s.world x1 x' a)
     (hfp : c.d.frameSize ≤ s.fp) (hr : RRel s x1)
@@ -1101,7 +1114,7 @@ theorem call_return_at (ctx : Ctx) {c : R.Code} {s : R.RState} {x1 x' : X86.Stat
       obtain ⟨_, hfor, _⟩ := hpq q hq
       rcases hfor with ⟨_, h | h⟩ | ⟨_, h | h⟩ <;> rw [h] <;> simp [ArgRet.retRegList])
   have hrbp2 : x''.reg .rbp = x'.reg .rbp := rs2 5 (by decide) (by decide) (by decide)
-  refine ⟨⟨s.pc + 1, s.fp, st2, s.args⟩, x'', CallLemmas.answer_ret hi hf hsh hresR hw hp hfold,
+  refine ⟨⟨s.pc + 1, s.fp, st2, s.args⟩, x'', CallLemmas.answer_ret hi hf hsh hreg hresR hw hp hfold,
     by rw [hstores]; exact hx, ⟨hrel2, by rw [hrbp2, hrbp]; exact hr.rbp, ?_⟩, hmr2, rfl, rfl,
     by rw [p2, hstores], ?_, hrbp2, fun i hi' => ?_, st1, parts, regsR, hw, hp, hfold⟩
   · exact hwf.of_sizes g1 (SizesKept.of_escOnly g2)
@@ -1110,6 +1123,29 @@ theorem call_return_at (ctx : Ctx) {c : R.Code} {s : R.RState} {x1 x' : X86.Stat
   · obtain ⟨h0, h2, h11, -⟩ := Call.saved_ne hi'
     exact rs2 i h0 h2 h11
 
+/-- `Call.call_unwind` for the answer `a`, for any return keeping `rbp` (`Call.Landed`, or at a
+PE cleanup site `Call.PadCalled`). -/
+theorem call_unwind_at_rbp {c : R.Code} {s : R.RState} {x1 x' : X86.State}
+    {op : Reduced.Opcode} {f : Full.Opcode} {d : BitVec 32} {fo : R.Opnd Nat} {k : BitVec 64}
+    {ws : List (BitVec 32)} {Owned : BitVec 64 → Prop} {lo : BitVec 64}
+    {a : R.Answer} {exc : ThinPointer} {pad : Nat} {cat : Bool}
+    (hi : c.d.insns[s.pc]? = some (.native op [.slot d, fo, .imm k, .words ws]))
+    (hf : op.full = some f) (hsh : f.info.shape = .call) (hreg : c.inRegion s.pc = false)
+    (hres : a.result = .unwind exc)
+    (hce : Call.CallEnd Owned lo (s.fp - c.d.frameSize) (c.stackSize s.pc) s.world x1 x' a)
+    (hrbp : x'.reg .rbp = x1.reg .rbp)
+    (hfp : c.d.frameSize ≤ s.fp) (hr : RRel s x1)
+    (hb : c.d.frameSize + c.stackSize s.pc < 2 ^ 62)
+    (hap : Call.CallApart Owned lo c.d.frameSize (c.stackSize s.pc) (s.fp - c.d.frameSize) s.st x1)
+    (hpad : c.cleanupAt s.pc = some (some pad, cat)) :
+    ∃ st1, R.writeRanges (s.withWorld a.world).st [(-(c.d.frameSize : Int), c.stackSize s.pc)]
+        a.frame = .ok st1 ∧
+      R.answer c s a = .ok (.step ⟨pad, s.fp, { st1 with exception := exc }, s.args⟩) ∧
+      RRel ⟨pad, s.fp, { st1 with exception := exc }, s.args⟩ x' ∧ MemRel st1 x' := by
+  obtain ⟨st1, hw, hrel, hwf, hmr, -, -, -, -⟩ := Call.answer_rel hr hce hap hrbp hfp hb
+  exact ⟨st1, hw, CallLemmas.answer_unwind hi hf hsh hreg hres hw hpad,
+    ⟨Call.rel_exc exc hrel, by rw [hrbp]; exact hr.rbp, ⟨hwf.idLt, hwf.idInj, hwf.size, hwf.disj⟩⟩, hmr⟩
+
 /-- `Call.call_unwind` for the answer `a`. -/
 theorem call_unwind_at {c : R.Code} {s : R.RState} {x1 x' : X86.State}
     {op : Reduced.Opcode} {f : Full.Opcode} {d : BitVec 32} {fo : R.Opnd Nat} {k : BitVec 64}
@@ -1117,7 +1153,8 @@ theorem call_unwind_at {c : R.Code} {s : R.RState} {x1 x' : X86.State}
     {padOf : BitVec 64 → Option (BitVec 64)} {a : R.Answer} {exc : ThinPointer} {pad : Nat}
     {cat : Bool}
     (hi : c.d.insns[s.pc]? = some (.native op [.slot d, fo, .imm k, .words ws]))
-    (hf : op.full = some f) (hsh : f.info.shape = .call) (hres : a.result = .unwind exc)
+    (hf : op.full = some f) (hsh : f.info.shape = .call) (hreg : c.inRegion s.pc = false)
+    (hres : a.result = .unwind exc)
     (hce : Call.CallEnd Owned lo (s.fp - c.d.frameSize) (c.stackSize s.pc) s.world x1 x' a)
     (hland : Call.Landed c.mode.pe padOf (x1.rsp + 8) x1 x' exc)
     (hfp : c.d.frameSize ≤ s.fp) (hr : RRel s x1)
@@ -1127,12 +1164,9 @@ theorem call_unwind_at {c : R.Code} {s : R.RState} {x1 x' : X86.State}
     ∃ st1, R.writeRanges (s.withWorld a.world).st [(-(c.d.frameSize : Int), c.stackSize s.pc)]
         a.frame = .ok st1 ∧
       R.answer c s a = .ok (.step ⟨pad, s.fp, { st1 with exception := exc }, s.args⟩) ∧
-      RRel ⟨pad, s.fp, { st1 with exception := exc }, s.args⟩ x' ∧ MemRel st1 x' := by
-  have hrbp : x'.reg .rbp = x1.reg .rbp :=
-    hland.saved 5 (Call.saved_of_calleeSaved (by simp [CalleeSaved]))
-  obtain ⟨st1, hw, hrel, hwf, hmr, -, -, -, -⟩ := Call.answer_rel hr hce hap hrbp hfp hb
-  exact ⟨st1, hw, CallLemmas.answer_unwind hi hf hsh hres hw hpad,
-    ⟨Call.rel_exc exc hrel, by rw [hrbp]; exact hr.rbp, ⟨hwf.idLt, hwf.idInj, hwf.size, hwf.disj⟩⟩, hmr⟩
+      RRel ⟨pad, s.fp, { st1 with exception := exc }, s.args⟩ x' ∧ MemRel st1 x' :=
+  call_unwind_at_rbp hi hf hsh hreg hres hce
+    (hland.saved 5 (Call.saved_of_calleeSaved (by simp [CalleeSaved]))) hfp hr hb hap hpad
 
 /-! #### The result stores -/
 
@@ -1460,16 +1494,16 @@ the callee leaves the code, rodata and link slots alone (`call_kept_callee`). A 
 `Call.tail_call_step` and `ExitRel`'s `tailCall` from `FrameFacts`. The outgoing area fits in
 the frame (`hstk`, `StackSizes.frame`: callee writes below `sp + n` would otherwise reach the
 link slots, and the answer's area write would leave the window). -/
-theorem bodySim_call_fp (hfp : S.c.mode.framePointer = true)
+theorem bodySim_call_fpB (hfp : S.c.mode.framePointer = true)
     (hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
     {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
     (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
     (hr : (callInsn S.fr (S.dr k)).run cur = .ok (some q, c')) :
-    BodySim S k p (S.used k) := by
-  refine bodySim_of_fp hfp ?_
+    BodySimBE S k p := by
+  refine bodySimBE_of_fp hfp ?_
   have hstk : ∀ k, S.c.stackSize k + (if S.c.mode.pe then 16 else 0) ≤ S.F :=
     H.stackSizes.frame
-  intro s x hs hfi hrip hci hsafe
+  intro s x hs hfi hrip hbx hsafe
   have hcur := noArg_call hn hr
   subst hcur
   have hlk : LinkOk S.ctx x.mem (atPos S.body p) S.rs := bs_linkOk_at (hfi.code.toLinkOk hfp) p
@@ -1483,6 +1517,8 @@ theorem bodySim_call_fp (hfp : S.c.mode.framePointer = true)
   have hfpF : S.F ≤ s.fp := hfi.fpF
   have hfp64 : s.fp < 2 ^ 64 := by omega
   have hstkF : S.c.stackSize s.pc ≤ S.F := by have := hstk s.pc; split at this <;> omega
+  have hbodyK := hP.body
+  have hncK := hP.notClean
   obtain ⟨hlt, ⟨p1, ctr, hpq⟩, ⟨i, hi, hio⟩, hbd, hnop, hcache, hargs⟩ := hP
   have hpk := (Array.getElem?_eq_some_iff.1 hpq).2
   have hio' := hpk ▸ hio hlt
@@ -1519,10 +1555,11 @@ theorem bodySim_call_fp (hfp : S.c.mode.framePointer = true)
       omega
     -- R's step.
     rw [← hs] at hi
-    obtain ⟨qq, s', hstep⟩ := call_step_ext hi hf hsh hsafe
+    have hreg : S.c.inRegion s.pc = false := by rw [hs]; exact hbodyK
+    obtain ⟨qq, s', hstep⟩ := call_step_ext hi hf hsh hreg hsafe
     have hsafeQ := hsafe.2 {} qq s' hstep
     obtain ⟨s1, parts, -, -, -, hsc, hp, -, -, -, -, hsret, hpc', hfp', -, -⟩ :=
-      CallLemmas.step_call hi hf hsh hstep
+      CallLemmas.step_call hi hf hsh hreg hstep
     have hk1 := scopes_keeps _ hsc
     have hpcS : s'.pc = s.pc := hpc'.trans hk1.pc
     have hfpS : s'.fp = s.fp := hfp'.trans hk1.fp
@@ -1548,7 +1585,7 @@ theorem bodySim_call_fp (hfp : S.c.mode.framePointer = true)
     have hlo : S.lo.toNat + 8 ≤ x.rsp.toNat := by have := hfi.room; omega
     obtain ⟨cal, regs, stack, x1, hq, hx1, he1, hstl, -, hrr1, -, -, -, -, hrsp1, hret1, hsv1,
         hmem1⟩ :=
-      Call.call_query S.ctx hi hf hsh hseq
+      Call.call_query S.ctx hi hf hsh hreg hseq
         hrax hfi.rrel hfi.mem (hfb.scope_size _) hfi.rsp hb62 hlo
         (H.envApart.syms s x hfi) hstep hap
     have hrbp1 : x1.reg .rbp = x.reg .rbp := by
@@ -1583,13 +1620,12 @@ theorem bodySim_call_fp (hfp : S.c.mode.framePointer = true)
       Call.FrameSep.callApart hsep' hwin (by omega) hfi.rrel.rbp hfpF
         (fun o h1 h2 => by rw [hfi.fpAddr_eq]; exact H.envApart.window o h1 h2)
     have hcaX1 := Call.callApart_congr hcaX hrbp1
-    have hci' : CacheInv (S.used s.pc) x := by rw [hs]; exact hci
-    have hbi : BInv S s (x.jump (addrAt S.ctx (posOf S.r s.pc))) :=
-      (bInv_iff hfp).2 ⟨hfi.congr rfl rfl rfl, .inr ⟨rfl, hci'⟩⟩
+    have hbi := hbx.choose_spec
     have hkept := call_kept_callee H hfi hbi hsc hshp hesc' hsep' (S.c.stackSize s.pc) hstkF
     have hdb := hfb.result s.pc op d fo _ ws f hi hf hsh
     have hi' : S.c.d.insns[s'.pc]? = some (.native op [.slot d, fo, .imm (BitVec.ofNat 64 kk),
         .words ws]) := by rw [hpcS]; exact hi
+    have hreg' : S.c.inRegion s'.pc = false := by rw [hpcS]; exact hreg
     have hra : x1.mem.read64 x1.rsp = addrAt S.ctx (p3 + n) := by
       rw [hret1, hrip, hq3, addrAt_add]; rfl
     refine Reach.steps hsteps1 (Reach.env (H.envOutside.call _ _ _ _ _ _ he1) fun y hy => ?_)
@@ -1614,7 +1650,7 @@ theorem bodySim_call_fp (hfp : S.c.mode.framePointer = true)
       have hlk' : LinkOk S.ctx y.mem (atPos S.body p) S.rs := bs_linkOk_at hlky p
       obtain ⟨s'', x'', hans, hx'', hrr'', hmr'', hpc'', hfp'', hrip'', hrsp'', hrbp'', hsv'',
           st1, parts', regsR, hw1, hp', hfold⟩ :=
-        call_return_at S.ctx hi' hf hsh hcr' (by rw [hfpS]; exact hfpF) hrr1
+        call_return_at S.ctx hi' hf hsh hreg' hcr' (by rw [hfpS]; exact hfpF) hrr1
           (by rw [hpcS]; exact hb62) (by omega) (by rw [hpcS, hfpS]; exact hcaX1) ⟨parts, hp⟩ hresA
       have hoff := hfb.resultOff s.pc op d fo _ ws f hi hf hsh parts hp
       rw [hkk] at hp hx''
@@ -1662,13 +1698,18 @@ theorem bodySim_call_fp (hfp : S.c.mode.framePointer = true)
           island_frame_kept hfi.frame hmemK'' hrbpX (fun i hi _ => hsvX i hi), hsl'',
           ((hfi.esc.scopes hsc).of_not hNL).congr hE⟩
       have fin : ∀ z : X86.State, z.regs = x''.regs → z.xmm = x''.xmm → z.mem = x''.mem →
-          z.rip = addrAt S.ctx (S.start (k + 1)) → Reach S.ctx S.E (SNext S s) z := by
+          z.rip = addrAt S.ctx (S.start (k + 1)) → Reach S.ctx S.E (SNextE S s) z := by
         intro z hzr hzx hzm hzrip
-        refine .done (.inl ⟨_, .answer hstep hans, (bInv_iff hfp).2 ⟨hFI.congr hzr hzx hzm, .inl ⟨?_, ?_⟩⟩⟩)
+        refine .done (.inl ⟨_, .answer hstep hans,
+          ⟨(bInv_iff hfp).2 ⟨hFI.congr hzr hzx hzm, .inl ⟨?_, ?_⟩⟩, .inl ⟨?_, ?_⟩⟩⟩)
         · change z.rip = addrAt S.ctx (S.start s''.pc)
           rw [hpcK]; exact hzrip
         · change CacheInv (S.cache s''.pc) z
           rw [hpcK, hcache]; exact CacheInv.emptyPe _ _
+        · change z.rip = addrAt S.ctx (S.start s''.pc)
+          rw [hpcK]; exact hzrip
+        · change S.cache s''.pc = { pe := S.c.mode.pe }
+          rw [hpcK]; exact hcache
       refine Reach.steps hsteps2 ?_
       have hxrip : x''.rip = addrAt S.ctx c'.pos := by rw [hrip2, hcpos]
       have hlkX := island_link_kept (hfi.code.toLinkOk hfp) hmemK''
@@ -1685,6 +1726,11 @@ theorem bodySim_call_fp (hfp : S.c.mode.framePointer = true)
     · -- It unwinds.
       obtain ⟨a', exc, hres, hend, hland, hal⟩ := hsa.2 ⟨hy, hry⟩
       rw [hstl] at hend
+      -- Not a PE cleanup site: the unwind lands at the pad (`Call.Landing`).
+      have hland := hland.landed (by
+        rw [hra]
+        exact hncK hlt (p3, n) (by rw [hpk]; simp) (p3 + n)
+          (by show p3 < p3 + n; omega) (by show p3 + n ≤ p3 + n; omega))
       have hpads := (H.padsLinked hD hfi.code.small) k hlt (p3, n) (by rw [hpk]; simp) (p3 + n)
         (by show p3 < p3 + n; omega) (by show p3 + n ≤ p3 + n; omega)
       have hl := hland.rip
@@ -1712,7 +1758,7 @@ theorem bodySim_call_fp (hfp : S.c.mode.framePointer = true)
       have hpad' : S.c.cleanupAt s'.pc = some (some pad, cat) := by rw [hpcS, hs]; exact hcl
       have hend' : Call.CallEnd S.Owned S.lo (s'.fp - S.c.d.frameSize) (S.c.stackSize s'.pc)
           s'.world x1 y a' := by rw [hpcS, hfpS]; exact hend
-      obtain ⟨st1, hw1, hans, hrrY, hmrY⟩ := call_unwind_at hi' hf hsh hres hend' hland
+      obtain ⟨st1, hw1, hans, hrrY, hmrY⟩ := call_unwind_at hi' hf hsh hreg' hres hend' hland
         (by rw [hfpS]; exact hfpF) hrr1 (by rw [hpcS]; exact hb62)
         (by rw [hpcS, hfpS]; exact hcaX1) hpad'
       have hsepY : FrameSep (-(S.F : Int)) S.K st1 y := island_sep_writeRanges hsepW
@@ -1728,6 +1774,7 @@ theorem bodySim_call_fp (hfp : S.c.mode.framePointer = true)
       have hsvY : ∀ i, Saved S.c.mode.pe i → y.regs i = x.regs i := fun i hi => by
         rw [hland.saved i hi, hsv1 i hi]
       refine .done (.inl ⟨_, .answer hstep hans, ?_⟩)
+      refine ⟨?_, .inr ⟨hyrip, (H.cacheCleared hD).pads k pad cat hcl⟩⟩
       refine (bInv_iff hfp).2 ?_
       refine ⟨⟨hrrY, hmrY, ⟨hsepY.own, hsepY.init, hsepY.dis, hsepY.space, hsepY.esc⟩,
         by show (s'.fp : Int) + _ ≤ _; rw [hfpS]; exact hwinT,
@@ -1811,6 +1858,14 @@ theorem bodySim_call_fp (hfp : S.c.mode.framePointer = true)
         exact (hrbp' (.inr hfp)).trans (hfi.frame.savedRbp hfp)
       · rw [hsv' i hsv h5]; exact hfi.frame.saved i hsv h5
 
+theorem bodySim_call_fp (hfp : S.c.mode.framePointer = true)
+    (hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
+    {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
+    (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
+    (hr : (callInsn S.fr (S.dr k)).run cur = .ok (some q, c')) :
+    BodySim S k p (S.used k) :=
+  BodySimB.used (bodySim_call_fpB hfp hD H hP hn hr).toB
+
 set_option maxHeartbeats 2000000 in
 /-- `bodySim_call_fp` without a frame pointer. The body runs on the virtual state
 `xv = FForm.virtAt` of the real `xr` (`rbp := rsp + F`, `rip` shifted by the sp form's extra
@@ -1824,25 +1879,24 @@ relation at the next boundary is the virtual one of the real state (`cv_frameInv
 entry's by `RbpOk`). PE is excluded (`Mode.valid`), so no `nop` follows. A tail call: the loads by
 `steps_of_run_fb`, then `add rsp, F + 8` and the jump (no memory operand) on the real state
 (`nf_execItems_commute`); `ExitRel`'s `rbp` from `RbpOk`. -/
-theorem bodySim_call_nofp (hfpm : S.c.mode.framePointer = false)
+theorem bodySim_call_nofpB (hfpm : S.c.mode.framePointer = false)
     (hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
     {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
     (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
     (hr : (callInsn S.fr (S.dr k)).run cur = .ok (some q, c')) :
-    BodySim S k p (S.used k) := by
+    BodySimBE S k p := by
   have hsp0 : S.body.spFrame = some (BitVec.ofNat 32 S.F) := nf_spFrame_of_nofp hD hfpm
   have hpeF : S.c.mode.pe = false := nf_pe_of_nofp hD hfpm
   generalize BitVec.ofNat 32 S.F = F at hsp0
   have hsp := hsp0
   have hstk : ∀ k, S.c.stackSize k + (if S.c.mode.pe then 16 else 0) ≤ S.F :=
     H.stackSizes.frame
-  intro s xr hs hfR hrip hci hsafe
+  intro s xr hs hfR hrip hbx hsafe
   have hcur := noArg_call hn hr
   subst hcur
   have hsp' : (atPos S.body p).spFrame = some F := hsp
   have hlkR : LinkOkF S.ctx xr.mem (atPos S.body p) S.rs S.c.mode := hfR.code'.atPos p
-  have hbi : BInv S s (xr.jump (addrAt S.ctx (posOf S.r s.pc))) :=
-    vt_bInv_used hfR (by rw [hs]; exact hci)
+  have hbi := hbx.choose_spec
   have hrb : RbpOk S xr := hfR.2
   have hrbX : xr.reg .rbp = S.x0.reg .rbp := hrb (by simp [Setup.fb, hsp])
   have eF : (S.F : Int) = S.c.d.frameSize := rfl
@@ -1851,6 +1905,7 @@ theorem bodySim_call_nofp (hfpm : S.c.mode.framePointer = false)
   have hFl := hfb.F_le
   have hKl := hfb.K_le
   have hstkF : S.c.stackSize s.pc ≤ S.F := by have := hstk s.pc; split at this <;> omega
+  have hbodyK := hP.body
   obtain ⟨hlt, ⟨p1, ctr, hpq⟩, ⟨i, hi, hio⟩, hbd, hnop, hcache, hargs⟩ := hP
   have hpk := (Array.getElem?_eq_some_iff.1 hpq).2
   have hio' := hpk ▸ hio hlt
@@ -1912,10 +1967,11 @@ theorem bodySim_call_nofp (hfpm : S.c.mode.framePointer = false)
     have hfp64 : s.fp < 2 ^ 64 := by omega
     -- R's step.
     rw [← hs] at hi
-    obtain ⟨qq, s', hstep⟩ := call_step_ext hi hf hsh hsafe
+    have hreg : S.c.inRegion s.pc = false := by rw [hs]; exact hbodyK
+    obtain ⟨qq, s', hstep⟩ := call_step_ext hi hf hsh hreg hsafe
     have hsafeQ := hsafe.2 {} qq s' hstep
     obtain ⟨s1, parts, -, -, -, hsc, hp, -, -, -, -, hsret, hpc', hfp', -, -⟩ :=
-      CallLemmas.step_call hi hf hsh hstep
+      CallLemmas.step_call hi hf hsh hreg hstep
     have hk1 := scopes_keeps _ hsc
     have hpcS : s'.pc = s.pc := hpc'.trans hk1.pc
     have hfpS : s'.fp = s.fp := hfp'.trans hk1.fp
@@ -1941,7 +1997,7 @@ theorem bodySim_call_nofp (hfpm : S.c.mode.framePointer = false)
     have hlo : S.lo.toNat + 8 ≤ xv.rsp.toNat := by have := hfi.room; omega
     obtain ⟨cal, regs, stack, x1, hq, hx1, he1, hstl, -, hrr1, -, -, -, -, hrsp1, hret1, hsv1,
         hmem1⟩ :=
-      Call.call_query S.ctx hi hf hsh hseq
+      Call.call_query S.ctx hi hf hsh hreg hseq
         hrax hfi.rrel hfi.mem (hfb.scope_size _) hfi.rsp hb62 hlo
         (H.envApart.syms s xv hfi) hstep hap
     have hrbp1 : x1.reg .rbp = xv.reg .rbp := by
@@ -1991,6 +2047,7 @@ theorem bodySim_call_nofp (hfpm : S.c.mode.framePointer = false)
     have hdb := hfb.result s.pc op d fo _ ws f hi hf hsh
     have hi' : S.c.d.insns[s'.pc]? = some (.native op [.slot d, fo, .imm (BitVec.ofNat 64 kk),
         .words ws]) := by rw [hpcS]; exact hi
+    have hreg' : S.c.inRegion s'.pc = false := by rw [hpcS]; exact hreg
     have hra : x1.mem.read64 x1.rsp = addrAt S.ctx (p3 + n) := by
       rw [hret1, hxvrip, hrip]
       show addrAt S.ctx p + FForm.delta (some F) (pre ++ ps ++ [ci]) +
@@ -2033,7 +2090,7 @@ theorem bodySim_call_nofp (hfpm : S.c.mode.framePointer = false)
       have hlky : LinkOkF S.ctx y.mem S.body S.rs S.c.mode := island_link_keptF hfi.code hmemKyR
       obtain ⟨s'', x'', hans, hx'', hrr'', hmr'', hpc'', hfp'', -, hrsp'', hrbp'', hsv'',
           st1, parts', regsR, hw1, hp', hfold⟩ :=
-        call_return_at S.ctx hi' hf hsh hcr' (by rw [hfpS]; exact hfpF) hrr1
+        call_return_at S.ctx hi' hf hsh hreg' hcr' (by rw [hfpS]; exact hfpF) hrr1
           (by rw [hpcS]; exact hb62) (by omega) (by rw [hpcS, hfpS]; exact hcaX1) ⟨parts, hp⟩ hresA
       have hoff := hfb.resultOff s.pc op d fo _ ws f hi hf hsh parts hp
       rw [hkk] at hp hx''
@@ -2094,13 +2151,18 @@ theorem bodySim_call_nofp (hfpm : S.c.mode.framePointer = false)
       have fin : ∀ z : X86.State, z.regs = ((x''.jump a2).setReg .rbp (y.reg .rbp)).regs →
           z.xmm = ((x''.jump a2).setReg .rbp (y.reg .rbp)).xmm →
           z.mem = ((x''.jump a2).setReg .rbp (y.reg .rbp)).mem →
-          z.rip = addrAt S.ctx (S.start (k + 1)) → Reach S.ctx S.E (SNext S s) z := by
+          z.rip = addrAt S.ctx (S.start (k + 1)) → Reach S.ctx S.E (SNextE S s) z := by
         intro z hzr hzx hzm hzrip
-        refine .done (.inl ⟨_, .answer hstep hans, ⟨hFIR.congr' hzr hzx hzm, .inl ⟨?_, ?_⟩⟩⟩)
+        refine .done (.inl ⟨_, .answer hstep hans,
+          ⟨⟨hFIR.congr' hzr hzx hzm, .inl ⟨?_, ?_⟩⟩, .inl ⟨?_, ?_⟩⟩⟩)
         · change z.rip = addrAt S.ctx (S.start s''.pc)
           rw [hpcK]; exact hzrip
         · change CacheInv (S.cache s''.pc) (S.virt z)
           rw [hpcK, hcache]; exact CacheInv.emptyPe _ _
+        · change z.rip = addrAt S.ctx (S.start s''.pc)
+          rw [hpcK]; exact hzrip
+        · change S.cache s''.pc = { pe := S.c.mode.pe }
+          rw [hpcK]; exact hcache
       refine Reach.steps hsteps2 ?_
       generalize hE' : S.start (k + 1) = pE at hnop fin
       generalize hC : c'.pos = pC at hnop hxrip
@@ -2117,6 +2179,8 @@ theorem bodySim_call_nofp (hfpm : S.c.mode.framePointer = false)
     · -- It unwinds.
       obtain ⟨a', exc, hres, hend, hland, hal⟩ := hsa.2 ⟨hy, hry⟩
       rw [hstl] at hend
+      -- Off PE (no frame pointer): the unwind lands at the pad (`Call.Landing`).
+      have hland := hland.landed (by rw [hpeF, Bool.false_and])
       have hpads := (H.padsLinked hD hfi.code.small) k hlt (p3, n) (by rw [hpk]; simp) (p3 + n)
         (by show p3 < p3 + n; omega) (by show p3 + n ≤ p3 + n; omega)
       have hyrb : y.reg .rbp = xr.reg .rbp := by
@@ -2154,7 +2218,7 @@ theorem bodySim_call_nofp (hfpm : S.c.mode.framePointer = false)
       have hpad' : S.c.cleanupAt s'.pc = some (some pad, cat) := by rw [hpcS, hs]; exact hcl
       have hend' : Call.CallEnd S.Owned S.lo (s'.fp - S.c.d.frameSize) (S.c.stackSize s'.pc)
           s'.world x1 yv a' := by rw [hpcS, hfpS]; exact hendV
-      obtain ⟨st1, hw1, hans, hrrY, hmrY⟩ := call_unwind_at hi' hf hsh hres hend' hlandV
+      obtain ⟨st1, hw1, hans, hrrY, hmrY⟩ := call_unwind_at hi' hf hsh hreg' hres hend' hlandV
         (by rw [hfpS]; exact hfpF) hrr1 (by rw [hpcS]; exact hb62)
         (by rw [hpcS, hfpS]; exact hcaX1) hpad'
       have hsepY : FrameSep (-(S.F : Int)) S.K st1 yv := island_sep_writeRanges hsepW
@@ -2173,8 +2237,9 @@ theorem bodySim_call_nofp (hfpm : S.c.mode.framePointer = false)
         rw [hyv0, vt_setReg_setReg, X86.State.setReg_reg_self]
       refine .done (.inl ⟨_, .answer hstep hans, ?_⟩)
       rw [← hyback]
-      refine ⟨cv_frameInvR (z := yv) hsp (y.reg .rbp) ?_ (by rw [hrbpY, hrspY, hxvrbp, hxvrsp])
-        (by rw [hyback]; exact fun h => hyrb.trans (hrb h)), .inr ⟨hyrip, ?_⟩⟩
+      refine ⟨⟨cv_frameInvR (z := yv) hsp (y.reg .rbp) ?_ (by rw [hrbpY, hrspY, hxvrbp, hxvrsp])
+        (by rw [hyback]; exact fun h => hyrb.trans (hrb h)), .inr ⟨hyrip, ?_⟩⟩,
+        .inr ⟨hyrip, (H.cacheCleared hD).pads k pad cat hcl⟩⟩
       · exact ⟨hrrY, hmrY, ⟨hsepY.own, hsepY.init, hsepY.dis, hsepY.space, hsepY.esc⟩,
           by show (s'.fp : Int) + _ ≤ _; rw [hfpS]; exact hwinT,
           by show S.c.d.frameSize ≤ s'.fp; rw [hfpS]; exact hfpF,
@@ -2304,15 +2369,44 @@ theorem bodySim_call_nofp (hfpm : S.c.mode.framePointer = false)
         rw [X86.State.reg_setReg]; exact hrbX
       · rw [nf_setReg_rbp_regs x' _ h5, hsv' i hsv h5]; exact hfi.frame.saved i hsv h5
 
+theorem bodySim_call_nofp (hfpm : S.c.mode.framePointer = false)
+    (hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
+    {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
+    (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
+    (hr : (callInsn S.fr (S.dr k)).run cur = .ok (some q, c')) :
+    BodySim S k p (S.used k) :=
+  BodySimB.used (bodySim_call_nofpB hfpm hD H hP hn hr).toB
+
 /-- `bodySim_call_fp` in both frame forms. -/
+theorem bodySim_call'B (hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
+    {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
+    (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
+    (hr : (callInsn S.fr (S.dr k)).run cur = .ok (some q, c')) :
+    BodySimBE S k p := by
+  by_cases hfp : S.c.mode.framePointer = true
+  · exact bodySim_call_fpB hfp hD H hP hn hr
+  · exact bodySim_call_nofpB (by simpa using hfp) hD H hP hn hr
+
 theorem bodySim_call' (hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
     {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
     (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
     (hr : (callInsn S.fr (S.dr k)).run cur = .ok (some q, c')) :
-    BodySim S k p (S.used k) := by
-  by_cases hfp : S.c.mode.framePointer = true
-  · exact bodySim_call_fp hfp hD H hP hn hr
-  · exact bodySim_call_nofp (by simpa using hfp) hD H hP hn hr
+    BodySim S k p (S.used k) :=
+  BodySimB.used (bodySim_call'B hD H hP hn hr).toB
+
+/-- T2.2: `bodySim_call_fpB` at every body site, PE cleanup sites included (`ProtoFactsN`, no
+`notClean`): the return falls through in the body (`Decodes.fallBody`); an unwind is `Landed`
+at a catching pad or off PE (`BInv` at the pad, as now), or at a PE cleanup site `PadCalled`
+through the pad region's entry to `RegionInv` at the pad (`call_unwind_at_rbp`,
+`reach_regionPad`); the tail call as now. `bodySim_call_fpB` follows away from PE cleanup sites
+(`bodySimBE_of_RB`). -/
+theorem bodySim_call_fpRB (hfp : S.c.mode.framePointer = true)
+    (hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
+    {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
+    (hP : ProtoFactsN S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
+    (hr : (callInsn S.fr (S.dr k)).run cur = .ok (some q, c')) :
+    BodySimRB S k p := by
+  sorry -- PE-P5
 
 end Insn
 

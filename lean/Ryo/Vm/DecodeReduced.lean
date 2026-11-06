@@ -200,9 +200,18 @@ structure Proto where
   counter : Option (Nat × Nat) := none
   /-- An inline instruction's items in the code (without its dropped store). -/
   items : List Item := []
+  /-- An inline instruction's register cache after it (`cache.emit`'s): the slots its entries
+  cache, as `(offset, bytes)`; `none` for the others and for a sequence read without `exact`.
+  Not part of Rust's decoder: the dead-store check's `Frame.coveredAt` reads it. -/
+  cacheOut : Option (List (BitVec 32 × Nat)) := none
   /-- Its last item is its call (a call storing no result, a PE island), which on PE a `nop`
   follows if it has a landing pad. -/
   bare : Bool := false
+  /-- An inline instruction's dropped store item (the one its items lack), if any. Not part of
+  Rust's decoder: the dead-store check's `Frame.droppedFormOk` reads it. -/
+  droppedItem : Option Item := none
+  /-- How many dropped stores its read consumed (`inlineInsn`). Not part of Rust's decoder. -/
+  consumed : Nat := 0
 deriving Repr, Inhabited
 
 def Proto.targets (p : Proto) : List Nat :=
@@ -436,6 +445,10 @@ def argInsn (mode : Mode) : DM (Option Proto) := do
 
 /-! ### Inline sequences -/
 
+/-- The slots `cache`'s entries cache, as `(offset, bytes)` (`Proto.cacheOut`). -/
+def cacheSlots (cache : Cache) : List (BitVec 32 × Nat) :=
+  cache.regs.toList.filterMap fun e => e.slot.map fun (sl, w) => (sl, Asm.bytes w)
+
 /-- An inline sequence at the cursor (`inline_insn`): items up to the one that writes the
 result (or its dropped store; an overflow op's result store, kept or dropped, is followed by
 its flag's, which ends it), or up to a conditional branch, which must be the sequence as
@@ -493,7 +506,10 @@ def inlineInsn (cache : Cache) (dropped : List DroppedStore) (exact : Bool) :
     if out != its then none
     else
       let items := if wasDropped then its.eraseIdx dropAt else its
-      some ({ op := d.1, ops := d.2, pos := p0, dropped := wasDropped, items }, after)
+      let droppedItem := if wasDropped then its[dropAt]? else none
+      let consumed := dropped.length - dr.length
+      let q : Proto := { op := d.1, ops := d.2, pos := p0, dropped := wasDropped, items := items, cacheOut := some (cacheSlots after), droppedItem := droppedItem, consumed := consumed }
+      some (q, after)
   if let some d := decodeInline its branch then
     if let some (p, c) := accept its d then return some (p, c, dr)
   for cand in cache.unemit its do
@@ -890,7 +906,9 @@ def readRegion (fr : Frame) (ro : ByteArray) (callSites : Array CallSite)
   let i1 ← item
   expect (i1 == .subRsp (BitVec.ofNat 32 peRegionAlloc)) r "not the pad region's entry"
   let i2 ← item
-  expect (i2 == .jmpR11) r "not the pad region's entry"
+  let q ← pos
+  expect (i2 == .jmpR11 && q == r + regionEntryLen) r
+    "not the pad region's entry (`sub rsp, 40; jmp r11`, 7 bytes)"
   instructions { fr with region := true } ro droppedRegion targets none size callSites
 
 /-- `read_parts`: the body's instructions from `body` to `limit` (with `stubs`, the counter
@@ -910,11 +928,36 @@ def readParts (fr : Frame) (ro : ByteArray) (callSites : Array CallSite)
     let (rp, rpad) ← readRegion fr ro callSites droppedRegion targets size r
     return (protos ++ rp, padded ++ rpad, bodyEnd)
 
-/-- The pad region's first instruction (proto `rs`) is right after its entry. -/
+/-- Proto `p` may continue at the next instruction (`Frame.flow`'s fall-through test on its
+shape: native `jmp`, `ret`, `tailCall`, `trap` don't; handler calls do for `op`, `br`, `lpad`). -/
+def Proto.fallsThrough (p : Proto) : Bool :=
+  match p.handler with
+  | some _ => p.op.info.shape == .op || p.op.info.shape == .br || p.op.info.shape == .lpad
+  | none => !(p.op.info.shape == .jmp || p.op.info.shape == .ret || p.op.info.shape == .tailCall ||
+      p.op.info.shape == .trap)
+
+/-- The pad region's layout from proto `rs` on: no counter check and no `ret` or tail call in the
+region (their epilogue is `rsp`-relative on PE, run from the dispatcher's `rsp`), and no branch
+target across its start (`loopHeads` checks the same through `indexAt`; here for every proto at
+the target's position, as one test for the proofs: quadratic, Lean-side only). -/
+def regionLayoutOk (protos : Array Proto) (rs : Nat) : Bool :=
+  (List.range protos.size).all fun k =>
+    (decide (k < rs) || protos[k]!.counter.isNone) &&
+    (decide (k < rs) ||
+      !(protos[k]!.op.info.shape == .ret || protos[k]!.op.info.shape == .tailCall)) &&
+    protos[k]!.targets.all fun t => (List.range protos.size).all fun j =>
+      protos[j]!.pos != t || decide (rs ≤ j) == decide (rs ≤ k)
+
+/-- The pad region's first instruction (proto `rs`) is right after its entry; the body before
+it has an instruction (so the entry, instruction 0, is in the body), and its last one doesn't
+fall through into the region. -/
 def checkRegionStart (protos : Array Proto) (rs : Nat) : Option Nat → DM Unit
   | none => pure ()
-  | some r => expect ((protos[rs]?.map (·.pos)) == some (r + regionEntryLen)) (r + regionEntryLen)
-      "pad region without instructions"
+  | some r => expect (decide (0 < rs) && (protos[rs]?.map (·.pos)) == some (r + regionEntryLen) &&
+      !(protos[rs - 1]!).fallsThrough && regionLayoutOk protos rs) (r + regionEntryLen)
+      "pad region without instructions, without a body before it, entered by falling through \
+      from the body's last instruction, with a counter check, a `ret` or tail call (an `rsp`-relative \
+      epilogue on PE), or with a branch across its start"
 
 /-- The index of the instruction at byte position `b` (for a target of the instruction at
 `at_`). -/
@@ -975,6 +1018,25 @@ def checkStubs (entry : Option (Nat × Nat)) (protos : Array Proto) (heads : Arr
       | _ => bad
     if (← pos) != limit then err (← pos) "code after the counter stubs"
 
+/-- The cleanup (non-catching) entries of `actions` as `(instruction, pad, catches)`, as
+`reducedOf`'s `cleanup` lists them. -/
+def cleanupOf (actions : Array (Option (Option Nat × Bool))) : List (Nat × Option Nat × Bool) :=
+  (List.range actions.size).filterMap fun i => actions[i]!.map fun (pad, c) => (i, pad, c)
+
+/-- The least landing pad of a cleanup entry of `actions` (`Decoded.regionStart` of the read). -/
+def leastCleanupPad (actions : Array (Option (Option Nat × Bool))) : Option Nat :=
+  (((cleanupOf actions).filter (!·.2.2)).filterMap (·.2.1)).min?
+
+/-- The actions agree with the pad region from proto `rs` on: a catching pad is on its call's
+side, and the region's `resume`s continue unwinding (`some (none, false)`, no call site). -/
+def regionActionsOk (protos : Array Proto) (actions : Array (Option (Option Nat × Bool)))
+    (rs : Nat) : Bool :=
+  (List.range actions.size).all (fun i => match actions[i]! with
+    | some (some j, true) => decide (j ≥ rs) == decide (i ≥ rs)
+    | _ => true) &&
+  (List.range protos.size).all fun i =>
+    !(protos[i]!.op == .resume && decide (i ≥ rs)) || actions[i]! == some (none, false)
+
 /-- The unwind actions from the call sites (and the pad region's `resume`s, from proto `rs` on,
 which continue unwinding). -/
 def actionsOf (callSites : Array CallSite) (protos : Array Proto) (rs : Nat) :
@@ -1012,6 +1074,11 @@ def actionsOf (callSites : Array CallSite) (protos : Array Proto) (rs : Nat) :
       -- The pad region's `resume`, a return with no call site, continues unwinding.
       if p.op == .resume && i ≥ rs then actions := actions.set! i (some (none, false))
   if used != callSites.size then err 0 "call site outside every call"
+  if rs < protos.size && leastCleanupPad actions != some rs then
+    err 0 "the pad region doesn't start at the least cleanup landing pad"
+  if !regionActionsOk protos actions rs then
+    err 0 "a catching landing pad on the other side of the pad region's start than its call, or \
+      a pad region resume with a call site"
   return actions
 
 /-- `read`, handler calls in the reduced form. -/
@@ -1090,7 +1157,10 @@ def reducedOf (r : ReadResult) (pe : Bool) : Except AsmError Decoded := do
       if t ≤ k && t < region then head := head.set! t true
   let heads := (List.range insns.size).filter (head[·]!) |>.toArray
   let items := r.protos.map (·.items)
-  return { insns, frameSize := r.frameSize, cleanup, scopes := r.scopes, dropped, heads, items }
+  let cacheOut := r.protos.map (·.cacheOut)
+  let droppedItems := r.protos.map (·.droppedItem)
+  let consumed := r.protos.map (·.consumed)
+  return { insns, frameSize := r.frameSize, cleanup, scopes := r.scopes, dropped, heads, items := items, cacheOut := cacheOut, droppedItems := droppedItems, consumed := consumed }
 
 /-- Decodes one function's machine code, its `rel32` fields as `fields` says (relocations, or
 linked code through a `LinkMap`), to R (`decode_reduced`, `decode_linked`). `dropped` sorted by

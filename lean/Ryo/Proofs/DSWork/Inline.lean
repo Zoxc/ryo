@@ -2076,6 +2076,65 @@ theorem bodySim_inline' (hD : Decodes S code relocs rodata callSites dropped sco
         rw [ite_eq_left_iff.mpr (fun h => absurd this h)]
         exact CacheInv.empty _
 
+/-- **The ghost run** of an inline instruction (DS-T6 piece 1; `bodySim_inline'`'s R step and
+item run, without `q.dropped = false` and without fetching): from a state `y` related to `s` by
+`FrameInv` and the cache `cache` the decoder read `q` with, R steps, and the emitted items `out`
+(with a dropped store, if any: `inlineInsn_read_drop`'s `out`) run on `y` to a state related to
+the successor: `RRel`, the cache after, `FrameInv`, the branch outcome, `rbp` and `rsp` kept.
+In the no-frame-pointer form `y` is the virtual state (`S.virt`), as `inline_cls_step` runs. -/
+theorem inline_ghost_run (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    (H : Hyps S) (hbl : InlineBelowLink S) (heb : InlineEscBounded S)
+    (hcls : ∀ f cls, (f, cls) ∈ inlineOps →
+      shapeOk f cls = true ∧ CacheStep.clsOk cls = true) {k p : Nat} {q : Proto} {c' : Cursor}
+    {cache' : Cache} (hP : ProtoFacts S k p q c' cache') {cache : Cache}
+    (hcro : CacheRegsOk S cache) {cand : List Item} {br : Option (Cond × Nat)}
+    {out : List Item} (hh : q.handler = none) (hdi : decodeInline cand br = some (q.op, q.ops))
+    (hemit : cache.emit cand = (out, cache')) {s : R.RState} {y : X86.State} (hs : s.pc = k)
+    (hf : FrameInv S s y) (hci : CacheInv cache y) (hbi : ∃ z, BInv S s z)
+    (hsafe : RSafe S.Safe S.c s) :
+    ∃ op ops s' y', S.c.d.insns[s.pc]? = some (.native op ops) ∧ op.full = some q.op ∧
+      ops.map (opndMap (posOf S.r)) = q.ops ∧ R.step S.c s {} = .ok (.step s') ∧
+      execItems S.ctx out y = .ok y' ∧ RRel s' y' ∧ CacheInv cache' y' ∧
+      y'.rip = y.rip + BitVec.ofNat 64 (out.map Item.size).sum ∧
+      BrOk q.op ops s s' (br.map (·.1)) y' ∧ FrameInv S s' y' ∧ y'.reg .rbp = y.reg .rbp ∧
+      y'.rsp = y.rsp := by
+  obtain ⟨cls, hmem, hseq⟩ := decodeInline_spec hdi
+  have hk := hP.lt
+  obtain ⟨i, hi, hio⟩ := hP.insn
+  obtain ⟨p1, counter, hpk⟩ := hP.proto
+  have hpk' : S.r.protos[k] = { q with pos := p1, counter } := by
+    rw [Array.getElem?_eq_getElem hk] at hpk; exact Option.some.inj hpk
+  have hio' := hio hk
+  rw [hpk'] at hio'
+  unfold InsnOf at hio'
+  simp only [hh] at hio'
+  obtain ⟨op, ops, hof, rfl, hops⟩ := hio'
+  have hfull := inline_full_of hof
+  have hseqR : sequence cls ops = some (cand, br.map (·.1)) := by
+    rw [← inline_seq_map (posOf S.r), hops]; exact hseq
+  have hok := H.inlineOk _ _ hmem
+  have hi' : S.c.d.insns[s.pc]? = some (.native op ops) := hs ▸ hi
+  obtain ⟨s', hstep⟩ : ∃ s', R.step S.c s {} = .ok (.step s') := by
+    cases h : R.step S.c s {} with
+    | error e =>
+      obtain ⟨m, rfl⟩ := hsafe.1 _ _ h
+      exact absurd h (inline_progress' H s op ops _ cls m hi' hfull hmem)
+    | ok o =>
+      obtain ⟨s1, -, hv⟩ := Step.step_native hi' hfull hok.opShape h
+      obtain ⟨_, _, _, _, _, _, _, _, _, rfl⟩ :=
+        Step.stepView_native hfull hok.opShape hok.notResume hok.notUnreachable hv
+      exact ⟨_, rfl⟩
+  have hnl := inline_not_leadArg' hD hP hs hi' hfull hmem hstep H
+  obtain ⟨y', hy', hrr, hcc, hrip', hbr⟩ := inline_cls_step H hf hci hi' hfull hmem hseqR hstep
+  rw [hemit] at hy' hcc hrip'
+  simp only at hy' hcc hrip'
+  have hex : ∃ op ops f cls cand br, ∃ cache : Cache, S.c.d.insns[s.pc]? = some (.native op ops) ∧
+      op.full = some f ∧ (f, cls) ∈ inlineOps ∧ sequence cls ops = some (cand, br) ∧
+      CacheInv cache y ∧ CacheRegsOk S cache ∧ (cache.emit cand).1 = out :=
+    ⟨op, ops, q.op, cls, cand, _, cache, hi', hfull, hmem, hseqR, hci, hcro, by rw [hemit]⟩
+  obtain ⟨hf', hrbp', hrsp'⟩ := inline_frame' H hbl heb hcls s s' y y' {} out hf hbi hex hnl hstep hy' hrr
+  exact ⟨op, ops, s', y', hi', hfull, hops, hstep, hy', hrr, hcc, hrip', hbr, hf', hrbp', hrsp'⟩
+
 end Insn
 
 end Ryo.Proofs.DecodeSound

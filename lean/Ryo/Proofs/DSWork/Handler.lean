@@ -1416,13 +1416,15 @@ theorem hdl_fallthrough (hD : Decodes S code relocs rodata callSites dropped sco
     (hlk : LinkOkF S.ctx y.mem S.body S.rs S.c.mode) (hb : Boundary S.rs pC)
     (hyrip : y.rip = addrAt S.ctx pC) (hnext : RNext S.c s s') (hpc : s'.pc = k + 1)
     (hfi : FrameInvR S s' y) (hcache : S.cache (k + 1) = { pe := S.fr.mode.pe }) :
-    Reach S.ctx S.E (SNext S s) y := by
+    Reach S.ctx S.E (SNextE S s) y := by
   have fin : ∀ z : X86.State, z.regs = y.regs → z.xmm = y.xmm → z.mem = y.mem →
-      z.rip = addrAt S.ctx (S.start (k + 1)) → Reach S.ctx S.E (SNext S s) z := by
+      z.rip = addrAt S.ctx (S.start (k + 1)) → Reach S.ctx S.E (SNextE S s) z := by
     intro z hzr hzx hzm hzrip
-    refine .done (.inl ⟨s', hnext, hfi.congr' hzr hzx hzm, .inl ⟨?_, ?_⟩⟩)
+    refine .done (.inl ⟨s', hnext, ⟨hfi.congr' hzr hzx hzm, .inl ⟨?_, ?_⟩⟩, .inl ⟨?_, ?_⟩⟩)
     · rw [hpc]; exact hzrip
     · rw [hpc, hcache]; exact CacheInv.emptyPe _ _
+    · rw [hpc]; exact hzrip
+    · rw [hpc]; exact hcache
   generalize hE : S.start (k + 1) = pE at hnop fin
   cases hnop with
   | none _ => exact fin y rfl rfl rfl hyrip
@@ -1457,7 +1459,7 @@ theorem hdl_br (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (hnl : ¬ LeadArg S (k + 1))
     (hnop : NopRead S.fr S.callSites S.body q c3.pos (S.start (k + 1)))
     (hcache : S.cache (k + 1) = { pe := S.fr.mode.pe }) :
-    Reach S.ctx S.E (SNext S s) x' := by
+    Reach S.ctx S.E (SNextE S s) x' := by
   have hce : cond = (if (cond == Cond.z) = true then Cond.z else Cond.nz) := by
     rcases hcond with rfl | rfl <;> rfl
   have hnl' : ¬ LeadArg S (s.pc + 1) := by rw [hs]; exact hnl
@@ -1494,13 +1496,16 @@ theorem hdl_br (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     rw [← hpc] at hstep
     have hnlj : ¬ LeadArg S j := H.argsUntargeted hD k hlt _ htg j hj
     have hfj := (hFI j hnlj).congr' hregs hxmm hmem
-    refine Reach.steps hst (.done (.inl ⟨_, .step hstep, ⟨hfj, .inr ⟨?_, ?_⟩⟩⟩))
-    · show x''.rip = addrAt S.ctx (posOf S.r j)
+    have hc := H.cacheTargets k hlt _ htg
+    have hripj : x''.rip = addrAt S.ctx (posOf S.r j) := by
       rw [hrip2, hdl_base_setWidth, hj]
-    · show CacheInv (S.used j) (S.virt x'')
-      have hc := H.cacheTargets k hlt _ htg
+    have hused : S.used j = { pe := S.c.mode.pe } := by
       simp only [Setup.used, hj, hc, ↓reduceIte]
-      exact CacheInv.emptyPe _ _
+    refine Reach.steps hst (.done (.inl ⟨_, .step hstep,
+      ⟨⟨hfj, .inr ⟨hripj, ?_⟩⟩, .inr ⟨hripj, hused⟩⟩⟩))
+    show CacheInv (S.used j) (S.virt x'')
+    rw [hused]
+    exact CacheInv.emptyPe _ _
   · -- Not taken: falling through.
     have hnb : ¬ ((b != (cond == Cond.z)) = true) := by simp [hbn]
     rw [ite_eq_right hnb] at hpc
@@ -1531,7 +1536,7 @@ theorem hdl_switch (hD : Decodes S code relocs rodata callSites dropped scopes m
     (hrax : Handler.CtlIn (.index i) x')
     (hFI : ∀ pc, ¬ LeadArg S pc → FrameInvR S { s1 with pc, st := st' } x')
     (hstep : R.step S.c s ch = .ok (.step { s1 with pc, st := st' })) :
-    Reach S.ctx S.E (SNext S s) x' := by
+    Reach S.ctx S.E (SNextE S s) x' := by
   have hnl : ¬ LeadArg S pc := H.argsUntargeted hD k hlt _ htg pc hpe
   have hfi := hFI pc hnl
   have hlkT : LinkOkF S.ctx x'.mem (atPos S.body pT) S.rs S.c.mode := hfi.code'.atPos pT
@@ -1556,14 +1561,15 @@ theorem hdl_switch (hD : Decodes S code relocs rodata callSites dropped scopes m
   have hfi'' := hdl_frameInv_regs hfi.1 (by rw [setup_virt_mem, setup_virt_mem]; exact hm)
     (hvr 5 hrbp) (by rw [setup_virt_rsp, setup_virt_rsp]; exact hrsp)
     (fun i hi => hvr i (hsv i hi)) hnl
-  refine Reach.steps hst (.done (.inl ⟨_, .step hstep, ⟨⟨hfi'', fun h => hrbp.trans (hfi.2 h)⟩,
-    .inr ⟨?_, ?_⟩⟩⟩))
-  · show x''.rip = addrAt S.ctx (posOf S.r pc)
-    rw [hrip'', hpe]
-  · show CacheInv (S.used pc) (S.virt x'')
-    have hc := H.cacheTargets k hlt _ htg
+  have hc := H.cacheTargets k hlt _ htg
+  have hripP : x''.rip = addrAt S.ctx (posOf S.r pc) := by rw [hrip'', hpe]
+  have hused : S.used pc = { pe := S.c.mode.pe } := by
     simp only [Setup.used, hpe, hc, ↓reduceIte]
-    exact CacheInv.emptyPe _ _
+  refine Reach.steps hst (.done (.inl ⟨_, .step hstep, ⟨⟨⟨hfi'', fun h => hrbp.trans (hfi.2 h)⟩,
+    .inr ⟨hripP, ?_⟩⟩, .inr ⟨hripP, hused⟩⟩⟩))
+  show CacheInv (S.used pc) (S.virt x'')
+  rw [hused]
+  exact CacheInv.emptyPe _ _
 
 /-- The handler call's start in either frame form (for `hdl_call_reach`): the virtual state `xv`
 the setup runs from (with a frame pointer the state itself; without one `rbp := rsp + F` and
@@ -1685,11 +1691,11 @@ new `exception` (`asPtr` of the slot) is not related to `rax` here, nor by `Fram
 doesn't see `exception`), so the pad's `lpad` gets no relation to its `rax` (open). In either
 frame form (`hdl_vstart`): the setup runs on the virtual state, the handler from the real one
 (`ResumeContract` with the frame pointer explicit), the pad's relation on the virtual state. -/
-theorem handler_resume' (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+theorem handler_resume'B (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (H : Hyps S) {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
     (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
     (hr : InsnRead S.fr S.ro cur q c') (hres : q.op = .resume) :
-    BodySim S k p (S.used k) := by
+    BodySimBE S k p := by
   intro s xr hs hfR hrip _ hsafe
   have hcur := noArg_insn hn hr
   subst hcur
@@ -1873,22 +1879,32 @@ theorem handler_resume' (hD : Decodes S code relocs rodata callSites dropped sco
     omega
   have hfin := hdl_frameInv H HA hfi hag hsvY hnl
   have hstep' : R.step S.c s {} = .ok (.step s2) := hstep.trans rfl
-  refine .done (.inl ⟨s2, .step hstep', ⟨hconv x' s2 hx'rsp hx'rbp hfin, .inr ⟨hpad', ?_⟩⟩⟩)
-  show CacheInv (S.used pad) (S.virt x')
-  rw [(H.cacheCleared hD).pads k pad cat hcl]
-  exact CacheInv.emptyPe _ _
+  refine .done (.inl ⟨s2, .step hstep',
+    ⟨⟨hconv x' s2 hx'rsp hx'rbp hfin, .inr ⟨hpad', ?_⟩⟩, .inr ⟨hpad', ?_⟩⟩⟩)
+  · show CacheInv (S.used pad) (S.virt x')
+    rw [(H.cacheCleared hD).pads k pad cat hcl]
+    exact CacheInv.emptyPe _ _
+  · show S.used pad = { pe := S.c.mode.pe }
+    exact (H.cacheCleared hD).pads k pad cat hcl
+
+theorem handler_resume' (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    (H : Hyps S) {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
+    (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
+    (hr : InsnRead S.fr S.ro cur q c') (hres : q.op = .resume) :
+    BodySim S k p (S.used k) :=
+  BodySimB.used (handler_resume'B hD H hP hn hr hres).toB
 
 set_option maxHeartbeats 1000000 in
 set_option maxRecDepth 100000 in
 /-- A handler call other than `resume` (see `bodySim_handler'`). -/
-theorem handler_general' (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+theorem handler_general'B (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (H : Hyps S) {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
     (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
     (hr : InsnRead S.fr S.ro cur q c') (hh : q.handler ≠ none) (hres : q.op ≠ .resume)
     (hnd : ∀ c'', (denseSwitch S.fr).run cur ≠ .ok (some q, c''))
     (htable : HdlTables S) :
-    BodySim S k p (S.used k) := by
-  intro s x hs hfR hrip hci hsafe
+    BodySimBE S k p := by
+  intro s x hs hfR hrip hbx hsafe
   have hcur := noArg_insn hn hr
   subst hcur
   obtain ⟨i, p1, ctr, hi, hio, hlt, hpk⟩ := protoFacts_insnOf hP
@@ -1910,7 +1926,7 @@ theorem handler_general' (hD : Decodes S code relocs rodata callSites dropped sc
   have hbe' : Boundary S.rs (hat + len) := hbe
   obtain ⟨xv, r, hfx, hripE, hfpIn, hsepB, hsteps4, hsteps5, hconv⟩ :=
     hdl_vstart hD H hfR hrip hd hcall hsetup hP.bound
-  refine hdl_call_reach hD H hfx (vt_bInv_used hfR (by rw [hs]; exact hci)) hnop hhh hsetup hi
+  refine hdl_call_reach hD H hfx hbx.choose_spec hnop hhh hsetup hi
     hsc hu hno hripE hfpIn hsepB hsteps4 hsteps5 ?_
   intro x' ch ctl st' hop hctl hripT hrsp' hrbp' hFI0
   obtain ⟨st'', pc, hcl, hpc, hstep⟩ := hsucc ch ctl st' hop
@@ -1968,6 +1984,27 @@ theorem handler_general' (hD : Decodes S code relocs rodata callSites dropped sc
     subst ht0
     exact (hdl_succ_trap hpc).elim
 
+theorem handler_general' (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    (H : Hyps S) {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
+    (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
+    (hr : InsnRead S.fr S.ro cur q c') (hh : q.handler ≠ none) (hres : q.op ≠ .resume)
+    (hnd : ∀ c'', (denseSwitch S.fr).run cur ≠ .ok (some q, c''))
+    (htable : HdlTables S) :
+    BodySim S k p (S.used k) :=
+  BodySimB.used (handler_general'B hD H hP hn hr hh hres hnd htable).toB
+
+/-- T2.4: `resume`'s handler call on PE never comes back (`Hyps.resumePe`): from the setup
+steps to the handler's entry (as `handler_resume'B`) the environment runs (`EnvOutside.handler`)
+and no return is possible, so any post-condition holds (at a PE cleanup site, too:
+`ProtoFactsN`). -/
+theorem handler_resume_pe (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    (H : Hyps S) (hpe : S.c.mode.pe = true) {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
+    (hP : ProtoFactsN S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
+    (hr : InsnRead S.fr S.ro cur q c') (hres : q.op = .resume) :
+    ∀ s x, s.pc = k → FrameInv S s x → x.rip = addrAt S.ctx p → RSafe S.Safe S.c s →
+      Reach S.ctx S.E (fun _ => False) x := by
+  sorry -- PE-P6
+
 /-- `bodySim_handler'`: `resume` by `handler_resume'`, every other handler call by
 `handler_general'` (`noArg_insn`, `InsnRead.handler` as in `link_handler`; `handler_rside` for
 the R side under `RSafe`; `hdl_call_reach` for the setup, `call h` and the return under
@@ -1976,16 +2013,25 @@ the R side under `RSafe`; `hdl_call_reach` for the setup, `call h` and the retur
 an inline dense switch (`hnd`, as `link_handler`'s: the dispatch has it from `insn_split`); the
 switch tables' positions (`htable`, from the decoding and `tablesCheck`:
 `DecodeLink.Tables.hdlTables_of_check`). -/
+theorem bodySim_handler'B (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    (H : Hyps S) {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
+    (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
+    (hr : InsnRead S.fr S.ro cur q c') (hh : q.handler ≠ none)
+    (hnd : ∀ c'', (denseSwitch S.fr).run cur ≠ .ok (some q, c''))
+    (htable : HdlTables S) :
+    BodySimBE S k p := by
+  by_cases hres : q.op = .resume
+  · exact handler_resume'B hD H hP hn hr hres
+  · exact handler_general'B hD H hP hn hr hh hres hnd htable
+
 theorem bodySim_handler' (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (H : Hyps S) {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
     (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
     (hr : InsnRead S.fr S.ro cur q c') (hh : q.handler ≠ none)
     (hnd : ∀ c'', (denseSwitch S.fr).run cur ≠ .ok (some q, c''))
     (htable : HdlTables S) :
-    BodySim S k p (S.used k) := by
-  by_cases hres : q.op = .resume
-  · exact handler_resume' hD H hP hn hr hres
-  · exact handler_general' hD H hP hn hr hh hres hnd htable
+    BodySim S k p (S.used k) :=
+  BodySimB.used (bodySim_handler'B hD H hP hn hr hh hnd htable).toB
 
 end Insn
 

@@ -678,8 +678,7 @@ theorem stubsDec_of_decodes (hD : Decodes S code relocs rodata callSites dropped
     ∀ k (hk : k < S.r.protos.size) stub back, S.r.protos[k].counter = some (stub, back) →
       ∃ n t long q, t.toNat = back ∧ Dec S.body stub [.lea .r11 .record,
         .setReg .rax (BitVec.ofNat 64 n), .callR11 16, .branch .always t long] q := by
-  obtain ⟨c', hr⟩ := hD.read
-  obtain ⟨c1, c9, hc1, hc9, hall⟩ := sl_read_stubs hr hD.noRegion
+  obtain ⟨c1, c9, hc1, hc9, hall⟩ := hD.readStubs
   have key : c9 = atPos S.body c9.pos := by
     refine hc9.trans ?_
     calc atPos c1 c9.pos
@@ -727,8 +726,7 @@ theorem stubsBoundary_of_decodes (hD : Decodes S code relocs rodata callSites dr
     {m : Mem} (hL : LinkOkF S.ctx m S.body S.rs S.c.mode) :
     ∀ k (hk : k < S.r.protos.size) stub back, S.r.protos[k].counter = some (stub, back) →
       Boundary S.rs stub := by
-  obtain ⟨c', hr⟩ := hD.read
-  obtain ⟨c0, c7, tg, st, pd, hc0, hrun, hpro, hall⟩ := sl_read_stubs_R hr hD.noRegion
+  obtain ⟨c0, c7, tg, st, pd, hc0, hrun, hpro, hall⟩ := hD.readStubsR
   have key : c0 = atPos S.body c0.pos := by
     calc c0 = bodyCursor { code := code.data, pos := 0, fields := .relocs relocs } mode
             S.r.frameSize c0.pos := hc0

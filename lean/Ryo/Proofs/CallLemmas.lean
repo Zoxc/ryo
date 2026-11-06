@@ -391,7 +391,8 @@ theorem step_call {c : R.Code} {s : R.RState} {ch : OpSem.Choice} {op : Reduced.
     {d : BitVec 32} {fo : R.Opnd Nat} {k : BitVec 64} {ws : List (BitVec 32)} {f : Full.Opcode}
     {q : R.Query} {s' : R.RState}
     (hi : c.d.insns[s.pc]? = some (.native op [.slot d, fo, .imm k, .words ws]))
-    (hf : op.full = some f) (hsh : f.info.shape = .call) (h : R.step c s ch = .ok (.ext q s')) :
+    (hf : op.full = some f) (hsh : f.info.shape = .call) (hreg : c.inRegion s.pc = false)
+    (h : R.step c s ch = .ok (.ext q s')) :
     ∃ s1 parts cal regs stack, (c.scopesAt s.pc).foldlM R.applyScope s = .ok s1 ∧
       R.retRegs k.toNat false = .ok parts ∧ R.callee s1.st f fo = .ok cal ∧
       R.argRegs s1.st ws = .ok regs ∧ c.d.frameSize ≤ s1.fp ∧
@@ -405,7 +406,8 @@ theorem step_call {c : R.Code} {s : R.RState} {ch : OpSem.Choice} {op : Reduced.
   cases hsc : (c.scopesAt s.pc).foldlM R.applyScope s with
   | error e => simp [hsc] at h
   | ok s1 =>
-    simp only [hsc, hf, hsh] at h
+    have hreg1 : c.inRegion s1.pc = false := by rw [(scopes_keeps _ hsc).pc]; exact hreg
+    simp only [hsc, hf, hsh, hreg1, Bool.false_eq_true, ↓reduceIte] at h
     cases hp : R.retRegs k.toNat false with
     | error e => simp [hp] at h
     | ok parts =>
@@ -479,7 +481,8 @@ theorem answer_ret {c : R.Code} {s : R.RState} {op : Reduced.Opcode} {d : BitVec
     {fo : R.Opnd Nat} {k : BitVec 64} {ws : List (BitVec 32)} {f : Full.Opcode} {a : R.Answer}
     {regs : R.Regs} {st1 st2 : OpSem.State} {parts : List (RetPart × R.Reg)}
     (hi : c.d.insns[s.pc]? = some (.native op [.slot d, fo, .imm k, .words ws]))
-    (hf : op.full = some f) (hsh : f.info.shape = .call) (hres : a.result = .ret regs)
+    (hf : op.full = some f) (hsh : f.info.shape = .call) (hreg : c.inRegion s.pc = false)
+    (hres : a.result = .ret regs)
     (hw : R.writeRanges (s.withWorld a.world).st [(-(c.d.frameSize : Int), c.stackSize s.pc)]
       a.frame = .ok st1)
     (hp : R.retRegs k.toNat false = .ok parts)
@@ -489,7 +492,7 @@ theorem answer_ret {c : R.Code} {s : R.RState} {op : Reduced.Opcode} {d : BitVec
   unfold R.answer
   simp only [hi, hf, hsh, bind, Except.bind]
   have e1 : (s.withWorld a.world).pc = s.pc := rfl
-  simp only [e1, hw, hres, hp]
+  simp only [e1, hreg, Bool.false_eq_true, ↓reduceIte, hw, hres, hp]
   rw [show (fun (st : OpSem.State) (x : RetPart × R.Reg) =>
       match x with | (p, r) => st.writeFrame (d.toInt + ↑p.off) (List.take p.size (regs.get r))) =
       (fun st (q : RetPart × R.Reg) => st.writeFrame (d.toInt + q.1.off) ((regs.get q.2).take q.1.size))
@@ -500,7 +503,8 @@ theorem answer_unwind {c : R.Code} {s : R.RState} {op : Reduced.Opcode} {d : Bit
     {fo : R.Opnd Nat} {k : BitVec 64} {ws : List (BitVec 32)} {f : Full.Opcode} {a : R.Answer}
     {exc : ThinPointer} {st1 : OpSem.State} {pad : Nat} {cat : Bool}
     (hi : c.d.insns[s.pc]? = some (.native op [.slot d, fo, .imm k, .words ws]))
-    (hf : op.full = some f) (hsh : f.info.shape = .call) (hres : a.result = .unwind exc)
+    (hf : op.full = some f) (hsh : f.info.shape = .call) (hreg : c.inRegion s.pc = false)
+    (hres : a.result = .unwind exc)
     (hw : R.writeRanges (s.withWorld a.world).st [(-(c.d.frameSize : Int), c.stackSize s.pc)]
       a.frame = .ok st1)
     (hpad : c.cleanupAt s.pc = some (some pad, cat)) :
@@ -508,10 +512,52 @@ theorem answer_unwind {c : R.Code} {s : R.RState} {op : Reduced.Opcode} {d : Bit
   unfold R.answer
   simp only [hi, hf, hsh, bind, Except.bind]
   have e1 : (s.withWorld a.world).pc = s.pc := rfl
-  simp only [e1, hw, hres]
+  simp only [e1, hreg, Bool.false_eq_true, ↓reduceIte, hw, hres]
   unfold R.unwindAt
   simp only [hpad]
   rfl
+
+/-- `step_call` in PE's pad region: the query's outgoing area is the choice's `sp`, its bytes
+`Uninit`. -/
+theorem step_call_region {c : R.Code} {s : R.RState} {ch : OpSem.Choice} {op : Reduced.Opcode}
+    {d : BitVec 32} {fo : R.Opnd Nat} {k : BitVec 64} {ws : List (BitVec 32)} {f : Full.Opcode}
+    {q : R.Query} {s' : R.RState}
+    (hi : c.d.insns[s.pc]? = some (.native op [.slot d, fo, .imm k, .words ws]))
+    (hf : op.full = some f) (hsh : f.info.shape = .call) (hreg : c.inRegion s.pc = true)
+    (h : R.step c s ch = .ok (.ext q s')) :
+    ∃ s1 parts cal regs, (c.scopesAt s.pc).foldlM R.applyScope s = .ok s1 ∧
+      R.retRegs k.toNat false = .ok parts ∧ R.callee s1.st f fo = .ok cal ∧
+      R.argRegs s1.st ws = .ok regs ∧
+      (s'.st = s1.st ∨ ∃ (n : Nat) (dst : BitVec 32),
+        s1.st.writeFrame dst.toInt (List.replicate n .uninit) = .ok s'.st) ∧
+      s'.pc = s1.pc ∧ s'.fp = s1.fp ∧ s'.args = s1.args ∧
+      q = ⟨.call cal regs ch.sp (List.replicate (c.stackSize s1.pc) .uninit), s'.world⟩ := by
+  sorry -- PE-P8
+
+/-- `answer_ret` in PE's pad region: no frame bytes written for the outgoing area. -/
+theorem answer_ret_region {c : R.Code} {s : R.RState} {op : Reduced.Opcode} {d : BitVec 32}
+    {fo : R.Opnd Nat} {k : BitVec 64} {ws : List (BitVec 32)} {f : Full.Opcode} {a : R.Answer}
+    {regs : R.Regs} {st2 : OpSem.State} {parts : List (RetPart × R.Reg)}
+    (hi : c.d.insns[s.pc]? = some (.native op [.slot d, fo, .imm k, .words ws]))
+    (hf : op.full = some f) (hsh : f.info.shape = .call) (hreg : c.inRegion s.pc = true)
+    (hres : a.result = .ret regs)
+    (hp : R.retRegs k.toNat false = .ok parts)
+    (hst : parts.foldlM (init := (s.withWorld a.world).st) (fun st (q : RetPart × R.Reg) =>
+      st.writeFrame (d.toInt + q.1.off) ((regs.get q.2).take q.1.size)) = .ok st2) :
+    R.answer c s a = .ok (.step ⟨s.pc + 1, s.fp, st2, s.args⟩) := by
+  sorry -- PE-P8
+
+/-- `answer_unwind` in PE's pad region. -/
+theorem answer_unwind_region {c : R.Code} {s : R.RState} {op : Reduced.Opcode} {d : BitVec 32}
+    {fo : R.Opnd Nat} {k : BitVec 64} {ws : List (BitVec 32)} {f : Full.Opcode} {a : R.Answer}
+    {exc : ThinPointer} {pad : Nat} {cat : Bool}
+    (hi : c.d.insns[s.pc]? = some (.native op [.slot d, fo, .imm k, .words ws]))
+    (hf : op.full = some f) (hsh : f.info.shape = .call) (hreg : c.inRegion s.pc = true)
+    (hres : a.result = .unwind exc)
+    (hpad : c.cleanupAt s.pc = some (some pad, cat)) :
+    R.answer c s a = .ok (.step ⟨pad, s.fp,
+      { (s.withWorld a.world).st with exception := exc }, s.args⟩) := by
+  sorry -- PE-P8
 
 open Ryo.Proofs.ArgRet in
 /-- `ret_parts`' part decoder (store form: integer parts of 1 to 8 bytes). -/

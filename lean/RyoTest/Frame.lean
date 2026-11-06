@@ -56,11 +56,29 @@ def lend (at_ : Nat) (off : Int) (n : Nat) : Nat × Scope := (at_, ⟨0, s32 off
 /-- An island with the operands `ops`. -/
 def island (ops : List Int) : Insn := .native (red "island") [.sym 0, .words (ops.map s32)]
 
+/-- The width of a store of `n` bytes. -/
+def widthOf : Nat → Ryo.X86.W
+  | 1 => .b
+  | 2 => .w
+  | 4 => .d
+  | _ => .q
+
+/-- `d` with what the decoder records of its dropped stores (`droppedFormOk`): each dropped
+instruction consumed one, a store `mov [fp + s], rax` of `droppedStore`'s range. -/
+def withDropForm (d : Decoded) : Decoded :=
+  { d with
+    consumed := (List.range d.insns.size).toArray.map fun k => if d.dropped.contains k then 1 else 0
+    droppedItems := (List.range d.insns.size).toArray.map fun k =>
+      if d.dropped.contains k then
+        (droppedStore d k).map fun (s, n) => .st (widthOf n) .rax (Ryo.X86.M.frame s)
+      else none }
+
 /-- A function of `insns` (then `ret`) in a frame of 64, instruction 0's store dropped. -/
 def fn (insns : List Insn) (scopes : List (Nat × Scope) := []) (items : List (List Ryo.X86.Item) := []) :
     Decoded :=
-  { insns := (insns ++ [ret]).toArray, frameSize := 64, cleanup := #[], scopes := scopes.toArray,
-    dropped := #[0], heads := #[], items := items.toArray }
+  withDropForm
+    { insns := (insns ++ [ret]).toArray, frameSize := 64, cleanup := #[], scopes := scopes.toArray,
+      dropped := #[0], heads := #[], items := items.toArray }
 
 /-- An inline store's item: `mov [fp + d], rax`. -/
 def st (d : Int) : Ryo.X86.Item := .st .q .rax (Ryo.X86.M.frame (s32 d))
@@ -113,15 +131,20 @@ def tests : List TestCase :=
    accepts "an overwrite before the call" (fn [mov 64 (-8), mov 64 (-8), call [(-8, reg 0)]] [] [[], [st (-8)]]),
    -- Pointer accesses read the objects escaped there.
    rejects "a call while the object is escaped" (fn [mov 64 (-8), call []] [escape 1 (-16) 16]),
-   accepts "a call after the object's end" (fn [mov 64 (-8), mov 64 (-32), call []]
+   -- The `Escape` at 1 copies the dropped bytes into the allocation (a read, `Flow.rowOf`): the
+   -- bytes the ghost differs on must stay private (`DeadStore/Defs.lean`'s `PatchOk`), though
+   -- nothing reads the copy before the `End`.
+   rejects "a call after the object's end" (fn [mov 64 (-8), mov 64 (-32), call []]
      [escape 1 (-16) 16, «end» 2 (-16) 16]),
    rejects "a call after a partial end" (fn [mov 64 (-8), mov 64 (-32), call []]
      [escape 1 (-16) 16, «end» 2 (-16) 8]),
    accepts "a call while another object is escaped" (fn [mov 64 (-8), call []] [escape 1 (-32) 16]),
    rejects "a handler load through a pointer while escaped" (fn [mov 64 (-8), handler "load.w64" [-32, -40]]
      [escape 0 (-8) 8]),
-   accepts "a handler that doesn't dereference while escaped" (fn [mov 64 (-8), handler "add.w64" [-32, -40, -48]]
-     [escape 0 (-8) 8]),
+   -- A dropped store into an object escaped there (`droppedPrivate`): the proofs keep the bytes the
+   -- ghost differs on private (`PatchOk`), though nothing reads it.
+   rejects "a dropped store while escaped, no dereference after" (fn [mov 64 (-8),
+     handler "add.w64" [-32, -40, -48]] [escape 0 (-8) 8]),
    -- Handlers access their operands at their widths.
    accepts "a handler reading the bytes below" (fn [mov 8 (-9), handler "add.w64" [-32, -24, -17]]),
    rejects "a handler reading the store" (fn [mov 8 (-9), handler "add.w64" [-32, -24, -16]]),
@@ -158,10 +181,13 @@ def tests : List TestCase :=
    -- An sret destination is `Uninit` once the call has read its arguments.
    rejects "an escaped sret destination without its size" (fn [mov 64 (-16), call [(-16, sret)]]
      [escape 1 (-16) 16]),
-   accepts "an sret destination" (fn [mov 64 (-16), call [(-16, sret)]] [escape 1 (-16) 16])
-     (sretAt1 16),
-   accepts "an sret destination read after the call" (fn [mov 64 (-16), call [(-16, sret)],
-     call [(-16, reg 0)]] [escape 1 (-16) 16]) (sretAt1 16),
+   -- The sret destination's `Escape` at 1 copies the dropped bytes into the allocation (a read,
+   -- `Flow.rowOf`), though the call makes them `Uninit` before the callee can read them: the
+   -- proofs keep the bytes the ghost differs on private (`PatchOk`).
+   rejects "a store into an sret destination before its escape" (fn [mov 64 (-16), call [(-16, sret)]]
+     [escape 1 (-16) 16]) (sretAt1 16),
+   rejects "a store into an sret destination before its escape, read after the call"
+     (fn [mov 64 (-16), call [(-16, sret)], call [(-16, reg 0)]] [escape 1 (-16) 16]) (sretAt1 16),
    rejects "an sret destination also passed as an argument" (fn [mov 64 (-16),
      call [(-16, sret), (-16, reg 1)]] [escape 1 (-16) 16]) (sretAt1 16),
    rejects "bytes past the return size" (fn [mov 64 (-8), call [(-16, sret)]] [escape 1 (-16) 16])

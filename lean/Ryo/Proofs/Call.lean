@@ -40,7 +40,9 @@ it lands in this frame. Every such `x'` corresponds to an R answer `a`:
 - a return (`CallReturn`): `a.result = .ret regs` with the x86 return registers related
   (`ArgRet.RetRel`: `rax`, `rdx`, `xmm0`, `xmm1`), `rip` the pushed return address, `rsp` popped,
   and the callee-saved registers kept (`Saved`: `rbx rbp r12`–`r15`, PE also `rsi rdi`);
-- an unwind (`Landed`): `a.result = .unwind exc`, `rip` the landing pad the unwinder finds for
+- an unwind (`Landing`): `a.result = .unwind exc`, and on PE at a cleanup site (`cleans` of the
+  return address) the pad region called by the exception dispatcher on its own stack
+  (`PadCalled`); otherwise (`Landed`) `rip` the landing pad the unwinder finds for
   the return address (`padOf`, the LSDA's call-site table as linked), `rax` the exception object,
   `rsp` the caller's (`x.rsp + 8`, the frame's body `rsp = fp - F`), the callee-saved registers
   restored.
@@ -281,17 +283,66 @@ structure Landed (pe : Bool) (padOf : BitVec 64 → Option (BitVec 64)) (sp0 : B
   rsp : x'.rsp = sp0
   saved : ∀ i, Saved pe i → x'.regs i = x.regs i
 
-/-- The environment's contract for calls (trusted; see the module comment). -/
+/-- PE: unwinding out of the callee (entered at `x`) came back at `x'` through the function's
+pad region, for the cleanup pad of the return address: the exception dispatcher's language
+handler (`ryo_seh_handler`, vm/rt/src/vm/seh.rs) called the region's entry `region` through
+`ryo_seh_call_pad`, on the dispatcher's stack below the call's. At `x'`: `rip` the region's
+entry, `r11` the pad (`padOf` of the return address), `rax` the exception record (`exc`: the
+contracts leave it existential), the callee-saved registers (`rbp`, the frame pointer,
+included) as at the call (the trampoline loads them from the unwound `CONTEXT`), `rsp`
+8 mod 16 with the trampoline's return address at `[rsp]`, below the call's `rsp` and with room
+above `lo` for the region's 40 bytes and a call. -/
+structure PadCalled (padOf : BitVec 64 → Option (BitVec 64)) (region lo : BitVec 64)
+    (x x' : X86.State) (exc : ThinPointer) : Prop where
+  rip : x'.rip = region
+  r11 : padOf (x.mem.read64 x.rsp) = some (x'.reg .r11)
+  rax : x'.reg .rax = BitVec.ofNat 64 exc.addr
+  saved : ∀ i, Saved true i → x'.regs i = x.regs i
+  align : x'.rsp.toNat % 16 = 8
+  below : x'.rsp.toNat + 8 ≤ x.rsp.toNat
+  room : lo.toNat + 64 + 40 ≤ x'.rsp.toNat
+
+/-- Where unwinding out of a call entered at `x` comes back into the function: on PE at a
+cleanup site (`cleans` of the return address, the language handler's test) through the pad
+region (`PadCalled`), else (a catching site on PE, every site on ELF) at the landing pad itself
+(`Landed`, with `rsp` the frame's `sp0`). -/
+def Landing (pe : Bool) (padOf : BitVec 64 → Option (BitVec 64)) (cleans : BitVec 64 → Bool)
+    (region lo sp0 : BitVec 64) (x x' : X86.State) (exc : ThinPointer) : Prop :=
+  if (pe && cleans (x.mem.read64 x.rsp)) = true then PadCalled padOf region lo x x' exc
+  else Landed pe padOf sp0 x x' exc
+
+/-- Away from a PE cleanup site the landing is `Landed`. -/
+theorem Landing.landed {pe : Bool} {padOf : BitVec 64 → Option (BitVec 64)}
+    {cleans : BitVec 64 → Bool} {region lo sp0 : BitVec 64} {x x' : X86.State} {exc : ThinPointer}
+    (h : Landing pe padOf cleans region lo sp0 x x' exc)
+    (hc : (pe && cleans (x.mem.read64 x.rsp)) = false) : Landed pe padOf sp0 x x' exc := by
+  have hn : ¬ ((pe && cleans (x.mem.read64 x.rsp)) = true) := by
+    rw [hc]; exact Bool.false_ne_true
+  unfold Landing at h
+  rw [if_neg hn] at h
+  exact h
+
+/-- At a PE cleanup site the landing is `PadCalled`. -/
+theorem Landing.padCalled {pe : Bool} {padOf : BitVec 64 → Option (BitVec 64)}
+    {cleans : BitVec 64 → Bool} {region lo sp0 : BitVec 64} {x x' : X86.State} {exc : ThinPointer}
+    (h : Landing pe padOf cleans region lo sp0 x x' exc)
+    (hc : (pe && cleans (x.mem.read64 x.rsp)) = true) : PadCalled padOf region lo x x' exc := by
+  unfold Landing at h
+  rw [if_pos hc] at h
+  exact h
+
+/-- The environment's contract for calls (trusted; see the module comment). An unwind comes back
+per `Landing`: on PE at a cleanup site (`cleans`) through the pad region at `region`. -/
 structure CallContract (ctx : Ctx) (pe : Bool) (Owned : BitVec 64 → Prop) (lo : BitVec 64)
-    (padOf : BitVec 64 → Option (BitVec 64)) (Safe : R.Query → Prop)
-    (Ret Unw : X86.State → X86.State → Prop) : Prop where
+    (padOf : BitVec 64 → Option (BitVec 64)) (cleans : BitVec 64 → Bool) (region : BitVec 64)
+    (Safe : R.Query → Prop) (Ret Unw : X86.State → X86.State → Prop) : Prop where
   ret : ∀ cal regs sp stack w x x', EntryAt ctx pe cal regs sp stack w x →
     Safe ⟨.call cal regs sp stack, w⟩ → (pe = true → 32 ≤ stack.length) → Ret x x' →
     ∃ a, CallReturn pe Owned lo sp stack.length w x x' a
   unwind : ∀ cal regs sp stack w x x', EntryAt ctx pe cal regs sp stack w x →
     Safe ⟨.call cal regs sp stack, w⟩ → (pe = true → 32 ≤ stack.length) → Unw x x' →
     ∃ a exc, a.result = .unwind exc ∧ CallEnd Owned lo sp stack.length w x x' a ∧
-      Landed pe padOf (x.rsp + 8) x x' exc
+      Landing pe padOf cleans region lo (x.rsp + 8) x x' exc
 
 /-! ### Hypotheses about the layout -/
 
@@ -1416,6 +1467,37 @@ theorem FrameSep.callApart {Owned : BitVec 64 → Prop} {lo : BitVec 64} {F n fp
   · exact hs.frameApart id al o hg hl he hu h1 h2 hin
   · exact hown o i1 i2 how
 
+/-! ### Calls in PE's pad region
+
+The outgoing area is on the dispatcher's stack at the region's `rsp`, below the frame: R's query
+has the choice's `sp` and `Uninit` stack bytes, its answer writes no frame bytes. -/
+
+/-- `CallApart` for an outgoing area off the frame (PE's pad region): no initialized private
+frame byte is where the callee may write. -/
+def CallApartR (Owned : BitVec 64 → Prop) (lo : BitVec 64) (sp n : Nat) (st : OpSem.State)
+    (x : X86.State) : Prop :=
+  ∀ o : Int, -2 ^ 63 ≤ o → o < 2 ^ 63 → st.escapedAt o = none → st.frame o ≠ .uninit →
+    ¬ CallMayWrite Owned lo sp n ⟨st.mem, st.exposed⟩ (fpAddr x o)
+
+/-- `FrameSep.callApart` with the outgoing area `[sp, sp + n)` below the frame. -/
+theorem FrameSep.callApartR {Owned : BitVec 64 → Prop} {lo : BitVec 64} {F n fp sp : Nat}
+    {K : Int} {st : OpSem.State} {x : X86.State} (hs : ScopeMem.FrameSep (-(F : Int)) K st x)
+    (hw : ScopeMem.Window (-(F : Int)) K fp) (hK : 0 ≤ K) (hb : x.reg .rbp = BitVec.ofNat 64 fp)
+    (hF : F ≤ fp) (hown : ∀ o, -(F : Int) ≤ o → o < K → ¬ Owned (fpAddr x o))
+    (hsp : sp + n ≤ fp - F) :
+    CallApartR Owned lo sp n st x := by
+  sorry -- PE-P8
+
+/-- `answer_rel` in PE's pad region: the answer's world, no frame bytes written. -/
+theorem answer_rel_region {Owned : BitVec 64 → Prop} {lo : BitVec 64} {sp n : Nat}
+    {s : R.RState} {x1 x' : X86.State} {a : R.Answer}
+    (hr : RRel s x1) (hce : CallEnd Owned lo sp n s.world x1 x' a)
+    (hap : CallApartR Owned lo sp n s.st x1) (hrbp : x'.reg .rbp = x1.reg .rbp) :
+    Rel (s.withWorld a.world).st x' ∧ EscWF (s.withWorld a.world).st ∧
+      MemRel (s.withWorld a.world).st x' ∧
+      EscOnly s.st a.world.mem (s.withWorld a.world).st.mem := by
+  sorry -- PE-P8
+
 /-! ### Calls -/
 
 /-- A call reaches its callee's entry related to R's query (see the module comment). -/
@@ -1423,7 +1505,7 @@ theorem call_query (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.State}
     {ch : OpSem.Choice} {op : Reduced.Opcode} {f : Full.Opcode} {d : BitVec 32} {fo : R.Opnd Nat}
     {k : BitVec 64} {ws : List (BitVec 32)} {items : List Item} {q : R.Query} {lo : BitVec 64}
     (hi : c.d.insns[s.pc]? = some (.native op [.slot d, fo, .imm k, .words ws]))
-    (hf : op.full = some f) (hsh : f.info.shape = .call)
+    (hf : op.full = some f) (hsh : f.info.shape = .call) (hreg : c.inRegion s.pc = false)
     (hs : callSeq c.mode.pe f fo ws = some items)
     (hrax : f = .callSymInd ∨ f = .callPtr → usesRax ws = false)
     (hr : RRel s x) (hm : MemRel s.st x) (hsz : ∀ sc ∈ c.scopesAt s.pc, sc.size < 2 ^ 62)
@@ -1443,7 +1525,7 @@ theorem call_query (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.State}
       (∀ i, Saved c.mode.pe i → x1.regs i = x.regs i) ∧
       (∀ b, ¬ InStack lo x.rsp b → x1.mem b = x.mem b) := by
   obtain ⟨s1, parts, cal, regs, stack, hsc, -, hc, ha, hF, hrd, hsret, hpc', hfp', hargs', hq⟩ :=
-    CallLemmas.step_call hi hf hsh h
+    CallLemmas.step_call hi hf hsh hreg h
   have hk := scopes_keeps _ hsc
   obtain ⟨hr1, hm1⟩ := ScopeMem.memRel_foldlM _ hsz hr hm hsc
   rw [hk.pc] at hrd
@@ -1544,9 +1626,10 @@ theorem call_return (ctx : Ctx) {c : R.Code} {s : R.RState} {x1 x' : X86.State}
     {ws : List (BitVec 32)} {cal : R.Callee} {regs : R.Regs} {stack : List AbstractByte}
     {Owned : BitVec 64 → Prop} {lo : BitVec 64} {padOf : BitVec 64 → Option (BitVec 64)}
     {Safe : R.Query → Prop} {Ret Unw : X86.State → X86.State → Prop}
-    (hC : CallContract ctx c.mode.pe Owned lo padOf Safe Ret Unw)
+    {cleans : BitVec 64 → Bool} {region : BitVec 64}
+    (hC : CallContract ctx c.mode.pe Owned lo padOf cleans region Safe Ret Unw)
     (hi : c.d.insns[s.pc]? = some (.native op [.slot d, fo, .imm k, .words ws]))
-    (hf : op.full = some f) (hsh : f.info.shape = .call)
+    (hf : op.full = some f) (hsh : f.info.shape = .call) (hreg : c.inRegion s.pc = false)
     (he : EntryAt ctx c.mode.pe cal regs (s.fp - c.d.frameSize) stack s.world x1)
     (hlen : stack.length = c.stackSize s.pc) (hfp : c.d.frameSize ≤ s.fp)
     (hr : RRel s x1) (_hm : MemRel s.st x1)
@@ -1584,7 +1667,7 @@ theorem call_return (ctx : Ctx) {c : R.Code} {s : R.RState} {x1 x' : X86.State}
       obtain ⟨_, hfor, _⟩ := hpq q hq
       rcases hfor with ⟨_, h | h⟩ | ⟨_, h | h⟩ <;> rw [h] <;> simp [ArgRet.retRegList])
   have hrbp2 : x''.reg .rbp = x'.reg .rbp := rs2 5 (by decide) (by decide) (by decide)
-  refine ⟨a, ⟨s.pc + 1, s.fp, st2, s.args⟩, x'', hcr, answer_ret hi hf hsh hresR hw hp hfold,
+  refine ⟨a, ⟨s.pc + 1, s.fp, st2, s.args⟩, x'', hcr, answer_ret hi hf hsh hreg hresR hw hp hfold,
     by rw [hstores]; exact hx, ⟨hrel2, by rw [hrbp2, hrbp]; exact hr.rbp, ?_⟩, hmr2, rfl, rfl, rfl,
     by rw [p2, hcr.rip, hstores], ?_, fun i hi' => ?_⟩
   · exact hwf.of_sizes g1 (SizesKept.of_escOnly g2)
@@ -1593,15 +1676,41 @@ theorem call_return (ctx : Ctx) {c : R.Code} {s : R.RState} {x1 x' : X86.State}
   · obtain ⟨h0, h2, h11, -⟩ := saved_ne hi'
     rw [rs2 i h0 h2 h11]; exact hcr.saved i hi'
 
+/-- `call_query` in PE's pad region: the outgoing area at the machine's `rsp` (the choice's
+`sp`), its bytes `Uninit`. -/
+theorem call_query_region (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.State}
+    {op : Reduced.Opcode} {f : Full.Opcode} {d : BitVec 32} {fo : R.Opnd Nat}
+    {k : BitVec 64} {ws : List (BitVec 32)} {items : List Item} {q : R.Query} {lo : BitVec 64}
+    (hi : c.d.insns[s.pc]? = some (.native op [.slot d, fo, .imm k, .words ws]))
+    (hf : op.full = some f) (hsh : f.info.shape = .call) (hreg : c.inRegion s.pc = true)
+    (hs : callSeq c.mode.pe f fo ws = some items)
+    (hrax : f = .callSymInd ∨ f = .callPtr → usesRax ws = false)
+    (hr : RRel s x) (hm : MemRel s.st x) (hsz : ∀ sc ∈ c.scopesAt s.pc, sc.size < 2 ^ 62)
+    (hlo : lo.toNat + 8 ≤ x.rsp.toNat) (hsym : SymsApart ctx lo x.rsp x.mem)
+    (h : R.step c s { sp := x.rsp.toNat } = .ok (.ext q s'))
+    (hap : Handler.StackApart lo s'.st x) :
+    ∃ cal regs x1,
+      q = ⟨.call cal regs x.rsp.toNat (List.replicate (c.stackSize s.pc) .uninit), s'.world⟩ ∧
+      execItems ctx items x = .ok x1 ∧
+      EntryAt ctx c.mode.pe cal regs x.rsp.toNat (List.replicate (c.stackSize s.pc) .uninit)
+        s'.world x1 ∧
+      RRel s' x1 ∧ MemRel s'.st x1 ∧ s'.pc = s.pc ∧ s'.fp = s.fp ∧ s'.args = s.args ∧
+      x1.rsp = x.rsp - 8 ∧
+      x1.mem.read64 x1.rsp = x.rip + BitVec.ofNat 64 (items.map Item.size).sum ∧
+      (∀ i, Saved c.mode.pe i → x1.regs i = x.regs i) ∧
+      (∀ b, ¬ InStack lo x.rsp b → x1.mem b = x.mem b) := by
+  sorry -- PE-P8
+
 /-- The full R step of a call that returns: `call_query` then `call_return`. -/
 theorem call_sound (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.State}
     {ch : OpSem.Choice} {op : Reduced.Opcode} {f : Full.Opcode} {d : BitVec 32} {fo : R.Opnd Nat}
     {k : BitVec 64} {ws : List (BitVec 32)} {items : List Item} {q : R.Query}
     {Owned : BitVec 64 → Prop} {lo : BitVec 64} {padOf : BitVec 64 → Option (BitVec 64)}
     {Safe : R.Query → Prop} {Ret Unw : X86.State → X86.State → Prop}
-    (hC : CallContract ctx c.mode.pe Owned lo padOf Safe Ret Unw)
+    {cleans : BitVec 64 → Bool} {region : BitVec 64}
+    (hC : CallContract ctx c.mode.pe Owned lo padOf cleans region Safe Ret Unw)
     (hi : c.d.insns[s.pc]? = some (.native op [.slot d, fo, .imm k, .words ws]))
-    (hf : op.full = some f) (hsh : f.info.shape = .call)
+    (hf : op.full = some f) (hsh : f.info.shape = .call) (hreg : c.inRegion s.pc = false)
     (hs : callSeq c.mode.pe f fo ws = some items)
     (hrax : f = .callSymInd ∨ f = .callPtr → usesRax ws = false)
     (hr : RRel s x) (hm : MemRel s.st x) (hsz : ∀ sc ∈ c.scopesAt s.pc, sc.size < 2 ^ 62)
@@ -1626,15 +1735,15 @@ theorem call_sound (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.State}
         x''.rip = x.rip + BitVec.ofNat 64 ((items ++ resultStores k.toNat d).map Item.size).sum ∧
         x''.rsp = x.rsp ∧ (∀ i, Saved c.mode.pe i → x''.regs i = x.regs i) := by
   obtain ⟨cal, regs, stack, x1, hq, hx, he, hstl, hF, hr', hm', hpc, hfp, -, hrsp, hret, hsaved,
-    -⟩ := call_query ctx hi hf hsh hs hrax hr hm hsz hsp hb hlo hsym h hap
-  obtain ⟨-, parts, -, -, -, -, hp, -⟩ := CallLemmas.step_call hi hf hsh h
+    -⟩ := call_query ctx hi hf hsh hreg hs hrax hr hm hsz hsp hb hlo hsym h hap
+  obtain ⟨-, parts, -, -, -, -, hp, -⟩ := CallLemmas.step_call hi hf hsh hreg h
   refine ⟨cal, regs, stack, x1, hq, hx, he, fun x' hR => ?_⟩
   have hx1b : x1.reg .rbp = x.reg .rbp := by
     have := hsaved 5 (saved_of_calleeSaved (by simp [CalleeSaved])); exact this
   rw [← hfp] at he hca hres ⊢
-  rw [← hpc] at hi hb hshadow hstl hca hres ⊢
+  rw [← hpc] at hi hb hshadow hstl hca hres hreg ⊢
   obtain ⟨a, s'', x'', hcr, hans, hx'', hr'', hm'', hpc'', -, -, hrip, hrsp'', hsv⟩ :=
-    call_return ctx hC hi hf hsh he hstl (by rw [hfp]; exact hF) hr' hm' hb hd hshadow
+    call_return ctx hC hi hf hsh hreg he hstl (by rw [hfp]; exact hF) hr' hm' hb hd hshadow
       (by rw [hfp, ← hq]; exact hsafe) (callApart_congr hca hx1b) ⟨parts, hp⟩ (hres x1 x') hR
   refine ⟨a, s'', x'', hcr, hans, hx'', hr'', hm'', by rw [hpc'', hpc], ?_, ?_, ?_⟩
   · rw [hrip, hret, List.map_append, List.sum_append, BitVec.ofNat_add, BitVec.add_assoc]
@@ -1649,11 +1758,11 @@ theorem call_unwind (ctx : Ctx) {c : R.Code} {s : R.RState} {x1 x' : X86.State}
     {ws : List (BitVec 32)} {cal : R.Callee} {regs : R.Regs} {stack : List AbstractByte}
     {Owned : BitVec 64 → Prop} {lo : BitVec 64} {padOf : BitVec 64 → Option (BitVec 64)}
     {Safe : R.Query → Prop} {Ret Unw : X86.State → X86.State → Prop} {pad : Nat}
-    {cat : Bool}
+    {cat : Bool} {cleans : BitVec 64 → Bool} {region : BitVec 64}
     (pos : Nat → BitVec 32)
-    (hC : CallContract ctx c.mode.pe Owned lo padOf Safe Ret Unw)
+    (hC : CallContract ctx c.mode.pe Owned lo padOf cleans region Safe Ret Unw)
     (hi : c.d.insns[s.pc]? = some (.native op [.slot d, fo, .imm k, .words ws]))
-    (hf : op.full = some f) (hsh : f.info.shape = .call)
+    (hf : op.full = some f) (hsh : f.info.shape = .call) (hreg : c.inRegion s.pc = false)
     (he : EntryAt ctx c.mode.pe cal regs (s.fp - c.d.frameSize) stack s.world x1)
     (hlen : stack.length = c.stackSize s.pc) (hfp : c.d.frameSize ≤ s.fp)
     (hr : RRel s x1) (_hm : MemRel s.st x1)
@@ -1663,6 +1772,7 @@ theorem call_unwind (ctx : Ctx) {c : R.Code} {s : R.RState} {x1 x' : X86.State}
     (hap : CallApart Owned lo c.d.frameSize (c.stackSize s.pc) (s.fp - c.d.frameSize) s.st x1)
     (hpad : c.cleanupAt s.pc = some (some pad, cat))
     (hpos : padOf (x1.mem.read64 x1.rsp) = some (ctx.base + (pos pad).setWidth 64))
+    (hcl : (c.mode.pe && cleans (x1.mem.read64 x1.rsp)) = false)
     (hU : Unw x1 x') :
     ∃ a exc s'', a.result = .unwind exc ∧
       CallEnd Owned lo (s.fp - c.d.frameSize) (c.stackSize s.pc) s.world x1 x' a ∧
@@ -1672,11 +1782,12 @@ theorem call_unwind (ctx : Ctx) {c : R.Code} {s : R.RState} {x1 x' : X86.State}
       x'.rsp = x1.rsp + 8 ∧ (∀ i, Saved c.mode.pe i → x'.regs i = x1.regs i) := by
   obtain ⟨a, exc, hres, hce, hland⟩ := hC.unwind cal regs (s.fp - c.d.frameSize) stack s.world
     x1 x' he hsafe (by rw [hlen]; exact hshadow) hU
+  have hland := hland.landed hcl
   rw [hlen] at hce
   have hrbp : x'.reg .rbp = x1.reg .rbp :=
     hland.saved 5 (saved_of_calleeSaved (by simp [CalleeSaved]))
   obtain ⟨st1, hw, hrel, hwf, hmr, -, -, -, -⟩ := answer_rel hr hce hap hrbp hfp hb
-  refine ⟨a, exc, _, hres, hce, answer_unwind hi hf hsh hres hw hpad, rfl, rfl,
+  refine ⟨a, exc, _, hres, hce, answer_unwind hi hf hsh hreg hres hw hpad, rfl, rfl,
     ⟨rel_exc exc hrel, by rw [hrbp]; exact hr.rbp, ⟨hwf.idLt, hwf.idInj, hwf.size, hwf.disj⟩⟩, hmr, rfl, rfl,
     Option.some.inj (hland.rip.symm.trans hpos), hland.rax, hland.rsp, hland.saved⟩
 

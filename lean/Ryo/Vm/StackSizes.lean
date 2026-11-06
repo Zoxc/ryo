@@ -13,7 +13,12 @@ bytes of return address and alignment (`StackSizes.frame`), and on PE a call's h
 `frame` and `F ≤ 2 ^ 31` (`boundsOk`). And `argSlotsCheck`: on PE with a handler call's stack
 argument (`shadowSize` 40, the argument at `[-F + 32, -F + 40)`, below `frameLo`), every call's
 area is the 32-byte shadow space only, so a call's answer, which rewrites the area
-(`R.answer`), leaves the argument's bytes private and `Uninit` (`FrameInv.slots`).
+(`R.answer`), leaves the argument's bytes private and `Uninit` (`FrameInv.slots`). And
+`regionCallsCheck`: a call in PE's pad region (`Code.inRegion`) has the shadow space only (no
+stack arguments; `StackSizes.region`): there the area is on the dispatcher's stack at the
+region's `rsp`, 40 bytes below the trampoline's return address (`RegionInv.tramp`), which a
+callee writing below `sp + n` would otherwise reach. The backend keeps a function with such a
+call native (`lower/call.rs`).
 -/
 import Ryo.Vm.R.Sem
 import Ryo.Vm.DecodeReduced
@@ -36,6 +41,13 @@ def argSlotsCheck (c : R.Code) : Bool :=
     (List.range c.d.insns.size).all fun k =>
       !((c.d.insns[k]?.map R.Insn.isCall).getD false) || decide (c.stackSize k ≤ 32)
 
+/-- PE's pad region: a call there has no stack arguments, its area the 32-byte shadow space only
+(see the module comment). -/
+def regionCallsCheck (c : R.Code) : Bool :=
+  (List.range c.d.insns.size).all fun k =>
+    !c.inRegion k || !((c.d.insns[k]?.map R.Insn.isCall).getD false) ||
+      decide (c.stackSize k ≤ 32)
+
 /-- The calls' stack-argument areas fit in the frame (see the module comment). -/
 def stackSizesCheck (c : R.Code) : Bool :=
   ((!c.mode.pe || decide (32 ≤ c.d.frameSize)) &&
@@ -43,7 +55,7 @@ def stackSizesCheck (c : R.Code) : Bool :=
       decide (c.stackSize k + (if c.mode.pe then 16 else 0) ≤ c.d.frameSize) &&
         (!c.mode.pe || !((c.d.insns[k]?.map R.Insn.isCall).getD false) ||
           decide (32 ≤ c.stackSize k))) &&
-    argSlotsCheck c
+    (argSlotsCheck c && regionCallsCheck c)
 
 /-- The window check: the frame ranges end no higher than the incoming area's end
 `16 + argSize`, itself at most `2 ^ 31` (`Hyps.windowOk`: with `boundsOk` it gives the window's

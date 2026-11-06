@@ -711,11 +711,11 @@ set_option maxHeartbeats 1000000 in
 `Island.FrameSep.islandApart` leaves it out. In either frame form (`isl_vstart`): the setup runs
 on the virtual state `x`, the template from the real one (`IslandAtB`, `isl_atB`), and its
 answers are read back on the virtual state (`rbp := x.reg .rbp`). -/
-theorem bodySim_island (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+theorem bodySim_islandB (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (H : Hyps S) {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
     (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
     (hr : InsnRead S.fr S.ro cur q c') (hop : q.op = .island) :
-    BodySim S k p (S.used k) := by
+    BodySimBE S k p := by
   have hF32 : S.c.mode.pe = true → 32 ≤ S.F := H.peShadow
   have HI := island_hyps hD H hF32
   have hshF : S.c.islandShadow ≤ S.c.d.frameSize ∧ S.c.islandShadow ≤ 32 := by
@@ -723,9 +723,10 @@ theorem bodySim_island (hD : Decodes S code relocs rodata callSites dropped scop
     · exact ⟨hF32 (by assumption), by omega⟩
     · omega
   have hshE : (S.c.islandShadow : Int) = Island.shadow S.c.mode.pe := rfl
-  intro s xr hs hfR hrip hci hsafe
+  intro s xr hs hfR hrip hbx hsafe
   have hcur := noArg_insn hn hr
   subst hcur
+  have hncK := hP.notClean
   obtain ⟨hlt, ⟨p1, ctr, hpq⟩, ⟨i, hi, hio⟩, hbd, hnop, hcache, hargs⟩ := hP
   cases hr with
   | handler _ _ _ hhh => simp only at hop; subst hop; simp [noHandler] at hhh
@@ -786,7 +787,7 @@ theorem bodySim_island (hD : Decodes S code relocs rodata callSites dropped scop
     island_rsp_toNat hfi.rrel.rbp hfp64 hfpF hrspF
   have hlo : S.lo.toNat + 8 ≤ x.rsp.toNat := by
     have := hfi.room; omega
-  have hkept := HI.kept s x s1 _ hfi (vt_bInv_used hfR (by rw [hs]; exact hci)) hsc
+  have hkept := HI.kept s x s1 _ hfi hbx.choose_spec hsc
   have hrspSh : x.rsp.toNat ≤ (x.rsp + BitVec.ofNat 64 (Island.shadow S.c.mode.pe)).toNat := by
     have hsh : Island.shadow S.c.mode.pe ≤ S.c.d.frameSize ∧ Island.shadow S.c.mode.pe ≤ 32 := by
       unfold Island.shadow; split
@@ -956,18 +957,23 @@ theorem bodySim_island (hD : Decodes S code relocs rodata callSites dropped scop
       rw [h1] at h2
       simp [h2] at ha
     have fin : ∀ z : X86.State, z.regs = y.regs → z.xmm = y.xmm → z.mem = y.mem →
-        z.rip = addrAt S.ctx (S.start (k + 1)) → Reach S.ctx S.E (SNext S s) z := by
+        z.rip = addrAt S.ctx (S.start (k + 1)) → Reach S.ctx S.E (SNextE S s) z := by
       intro z hzr hzx hzm hzrip
       have hzFI : FrameInv S { s1.withWorld a'.world with st, pc := s1.pc + 1 }
           (z.setReg .rbp (x.reg .rbp)) :=
         hFI.congr (hyv5 z hzr) (by rw [hyvx]; exact hzx) (by rw [hyvm]; exact hzm)
       have hzrsp' : z.rsp = x.rsp := by rw [hzrsp z hzr, ← hyvrsp]; exact hrspX
       have hzrbp' : z.reg .rbp = r := (hzrbp z hzr).trans hyr
-      refine .done (.inl ⟨_, .answer hstep hans, ⟨hconv z _ hzrsp' hzrbp' hzFI, .inl ⟨?_, ?_⟩⟩⟩)
+      refine .done (.inl ⟨_, .answer hstep hans,
+        ⟨⟨hconv z _ hzrsp' hzrbp' hzFI, .inl ⟨?_, ?_⟩⟩, .inl ⟨?_, ?_⟩⟩⟩)
       · change z.rip = addrAt S.ctx (S.start (s1.pc + 1))
         rw [hpc'']; exact hzrip
       · change CacheInv (S.cache (s1.pc + 1)) (S.virt z)
         rw [hpc'', hcache]; exact CacheInv.emptyPe _ _
+      · change z.rip = addrAt S.ctx (S.start (s1.pc + 1))
+        rw [hpc'']; exact hzrip
+      · change S.cache (s1.pc + 1) = { pe := S.c.mode.pe }
+        rw [hpc'']; exact hcache
     generalize hE : S.start (k + 1) = pE at hnop fin
     generalize hC : c'.pos = pC at hnop hyrip hbq
     cases hnop with
@@ -988,6 +994,12 @@ theorem bodySim_island (hD : Decodes S code relocs rodata callSites dropped scop
   · -- It unwinds.
     obtain ⟨a', exc, hres, hendR, hlandR, hal⟩ := (H.sepAcross.island isl _ _ _ _ s1.st s1.world
       (x1.setReg .rbp r) y x hatB hsafeQ hsep1).2 ⟨hy, hry⟩
+    -- Not a PE cleanup site: the unwind lands at the pad (`Call.Landing`).
+    have hlandR := hlandR.landed (by
+      rw [hx1rsp]
+      show (S.c.mode.pe && S.cleans (x1.mem.read64 x1.rsp)) = false
+      rw [hretA]
+      exact hncK hlt site (by rw [hpk]; simp) c'.pos (by omega) (by omega))
     have hyr : y.reg .rbp = r := by
       show y.regs 5 = r
       rw [hlandR.saved 5 (Island.saved_rbp _)]; exact hx1rbp
@@ -1067,9 +1079,30 @@ theorem bodySim_island (hD : Decodes S code relocs rodata callSites dropped scop
     have hrspR : y.rsp = x.rsp := by rw [← hyvrsp]; exact hrspX
     have hyripR : y.rip = addrAt S.ctx (posOf S.r pad) := by rw [← hyvrip]; exact hyrip
     refine .done (.inl ⟨_, .answer hstep hans,
-      ⟨hconv y _ hrspR hyr (by rw [hyv]; exact hFIu), .inr ⟨hyripR, ?_⟩⟩⟩)
-    change CacheInv (S.used pad) (S.virt y)
-    rw [(H.cacheCleared hD).pads k pad cat hcl]; exact CacheInv.emptyPe _ _
+      ⟨⟨hconv y _ hrspR hyr (by rw [hyv]; exact hFIu), .inr ⟨hyripR, ?_⟩⟩,
+        .inr ⟨hyripR, ?_⟩⟩⟩)
+    · change CacheInv (S.used pad) (S.virt y)
+      rw [(H.cacheCleared hD).pads k pad cat hcl]; exact CacheInv.emptyPe _ _
+    · change S.used pad = { pe := S.c.mode.pe }
+      exact (H.cacheCleared hD).pads k pad cat hcl
+
+theorem bodySim_island (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    (H : Hyps S) {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
+    (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
+    (hr : InsnRead S.fr S.ro cur q c') (hop : q.op = .island) :
+    BodySim S k p (S.used k) :=
+  BodySimB.used (bodySim_islandB hD H hP hn hr hop).toB
+
+/-- T2.3: `bodySim_islandB` (frame-pointer form) at every body site, PE cleanup sites included
+(`ProtoFactsN`): as `bodySim_call_fpRB`, an unwind at a PE cleanup site comes back through the
+pad region's entry (`Call.PadCalled`, `reach_regionPad`). -/
+theorem bodySim_islandRB (hfp : S.c.mode.framePointer = true)
+    (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    (H : Hyps S) {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
+    (hP : ProtoFactsN S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
+    (hr : InsnRead S.fr S.ro cur q c') (hop : q.op = .island) :
+    BodySimRB S k p := by
+  sorry -- PE-P6
 
 end Insn
 

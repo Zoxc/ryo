@@ -590,11 +590,11 @@ allocation holds a written byte, `FrameOwn`; `FrameSep` with `frameInit_writeFra
 slots, the code and the rodata are outside the written range; `arg_argsLive_succ` the
 registers at `k + 1` (none callee-saved, nor PE's `rsi`/`rdi`: `arg_clobbers_ok`,
 `arg_clobbers_pe`); `rip` at `S.start (k + 1)` with the cache empty. -/
-theorem bodySim_arg (hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
+theorem bodySim_argB (hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
     {k p : Nat} {q : Proto} {c' : Cursor} (ha : S.args k = true)
     (hP : ProtoFacts S k p q c' (S.used k))
     (hr : (argInsn S.fr.mode).run (atPos S.body p) = .ok (some q, c')) :
-    BodySim S k p (S.used k) := by
+    BodySimBE S k p := by
   have hce := arg_used_empty hD H hP.lt ha
   intro s xr hs hfR hrip _ hsafe
   obtain ⟨a, d, hq, hs32, hi24, hofs, hdec, -⟩ := argInsn_bounds hr
@@ -814,8 +814,18 @@ theorem bodySim_arg (hD : Decodes S code relocs rodata callSites dropped scopes 
   have hvr : S.virt (FForm.real S.body.spFrame (xr.reg .rbp) x') = x' :=
     arg_virt_real (hrsp.trans hxrsp) (hrbp.trans hxrbp)
   refine Reach.steps hsteps (.done (.inl ⟨_, .step hstep,
-    ⟨⟨by rw [hvr]; exact hFI, arg_rbpOk hfR.2⟩,
-      .inl ⟨by rw [nf_real_rip]; exact hripN, by rw [hvr]; exact hcacheN⟩⟩⟩))
+    ⟨⟨⟨by rw [hvr]; exact hFI, arg_rbpOk hfR.2⟩,
+      .inl ⟨by rw [nf_real_rip]; exact hripN, by rw [hvr]; exact hcacheN⟩⟩,
+      .inl ⟨by rw [nf_real_rip]; exact hripN, (by
+        show S.cache (s1.pc + 1) = _
+        rw [hk1.pc, hs, hcache, hce] <;> rfl)⟩⟩⟩))
+
+theorem bodySim_arg (hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
+    {k p : Nat} {q : Proto} {c' : Cursor} (ha : S.args k = true)
+    (hP : ProtoFacts S k p q c' (S.used k))
+    (hr : (argInsn S.fr.mode).run (atPos S.body p) = .ok (some q, c')) :
+    BodySim S k p (S.used k) :=
+  (bodySim_argB hD H ha hP hr).toB.used
 
 end Insn
 

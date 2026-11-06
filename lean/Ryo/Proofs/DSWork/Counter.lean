@@ -228,7 +228,7 @@ theorem ctr_read_heads {ro : ByteArray} {callSites : Array CallSite}
   unfold posOf
   exact ctr_heads_of h9
 
-/-- A loop head is a branch target (`ctr_read_heads`, without a pad region, `hD.noRegion`):
+/-- A loop head is a branch target (`Decodes.readHeads`, from `ctr_read_heads`):
 `read`'s loop-head pass sets `head[j]` only for `j = index p.pos t`
 with `t` in `single ++ br` (a `.target` operand, a handler branch or a table's last target:
 all in `Proto.targets`), and its check `counter.isSome != (counters && head[i])` rejects a
@@ -236,8 +236,7 @@ counter elsewhere; `rustBinarySearch` gives `posOf S.r j = t`. -/
 theorem ctr_head_target (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     {k : Nat} (hk : k < S.r.protos.size) (h : S.r.protos[k].counter.isSome = true) :
     ∃ k', ∃ hk' : k' < S.r.protos.size, posOf S.r k ∈ S.r.protos[k'].targets := by
-  obtain ⟨c', hr⟩ := hD.read
-  exact ctr_read_heads hr hD.noRegion k hk h
+  exact hD.readHeads k hk h
 
 theorem ctr_apart (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (H : Hyps S) : CounterApart S := by

@@ -238,7 +238,7 @@ def checkFuncs (o : ImageObject) (ds : Array FuncDecoding) : Array String := Id.
       -- The calls' stack areas against the frame (`stackSizesCheck`, `Hyps.stackSizesOk`).
       if let .ok fi := ds[i].inputs then
         if !stackSizesCheck (Ryo.Vm.R.Image.imageCode o (fun _ => []) i fi d) then
-          out := out.push s!"{funcLabel o i}: a call's stack area doesn't fit the frame (stackSizesCheck)"
+          out := out.push s!"{funcLabel o i}: a call's stack area doesn't fit the frame, or a PE pad-region call has stack arguments (stackSizesCheck)"
         -- The frame window's end (`windowCheck`, `Hyps.windowOk`).
         if !windowCheck (Ryo.Vm.R.Image.imageCode o (fun _ => []) i fi d) then
           out := out.push s!"{funcLabel o i}: frame ranges end past 16 + arg_size or 2^31 (windowCheck)"

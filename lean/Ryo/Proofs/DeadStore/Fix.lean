@@ -11,10 +11,14 @@ run: `endsUnread` rejects real code):
 - `live_succ`, `live_pad`, `live_gen` (and `plive_*` for the precise liveness): a byte live into a
   successor (not written for sure, not made `Uninit`, not ended) or a landing pad, or read, is
   live into `k`;
-- `endsUnread_spec`: an ended byte a dropped store writes isn't precise-live out of `k`;
+- `endsUnread_spec`: an ended byte a dropped store writes isn't precise-live out of `k` (the check is no
+  longer run by `droppedNotDead`);
 - `droppedOk_spec`: the dropped store's bytes, but its flag byte, are dead into each successor;
 - `droppedNotDead_ok`: `droppedNotDead … = .ok []` with stores dropped gives `liveOk`, `escOk` and
-  `droppedOk` of each store.
+  `droppedOk` of each store (`droppedNotDead_full`: also `keptReadOk`, `droppedInFrame`,
+  `droppedUnread`; `droppedNotDead_frameLo`);
+- `keptRead_gen`/`_succ`/`_pad`, `droppedUnread_spec`, `keptReads_apart`: the kept-read liveness
+  (bytes kept `rbp`-based items read from memory), and that kept reads miss a patch set outside it.
 -/
 import Ryo.Vm.Frame
 
@@ -101,7 +105,7 @@ theorem testBit_transferWith (fl : Flow) (gen : Nat) (ends : Bool) (live : Array
     (fl.transferWith gen ends live k).testBit i =
       ((((((fl.succ[k]!.any (fun s => (live[s]!).testBit i)) && !(fl.kill[k]!.bits.testBit i)) ||
           (fl.pad[k]!.any (fun s => (live[s]!).testBit i))) && !(fl.uninit[k]!.bits.testBit i)) ||
-        gen.testBit i) && !(ends && fl.ends[k]!.bits.testBit i)) := by
+        gen.testBit i) && !(ends && fl.ends[k]!.bits.testBit i && !(fl.escRead[k]!).testBit i)) := by
   unfold Flow.transferWith
   cases ends <;>
     simp only [testBit_diff, testBit_foldl_or, Nat.testBit_or, Nat.zero_testBit, Bool.false_or,
@@ -134,14 +138,22 @@ theorem live_pad {fl : Flow} {live : Array Nat} (h : fl.liveOk live = true) {k :
   rw [this]
   simp
 
-/-- Read by `k` (`gen`), not ended: live into `k`. -/
+/-- Read by `k` (`gen`), not ended before `k` unless an `Escape` before `k` copies it: live
+into `k`. -/
 theorem live_gen {fl : Flow} {live : Array Nat} (h : fl.liveOk live = true) {k : Nat}
     (hk : k < fl.succ.size) {i : Nat} (hg : (fl.gen k).testBit i = true)
-    (hend : fl.ends[k]!.bits.testBit i = false) : (live[k]!).testBit i = true := by
+    (hend : fl.ends[k]!.bits.testBit i = false ∨ (fl.escRead[k]!).testBit i = true) :
+    (live[k]!).testBit i = true := by
   apply ((postFix_spec h).2.2 k hk).2 i
   unfold Flow.transfer
-  rw [testBit_transferWith, hg, hend]
-  simp
+  rw [testBit_transferWith, hg]
+  rcases hend with h' | h' <;> simp [h']
+
+/-- Read by `k` and copied by an `Escape` before it: live into `k` (an `End` doesn't take it). -/
+theorem live_esc {fl : Flow} {live : Array Nat} (h : fl.liveOk live = true) {k : Nat}
+    (hk : k < fl.succ.size) {i : Nat} (hg : (fl.gen k).testBit i = true)
+    (he : (fl.escRead[k]!).testBit i = true) : (live[k]!).testBit i = true :=
+  live_gen h hk hg (.inr he)
 
 /-- The successors and landing pads are in range. -/
 theorem liveOk_edges {fl : Flow} {live : Array Nat} (h : fl.liveOk live = true) {k : Nat}
@@ -246,32 +258,248 @@ theorem droppedOk_spec {d : Decoded} {fl : Flow} {live : Array Nat} {k : Nat}
       · rw [testBit_diff, hl, testBit_flagBits hfl]; rfl
       · rw [testBit_bitsOf]; simp [h1, h2]
 
+/-- Everything `droppedNotDead` accepting a function with dropped stores gives: its flow, the
+checked post-fixpoints (liveness, escapes, kept reads) and each dropped store shown dead,
+private, at or above `frameLo` and unread by kept items. -/
+theorem droppedNotDead_full {d : Decoded} {mode : Ryo.Obj.Mode} {facts : Frame.Facts}
+    (h : droppedNotDead d mode facts = .ok []) (hne : d.dropped.isEmpty = false) :
+    ∃ fl, Flow.of d mode facts = .ok fl ∧ fl.liveOk fl.liveIn = true ∧
+      escOk d fl.edges fl.esc = true ∧ fl.keptReadOk d (fl.keptReadLive d) = true ∧
+      ∀ k ∈ d.dropped.toList, droppedOk d fl fl.liveIn k = true ∧ droppedPrivate d fl k = true ∧
+        droppedInFrame d mode k = true ∧ droppedUnread d fl (fl.keptReadLive d) k = true ∧
+        droppedFormOk d k = true := by
+  unfold droppedNotDead at h
+  cases hf : Flow.of d mode facts with
+  | error e => simp [hne, hf, bind, Except.bind] at h
+  | ok fl =>
+    refine ⟨fl, rfl, ?_⟩
+    by_cases hc : (fl.liveOk fl.liveIn && escOk d fl.edges fl.esc &&
+        fl.keptReadOk d (fl.keptReadLive d)) = true
+    · have hc' := hc
+      simp only [Bool.and_eq_true] at hc'
+      obtain ⟨⟨h1, h2⟩, h3⟩ := hc'
+      refine ⟨h1, h2, h3, ?_⟩
+      have h' : d.dropped.toList.filter
+          (fun k => !(droppedOk d fl fl.liveIn k && droppedPrivate d fl k &&
+            droppedInFrame d mode k && droppedUnread d fl (fl.keptReadLive d) k &&
+            droppedFormOk d k)) = [] := by
+        simpa [hne, hf, hc, bind, Except.bind, pure, Except.pure] using h
+      intro k hk
+      have := List.filter_eq_nil_iff.1 h' k hk
+      simpa [and_assoc] using this
+    · exfalso
+      have h' : d.dropped.toList = [] := by
+        simpa [hne, hf, hc, bind, Except.bind, pure, Except.pure] using h
+      have hsz : d.dropped.size = 0 := by rw [← Array.length_toList, h']; rfl
+      simp [Array.isEmpty, hsz] at hne
+
 /-- What `droppedNotDead` accepting a function with dropped stores gives: its flow, the checked
 post-fixpoints and every dropped store shown dead. -/
 theorem droppedNotDead_ok {d : Decoded} {mode : Ryo.Obj.Mode} {facts : Frame.Facts}
     (h : droppedNotDead d mode facts = .ok []) (hne : d.dropped.isEmpty = false) :
     ∃ fl, Flow.of d mode facts = .ok fl ∧ fl.liveOk fl.liveIn = true ∧
       escOk d fl.edges fl.esc = true ∧
-      ∀ k ∈ d.dropped.toList, droppedOk d fl fl.liveIn k = true := by
-  unfold droppedNotDead at h
-  cases hf : Flow.of d mode facts with
-  | error e => simp [hne, hf, bind, Except.bind] at h
-  | ok fl =>
-    refine ⟨fl, rfl, ?_⟩
-    by_cases hc : (fl.liveOk fl.liveIn && escOk d fl.edges fl.esc) = true
-    · have hc' := hc
-      simp only [Bool.and_eq_true] at hc'
-      obtain ⟨h1, h2⟩ := hc'
-      refine ⟨h1, h2, ?_⟩
-      have h' : d.dropped.toList.filter (fun k => !droppedOk d fl fl.liveIn k) = [] := by
-        simpa [hne, hf, hc, bind, Except.bind, pure, Except.pure] using h
-      intro k hk
-      have := List.filter_eq_nil_iff.1 h' k hk
-      simpa using this
-    · exfalso
-      have h' : d.dropped.toList = [] := by
-        simpa [hne, hf, hc, bind, Except.bind, pure, Except.pure] using h
-      have hsz : d.dropped.size = 0 := by rw [← Array.length_toList, h']; rfl
-      simp [Array.isEmpty, hsz] at hne
+      ∀ k ∈ d.dropped.toList, droppedOk d fl fl.liveIn k = true ∧ droppedPrivate d fl k = true := by
+  obtain ⟨fl, hf, h1, h2, -, hk⟩ := droppedNotDead_full h hne
+  exact ⟨fl, hf, h1, h2, fun k hm => ⟨(hk k hm).1, (hk k hm).2.1⟩⟩
+
+/-- A store `droppedInFrame` accepts has its destination at or above `frameLo`. -/
+theorem droppedInFrame_spec {d : Decoded} {mode : Ryo.Obj.Mode} {k : Nat}
+    (h : droppedInFrame d mode k = true) {s : BitVec 32} {w : Nat}
+    (hs : droppedStore d k = some (s, w)) :
+    d.frameLo mode ≤ s.toInt ∨ s.toInt + w ≤ -(d.frameSize : Int) + 32 := by
+  unfold droppedInFrame at h
+  rw [hs] at h
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at h
+  exact h.2
+
+/-- A store `droppedInFrame` accepts lies in the frame `[-F, 0)`. -/
+theorem droppedInFrame_bounds {d : Decoded} {mode : Ryo.Obj.Mode} {k : Nat}
+    (h : droppedInFrame d mode k = true) {s : BitVec 32} {w : Nat}
+    (hs : droppedStore d k = some (s, w)) :
+    -(d.frameSize : Int) ≤ s.toInt ∧ s.toInt + w ≤ 0 := by
+  unfold droppedInFrame at h
+  rw [hs] at h
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at h
+  exact h.1
+
+/-- A store `droppedFormOk` accepts misses its instruction's overflow flag slot, or isn't the
+flag store (`flagApart`: the flag store is `mov [o], cl`; a dropped store from another register
+at `o` is the result's, overwritten by the flag store). -/
+theorem droppedFormOk_flagApart {d : Decoded} {k : Nat} (h : droppedFormOk d k = true)
+    {s : BitVec 32} {w : Nat} {o : BitVec 32} (hs : droppedStore d k = some (s, w))
+    (ho : flagSlot d k = some o) :
+    (o.toInt + 1 ≤ s.toInt ∨ s.toInt + w ≤ o.toInt) ∨
+      ∃ w' src m, d.droppedItems[k]? = some (some (.st w' src m)) ∧ src ≠ .rcx := by
+  unfold droppedFormOk at h
+  simp only [Bool.and_eq_true] at h
+  have h2 := h.2
+  unfold flagApart at h2
+  rw [hs, ho] at h2
+  simp only [Bool.or_eq_true, decide_eq_true_eq] at h2
+  rcases h2 with h2 | h2
+  · exact .inl h2
+  · right
+    split at h2
+    · rename_i w' src m heq
+      exact ⟨w', src, m, heq, by simpa using h2⟩
+    · cases h2
+
+/-- Every dropped store's destination is at or above `frameLo` (`droppedInFrame`). -/
+theorem droppedNotDead_frameLo {d : Decoded} {mode : Ryo.Obj.Mode} {facts : Frame.Facts}
+    (h : droppedNotDead d mode facts = .ok []) (hne : d.dropped.isEmpty = false) :
+    ∀ k ∈ d.dropped.toList, ∀ s w, droppedStore d k = some (s, w) →
+      d.frameLo mode ≤ s.toInt ∨ s.toInt + w ≤ -(d.frameSize : Int) + 32 := by
+  obtain ⟨fl, -, -, -, -, hk⟩ := droppedNotDead_full h hne
+  intro k hm s w hs
+  exact droppedInFrame_spec (hk k hm).2.2.1 hs
+
+/-! ### Operand ranges -/
+
+/-- `opndStep`'s writes: the state's, or the access's if it is a write. -/
+theorem opndStep_snd {f : Nat} {isCall : Bool} {eb : Nat} {st : Ranges × Ranges}
+    {x : BitVec 32 × Access} {r : Nat × Nat} (h : r ∈ (Flow.opndStep f isCall eb st x).2) :
+    r ∈ st.2 ∨ ∃ m, x.2 = .write m ∧ r = range f x.1 m := by
+  obtain ⟨off, acc⟩ := x
+  unfold Flow.opndStep at h
+  cases acc with
+  | read m => exact .inl h
+  | write m =>
+    rcases List.mem_cons.1 h with rfl | h
+    · exact .inr ⟨m, rfl, rfl⟩
+    · exact .inl h
+  | clobber m => exact .inl h
+  | addr =>
+    simp only at h
+    split at h
+    · exact .inl h
+    · exact .inl h
+  | «opaque» => exact .inl h
+
+theorem opndRanges_snd_aux (f : Nat) (isCall : Bool) (eb : Nat) :
+    ∀ (l : List (BitVec 32 × Access)) (st : Ranges × Ranges) (r : Nat × Nat),
+      r ∈ (l.foldl (Flow.opndStep f isCall eb) st).2 →
+      r ∈ st.2 ∨ ∃ off m, (off, Access.write m) ∈ l ∧ r = range f off m
+  | [], st, r, h => .inl h
+  | x :: l, st, r, h => by
+    rw [List.foldl_cons] at h
+    rcases opndRanges_snd_aux f isCall eb l _ r h with h' | ⟨off, m, hm, rfl⟩
+    · rcases opndStep_snd h' with h'' | ⟨m, hx, rfl⟩
+      · exact .inl h''
+      · refine .inr ⟨x.1, m, ?_, rfl⟩
+        rw [← hx]
+        exact List.mem_cons_self ..
+    · exact .inr ⟨off, m, List.mem_cons_of_mem _ hm, rfl⟩
+
+/-- A sure write of `opndRanges` is a write access's range. -/
+theorem opndRanges_kill {f : Nat} {isCall : Bool} {eb : Nat} {opnds : List (BitVec 32 × Access)}
+    {r : Nat × Nat} (h : r ∈ (Flow.opndRanges f isCall eb opnds).2) :
+    ∃ off m, (off, Access.write m) ∈ opnds ∧ r = range f off m := by
+  rcases opndRanges_snd_aux f isCall eb opnds ([], []) r h with h' | h'
+  · cases h'
+  · exact h'
+
+/-! ### Kept reads
+
+The machine code reads, from memory, no byte where the real machine and the ghost differ. With
+the invariant that every byte `o` of the patch set `P` at `pc` is out of the kept-read liveness
+`kr[pc]` (to add to `PatchOk`), `keptReads_apart` gives the kept items' memory reads miss `P`
+(what `keptApart_of_live` needs for `rbp`-based operands); `droppedUnread_spec` (the new bytes of
+a dropped store) and `keptRead_succ`/`keptRead_pad` (the old bytes) keep the invariant. -/
+
+theorem testBit_keptReadTransfer (d : Decoded) (fl : Flow) (live : Array Nat) (k i : Nat) :
+    (fl.keptReadTransfer d live k).testBit i =
+      (((((fl.succ[k]!.any fun t => (live[t]!).testBit i &&
+            !((fl.ends[k]!.bits).testBit i && !(coveredAt d t).testBit i)) &&
+          !(fl.kill[k]!.bits).testBit i) ||
+        fl.pad[k]!.any fun s => (live[s]!).testBit i) || (keptReads d k).bits.testBit i) ||
+        (fl.escRead[k]!).testBit i) := by
+  unfold Flow.keptReadTransfer
+  simp only [Nat.testBit_or, testBit_foldl_or, testBit_diff, Nat.zero_testBit, Bool.false_or]
+
+/-- Read from memory by a kept item at `k`: kept-read live into `k`. -/
+theorem keptRead_gen {d : Decoded} {fl : Flow} {kr : Array Nat} (h : fl.keptReadOk d kr = true)
+    {k : Nat} (hk : k < fl.succ.size) {i : Nat} (hg : (keptReads d k).bits.testBit i = true) :
+    (kr[k]!).testBit i = true := by
+  apply ((postFix_spec h).2.2 k hk).2 i
+  rw [testBit_keptReadTransfer, hg, Bool.or_true, Bool.true_or]
+
+/-- Copied by an `Escape` before `k` (`Flow.escRead`): kept-read live into `k`. -/
+theorem keptRead_esc {d : Decoded} {fl : Flow} {kr : Array Nat} (h : fl.keptReadOk d kr = true)
+    {k : Nat} (hk : k < fl.succ.size) {i : Nat} (hg : (fl.escRead[k]!).testBit i = true) :
+    (kr[k]!).testBit i = true := by
+  apply ((postFix_spec h).2.2 k hk).2 i
+  rw [testBit_keptReadTransfer, hg, Bool.or_true]
+
+/-- Kept-read live into a successor `s`, not written for sure by `k`, and not ended before `k`
+unless the cache covers it entering `s`: kept-read live into `k`. -/
+theorem keptRead_succ {d : Decoded} {fl : Flow} {kr : Array Nat} (h : fl.keptReadOk d kr = true)
+    {k : Nat} (hk : k < fl.succ.size) {s : Nat} (hs : s ∈ fl.succ[k]!) {i : Nat}
+    (hl : (kr[s]!).testBit i = true)
+    (hkill : fl.kill[k]!.bits.testBit i = false)
+    (hend : fl.ends[k]!.bits.testBit i = false ∨ (coveredAt d s).testBit i = true) :
+    (kr[k]!).testBit i = true := by
+  apply ((postFix_spec h).2.2 k hk).2 i
+  have ho : (fl.succ[k]!.any fun t => (kr[t]!).testBit i &&
+      !((fl.ends[k]!.bits).testBit i && !(coveredAt d t).testBit i)) = true :=
+    List.any_eq_true.2 ⟨s, hs, by rcases hend with h' | h' <;> simp [hl, h']⟩
+  rw [testBit_keptReadTransfer, ho, hkill]
+  rfl
+
+/-- Kept-read live into a landing pad: kept-read live into `k`. -/
+theorem keptRead_pad {d : Decoded} {fl : Flow} {kr : Array Nat} (h : fl.keptReadOk d kr = true)
+    {k : Nat} (hk : k < fl.succ.size) {s : Nat} (hs : s ∈ fl.pad[k]!) {i : Nat}
+    (hl : (kr[s]!).testBit i = true) : (kr[k]!).testBit i = true := by
+  apply ((postFix_spec h).2.2 k hk).2 i
+  have : (fl.pad[k]!.any fun s => (kr[s]!).testBit i) = true := List.any_eq_true.2 ⟨s, hs, hl⟩
+  rw [testBit_keptReadTransfer, this, Bool.or_true, Bool.true_or, Bool.true_or]
+
+/-- `coveredAt` bit by bit: after an inline instruction with a recorded cache, the bytes of its
+slots. -/
+theorem testBit_slotBits (f : Nat) (sl : List (BitVec 32 × Nat)) (i : Nat) :
+    (slotBits f sl).testBit i =
+      sl.any fun p => decide ((range f p.1 p.2).1 ≤ i) && decide (i < (range f p.1 p.2).2) := by
+  unfold slotBits
+  rw [testBit_foldl_or (fun p : BitVec 32 × Nat => bitsOf (range f p.1 p.2).1 (range f p.1 p.2).2)]
+  simp only [Nat.zero_testBit, Bool.false_or, testBit_bitsOf]
+
+/-- A byte dropped store `k` writes (but its flag byte) isn't kept-read live into a successor. -/
+theorem droppedUnread_spec {d : Decoded} {fl : Flow} {kr : Array Nat} {k : Nat}
+    (h : droppedUnread d fl kr k = true) {i : Nat} (hd : (droppedBitsAt d k).testBit i = true)
+    (hfl : (flagBits d k).testBit i = false) {s : Nat} (hs : s ∈ fl.succ[k]!) :
+    (kr[s]!).testBit i = false := by
+  unfold droppedUnread at h
+  simp only [beq_iff_eq] at h
+  cases hp : (kr[s]!).testBit i
+  · rfl
+  · exfalso
+    have hl : (fl.liveOut kr k).testBit i = true := by
+      rw [testBit_liveOut]; exact List.any_eq_true.2 ⟨s, hs, hp⟩
+    refine testBit_and_zero h ?_ hd
+    rw [testBit_diff, hl, hfl]; rfl
+
+/-- **The kept items' memory reads miss `P`**: with every byte of `P` a frame byte out of the
+kept-read liveness into `k`, no kept item at `k` reads a byte of `P` through an `rbp`-based
+operand. -/
+theorem keptReads_apart {d : Decoded} {fl : Flow} {kr : Array Nat}
+    (h : fl.keptReadOk d kr = true) {k : Nat} (hk : k < fl.succ.size) {kept : List Ryo.X86.Item}
+    (hkept : d.items[k]? = some kept) {P : Int → Prop}
+    (hP : ∀ o, P o → -(d.frameSize : Int) ≤ o ∧ o < 0 ∧
+      (kr[k]!).testBit (o + (d.frameSize : Int)).toNat = false) :
+    ∀ it ∈ kept, ∀ m, it.mem? = some m → m.base = .rbp →
+      ∀ j < itemReadBytes it, ¬ P (m.disp.toInt + j) := by
+  intro it hit m hm hb j hj hPo
+  obtain ⟨h1, h2, h3⟩ := hP _ hPo
+  have hg : (keptReads d k).bits.testBit (m.disp.toInt + j + (d.frameSize : Int)).toNat = true := by
+    rw [testBit_rangesBits]
+    refine List.any_eq_true.2 ⟨range d.frameSize m.disp (itemReadBytes it), ?_, ?_⟩
+    · unfold keptReads
+      rw [hkept, Option.getD_some]
+      exact List.mem_filterMap.2 ⟨it, hit, by simp [hm, hb]⟩
+    · simp only [range]
+      simp only [Bool.and_eq_true]
+      exact ⟨decide_eq_true (by omega), decide_eq_true (by omega)⟩
+  rw [keptRead_gen h hk hg] at h3
+  cases h3
 
 end Ryo.Proofs.DeadStore

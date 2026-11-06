@@ -84,9 +84,17 @@ lookup (`unwinderReadsLsda`: the unwinder's pad for a return address is the LSDA
 `inlineOps_shape`, `RyoProofs/InlineOps.lean`, and `inlineOps_clsOk`). Both frame modes: without a frame pointer the relations are read on the virtual state
 `S.virt x` (`rbp := rsp + F`, `Ryo/X86/VirtFp.lean`; the real `rbp` kept, `RbpOk`), frame operands
 checked not to wrap off `rsp` (`spDispCheck`). Handler calls may have PE's stack argument
-(`HandlerStackArg`; `resume`'s fit in registers, `resume_regs_le`). Restriction: no PE pad region (`Decodes.noRegion`: PE's cleanup code after the body, which the
-exception dispatcher enters on its own stack). Open prerequisites, each a named hypothesis to be
-discharged later:
+(`HandlerStackArg`; `resume`'s fit in registers, `resume_regs_le`). PE's pad region (the cleanup code after the body, which the exception dispatcher's language
+handler calls on its own stack, `Call.PadCalled`): the relation is `RBInv` (`BInv` in the body,
+`RegionInv` in the region); its pieces are in progress (`sorry -- PE-T<n>`: `regionFacts_of_read`,
+`rinsnSim_region`, `rinsnSim_peClean`, `Hyps.cleansLinked`; the region's lemmas are stated in
+`DecodeSound/RegionEntry.lean` and `DSWork/*Region.lean`), and `decodes_of_ok` still takes
+`regionPad … = none`. For the region: `Hyps.resumePe` (trusted: `resume`'s handler never returns
+on PE), `SepAcross.handlerAt` (the handler's home space off the frame), `EnvApart.stackOff` (no
+runtime-owned byte on the stack), `DeadStoreSim.emptyR`/`inlineR`, and the checks
+`regionLayoutOk` (no `ret` or tail call in the region) and `regionCallsCheck` (in
+`stackSizesCheck`: no stack arguments for a call there). Open prerequisites, each a named
+hypothesis to be discharged later:
 
 - of the decoded code, checkable (the decoder or a check could reject the code otherwise):
   `windowOk` (`windowCheck`: `frameTop ≤ 16 + argSize ≤ 2 ^ 31`, run by check-image;
@@ -126,6 +134,7 @@ function).
 -/
 import Ryo.Proofs.DecodeSound.Basic
 import Ryo.Proofs.DSWork.Boundary
+import Ryo.Proofs.DecodeSound.Region
 import Ryo.Proofs.DSWork.Arg
 import Ryo.Proofs.DSWork.Ret
 import Ryo.Proofs.DSWork.Counter
@@ -140,6 +149,12 @@ import Ryo.Proofs.DecodeLink.Tables
 import Ryo.Proofs.DecodeLink.CacheRegs
 import Ryo.Proofs.Discharge.RelocsIn
 import Ryo.Proofs.Discharge.CacheCleared
+import Ryo.Proofs.DecodeSound.RegionEntry
+import Ryo.Proofs.DSWork.CallRegion
+import Ryo.Proofs.DSWork.IslandRegion
+import Ryo.Proofs.DSWork.HandlerRegion
+import Ryo.Proofs.DSWork.InlineRegion
+import Ryo.Proofs.DSWork.ResumeRegion
 
 set_option linter.constructorNameAsVariable false
 set_option linter.unusedSimpArgs false
@@ -527,12 +542,12 @@ pointer `Dense.dense_switch_steps` to the entry's target; without one the same r
 form by `steps_of_run_last_fb` (`dense_vt`, `Hyps.spDisp`). The registers but `rax`/`rcx` kept
 (`Dense.Keep`, `hdl_switch_regs`), so `FrameInv` of R's state after the scopes
 (`dense_frameInv`, `hdl_frameInv_regs`); the target's cache cleared (`CacheCleared.targets`). -/
-theorem bodySim_dense (_hD : Decodes S code relocs rodata callSites dropped scopes mode)
+theorem bodySim_denseB (_hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (H : Hyps S) {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
     (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
     (hr : (denseSwitch S.fr).run cur = .ok (some q, c')) (htable : HdlTables S) :
-    BodySim S k p (S.used k) := by
-  intro s xr hs hfR hrip hci hsafe
+    BodySimBE S k p := by
+  intro s xr hs hfR hrip _ hsafe
   obtain ⟨x, hxdef⟩ : ∃ x, x = S.virt xr := ⟨_, rfl⟩
   have hf : FrameInv S s x := by rw [hxdef]; exact hfR.1
   have hcur := noArg_insn hn (InsnRead.dense (ro := S.ro) hr)
@@ -705,13 +720,22 @@ theorem bodySim_dense (_hD : Decodes S code relocs rodata callSites dropped scop
   have hfi'' := hdl_frameInv_regs
     (hdl_frameInv_clear H (dense_frameInv H hf hsc hnl) (hdl_home_le H hi) hcl) hmem hrbp hrsp
     hsv hnl
-  refine Reach.steps hst (.done (.inl ⟨_, .step hstep, ⟨⟨hfi'', hok⟩, .inr ⟨?_, ?_⟩⟩⟩))
-  · show xr''.rip = addrAt S.ctx (posOf S.r pc)
-    rw [hripz, hpe]
-  · show CacheInv (S.used pc) (S.virt xr'')
-    have hc := H.cacheTargets k hlt _ htg
+  have hc := H.cacheTargets k hlt _ htg
+  have hrip'' : xr''.rip = addrAt S.ctx (posOf S.r pc) := by rw [hripz, hpe]
+  have hused : S.used pc = { pe := S.c.mode.pe } := by
     simp only [Setup.used, hpe, hc, ↓reduceIte]
-    exact CacheInv.emptyPe _ _
+  refine Reach.steps hst (.done (.inl ⟨_, .step hstep,
+    ⟨⟨⟨hfi'', hok⟩, .inr ⟨hrip'', ?_⟩⟩, .inr ⟨hrip'', hused⟩⟩⟩))
+  show CacheInv (S.used pc) (S.virt xr'')
+  rw [hused]
+  exact CacheInv.emptyPe _ _
+
+theorem bodySim_dense (_hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    (H : Hyps S) {k p : Nat} {a : Bool} {q : Proto} {cur c' : Cursor}
+    (hP : ProtoFacts S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
+    (hr : (denseSwitch S.fr).run cur = .ok (some q, c')) (htable : HdlTables S) :
+    BodySim S k p (S.used k) :=
+  BodySimB.used (bodySim_denseB _hD H hP hn hr htable).toB
 
 /-! #### The dispatch over what the decoder read -/
 
@@ -781,7 +805,8 @@ theorem insnSim_main (hD : Decodes S code relocs rodata callSites dropped scopes
       (if (some S.targets).any (sortedContains · p1) then { pe := S.fr.mode.pe } else S.cache k)
       (S.dr k) (S.args k) q c' cache' dr')
     (hnop : NopRead S.fr S.callSites S.body q c'.pos (S.start (k + 1)))
-    (hcache : S.cache (k + 1) = cache') (htable : HdlTables S) :
+    (hcache : S.cache (k + 1) = cache') (htable : HdlTables S)
+    (hbody : S.c.inRegion k = false) (hncl : NotCleanup S k) :
     InsnSimAt S k := by
   intro s x hs hbi hsafe
   obtain ⟨hfR, hat⟩ := hbi
@@ -807,7 +832,8 @@ theorem insnSim_main (hD : Decodes S code relocs rodata callSites dropped scopes
     have hk' : k < S.c.d.insns.size := h1.1 ▸ hk
     exact ⟨S.c.d.insns[k], by simp [hk'], fun hk => h1.2 k hk hk'⟩
   have body : ∀ (hb2 : Boundary S.rs p2), BodySim S k p2 (S.used k) := fun hb2 =>
-    bodySim_of_read hD H ⟨hk, ⟨p1, counter, by simp [hk, hq]⟩, hinsn, hb2, hnop, hcache, hargs⟩ hpr htable
+    bodySim_of_read hD H ⟨hk, ⟨p1, counter, by simp [hk, hq]⟩, hinsn, hb2, hnop, hcache, hargs,
+      hbody, hncl⟩ hpr htable
   -- From `p1` with the cache `used k`.
   have from_p1 : ∀ y, FrameInvR S s y → y.rip = addrAt S.ctx p1 →
       CacheInv (S.used k) (S.virt y) → Reach S.ctx S.E (SNext S s) y := by
@@ -839,6 +865,63 @@ theorem insnSim_main (hD : Decodes S code relocs rodata callSites dropped scopes
   · rw [hs, hp1] at hrip
     rw [hs] at hci
     exact from_p1 x hfR hrip hci
+
+/-! ### PE's pad region and its cleanup sites (PE-T2, PE-T3/T4)
+
+`rinsnSim_peClean` (T2): a body instruction at a PE cleanup site, by shape through
+`insnSim_prefix` (the padding and counter check of `insnSim_main` for any post-condition) and
+the body lemmas reaching `RSNext` (`bodySim_call_fpRB`, `bodySim_islandRB`, `handler_resume_pe`,
+the others by `rsnext_of_snext`). `rinsnSim_region` (T3/T4): `regionSim_main` over the region's
+iterations, dispatched by `regionSim_of_read`. -/
+
+/-- The body's targets are the whole function's when no successor is in the region. -/
+theorem rsnext_of_snext {s : R.RState} {x : X86.State}
+    (hs : ∀ s', RNext S.c s s' → S.c.inRegion s'.pc = false)
+    (h : Reach S.ctx S.E (SNext S s) x) : Reach S.ctx S.E (RSNext S s) x := by
+  refine h.mono ?_
+  rintro x' (⟨s', hn, hb⟩ | hd)
+  · exact .inl ⟨s', hn, (rbInv_body (hs s' hn)).2 hb⟩
+  · exact .inr hd
+
+/-- `insnSim_main`'s prefix for any post-condition `Q`: the padding (from the iteration's
+start) and the counter check, then `body` from `p2` with the cache `S.used k`. -/
+theorem insnSim_prefix (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    (H : Hyps S) {k p1 p2 : Nat} {counter : Option (Nat × Nat)} {q : Proto}
+    (hk : k < S.r.protos.size) (hq : S.r.protos[k] = { q with pos := p1, counter })
+    (hpad : PadRead S.body (S.start k) p1) (hctr : CounterRead S.fr S.body p1 counter p2)
+    (hbody : S.c.inRegion k = false) {Q : R.RState → X86.State → Prop}
+    (body : Boundary S.rs p2 → ∀ s x, s.pc = k → FrameInvR S s x → x.rip = addrAt S.ctx p2 →
+      CacheInv (S.used k) (S.virt x) → RSafe S.Safe S.c s → Reach S.ctx S.E (Q s) x) :
+    ∀ s x, s.pc = k → BInv S s x → RSafe S.Safe S.c s → Reach S.ctx S.E (Q s) x := by
+  sorry -- PE-P7
+
+/-- `bodySim_of_read` in PE's pad region: by shape (no `arg`: `region_not_leadArg`; no `ret` or
+tail call: `region_shape`; dropped inline stores by `DeadStoreSim.inlineR`). -/
+theorem regionSim_of_read (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    (H : Hyps S) {k p : Nat} {q : Proto} {c' : Cursor} {cache' : Cache}
+    {dr' : List DroppedStore}
+    (hP : ProtoFactsR S k p q c' cache')
+    (hr : ProtoRead S.frR S.ro true S.body p (S.used k) (S.dr k) (S.args k) q c' cache' dr')
+    (htable : HdlTables S) :
+    RegionSim S k p (S.used k) := by
+  sorry -- PE-P15
+
+/-- Instruction `k` of a pad-region iteration (as `insnSim_main`; no counter check,
+`RegionFacts.heads`): the padding, then the body (`regionSim_of_read`). The iteration's proto is
+`read`'s after `resumeSlots` (`S.fixResume`). -/
+theorem regionSim_main (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    (H : Hyps S) {k p1 p2 : Nat} {counter : Option (Nat × Nat)} {q : Proto} {c' : Cursor}
+    {cache' : Cache} {dr' : List DroppedStore} (hk : k < S.r.protos.size)
+    (hreg : S.c.inRegion k = true)
+    (hq : S.r.protos[k] = S.fixResume { q with pos := p1, counter })
+    (hpad : PadRead S.body (S.start k) p1) (hctr : CounterRead S.frR S.body p1 counter p2)
+    (hpr : ProtoRead S.frR S.ro (some S.targets).isSome S.body p2
+      (if (some S.targets).any (sortedContains · p1) then { pe := S.frR.mode.pe } else S.cache k)
+      (S.dr k) (S.args k) q c' cache' dr')
+    (hnop : NopRead S.frR S.callSites S.body q c'.pos (S.start (k + 1)))
+    (hcache : S.cache (k + 1) = cache') (htable : HdlTables S) :
+    RInsnSimAt S k := by
+  sorry -- PE-P15
 
 end Insn
 
@@ -1070,9 +1153,33 @@ theorem read_instructions_entry {ro : ByteArray} {callSites : Array CallSite}
     fun R hR hR0 => (checkStubs_entry R (fun p L q hp hd => hR p L q hp (sl_dec e9' hd))
       (by rw [hbe]; exact hR0) h10).1, sl_dec e9' hds⟩
 
-/-- Every function `decodeReduced` accepts without a PE pad region (`regionPad … = none`) has a
-`Setup` that is its read, for any R code with its `Decoded` and mode and any choice of the other
-parameters. -/
+/-- PE-T1: `read`'s layout of PE's pad region (`RegionFacts`: `readParts`' region branch,
+`checkRegionStart`, `regionPad` the least cleanup pad, `actionsOf`, `loopHeads`' cross check), for
+any `Setup` whose read, reduced code, mode, call sites and body cursor are the decoder's. -/
+theorem regionFacts_of_read {S : Setup} {code : ByteArray} {relocs : Array Reloc}
+    {rodata : ByteArray} {callSites : Array CallSite} {dropped : Array DroppedStore}
+    {scopes : Array R.Scope} {mode : Ryo.Obj.Mode} {c' : Cursor}
+    (hread : (Vm.read rodata callSites dropped.toList scopes mode).run
+      { code := code.data, pos := 0, fields := .relocs relocs } = .ok (S.r, c'))
+    (hred : reducedOf S.r mode.pe = .ok S.c.d) (hm : S.c.mode = mode)
+    (hcs : S.callSites = callSites)
+    (hbody : S.body = bodyCursor { code := code.data, pos := 0, fields := .relocs relocs } mode
+      S.r.frameSize S.body.pos) :
+    RegionFacts S callSites mode :=
+  { start := regionFacts_start hread hred hm hbody
+    noStart := regionFacts_noStart hread hred
+    pads := regionFacts_pads
+    catchPads := regionFacts_catchPads hread hred hm
+    resume := regionFacts_resume hread hred hm
+    noCross := regionFacts_noCross hread hred hm
+    heads := regionFacts_heads hread hred hm
+    bodyEnd := regionFacts_bodyEnd hread hred hm
+    entryBody := regionFacts_entryBody hread hred hm }
+
+/-- Every function `decodeReduced` accepts without a PE pad region (`regionPad … = none`; PE-T1
+drops this: `run` and `iters` in two segments, `read_instructions_entry` and the `read*` fields
+from `read` with a region) has a `Setup` that is its read, for any R code with its `Decoded` and
+mode and any choice of the other parameters. -/
 theorem decodes_of_ok {code : ByteArray} {relocs : Array Reloc} {rodata : ByteArray}
     {callSites : Array CallSite} {dropped : Array DroppedStore} {scopes : Array R.Scope}
     {mode : Ryo.Obj.Mode} {d : Decoded}
@@ -1082,10 +1189,11 @@ theorem decodes_of_ok {code : ByteArray} {relocs : Array Reloc} {rodata : ByteAr
     (hcc : cacheClearedCheck code relocs rodata callSites dropped scopes mode = true)
     (c : R.Code) (hc : c.d = d) (hm : c.mode = mode) (ctx : Ctx) (E : Env)
     (x0 : X86.State) (Owned : BitVec 64 → Prop) (lo : BitVec 64)
-    (padOf : BitVec 64 → Option (BitVec 64)) (Safe : R.Query → Prop) :
+    (padOf : BitVec 64 → Option (BitVec 64)) (cleans : BitVec 64 → Bool) (region : BitVec 64)
+    (Safe : R.Query → Prop) :
     ∃ S : Setup, Decodes S code relocs rodata callSites dropped scopes mode ∧ S.c = c ∧
       S.ctx = ctx ∧ S.E = E ∧ S.x0 = x0 ∧ S.Owned = Owned ∧ S.lo = lo ∧
-      S.padOf = padOf ∧ S.Safe = Safe := by
+      S.padOf = padOf ∧ S.cleans = cleans ∧ S.region = region ∧ S.Safe = Safe := by
   obtain ⟨r, c', hread, hred⟩ := decodeReduced_read hdec
   obtain ⟨targets, cT, hT⟩ := readTargets_of_check hcc
   obtain ⟨c0, c1, stub, padded, hc0, hrun, hpro, hent⟩ :=
@@ -1106,11 +1214,36 @@ theorem decodes_of_ok {code : ByteArray} {relocs : Array Reloc} {rodata : ByteAr
   obtain ⟨st, ca, drs, ar, h0, hc0', hd0, ha0, -, -, har, hix⟩ := iters_indexed hit
   have hsz : c0.code.size = code.data.size := by rw [hc0]; rfl
   refine ⟨Setup.mk ctx E c r c0 relocs rodata callSites targets st ca drs ar x0 Owned lo padOf
-    Safe, ⟨⟨c', hread⟩,
-    hc ▸ hred, hm, rfl, rfl, rfl, hnr, hc0, ?_, h0, hc0', hd0, ha0, har, ?_,
-    fun hfp => hpro (hm ▸ hfp), hcs, ⟨cT, hT⟩, hentry⟩, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    cleans region Safe, ⟨⟨c', hread⟩,
+    hc ▸ hred, hm, rfl, rfl, rfl, hc0, ?_, h0, hc0', hd0, ha0, har, ?_,
+    fun hfp => hpro (hm ▸ hfp), hcs, ⟨cT, hT⟩, hentry, ctr_read_heads hread hnr,
+    sl_read_stubs hread hnr, sl_read_stubs_R hread hnr, ?_⟩,
+    rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
   · exact ⟨stub, padded, c1, by simpa [Setup.fr, hm, hsz] using hrun⟩
   · simpa [Setup.fr, hm] using hix
+  · exact regionFacts_of_read hread (hc ▸ hred) hm rfl hc0
+
+/-- PE-T3/T4 (dispatch PE-T5): an instruction of PE's pad region, from `RegionInv`: calls and
+islands with the outgoing area on the dispatcher's stack (T3), handlers, inline code, branches,
+`lpad` and `resume` (`add rsp, 40; ret` to `ExitRel`'s `unwind`) (T4). -/
+theorem rinsnSim_region {S : Setup} {code : ByteArray} {relocs : Array Reloc}
+    {rodata : ByteArray} {callSites : Array CallSite} {dropped : Array DroppedStore}
+    {scopes : Array R.Scope} {mode : Ryo.Obj.Mode}
+    (hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
+    (htable : HdlTables S) {k : Nat} (hk : k < S.r.protos.size)
+    (hr : S.c.inRegion k = true) : RInsnSimAt S k := by
+  sorry -- PE-T3/T4
+
+/-- PE-T2: a body instruction at a PE cleanup site (a call, island or handler whose unwind comes
+back through the pad region, `Call.PadCalled`, to `RegionInv` at the pad); otherwise as
+`insnSim_main`. -/
+theorem rinsnSim_peClean {S : Setup} {code : ByteArray} {relocs : Array Reloc}
+    {rodata : ByteArray} {callSites : Array CallSite} {dropped : Array DroppedStore}
+    {scopes : Array R.Scope} {mode : Ryo.Obj.Mode}
+    (hD : Decodes S code relocs rodata callSites dropped scopes mode) (H : Hyps S)
+    (htable : HdlTables S) {k : Nat} (hk : k < S.r.protos.size)
+    (hb : S.c.inRegion k = false) (hc : ¬ NoPeClean S k) : RInsnSimAt S k := by
+  sorry -- PE-T2
 
 /-- **`decode_sound`** (aot.md §C2): for a function the decoder accepts (`Decodes`, given by
 `decodes_of_ok` from `decodeReduced … = .ok d`) under `Hyps`, the fetching machine with its
@@ -1119,11 +1252,21 @@ theorem decode_sound {S : Setup} {code : ByteArray} {relocs : Array Reloc} {roda
     {callSites : Array CallSite} {dropped : Array DroppedStore} {scopes : Array R.Scope}
     {mode : Ryo.Obj.Mode} (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (H : Hyps S) (htc : tablesCheck code relocs rodata callSites dropped scopes mode = true) :
-    ∀ s x, BInv S s x → SafeFrom S.Safe S.c s → FnSim S.ctx S.E S.c (BInv S) (ExitRel S) s x := by
+    ∀ s x, RBInv S s x → SafeFrom S.Safe S.c s →
+      FnSim S.ctx S.E S.c (RBInv S) (ExitRel S) s x := by
   have htable : HdlTables S := DecodeLink.Tables.hdlTables_of_check hD htc
-  refine fnSim_of_insnSim _ _ _ _ _ _ fun s x hbi hsafe => ?_
+  refine fnSim_of_insnSim _ _ _ _ _ _ fun s x hrbi hsafe => ?_
   by_cases hk : s.pc < S.r.protos.size
-  · have hit := hD.iters s.pc (by simpa using hk)
+  · cases hreg : S.c.inRegion s.pc with
+    | true => exact rinsnSim_region hD H htable hk hreg s x rfl hrbi hsafe
+    | false =>
+    by_cases hnc : NoPeClean S s.pc
+    case neg => exact rinsnSim_peClean hD H htable hk hreg hnc s x rfl hrbi hsafe
+    have hbi := (rbInv_body hreg).1 hrbi
+    have hncl : NotCleanup S s.pc :=
+      notCleanup_of (H.cleansLinked hD hbi.1.1.code.small) hnc
+    refine rinsnSim_of_insnSim hD hreg hnc ?_ s x rfl hrbi hsafe
+    have hit := hD.iters s.pc (by simpa using hk)
     simp only [Array.getElem_toList] at hit
     generalize hpk : S.r.protos[s.pc] = pk at hit
     generalize hdr : S.dr s.pc = drk at hit
@@ -1132,12 +1275,12 @@ theorem decode_sound {S : Setup} {code : ByteArray} {relocs : Array Reloc} {roda
     generalize hdr1 : S.dr (s.pc + 1) = dr1 at hit
     cases hit with
     | empty hd _ =>
-      exact H.deadStore.empty s.pc hk _ _ hdr hd s x rfl hbi hsafe
+      exact H.deadStore.empty s.pc hk _ _ hdr hd
     | main hpad hctr hpr hnop =>
       rw [← hdr] at hpr
       rw [← hst1] at hnop
-      exact insnSim_main hD H hk hpk hpad hctr hpr hnop hca1 htable s x rfl hbi hsafe
-  · exact insnSim_oob hD (Nat.le_of_not_lt hk) s x rfl hbi hsafe
+      exact insnSim_main hD H hk hpk hpad hctr hpr hnop hca1 htable hreg hncl
+  · exact rinsnSim_oob hD (Nat.le_of_not_lt hk) s x rfl hrbi hsafe
 
 /-- `decode_sound` from the decoder's acceptance directly (without a PE pad region, as
 `decodes_of_ok`; and with the switch tables checked, `htc`). -/
@@ -1151,14 +1294,15 @@ theorem decode_sound_of_ok {code : ByteArray} {relocs : Array Reloc} {rodata : B
     (hcc : cacheClearedCheck code relocs rodata callSites dropped scopes mode = true)
     (c : R.Code) (hc : c.d = d) (hm : c.mode = mode) (ctx : Ctx) (E : Env)
     (x0 : X86.State) (Owned : BitVec 64 → Prop) (lo : BitVec 64)
-    (padOf : BitVec 64 → Option (BitVec 64)) (Safe : R.Query → Prop) :
+    (padOf : BitVec 64 → Option (BitVec 64)) (cleans : BitVec 64 → Bool) (region : BitVec 64)
+    (Safe : R.Query → Prop) :
     ∃ S : Setup, Decodes S code relocs rodata callSites dropped scopes mode ∧ S.c = c ∧
       S.ctx = ctx ∧ S.E = E ∧ S.x0 = x0 ∧ S.Owned = Owned ∧ S.lo = lo ∧
-      S.padOf = padOf ∧ S.Safe = Safe ∧
-      (Hyps S → ∀ s x, BInv S s x → SafeFrom Safe c s → FnSim ctx E c (BInv S) (ExitRel S) s x) := by
-  obtain ⟨S, hD, h1, h2, h3, h4, h5, h6, h7, h8⟩ :=
-    decodes_of_ok hdec hnr hcs hcc c hc hm ctx E x0 Owned lo padOf Safe
-  refine ⟨S, hD, h1, h2, h3, h4, h5, h6, h7, h8, fun H => ?_⟩
+      S.padOf = padOf ∧ S.cleans = cleans ∧ S.region = region ∧ S.Safe = Safe ∧
+      (Hyps S → ∀ s x, RBInv S s x → SafeFrom Safe c s → FnSim ctx E c (RBInv S) (ExitRel S) s x) := by
+  obtain ⟨S, hD, h1, h2, h3, h4, h5, h6, h7, h7c, h7r, h8⟩ :=
+    decodes_of_ok hdec hnr hcs hcc c hc hm ctx E x0 Owned lo padOf cleans region Safe
+  refine ⟨S, hD, h1, h2, h3, h4, h5, h6, h7, h7c, h7r, h8, fun H => ?_⟩
   subst h1 h2 h3 h8
   exact decode_sound hD H htc
 
@@ -1240,13 +1384,14 @@ theorem decode_sound_of_checked {code : ByteArray} {relocs : Array Reloc} {rodat
     (hnr : regionPad mode callSites = none)
     (c : R.Code) (hc : c.d = d) (hm : c.mode = mode) (ctx : Ctx) (E : Env)
     (x0 : X86.State) (Owned : BitVec 64 → Prop) (lo : BitVec 64)
-    (padOf : BitVec 64 → Option (BitVec 64)) (Safe : R.Query → Prop) :
+    (padOf : BitVec 64 → Option (BitVec 64)) (cleans : BitVec 64 → Bool) (region : BitVec 64)
+    (Safe : R.Query → Prop) :
     ∃ S : Setup, Decodes S code relocs rodata callSites dropped scopes mode ∧ S.c = c ∧
       S.ctx = ctx ∧ S.E = E ∧ S.x0 = x0 ∧ S.Owned = Owned ∧ S.lo = lo ∧
-      S.padOf = padOf ∧ S.Safe = Safe ∧
-      (Hyps S → ∀ s x, BInv S s x → SafeFrom Safe c s → FnSim ctx E c (BInv S) (ExitRel S) s x) :=
+      S.padOf = padOf ∧ S.cleans = cleans ∧ S.region = region ∧ S.Safe = Safe ∧
+      (Hyps S → ∀ s x, RBInv S s x → SafeFrom Safe c s → FnSim ctx E c (RBInv S) (ExitRel S) s x) :=
   have h := decodeChecked_ok hdec
   decode_sound_of_ok h.1 hnr h.2.2.1 h.2.2.2.2.2.1 h.2.2.2.2.2.2.2.1 c hc hm ctx E x0 Owned lo padOf
-    Safe
+    cleans region Safe
 
 end Ryo.Proofs.DecodeSound

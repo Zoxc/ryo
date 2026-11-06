@@ -13,7 +13,7 @@ runs, the gap being the dead stores' (a dead-store step lemma, not a decoder lin
 
 - `inlineInsn_read_drop`: `inlineInsn_read` for any sequence: `DecDrop` of `cache.emit cand`'s
   output (and the `jcc`) from `c.pos` to `c'.pos`, `dropped` to `dr'`; `decodeInline cand br =
-  some (q.op, q.ops)`.
+  some (q.op, q.ops)`; the proto's items are that output, without the dropped store's (`eraseIdx`).
 - `codeAt_of_decDrop`: in memory (`LinkOk`), a `DecDrop` reading is `CodeAt` of its kept items,
   `SkipAt` placing the dropped ones.
 - `link_inline_drop`: the two composed, the analogue of `link_inline` (which is its case without
@@ -55,6 +55,22 @@ inductive SkipAt : Nat → List DroppedStore → List Item → List Item → Lis
       SkipAt (p + i.size) dr is ks dr' → SkipAt p dr (i :: is) (i :: ks) dr'
   | drop {p : Nat} {d : DroppedStore} {dr dr' : List DroppedStore} {is ks : List Item} :
       d.at_ = p → SkipAt p dr is ks dr' → SkipAt p (d :: dr) (d.item :: is) ks dr'
+
+/-- `SkipAt` without the positions: `kept` is `out` without the dropped stores `dr` consumes
+(what the kept run needs; without a frame pointer the items' sizes in memory differ). -/
+inductive Skip : List DroppedStore → List Item → List Item → List DroppedStore → Prop
+  | nil (dr : List DroppedStore) : Skip dr [] [] dr
+  | keep {dr dr' : List DroppedStore} {i : Item} {is ks : List Item} :
+      Skip dr is ks dr' → Skip dr (i :: is) (i :: ks) dr'
+  | drop {d : DroppedStore} {dr dr' : List DroppedStore} {is ks : List Item} :
+      Skip dr is ks dr' → Skip (d :: dr) (d.item :: is) ks dr'
+
+theorem SkipAt.toSkip {p : Nat} {dr dr' : List DroppedStore} {out kept : List Item}
+    (h : SkipAt p dr out kept dr') : Skip dr out kept dr' := by
+  induction h with
+  | nil _ dr => exact .nil dr
+  | keep _ ih => exact .keep ih
+  | drop _ _ ih => exact .drop ih
 
 /-- Without dropped stores, nothing is skipped. -/
 theorem skipAt_nil : ∀ (p : Nat) (dr : List DroppedStore) (items : List Item),
@@ -114,7 +130,9 @@ theorem inlineInsn_read_drop {cache cache' : Cache} {dropped dr' : List DroppedS
       cache.emit cand = (out, cache') ∧
       ((br = none ∧ DecDrop c c.pos dropped out c'.pos dr') ∨ ∃ cond tgt long,
         br = some (cond, tgt.toNat) ∧
-        DecDrop c c.pos dropped (out ++ [.branch cond tgt long]) c'.pos dr') := by
+        DecDrop c c.pos dropped (out ++ [.branch cond tgt long]) c'.pos dr') ∧
+      q.cacheOut = some (cacheSlots cache') ∧
+      (q.items = out ∨ ∃ i, q.items = out.eraseIdx i) := by
   unfold inlineInsn at h
   obtain ⟨p0, c1, h1, h⟩ := bind_ok h
   obtain ⟨rfl, hc1⟩ := pos_run' h1
@@ -253,30 +271,33 @@ theorem inlineInsn_read_drop {cache cache' : Cache} {dropped dr' : List DroppedS
     have found : ∃ cand d, decodeInline cand branch = some d ∧
         (cache.emit cand).1 = items.toList ∧ cache' = (cache.emit cand).2 ∧
         q.op = d.1 ∧ q.ops = d.2 ∧ q.pos = c.pos ∧ q.handler = none ∧ q.dropped = wd ∧
-        q.items = (if wd = true then items.toList.eraseIdx da else items.toList) ∧ c' = c3 ∧ dr = dr' := by
+        q.items = (if wd = true then items.toList.eraseIdx da else items.toList) ∧
+        q.cacheOut = some (cacheSlots (cache.emit cand).2) ∧ c' = c3 ∧ dr = dr' := by
       have fin : ∀ cand d (P : Proto) pp cc, decodeInline cand branch = some d →
           (if ((cache.emit cand).fst != items.toList) = true then none
             else some (P, (cache.emit cand).snd)) = some (pp, cc) →
           P.op = d.1 → P.ops = d.2 → P.pos = c.pos → P.handler = none → P.dropped = wd →
           P.items = (if wd = true then items.toList.eraseIdx da else items.toList) →
+          P.cacheOut = some (cacheSlots (cache.emit cand).2) →
           (pp, cc, dr) = (q, cache', dr') → c' = c3 → ∃ cand d, decodeInline cand branch = some d ∧
             (cache.emit cand).1 = items.toList ∧ cache' = (cache.emit cand).2 ∧
             q.op = d.1 ∧ q.ops = d.2 ∧ q.pos = c.pos ∧ q.handler = none ∧ q.dropped = wd ∧
-            q.items = (if wd = true then items.toList.eraseIdx da else items.toList) ∧ c' = c3 ∧ dr = dr' := by
-        intro cand d P pp cc hd hh h1 h2 h3 h4 h5 h6 he hc
+            q.items = (if wd = true then items.toList.eraseIdx da else items.toList) ∧
+        q.cacheOut = some (cacheSlots (cache.emit cand).2) ∧ c' = c3 ∧ dr = dr' := by
+        intro cand d P pp cc hd hh h1 h2 h3 h4 h5 h6 h7 he hc
         split at hh
         · cases hh
         · rename_i hne
           simp only [Option.some.injEq, Prod.mk.injEq] at hh he
           obtain ⟨rfl, rfl⟩ := hh
           obtain ⟨rfl, rfl, rfl⟩ := he
-          exact ⟨cand, d, hd, by simpa using hne, rfl, h1, h2, h3, h4, h5, h6, hc, rfl⟩
+          exact ⟨cand, d, hd, by simpa using hne, rfl, h1, h2, h3, h4, h5, h6, h7, hc, rfl⟩
       split at h
       · rename_i d hdi
         split at h
         · rename_i pp cc hacc
           obtain ⟨he, rfl⟩ := pure_ok h
-          exact fin _ d _ pp cc hdi hacc rfl rfl rfl rfl rfl rfl (by cases he; rfl) rfl
+          exact fin _ d _ pp cc hdi hacc rfl rfl rfl rfl rfl rfl rfl (by cases he; rfl) rfl
         · obtain ⟨res, c4, h4, hk2⟩ := bind_ok h
           have key2 := forIn_list_inv (fun (st : Option (Option (Proto × Cache × List DroppedStore)) × Unit) cur => st.1 = none ∧ cur = c3)
             (fun (st : Option (Option (Proto × Cache × List DroppedStore)) × Unit) cur => cur = c3 ∧
@@ -285,6 +306,7 @@ theorem inlineInsn_read_drop {cache cache' : Cache} {dropped dr' : List DroppedS
                 else some (P, (cache.emit cand).snd)) = some (pp, cc) ∧
               P.op = d.1 ∧ P.ops = d.2 ∧ P.pos = c.pos ∧ P.handler = none ∧ P.dropped = wd ∧
               P.items = (if wd = true then items.toList.eraseIdx da else items.toList) ∧
+              P.cacheOut = some (cacheSlots (cache.emit cand).2) ∧
               st.1 = some (some (pp, cc, dr))) _ ?step2 _ _ c3 c4 res ⟨rfl, rfl⟩ h4
           case step2 =>
             intro cand st cur r cur' hI hr
@@ -293,10 +315,10 @@ theorem inlineInsn_read_drop {cache cache' : Cache} {dropped dr' : List DroppedS
               split at hr
               · rename_i pp cc hacc
                 obtain ⟨rfl, rfl⟩ := pure_ok hr
-                exact ⟨hI.2, cand, d, _, pp, cc, hd, hacc, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+                exact ⟨hI.2, cand, d, _, pp, cc, hd, hacc, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
               · obtain ⟨rfl, rfl⟩ := pure_ok hr; exact ⟨rfl, hI.2⟩
             · obtain ⟨rfl, rfl⟩ := pure_ok hr; exact ⟨rfl, hI.2⟩
-          rcases key2 with ⟨hn, rfl⟩ | ⟨rfl, cand, d, P, pp, cc, hd, hacc, h1, h2, h3, h4', h5, h6, hs⟩
+          rcases key2 with ⟨hn, rfl⟩ | ⟨rfl, cand, d, P, pp, cc, hd, hacc, h1, h2, h3, h4', h5, h6, h7, hs⟩
           · split at hk2
             · rename_i r hr; rw [hn] at hr; cases hr
             · obtain ⟨u, c5, -, hk3⟩ := bind_ok hk2
@@ -304,7 +326,7 @@ theorem inlineInsn_read_drop {cache cache' : Cache} {dropped dr' : List DroppedS
           · split at hk2
             · rename_i r hr; rw [hs] at hr; cases hr
               obtain ⟨he, rfl⟩ := pure_ok hk2
-              exact fin cand d P pp cc hd hacc h1 h2 h3 h4' h5 h6 (by cases he; rfl) rfl
+              exact fin cand d P pp cc hd hacc h1 h2 h3 h4' h5 h6 h7 (by cases he; rfl) rfl
             · rename_i hr; rw [hs] at hr; cases hr
       · obtain ⟨res, c4, h4, hk2⟩ := bind_ok h
         have key2 := forIn_list_inv (fun (st : Option (Option (Proto × Cache × List DroppedStore)) × Unit) cur => st.1 = none ∧ cur = c3)
@@ -314,6 +336,7 @@ theorem inlineInsn_read_drop {cache cache' : Cache} {dropped dr' : List DroppedS
               else some (P, (cache.emit cand).snd)) = some (pp, cc) ∧
             P.op = d.1 ∧ P.ops = d.2 ∧ P.pos = c.pos ∧ P.handler = none ∧ P.dropped = wd ∧
             P.items = (if wd = true then items.toList.eraseIdx da else items.toList) ∧
+            P.cacheOut = some (cacheSlots (cache.emit cand).2) ∧
             st.1 = some (some (pp, cc, dr))) _ ?step2 _ _ c3 c4 res ⟨rfl, rfl⟩ h4
         case step2 =>
           intro cand st cur r cur' hI hr
@@ -322,10 +345,10 @@ theorem inlineInsn_read_drop {cache cache' : Cache} {dropped dr' : List DroppedS
             split at hr
             · rename_i pp cc hacc
               obtain ⟨rfl, rfl⟩ := pure_ok hr
-              exact ⟨hI.2, cand, d, _, pp, cc, hd, hacc, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+              exact ⟨hI.2, cand, d, _, pp, cc, hd, hacc, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
             · obtain ⟨rfl, rfl⟩ := pure_ok hr; exact ⟨rfl, hI.2⟩
           · obtain ⟨rfl, rfl⟩ := pure_ok hr; exact ⟨rfl, hI.2⟩
-        rcases key2 with ⟨hn, rfl⟩ | ⟨rfl, cand, d, P, pp, cc, hd, hacc, h1, h2, h3, h4', h5, h6, hs⟩
+        rcases key2 with ⟨hn, rfl⟩ | ⟨rfl, cand, d, P, pp, cc, hd, hacc, h1, h2, h3, h4', h5, h6, h7, hs⟩
         · split at hk2
           · rename_i r hr; rw [hn] at hr; cases hr
           · obtain ⟨u, c5, -, hk3⟩ := bind_ok hk2
@@ -333,11 +356,274 @@ theorem inlineInsn_read_drop {cache cache' : Cache} {dropped dr' : List DroppedS
         · split at hk2
           · rename_i r hr; rw [hs] at hr; cases hr
             obtain ⟨he, rfl⟩ := pure_ok hk2
-            exact fin cand d P pp cc hd hacc h1 h2 h3 h4' h5 h6 (by cases he; rfl) rfl
+            exact fin cand d P pp cc hd hacc h1 h2 h3 h4' h5 h6 h7 (by cases he; rfl) rfl
           · rename_i hr; rw [hs] at hr; cases hr
-    obtain ⟨cand, d, hdi, hemit, hcache, hop, hops, hpos, hh, hdr, hits, rfl, rfl⟩ := found
+    obtain ⟨cand, d, hdi, hemit, hcache, hop, hops, hpos, hh, hdr, hits, hco, rfl, rfl⟩ := found
     refine ⟨hpos, hh, cand, branch, items.toList, by rw [hop, hops]; exact hdi,
-      by rw [hcache, ← hemit], hd⟩
+      by rw [hcache, ← hemit], hd, by rw [hcache]; exact hco, ?_⟩
+    rw [hits]
+    split
+    · exact .inr ⟨_, rfl⟩
+    · exact .inl rfl
+
+theorem push_keep {items : Array Item} {it x : Item} {i : Nat}
+    (h : items.toList[i]? = some x) : (items.push it).toList[i]? = some x := by
+  rw [Array.toList_push]
+  first
+    | (rw [List.getElem?_append_left (List.getElem?_eq_some_iff.1 h).1]; exact h)
+    | simp [List.getElem?_append, h, (List.getElem?_eq_some_iff.1 h).1]
+
+/-- `inlineInsn_read_drop`'s items, with the erased item: a dropped store's (the loop's
+`dropAt` is where it pushed `d.item`, `d` from `dropped`). A second invariant over the same
+loop, alongside `inlineInsn_read_drop`'s (whose proof this copies). -/
+theorem inlineInsn_erased_dropped {cache cache' : Cache} {dropped dr' : List DroppedStore}
+    {c c' : Cursor} {q : Proto}
+    (h : (inlineInsn cache dropped true).run c = .ok (some (q, cache', dr'), c')) :
+    ∃ cand br out, decodeInline cand br = some (q.op, q.ops) ∧ cache.emit cand = (out, cache') ∧
+      (q.items = out ∨ ∃ i, ∃ d ∈ dropped, out[i]? = some d.item ∧ q.items = out.eraseIdx i) := by
+  unfold inlineInsn at h
+  obtain ⟨p0, c1, h1, h⟩ := bind_ok h
+  obtain ⟨rfl, hc1⟩ := pos_run' h1
+  subst c1
+  obtain ⟨fu, c2, h2, h⟩ := bind_ok h
+  have := fuel_run h2; subst c2
+  obtain ⟨st, c3, h3, h⟩ := bind_ok h
+  let I : Option (Option (Proto × Cache × List DroppedStore)) × Array Item ×
+      Option (Cond × Nat) × Bool × Nat × List DroppedStore × Bool → Cursor → Prop :=
+    fun st cur => st.1 = none ∧ st.2.2.2.2.2.2 = false ∧ cur = atPos c cur.pos ∧
+      st.2.2.1 = none ∧ DecDrop c c.pos dropped st.2.1.toList cur.pos st.2.2.2.2.2.1
+  let D : Option (Option (Proto × Cache × List DroppedStore)) × Array Item ×
+      Option (Cond × Nat) × Bool × Nat × List DroppedStore × Bool → Cursor → Prop :=
+    fun st cur => st.1 = some none ∨ (st.1 = none ∧ st.2.2.2.2.2.2 = true ∧
+      ((st.2.2.1 = none ∧ DecDrop c c.pos dropped st.2.1.toList cur.pos st.2.2.2.2.2.1) ∨
+        ∃ cond tgt long, st.2.2.1 = some (cond, tgt.toNat) ∧
+          DecDrop c c.pos dropped (st.2.1.toList ++ [.branch cond tgt long]) cur.pos
+            st.2.2.2.2.2.1))
+  let J : Option (Option (Proto × Cache × List DroppedStore)) × Array Item ×
+      Option (Cond × Nat) × Bool × Nat × List DroppedStore × Bool → Cursor → Prop :=
+    fun st _ => (st.2.2.2.1 = true → ∃ d ∈ dropped, st.2.1.toList[st.2.2.2.2.1]? = some d.item) ∧
+      ∀ d ∈ st.2.2.2.2.2.1, d ∈ dropped
+  have key := forIn_range_inv (fun st cur => I st cur ∧ J st cur) (fun st cur => D st cur ∧ J st cur)
+    _ ?step _ _ c c3 st ⟨⟨rfl, rfl, rfl, rfl, DecDrop.nil _ _⟩, fun hw => (Bool.false_ne_true hw).elim,
+      fun _ hx => hx⟩ h3
+  case step =>
+    intro a b cur r cur' hI hr
+    obtain ⟨o, items, branch, wd, da, dr, ended⟩ := b
+    obtain ⟨⟨ho, hend, hc, hbr, hd⟩, hJ1, hJ2⟩ := hI
+    simp only at ho hend hc hbr hd hr hJ1 hJ2
+    subst ho hend hbr
+    obtain ⟨pc, rfl⟩ : ∃ p, cur = atPos c p := ⟨_, hc⟩
+    split at hr
+    · rename_i d hdr
+      obtain ⟨p1, c4, h4, hr⟩ := bind_ok hr
+      obtain ⟨rfl, hc4⟩ := pos_run' h4
+      subst c4
+      split at hr
+      · rename_i hat
+        obtain ⟨tl, rfl⟩ : ∃ tl, dr = d :: tl := by
+          cases dr with
+          | nil => cases hdr
+          | cons d' tl => exact ⟨tl, by simp only [List.head?_cons, Option.some.injEq] at hdr; rw [hdr]⟩
+        have hd' := hd.snoc_drop (by simpa using hat)
+        -- a dropped store: `wasDropped` from here on
+        obtain ⟨p2, c5, h5, hr⟩ := bind_ok hr
+        obtain ⟨rfl, hc5⟩ := pos_run' h5
+        subst c5
+        obtain ⟨nx, c6, h6, hr⟩ := bind_ok hr
+        have e6 := posOnly_run PosOnly.tryItem h6
+        obtain ⟨u, c7, h7, hr⟩ := bind_ok hr
+        rw [run_setPos] at h7; cases h7
+        split at hr
+        · obtain ⟨rfl, rfl⟩ := pure_ok hr
+          exact ⟨⟨rfl, rfl, by rw [e6], rfl, by simpa using hd'⟩, ⟨fun _ => ⟨d, hJ2 d (List.mem_cons.2 (.inl rfl)), by simp [Array.toList_push]⟩,
+            fun x hx => hJ2 x (List.mem_cons.2 (.inr hx))⟩⟩
+        · obtain ⟨rfl, rfl⟩ := pure_ok hr
+          exact ⟨.inr ⟨rfl, rfl, .inl ⟨rfl, by simpa using hd'⟩⟩, ⟨fun _ => ⟨d, hJ2 d (List.mem_cons.2 (.inl rfl)), by simp [Array.toList_push]⟩,
+            fun x hx => hJ2 x (List.mem_cons.2 (.inr hx))⟩⟩
+      · obtain ⟨x, c5, h5, hr⟩ := bind_ok hr
+        cases x with
+        | none =>
+          have := run_tryItem_none h5; subst this
+          obtain ⟨u, c7, h7, hr⟩ := bind_ok hr
+          rw [run_setPos] at h7; cases h7
+          obtain ⟨rfl, rfl⟩ := pure_ok hr
+          exact ⟨.inl rfl, hJ1, hJ2⟩
+        | some it =>
+          obtain ⟨n, hn, rfl⟩ := run_tryItem_some h5
+          dsimp only at hr
+          split at hr
+          · obtain ⟨p2, c6, h6, hr⟩ := bind_ok hr
+            obtain ⟨rfl, hc6⟩ := pos_run' h6
+            subst c6
+            obtain ⟨nx, c7, h7, hr⟩ := bind_ok hr
+            have e7 := posOnly_run PosOnly.tryItem h7
+            obtain ⟨u, c8, h8, hr⟩ := bind_ok hr
+            rw [run_setPos] at h8; cases h8
+            split at hr
+            · obtain ⟨rfl, rfl⟩ := pure_ok hr
+              refine ⟨.inr ⟨rfl, rfl, .inl ⟨rfl, ?_⟩⟩, ⟨fun hw => (hJ1 hw).imp fun _ ⟨hd1, hx⟩ => ⟨hd1, push_keep hx⟩, hJ2⟩⟩
+              simp only [Array.toList_push]; exact hd.snoc_item hn
+            · obtain ⟨rfl, rfl⟩ := pure_ok hr
+              refine ⟨⟨rfl, rfl, by rw [e7], rfl, ?_⟩, ⟨fun hw => (hJ1 hw).imp fun _ ⟨hd1, hx⟩ => ⟨hd1, push_keep hx⟩, hJ2⟩⟩
+              simp only [Array.toList_push]; exact hd.snoc_item hn
+          · split at hr
+            · split at hr
+              · obtain ⟨rfl, rfl⟩ := pure_ok hr
+                exact ⟨.inr ⟨rfl, rfl, .inr ⟨_, _, _, rfl, hd.snoc_item hn⟩⟩, hJ1, hJ2⟩
+              · obtain ⟨u, c7, h7, hr⟩ := bind_ok hr
+                rw [run_setPos] at h7; cases h7
+                obtain ⟨rfl, rfl⟩ := pure_ok hr
+                exact ⟨.inl rfl, hJ1, hJ2⟩
+            · obtain ⟨u, c7, h7, hr⟩ := bind_ok hr
+              rw [run_setPos] at h7; cases h7
+              obtain ⟨rfl, rfl⟩ := pure_ok hr
+              exact ⟨.inl rfl, hJ1, hJ2⟩
+    · obtain ⟨x, c5, h5, hr⟩ := bind_ok hr
+      cases x with
+      | none =>
+        have := run_tryItem_none h5; subst this
+        obtain ⟨u, c7, h7, hr⟩ := bind_ok hr
+        rw [run_setPos] at h7; cases h7
+        obtain ⟨rfl, rfl⟩ := pure_ok hr
+        exact ⟨.inl rfl, hJ1, hJ2⟩
+      | some it =>
+        obtain ⟨n, hn, rfl⟩ := run_tryItem_some h5
+        dsimp only at hr
+        split at hr
+        · obtain ⟨p2, c6, h6, hr⟩ := bind_ok hr
+          obtain ⟨rfl, hc6⟩ := pos_run' h6
+          subst c6
+          obtain ⟨nx, c7, h7, hr⟩ := bind_ok hr
+          have e7 := posOnly_run PosOnly.tryItem h7
+          obtain ⟨u, c8, h8, hr⟩ := bind_ok hr
+          rw [run_setPos] at h8; cases h8
+          split at hr
+          · obtain ⟨rfl, rfl⟩ := pure_ok hr
+            refine ⟨.inr ⟨rfl, rfl, .inl ⟨rfl, ?_⟩⟩, ⟨fun hw => (hJ1 hw).imp fun _ ⟨hd1, hx⟩ => ⟨hd1, push_keep hx⟩, hJ2⟩⟩
+            simp only [Array.toList_push]; exact hd.snoc_item hn
+          · obtain ⟨rfl, rfl⟩ := pure_ok hr
+            refine ⟨⟨rfl, rfl, by rw [e7], rfl, ?_⟩, ⟨fun hw => (hJ1 hw).imp fun _ ⟨hd1, hx⟩ => ⟨hd1, push_keep hx⟩, hJ2⟩⟩
+            simp only [Array.toList_push]; exact hd.snoc_item hn
+        · split at hr
+          · split at hr
+            · obtain ⟨rfl, rfl⟩ := pure_ok hr
+              exact ⟨.inr ⟨rfl, rfl, .inr ⟨_, _, _, rfl, hd.snoc_item hn⟩⟩, hJ1, hJ2⟩
+            · obtain ⟨u, c7, h7, hr⟩ := bind_ok hr
+              rw [run_setPos] at h7; cases h7
+              obtain ⟨rfl, rfl⟩ := pure_ok hr
+              exact ⟨.inl rfl, hJ1, hJ2⟩
+          · obtain ⟨u, c7, h7, hr⟩ := bind_ok hr
+            rw [run_setPos] at h7; cases h7
+            obtain ⟨rfl, rfl⟩ := pure_ok hr
+            exact ⟨.inl rfl, hJ1, hJ2⟩
+  have hJ := key.elim And.right And.right
+  replace key := key.imp And.left And.left
+  obtain ⟨o, items, branch, wd, da, dr, ended⟩ := st
+  dsimp only at key h hJ
+  rcases key with ⟨rfl, rfl, -, -, -⟩ | rfl | ⟨rfl, rfl, hd⟩
+  · obtain ⟨u, c4, -, h4⟩ := bind_ok h
+    obtain ⟨he, -⟩ := pure_ok h4; cases he
+  · obtain ⟨he, -⟩ := pure_ok h; cases he
+  · simp only [Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
+    -- the candidate the decoder accepted
+    have found : ∃ cand d, decodeInline cand branch = some d ∧
+        (cache.emit cand).1 = items.toList ∧ cache' = (cache.emit cand).2 ∧
+        q.op = d.1 ∧ q.ops = d.2 ∧ q.pos = c.pos ∧ q.handler = none ∧ q.dropped = wd ∧
+        q.items = (if wd = true then items.toList.eraseIdx da else items.toList) ∧
+        q.cacheOut = some (cacheSlots (cache.emit cand).2) ∧ c' = c3 ∧ dr = dr' := by
+      have fin : ∀ cand d (P : Proto) pp cc, decodeInline cand branch = some d →
+          (if ((cache.emit cand).fst != items.toList) = true then none
+            else some (P, (cache.emit cand).snd)) = some (pp, cc) →
+          P.op = d.1 → P.ops = d.2 → P.pos = c.pos → P.handler = none → P.dropped = wd →
+          P.items = (if wd = true then items.toList.eraseIdx da else items.toList) →
+          P.cacheOut = some (cacheSlots (cache.emit cand).2) →
+          (pp, cc, dr) = (q, cache', dr') → c' = c3 → ∃ cand d, decodeInline cand branch = some d ∧
+            (cache.emit cand).1 = items.toList ∧ cache' = (cache.emit cand).2 ∧
+            q.op = d.1 ∧ q.ops = d.2 ∧ q.pos = c.pos ∧ q.handler = none ∧ q.dropped = wd ∧
+            q.items = (if wd = true then items.toList.eraseIdx da else items.toList) ∧
+        q.cacheOut = some (cacheSlots (cache.emit cand).2) ∧ c' = c3 ∧ dr = dr' := by
+        intro cand d P pp cc hd hh h1 h2 h3 h4 h5 h6 h7 he hc
+        split at hh
+        · cases hh
+        · rename_i hne
+          simp only [Option.some.injEq, Prod.mk.injEq] at hh he
+          obtain ⟨rfl, rfl⟩ := hh
+          obtain ⟨rfl, rfl, rfl⟩ := he
+          exact ⟨cand, d, hd, by simpa using hne, rfl, h1, h2, h3, h4, h5, h6, h7, hc, rfl⟩
+      split at h
+      · rename_i d hdi
+        split at h
+        · rename_i pp cc hacc
+          obtain ⟨he, rfl⟩ := pure_ok h
+          exact fin _ d _ pp cc hdi hacc rfl rfl rfl rfl rfl rfl rfl (by cases he; rfl) rfl
+        · obtain ⟨res, c4, h4, hk2⟩ := bind_ok h
+          have key2 := forIn_list_inv (fun (st : Option (Option (Proto × Cache × List DroppedStore)) × Unit) cur => st.1 = none ∧ cur = c3)
+            (fun (st : Option (Option (Proto × Cache × List DroppedStore)) × Unit) cur => cur = c3 ∧
+                ∃ (cand : List Item) (d : Full.Opcode × List (Opnd Nat)) (P pp : Proto) (cc : Cache), decodeInline cand branch = some d ∧
+              (if ((cache.emit cand).fst != items.toList) = true then none
+                else some (P, (cache.emit cand).snd)) = some (pp, cc) ∧
+              P.op = d.1 ∧ P.ops = d.2 ∧ P.pos = c.pos ∧ P.handler = none ∧ P.dropped = wd ∧
+              P.items = (if wd = true then items.toList.eraseIdx da else items.toList) ∧
+              P.cacheOut = some (cacheSlots (cache.emit cand).2) ∧
+              st.1 = some (some (pp, cc, dr))) _ ?step2 _ _ c3 c4 res ⟨rfl, rfl⟩ h4
+          case step2 =>
+            intro cand st cur r cur' hI hr
+            split at hr
+            · rename_i d hd
+              split at hr
+              · rename_i pp cc hacc
+                obtain ⟨rfl, rfl⟩ := pure_ok hr
+                exact ⟨hI.2, cand, d, _, pp, cc, hd, hacc, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+              · obtain ⟨rfl, rfl⟩ := pure_ok hr; exact ⟨rfl, hI.2⟩
+            · obtain ⟨rfl, rfl⟩ := pure_ok hr; exact ⟨rfl, hI.2⟩
+          rcases key2 with ⟨hn, rfl⟩ | ⟨rfl, cand, d, P, pp, cc, hd, hacc, h1, h2, h3, h4', h5, h6, h7, hs⟩
+          · split at hk2
+            · rename_i r hr; rw [hn] at hr; cases hr
+            · obtain ⟨u, c5, -, hk3⟩ := bind_ok hk2
+              obtain ⟨he, -⟩ := pure_ok hk3; cases he
+          · split at hk2
+            · rename_i r hr; rw [hs] at hr; cases hr
+              obtain ⟨he, rfl⟩ := pure_ok hk2
+              exact fin cand d P pp cc hd hacc h1 h2 h3 h4' h5 h6 h7 (by cases he; rfl) rfl
+            · rename_i hr; rw [hs] at hr; cases hr
+      · obtain ⟨res, c4, h4, hk2⟩ := bind_ok h
+        have key2 := forIn_list_inv (fun (st : Option (Option (Proto × Cache × List DroppedStore)) × Unit) cur => st.1 = none ∧ cur = c3)
+          (fun (st : Option (Option (Proto × Cache × List DroppedStore)) × Unit) cur => cur = c3 ∧
+                ∃ (cand : List Item) (d : Full.Opcode × List (Opnd Nat)) (P pp : Proto) (cc : Cache), decodeInline cand branch = some d ∧
+            (if ((cache.emit cand).fst != items.toList) = true then none
+              else some (P, (cache.emit cand).snd)) = some (pp, cc) ∧
+            P.op = d.1 ∧ P.ops = d.2 ∧ P.pos = c.pos ∧ P.handler = none ∧ P.dropped = wd ∧
+            P.items = (if wd = true then items.toList.eraseIdx da else items.toList) ∧
+            P.cacheOut = some (cacheSlots (cache.emit cand).2) ∧
+            st.1 = some (some (pp, cc, dr))) _ ?step2 _ _ c3 c4 res ⟨rfl, rfl⟩ h4
+        case step2 =>
+          intro cand st cur r cur' hI hr
+          split at hr
+          · rename_i d hd
+            split at hr
+            · rename_i pp cc hacc
+              obtain ⟨rfl, rfl⟩ := pure_ok hr
+              exact ⟨hI.2, cand, d, _, pp, cc, hd, hacc, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+            · obtain ⟨rfl, rfl⟩ := pure_ok hr; exact ⟨rfl, hI.2⟩
+          · obtain ⟨rfl, rfl⟩ := pure_ok hr; exact ⟨rfl, hI.2⟩
+        rcases key2 with ⟨hn, rfl⟩ | ⟨rfl, cand, d, P, pp, cc, hd, hacc, h1, h2, h3, h4', h5, h6, h7, hs⟩
+        · split at hk2
+          · rename_i r hr; rw [hn] at hr; cases hr
+          · obtain ⟨u, c5, -, hk3⟩ := bind_ok hk2
+            obtain ⟨he, -⟩ := pure_ok hk3; cases he
+        · split at hk2
+          · rename_i r hr; rw [hs] at hr; cases hr
+            obtain ⟨he, rfl⟩ := pure_ok hk2
+            exact fin cand d P pp cc hd hacc h1 h2 h3 h4' h5 h6 h7 (by cases he; rfl) rfl
+          · rename_i hr; rw [hs] at hr; cases hr
+    obtain ⟨cand, d, hdi, hemit, hcache, hop, hops, hpos, hh, hdr, hits, hco, rfl, rfl⟩ := found
+    refine ⟨cand, branch, items.toList, by rw [hop, hops]; exact hdi, by rw [hcache, ← hemit], ?_⟩
+    rw [hits]
+    split
+    · rename_i hw
+      obtain ⟨d, hd1, hx⟩ := hJ.1 hw
+      exact .inr ⟨da, d, hd1, hx, rfl⟩
+    · exact Or.inl rfl
 
 /-- An inline sequence in memory, dropped stores included: the kept items of
 `(cache.emit cand).1` (and the `jcc`), `SkipAt` placing the dropped ones. -/
@@ -353,7 +639,7 @@ theorem link_inline_drop {ctx : Ctx} {m : Mem} {c c' : Cursor} {rs : Array Reloc
         ∃ cond tgt long, br = some (cond, tgt.toNat) ∧ ∃ kept,
           SkipAt c.pos dropped (out ++ [.branch cond tgt long]) kept dr' ∧
           CodeAt ctx m kept c.pos ∧ c'.pos = c.pos + codeSize kept ∧ Boundary rs c'.pos) := by
-  obtain ⟨hpos, hh, cand, br, out, hdi, hemit, hd⟩ := inlineInsn_read_drop h
+  obtain ⟨hpos, hh, cand, br, out, hdi, hemit, hd, -⟩ := inlineInsn_read_drop h
   obtain ⟨cls, hmem, hseq⟩ := decodeInline_spec hdi
   refine ⟨hpos, hh, cand, br, cls, out, hdi, hmem, hseq, hemit, ?_⟩
   rcases hd with ⟨hbr, hd⟩ | ⟨cond, tgt, long, hbr, hd⟩
