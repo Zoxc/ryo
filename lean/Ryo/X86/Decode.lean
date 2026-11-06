@@ -13,8 +13,10 @@ Mirrors `Cursor` in `vm/bytecode/src/asm/x86.rs` (`item`, `base_item`, `native`,
 
 The decoder accepts only canonical encodings. After parsing a candidate item as Rust does, it
 re-encodes it and compares every byte outside the item's own relocated fields (whose bytes are
-the linker's business), so `encode` inverts `decodeItem` on what it accepts by construction
-(`Cursor.matchesItem`; `decodeItem_pos`: an accepted element is never empty). The converse, `decodeItem (encode i) = some (i, len)` for `Item.wf` items,
+the linker's business), so with `spFrame = none` `encode` inverts `decodeItem` on what it
+accepts by construction (`Cursor.matchesItem`, `decodeItem_matches`; `decodeItem_pos`: an
+accepted element is never empty); with `spFrame` set the check is on the parsed item, and the
+item returned is its `[rbp + d]` form (below, `decodeItem_matches_sp`). The converse, `decodeItem (encode i) = some (i, len)` for `Item.wf` items,
 is tested over the Rust encoder's vectors and generated item sets in `RyoTest/X86.lean`.
 
 `Cursor.spFrame`: without a frame pointer, frame slots are `[rsp + F + d]`, which the decoder
