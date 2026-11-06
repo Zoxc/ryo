@@ -126,7 +126,6 @@ import Ryo.Vm.ArgsLeadCheck
 import Ryo.Vm.PrivCheck
 import Ryo.Vm.OpSem.Footprint
 import Ryo.Vm.R.Islands
-import Std.Data.HashMap
 
 namespace Ryo.Vm.Frame
 
@@ -410,8 +409,8 @@ def effects (i : Insn) (items : List Item) (mode : Mode) (lends : List (BitVec 3
 
 A set of frame bytes is a bitset, a `Nat` whose bit `F + off` is the byte at `off` (GMP does the
 word-wise `|||`, `&&&`, `^^^`); an instruction's own sets, mostly one or a few ranges, are kept as
-`Ranges` and made bitsets where they are combined. So the memory is one bitset per instruction
-(the bytes live into it) and per set of escaped objects, not one per set and instruction. -/
+`Ranges` and made bitsets where they are combined. So the memory is a few bitsets per
+instruction (the bytes live into it, the escaped bytes of a pointer access). -/
 
 /-- The byte indices `lo .. hi` (`F + off`, `hi` excluded) of `n` bytes at `off`, clamped to the
 frame. -/
@@ -574,8 +573,7 @@ structure Flow where
   pad : Array (List Nat)
   operand : Array Ranges
   stack : Array Ranges
-  /-- The bytes of the objects escaped at it if it makes a pointer access (one bitset for each
-  set of escapes, shared), else none. -/
+  /-- The bytes of the objects escaped at it if it makes a pointer access, else none. -/
   pointer : Array Nat
   uninit : Array Ranges
   kill : Array Ranges
@@ -616,13 +614,6 @@ def sretDest (ws : List (BitVec 32)) : Option (BitVec 32) :=
 /-- A call instruction's argument list. -/
 def callArgs (ops : List (Opnd Nat)) : List (BitVec 32) :=
   (ops.findSome? fun | .words ws => some ws | _ => none).getD []
-
-/-- A bitset as a hash map key. -/
-structure BitsKey where
-  bits : Nat
-deriving BEq
-
-instance : Hashable BitsKey := ⟨fun k => UInt64.ofNat (k.bits % 0xFFFFFFFFFFFFFFC5)⟩
 
 /-- The scopes before each instruction, with their indices in `d.scopes`, in order. -/
 def scopesAt (d : Decoded) : Array (List (Nat × Scope)) :=
