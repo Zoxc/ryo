@@ -9,7 +9,9 @@ One JSON request per line on stdin, one JSON response per line on stdout:
                                          with `decodeItem` from `pos` to its end
             "pos": n,                    position of the first item in the function (default 0)
             "base": a,                   the function's address (`Ctx.base`)
-            "refs": [[Ref, a], ..],      where each `Ref` lives (others: 0)
+            "refs": [[Ref, a], ..],      where each `Ref` lives (others: 0; an unlisted
+                                         `recordLoopCtr` is `record` + `loopCtr`, as
+                                         decoding takes it)
             "state": {"regs": [16 x u64], "rip": a, "flags": {"cf": b, "zf": b, "sf": b, "of": b},
                       "xmm": [16 x u128], "mem": [[a, "hex"], ..]}}
   response {"items": [..], "bytes": "hex", "state": {..}}   the items, their linked bytes at
@@ -121,7 +123,13 @@ def handle (j : Json) : Except String Json := do
   let (_, bad) := items.foldl (fun (p, bad) i =>
     (p + i.len, bad || !i.wf (BitVec.ofNat 32 p))) (pos, false)
   if bad then throw "an item is not wf at its position"
-  let addrOf : RefAddr := fun r => ((refs.find? (·.1 == r)).map (·.2)).getD 0
+  -- `RefAddr`'s contract: `recordLoopCtr` is the record's address plus `loopCtr`, as
+  -- `decodeAll` (`Cursor.field`) resolves it, unless the request places it.
+  let listed (r : Ref) : Option (BitVec 64) := (refs.find? (·.1 == r)).map (·.2)
+  let addrOf : RefAddr := fun r => match listed r, r with
+    | some a, _ => a
+    | none, .recordLoopCtr => (listed .record).getD 0 + BitVec.ofNat 64 loopCtr
+    | none, _ => 0
   let (code, relocs) := encodeItems items pos
   let linked := (link base addrOf (List.replicate pos 0 ++ code) relocs).drop pos
   let (s, regions) ← parseState (← j.getObjVal? "state")
