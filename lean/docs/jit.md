@@ -52,7 +52,7 @@ pipeline.
   head `N`. For JIT code that is exactly what a validated compilation provides
   ([aot.md](aot.md) §C5).
 
-Trusted (assembly + Rust). Tested by `vm/rt/tests/jit.rs`.
+Trusted (assembly + Rust). Tested by `vm/jit/tests/jit.rs`.
 
 ## E.3 The SSA pipeline's levels
 
