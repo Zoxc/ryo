@@ -26,7 +26,7 @@ Checked:
   `bool`, `*WithOverflow` to `(T, bool)`, `Offset` of a raw pointer by `isize`/`usize`), source
   and target kinds of each `CastKind` (`Transmute`: only that both are sized; a size mismatch
   is UB, D33), `Ref`/`RawPtr` to a pointer with the place's metadata kind, `Discriminant` to an
-  integer, `Repeat` to an array of that length, `ThreadLocalRef` to a pointer, `Aggregate`
+  integer, `Repeat` to an array of that length, `ThreadLocalRef` to a thin pointer, `Aggregate`
   field counts and field shapes, the variant index and the union's active field in range, and
   `AggregateKind::RawPtr`/`PtrMetadata` metadata types;
 - D9 needs no check (`always_storage_live_locals` is computed from the body).
@@ -237,7 +237,8 @@ def checkMetaTy (what : String) (mk : PointerMetaKind) (t : Ty) : WfM Unit :=
   | .elementCount =>
     ensure (t matches .int ⟨false, 8⟩ _) s!"{what}: slice metadata must be usize, not {tyKind t}"
   | .vtablePointer _ =>
-    ensure (isPtr t) s!"{what}: vtable metadata must be a pointer, not {tyKind t}"
+    ensure (isPtr t && ptrTyMetaClass t == 0)
+      s!"{what}: vtable metadata must be a thin pointer, not {tyKind t}"
 
 -- rustc `BinOp::ty` and the `BinaryOp` arm of `visit_rvalue`.
 def checkBinOp (op : BinOp) (a b dest : Ty) : WfM Unit := do
@@ -460,7 +461,9 @@ def checkRvalue (b : Body) (dest : Ty) : Rvalue → WfM Unit
         s!"Reborrow: a {tyKind t} place coerced to {tyKind ty} of a different layout"
     expectShape "Reborrow" ty dest
   | .threadLocalRef _ =>
-    ensure (isPtr dest) s!"ThreadLocalRef assigned to a place of type {tyKind dest}"
+    -- `evalRvalue` gives a thin pointer.
+    ensure (isPtr dest && ptrTyMetaClass dest == 0)
+      s!"ThreadLocalRef assigned to a place of type {tyKind dest}"
   | .discriminant p => do
     let _ ← placeTy b p
     ensure (isInt dest) s!"Discriminant assigned to a place of type {tyKind dest}"

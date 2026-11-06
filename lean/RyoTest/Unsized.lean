@@ -193,6 +193,22 @@ def computeSizeAlign : Program := program do
     assumeEq (← callTmp alignOfVal usize [s]) (cusize 2)
     ret
 
+/-- The metadata of a `dyn` pointer is a thin vtable pointer: `PtrMetadata` into a wide pointer
+is ill-formed. -/
+def wideVtableMeta : Program := program do
+  let vt ← vtable none 4 4 []
+  addFn "main" <| body unit [] do
+    let x ← newLocal u32
+    storageLive x
+    assignL x (.use (cint u32 7))
+    let thin ← tmp (rawTo u32) (.rawPtr false (place x))
+    let vp ← tmp (rawTo u8) (.use (.const (.ptr (.alloc vt) 0) (rawTo u8)))
+    let d ← tmp (rawTo dynTy) (.aggregate .rawPtr [thin, vp])
+    let m ← newLocal (rawTo (slice u8))
+    storageLive m
+    assignL m (.unaryOp .ptrMetadata d)
+    ret
+
 def tests : List TestCase := [
   ⟨"compute_size_align", fun _ => expectReturn computeSizeAlign⟩,
   ⟨"trait_object/dynamic_dispatch (D29)", fun _ => expectReturnValue dynamicDispatch (.int 112)⟩,
@@ -201,7 +217,9 @@ def tests : List TestCase := [
   ⟨"unsized_struct/dyn_tail (D29)", fun _ => expectReturn (dynTail false)⟩,
   ⟨"unsized_struct/packed_dyn_tail", fun _ => expectReturn (dynTail true)⟩,
   ⟨"unsize/struct (D30)", fun _ => expectReturn unsizeStruct⟩,
-  ⟨"unsize/upcast (D30)", fun _ => expectReturnValue upcast (.int 9)⟩
+  ⟨"unsize/upcast (D30)", fun _ => expectReturnValue upcast (.int 9)⟩,
+  ⟨"trait_object/wide_metadata_wf", fun _ =>
+    expectIllFormed wideVtableMeta "vtable metadata must be a thin pointer"⟩
 ]
 
 end RyoTest.Unsized

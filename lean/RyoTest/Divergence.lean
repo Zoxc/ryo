@@ -286,6 +286,16 @@ def threadLocal : Program := program do
     assignL 0 (.use (copy ((place q).deref u32)))
     ret
 
+/-- `ThreadLocalRef` gives a thin pointer: a wide destination is ill-formed. -/
+def threadLocalWide : Program := program do
+  let g ← addGlobal { bytes := [some 1, some 0, some 0, some 0], align := Align.ofBytes 4,
+                      kind := .threadLocal }
+  addFn "main" <| body unit [] do
+    let p ← newLocal (rawTo (slice u8))
+    storageLive p
+    assignL p (.threadLocalRef g)
+    ret
+
 def runtimeChecks : Program := mainOnly do
   assumeEq (.runtimeChecks .overflowChecks true) (cbool true)
   assumeEq (.runtimeChecks .ubChecks false) (cbool false)
@@ -359,6 +369,7 @@ def tests : List TestCase := [
   ⟨"D21/use_after_free", fun _ => expectUb (heapProg false) "dead allocation"⟩,
   ⟨"D21/double_free", fun _ => expectUb (heapProg true) "double-free"⟩,
   ⟨"D22/thread_local", fun _ => expectReturnValue threadLocal (.int 3)⟩,
+  ⟨"D22/thread_local_wide", fun _ => expectIllFormed threadLocalWide "ThreadLocalRef"⟩,
   ⟨"D23/runtime_checks", fun _ => expectReturn runtimeChecks⟩,
   ⟨"D24/type_id_ptr", fun _ => expectReturn typeIdPtr⟩,
   ⟨"D27/i128", fun _ => expectReturn i128Ops⟩,
