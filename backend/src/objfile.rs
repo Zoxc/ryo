@@ -98,7 +98,9 @@ pub trait ObjectFormat {
     /// `(start, end, anchor)` with the list's bounds and the registry anchor `anchor`. Every
     /// link unit links its own `ryo_rt` (design/vm.md#several-ryo-runtimes-in-one-process), so
     /// the reference binds to it at link time (hidden on ELF, so it isn't exported either).
-    fn add_registry_ctor(&self, obj: &mut Object<'static>, register: &str, anchor: &str);
+    /// `gdb_scripts` is the contents of an executable's `.debug_gdb_scripts` (ELF only, see
+    /// [`elf_gdb_scripts`]; other targets have none).
+    fn add_registry_ctor(&self, obj: &mut Object<'static>, register: &str, anchor: &str, gdb_scripts: Option<&[u8]>);
     /// Defines the hidden registry anchor `name`, such that several stubs in one link (two
     /// ryo staticlibs in a C program) don't clash: weak, or a COMDAT on PE.
     fn define_anchor(&self, obj: &mut Object<'static>, name: &str) {
@@ -233,7 +235,7 @@ impl ObjectFormat for Elf {
         });
     }
 
-    fn add_registry_ctor(&self, obj: &mut Object<'static>, register: &str, anchor: &str) {
+    fn add_registry_ctor(&self, obj: &mut Object<'static>, register: &str, anchor: &str, gdb_scripts: Option<&[u8]>) {
         let entries = self.entry_section(obj);
         obj.append_section_data(entries, &[0; 8], 8);
         // A hidden reference: it binds to this link unit's own `ryo_rt` at link time.
@@ -265,7 +267,27 @@ impl ObjectFormat for Elf {
         obj.append_section_data(init, &[0; 8], 8);
         let text_sym = obj.section_symbol(text);
         obj.add_relocation(init, Relocation { offset: 0, symbol: text_sym, addend: 0, flags: self.abs64() }).unwrap();
+        if let Some(contents) = gdb_scripts {
+            elf_gdb_scripts(obj, text, contents);
+        }
     }
+}
+
+/// An executable's `.debug_gdb_scripts` with `contents`, as cg_llvm defines it in every CGU
+/// (under the weak `__rustc_debug_gdb_scripts_section__`), and a GC edge to it from `from`:
+/// what cg_ssa's C `main` references it for, which a VM `main` doesn't. Mergeable, as LLVM
+/// writes it, only for a single C string: linkers drop the unreferenced strings of a merged
+/// section (the visualizers after the first).
+fn elf_gdb_scripts(obj: &mut Object<'static>, from: object::write::SectionId, contents: &[u8]) {
+    let cstr = contents.iter().position(|&b| b == 0) == Some(contents.len() - 1);
+    let kind = if cstr { SectionKind::ReadOnlyString } else { SectionKind::ReadOnlyData };
+    let s = obj.add_section(Vec::new(), b".debug_gdb_scripts".to_vec(), kind);
+    obj.append_section_data(s, contents, 1);
+    let name = "__rustc_debug_gdb_scripts_section__";
+    let sym = obj.add_symbol(Symbol { weak: true, ..defined(name, s, 0, contents.len() as u64, SymbolKind::Data, SymbolScope::Dynamic) });
+    // Patches nothing.
+    let flags = RelocationFlags::Elf { r_type: elf::R_X86_64_NONE };
+    obj.add_relocation(from, Relocation { offset: 0, symbol: sym, addend: 0, flags }).unwrap();
 }
 
 /// PE/COFF (x86_64-pc-windows-msvc). Section names use the `$` grouping suffix, so the linker
@@ -346,7 +368,7 @@ impl ObjectFormat for Coff {
         coff_entries(obj, "m")
     }
 
-    fn add_registry_ctor(&self, obj: &mut Object<'static>, register: &str, anchor: &str) {
+    fn add_registry_ctor(&self, obj: &mut Object<'static>, register: &str, anchor: &str, _gdb_scripts: Option<&[u8]>) {
         let start = coff_entries(obj, "a");
         obj.append_section_data(start, &[0; 8], 8);
         let end = coff_entries(obj, "z");
@@ -503,7 +525,7 @@ impl ObjectFormat for MachO {
         s
     }
 
-    fn add_registry_ctor(&self, obj: &mut Object<'static>, register: &str, anchor: &str) {
+    fn add_registry_ctor(&self, obj: &mut Object<'static>, register: &str, anchor: &str, _gdb_scripts: Option<&[u8]>) {
         let entries = self.entry_section(obj);
         obj.append_section_data(entries, &[0; 8], 8);
         // As on ELF, with the bounds ld64 and lld define for `section$start$<seg>$<sect>`;
@@ -810,12 +832,13 @@ fn patch_by_address(bytes: &mut [u8], eh: &str, fields: &[(u64, String, i64, u64
 
 /// The registry stub of one final link: the same for every crate. A constructor registering
 /// the link unit's entry list (each image object's entry), and the hidden
-/// `__ryo_registry_anchor_<tag>`.
-pub fn write_registry(fmt: &dyn ObjectFormat, register: &str) -> Result<Vec<u8>, String> {
+/// `__ryo_registry_anchor_<tag>`; for an executable with debuginfo, `gdb_scripts`
+/// ([`ObjectFormat::add_registry_ctor`]).
+pub fn write_registry(fmt: &dyn ObjectFormat, register: &str, gdb_scripts: Option<&[u8]>) -> Result<Vec<u8>, String> {
     let mut obj = fmt.new_object();
     let anchor = fmt.mangle(&anchor_symbol());
     fmt.define_anchor(&mut obj, &anchor);
-    fmt.add_registry_ctor(&mut obj, register, &anchor);
+    fmt.add_registry_ctor(&mut obj, register, &anchor, gdb_scripts);
     obj.write().map_err(|e| format!("writing the registry object: {e}"))
 }
 
@@ -855,7 +878,8 @@ pub fn write_allocator_shim(fmt: &dyn ObjectFormat, fns: &[ShimFn], visibility: 
 
 #[cfg(test)]
 mod tests {
-    //! The Mach-O objects (and one PE/COFF object, `pe_unwind_handler`), read back with
+    //! The Mach-O objects (and one PE/COFF object, `pe_unwind_handler`, and the ELF registry's
+    //! `.debug_gdb_scripts`, `elf_gdb_scripts`), read back with
     //! `object` (design/platforms.md). Nothing links or runs them here.
     use object::read::macho::MachOFile64;
     use object::read::{Object as _, ObjectSection as _, ObjectSymbol as _, RelocationTarget};
@@ -1147,7 +1171,7 @@ mod tests {
 
     #[test]
     fn registry() {
-        let bytes = write_registry(&fmt(), "ryo_vm_register_t").unwrap();
+        let bytes = write_registry(&fmt(), "ryo_vm_register_t", None).unwrap();
         let file = MachOFile64::<Endianness>::parse(&*bytes).unwrap();
         let init = section(&file, "__mod_init_func");
         let object::SectionFlags::MachO { flags } = init.flags() else { panic!() };
@@ -1180,6 +1204,30 @@ mod tests {
         let anchor = file.symbols().find(|s| s.name() == Ok(&*anchor_name)).unwrap();
         assert_eq!((anchor.scope(), anchor.is_weak()), (SymbolScope::Linkage, true));
         assert_eq!(anchor.section_index(), Some(section(&file, "__data").index()));
+    }
+
+    /// An ELF registry's `.debug_gdb_scripts`: the contents under the weak symbol, kept by a
+    /// patch-free relocation from the constructor, mergeable only as a single C string.
+    #[test]
+    fn elf_gdb_scripts() {
+        use object::read::elf::ElfFile64;
+        for (contents, merge) in [(&b"\x01a.py\0"[..], true), (&b"\x01a.py\0\x04p\nsrc\0"[..], false)] {
+            let bytes = write_registry(&Elf, "ryo_vm_register_t", Some(contents)).unwrap();
+            let file = ElfFile64::<Endianness>::parse(&*bytes).unwrap();
+            let s = file.sections().find(|s| s.name() == Ok(".debug_gdb_scripts")).unwrap();
+            assert_eq!(s.data().unwrap(), contents);
+            let object::SectionFlags::Elf { sh_flags } = s.flags() else { panic!() };
+            let mergeable = u64::from(elf::SHF_ALLOC | elf::SHF_MERGE | elf::SHF_STRINGS);
+            assert_eq!(sh_flags, if merge { mergeable } else { u64::from(elf::SHF_ALLOC) });
+            let sym = file.symbols().find(|s| s.name() == Ok("__rustc_debug_gdb_scripts_section__")).unwrap();
+            assert_eq!((sym.is_weak(), sym.section_index(), sym.address()), (true, Some(s.index()), 0));
+            let text = file.sections().find(|s| s.name() == Ok(".text.ryo_registry")).unwrap();
+            let edge = text.relocations().find(|(_, r)| r.target() == RelocationTarget::Symbol(sym.index())).unwrap().1;
+            assert_eq!(edge.flags(), RelocationFlags::Elf { r_type: elf::R_X86_64_NONE });
+        }
+        let bytes = write_registry(&Elf, "ryo_vm_register_t", None).unwrap();
+        let file = object::read::File::parse(&*bytes).unwrap();
+        assert!(file.sections().all(|s| s.name() != Ok(".debug_gdb_scripts")));
     }
 
     /// The forwarders jump to their targets; the empty function returns. ELF, PE and Mach-O.

@@ -23,6 +23,8 @@ pub struct LinkInfo {
     pub runtime_exports: rustc_data_structures::fx::FxHashSet<String>,
     /// The allocator shim's symbols to export, per crate type ([`crate::alloc_shim::exports`]).
     pub allocator_exports: Vec<(CrateType, Vec<String>)>,
+    /// The contents of an executable's `.debug_gdb_scripts`, if it gets one ([`gdb_scripts`]).
+    pub gdb_scripts: Option<Vec<u8>>,
 }
 
 impl LinkInfo {
@@ -33,8 +35,35 @@ impl LinkInfo {
             register: crate::symbols::rt_symbol(tcx, objfile::REGISTER_SYMBOL),
             runtime_exports: if dylib { crate::symbols::runtime_exports(tcx) } else { Default::default() },
             allocator_exports: crate::alloc_shim::exports(tcx, crate::original_allocator_kind(tcx)),
+            gdb_scripts: gdb_scripts(tcx),
         }
     }
+}
+
+/// The contents of `.debug_gdb_scripts` for an executable, as cg_llvm's
+/// `get_or_insert_gdb_debug_scripts_section_global` builds them, when cg_ssa's C `main` would
+/// reference the section (`create_entry_fn`: debuginfo on, the target emitting it, an entry fn).
+/// The registry object references it instead, for a VM `main` (`objfile::elf_gdb_scripts`).
+fn gdb_scripts(tcx: rustc_middle::ty::TyCtxt<'_>) -> Option<Vec<u8>> {
+    use rustc_hir::attrs::DebuggerVisualizerType;
+    let sess = tcx.sess;
+    if sess.opts.debuginfo == rustc_session::config::DebugInfo::None
+        || !sess.target.emit_debug_gdb_scripts
+        || !tcx.crate_types().contains(&CrateType::Executable)
+        || tcx.entry_fn(()).is_none()
+    {
+        return None;
+    }
+    let mut contents = b"\x01gdb_load_rust_pretty_printers.py\0".to_vec();
+    let visualizers = rustc_codegen_ssa::base::collect_debugger_visualizers_transitive(tcx, DebuggerVisualizerType::GdbPrettyPrinter);
+    let crate_name = tcx.crate_name(rustc_hir::def_id::LOCAL_CRATE);
+    for (index, visualizer) in visualizers.iter().enumerate() {
+        contents.push(4);
+        contents.extend_from_slice(format!("pretty-printer-{crate_name}-{index}\n").as_bytes());
+        contents.extend_from_slice(&visualizer.src);
+        contents.push(0);
+    }
+    Some(contents)
 }
 
 pub fn link(
@@ -132,7 +161,8 @@ fn registry_module(
     let _t = sess.prof.generic_activity("ryo_registry");
     // Every output has a private copy of `ryo_rt`
     // (design/vm.md#several-ryo-runtimes-in-one-process), which the stub calls.
-    let bytes = objfile::write_registry(fmt, &info.register).unwrap_or_else(|e| sess.dcx().fatal(e));
+    let gdb_scripts = info.gdb_scripts.as_deref().filter(|_| crate_type == CrateType::Executable);
+    let bytes = objfile::write_registry(fmt, &info.register, gdb_scripts).unwrap_or_else(|e| sess.dcx().fatal(e));
     let name = format!("{}.ryo_registry.{}", crate_info.local_crate_name, crate_type);
     let path = outputs.temp_path_for_cgu(OutputType::Object, &name);
     write_or_fatal(sess, &path, &bytes);

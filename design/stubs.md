@@ -201,6 +201,11 @@ extern "C" fn main(argc: c_int, argv: *const *const u8) -> c_int {
   certificate (the dumps name it `<C main of {entry fn}>`).
 - If the entry fn stays native, so does the C `main`: the wrapper is dropped and cg_ssa
   emits its own. The wrapper failing to lower while the entry fn is VM code is a fatal error.
+- cg_ssa's wrapper also references `__rustc_debug_gdb_scripts_section__` (gdb's pretty
+  printers and `#[debugger_visualizer]` scripts), which cg_llvm defines unreferenced in every
+  CGU with debuginfo. The registry object of an executable with an entry fn and debuginfo
+  references it instead, whoever's `main` it gets, defining its own copy for a link without
+  native CGUs (`link::gdb_scripts`, `objfile::elf_gdb_scripts`; ELF only, as rustc).
 - `#[no_main]` crates and `-Zcrate-attr=no_main` skip this, exactly like cg_ssa.
 
 ## Calls between VM and native code
