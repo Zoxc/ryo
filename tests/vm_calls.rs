@@ -86,6 +86,17 @@ fn may_panic(fail: bool) -> u32 {
     v[i]
 }
 
+/// Defined and called under a verbatim (`\x01`) symbol name: no Mach-O `_` on either side.
+#[unsafe(export_name = "\x01ryo_test_verbatim_fn")]
+pub extern "C" fn verbatim(x: u32) -> u32 {
+    x + 1
+}
+
+unsafe extern "C" {
+    #[link_name = "\x01ryo_test_verbatim_fn"]
+    fn verbatim_by_name(x: u32) -> u32;
+}
+
 fn main() {
     println!("{:?}", add(P { x: 1, y: 2 }, black_box(P { x: 10, y: 20 })));
     println!("{:?}", swap(black_box((1, 2, -3))));
@@ -103,4 +114,5 @@ fn main() {
     println!("caught: {}", r.is_err());
     let s = String::from("abc") + &"def".repeat(2);
     println!("{s} {}", s.len());
+    println!("{}", unsafe { verbatim_by_name(black_box(41)) });
 }

@@ -625,6 +625,15 @@ fn coff_entries(obj: &mut Object<'static>, suffix: &str) -> object::write::Secti
     obj.add_section(Vec::new(), format!(".ryo${}{suffix}", ryo_bytecode::ABI_TAG).into_bytes(), SectionKind::ReadOnlyData)
 }
 
+/// The object-file name of the symbol `name` (as rustc names it): a leading `\x01` (LLVM's
+/// marker) means the rest verbatim, without `fmt`'s mangling (no Mach-O `_`).
+fn object_name(fmt: &dyn ObjectFormat, name: &str) -> String {
+    match name.strip_prefix('\x01') {
+        Some(n) => n.to_owned(),
+        None => fmt.mangle(name),
+    }
+}
+
 /// The image object: the image sections, `__ryo_image_<id>_<cgu>` at the start of the
 /// read-only one, a symbol per VM function (global for those native code calls by name), its
 /// registration entry (a pointer to the header), and a reference to the registry anchor. On Mach-O also
@@ -641,7 +650,7 @@ pub fn write_image(fmt: &dyn ObjectFormat, image: &ImageObject, rt_symbol: &dyn 
     let text = fmt.text_section(&mut obj);
     obj.append_section_data(text, &image.text, 16);
     for f in &image.functions {
-        let name = fmt.mangle(&f.name);
+        let name = object_name(fmt, &f.name);
         match f.symbol {
             Some(sym) => fmt.global_function(&mut obj, &name, text, f.start as u64, f.eh.len as u64, sym),
             None => fmt.local_function(&mut obj, &name, text, f.start as u64, f.eh.len as u64),
@@ -677,17 +686,10 @@ pub fn write_image(fmt: &dyn ObjectFormat, image: &ImageObject, rt_symbol: &dyn 
         .symbols
         .iter()
         .map(|s| {
-            // `\x01`: the name verbatim, as LLVM has it (no Mach-O `_`).
-            let (name, verbatim) = match s.name.strip_prefix('\x01') {
-                Some(n) => (n, true),
-                None => (&s.name[..], false),
-            };
             let name = if s.flags & SYM_INDIRECT != 0 {
-                fmt.mangle(&fmt.import_slot(name)?)
-            } else if verbatim {
-                name.to_owned()
+                fmt.mangle(&fmt.import_slot(s.name.strip_prefix('\x01').unwrap_or(&s.name))?)
             } else {
-                fmt.mangle(name)
+                object_name(fmt, &s.name)
             };
             Ok(*unknown.entry(name).or_insert_with_key(|name| undefined(&mut obj, name, SymbolKind::Unknown)))
         })
@@ -979,6 +981,27 @@ mod tests {
             }
         }
         assert_eq!(build, Some((macho::PLATFORM_MACOS, 0x000a_0c00)));
+    }
+
+    /// A `\x01` name (LLVM's verbatim marker) is written without the marker and without the
+    /// `_` prefix, both where a function is defined and where it is referenced.
+    #[test]
+    fn verbatim_names() {
+        let mut w = ImageWriter::new(SCID);
+        w.set_cgu_hash(CGU);
+        w.set_eh_pointers(ryo_bytecode::image::EhPointers::Abs8);
+        let ext = w.symbol("\x01verbatim_ext", 0);
+        let mut c = CodeBuf::default();
+        c.emit(&Insn::CallSym { d: Slot(-16), sym: ext, k: 8, a: List::from_words(&[]) });
+        c.emit(&Insn::Ret { s: Slot(0), k: 0 });
+        let symbol = Some(FuncSymbol { visibility: SymVisibility::Default, weak: false });
+        w.add_function(FunctionDef { name: "\x01verbatim_def".into(), code: c.words, frame_size: 16, symbol, ..Default::default() });
+        let bytes = written(&w.finish(MODE).expect("image"));
+        let file = MachOFile64::<Endianness>::parse(&*bytes).unwrap();
+        let sym = |name: &str| file.symbols().find(|s| s.name() == Ok(name)).unwrap_or_else(|| panic!("no symbol {name}"));
+        assert!(!sym("verbatim_def").is_undefined());
+        assert!(sym("verbatim_ext").is_undefined());
+        assert!(file.symbols().all(|s| !s.name().unwrap().contains('\x01')));
     }
 
     /// Every image relocation outside `__eh_frame` becomes an extern relocation of the
