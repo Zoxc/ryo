@@ -186,9 +186,10 @@ mutual
 /-- The shape part of `check_value`. Weaker than its memory-independent part: besides pointer
 dereferenceability (which needs memory), it skips the pointer checks (`checkPtr`'s address
 limit, non-null, alignment, inhabited pointee and `ISIZE_MAX` size bound for safe pointers,
-`checkPtrMetadata`'s slice length and vtable address bounds, the vtable's validity): for a
-pointer it checks only the address's range and the metadata's kind and, for an enum with `EnumRepr.single i`, that the variant is `i`. So a
-`WfValue` need not encode. -/
+`checkPtrMetadata`'s slice length and vtable address bounds, the vtable's validity), so for a
+pointer it checks only the address's range and the metadata's kind; and for an enum with
+`EnumRepr.single i` it skips the check that the variant is `i`. So a `WfValue` need not
+encode. -/
 def Value.wfShape : Value → Ty → Bool
   | .int i, .int t r => t.canRepresent i && r.contains (t.toBits i)
   | .int i, .char => 0 ≤ i && isUnicodeScalar i.toNat
