@@ -10,7 +10,7 @@ use rustc_middle::ty::TyCtxt;
 use rustc_span::{Pos, Span};
 use ryo_bytecode::image::SrcLoc;
 
-use super::{FnCx, no_trim};
+use super::FnCx;
 
 /// A function's location runs, by `(span, scope)`.
 pub struct Locs {
@@ -57,10 +57,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             match inlined {
                 Some(s) => {
                     let (callee, call_span) = scopes[s].inlined.expect("an inlined scope");
-                    // With the crate's name, as DWARF's namespaces give it.
-                    let id = callee.def_id();
-                    let path = no_trim(|| self.tcx.def_path_str(id));
-                    let name = if id.is_local() { format!("{}::{path}", self.tcx.crate_name(id.krate)) } else { path };
+                    // Its symbol name, as cg_llvm's linkage name on the inlined subprogram
+                    // (without a `LocalCopy` suffix): the symbolizer demangles it.
+                    let name = crate::original_symbol_name(self.tcx, self.mono(callee)).name.to_owned();
                     run.push(self.src_loc(span, Some(name)));
                     span = call_span;
                     match scopes[s].parent_scope {

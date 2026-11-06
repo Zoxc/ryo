@@ -856,7 +856,8 @@ see only symbols.
   location of what it emits (`lower/loc.rs`, `Asm::set_loc`); every call among it (VM call,
   island, handler call) starts a location run where the location differs from the last
   run's. A run is the list entries at one position, innermost first: one per scope rustc's
-  MIR inliner folded in (the inlined function's path, with the span inside it; walked by
+  MIR inliner folded in (the inlined instance's symbol name, which the symbolizer demangles
+  as it does cg_llvm's linkage names, with the span inside it; walked by
   `inlined_parent_scope`), then the function's own. Spans are collapsed to their macro call
   site, columns are bytes (none on MSVC) and file names are the embeddable names joined to
   their working directory, as cg_llvm's debuginfo has them. A return

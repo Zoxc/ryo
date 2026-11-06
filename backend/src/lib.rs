@@ -135,6 +135,11 @@ fn symbol_name<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> ty::SymbolN
     symbols::symbol_name(tcx, instance, || (originals().symbol_name)(tcx, instance))
 }
 
+/// `instance`'s symbol as rustc names it, without our `LocalCopy` suffix (`symbols::symbol_name`).
+fn original_symbol_name<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>) -> ty::SymbolName<'tcx> {
+    (originals().symbol_name)(tcx, instance)
+}
+
 fn exported_generic_symbols<'tcx>(tcx: TyCtxt<'tcx>, krate: LocalCrate) -> &'tcx [(ExportedSymbol<'tcx>, SymbolExportInfo)] {
     exports::exported_generic_symbols(tcx, (originals().exported_generic_symbols)(tcx, krate))
 }

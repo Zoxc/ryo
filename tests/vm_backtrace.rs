@@ -2,7 +2,7 @@
 //! of VM functions (their unwind information and symbols) into native frames. The guard's
 //! drop, which runs in `outer`'s landing pad while the panic unwinds, captures one of its own.
 //! Built with line tables against the ryo sysroot, the frames have source locations, `helper`
-//! (MIR-inlined into `mid`) and `via` (which the JIT inlines, but not the MIR inliner) as
+//! (a trait method MIR-inlined into `mid`, named by its symbol as cg_llvm's would be) and `via` (which the JIT inlines, but not the MIR inliner) as
 //! frames of their own; the `@name` comments mark the lines the check expects.
 #![feature(rustc_attrs)]
 #![allow(internal_features)]
@@ -29,15 +29,22 @@ fn via(x: u32) -> u32 {
     inner(x) + 3 // @via
 }
 
-#[inline]
-fn helper(x: u32) -> u32 {
-    via(x) + 1 // @helper
+trait Help {
+    fn helper(&self, x: u32) -> u32;
+}
+
+struct H;
+impl Help for H {
+    #[inline]
+    fn helper(&self, x: u32) -> u32 {
+        via(x) + 1 // @helper
+    }
 }
 
 /// Calls `via` at a site without a landing pad, where the JIT inlines it.
 #[inline(never)]
 fn mid(x: u32) -> u32 {
-    helper(x) * 2 // @mid
+    H.helper(x) * 2 // @mid
 }
 
 #[inline(never)]

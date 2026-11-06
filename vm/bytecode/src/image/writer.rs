@@ -105,7 +105,7 @@ pub struct SrcLoc {
     pub file: String,
     pub line: u32,
     pub col: u32,
-    /// For a frame the MIR inliner folded in, the inlined function's name.
+    /// For a frame the MIR inliner folded in, the inlined instance's symbol (mangled).
     pub inlined: Option<String>,
 }
 

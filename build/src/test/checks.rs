@@ -244,8 +244,9 @@ fn backtrace_oracle(rustc_ryo: &Path, src: &Path, out: &Path, cases: &[&[&str]])
 
 /// The `backtrace` check's ryo sysroot part (design/vm.md#source-locations): with line
 /// tables and MIR inlining, std's backtraces give each VM frame's source location, AOT and
-/// JIT (with shuffled frames too), `helper` as an inlined frame of `outer`'s, and the panic
-/// hook's short backtrace starts and ends at its markers (VM or JIT code here).
+/// JIT (with shuffled frames too), `helper` as an inlined frame of `mid`'s (by its demangled
+/// symbol), and the panic hook's short backtrace starts and ends at its markers (VM or JIT
+/// code here).
 fn backtrace_lines(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
     let text = crate::utils::read(src)?;
     let line = |name: &str| text.lines().position(|l| l.ends_with(&format!("// @{name}"))).map(|i| i + 1).ok_or(format!("no `// @{name}` line"));
@@ -261,7 +262,7 @@ fn backtrace_lines(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), Strin
         &l_inner,
         "vm_backtrace::via",
         &l_via,
-        "vm_backtrace::helper",
+        "<vm_backtrace::H as vm_backtrace::Help>::helper",
         &l_helper,
         "vm_backtrace::mid",
         &l_mid,
