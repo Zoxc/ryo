@@ -72,7 +72,8 @@ pub trait Env {
     /// The target to call `t` (a function of image `img` or one of its symbols) by in the
     /// unit: the JIT's call forms (a function operand with an [`crate::asm::FUNC_KINDS`] bit,
     /// through a call slot, directly, or through `r11`), or a call of the root itself. For
-    /// the root's image, `None` keeps `t`, as for the root's calls of itself.
+    /// the root's image, `None` keeps `t`, as for the root's calls of itself as a function
+    /// (one through a symbol becomes one as a function: emit has no tail call through one).
     fn retarget(&mut self, img: ImageId, t: CallTarget) -> Option<CallTarget>;
     /// The address of `r` (a constant, data area offset, symbol slot or code constant) of image `img`, and for a symbol the value its slot holds (filled before any
     /// VM code runs, and never again).

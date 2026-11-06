@@ -153,8 +153,9 @@ impl jit::inline::Env for InlineEnv<'_> {
             _ => return None,
         };
         if c == Callee::Vm(self.header, self.root) {
-            // The root's own calls of itself stay; another image's become direct ones.
-            return (img != self.header).then_some(CallTarget::Func(Func(self.root)));
+            // The root's own calls of itself by function stay; another image's, and calls
+            // through a symbol (a devirtualized `become` of itself, say), become direct ones.
+            return (img != self.header || matches!(t, CallTarget::Sym(_))).then_some(CallTarget::Func(Func(self.root)));
         }
         let op = callee(self.place, c, name, &mut self.ext, &mut self.memo);
         if let Callee::Vm(h, g) = c {
