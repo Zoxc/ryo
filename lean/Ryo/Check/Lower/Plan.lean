@@ -16,7 +16,8 @@ scalar), which `scalarSext` reads (`AbiScalar.sext`), and a `Direct` C integer u
 it is taken as `zeroext`. A C-variadic call's `al` load (`ARG_RAX`) and Win64's duplicated
 integer pair of variadic `xmm` pieces are not plan entries (the certificate's plan doesn't
 list them either): `CertCheck.passArgs` adds them to the expected argument list, given the
-fixed input count the dump gives (`FnAbiSummary.fixed`). Not covered: that a C-variadic
+fixed input count the dump gives (`FnAbiSummary.fixed`); without a usable dump the call is
+counted unverified when its list fits the suffix of some fixed count. Not covered: that a C-variadic
 fn's *definition* stays native. The lowering check (`CertCheck.lean`) compares
 these with the certificate's plans; a mode the backend leaves native (`NeedsNative`) is an
 error here (`Except.error` with `sig.rs`'s reason).

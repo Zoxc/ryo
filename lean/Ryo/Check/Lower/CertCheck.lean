@@ -38,7 +38,9 @@ Per object:
   register words are what `call.rs`'s `pass_args` builds from the plan (registers, integer
   sizes rounded up to a power of two, `ARG_ADDR` for by-address pieces; tail calls pass the
   incoming sret and `Indirect` pointers, whose slots the certificate gives; the other slots are
-  homes, unknown here, but one input's pieces must share one). The fixed signatures of
+  homes, unknown here, but one input's pieces must share one). A C-variadic call's suffix
+  needs its fixed input count from the dump ((ii) below); without it, a list that fits only
+  with the suffix of some fixed count is counted unverified, not rejected. The fixed signatures of
   `virtualDrop` (`unsafe fn(*mut ())`) and `threadLocal` (no arguments, a pointer back).
   The plan is then **verified** by
   (i) the callee's `FuncEntry` for a `Ref.func` callee (`arg_size = stackSize`, `ret_kind`,
@@ -469,17 +471,27 @@ def checkFunc (c : Ctx) (i : Nat) (d : Decoded) (fc : FuncCert) : FuncCheck := I
     let ws := match opnd op ops "a" with
       | some (.words ws) => ws
       | _ => []
-    -- A C-variadic call's fixed input count, from the dumped ABI of the terminator the call
-    -- is alone in (as for (ii) below).
-    let variadic : Option Nat := match body, termOf[k]? with
+    -- The dumped ABI of the terminator the call is alone in (for (ii) below), and from it a
+    -- C-variadic call's fixed input count.
+    let dumped := match body, termOf[k]? with
       | some b, some bi =>
         if termCalls.getD bi 0 == 1 && fc.blocks.size == b.blocks.size then
-          (termAbi c.prog b.blocks[bi]!.term).bind (·.fixed)
+          termAbi c.prog b.blocks[bi]!.term
         else none
       | _, _ => none
+    let variadic : Option Nat := dumped.bind (·.fixed)
+    -- Without that count (no usable dump), the plan doesn't say whether the callee is
+    -- C-variadic: a list that only fits with the suffix of some fixed count is a gap.
+    let mut variadicGap := false
     match passArgs fc plan csret cc.kind.tail c.pe variadic with
     | .error e => r := err r s!"call at {k}: {e}"
-    | .ok want => if let some e := checkArgList ws want then r := err r s!"call at {k}: {e}"
+    | .ok want =>
+      if let some e := checkArgList ws want then
+        let fits (n : Nat) := match passArgs fc plan csret cc.kind.tail c.pe (some n) with
+          | .ok w => (checkArgList ws w).isNone
+          | .error _ => false
+        if dumped.isNone && (List.range (plan.locs.length + 1)).any fits then variadicGap := true
+        else r := err r s!"call at {k}: {e}"
     -- (i) The callee's entry.
     let mut byEntry := false
     if let some (.func j) := opnd op ops "f" then
@@ -495,19 +507,17 @@ def checkFunc (c : Ctx) (i : Nat) (d : Decoded) (fc : FuncCert) : FuncCheck := I
         byEntry := r.errors.size == n1
     -- (ii) The dumped ABI of the terminator the call is alone in.
     let mut byAbi := false
-    if let (some b, some bi) := (body, termOf[k]?) then
-      if termCalls.getD bi 0 == 1 && fc.blocks.size == b.blocks.size then
-        if let some abi := termAbi c.prog b.blocks[bi]!.term then
-          match sigOf c.pe abi with
-          | .error e => r := err r s!"call at {k}: the dumped ABI has no plan: {e}"
-          | .ok (rk, p) =>
-            let n1 := r.errors.size
-            if rk != cc.retKind then r := err r s!"call at {k}: return kind {cc.retKind}, the dumped ABI's {rk}"
-            if p != plan then r := err r s!"call at {k}: plan {plan.text}, the dumped ABI's {p.text}"
-            if abi.ret.size != cc.retSize then r := err r s!"call at {k}: return size {cc.retSize}, the dumped ABI's {abi.ret.size}"
-            byAbi := r.errors.size == n1
+    if let some abi := dumped then
+      match sigOf c.pe abi with
+      | .error e => r := err r s!"call at {k}: the dumped ABI has no plan: {e}"
+      | .ok (rk, p) =>
+        let n1 := r.errors.size
+        if rk != cc.retKind then r := err r s!"call at {k}: return kind {cc.retKind}, the dumped ABI's {rk}"
+        if p != plan then r := err r s!"call at {k}: plan {plan.text}, the dumped ABI's {p.text}"
+        if abi.ret.size != cc.retSize then r := err r s!"call at {k}: return size {cc.retSize}, the dumped ABI's {abi.ret.size}"
+        byAbi := r.errors.size == n1
     -- (ii) first: it also gives the call's facts (`Cert.facts`), where (i) gives none.
-    let v := if r.errors.size != n0 then Verified.none else if byAbi then .abi else if byEntry then .entry else .none
+    let v := if r.errors.size != n0 || variadicGap then Verified.none else if byAbi then .abi else if byEntry then .entry else .none
     r := { r with calls := r.calls.push (cc, v) }
   -- Escape coverage.
   let (ac, aerrs) := checkAddrs d o.image.mode ((fc.locals.filter (·.size == 0)).toList.map (·.off))
