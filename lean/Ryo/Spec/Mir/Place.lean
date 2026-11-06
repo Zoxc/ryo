@@ -112,8 +112,10 @@ def projectPlace (pl : Place) (ty : Ty) : ProjElem → SemM (Place × Ty)
     if i ≥ n then throwUb "access to out-of-bounds index"
     let q ← ptrOffsetInbounds pl.ptr.thin (i * e.size)
     pure ({ pl with ptr := q.widen }, e)
-  | .constantIndex off _ fromEnd => do
+  | .constantIndex off minLen fromEnd => do
     let (e, n, _) ← elemsOf pl ty
+    -- Miri `project_constant_index`: a length below `min_length` is UB (`BoundsCheckFailed`)
+    if n < minLen then throwUb "access to out-of-bounds index: the length is below min_length"
     let i : Int := if fromEnd then (n : Int) - off else off
     if i < 0 || i ≥ n then throwUb "access to out-of-bounds index"
     let q ← ptrOffsetInbounds pl.ptr.thin (i * e.size)

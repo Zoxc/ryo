@@ -206,6 +206,21 @@ def sliceIndexOob : Program := mainOnly do
   let _ ← tmp u32 (.use (copy (((place sl).deref (slice u32)).index i)))
   ret
 
+/-- `ConstantIndex { offset, min_length, from_end }` on a slice of length 2: `min_length` 3 is
+UB (Miri `BoundsCheckFailed`) even though the offset is in bounds; `offset ≥ min_length` is
+ill-formed. -/
+def constantIndexMinLen (off : Nat) : Program := mainOnly do
+  let arr ← newLocal (array u32 3)
+  storageLive arr
+  assignL arr (.aggregate .array [cint u32 10, cint u32 20, cint u32 30])
+  let s ← sliceOf arr u32 2
+  let sl ← newLocal (refTo (slice u32))
+  storageLive sl
+  assignL sl (.cast .transmute s (refTo (slice u32)))
+  assumeEq (copy (((place sl).deref (slice u32)).proj1 (.constantIndex off 3 false)))
+    (cint u32 10)
+  ret
+
 def largeRawSlice (asRef : Bool) : Program := mainOnly do
   let arr ← newLocal (array u32 1)
   storageLive arr
@@ -268,6 +283,10 @@ def tests : List TestCase := [
   ⟨"raw_eq/uninit", fun _ => expectUb (rawEq false 0 false) "raw_eq: uninitialized bytes"⟩,
   ⟨"slice/construct_index_subslice", fun _ => expectReturn constructSlice⟩,
   ⟨"slice/index_oob", fun _ => expectUb sliceIndexOob "access to out-of-bounds index"⟩,
+  ⟨"slice/constant_index_min_length", fun _ =>
+    expectUb (constantIndexMinLen 0) "the length is below min_length"⟩,
+  ⟨"slice/constant_index_offset_wf", fun _ =>
+    expectIllFormed (constantIndexMinLen 3) "ConstantIndex"⟩,
   ⟨"slice/large_raw", fun _ => expectReturn (largeRawSlice false)⟩,
   ⟨"slice/too_large_ref", fun _ =>
     expectUb (largeRawSlice true) "Value::Ptr: total size exceeds isize::MAX"⟩,

@@ -99,7 +99,10 @@ def projTy (b : Body) (ty : Ty) : ProjElem → WfM Ty
     match ty with
     | .array e _ | .slice e => pure e
     | _ => throw "Index of a non-indexable type"
-  | .constantIndex .. =>
+  | .constantIndex off minLen fromEnd => do
+    -- Miri `project_constant_index`'s assertions
+    ensure (if fromEnd then 0 < off && off ≤ minLen else off < minLen)
+      "ConstantIndex: offset out of range of min_length"
     match ty with
     | .array e _ | .slice e => pure e
     | _ => throw "ConstantIndex of a non-indexable type"
