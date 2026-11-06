@@ -1203,6 +1203,8 @@ pub(super) fn reject_unsupported(rustc_ryo: &Path, src: &Path, out: &Path) -> Re
         (&["-Ctarget-feature=+retpoline-indirect-calls"], "retpoline-indirect-calls"),
         (&["-Ctarget-feature=+sse2,+lvi-cfi"], "lvi-cfi"),
         (&["-Ctarget-feature=+harden-sls-ret"], "harden-sls-ret"),
+        // LLVM doesn't trim entries: `-x ` names no feature, so retpoline stays on.
+        (&["-Ctarget-feature=+retpoline-indirect-calls,-retpoline-indirect-calls "], "retpoline-indirect-calls"),
         (&["-Zfunction-return=thunk-extern"], "-Zfunction-return"),
         (&["-Zindirect-branch-cs-prefix"], "-Zindirect-branch-cs-prefix"),
         (&["--target=aarch64-unknown-linux-gnu"], "x86_64"),

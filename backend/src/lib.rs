@@ -457,7 +457,8 @@ fn unsupported_features(sess: &Session) -> Option<String> {
     // LLVM's Spectre and LVI hardening, which rustc passes to LLVM by their LLVM names (it
     // only warns that they aren't Rust features): VM code would silently lack it, as with
     // `-Zretpoline`. The target's features, then `-Ctarget-feature`, then
-    // `-Zllvm-target-feature` (which cg_llvm appends last); the last sign wins.
+    // `-Zllvm-target-feature` (which cg_llvm appends last); the last sign wins. Entries are
+    // matched untrimmed, as rustc and LLVM do: ` +x` lacks a prefix and `-x ` names no feature.
     const HARDENING: [&str; 9] = [
         "retpoline",
         "retpoline-indirect-calls",
@@ -472,7 +473,6 @@ fn unsupported_features(sess: &Session) -> Option<String> {
     let mut on: Vec<&str> = Vec::new();
     let lists = [&*sess.target.features, &sess.opts.cg.target_feature, &sess.opts.unstable_opts.llvm_target_feature];
     for f in lists.into_iter().flat_map(|l| l.split(',')) {
-        let f = f.trim();
         let (enable, name) = match f.split_at_checked(1) {
             Some(("+", n)) => (true, n),
             Some(("-", n)) => (false, n),
