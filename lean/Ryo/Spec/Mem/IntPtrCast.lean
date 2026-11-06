@@ -4,7 +4,9 @@ Ryo.Spec.Mem.IntPtrCast — exposed provenance.
 Ports: MiniRust `mem/intptrcast.md` (`IntPtrCast`, `expose`, `int2ptr`).
 
 D11: kept as in MiniRust. `ptrFromInt` asks the oracle for the provenance (angelic `predict`):
-the answer must be `none` or an exposed allocation; anything else is `noBehavior`. The
+the answer must be `none` or an exposed allocation; any other answer is taken as `none`, so
+that an angelic answer never ends a run in `noBehavior` (which `Behaviors` reserves for
+daemonic answers: a run with a bad angelic answer is the run with `none`). The
 executable oracle answers with the live exposed allocation containing the address, as Miri
 does, except that it also accepts one-past-the-end (`containsAddr`, preferring an allocation
 strictly containing the address), where Miri gives no provenance: a legitimate angelic
@@ -32,8 +34,8 @@ def ptrFromInt {m : Type → Type} [Monad m] [MonadExceptOf Outcome m] [MonadCho
   match prov with
   | none => pure ⟨addr, none⟩
   | some id =>
-    if s.exposed.contains id then pure ⟨addr, some id⟩
-    else throwNoBehavior "int-to-ptr cast picked a provenance that was never exposed"
+    -- an allocation never exposed (MiniRust's `predict` never picks it) is taken as `none`
+    if s.exposed.contains id then pure ⟨addr, some id⟩ else pure ⟨addr, none⟩
 
 end IntPtrCast
 

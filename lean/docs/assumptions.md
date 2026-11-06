@@ -178,7 +178,7 @@ concrete oracle (`concreteOracle`, Interp.lean:26) answers:
 | Choice | Kind | Constraint (checked by) | Bad answer | `concreteOracle` |
 |---|---|---|---|---|
 | `allocAddr size align` | daemonic | `Memory.addrOk`: non-zero, aligned, `addr + size < 2^64`, no overlap with a live non-empty allocation (D8, D26) | `noBehavior` | bump allocator from `0x10000`, one byte gap |
-| `exposedProv addr` | angelic | `none` or an exposed `AllocId` (`IntPtrCast.ptrFromInt`) | `noBehavior` | the live exposed allocation containing `addr`, preferring one where it is not one-past-the-end (Miri) |
+| `exposedProv addr` | angelic | `none` or an exposed `AllocId` (`IntPtrCast.ptrFromInt`) | taken as `none` (so `noBehavior` stops come from daemonic answers only, `Behaviors`) | the live exposed allocation containing `addr`, preferring one where it is not one-past-the-end (Miri) |
 | `nanBits fmt cands` | daemonic | answer in `cands` (`resolveFloat`) | `noBehavior` | the first candidate: the positive canonical quiet NaN |
 | `constCopy g n` | daemonic | any `Nat` (`< n` reuses a copy, else a fresh copy) | none | `0` (first copy) |
 | `fnAddr i n` | daemonic | as `constCopy` | none | `0` |

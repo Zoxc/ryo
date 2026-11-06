@@ -131,15 +131,14 @@ def Behavior.isGoesWrong : Behavior → Bool
   | _ => false
 
 /-- The behaviors of a program in environments allowed by `spec` (mir-spec §A.4, §A.6): UB
-only counts if no angelic choice avoids it. An alternative whose run has no behavior (it
-ends in `noBehavior`: an invalid angelic answer, such as an `exposedProv` allocation that was
-never exposed, which MiniRust's `predict` never gives) avoids nothing. `Behaviors .none` are
-the shim-only behaviors. -/
+only counts if no angelic choice avoids it: every alternative with the same daemonic answers
+goes wrong. Angelic answers never end a run in `noBehavior` (an invalid `exposedProv` answer
+is taken as `none`, `IntPtrCast.ptrFromInt`), so an alternative that ends there met a bad
+daemonic answer of `o` and avoids the UB: `o` must answer validly on the alternatives' paths
+too. `Behaviors .none` are the shim-only behaviors. -/
 def Behaviors (spec : ExtSpec) (p : Program) (args : List (Value × Ty)) (b : Behavior) : Prop :=
   ∃ o, o.respects spec ∧ RunsTo p args o b ∧
-    (b.isGoesWrong → ∀ o', o'.sameDaemonic o →
-      (∃ tr m, RunsTo p args o' (.goesWrong tr m)) ∨
-      ∃ n msg, (runN o' p args n).result = .error (.noBehavior msg))
+    (b.isGoesWrong → ∀ o', o'.sameDaemonic o → ∃ tr m, RunsTo p args o' (.goesWrong tr m))
 
 /-- `tr` is a prefix of the behavior's trace. -/
 def Behavior.hasPrefix (tr : List Event) : Behavior → Prop

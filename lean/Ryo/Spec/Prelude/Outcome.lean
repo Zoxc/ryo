@@ -6,9 +6,8 @@ Ports: MiniRust `prelude/main.md` (`TerminationInfo`).
 Differences: no `Deadlock` (single thread, D17) and no `MemoryLeak` (leaks are not checked:
 the heap is external, D21). `MachineStop` is `exit code` (the `exit` shim, mir-spec §A.6).
 Added:
-- `noBehavior`: a choice was answered outside its constraint (mir-spec §A.4): a daemonic
-  one, or an invalid angelic answer (`exposedProv`), which `Behaviors` doesn't count as
-  avoiding UB; not a program behavior.
+- `noBehavior`: a daemonic choice was answered outside its constraint (mir-spec §A.4); not a
+  program behavior. (An invalid angelic `exposedProv` answer is taken as `none` instead.)
 - `stackOverflow` (D25).
 - `outOfFuel`: interpreter-only; not part of the semantics.
 -/
@@ -25,7 +24,7 @@ inductive Outcome where
   | exit (code : Int)
   /-- The program (or its dump) is ill-formed, or the spec hit a case it rules out. -/
   | illFormed (msg : String)
-  /-- A choice (daemonic, or angelic `exposedProv`) was answered outside its constraint. -/
+  /-- A daemonic choice was answered outside its constraint. -/
   | noBehavior (msg : String)
   /-- The stack overflowed (D25). -/
   | stackOverflow
