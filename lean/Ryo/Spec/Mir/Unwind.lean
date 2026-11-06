@@ -12,7 +12,8 @@ mir-spec §A.6): a call ends with `ret v` or `unwind payload`. In the caller the
   `UnwindResume` continues unwinding with it);
 - `Unreachable`: UB;
 - `Terminate reason`: call the reason's lang item (`panic_cannot_unwind`/`panic_in_cleanup`),
-  which must not return or unwind (either aborts); without the lang item: abort.
+  which must not return or unwind (either aborts); an external one is recorded as an
+  `extCall` before the abort; without the lang item: abort.
 `catch_unwind(try, data, catch)` calls `try(data)`; if it unwinds, `catch(data, payload)` is
 called; the intrinsic returns 0, or 1 after a caught unwind (rustc `codegen_gnu_try`).
 Unwinding out of the bottom frame ends the run with `Final.unwound`.
@@ -54,9 +55,14 @@ def callTerminate (r : TerminateReason) : SemM Unit := do
     | .inCleanup => p.langItems.panicInCleanup
   match item with
   | some i =>
-    match p.body? i with
-    | some b => callBody i b .terminate [] none none none
-    | none => throw .abort
+    match p.instances[i]? with
+    | some ⟨_, .body b⟩ => callBody i b .terminate [] none none none
+    -- an external lang item (std's, in a dump): the program calls it, so the trace records
+    -- the call; it never returns (`docs/assumptions.md`), so the run aborts
+    | some ⟨sym, .ext⟩ => do
+      emit (.extCall sym [] (.ret unitValue))
+      throw .abort
+    | _ => throwIllFormed "terminate lang item is not a function"
   | none => throw .abort
 
 -- [D18]

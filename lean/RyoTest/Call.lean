@@ -244,6 +244,20 @@ def reachTerminate (withLangItem : Bool) : Program := program do
     callUnit (.inst p) [] (unwind := .cleanup cleanup)
     ret
 
+/-- The same with an external `panic_in_cleanup` (std's in a dump): the trace records the call
+before the abort. -/
+def reachTerminateExt : Program := program do
+  let r ← rt
+  let p ← panicFn r
+  let inCleanup ← addExtern "panic_in_cleanup"
+  modify fun s => { s with langItems := { panicInCleanup := some inCleanup } }
+  addFn "main" <| body unit [] do
+    let cleanup ← cleanupBlock do
+      callUnit (.inst p) [] (unwind := .terminate .inCleanup)
+      term .unwindResume
+    callUnit (.inst p) [] (unwind := .cleanup cleanup)
+    ret
+
 def abortInCleanup : Program := program do
   let r ← rt
   addFn "main" <| body unit [] do
@@ -409,6 +423,12 @@ def tests : List TestCase := [
   ⟨"unwinding/reach_terminate (D18)", fun _ =>
     expectPrinted (reachTerminate true) [99] (fun r => r.result matches .error .abort)⟩,
   ⟨"unwinding/terminate_without_lang_item (D18)", fun _ => expectAbort (reachTerminate false)⟩,
+  ⟨"unwinding/terminate_ext_lang_item (D18)", fun _ =>
+    let r := run reachTerminateExt
+    if !(r.result matches .error .abort) then .error s!"expected abort, got {describe r}"
+    else match r.events.back? with
+      | some (.extCall "panic_in_cleanup" [] _) => .ok ()
+      | e => .error s!"expected a final call of panic_in_cleanup, got {repr e}"⟩,
   ⟨"unwinding/abort_in_cleanup", fun _ => expectAbort abortInCleanup⟩,
   ⟨"unwinding/recursive", fun _ =>
     expectPrinted unwindRecursive [6, 5, 4, 3, 2, 1, 0, 1, 2, 3, 4, 5, 6]
