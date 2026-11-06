@@ -295,6 +295,13 @@ def unwindOut : TestCase := ⟨"rsem/unwind out", fun _ => do
   | .ok f => throw s!"ended with {f.text}"
   | .error h => throw (haltText h)⟩
 
+/-- On PE, function 0's cleanup pad (the pad region) calls function 2, whose escaped object
+needs a frame address: the callee's frame lies below the caller's, not at address 0. -/
+def padCaller : Code := { code (frame := 48) [
+    nat "imm.w64" [sl (-24), im 1234], call 0 1 0 [(-24, reg 0)], ret 0 0,
+    call (-32) 2 8 [], ret (-32) 8]
+    (cleanup := [(1, some 3, false)]) with mode := { mode with pe := true } }
+
 def catchFlag : TestCase := ⟨"rsem/catch flag", fun _ => do
   let c := code [ret 0 0] (cleanup := [(0, some 0, true), (1, some 0, false)])
   if !(c.catchesAt 0 && !c.catchesAt 1 && !c.catchesAt 2) then throw "catchesAt"⟩
@@ -368,6 +375,7 @@ def tests : List TestCase := [
   returns "unwind to a landing pad" [catcher true, resumer] 0 [] 1234,
   stops "unwind without a call-site entry" [catcher false, resumer] 0 [] "no call-site entry",
   unwindOut,
+  returns "PE pad-region call of a program function" [padCaller, resumer, escapeKeeps] 0 [] 7,
   catchFlag,
   returns "tail call" [tailer, fib false 1] 0 [9] 55,
   islandQuery,

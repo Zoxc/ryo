@@ -8,7 +8,8 @@ the callee's R code (`Program.invoke`), and an image object as such a program
 - `Program.invoke`: a `Callee.func g` is run as `g`'s R code, its frame below the caller's
   (`fp_callee = sp - 16`, `sp` the caller's `fp - F`), its `Final` the call's answer (the
   return registers, the incoming area's bytes as the outgoing area's, the world; or unwinding),
-  a tail call run in the frame it takes over. Other queries go to `Program.ext`; with no
+  a tail call run in the frame it takes over. A call in PE's pad region has its outgoing area
+  `padGap` below the caller's frame (`Choice.sp`: on the dispatcher's stack). Other queries go to `Program.ext`; with no
   answer the run halts there (`Halt.external`).
 - `imageProgram o`: the functions of image object `o` decoded (`DecodeObj.decodeAll`), their
   calls of image functions with the callee's `arg_size` as the stack size and, for an sret
@@ -88,6 +89,10 @@ def Answer.toFinal (a : Answer) : Final :=
   | .ret regs => { exit := .ret regs (a.frame.head?.getD []), world := a.world }
   | .unwind exc => { exit := .unwind exc, world := a.world }
 
+/-- How far below a function's frame (`fp - F`) its PE pad-region calls' outgoing area is
+(`Choice.sp`): room for the exception dispatcher's frames. -/
+def padGap : Nat := 0x1000
+
 /-- Call `cal` with the argument registers `args` and the stack arguments `stack` at `sp`, in
 `w`: a program function runs as R code (its tail calls too), anything else is `ext`'s. -/
 def Program.invoke (p : Program) : Nat → Callee → Nat → Regs → List AbstractByte → World → RM Final
@@ -101,7 +106,9 @@ def Program.invoke (p : Program) : Nat → Callee → Nat → Regs → List Abst
         | .call (.func h) args' sp' stack' => do
           pure (← p.invoke fuel (.func h) sp' args' stack' q.world).toAnswer
         | _ => (p.ext q).getD (throw (.external q))
-      let f ← runCode c env {} fuel s
+      -- PE's pad-region calls get an outgoing area below this frame and the dispatcher's
+      -- (`padGap`), so their callees' frames don't sit at address 0.
+      let f ← runCode c env { sp := sp - 16 - c.d.frameSize - padGap } fuel s
       match f.exit with
       | .tailCall cal' args' sp' stack' => p.invoke fuel cal' sp' args' stack' f.world
       | _ => pure f
