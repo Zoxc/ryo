@@ -236,15 +236,18 @@ def decodeFunc (f : Ryo.Obj.FuncInputs) (hints : Array Ryo.Obj.Hint)
   let some (code, fields, dropped, scopes) ← funcArgs f hints table | return none
   return some (decodeLinked code fields f.rodata f.callSites dropped scopes f.mode hints)
 
-/-- Function `f`'s checked decoding (`Frame.decodeChecked`, given `facts`), once its handler
-calls pass `decodeLinked`'s check; `none` as for `funcArgs`. -/
+/-- Function `f`'s checked decoding (`Frame.decodeChecked`, given `facts`, with `f`'s
+relocations as the linked fields' positions), once its handler calls pass `decodeLinked`'s
+check; `none` as for `funcArgs`. The calls between image functions carry no relocation, so the
+switch tables' boundary check doesn't see their fields; the proofs don't cover linked code. -/
 def decodeFuncChecked (f : Ryo.Obj.FuncInputs) (hints : Array Ryo.Obj.Hint)
     (facts : Frame.Facts := {}) (table : HandlerTable := distinctTable) :
     Except String (Option (Except String Decoded)) := do
   let some (code, fields, dropped, scopes) ← funcArgs f hints table | return none
   if let .error e := decodeLinked code fields f.rodata f.callSites dropped scopes f.mode hints then
     return some (.error s!"{e.what} at {e.at_}")
-  return some (Frame.decodeChecked code fields f.rodata f.callSites dropped scopes f.mode facts)
+  let relocs := f.relocs.map fun r => ({ pos := r.pos, to := toRef r.to } : Reloc)
+  return some (Frame.decodeChecked code fields f.rodata f.callSites dropped scopes f.mode facts relocs)
 
 /-- Each function of the image decoded (`decodeFunc`), `none` where it isn't. -/
 def decodeAll (o : Ryo.Obj.ImageObject) : Array (Option (Ryo.Obj.FuncInputs × Decoded)) :=

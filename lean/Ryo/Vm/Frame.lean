@@ -1112,10 +1112,16 @@ def incomingExtents (decoded : Array (Option Decoded)) (mode : Mode) : Array (Op
 `argsLeadCheck` the leading `arg`s, `privCheck` the link slots and `arg` destinations, and
 `droppedNotDead` shows every dropped
 store dead (given `facts`): the decoding, or an error
-naming the first store it doesn't (its word offset). -/
+naming the first store it doesn't (its word offset).
+
+Linked code (`Fields.linked`, `DecodeObj`) runs the same checks through `linkedChecks`, read
+with the linked fields; `relocs` are then the relocated fields the linking patched (for the
+tables' boundaries and `relocsInCheck`). The proofs (`decodeChecked_ok`) cover only
+`Fields.relocs`. -/
 def decodeChecked (code : ByteArray) (fields : Fields) (rodata : ByteArray)
     (callSites : Array CallSite) (dropped : Array DroppedStore) (scopes : Array Scope)
-    (mode : Mode) (facts : Facts := {}) : Except String Decoded := do
+    (mode : Mode) (facts : Facts := {}) (relocs : Array Reloc := #[]) :
+    Except String Decoded := do
   let d ← match decodeBounded code fields rodata callSites dropped scopes mode with
     | .ok d => pure d
     | .error e => throw s!"{e.what} at {e.at_}"
@@ -1134,7 +1140,8 @@ def decodeChecked (code : ByteArray) (fields : Fields) (rodata : ByteArray)
   -- The switch tables' starts and the targets (`tablesCheck`, for `HdlTables`); the call sites
   -- sorted by start and aligned with the calls (`callSitesCheck`, for `PadsLinked`); every
   -- relocated field within the code (`relocsInCheck`, for `RelocsIn`).
-  if let .relocs rs := fields then
+  match fields with
+  | .relocs rs =>
     if !tablesCheck code rs rodata callSites dropped scopes mode then
       throw "switch table start off a relocation boundary, or code or targets over 2 GiB"
     if !callSitesCheck code rs rodata callSites dropped scopes mode then
@@ -1149,9 +1156,37 @@ def decodeChecked (code : ByteArray) (fields : Fields) (rodata : ByteArray)
     -- for `ArgsOk`).
     if !argsLeadCheck code rs rodata callSites dropped scopes mode then
       throw "two leading args read the same register, or a branch targets a leading arg"
+  | _ =>
+    linkedChecks code fields relocs rodata callSites dropped scopes mode
   checkDropped d mode facts
 
 where
+  /-- The five relocation-input checks above (`tablesCheck`, `callSitesCheck`,
+  `relocsInCheck`, `cacheClearedCheck`, `argsLeadCheck`) on code read with `fields`, `rs` the
+  relocated fields: their parts, with the same errors. -/
+  linkedChecks (code : ByteArray) (fields : Fields) (rs : Array Reloc) (rodata : ByteArray)
+      (callSites : Array CallSite) (dropped : Array DroppedStore) (scopes : Array Scope)
+      (mode : Mode) : Except String Unit := do
+    let c : Cursor := { code := code.data, pos := 0, fields }
+    let .ok (r, _) := (read rodata callSites dropped.toList scopes mode).run c
+      | throw "switch table start off a relocation boundary, or code or targets over 2 GiB"
+    let sp : Option (BitVec 32) :=
+      if mode.framePointer then none else some (BitVec.ofNat 32 r.frameSize)
+    if !(tablesOk { c with spFrame := sp } rs && r.protos.all fun q => q.targets.all (· < 2 ^ 31)) then
+      throw "switch table start off a relocation boundary, or code or targets over 2 GiB"
+    if !(startsSorted callSites.toList && sitesAlignedOk r.protos callSites) then
+      throw "call sites not sorted by start, or a call site misaligned with a call"
+    if !relocsInCheck code.data rs then
+      throw "relocated field past the end of the code"
+    let cacheOk := match (readTargets rodata callSites dropped.toList mode).run c,
+        reducedOf r mode.pe with
+      | .ok (ts, _), .ok d => cacheClearedOk r.protos d.cleanup ts
+      | _, _ => false
+    if !cacheOk then
+      throw "branch target outside the first pass's, or a landing pad after an inline instruction"
+    if !argsLeadOk r.protos then
+      throw "two leading args read the same register, or a branch targets a leading arg"
+
   /-- `d` if every dropped store is shown dead. -/
   checkDropped (d : Decoded) (mode : Mode) (facts : Facts := {}) : Except String Decoded := do
     match ← droppedNotDead d mode facts with
