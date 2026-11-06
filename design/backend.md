@@ -345,7 +345,8 @@ depends on changed (`partition.rs`, `image_part`; the side data and work product
   forever-red dep node (as rustc's `create_def` does) and reruns every session; it is cheap,
   and an unchanged result keeps its dependents green.
 - Not reused: with `RYO_DUMP`, `RYO_DUMP_CODE`, `RYO_DUMP_NATIVE` or `RYO_DUMP_LEAN` (their
-  output covers the images built), with `RYO_ASM_CHECK` (it checks the images built), and under `-Zdisable-incr-comp-backend-caching`. `RYO_STATS` prints
+  output covers the images built), with `RYO_ASM_CHECK` (it checks the images built), and under `-Zdisable-incr-comp-backend-caching`; nor saved then, as cg_ssa doesn't save its
+  modules under that flag. `RYO_STATS` prints
   `ryo: <n> of <m> images reused`; the `incremental` check rebuilds each revision unchanged
   and expects every image reused and the same executable.
 

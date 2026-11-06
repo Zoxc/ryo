@@ -500,14 +500,14 @@ fn write_images(tcx: TyCtxt<'_>, results: &partition::Results) -> Vec<OngoingIma
     let fmt = object_format(tcx.sess);
     let mut images = Vec::with_capacity(results.images.len());
     for img in &results.images {
-        // Side data alone is only for the incremental cache.
-        if !img.has_object() && tcx.sess.opts.incremental.is_none() {
+        // Side data is only for the incremental cache.
+        if !img.has_object() && !results.cached {
             continue;
         }
         let name = format!("{}.ryo_image", img.cgu_name);
         let image_path = tcx.output_filenames(()).temp_path_for_cgu(OutputType::Object, &name);
         let save = match &img.image {
-            partition::ImageSrc::Fresh { image, side } => write_fresh_image(tcx, &*fmt, image.as_ref(), side, &image_path),
+            partition::ImageSrc::Fresh { image, side } => write_fresh_image(tcx, &*fmt, image.as_ref(), results.cached.then_some(side), &image_path),
             partition::ImageSrc::Reused(wp) => incr::place_reused_image(tcx, wp, &image_path),
         };
         let path = img.has_object().then_some(image_path);
@@ -516,12 +516,12 @@ fn write_images(tcx: TyCtxt<'_>, results: &partition::Results) -> Vec<OngoingIma
     images
 }
 
-/// Writes a CGU's image object (if it has one) and its side data.
+/// Writes a CGU's image object (if it has one) and its side data (if it is cached).
 fn write_fresh_image(
     tcx: TyCtxt<'_>,
     fmt: &dyn objfile::ObjectFormat,
     image: Option<&ryo_bytecode::image::ImageObject>,
-    side: &[u8],
+    side: Option<&[u8]>,
     image_path: &std::path::Path,
 ) -> incr::ImageSave {
     // A file left by `-Csave-temps` may still be a hard link into the incremental cache (a
@@ -530,8 +530,11 @@ fn write_fresh_image(
         let _ = std::fs::remove_file(p);
         link::write_or_fatal(tcx.sess, p, bytes);
     };
-    let side_path = image_path.with_extension(incr::WP_SIDE);
-    write(&side_path, side);
+    let side_path = side.map(|side| {
+        let side_path = image_path.with_extension(incr::WP_SIDE);
+        write(&side_path, side);
+        side_path
+    });
     if let Some(image) = image {
         let bytes = objfile::write_image(fmt, image, &|name: &str| symbols::rt_symbol(tcx, name)).unwrap_or_else(|e| tcx.dcx().fatal(e));
         write(image_path, &bytes);

@@ -84,6 +84,9 @@ pub struct Results {
     pub images: Vec<CguImage>,
     /// With `RYO_DUMP_LEAN`: the data of the certificate file (`dump_lean::write_certs`).
     pub lean: Option<LeanCerts>,
+    /// Whether the images are saved as work products, for a later session to reuse
+    /// ([`reuse_images`]).
+    pub cached: bool,
     /// The interned data, lifetime-erased ([`Results::exports`]).
     exports: Exports<'static>,
 }
@@ -148,10 +151,10 @@ pub(super) fn results_untracked(tcx: TyCtxt<'_>) -> Option<&'static Results> {
 }
 
 impl Results {
-    fn new<'tcx>(images: Vec<CguImage>, lean: Option<LeanCerts>, exports: Exports<'tcx>) -> Self {
+    fn new<'tcx>(images: Vec<CguImage>, lean: Option<LeanCerts>, cached: bool, exports: Exports<'tcx>) -> Self {
         // SAFETY: only the lifetime parameter changes; `exports` restores it (see there).
         let exports = unsafe { std::mem::transmute::<Exports<'tcx>, Exports<'static>>(exports) };
-        Results { images, lean, exports }
+        Results { images, lean, cached, exports }
     }
 
     pub(super) fn exports<'tcx>(&self, _tcx: TyCtxt<'tcx>) -> &Exports<'tcx> {
@@ -372,7 +375,8 @@ pub(super) struct ImageCx<'a, 'tcx> {
     pub entry: Option<(Instance<'tcx>, u8)>,
     /// The reuse fingerprint's session part ([`image_settings`]).
     pub settings: &'a str,
-    /// Whether a previous session's images may be reused (and new ones saved for that).
+    /// Whether a previous session's images may be reused (and new ones saved for that,
+    /// [`reuse_images`]).
     pub reuse: bool,
 }
 
@@ -564,11 +568,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
     fn lower(&mut self, entry: Option<(Instance<'tcx>, u8)>) -> (Vec<CguImage>, Vec<Fresh<'tcx>>) {
         let tcx = self.tcx;
         let settings = image_settings(tcx, self.rt, self.mode, self.switches);
-        // `RYO_ASM_CHECK` checks code as it is encoded: a reused image would go unchecked.
-        let reuse = tcx.dep_graph.is_fully_enabled()
-            && !tcx.sess.opts.unstable_opts.disable_incr_comp_backend_caching
-            && !self.switches.dumps_any()
-            && !self.switches.asm_check;
+        let reuse = reuse_images(tcx, self.switches);
         let cx = ImageCx { tcx, rt: self.rt, mode: self.mode, switches: self.switches, entry, settings: &settings, reuse };
         let parts: Vec<ImagePart<'tcx>> = {
             let _t = tcx.prof.generic_activity("ryo_lower");
@@ -693,7 +693,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
                 }
             }
         }
-        Results::new(images, lean, Exports { vm: vm_exports, hidden_for_image: hidden })
+        Results::new(images, lean, reuse_images(self.tcx, self.switches), Exports { vm: vm_exports, hidden_for_image: hidden })
     }
 
     /// References of a VM function of another image by the fresh images (a `call.sym` or its
@@ -1003,6 +1003,13 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         self.owners.insert(item, u);
         true
     }
+}
+
+/// Whether a previous session's images may be reused, and this session's saved for that
+/// (design/backend.md#incremental). `RYO_ASM_CHECK` checks code as it is encoded: a reused
+/// image would go unchecked.
+fn reuse_images(tcx: TyCtxt<'_>, switches: &Switches) -> bool {
+    tcx.dep_graph.is_fully_enabled() && !tcx.sess.opts.unstable_opts.disable_incr_comp_backend_caching && !switches.dumps_any() && !switches.asm_check
 }
 
 /// CGU `cgu`'s image phase: its VM functions lowered and its image built, inside the image's

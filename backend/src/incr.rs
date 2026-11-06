@@ -103,8 +103,9 @@ pub(super) fn try_reuse<'tcx>(tcx: TyCtxt<'tcx>, cgu: Symbol, node: &DepNode) ->
 
 /// How an image's work product is saved.
 pub(super) enum ImageSave {
-    /// Written this session, with its side data at this path.
-    Fresh(PathBuf),
+    /// Written this session, with its side data at this path if it is to be cached (none when
+    /// images aren't reused, `partition::Results::cached`).
+    Fresh(Option<PathBuf>),
     /// The previous session's work product, and the cached object it was copied from.
     Reused(WorkProduct, Option<PathBuf>),
 }
@@ -122,8 +123,8 @@ pub(super) fn place_reused_image(tcx: TyCtxt<'_>, wp: &WorkProduct, image_path: 
 }
 
 /// Saves CGU `cgu`'s image work product (its object at `object`, if it has one) into
-/// `work_products`: this session's copied into the incremental cache, or the previous
-/// session's kept. Returns the cached object a reused image was copied from.
+/// `work_products`: this session's copied into the incremental cache (if it is cached), or
+/// the previous session's kept. Returns the cached object a reused image was copied from.
 pub(super) fn save_work_product(
     sess: &Session,
     incr: Option<&IncrCompSession>,
@@ -134,7 +135,8 @@ pub(super) fn save_work_product(
 ) -> Option<PathBuf> {
     let wp_name = image_work_product_name(cgu);
     match save {
-        ImageSave::Fresh(side) => {
+        ImageSave::Fresh(None) => None,
+        ImageSave::Fresh(Some(side)) => {
             if let Some(incr) = incr {
                 let mut files = vec![(WP_SIDE, side.as_path())];
                 files.extend(object.map(|p| (WP_OBJECT, p)));
