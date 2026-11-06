@@ -17,6 +17,7 @@ use rustc_middle::ty::{self, GenericArgs, Instance, InstanceKind, ShimKind, TyCt
 use ryo_bytecode::full::{Abs, Data, Opcode};
 
 use super::emit::Width;
+use super::operand::MAX_TEMP_COPY;
 use super::place::{Loc, PlaceVal};
 use super::{CodeReloc, FnCx, NeedsNative, native};
 
@@ -67,8 +68,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 if size == 0 {
                     return Ok(());
                 }
-                if needs_fixup(self.tcx, alloc_id) {
-                    // Copied out of the fixup area through its address.
+                // Copied out of the fixup area through its address; so are large values for a
+                // memory place, which `copy_val` copies without a frame temporary.
+                if needs_fixup(self.tcx, alloc_id) || matches!(dst, Loc::Mem { .. }) && size > MAX_TEMP_COPY {
                     let p = self.temp8();
                     self.pool_addr_into(p, alloc_id, offset.bytes())?;
                     return self.copy_val(dst, Loc::Mem { p, k: 0 }, size);

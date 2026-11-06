@@ -160,7 +160,8 @@ mov [rax + k], rcx
 
 The loads and stores of other sizes (aggregates), with `memmove` semantics: `Indirect`
 arguments' values copied to their homes in the prologue, sret results copied out before
-`ret`, `typed_swap_nonoverlapping`.
+`ret`, `typed_swap_nonoverlapping` of 49 bytes to 1 KiB (larger values take the
+fallback body, `ptr::swap_nonoverlapping`, which needs no frame space for the value).
 
 Handlers `ryo_h_LoadCopy` (`load_copy`) and `ryo_h_StoreCopy` (`store_copy`):
 

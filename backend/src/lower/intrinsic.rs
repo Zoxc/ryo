@@ -21,6 +21,9 @@ use super::place::{Loc, META, vtable_off};
 use super::{FnCx, NeedsNative, SPLIT_MAX, native};
 use ryo_bytecode::full::{AtomicOp, AtomicOrd, OpWidth, atomic_op};
 
+/// The largest value `typed_swap_nonoverlapping` swaps through a frame temporary.
+const SWAP_TEMP_MAX: u64 = 1024;
+
 /// The VM's ordering for a Rust one.
 fn atomic_ord(o: ty::AtomicOrdering) -> AtomicOrd {
     match o {
@@ -162,6 +165,12 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             sym::typed_swap_nonoverlapping => {
                 let el = self.layout_of(ty0())?;
                 let size = el.size.bytes();
+                // Through a frame temporary of the whole value, so only up to a bound; larger
+                // values take the fallback body (`ptr::swap_nonoverlapping`, constant stack),
+                // as cg_ssa does when optimizing.
+                if size > SWAP_TEMP_MAX {
+                    return Ok(Lowered::Fallback);
+                }
                 let [x, y] = self.arg_slots::<2>(args)?;
                 // `y` is read again after the stores through `x`, which may overwrite it.
                 let y = self.piece_ptr(y);

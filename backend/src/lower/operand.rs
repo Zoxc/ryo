@@ -14,7 +14,7 @@ use super::{FnCx, LayoutCx, NeedsNative, native};
 
 /// Copies above this size between two memory places go through `memmove` instead of a
 /// temporary slot.
-const MAX_TEMP_COPY: u32 = 256;
+pub(super) const MAX_TEMP_COPY: u32 = 256;
 
 /// See [`FnCx::split`].
 enum Split {

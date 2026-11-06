@@ -1,6 +1,7 @@
 //! Lowerings of ops with constant operands into inline ops: exact division by constants
 //! (`ptr_offset_from`, `exact_div`), division by 1 and -1, small unsigned division by
-//! constants, constant rotates, constant-length copies and sets, `bswap` of a byte.
+//! constants, constant rotates, constant-length copies, sets and swaps, large constants,
+//! `bswap` of a byte.
 #![feature(core_intrinsics)]
 #![allow(internal_features)]
 use std::hint::black_box;
@@ -136,6 +137,25 @@ fn copies() {
     big[0][2] = 9;
     big.swap(0, 1);
     println!("{big:?}");
+    // Above the frame-temporary bound: the fallback body, in constant stack.
+    let mut a = black_box([1u8; 4096]);
+    let mut b = black_box([2u8; 4096]);
+    a[7] = 3;
+    std::mem::swap(black_box(&mut a), black_box(&mut b));
+    println!("{} {} {} {}", a[0], a[7], b[7], b[4095]);
+    // A large constant into memory: through its address, not a frame temporary.
+    const TABLE: [u16; 600] = {
+        let mut t = [0u16; 600];
+        let mut i = 0;
+        while i < 600 {
+            t[i] = (i * 7) as u16;
+            i += 1;
+        }
+        t
+    };
+    let mut c = Box::new([1u16; 600]);
+    *black_box(&mut *c) = TABLE;
+    println!("{} {} {}", c[0], c[300], c[599]);
     let mut arr = black_box([0u8; 64]);
     arr[3..].fill(9);
     let mut w = [1u16; 20];

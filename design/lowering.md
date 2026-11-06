@@ -324,7 +324,8 @@ island.
      `island` with the intrinsic's wrapper. So far, as VM instructions: `abort`,
      `caller_location`, `cold_path`, `black_box`, `likely`/`unlikely`,
      `ptr_offset_from(_unsigned)`,
-     `arith_offset`, `copy`, `write_bytes`, `typed_swap_nonoverlapping`,
+     `arith_offset`, `copy`, `write_bytes`, `typed_swap_nonoverlapping` (up to 1 KiB; larger
+     values take the fallback body, as cg_ssa does when optimizing),
      `size_of_val`/`align_of_val` (also of structs with an unsized tail, as cg_ssa's
      `size_and_align_of_dst`), `vtable_size`/`vtable_align`, `ctpop`/`ctlz`/`cttz` (and
      `_nonzero`), `bswap`, `bitreverse`, rotates, `unchecked_funnel_shl`/`_shr`,
