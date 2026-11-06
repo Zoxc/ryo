@@ -177,6 +177,7 @@ const FULL_ONLY: &[(&str, &str)] = &[
     ("dylib", "native dylib; vm_dylib covers dylibs with VM code"),
     ("vm_answer", "early milestone; vm_calls and vm_abi cover its calls"),
     ("vm_main", "a VM main; every VM program in the fast set has one"),
+    ("vm_main_upstream", "an upstream entry fn (`use dep::main;`); rarely touched"),
     ("vm_refs", "statics and consts; vm_statics_cross covers them"),
     ("vm_ints", "integer ops; vm_abi and vm_aggregates cover most of them"),
     ("vm_dyn", "vtables and shims; vm_calls covers call.ind"),

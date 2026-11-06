@@ -524,7 +524,12 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
 
     fn run(mut self) -> (Vec<CodegenUnit<'tcx>>, Results) {
         let tcx = self.tcx;
-        let entry = tcx.entry_fn(()).map(|(def_id, EntryFnType::Main { sigpipe })| (Instance::mono(tcx, def_id), sigpipe));
+        // An upstream entry fn's C `main` is cg_ssa's (`maybe_create_entry_wrapper` emits it
+        // whatever the entry fn's CGU), so only a local one may get the backend's.
+        let entry = tcx
+            .entry_fn(())
+            .filter(|(def_id, _)| def_id.is_local())
+            .map(|(def_id, EntryFnType::Main { sigpipe })| (Instance::mono(tcx, def_id), sigpipe));
         let (images, fresh) = self.lower(entry);
         // Each function once, however many CGUs hold a copy of it (`LocalCopy`).
         let mut seen = FxHashSet::default();

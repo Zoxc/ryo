@@ -411,6 +411,12 @@ pub(crate) const CORPUS: &[Program] = &[
         ..PROGRAM
     },
     Program {
+        name: "vm_main_upstream",
+        crates: &[krate("vmu", "vm_main_upstream/lib.rs", CrateKind::Rlib), krate("main", "vm_main_upstream/main.rs", CrateKind::Bin)],
+        vm: &["vmu::main"],
+        ..PROGRAM
+    },
+    Program {
         name: "vm_dylib",
         crates: &[krate("vmd", "vm_dylib/lib.rs", CrateKind::RlibDylib), krate("main", "vm_dylib/main.rs", CrateKind::Bin)],
         flags: &["-Cprefer-dynamic"],

@@ -171,7 +171,9 @@ link to it unchanged.
 ## Program entry: `main`
 
 cg_ssa only emits the C `main` wrapper if the CGU contains the entry fn's own mono item
-(`maybe_create_entry_wrapper`, `rustc_codegen_ssa/src/base.rs:508-517`). With a VM `main`,
+(`maybe_create_entry_wrapper`, `rustc_codegen_ssa/src/base.rs:508-517`), or, for an
+upstream entry fn (`use dep::main;`), always in the primary CGU, which the backend then keeps
+native even if it is empty; such an entry fn never gets the backend's wrapper. With a VM `main`,
 the entry fn is a VM function in the image instead, so the backend adds the wrapper to the
 same image as a VM function of its own (`backend/src/lower/entry.rs`):
 
