@@ -337,8 +337,8 @@ properties do:
 
 - allocations the program never exposed and that the callee could not reach are unchanged
   (reachability: through pointer arguments, exposed provenance, globals)
-- deallocations only of reachable heap allocations
-- fresh allocations allowed
+- deallocations only of reachable heap allocations; dead allocations stay dead
+- fresh allocations allowed, at addresses `allocate` could pick
 - existing allocations keep address, kind, size, alignment and mutability; read-only ones
   keep their contents
 

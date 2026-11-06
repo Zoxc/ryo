@@ -36,7 +36,8 @@ namespace Ryo.Spec
 
 /-- The environment's contract for an external call (mir-spec §A.6), as CompCert's `extcall`
 properties: memory the callee cannot reach is unchanged, it frees only reachable heap
-allocations, it may allocate, and existing allocations stay where and what they are. -/
+allocations and revives none (`ec_max_perm`), it may allocate (at addresses `allocate` could
+pick), and existing allocations stay where and what they are. -/
 structure ExtSpec where
   /-- `allowed callee args memBefore memAfter result`. -/
   allowed : String → List Value → Memory → Memory → ExtResult → Prop
@@ -59,6 +60,14 @@ structure ExtSpec where
     ∀ id a, m.get? id = some a → ∃ a', m'.get? id = some a' ∧ a'.addr = a.addr ∧
       a'.kind = a.kind ∧ a'.size = a.size ∧ a'.align = a.align ∧ a'.mutable = a.mutable ∧
       (a.mutable = false → a'.data = a.data)
+  /-- Dead allocations stay dead. -/
+  keepsDead : ∀ f args m m' r, allowed f args m m' r →
+    ∀ id a a', m.get? id = some a → m'.get? id = some a' → a.live = false → a'.live = false
+  /-- Each appended allocation is at an address `Memory.allocate` accepts after the ones before
+  it (with their liveness after the call: one the callee freed may have been reused). -/
+  appendsAddrOk : ∀ f args m m' r, allowed f args m m' r →
+    ∀ id a', m.get? id = none → m'.get? id = some a' →
+      ({ allocs := m'.allocs.extract 0 id } : Memory).addrOk a'.addr a'.size a'.align = true
 
 /-- The environment that runs nothing: external calls are the shims' only, as in the
 interpreter (`concreteOracle`). -/
@@ -68,6 +77,8 @@ def ExtSpec.none : ExtSpec where
   unreachableUnchanged := fun _ _ _ _ _ h => h.elim
   freesOnlyReachableHeap := fun _ _ _ _ _ h => h.elim
   keepsAllocs := fun _ _ _ _ _ h => h.elim
+  keepsDead := fun _ _ _ _ _ h => h.elim
+  appendsAddrOk := fun _ _ _ _ _ h => h.elim
 
 /-- Every environment answer of `o` is one `spec` allows. -/
 def Oracle.respects (spec : ExtSpec) (o : Oracle) : Prop :=
