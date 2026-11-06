@@ -7523,9 +7523,23 @@ theorem call_stack_agree (C : Cert S) {s s1 : R.RState} {P : Int → Prop} (h : 
   try rw [hb32] at h2
   cases hmay : Frame.mayHaveStackArgs S.c.mode.pe ws with
   | false =>
-    have h0 := h.facts.noStack s.pc op _ hi (by rw [hca]; exact hmay)
-    rw [h0] at h2
-    omega
+    cases hsa : C.facts.stackArgs s.pc with
+    | none =>
+      have h0 := h.facts.noStack s.pc op _ hi hsa (by rw [hca]; exact hmay)
+      rw [h0] at h2
+      omega
+    | some m =>
+      -- a `byval` call: the row reads its `stackArgs` bytes all the same
+      have hm := h.facts.stack s.pc m hsa
+      have hsb : (Frame.Ranges.bits C.fl.stack[s.pc]!).testBit (bit S o) = true := by
+        rw [hstk]
+        simp only [Frame.Flow.rowOf, Frame.Flow.callInfo, hik, hc1, hRA, hmay, hsa,
+          Bool.not_false, eq_self_iff_true, ↓reduceIte]
+        rw [testBit_rangesBits]
+        simp only [List.any_cons, List.any_nil, Bool.or_false, Bool.and_eq_true, Frame.range]
+        refine ⟨decide_eq_true ?_, decide_eq_true ?_⟩ <;> simp only [bit, hb32] <;>
+          (try rw [BitVec.toInt_ofInt]) <;> omega
+      exact read_uninit C h hs1 hends hpo (gen_of_stack_bit hsb)
   | true =>
     have hsb : (Frame.Ranges.bits C.fl.stack[s.pc]!).testBit (bit S o) = true := by
       rw [hstk]

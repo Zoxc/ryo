@@ -31,13 +31,18 @@ What each instruction reads (`gen`) and writes for sure (`kill`), and what that 
   argument reads no byte itself), `call.ptr`'s `p`, and memory through pointers (below). A
   callee reads the caller's frame otherwise only as its stack arguments, in the outgoing area
   at `fp - F` (design/vm.md, "Calls"), which no operand names. The convention (`sig.rs`'s
-  `arg_plan`, as LLVM's) puts a piece on the stack only once its class's registers ran out:
-  SysV with all six integer registers taken (an `i128` with five), or all eight `xmm` ones;
-  Win64 from argument position 4 on. So a call whose list uses no integer register from `r8`
-  on and no `xmm7` (SysV), or no register of position 3 (Win64), has no stack arguments; any
-  other call reads every frame byte, or with `Facts.stackArgs` = `n` the `n` bytes from
-  `fp - F` (frame byte 0). This assumes the argument list is the callee's register plan (the
-  C1 call check validates it against the plan, aot.md §C1). A tail call's stack arguments go
+  `arg_plan`, as LLVM's) puts a register-class piece on the stack only once its class's
+  registers ran out: SysV with all six integer registers taken (an `i128` with five), or all
+  eight `xmm` ones; Win64 from argument position 4 on. So a call whose list uses no integer
+  register from `r8` on and no `xmm7` (SysV), or no register of position 3 (Win64), has no
+  such stack arguments (`mayHaveStackArgs`); any other call reads every frame byte, or with
+  `Facts.stackArgs` = `n` the `n` bytes from `fp - F` (frame byte 0). SysV C `byval` arguments
+  (`ArgLoc::StackByval`) go on the stack whatever registers are left, copied there by plain
+  `mov`s outside the argument list: a call with `Facts.stackArgs` = `n` reads those `n` bytes
+  even when `mayHaveStackArgs` rules stack arguments out, and without the fact such a call's
+  stack arguments are unchecked (trusted, `FactsAgree.noStack`). This assumes the argument list
+  is the callee's register plan (the C1 call check validates it against the plan, aot.md §C1,
+  and gives the fact). A tail call's stack arguments go
   to the incoming area, above `fp`. A call's result stores write each part exactly, on the
   fall-through only.
 - **Stack-argument extents** (`Facts.stackArgs`). The callee's `fp + 16` is the caller's
@@ -687,8 +692,14 @@ def Flow.rowOf (d : Decoded) (facts : Facts) (scopes : Array (List (Nat × Scope
   let all : Ranges := [(0, f)]
   let ci := Flow.callInfo d.insns[k]!
   -- A call that may have stack arguments: the callee reads at most `stackArgs` bytes of the
-  -- outgoing area, at `fp - F` (frame byte 0), if known; else any byte.
-  let gs : Ranges := if !e.readsAll then [] else match ci.2.1, facts.stackArgs k with
+  -- outgoing area, at `fp - F` (frame byte 0), if known; else any byte. A call whose argument
+  -- list rules them out (`mayHaveStackArgs`) still reads its `stackArgs` bytes when it has
+  -- some: SysV C `byval` arguments take stack slots whatever registers are left.
+  let gs : Ranges := if !e.readsAll then
+      (match ci.2.1, facts.stackArgs k with
+       | true, some m => [range f (BitVec.ofInt 32 (-(f : Int))) m]
+       | _, _ => [])
+    else match ci.2.1, facts.stackArgs k with
     | true, some m => [range f (BitVec.ofInt 32 (-(f : Int))) m]
     | _, _ => all
   let gk := Flow.opndRanges f ci.1 eb e.opnds

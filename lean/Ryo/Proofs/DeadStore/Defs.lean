@@ -267,10 +267,12 @@ def FootprintExact : Prop :=
 
 /-- **Trusted** (or derived where `c` is built in Lean from the same image): the `Frame.Facts`
 the check used agree with the R code. `noStack` is C1's call check (the argument list is the
-register plan). -/
+register plan) for calls without a `stackArgs` fact: SysV C `byval` arguments go on the stack
+whatever the argument list says, so it doesn't hold for such a call without the fact, which
+C1 gives every call it verifies by the dump's ABI. -/
 structure FactsAgree (facts : Frame.Facts) (c : R.Code) : Prop where
   stack : ∀ k m, facts.stackArgs k = some m → c.stackSize k ≤ m
-  noStack : ∀ k op ops, c.d.insns[k]? = some (.native op ops) →
+  noStack : ∀ k op ops, c.d.insns[k]? = some (.native op ops) → facts.stackArgs k = none →
     Frame.mayHaveStackArgs c.mode.pe (Frame.callArgs ops) = false → c.stackSize k = 0
   sret : ∀ k m, facts.sretSize k = some m → c.sretSize k = some m
   island : ∀ k t, facts.islandTemplate k = some t → c.islandTemplate k = some t
