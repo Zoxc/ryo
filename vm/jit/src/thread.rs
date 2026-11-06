@@ -226,22 +226,29 @@ fn main(rt: &'static RtApi) {
         }
         recheck_pass(&mut recheck);
         if !list.is_null() {
+            // Counted as taken before any is compiled: before the first leaves `Queued`.
+            let mut n = 0;
+            let mut rec = list;
+            while !rec.is_null() {
+                n += 1;
+                // SAFETY: as below.
+                rec = unsafe { (*rec).next };
+            }
             stats::add(&STATS.batches, 1);
+            stats::add(&STATS.queued, n);
+            stats::max(&STATS.largest_batch, n);
         }
-        let mut n = 0;
         while !list.is_null() {
             let rec = list;
             // SAFETY: the records of a batch are this thread's until it reports them. Their
             // links stay: the runtime walks the rest of the batch from a reported record
             // (`IN_FLIGHT`).
             list = unsafe { (*rec).next };
-            n += 1;
             if let Some(d) = slow {
                 std::thread::sleep(d);
             }
             compile_one(&mut jit, rt, rec, &mut recheck);
         }
-        stats::max(&STATS.largest_batch, n);
         if rt.settings.stats >= 2 && last_progress.elapsed() >= std::time::Duration::from_secs(60) {
             last_progress = std::time::Instant::now();
             stats::write_progress();
@@ -267,7 +274,6 @@ fn recheck_pass(recheck: &mut Recheck) {
 /// Compiles `rec`, counts and logs the outcome, and reports it to the runtime; a published
 /// record goes on `recheck`.
 fn compile_one(jit: &mut Jit, rt: &RtApi, rec: *mut JitRecord, recheck: &mut Recheck) {
-    stats::add(&STATS.queued, 1);
     let t0 = rt.settings.count.then(std::time::Instant::now);
     // Everything that may allocate, and so panic (`oom_panics`), is inside the
     // `catch_unwind`s: a panic out of here would end the thread with records unreported.

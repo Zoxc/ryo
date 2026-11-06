@@ -614,7 +614,7 @@ fn concurrent_trips() {
 
 /// The JIT's statistics: with `RYO_JIT_SYNC`, a function's counts are in as soon as its
 /// first call returns (they are stored before its record's `Done`), and compiles are timed
-/// (`configure_jit` turns the gate on), those counters and the largest batch soon after.
+/// (`configure_jit` turns the gate on), those counters soon after.
 #[test]
 fn statistics() {
     init();
@@ -636,14 +636,13 @@ fn statistics() {
     assert!(now.compiled > before.compiled);
     assert!(now.ssa + now.reencode > before.ssa + before.reencode);
     assert!(now.code_ssa + now.code_reencode > before.code_ssa + before.code_reencode);
-    assert!(now.queued > before.queued && now.batches > before.batches);
+    assert!(now.queued > before.queued && now.batches > before.batches && now.largest_batch >= 1);
     assert!(now.regions >= 1);
-    // Stored after the compile, and after the batch, which may be the first: they may lag.
+    // Stored after the compile: they may lag.
     wait_for("the timing counters", || {
         let s = ryo_jit::stats();
         s.timed > before.timed && s.compile_ns > before.compile_ns && s.compile_max_ns > 0
     });
-    wait_for("the largest batch", || ryo_jit::stats().largest_batch >= 1);
 }
 
 // ---- OSR ----

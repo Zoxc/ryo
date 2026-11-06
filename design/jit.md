@@ -1104,9 +1104,10 @@ the stderr it compares), each with one `write`:
   are on, or `off (RYO_JIT=off)`. It registers the summary's `atexit` handler.
 - **Counters**: nothing on the AOT side (code, handlers, trips). The counters
   (`vm/jit/src/stats.rs`) are atomics only the JIT thread writes, with a `Relaxed` load
-  and store; other threads read them with `Relaxed` loads. A record's are stored before its
-  state leaves `Queued` (`JitRecord::publish`, `JitRecord::fail`), so a `RYO_JIT_SYNC` waiter
-  sees them; the timing counters and `largest_batch` come after, so they can be one behind. Compile timing is gated by `JitSettings::count` (on with stats, and in tests).
+  and store; other threads read them with `Relaxed` loads. A record's, and its batch's
+  (`queued`, the batch counts, counted when the batch is taken), are stored before its state
+  leaves `Queued` (`JitRecord::publish`, `JitRecord::fail`), so a `RYO_JIT_SYNC` waiter sees
+  them; the timing counters come after the compile, so they can be one behind. Compile timing is gated by `JitSettings::count` (on with stats, and in tests).
 - **Summary**: the `atexit` handler calls the JIT's report (formatted on the stack, no lock,
   no waiting for the JIT thread), or prints `JIT off`, `JIT thread not started`,
   `JIT thread failed to start` or `JIT thread still starting`. Read mid-compile, the counters needn't balance: `in flight`
