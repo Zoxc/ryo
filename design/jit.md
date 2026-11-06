@@ -157,7 +157,9 @@ trips start nothing; they are a CAS, a Treiber push and a futex wake.
   thread needs: under the loader lock on Windows (`sys::in_loader_lock`: the PEB's
   `LoaderLock` owned by the current thread, through the TEB), on a signal stack
   (`sigaltstack`'s `SS_ONSTACK`, where the interrupted thread may hold a lock), at exit on
-  PE (`sys::exiting`), and without a JIT thread in this process (`STARTED`, `JIT_PID`).
+  PE (`sys::exiting`), and without a JIT thread in this process (`STARTED`, `JIT_PID`); a
+  start another thread claimed (`START_CLAIMED`) but hasn't marked `STARTED` yet counts as
+  one, since a registration that sees the claim returns at once and its trips may come first.
   Under `dlopen`'s lock on Linux the JIT thread's setup blocks too (glibc's
   `__cxa_thread_atexit_impl`, for its TLS destructors, takes `dl_load_lock`), and that lock
   can't be queried: so a wait first waits up to 2 s for the thread to be set up (`JIT_READY`, at

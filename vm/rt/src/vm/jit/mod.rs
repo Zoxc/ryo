@@ -629,13 +629,18 @@ fn may_wait() -> bool {
 
 /// Whether the JIT thread is set up, waiting up to 2 s for it: a thread that holds the loader
 /// lock (a constructor `dlopen` runs) would keep it from finishing, so the wait for it
-/// is bounded, and for the compile skipped then.
+/// is bounded, and for the compile skipped then. A start that another thread claimed but
+/// hasn't marked [`STARTED`] yet is waited for too: a registration that saw the claim
+/// returned from [`start_once`] at once, so the trips of its images may come first. Not in
+/// a forked child before its restart ([`CHILD_RESTART`]), which keeps the claim but has no
+/// thread.
 fn ready() -> bool {
     for _ in 0..20 {
         if JIT_READY.load(Acquire) != 0 {
             return true;
         }
-        if !STARTED.load(Acquire) || DISABLED.load(Acquire) {
+        let starting = START_CLAIMED.load(Acquire) && CHILD_RESTART.load(Acquire) == 0;
+        if !(STARTED.load(Acquire) || starting) || DISABLED.load(Acquire) {
             return false;
         }
         super::sys::futex_wait_ms(&JIT_READY, 0, 100);
