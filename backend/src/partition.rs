@@ -1067,8 +1067,10 @@ fn build_cgu<'tcx>(
         let lcx = LowerCx { vm: &vm, rt, mode: cx.mode, cert: false, asm_check: cx.switches.asm_check };
         let lowered = lower::lower_entry(tcx, &lcx, main, sigpipe)
             .unwrap_or_else(|why| tcx.dcx().fatal(format!("ryo: the C `main` wrapper can't be VM code: {}", why.0)));
-        // `External` with default visibility, as cg_ssa declares it.
-        let data = MonoItemData { inlined: false, linkage: Linkage::External, visibility: Visibility::Default, size_estimate: 0 };
+        // `External` with the session's default visibility, as cg_llvm declares it
+        // (`declare_entry_fn`).
+        let visibility = tcx.sess.default_visibility().into();
+        let data = MonoItemData { inlined: false, linkage: Linkage::External, visibility, size_estimate: 0 };
         VmFn { instance: main, wrapper: true, data, lowered, global: true }
     });
     let mut vm: Vec<VmFn<'tcx>> = Vec::new();

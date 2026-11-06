@@ -186,9 +186,10 @@ extern "C" fn main(argc: c_int, argv: *const *const u8) -> c_int {
 - As cg_ssa's `create_entry_fn`, the backend makes the function itself: no instance, no
   template. Its signature is the target's entry signature, `(c_int, *const *const u8) ->
   c_int` with the C ABI (`entry::c_sig`, `c_int` per `target.c_int_width`); its symbol is
-  `target.entry_name` (also right for MSVC); it is global with default visibility, as cg_ssa
-  declares it. `T` is the entry fn's return type and `SIGPIPE` is `EntryFnType::Main {
-  sigpipe }`, as cg_ssa passes them.
+  `target.entry_name` (also right for MSVC); it is global with the session's default
+  visibility (`-Zdefault-visibility` or the target's), as cg_llvm declares it. `T` is the
+  entry fn's return type and `SIGPIPE` is `EntryFnType::Main { sigpipe }`, as cg_ssa passes
+  them.
 - The backend lowers it from a MIR body it builds (`entry::body`): a reify of the entry fn,
   the cast of `argc`, the call of `lang_start::<T>` (the `start` lang item resolved as cg_ssa
   does, `require_lang_item(LangItem::Start)` + `Instance::expect_resolve` with `[T]`,
