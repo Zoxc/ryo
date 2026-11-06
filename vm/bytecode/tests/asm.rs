@@ -253,13 +253,13 @@ fn check(f: &Fn, frame_size: u32, mode: Mode, what: &str) -> asm::Encoded {
     let escapes: Vec<_> = scopes.iter().filter(|s| matches!(s.kind, ScopeKind::Escape { .. })).collect();
     let overlap = |a: &Scope, b: &Scope| a.frame_offset < b.frame_offset + b.size as i32 && b.frame_offset < a.frame_offset + a.size as i32;
     let kept: Vec<Scope> = scopes.iter().copied().filter(|s| s.kind != ScopeKind::End || escapes.iter().any(|e| overlap(s, e))).collect();
-    // A scope right after instructions whose stores were dropped (no code) comes back before
+    // A scope right before instructions whose stores were dropped (no code) comes back after
     // them: the same machine code position.
     let starts: Vec<u32> = Decoder::new(&code).map(|r| r.unwrap().0 as u32).collect();
     let same = |d: &Scope, k: &Scope| {
         Scope { code_offset: k.code_offset, ..*d } == *k
-            && d.code_offset <= k.code_offset
-            && starts.iter().filter(|&&p| d.code_offset <= p && p < k.code_offset).all(|p| dec.dropped.contains(p))
+            && k.code_offset <= d.code_offset
+            && starts.iter().filter(|&&p| k.code_offset <= p && p < d.code_offset).all(|p| dec.dropped.contains(p))
     };
     assert!(dec.scopes.len() == kept.len() && dec.scopes.iter().zip(&kept).all(|(d, k)| same(d, k)), "{what} {mode:?}: {:?} != {kept:?}", dec.scopes);
     // The reduced decoder reads the same function as the full one, reduced.
@@ -717,6 +717,31 @@ fn label_at_a_dead_hint(mode: Mode) {
         assert_eq!(enc.code[enc.scopes[0].code_offset as usize..][..3], [0x48, 0xff, 0x05]);
     }
     reencodes(&enc, mode, "dead hint before a loop head");
+}
+
+/// An island's `Lend` right after an instruction without code (its reload hit the cache, its
+/// store was dropped) shares that instruction's position, but stays at the island: the JIT
+/// takes an island's operand extents from the `Lend`s at its own index.
+#[test]
+fn lend_after_an_instruction_without_code() {
+    use asm::Opnd::{Imm, Slot, Sym as S, Words};
+    for mode in MODES {
+        let mut a = asm::Asm::new(mode);
+        a.insn(Opcode::AddImmW32, &[Slot(-8), Slot(-16), Imm(1)]);
+        // Its load hits the cache and its store is dropped: no code.
+        a.insn(Opcode::MovW32, &[Slot(-24), Slot(-8)]);
+        a.dead(-24i32 as u32, 4);
+        a.lend(-8i32 as u32, 4);
+        a.insn(Opcode::Island, &[S(Sym(1)), Words(vec![-8i32 as u32])]);
+        a.insn(Opcode::Ret, &[Slot(0), Imm(0)]);
+        let enc = a.finish(32, |s| s);
+        assert_eq!(enc.dropped.len(), 1, "{mode:?}");
+        let dec = asm::decode(&enc, mode).expect("decodes");
+        let island = dec.words.iter().position(|&w| w == Opcode::Island as u32).unwrap() as u32;
+        assert_eq!(dec.scopes.iter().map(|s| s.code_offset).collect::<Vec<_>>(), [island], "{mode:?}");
+        let red = asm::decode_reduced(&enc, mode).expect("decodes reduced");
+        ryo_bytecode::jit::decode::decode(&red, mode, None).unwrap_or_else(|e| panic!("{mode:?}: {e:?}"));
+    }
 }
 
 /// Random runs of inline instructions on a few overlapping slots, with branches into them,

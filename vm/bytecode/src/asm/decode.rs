@@ -333,8 +333,21 @@ fn read(code: &[u8], fields: Fields<'_>, rodata: &[u8], side: Side<'_>, mode: Mo
     }
 
     let actions = unwind_actions(&protos, &ipos, call_sites, rs)?;
-    // Scopes: before the first instruction at or after their position.
-    let scopes = scopes.iter().map(|sc| (ipos.partition_point(|&p| p < sc.code_offset), *sc)).collect();
+    // Scopes: before the first instruction with code at or after their position. The encoder
+    // lays a scope before the next piece with code, so one after an instruction without code
+    // (its reload hit the cache, its store was dropped) shares that instruction's position but
+    // belongs after it: an island's `Lend`s must stay at the island. One before such an
+    // instruction moves after it too, harmlessly: there is no code in between.
+    let scopes = scopes
+        .iter()
+        .map(|sc| {
+            let mut i = ipos.partition_point(|&p| p < sc.code_offset);
+            while i + 1 < ipos.len() && ipos[i + 1] == ipos[i] {
+                i += 1;
+            }
+            (i, *sc)
+        })
+        .collect();
     Ok(Read { protos, frame_size, actions, scopes, heads, ipos })
 }
 
