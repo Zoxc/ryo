@@ -1043,7 +1043,9 @@ def firstReader (d : Decoded) (mode : Mode) (k : Nat) (facts : Facts := {}) :
     | none => return none
     | some ((j, st), rest) =>
       work := rest
-      let st := diff (diff st seen[j]!) fl.ends[j]!.bits
+      -- An `End` before `j` makes its bytes `Uninit`, but what an `Escape` copies stays read
+      -- (as `Flow.transferWith`).
+      let st := diff (diff st seen[j]!) (diff fl.ends[j]!.bits fl.escRead[j]!)
       if st == 0 then continue
       seen := seen.set! j (seen[j]! ||| st)
       let hit := st &&& fl.gen j
