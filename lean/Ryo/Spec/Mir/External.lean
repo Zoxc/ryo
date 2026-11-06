@@ -22,6 +22,8 @@ The shims:
   is external; tests use this to start unwinding);
 - `ryo_test_print(..)`: records its arguments, returns `()` (tests);
 - `__rust_no_alloc_shim_is_unstable_v2()`: a no-op.
+A shim's symbol called with another argument count is UB (as in Miri), not passed to the
+environment.
 Symbols of `#[rustc_std_internal_symbol]` items are matched by their unmangled name
 (`internalName`), and the shims see integer and pointer arguments through single-field structs
 and fieldless enums (`scalarOf`: std passes `Alignment` and `NonNull<u8>`).
@@ -89,6 +91,15 @@ def internalName (sym : String) : String :=
     if digits.isEmpty || cs.length < n then sym else String.ofList (cs.take n)
   | _ => sym
 
+/-- The shims' symbols and their argument counts (`ryo_test_print` takes any). -/
+def shimArity : String → Option Nat
+  | "__rust_alloc" | "__rust_alloc_zeroed" => some 2
+  | "__rust_dealloc" | "write" => some 3
+  | "__rust_realloc" => some 4
+  | "exit" | "_Unwind_RaiseException" => some 1
+  | "abort" | "__rust_no_alloc_shim_is_unstable_v2" => some 0
+  | _ => none
+
 -- [D21] [D18]
 /-- Run an external function: a shim, or the environment. Arguments come with their types,
 so that the shims can see through ABI-transparent wrappers (`scalarOf`). -/
@@ -130,7 +141,11 @@ def callExternal (sym : String) (targs : List (Value × Ty)) : SemM ExtResult :=
     | "ryo_test_print", _ => pure (.ret unitValue)
     -- the allocator shim's marker that std's allocator is linked (`alloc::alloc`): a no-op
     | "__rust_no_alloc_shim_is_unstable_v2", [] => pure (.ret unitValue)
-    | _, _ => callEnv sym args
+    -- a shim's symbol declared with other parameters (as Miri's shims: UB); never the
+    -- environment's
+    | _, _ => match shimArity sym with
+      | some n => throwUb s!"external call: `{sym}` takes {n} arguments, not {targs.length}"
+      | none => callEnv sym args
   if sym != "write" then emit (.extCall sym args res)
   pure res
 

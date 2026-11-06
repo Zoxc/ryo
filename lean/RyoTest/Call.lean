@@ -391,6 +391,21 @@ def envCall : Except String Unit := do
   -- the interpreter's environment runs nothing
   expectIllFormed envProg "unknown external function `frob`"
 
+/-- `abort(1)`: a shim's symbol with another argument count is UB, even with an environment
+that would run it. -/
+def abortWithArg : Program := program do
+  let abort ← addExtern "abort"
+  addFn "main" <| body unit [] do
+    callUnit (.inst abort) [ci32 1]
+    ret
+
+def shimArity : Except String Unit := do
+  let anyOracle : Oracle := { concreteOracle with env := fun _ _ _ s => some (s.mem, .ret unitValue) }
+  match (runWith anyOracle abortWithArg).result with
+  | .error (.ub m) =>
+    unless (m.splitOn "`abort` takes 0 arguments, not 1").length > 1 do throw s!"shim arity: {m}"
+  | _ => throw s!"shim arity: {describe (runWith anyOracle abortWithArg)}"
+
 def tests : List TestCase := [
   ⟨"call/success", fun _ => expectReturn (callProg unit [unit] [cunit] unit)⟩,
   ⟨"call/arg_count", fun _ => expectUb (callProg unit [unit] [] unit)
@@ -455,7 +470,8 @@ def tests : List TestCase := [
     expectPrinted (catchUnwind true) [1, 2, 3, 1] (fun r => r.result matches .ok (.returned _))⟩,
   ⟨"catch_unwind/no_unwind", fun _ =>
     expectPrinted (catchUnwind false) [1, 2, 0] (fun r => r.result matches .ok (.returned _))⟩,
-  ⟨"extcall/env (A.6)", fun _ => envCall⟩
+  ⟨"extcall/env (A.6)", fun _ => envCall⟩,
+  ⟨"extcall/shim_arity (A.6)", fun _ => shimArity⟩
 ]
 
 end RyoTest.Call
