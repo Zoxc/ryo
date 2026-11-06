@@ -1901,9 +1901,73 @@ def layoutAgreeOk (op : Full.Opcode) : Bool :=
     | none => true
     | some l => op.info.operands.zipIdx.all fun (o, k) => locAgreeOk o (l.locs.getD k default)
 
+/-! The opcode tables below are checked by `decide +kernel` in chunks of 100 opcodes: one
+kernel reduction over all of `Full.all` keeps every intermediate term alive and needs more
+than 12 GiB; per chunk it stays under 4 GiB. -/
+
+/-- The opcodes of values `s, …, s + n - 1`. -/
+def opsIn (s n : Nat) : List Full.Opcode := (List.range' s n).map fun n => ⟨n.toUInt16⟩
+
+theorem all_eq_opsIn : Full.all = opsIn 0 Full.count := by
+  simp only [Full.all, opsIn, List.range_eq_range']
+
+theorem all_opsIn_append {p : Full.Opcode → Bool} {s m n k : Nat} (hk : m + n = k)
+    (h1 : (opsIn s m).all p = true) (h2 : (opsIn (s + m) n).all p = true) :
+    (opsIn s k).all p = true := by
+  rw [← hk, opsIn, ← List.range'_append_1, List.map_append, List.all_append]
+  exact Bool.and_eq_true_iff.2 ⟨h1, h2⟩
+
 set_option maxRecDepth 100000 in
-theorem layoutAgreeTable : Full.all.all layoutAgreeOk = true := by
+theorem layoutAgreeTable_0 : (opsIn 0 100).all layoutAgreeOk = true := by
   decide +kernel
+set_option maxRecDepth 100000 in
+theorem layoutAgreeTable_100 : (opsIn 100 100).all layoutAgreeOk = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem layoutAgreeTable_200 : (opsIn 200 100).all layoutAgreeOk = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem layoutAgreeTable_300 : (opsIn 300 100).all layoutAgreeOk = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem layoutAgreeTable_400 : (opsIn 400 100).all layoutAgreeOk = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem layoutAgreeTable_500 : (opsIn 500 100).all layoutAgreeOk = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem layoutAgreeTable_600 : (opsIn 600 100).all layoutAgreeOk = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem layoutAgreeTable_700 : (opsIn 700 100).all layoutAgreeOk = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem layoutAgreeTable_800 : (opsIn 800 100).all layoutAgreeOk = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem layoutAgreeTable_900 : (opsIn 900 5).all layoutAgreeOk = true := by
+  decide +kernel
+theorem layoutAgreeTable : Full.all.all layoutAgreeOk = true := by
+  rw [all_eq_opsIn]
+  have h1 : (opsIn 0 200).all layoutAgreeOk = true :=
+    all_opsIn_append (m := 100) (n := 100) rfl layoutAgreeTable_0 layoutAgreeTable_100
+  have h2 : (opsIn 0 300).all layoutAgreeOk = true :=
+    all_opsIn_append (m := 200) (n := 100) rfl h1 layoutAgreeTable_200
+  have h3 : (opsIn 0 400).all layoutAgreeOk = true :=
+    all_opsIn_append (m := 300) (n := 100) rfl h2 layoutAgreeTable_300
+  have h4 : (opsIn 0 500).all layoutAgreeOk = true :=
+    all_opsIn_append (m := 400) (n := 100) rfl h3 layoutAgreeTable_400
+  have h5 : (opsIn 0 600).all layoutAgreeOk = true :=
+    all_opsIn_append (m := 500) (n := 100) rfl h4 layoutAgreeTable_500
+  have h6 : (opsIn 0 700).all layoutAgreeOk = true :=
+    all_opsIn_append (m := 600) (n := 100) rfl h5 layoutAgreeTable_600
+  have h7 : (opsIn 0 800).all layoutAgreeOk = true :=
+    all_opsIn_append (m := 700) (n := 100) rfl h6 layoutAgreeTable_700
+  have h8 : (opsIn 0 900).all layoutAgreeOk = true :=
+    all_opsIn_append (m := 800) (n := 100) rfl h7 layoutAgreeTable_800
+  have h9 : (opsIn 0 905).all layoutAgreeOk = true :=
+    all_opsIn_append (m := 900) (n := 5) rfl h8 layoutAgreeTable_900
+  exact h9
 
 theorem footprintOf_names {k : Handlers.HandlerKind} {ps : List String} {fp : OpSem.Footprint}
     (h : OpSem.footprintOf k ps = some fp) :
@@ -1912,8 +1976,56 @@ theorem footprintOf_names {k : Handlers.HandlerKind} {ps : List String} {fp : Op
   sorry -- DS-T8 (footprintOf's names per handler kind; checked true by #eval)
 
 set_option maxRecDepth 100000 in
-theorem footprintNamesTable' : Full.all.all footprintNamesOk' = true := by
+theorem footprintNamesTable'_0 : (opsIn 0 100).all footprintNamesOk' = true := by
   decide +kernel
+set_option maxRecDepth 100000 in
+theorem footprintNamesTable'_100 : (opsIn 100 100).all footprintNamesOk' = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem footprintNamesTable'_200 : (opsIn 200 100).all footprintNamesOk' = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem footprintNamesTable'_300 : (opsIn 300 100).all footprintNamesOk' = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem footprintNamesTable'_400 : (opsIn 400 100).all footprintNamesOk' = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem footprintNamesTable'_500 : (opsIn 500 100).all footprintNamesOk' = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem footprintNamesTable'_600 : (opsIn 600 100).all footprintNamesOk' = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem footprintNamesTable'_700 : (opsIn 700 100).all footprintNamesOk' = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem footprintNamesTable'_800 : (opsIn 800 100).all footprintNamesOk' = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem footprintNamesTable'_900 : (opsIn 900 5).all footprintNamesOk' = true := by
+  decide +kernel
+theorem footprintNamesTable' : Full.all.all footprintNamesOk' = true := by
+  rw [all_eq_opsIn]
+  have h1 : (opsIn 0 200).all footprintNamesOk' = true :=
+    all_opsIn_append (m := 100) (n := 100) rfl footprintNamesTable'_0 footprintNamesTable'_100
+  have h2 : (opsIn 0 300).all footprintNamesOk' = true :=
+    all_opsIn_append (m := 200) (n := 100) rfl h1 footprintNamesTable'_200
+  have h3 : (opsIn 0 400).all footprintNamesOk' = true :=
+    all_opsIn_append (m := 300) (n := 100) rfl h2 footprintNamesTable'_300
+  have h4 : (opsIn 0 500).all footprintNamesOk' = true :=
+    all_opsIn_append (m := 400) (n := 100) rfl h3 footprintNamesTable'_400
+  have h5 : (opsIn 0 600).all footprintNamesOk' = true :=
+    all_opsIn_append (m := 500) (n := 100) rfl h4 footprintNamesTable'_500
+  have h6 : (opsIn 0 700).all footprintNamesOk' = true :=
+    all_opsIn_append (m := 600) (n := 100) rfl h5 footprintNamesTable'_600
+  have h7 : (opsIn 0 800).all footprintNamesOk' = true :=
+    all_opsIn_append (m := 700) (n := 100) rfl h6 footprintNamesTable'_700
+  have h8 : (opsIn 0 900).all footprintNamesOk' = true :=
+    all_opsIn_append (m := 800) (n := 100) rfl h7 footprintNamesTable'_800
+  have h9 : (opsIn 0 905).all footprintNamesOk' = true :=
+    all_opsIn_append (m := 900) (n := 5) rfl h8 footprintNamesTable'_900
+  exact h9
 
 theorem mem_all_of_handler {op : Full.Opcode} {hi : Handlers.HandlerInfo}
     (h : op.handler? = some hi) : op ∈ Full.all := by
