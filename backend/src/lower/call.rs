@@ -557,7 +557,9 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// incoming stack area: the prologue copies incoming stack arguments out of it), their
     /// stack pieces stored over the function's own incoming ones, then `tail_call` (a VM
     /// function of this image) or `tail_call.ptr` (anything else with an address) loads the
-    /// argument registers and jumps (design/vm.md#calls-and-islands).
+    /// argument registers and jumps (design/vm.md#calls-and-islands). As in cg_ssa, a
+    /// `#[track_caller]` callee is reached through its reify shim, which passes the shim's
+    /// own location, so the arguments match the function's own.
     pub fn tail_call_terminator(
         &mut self,
         func: &Operand<'tcx>,
@@ -568,7 +570,19 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let srcs = arg_srcs(args);
         let (target, sig, srcs) = match callee {
             Resolved::Intrinsic(_) => return native("tail call of an intrinsic"),
-            Resolved::Direct(callee) => self.direct_target(fty, callee, &srcs, true)?,
+            Resolved::Direct(callee) => {
+                let callee = if callee.def.requires_caller_location(self.tcx) {
+                    let ty::FnDef(def_id, fn_args) = *fty.kind() else { unreachable!("direct callee of a non-fn-item type") };
+                    let fn_args = fn_args.no_bound_vars().expect("monomorphic callee");
+                    let Some(shim) = Instance::resolve_for_fn_ptr(self.tcx, TypingEnv::fully_monomorphized(), def_id, fn_args) else {
+                        return native("tail call of an unresolvable `#[track_caller]` callee");
+                    };
+                    shim
+                } else {
+                    callee
+                };
+                self.direct_target(fty, callee, &srcs, true)?
+            }
             Resolved::Ptr => {
                 let (t, sig) = self.ptr_target(func, fty, &srcs)?;
                 (t, sig, srcs)
@@ -582,6 +596,10 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let ret = self.frame.locals[rustc_middle::mir::RETURN_PLACE].layout;
         if ret.size != sig.output.size || sig.ret_kind != self.ret_kind {
             return native("tail call with a different return");
+        }
+        // The stack pieces are stored over the function's own incoming area.
+        if sig.plan.as_ref().is_some_and(|p| p.stack_size > self.arg_size) {
+            return native("tail call with more stack arguments than the function's own");
         }
         let homes = self.write_args(&sig, &srcs, source_info, false)?;
         // A symbol's address is taken before the arguments are passed.

@@ -344,8 +344,11 @@ island.
    **Tail calls** (`TailCall`, `become`): the arguments are staged in temporaries, their
    stack pieces stored over the function's own incoming ones, then `tail_call fn` for a VM
    function of this image, and `tail_call.ptr` otherwise: on a fn pointer, the vtable entry
-   of a virtual call, or `addr.sym` of any other callee with a symbol. Calls of intrinsics,
-   non-Rust ABIs and an sret callee from a non-sret function stay native.
+   of a virtual call, or `addr.sym` of any other callee with a symbol. A `#[track_caller]`
+   callee is tail-called through its reify shim, as cg_ssa does, so it sees the shim's
+   location and gets no extra argument. Calls of intrinsics, non-Rust ABIs, an sret callee
+   from a non-sret function and a callee with more stack arguments than the function's own
+   stay native.
 2. **Arguments** (`call.rs`, `write_args`, `pass_args`): each ABI input's slot is the
    operand's own slot, except that an `Indirect` input, which the callee may write to, is
    copied to a temporary. The stack pieces are stored to the outgoing area at `rsp` by

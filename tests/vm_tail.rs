@@ -85,6 +85,28 @@ fn panicky(n: u32) -> u32 {
     become panicky(n - 1)
 }
 
+// A `#[track_caller]` callee is tail-called through its reify shim (as cg_ssa does): the
+// location is the callee's own, and with six register arguments the hidden location argument
+// doesn't go on the stack over the native caller's frame.
+#[track_caller]
+#[inline(never)]
+fn located(a: u64, b: u64, c: u64, d: u64, e: u64, f: u64) -> u64 {
+    let l = std::panic::Location::caller();
+    a + b + c + d + e + f + u64::from(l.line()) * 1000 + u64::from(l.column())
+}
+#[inline(never)]
+fn to_located(a: u64, b: u64, c: u64, d: u64, e: u64, f: u64) -> u64 {
+    become located(a, b, c, d, e, f)
+}
+#[inline(never)]
+fn native_caller(x: u64) -> u64 {
+    unsafe { std::arch::asm!("") }; // keeps it native
+    let v: [u64; 10] = std::array::from_fn(|i| black_box(x * (i as u64 + 1)));
+    let r = black_box(to_located(black_box(1), 2, 3, 4, 5, 6));
+    println!("{v:?}");
+    r
+}
+
 fn main() {
     println!("{}", count(black_box(1_000_000), 0));
     println!("{} {}", even(black_box(100_001)), odd(black_box(77)));
@@ -94,4 +116,5 @@ fn main() {
     println!("{}", to_native(black_box(2.0)));
     println!("{}", virt(&S, black_box(41)));
     println!("{:?}", std::panic::catch_unwind(|| panicky(black_box(100))).is_err());
+    println!("{}", native_caller(black_box(100)));
 }
