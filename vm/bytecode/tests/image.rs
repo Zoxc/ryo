@@ -1062,6 +1062,10 @@ fn insn_lists() {
     assert_eq!(InsnList::read(&[1, 2, 0, 8, 3], 10), None);
     assert_eq!(InsnList::read(&[1, 9], 10), None);
     assert_eq!(InsnList::read(&[1, 0, 1, 1, 0, 0x30], 10).map(|l| l.dropped.len()), Some(1));
+    // A location line delta that overflows `i64` is rejected, not a panic.
+    let mut b = vec![0x01, 0x05, 0x02, 0x02, 0x00];
+    b.extend_from_slice(&[0x01, 0x05, 0x02, 0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01, 0x00]);
+    assert_eq!(asm::list::walk(&b, 0, |_, _| ()), None);
 }
 
 /// With counters, every function has a JIT record in the writable section, initialized and

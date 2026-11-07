@@ -97,7 +97,7 @@ def walkList (bytes : ByteArray) (codeLen : Nat) : Option (Array (Nat × ListEnt
   -- The kind order of the last entry at `pos`.
   let mut last : Option Nat := none
   let mut out : Array (Nat × ListEntry) := #[]
-  -- The line of the last location, an `i64` (`line += …` wraps in release builds).
+  -- The line of the last location, an `i64` (`walk` adds deltas wrapping).
   let mut line : Int := 0
   let u32 (r : Nat × Nat) : Option (Nat × Nat) := if r.1 < 2 ^ 32 then some r else none
   let i32 (r : Nat × Nat) : Option (Int × Nat) := do

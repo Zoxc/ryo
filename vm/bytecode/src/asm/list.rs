@@ -235,7 +235,8 @@ pub fn walk(bytes: &[u8], code_len: u32, mut f: impl FnMut(u32, Entry)) -> Optio
                     let fi = b.u64()?;
                     let file = u32::try_from(fi >> 1).ok()?;
                     let d = b.u64()?;
-                    line += ((d >> 1) as i64) ^ -((d & 1) as i64);
+                    // Wraps, as in the Lean model: only each line must fit in `u32`.
+                    line = line.wrapping_add(((d >> 1) as i64) ^ -((d & 1) as i64));
                     let col = b.u32()?;
                     let name = if fi & 1 != 0 { b.u32().filter(|&n| n != 0)? } else { 0 };
                     Entry::Loc { file, line: u32::try_from(line).ok()?, col, name }
