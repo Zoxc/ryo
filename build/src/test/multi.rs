@@ -167,6 +167,15 @@ fn jit_threads(stdout: &str) -> Option<usize> {
     stdout.lines().find_map(|l| l.strip_prefix("jit threads: ")).and_then(|n| n.trim().parse().ok())
 }
 
+/// The number of failed compiles in the `RYO_JIT_STATS=1` exit summaries in `stderr` (one
+/// per JIT), `None` without one.
+fn jit_failed(stderr: &str) -> Option<u64> {
+    let n = stderr
+        .lines()
+        .filter_map(|l| l.strip_prefix("[ryo] jit stats:")?.trim_start().strip_prefix("failed")?.trim_start().split(':').next()?.parse::<u64>().ok());
+    n.reduce(|a, b| a + b)
+}
+
 /// Several ryo modules in one process:
 /// - a ryo cdylib `dlopen`ed by a ryo executable, `RTLD_LOCAL` and `RTLD_GLOBAL`, and by one
 ///   exporting its symbols (`-Zexport-executable-symbols`): two instances (the cdylib has its
@@ -177,7 +186,7 @@ fn jit_threads(stdout: &str) -> Option<usize> {
 ///   nothing of the runtime, and merge into one instance (one JIT thread), or stay three with
 ///   `RYO_JIT_MERGE=0`; `dlclose`d by a C program after merging, they stay loaded;
 /// - a Rust dylib `dlopen`ed by an executable, both linking one rlib: the merged runtime
-///   registers both copies of its images.
+///   registers both copies of its images, and its JIT compiles every module's code.
 pub(super) fn multi_dylib(info: &RustcInfo, root: &Path, rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
     if !applies() {
         return Ok(());
@@ -243,6 +252,19 @@ pub(super) fn multi_dylib(info: &RustcInfo, root: &Path, rustc_ryo: &Path, src: 
     let jit = run_libs(&shost, &[splugin], JIT_SYNC)?;
     if plain != jit || plain.is_empty() {
         return Err(format!("a crate linked by the executable and a dlopened dylib: with the JIT {jit:?}, without {plain:?}"));
+    }
+    // The merged JIT decodes each copy's images with that copy's handlers: no more compiles
+    // fail than in the copies' own JITs.
+    let failed = |merge: &str| -> Result<(Option<u64>, String), String> {
+        let env = [("RYO_JIT_MERGE", merge), ("RYO_JIT_STATS", "1")];
+        let r = capture_ok(program(&shost).arg(splugin).env("LD_LIBRARY_PATH", &lib_path).envs(JIT_SYNC.iter().copied()).envs(env))?;
+        Ok((jit_failed(&r.stderr), r.stderr))
+    };
+    let ((merged, stderr), (alone, _)) = (failed("1")?, failed("0")?);
+    if merged.is_none_or(|m| m > alone.unwrap_or(0)) {
+        return Err(format!(
+            "a crate linked by the executable and a dlopened dylib: merged, {merged:?} JIT compiles failed (separate {alone:?}): {stderr}"
+        ));
     }
     // Merged copies closed again: both the winner (closed before its JIT starts) and a joiner
     // stay loaded.

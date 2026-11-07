@@ -719,7 +719,7 @@ in `ryo_rt`, `ryo_h_<Opcode>`:
   keeps a frame pointer anyway (the target's default, `-Cforce-frame-pointers`) calls this
   set and saves the `mov rdi, rbp` of every handler call; other code calls `ryo_h_<Opcode>`
   without a frame pointer. The image's mode says which (`MODE_FP_ARG` clear off PE), and the
-  JIT picks the set by it (`RtApi::fp_handlers`). The set is about as much handler code again
+  JIT picks the set by it (`RtCode::fp_handlers`). The set is about as much handler code again
   as the first (some 33 KB on x86-64 Linux, in every program that links `ryo_rt`); its
   register entries take no `fp`, so LLVM merges them into the first set's.
 - **PE layouts**: four registers and, for one 32-bit operand of its own, a fifth argument on
@@ -1045,15 +1045,18 @@ private copy of the runtime (`ryo_rt`, `ryo_bytecode` and the sealed JIT):
   `MAP_FIXED_NOREPLACE`, macOS an `mmap` with the address as a hint, a mapping elsewhere
   meaning the address is taken, Windows
   `VirtualAlloc` at that address: private to the process, no named object another user
-  could create first) and publishes its `ryo_vm_register` there; later copies with the same
-  personality forward their registrations to it. A later copy reads a taken address only
+  could create first) and publishes its registration function there; later copies with the
+  same personality forward their registrations to it, with their own handler tables
+  (`RtCode`). A later copy reads a taken address only
   through a call that fails on an unmapped one, waits a bounded time for it to be READY,
   and joins only if it then has this build's magic and tag; a page that stays foreign, or
   is a copy's with another personality, moves it on to the next probe address, and one that is this build's but can't be joined (or no
   probe working) leaves it private. The winner's
   registration points the images' JIT record slots at its own trips, so its registry, queue,
   JIT thread and code allocator serve all of them, and JIT code calls and inlines across
-  modules; handlers keep no state. Copies with another personality (cdylibs, localized
+  modules; handlers keep no state. AOT code keeps calling its own copy's handlers, so the JIT
+  decodes each image with the tables its copy passed (`RtApi::code_of`); its own code calls
+  the winner's. Copies with another personality (cdylibs, localized
   blobs) stay separate from them, and merge among themselves at another probe address. `RYO_JIT_MERGE=0` keeps every copy separate.
 - **Unloading** stays unsupported: a module that merges (the winner, whose function the page
   names, and each copy that joins, whose images the winner's registry holds) is pinned when
@@ -1099,7 +1102,7 @@ templates and the `main` wrapper. It is a normal Rust dependency of every ryo-bu
     reads `rbp`. The backend picks the set per crate ([Handlers](#handlers)); `handler_for`
     and `reg_handler_for` find a mode's. With the `pe-test` feature (tests off Windows) a second, symbol-less set of handlers and register
     entries in the PE form's Win64 convention (`vm::PE_MODE`, `pe_handler`), which the JIT
-    gets through `RtApi::pe_handlers`, runs PE code on Linux.
+    gets through `RtCode::pe_handlers`, runs PE code on Linux.
 - **`island`**: the island templates ([stubs.md](stubs.md#templates)).
 
 ### Rules

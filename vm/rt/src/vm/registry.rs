@@ -9,6 +9,7 @@ use core::ptr;
 use core::sync::atomic::{AtomicPtr, Ordering};
 
 use ryo_bytecode::image::Image;
+use ryo_bytecode::jit_abi::RtCode;
 
 use super::sys::{Bump, fatal, lock};
 
@@ -16,16 +17,18 @@ struct Snapshot {
     /// The registered images, sorted by crate hash (then CGU hash).
     images: &'static [Image<'static>],
     /// The images' non-empty text and read-only sections, sorted by start address: for
-    /// [`image_at`].
+    /// [`image_at`] and [`code_of`].
     sections: &'static [Section],
 }
 
-/// A section of a registered image: `[start, start + len)`, in the image with header `header`.
+/// A section of a registered image: `[start, start + len)`, in the image with header `header`,
+/// whose code calls the handlers of `code` (null: this copy's; [`code_of`]).
 #[derive(Clone, Copy)]
 struct Section {
     start: usize,
     len: usize,
     header: *const u8,
+    code: *const RtCode,
 }
 
 static SNAPSHOT: AtomicPtr<Snapshot> = AtomicPtr::new(ptr::null_mut());
@@ -36,16 +39,19 @@ fn snapshot() -> Option<&'static Snapshot> {
     unsafe { SNAPSHOT.load(Ordering::Acquire).as_ref() }
 }
 
-/// Registers the images whose headers are the non-null entries of `[start, end)`. See
-/// [`super::ryo_vm_register`].
+/// Registers the images whose headers are the non-null entries of `[start, end)`, whose code
+/// calls the handlers of `code` (null: this copy's). See [`super::register_from`].
 ///
 /// # Safety
-/// As for `ryo_vm_register`.
-pub unsafe fn register(start: *const *const u8, end: *const *const u8, anchor: *const u8) {
-    // A copy merged into another registers there (design/vm.md#several-ryo-runtimes-in-one-process).
+/// As for `register_from`.
+pub unsafe fn register(start: *const *const u8, end: *const *const u8, anchor: *const u8, code: *const RtCode) {
+    // A copy merged into another registers there (design/vm.md#several-ryo-runtimes-in-one-process),
+    // passing the handlers its images call.
     if let Some(winner) = super::jit::forward() {
-        // SAFETY: per the caller; the winner's `ryo_vm_register` has the same contract.
-        return unsafe { winner(start, end, anchor) };
+        let code = if code.is_null() { super::jit::code() as *const RtCode } else { code };
+        // SAFETY: per the caller; the winner's `register_from` has the same contract, and
+        // `code` is this copy's tables (static) or the caller's.
+        return unsafe { winner(start, end, anchor, code) };
     }
     let n = (end as usize).saturating_sub(start as usize) / size_of::<*const u8>();
     let mut g = lock();
@@ -71,26 +77,33 @@ pub unsafe fn register(start: *const *const u8, end: *const *const u8, anchor: *
     if len == old.len() {
         return;
     }
-    // SAFETY: the first `len` entries are initialized, and nothing else views them. They are
-    // allocated forever and not mutated after sorting, so the list is `&'static`.
+    let old_sections = snapshot().map_or(&[][..], |s| s.sections);
+    // SAFETY: entries `old.len()..len` are the new images, initialized; not `&images[..]`,
+    // whose bounds check reaches core's panic path.
+    let new = unsafe { core::slice::from_raw_parts(by_hash.add(old.len()), len - old.len()) };
+    let sections = build_sections(&mut g, old_sections, new, code);
+    // SAFETY: the first `len` entries are initialized, and nothing else views them (`new` is
+    // dead). They are allocated forever and not mutated after sorting, so the list is
+    // `&'static`.
     let images: &'static mut [Image<'static>] = unsafe { core::slice::from_raw_parts_mut(by_hash, len) };
     sort_by_key(images, |im| (im.crate_hash(), im.header().cgu_hash));
-    let sections = build_sections(&mut g, images);
     publish(&mut g, Snapshot { images, sections });
 }
 
-/// The by-address index of `images`' non-empty text and read-only sections, sorted by start
-/// address.
-fn build_sections(g: &mut Bump, images: &[Image<'static>]) -> &'static [Section] {
-    let by_addr = g.alloc_forever(2 * images.len() * size_of::<Section>(), align_of::<Section>()).cast::<Section>();
-    let mut n = 0;
-    for im in images {
+/// The by-address index of the sections `old` and the non-empty text and read-only sections
+/// of `new`, images whose code calls `code`'s handlers, sorted by start address.
+fn build_sections(g: &mut Bump, old: &[Section], new: &[Image<'static>], code: *const RtCode) -> &'static [Section] {
+    let by_addr = g.alloc_forever((old.len() + 2 * new.len()) * size_of::<Section>(), align_of::<Section>()).cast::<Section>();
+    // SAFETY: fresh, suitably sized and aligned allocation.
+    unsafe { ptr::copy_nonoverlapping(old.as_ptr(), by_addr, old.len()) };
+    let mut n = old.len();
+    for im in new {
         let header = (im.header() as *const ryo_bytecode::image::Header).cast::<u8>();
         let ro = im.bytes();
         for (start, len) in [(im.text_ptr() as usize, im.header().text_size as usize), (ro.as_ptr() as usize, ro.len())] {
             if len != 0 {
-                // SAFETY: `by_addr` has room for two entries per image.
-                unsafe { by_addr.add(n).write(Section { start, len, header }) };
+                // SAFETY: `by_addr` has room for two entries per new image.
+                unsafe { by_addr.add(n).write(Section { start, len, header, code }) };
                 n += 1;
             }
         }
@@ -128,7 +141,7 @@ pub unsafe fn ensure(h: *const u8) {
     let entry = [h];
     // SAFETY: per the caller; `register` skips the image if another thread just registered it.
     // No anchor: the image's own trip reached this runtime, so it is this runtime's.
-    unsafe { register(entry.as_ptr(), entry.as_ptr().wrapping_add(1), ptr::null()) }
+    unsafe { register(entry.as_ptr(), entry.as_ptr().wrapping_add(1), ptr::null(), ptr::null()) }
 }
 
 /// The admission checks for header `h` against the images already registered (`existing`):
@@ -200,7 +213,21 @@ unsafe fn admit(h: *const u8, anchor: *const u8, existing: &[Image<'static>]) ->
 ///
 /// [`RtApi::image_at`]: ryo_bytecode::jit_abi::RtApi::image_at
 pub fn image_at(addr: usize) -> *const u8 {
-    let Some(s) = snapshot() else { return ptr::null() };
+    section_at(addr).map_or(ptr::null(), |s| s.header)
+}
+
+/// The handlers the code of the registered image with header `h` calls: its runtime copy's
+/// tables, null for this copy's own (or no such image) ([`RtApi::code_of`]).
+///
+/// [`RtApi::code_of`]: ryo_bytecode::jit_abi::RtApi::code_of
+pub fn code_of(h: *const u8) -> *const RtCode {
+    // The header starts the image's read-only section.
+    section_at(h as usize).filter(|s| s.header == h).map_or(ptr::null(), |s| s.code)
+}
+
+/// The registered section that holds `addr`.
+fn section_at(addr: usize) -> Option<&'static Section> {
+    let s = snapshot()?;
     let secs = s.sections;
     // Binary search for the number of sections starting at or below `addr`; sections don't
     // overlap, so only the last of them can hold it.
@@ -215,11 +242,11 @@ pub fn image_at(addr: usize) -> *const u8 {
         }
     }
     if lo == 0 {
-        return ptr::null();
+        return None;
     }
     // SAFETY: `0 < lo <= secs.len()`.
     let sec = unsafe { secs.get_unchecked(lo - 1) };
-    if addr.wrapping_sub(sec.start) < sec.len { sec.header } else { ptr::null() }
+    (addr.wrapping_sub(sec.start) < sec.len).then_some(sec)
 }
 
 /// The registered image whose header is at `h`.
@@ -244,7 +271,7 @@ pub fn text_at(addr: usize) -> Option<(&'static Image<'static>, u32, u32)> {
 
 /// A heapsort: core's sorts reference its panic path (`panic_on_ord_violation`), which the
 /// runtime must not reach (design/vm.md, "No re-entry"). O(n log n) whatever the input order:
-/// the section index is rebuilt from hash order on every registration.
+/// every registration sorts the section index again, the new sections after the old ones.
 fn sort_by_key<T, K: Ord>(list: &mut [T], key: impl Fn(&T) -> K) {
     let p = list.as_mut_ptr();
     let n = list.len();

@@ -205,8 +205,11 @@ by `start_once` (unix), keep the child consistent and let it start a JIT of its 
 `vm/jit/src/install.rs`, per record:
 
 - **Decoding**: `image::ImageResolver::decode` from the image alone (the handler table is
-  every `ryo_h_*` handler's address with its opcode, from `RtApi::handlers`, sorted, built
-  once; the probe `ryo_probe_stack`, `RtApi::probe`). The decoder reads the counters'
+  every `ryo_h_*` handler's address with its opcode, from `RtCode::handlers`, sorted, built
+  once per runtime copy; the probe `ryo_probe_stack`, `RtCode::probe`). An image's code calls
+  the handlers of the copy that linked it: `RtApi::code` for this copy's,
+  `RtApi::code_of(header)` for an image a copy merged into this one passed along with its own
+  tables ([vm.md](vm.md#several-ryo-runtimes-in-one-process)). The decoder reads the counters'
   checks and stubs as part of the canonical form and lists the loop heads
   (`Decoded::heads`, [vm.md](vm.md#jit-records-and-counters)).
 - **Encoding**: the SSA pipeline's `jit::compile` ([The SSA pipeline](#the-ssa-pipeline)), or, for a
@@ -796,7 +799,7 @@ only it, and is unchanged).
   edi; ret`. `vm/rt/tests/codegen.rs` checks that every entry exists and keeps nothing on
   the stack, `vm/rt/tests/reg_entries.rs` runs every entry against its frame entry on random
   operands.
-- **Interface**: `RtApi::reg_handlers` gives their addresses (null without one), the JIT
+- **Interface**: `RtCode::reg_handlers` (`RtApi::code`) gives their addresses (null without one), the JIT
   relocates `Ref::RegHandler` against it, and `RYO_JIT_DUMP` names them
   `ryo_hr_<Opcode>`.
 - **Use**: the builder makes a handler call `hcall.reg` when the handler has a register

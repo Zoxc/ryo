@@ -22,7 +22,7 @@ use ryo_bytecode::image::{
 use ryo_bytecode::jit;
 use ryo_bytecode::jit::inline::VmFunc;
 use ryo_bytecode::jit::ir::CallTarget;
-use ryo_bytecode::jit_abi::{JIT_ENTRY_PREFIX, JIT_ENTRY_PREFIX_BYTES, JitOpt, RtApi};
+use ryo_bytecode::jit_abi::{JIT_ENTRY_PREFIX, JIT_ENTRY_PREFIX_BYTES, JitOpt, RtApi, RtCode};
 use ryo_bytecode::{Opcode, reduced, vmem};
 
 use crate::stats::{self, Fail, STATS};
@@ -32,7 +32,7 @@ mod dump;
 mod region;
 
 pub(crate) use callees::init_tls;
-use callees::{Ext, InlineEnv, IrCache, Name, PoolMem};
+use callees::{Calls, Copies, Ext, InlineEnv, IrCache, Name, PoolMem};
 use region::{Place, REGION, Region, Span};
 
 /// The page size.
@@ -151,8 +151,8 @@ impl Tier {
 
 pub(crate) struct Jit {
     rt: &'static RtApi,
-    /// The handlers' addresses and opcodes, sorted, for [`ImageResolver`].
-    handlers: Vec<(usize, Opcode)>,
+    /// The handlers each image's code calls, for [`ImageResolver`].
+    copies: Copies,
     /// The handlers' and the probe's range.
     rt_span: Span,
     regions: Vec<Region>,
@@ -179,22 +179,8 @@ pub(crate) struct Jit {
 
 impl Jit {
     pub(crate) fn new(rt: &'static RtApi) -> Jit {
-        // The frame-pointer set's, and the PE form's handlers too, if the runtime has a set of
-        // its own (tests off Windows).
-        // SAFETY: `fp_handlers` and `pe_handlers` are null or point at the runtime's tables.
-        let (fp, pe) = unsafe { (rt.fp_handlers.as_ref(), rt.pe_handlers.as_ref()) };
-        let mut handlers: Vec<(usize, Opcode)> = [Some(&rt.handlers), fp, pe]
-            .into_iter()
-            .flatten()
-            .flat_map(|t| t.iter().zip(ryo_bytecode::ALL_OPCODES))
-            .filter(|(h, _)| !h.is_null())
-            .map(|(&h, &op)| (h as usize, op))
-            .collect();
-        handlers.sort_unstable();
-        // The target's and the PE sets share `resume`. Other opcodes at one address (folded handlers) stay: a
-        // call's instruction list entry tells them apart.
-        handlers.dedup();
-        let probe = rt.probe as usize;
+        // The JIT's code calls this copy's handlers and probe.
+        let Calls { handlers, probe } = Calls::new(rt.code);
         let lo = handlers.first().map_or(probe, |h| h.0).min(probe);
         let hi = handlers.last().map_or(probe, |h| h.0).max(probe) + PAGE;
         let perfmap = rt
@@ -206,7 +192,7 @@ impl Jit {
         let dump = std::env::var("RYO_JIT_DUMP").ok().filter(|d| !d.is_empty());
         Jit {
             rt,
-            handlers,
+            copies: Copies::new(rt),
             rt_span: Span { lo, hi },
             regions: Vec::new(),
             images: HashMap::new(),
@@ -288,7 +274,7 @@ impl Jit {
         // AOT code's (design/vm.md#pe-seh).
         let personality = if img.mode().pe { 0 } else { info.personality.ok_or(CompileError::Fail(Fail::NoPersonality))? };
         let place = self.place(info.span).ok_or("no code memory near the image")?;
-        let d = callees::decode(img, &self.handlers, self.rt.probe as usize, func).ok_or("no such function")?.map_err(|e| e.what)?;
+        let d = callees::decode(img, &mut self.copies, func).ok_or("no such function")?.map_err(|e| e.what)?;
         let mode = jit_mode(&img, place.far_rt);
         let shuffled = (self.rt.shuffled)(h as *const _ as *const u8);
         let job = Job { rec, func, img: &img, d: &d, mode, shuffled, place, personality, retry };
@@ -352,8 +338,7 @@ impl Jit {
         let header = h as *const _ as usize;
         let mut env = InlineEnv {
             cache: &mut self.ir_cache,
-            handlers: &self.handlers,
-            probe: self.rt.probe as usize,
+            copies: &mut self.copies,
             mode,
             header,
             root: func,
@@ -503,16 +488,16 @@ impl Jit {
         // `rbp` off PE, PE code's own set if the runtime has one.
         let mode = job.img.mode();
         let (hs, rhs) = if mode.rbp_set() {
-            if self.rt.fp_handlers.is_null() {
+            if self.rt.code.fp_handlers.is_null() {
                 return Err("no frame-pointer handler set".into());
             }
             // SAFETY: the runtime's tables, non-null.
-            unsafe { (&*self.rt.fp_handlers, &*self.rt.fp_reg_handlers) }
-        } else if mode.pe && !self.rt.pe_handlers.is_null() {
+            unsafe { (&*self.rt.code.fp_handlers, &*self.rt.code.fp_reg_handlers) }
+        } else if mode.pe && !self.rt.code.pe_handlers.is_null() {
             // SAFETY: as above.
-            unsafe { (&*self.rt.pe_handlers, &*self.rt.pe_reg_handlers) }
+            unsafe { (&*self.rt.code.pe_handlers, &*self.rt.code.pe_reg_handlers) }
         } else {
-            (&self.rt.handlers, &self.rt.reg_handlers)
+            (&self.rt.code.handlers, &self.rt.code.reg_handlers)
         };
         for r in relocs {
             let field = jit_f + r.at as usize;
@@ -525,7 +510,7 @@ impl Jit {
             let target = match r.to {
                 Ref::Handler(op) => Some(hs[op as usize]).filter(|h| !h.is_null()).ok_or("no handler")? as usize,
                 Ref::RegHandler(op) => Some(rhs[op as usize]).filter(|h| !h.is_null()).ok_or("no register entry")? as usize,
-                Ref::Probe => self.rt.probe as usize,
+                Ref::Probe => self.rt.code.probe as usize,
                 Ref::Func(Func(g)) if g == job.func => jit_f,
                 Ref::Func(Func(g)) if g & FUNC_KINDS != 0 => {
                     let k = (g & !FUNC_KINDS) as usize;

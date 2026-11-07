@@ -30,10 +30,12 @@ pub use interp::{PE_MODE, pe_handler, pe_reg_handler};
 pub use jit::{JIT_ENTRY_PREFIX, configure_jit, configure_jit_off, jit_shuffle_image};
 pub use jit::{trip_entry, trip_osr};
 
-/// A registration function: [`ryo_vm_register`] (`C-unwind`, but it never unwinds), called as
+use ryo_bytecode::jit_abi::RtCode;
+
+/// A registration function: [`register_from`] (`C-unwind`, but it never unwinds), called as
 /// `C`: a call through a `C-unwind` pointer would make `ryo_rt` require `panic=unwind`.
 /// `jit::forward` returns one.
-pub(crate) type RegisterFn = unsafe extern "C" fn(*const *const u8, *const *const u8, *const u8);
+pub(crate) type RegisterFn = unsafe extern "C" fn(*const *const u8, *const *const u8, *const u8, *const RtCode);
 
 /// Registers the images whose header addresses are the non-null entries of `[start, end)` and
 /// that were linked against `anchor` (`Header::anchor`; a null `anchor` takes all). Called by
@@ -61,9 +63,21 @@ pub(crate) type RegisterFn = unsafe extern "C" fn(*const *const u8, *const *cons
 #[unsafe(export_name = tagged!(ryo_bytecode::rt_sym!(register)))]
 pub unsafe extern "C-unwind" fn ryo_vm_register(start: *const *const u8, end: *const *const u8, anchor: *const u8) {
     // SAFETY: per the caller.
-    unsafe { registry::register(start, end, anchor) };
+    unsafe { register_from(start, end, anchor, core::ptr::null()) }
+}
+
+/// [`ryo_vm_register`] for images whose code calls the handlers of `code`, a runtime copy's
+/// tables that stay for the rest of the process (null: this copy's): the [`RegisterFn`] a copy
+/// publishes for the copies that merge into it (`jit::forward`), which pass their own, so that
+/// the JIT decodes each image's code with its copy's handler addresses.
+///
+/// # Safety
+/// As for `ryo_vm_register`, and `code` is null or valid forever.
+pub(crate) unsafe extern "C-unwind" fn register_from(start: *const *const u8, end: *const *const u8, anchor: *const u8, code: *const RtCode) {
+    // SAFETY: per the caller.
+    unsafe { registry::register(start, end, anchor, code) };
     // The JIT thread starts here, in a constructor (design/jit.md#when-the-jit-thread-starts),
-    // unless this copy forwarded to another, whose `ryo_vm_register` just started its own.
+    // unless this copy forwarded to another, whose `register_from` just started its own.
     if jit::forward().is_none() {
         jit::start_once();
     }

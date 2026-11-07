@@ -5,10 +5,12 @@
 //! one ryo build (same ABI tag) whose program shares one panic personality (one std, e.g.
 //! `libstd-*.so`) merge into one instance: the first copy to get here, the winner, publishes
 //! its registration function in a rendezvous page; every other copy forwards its
-//! registrations there ([`forward`]). The winner's registration points the images' JIT
-//! records at its own trips ([`super::registered`]), so the winner's registry, queue, JIT
-//! thread and code allocator serve them all, and the losers' JITs never start. Handlers keep
-//! no state, so images keep calling their own copy's.
+//! registrations there ([`forward`]), with their own handler tables ([`super::code`]). The
+//! winner's registration points the images' JIT records at its own trips
+//! ([`super::registered`]), so the winner's registry, queue, JIT thread and code allocator
+//! serve them all, and the losers' JITs never start. Handlers keep no state, so images keep
+//! calling their own copy's; the JIT decodes an image's code with its copy's tables
+//! (`RtApi::code_of`), and its own code calls the winner's.
 //!
 //! Copies with another personality (a cdylib's own std, a localized staticlib blob) skip the
 //! winner's page and merge among themselves at the next probe address. A page that isn't this
@@ -79,7 +81,7 @@ fn decide() -> usize {
         return PRIVATE;
     }
     let personality = super::rust_eh_personality as *const () as usize;
-    let own = super::super::ryo_vm_register as *const () as usize;
+    let own = super::super::register_from as *const () as usize;
     use ryo_bytecode::vmem;
     for i in 0..8 {
         let at = probe(i);

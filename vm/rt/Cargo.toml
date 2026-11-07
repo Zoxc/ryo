@@ -6,7 +6,7 @@ license = "MIT OR Apache-2.0"
 
 [features]
 # Tests off Windows: a second set of handlers and register entries in the PE form's Win64
-# convention (`vm::PE_MODE`, no symbols), which the JIT gets through `RtApi::pe_handlers`, so
+# convention (`vm::PE_MODE`, no symbols), which the JIT gets through `RtCode::pe_handlers`, so
 # that PE code runs on Linux.
 pe-test = []
 

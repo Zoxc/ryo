@@ -36,7 +36,7 @@ use core::sync::atomic::Ordering::{AcqRel, Acquire, Relaxed, Release, SeqCst};
 use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU8, AtomicU32, AtomicUsize};
 
 use ryo_bytecode::image::{Image, JIT_BIAS, JIT_COLD, JIT_DONE, JIT_ENTRY_THRESHOLD, JIT_FAILED, JIT_QUEUED, JIT_THRESHOLD, JitRecord, jit_settle};
-use ryo_bytecode::jit_abi::{JitOpt, JitSettings, RtApi};
+use ryo_bytecode::jit_abi::{JitOpt, JitSettings, RtApi, RtCode};
 
 pub use ryo_bytecode::jit_abi::JIT_ENTRY_PREFIX;
 
@@ -327,6 +327,50 @@ extern "C-unwind" fn shuffled(header: *const u8) -> bool {
 /// [`RtApi::image_at`].
 extern "C-unwind" fn image_at(addr: usize) -> *const u8 {
     super::registry::image_at(addr)
+}
+
+/// [`RtApi::code_of`].
+extern "C-unwind" fn code_of(header: *const u8) -> *const RtCode {
+    super::registry::code_of(header)
+}
+
+/// This copy's handlers and probe ([`RtApi::code`]): the JIT's, or, in a copy merged into
+/// another, what its images' code calls, which it passes along with them ([`RtApi::code_of`]).
+pub(crate) fn code() -> &'static RtCode {
+    type Table = [*const (); ryo_bytecode::Opcode::COUNT];
+    fn table(f: fn(ryo_bytecode::Opcode) -> Option<*const ()>) -> Table {
+        core::array::from_fn(|i| f(ryo_bytecode::ALL_OPCODES[i]).unwrap_or(ptr::null()))
+    }
+    static CODE: Once<RtCode> = Once::new();
+    #[cfg(all(feature = "pe-test", not(windows)))]
+    static PE: Once<[Table; 2]> = Once::new();
+    #[cfg(not(any(windows, target_vendor = "apple")))]
+    static FP: Once<[Table; 2]> = Once::new();
+    CODE.get_or_init(|| {
+        #[cfg(all(feature = "pe-test", not(windows)))]
+        let (pe_handlers, pe_reg_handlers) = {
+            let t = PE.get_or_init(|| [table(super::interp::pe_handler), table(super::interp::pe_reg_handler)]);
+            (&raw const t[0], &raw const t[1])
+        };
+        #[cfg(not(all(feature = "pe-test", not(windows))))]
+        let (pe_handlers, pe_reg_handlers) = (ptr::null(), ptr::null());
+        #[cfg(not(any(windows, target_vendor = "apple")))]
+        let (fp_handlers, fp_reg_handlers) = {
+            let t = FP.get_or_init(|| [table(super::interp::fp_handler), table(super::interp::fp_reg_handler)]);
+            (&raw const t[0], &raw const t[1])
+        };
+        #[cfg(any(windows, target_vendor = "apple"))]
+        let (fp_handlers, fp_reg_handlers) = (ptr::null(), ptr::null());
+        RtCode {
+            probe: super::interp::probe_stack as *const (),
+            handlers: table(super::interp::handler),
+            reg_handlers: table(super::interp::reg_handler),
+            pe_handlers,
+            pe_reg_handlers,
+            fp_handlers,
+            fp_reg_handlers,
+        }
+    })
 }
 
 /// The queue of records to compile: a Treiber stack linked through [`JitRecord::next`]. Only
@@ -807,35 +851,11 @@ fn start(child: bool) -> bool {
         return unsafe { ryo_jit_start(api, true) }.is_some();
     }
     let cfg = config();
-    let table = |f: fn(ryo_bytecode::Opcode) -> Option<*const ()>| -> [*const (); ryo_bytecode::Opcode::COUNT] {
-        core::array::from_fn(|i| f(ryo_bytecode::ALL_OPCODES[i]).unwrap_or(ptr::null()))
-    };
-    let handlers = table(super::interp::handler);
-    let reg_handlers = table(super::interp::reg_handler);
-    #[cfg(all(feature = "pe-test", not(windows)))]
-    let (pe_handlers, pe_reg_handlers) = {
-        static PE: Once<[[*const (); ryo_bytecode::Opcode::COUNT]; 2]> = Once::new();
-        let Some(t) = PE.set_with(|| [table(super::interp::pe_handler), table(super::interp::pe_reg_handler)]) else {
-            super::sys::fatal("the JIT started twice");
-        };
-        (&raw const t[0], &raw const t[1])
-    };
-    #[cfg(not(all(feature = "pe-test", not(windows))))]
-    let (pe_handlers, pe_reg_handlers) = (ptr::null(), ptr::null());
-    #[cfg(not(any(windows, target_vendor = "apple")))]
-    let (fp_handlers, fp_reg_handlers) = {
-        static FP: Once<[[*const (); ryo_bytecode::Opcode::COUNT]; 2]> = Once::new();
-        let Some(t) = FP.set_with(|| [table(super::interp::fp_handler), table(super::interp::fp_reg_handler)]) else {
-            super::sys::fatal("the JIT started twice");
-        };
-        (&raw const t[0], &raw const t[1])
-    };
-    #[cfg(any(windows, target_vendor = "apple"))]
-    let (fp_handlers, fp_reg_handlers) = (ptr::null(), ptr::null());
     let api = RtApi {
         settings: cfg.jit,
         thresholds: cfg.thresholds(),
-        probe: super::interp::probe_stack as *const (),
+        code: code(),
+        code_of,
         personality: rust_eh_personality as *const (),
         #[cfg(windows)]
         seh_handler: super::seh::handler as *const (),
@@ -845,12 +865,6 @@ fn start(child: bool) -> bool {
         done,
         shuffled,
         image_at,
-        handlers,
-        reg_handlers,
-        pe_handlers,
-        pe_reg_handlers,
-        fp_handlers,
-        fp_reg_handlers,
         bt_publish: super::backtrace::bt_publish,
         fork_enter,
         fork_leave,

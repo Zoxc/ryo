@@ -9,7 +9,8 @@ use super::{Image, PoolRead, SYM_SLOT};
 /// the image's header ranges, for decoding its functions at run time
 /// ([`crate::asm::decode_linked`]). The handlers aren't in the image: `handlers` gives their
 /// addresses (sorted; an address may be shared by several opcodes, folded handlers, where the
-/// call's instruction list entry tells which one it calls), `probe` that of `ryo_probe_stack`.
+/// call's instruction list entry tells which one it calls), `probe` that of `ryo_probe_stack`,
+/// both of the runtime copy the image's code calls (`RtApi::code_of`).
 #[derive(Clone, Copy)]
 pub struct ImageResolver<'a> {
     pub image: Image<'a>,

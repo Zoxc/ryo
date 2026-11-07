@@ -102,8 +102,6 @@ pub struct JitSettings {
 pub struct RtApi {
     /// The settings.
     pub settings: JitSettings,
-    /// `ryo_probe_stack`'s address.
-    pub probe: *const (),
     /// The program's `rust_eh_personality`: the JIT finds an image's personality slot, which
     /// its unwind information names, by this address. (The JIT's own `rust_eh_personality`,
     /// if it has a std of its own, is another function.)
@@ -133,22 +131,13 @@ pub struct RtApi {
     /// symbol slot holds; and it folds loads from the constant pool a constant address points
     /// into.
     pub image_at: extern "C-unwind" fn(addr: usize) -> *const u8,
-    /// Every opcode's handler address by opcode, null for opcodes without a handler.
-    pub handlers: [*const (); Opcode::COUNT],
-    /// Every opcode's register entry (design/jit.md, "Register entries"), null for opcodes
-    /// without one: [`crate::jit::effects::reg_entry`] says which have one, and how they take
-    /// their operands.
-    pub reg_handlers: [*const (); Opcode::COUNT],
-    /// Tests off Windows only (`ryo_rt`'s `pe-test`): the handlers and register entries of
-    /// PE code (Win64, `Mode::pe`), as [`RtApi::handlers`] and [`RtApi::reg_handlers`]; null
-    /// without them, when PE code uses those (on Windows they are the PE form's).
-    pub pe_handlers: *const [*const (); Opcode::COUNT],
-    pub pe_reg_handlers: *const [*const (); Opcode::COUNT],
-    /// The frame-pointer set's handlers and register entries (`ryo_hf_<Opcode>`, for code of
-    /// a mode with [`crate::asm::Mode::rbp_set`]), as [`RtApi::handlers`]; null where the
-    /// runtime has none (PE, Apple).
-    pub fp_handlers: *const [*const (); Opcode::COUNT],
-    pub fp_reg_handlers: *const [*const (); Opcode::COUNT],
+    /// This copy's handlers and probe, which the JIT's code calls.
+    pub code: &'static RtCode,
+    /// The handlers and probe that the code of the registered image with this header calls:
+    /// those of the runtime copy that linked it, another copy's for an image that copy
+    /// forwarded when it merged into this one (design/vm.md#several-ryo-runtimes-in-one-process);
+    /// null for this copy's own ([`RtApi::code`]).
+    pub code_of: extern "C-unwind" fn(header: *const u8) -> *const RtCode,
     /// Publishes the call map of installed JIT code for backtraces ([`BtRegion`]), before
     /// the code can run. The region and its tables are the runtime's from then on, and stay
     /// for the rest of the process. Only the JIT's thread calls it.
@@ -194,6 +183,35 @@ pub struct BtChain {
     pub parent: u32,
     pub pad: u32,
 }
+
+/// A runtime copy's handler entry points: what its images' AOT code calls, which the JIT
+/// recognizes when it decodes that code. Copies of one build have the same handlers, which
+/// keep no state, so the JIT's code calls its own copy's ([`RtApi::code`]) for any image.
+#[repr(C)]
+pub struct RtCode {
+    /// `ryo_probe_stack`'s address.
+    pub probe: *const (),
+    /// Every opcode's handler address by opcode, null for opcodes without a handler.
+    pub handlers: [*const (); Opcode::COUNT],
+    /// Every opcode's register entry (design/jit.md, "Register entries"), null for opcodes
+    /// without one: [`crate::jit::effects::reg_entry`] says which have one, and how they take
+    /// their operands.
+    pub reg_handlers: [*const (); Opcode::COUNT],
+    /// Tests off Windows only (`ryo_rt`'s `pe-test`): the handlers and register entries of
+    /// PE code (Win64, `Mode::pe`), as [`RtCode::handlers`] and [`RtCode::reg_handlers`]; null
+    /// without them, when PE code uses those (on Windows they are the PE form's).
+    pub pe_handlers: *const [*const (); Opcode::COUNT],
+    pub pe_reg_handlers: *const [*const (); Opcode::COUNT],
+    /// The frame-pointer set's handlers and register entries (`ryo_hf_<Opcode>`, for code of
+    /// a mode with [`crate::asm::Mode::rbp_set`]), as [`RtCode::handlers`]; null where the
+    /// runtime has none (PE, Apple).
+    pub fp_handlers: *const [*const (); Opcode::COUNT],
+    pub fp_reg_handlers: *const [*const (); Opcode::COUNT],
+}
+
+// SAFETY: immutable once built; the pointers are code addresses, and the PE and frame-pointer
+// ones the copy's tables, written once before it is built and never again.
+unsafe impl Sync for RtCode {}
 
 /// No parent ([`BtChain::parent`]).
 pub const BT_ROOT: u32 = u32::MAX;

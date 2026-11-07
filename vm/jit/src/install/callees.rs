@@ -50,8 +50,7 @@ pub(super) const IR_CACHE_MAX: usize = 4096;
 /// retargets the unit's calls after inlining ([`callee`]): the region, and the callees.
 pub(super) struct InlineEnv<'a> {
     pub(super) cache: &'a mut IrCache,
-    pub(super) handlers: &'a [(usize, Opcode)],
-    pub(super) probe: usize,
+    pub(super) copies: &'a mut Copies,
     pub(super) mode: Mode,
     pub(super) header: usize,
     pub(super) root: u32,
@@ -64,13 +63,64 @@ pub(super) struct InlineEnv<'a> {
     pub(super) ext_vm: HashMap<u32, (usize, u32)>,
 }
 
-/// Decodes function `func` of the registered image `img` to the reduced set, `None` if it
-/// has no such function.
-pub(super) fn decode(img: Image<'_>, handlers: &[(usize, Opcode)], probe: usize, func: u32) -> Option<Result<asm::Decoded, asm::AsmError>> {
+/// A runtime copy's handler entry points as [`ImageResolver`] takes them: the handlers'
+/// addresses and opcodes, sorted, and the probe's address.
+pub(super) struct Calls {
+    pub(super) handlers: Vec<(usize, Opcode)>,
+    pub(super) probe: usize,
+}
+
+impl Calls {
+    pub(super) fn new(code: &RtCode) -> Calls {
+        // The frame-pointer set's, and the PE form's handlers too, if the runtime has a set of
+        // its own (tests off Windows).
+        // SAFETY: `fp_handlers` and `pe_handlers` are null or point at the runtime's tables.
+        let (fp, pe) = unsafe { (code.fp_handlers.as_ref(), code.pe_handlers.as_ref()) };
+        let mut handlers: Vec<(usize, Opcode)> = [Some(&code.handlers), fp, pe]
+            .into_iter()
+            .flatten()
+            .flat_map(|t| t.iter().zip(ryo_bytecode::ALL_OPCODES))
+            .filter(|(h, _)| !h.is_null())
+            .map(|(&h, &op)| (h as usize, op))
+            .collect();
+        handlers.sort_unstable();
+        // The target's and the PE sets share `resume`. Other opcodes at one address (folded
+        // handlers) stay: a call's instruction list entry tells them apart.
+        handlers.dedup();
+        Calls { handlers, probe: code.probe as usize }
+    }
+}
+
+/// The [`Calls`] of each runtime copy whose images the JIT decodes, by its [`RtCode`]'s
+/// address: an image's code calls the handlers of the copy that linked it, also when that
+/// copy merged into this one ([`RtApi::code_of`]).
+pub(super) struct Copies {
+    rt: &'static RtApi,
+    by_code: HashMap<usize, Calls>,
+}
+
+impl Copies {
+    pub(super) fn new(rt: &'static RtApi) -> Copies {
+        Copies { rt, by_code: HashMap::new() }
+    }
+
+    /// What the code of the registered image with header `header` calls.
+    pub(super) fn of(&mut self, header: usize) -> &Calls {
+        let code = (self.rt.code_of)(header as *const u8);
+        // SAFETY: null or a runtime copy's tables, which stay forever.
+        let code = unsafe { code.as_ref() }.unwrap_or(self.rt.code);
+        self.by_code.entry(code as *const RtCode as usize).or_insert_with(|| Calls::new(code))
+    }
+}
+
+/// Decodes function `func` of the registered image `img` to the reduced set with its copy's
+/// handlers (`copies`), `None` if it has no such function.
+pub(super) fn decode(img: Image<'_>, copies: &mut Copies, func: u32) -> Option<Result<asm::Decoded, asm::AsmError>> {
     let h = img.header();
+    let calls = copies.of(h as *const _ as usize);
     // SAFETY: a registered image's text section.
     let text = unsafe { core::slice::from_raw_parts(h.text as usize as *const u8, h.text_size as usize) };
-    ImageResolver { image: img, handlers, probe }.decode(func, text)
+    ImageResolver { image: img, handlers: &calls.handlers, probe: calls.probe }.decode(func, text)
 }
 
 std::thread_local! {
@@ -112,7 +162,7 @@ impl jit::inline::Env for InlineEnv<'_> {
         if self.cache.len() >= IR_CACHE_MAX {
             self.cache.clear();
         }
-        let f = match decode(img, self.handlers, self.probe, g.func.0) {
+        let f = match decode(img, self.copies, g.func.0) {
             Some(Ok(d)) => jit::ir_of(&d, self.mode, Some(&PoolMem { header: g.img, rt: self.rt })).ok().map(std::rc::Rc::new),
             _ => None,
         };
