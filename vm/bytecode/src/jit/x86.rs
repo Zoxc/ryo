@@ -626,6 +626,10 @@ impl X86 {
         self.code.push(0xcc);
     }
 
+    pub fn nop(&mut self) {
+        self.code.push(0x90);
+    }
+
     pub fn push(&mut self, r: R) {
         if r.num() >= 8 {
             self.code.push(0x41);

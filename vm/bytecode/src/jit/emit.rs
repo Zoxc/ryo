@@ -298,6 +298,16 @@ impl Asm {
     fn bind(&mut self, l: u32) {
         self.ps.push(P::Bind(l));
     }
+    /// Whether nothing has been emitted since `m`: no code, branch, padding or table.
+    fn nothing_since(&self, m: Mark) -> bool {
+        let p = m.piece as usize;
+        matches!(self.ps.get(p), Some(P::Code(x)) if x.pos() == m.off)
+            && self.ps[p + 1..].iter().all(|q| match q {
+                P::Bind(_) => true,
+                P::Code(x) => x.pos() == 0,
+                _ => false,
+            })
+    }
     fn br(&mut self, cc: Option<X>, to: u32) {
         self.ps.push(P::Br { cc, to, long: false });
     }
@@ -586,6 +596,10 @@ struct E<'a> {
     sites: Vec<PendingSite>,
     /// The calls: (mark, length, chain).
     calls: Vec<(Mark, u32, u32)>,
+    /// PE: the end of the last call the unwinder must give to the handler (one with a landing
+    /// pad or without a call site), so that an epilogue right after it gets a `nop` first: at
+    /// an epilogue's start the unwinder calls no handler (design/vm.md#pe-seh).
+    handled_call_end: Option<Mark>,
     /// The chain of the instruction being emitted.
     cur_loc: u32,
     /// Unwind rows: (mark, instructions).
@@ -904,6 +918,10 @@ impl<'a> E<'a> {
         let len = self.a.x().pos() - m.off;
         self.calls.push((m, len, self.cur_loc));
         self.site(m, len, site, pad);
+        // `Nounwind` too: its site is dropped if the function has landing pads ([`emit`]).
+        if self.mode.pe && site != Site::Continue {
+            self.handled_call_end = Some(self.a.mark());
+        }
     }
 
     /// The prologue: frame and saves (the entry's arguments are still in their ABI registers;
@@ -1032,6 +1050,9 @@ impl<'a> E<'a> {
                 self.a.x().movdqa_load(x, Mem::base(R::Rbp, o));
             }
             let n = if self.fr.pushed { self.fr.saves.len() as i32 } else { 0 };
+            if self.handled_call_end.is_some_and(|m| self.a.nothing_since(m)) {
+                self.a.x().nop();
+            }
             self.a.x().lea(R::Rsp, Mem::base(R::Rbp, -8 * n));
             self.pop_saves(n as usize);
             self.a.x().pop(R::Rbp);
@@ -1642,6 +1663,10 @@ impl<'a> E<'a> {
         let hh = h.h;
         let far = self.mode.far_rt;
         self.call_with_site(h.site, pad, |x| x.call_rt(Ref::RegHandler(hh), far));
+        if h.site == Site::None {
+            // A handler call without a call site doesn't unwind (or, a trap's, doesn't return).
+            self.handled_call_end = None;
+        }
         if pe && e.nout as usize + e.ret as usize == 2 {
             // Win64 entries return two values in `xmm0` (`ryo_rt`'s `RegRetOf`):
             // `movq rax, xmm0; punpckhqdq xmm0, xmm0; movq rdx, xmm0`.
@@ -1675,6 +1700,10 @@ impl<'a> E<'a> {
         let hh = h.h;
         let far = self.mode.far_rt;
         self.call_with_site(h.site, pad, |x| x.call_rt(Ref::Handler(hh), far));
+        if h.site == Site::None {
+            // A handler call without a call site doesn't unwind (or, a trap's, doesn't return).
+            self.handled_call_end = None;
+        }
         let nout = h.nout as usize;
         if h.ret {
             self.put(res[nout], R::Rax);
@@ -2240,6 +2269,7 @@ pub fn emit(f: &Func, al: &Alloc, uses: &[u32], mode: Mode, code_consts: &[u8], 
         code_consts,
         sites: Vec::new(),
         calls: Vec::new(),
+        handled_call_end: None,
         cur_loc: 0,
         cfi: Vec::new(),
         uses,

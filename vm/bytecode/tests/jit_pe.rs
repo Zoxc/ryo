@@ -578,6 +578,23 @@ fn tail_call() {
     each(&v, 32, &[], "tail call", |f, what| assert!(f.epilogues >= 1, "{what}"));
 }
 
+/// A call without a call site right before `ret` (its result returned as is): its return
+/// address is never an epilogue's start (`lea rsp, [rbp + d]`), where the unwinder would call
+/// no handler for the frame (design/vm.md#pe-seh): a `nop` comes first.
+#[test]
+fn no_epilogue_right_after_a_call() {
+    let p = param(-24, 0);
+    let v = vec![arg(-24, 0), Insn::Call { d: Slot(-32), f: Func(0), k: 8, a: List::from_words(&p) }, Insn::Ret { s: Slot(-32), k: 8 }];
+    for alloc in [Allocator::LinearScan, Allocator::Naive] {
+        let o = compile(&v, 32, &[], alloc, false).unwrap_or_else(|e| panic!("{alloc:?}: {e:?}"));
+        let ends: Vec<usize> =
+            o.relocs.iter().filter(|r| matches!(r.to, asm::Ref::Func(_)) && o.code[r.at as usize - 1] == 0xe8).map(|r| r.at as usize + 4).collect();
+        assert_eq!(ends.len(), 1, "{alloc:?}");
+        let next = &o.code[ends[0]..];
+        assert!(!(next.starts_with(&[0x48, 0x8d, 0x65]) || next.starts_with(&[0x48, 0x8d, 0xa5])), "{alloc:?}: {:02x?}", &next[..4.min(next.len())]);
+    }
+}
+
 /// The handlers that use `xmm6`–`xmm15` (the `i128` saturating casts) are Win64 functions,
 /// which preserve them: compiled on PE like the others.
 #[test]
