@@ -186,7 +186,8 @@ pub enum EncodeError {
 /// An instruction operand, by kind. Branch targets are `T`: word offsets from the function
 /// start when read from instruction words ([`operands`]), [`Label`]s for [`Asm`].
 ///
-/// For [`Asm`], `Slot`, the pointer slot of `Mem` and every element of `Words` are raw slot
+/// For [`Asm`], `Slot`, the pointer slot of `Mem`, every element of an island's `Words` and
+/// the slot of each (slot, register word) pair of a call's argument list `Words` are raw slot
 /// values that [`Asm::finish`] turns into frame offsets.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Opnd<T = u32> {
