@@ -87,11 +87,12 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
 
     /// An operation with no instruction at this width: a `[a, b, dest]` island.
     fn binop_island(&mut self, dst: PlaceVal<'tcx>, template: &str, a: &Operand<'tcx>, b: &Operand<'tcx>) -> Result<(), NeedsNative> {
-        let (sa, la) = self.operand_slot(a)?;
-        let (sb, lb) = self.operand_slot(b)?;
+        let a = self.island_operand(a)?;
+        let b = self.island_operand(b)?;
         let n = dst.layout.size.bytes() as u32;
-        self.into_place(dst, |fx, d| {
-            fx.island(template, &[], &[(sa, la.size.bytes() as u32), (sb, lb.size.bytes() as u32), (d, n)], None);
+        self.with_island_place_slot(dst, |fx, d| {
+            fx.island(template, &[], &[a, b, (d, n)], None);
+            Ok(())
         })
     }
 

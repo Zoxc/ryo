@@ -1,9 +1,11 @@
 // Milestone 4 (design/lowering.md): aggregates, unsizing, unsized tails, `Repeat`, casts,
 // wide pointers, 128-bit arithmetic islands and frame slot sharing.
-#![feature(f16, f128)]
+#![feature(f16, f128, custom_mir, core_intrinsics)]
+#![allow(internal_features)]
 
 use std::cell::{Ref, RefCell};
 use std::hint::black_box as bb;
+use std::intrinsics::mir::*;
 use std::mem::{align_of_val, size_of_val};
 use std::pin::Pin;
 use std::rc::Rc;
@@ -184,6 +186,46 @@ fn main() {
     println!("{:?}", packed(bb(&Packed { t: 1, val: std::mem::ManuallyDrop::new(A16(3)) })));
     println!("{:?}", packed(bb(&Packed { t: 2, val: std::mem::ManuallyDrop::new(4u32) })));
     println!("{:?}", min128(bb(i128::MIN), bb(-1)));
+    println!("{:?}", packed_islands(bb(2.0), bb(1 << 100), bb(3), bb(-1.5)));
+}
+
+#[repr(packed)]
+struct PackedQ {
+    b: f128,
+    a: u8,
+}
+#[repr(packed)]
+struct PackedU {
+    b: u128,
+    a: u8,
+}
+
+/// Island operands and destinations that are fields of `repr(packed)` locals, which the
+/// templates must not access misaligned (custom MIR: MIR building copies them to
+/// temporaries first).
+#[custom_mir(dialect = "runtime", phase = "optimized")]
+#[inline(never)]
+fn packed_islands(x: f128, y: u128, z: u128, w: f64) -> (f64, u128, f64) {
+    mir! {
+        let p: PackedQ;
+        let q: PackedU;
+        let r: PackedU;
+        let s: PackedQ;
+        let t: f64;
+        let u: f64;
+        {
+            p = PackedQ { b: x, a: 1 };
+            q = PackedU { b: y, a: 2 };
+            r = PackedU { b: 0, a: 3 };
+            s = PackedQ { b: x, a: 4 };
+            t = p.b as f64;
+            r.b = q.b / z;
+            s.b = w as f128;
+            u = s.b as f64;
+            RET = (t, r.b, u);
+            Return()
+        }
+    }
 }
 
 /// `f16`/`f128` casts from and to `isize`/`usize`.

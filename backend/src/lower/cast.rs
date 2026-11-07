@@ -49,10 +49,11 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
                 let half_or_quad = |t: Ty<'_>| matches!(t.kind(), ty::Float(FloatTy::F16 | FloatTy::F128));
                 if half_or_quad(src.ty) || half_or_quad(to) {
                     // No VM instructions for `f16`/`f128`: the `as_cast` island.
-                    let (s, _) = self.operand_slot(op)?;
-                    let (sn, dn) = (src.size.bytes() as u32, to_layout.size.bytes() as u32);
-                    return self.into_place(dst, |fx, d| {
+                    let (s, sn) = self.island_operand(op)?;
+                    let dn = to_layout.size.bytes() as u32;
+                    return self.with_island_place_slot(dst, |fx, d| {
                         fx.island(super::island::templates::AS_CAST, &[src.ty.into(), to.into()], &[(s, sn), (d, dn)], None);
+                        Ok(())
                     });
                 }
                 let from = self.scalar_kind(src)?;

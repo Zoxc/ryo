@@ -101,12 +101,11 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
             sym::caller_location => self.into_dest(cont, |fx, d| fx.caller_location_into(source_info, d))?,
             sym::catch_unwind => {
                 // `rustc_nounwind`: a plain island (design/lowering.md#unwinding).
-                let [try_fn, data, catch_fn] = self.arg_slots::<3>(args)?;
-                let dn = cont.dest_size();
-                self.into_dest(cont, |fx, d| {
-                    fx.island(templates::CATCH_UNWIND, &[ty0().into()], &[(try_fn, 8), (data, 8), (catch_fn, 8), (d, dn)], None);
-                    Ok(())
-                })?
+                if args.len() != 3 {
+                    return native("intrinsic argument count");
+                }
+                let ins = self.island_args(args)?;
+                self.wrapper(templates::CATCH_UNWIND, &[ty0().into()], &ins, cont)?
             }
             sym::abort => {
                 self.op(Opcode::Abort, &[]);
@@ -455,12 +454,14 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         let mut ops = Vec::with_capacity(ins.len() + 1);
         ops.extend_from_slice(ins);
         let dn = cont.dest_size();
-        self.into_dest(cont, |fx, d| {
+        let Some(dest) = cont.dest else { return native("intrinsic without a destination") };
+        self.with_island_place_slot(dest, |fx, d| {
             let mut ops = ops;
             ops.push((d, dn));
             fx.island(template, generics, &ops, None);
             Ok(())
-        })
+        })?;
+        Ok(true)
     }
 
     /// `unchecked_funnel_shl(a, b, s)` = `(a << s) | ((b >> 1) >> (bits - 1 - s))` and

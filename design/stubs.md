@@ -134,7 +134,9 @@ These make the containing function native ([backend.md](backend.md#pipeline), st
 - functions with unsized parameters (`unsized_fn_params`)
 - functions whose locals or arguments, including the argument block of any island call they make,
   contain a type with alignment above 16: VM frames only guarantee 16
-  ([lowering.md](lowering.md#frame-slots)), and templates access slots aligned
+  ([lowering.md](lowering.md#frame-slots)), and templates access slots aligned (an operand
+  or destination that is a misaligned field of a `repr(packed)` local goes through an
+  aligned temporary, `FnCx::island_slot`)
 
 ### Unwinding
 

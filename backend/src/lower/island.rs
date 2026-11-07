@@ -4,13 +4,15 @@
 //! template (found by its diagnostic item name in `ryo_rt`) with the generic args, adds the
 //! instance and its neighbors to the native CGU, and fills `isl`.
 
-use rustc_middle::mir::UnwindAction;
+use rustc_middle::mir::{Operand, UnwindAction};
 use rustc_middle::ty::GenericArg;
+use rustc_middle::ty::layout::TyAndLayout;
 use rustc_span::Symbol;
 use ryo_bytecode::asm::{InsnId, Opnd};
 use ryo_bytecode::full::{Opcode, Sym};
 
-use super::{CodeReloc, FnCx};
+use super::place::{Loc, PlaceVal};
+use super::{CodeReloc, FnCx, NeedsNative};
 
 /// Template diagnostic item names (`vm/rt/src/island.rs`).
 pub mod templates {
@@ -64,4 +66,46 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         }
         at
     }
+
+    /// `s`, a slot holding a value of `layout`, as an island operand: templates access their
+    /// operands as aligned (`ryo_rt::island::slot`), but a field of a `repr(packed)` local
+    /// can be at any offset, so a misaligned `s` is copied to an aligned temporary.
+    pub fn island_slot(&mut self, s: u32, layout: TyAndLayout<'tcx>) -> u32 {
+        if is_aligned(s, layout) {
+            return s;
+        }
+        let t = self.temp_for(layout);
+        self.with_cuts(layout, |fx| fx.mov(t, s, layout.size.bytes() as u32));
+        t
+    }
+
+    /// The value of `op` in an aligned frame slot ([`FnCx::island_slot`]), with its size.
+    pub fn island_operand(&mut self, op: &Operand<'tcx>) -> Result<(u32, u32), NeedsNative> {
+        let (s, layout) = self.operand_slot(op)?;
+        Ok((self.island_slot(s, layout), layout.size.bytes() as u32))
+    }
+
+    /// [`FnCx::with_place_slot`] for an island's destination: a slot `dst` that isn't
+    /// aligned for its type ([`FnCx::island_slot`]) is written through a temporary.
+    pub fn with_island_place_slot(
+        &mut self,
+        dst: PlaceVal<'tcx>,
+        f: impl FnOnce(&mut Self, u32) -> Result<(), NeedsNative>,
+    ) -> Result<(), NeedsNative> {
+        if let (Loc::Slot(d), None) = (dst.loc, dst.meta)
+            && !is_aligned(d, dst.layout)
+        {
+            let t = self.temp_for(dst.layout);
+            f(self, t)?;
+            self.with_cuts(dst.layout, |fx| fx.mov(d, t, dst.layout.size.bytes() as u32));
+            return Ok(());
+        }
+        self.with_place_slot(dst, f)
+    }
+}
+
+/// Whether the slot `s` is aligned for `layout` relative to `fp` (frames are 16-aligned,
+/// and neither the bias nor `F` changes a slot's offset modulo 16).
+pub fn is_aligned(s: u32, layout: TyAndLayout<'_>) -> bool {
+    s % (layout.align.abi.bytes().min(16) as u32) == 0
 }

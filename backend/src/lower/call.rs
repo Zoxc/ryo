@@ -62,9 +62,15 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
         Ok(self.arg_slot_sized(a)?.0)
     }
 
-    /// The arguments in frame slots, each with its size, as island operands.
+    /// The arguments in frame slots, each with its size, as island operands
+    /// ([`FnCx::island_slot`]).
     pub(super) fn island_args(&mut self, args: &[ArgSrc<'_, 'tcx>]) -> Result<Vec<(u32, u32)>, NeedsNative> {
-        args.iter().map(|a| self.arg_slot_sized(a)).collect()
+        args.iter()
+            .map(|a| match *a {
+                ArgSrc::Operand(op) => self.island_operand(op),
+                ArgSrc::Slot(s) => Ok((s, 8)),
+            })
+            .collect()
     }
 
     /// The `N` arguments of an intrinsic in frame slots.
@@ -727,8 +733,10 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// An sret callee gets its address, so it escapes ([`FnCx::escape`]).
     fn call_dest(&mut self, cont: &CallCont<'tcx>, sig: &AbiSig<'tcx>) -> Result<(u32, bool), NeedsNative> {
         let (d, base, store) = match cont.dest {
-            Some(PlaceVal { loc: Loc::Slot(d), meta: None, base, .. }) => (d, base, false),
-            Some(PlaceVal { loc: Loc::Mem { .. }, meta: None, .. }) | None => {
+            // A misaligned slot (a field of a `repr(packed)` local) goes through a temporary:
+            // the `call` island and native sret callees write the result as aligned.
+            Some(PlaceVal { loc: Loc::Slot(d), meta: None, base, .. }) if super::island::is_aligned(d, sig.output) => (d, base, false),
+            Some(PlaceVal { loc: Loc::Slot(_) | Loc::Mem { .. }, meta: None, .. }) | None => {
                 let t = self.temp_for(sig.output);
                 (t, None, cont.dest.is_some())
             }
