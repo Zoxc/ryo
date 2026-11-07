@@ -350,22 +350,27 @@ fn cargo_root() -> Result<PathBuf, String> {
         // anywhere.
         return std::path::absolute(v).map_err(|e| format!("CARGO_INSTALL_ROOT: {e}"));
     }
-    if let Some(root) = config_install_root() {
+    let home = match std::env::var_os("CARGO_HOME").filter(|v| !v.is_empty()) {
+        Some(v) => std::path::absolute(v).map_err(|e| format!("CARGO_HOME: {e}"))?,
+        None => {
+            let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).ok_or("no home directory to find ~/.cargo in")?;
+            Path::new(&home).join(".cargo")
+        }
+    };
+    if let Some(root) = config_install_root(&home) {
         return Ok(root);
     }
-    if let Some(v) = std::env::var_os("CARGO_HOME").filter(|v| !v.is_empty()) {
-        return std::path::absolute(v).map_err(|e| format!("CARGO_HOME: {e}"));
-    }
-    let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).ok_or("no home directory to find ~/.cargo in")?;
-    Ok(Path::new(&home).join(".cargo"))
+    Ok(home)
 }
 
-/// cargo's `install.root` config as seen from the checkout (`install.root = "<path>" #
-/// <file>`, or a TOML literal string `'<path>'` when the path needs escaping, as any Windows
-/// path does); a relative path is relative to the directory holding the file's `.cargo/`.
-fn config_install_root() -> Option<PathBuf> {
+/// cargo's `install.root` config as `cargo install <crate>` sees it: from the cargo `home`'s
+/// `config.toml` (and those above it; not the cwd's), as cargo roots its config there
+/// (`install.root = "<path>" # <file>`, or a TOML literal string `'<path>'` when the path
+/// needs escaping, as any Windows path does). A relative path with a separator is relative to
+/// the config file's grandparent (the directory holding its `.cargo/`); one without, to the cwd.
+fn config_install_root(home: &Path) -> Option<PathBuf> {
     let out = capture(
-        cmd("cargo").args(["-Zunstable-options", "config", "get", "--show-origin", "install.root"]).current_dir(root()).env("RUSTC_BOOTSTRAP", "1"),
+        cmd("cargo").args(["-Zunstable-options", "config", "get", "--show-origin", "install.root"]).current_dir(home).env("RUSTC_BOOTSTRAP", "1"),
     )
     .ok()
     .filter(|o| o.status.success())?;
@@ -374,12 +379,14 @@ fn config_install_root() -> Option<PathBuf> {
     let value = value.trim();
     let literal = value.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')).map(str::to_owned);
     let path = PathBuf::from(literal.or_else(|| unquote(value))?);
-    if path.is_relative()
-        && let Some(base) = Path::new(origin.trim()).parent().and_then(Path::parent)
-    {
-        return Some(base.join(path));
+    if !path.is_relative() {
+        return Some(path);
     }
-    Some(path)
+    let sep = path.to_str().is_some_and(|p| p.contains('/') || (cfg!(windows) && p.contains('\\')));
+    match Path::new(origin.trim()).parent().and_then(Path::parent).filter(|_| sep) {
+        Some(base) => Some(base.join(path)),
+        None => std::path::absolute(path).ok(),
+    }
 }
 
 /// Who installed the `cargo-ryo` package in a cargo root.
