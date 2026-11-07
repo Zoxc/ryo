@@ -257,7 +257,8 @@ impl CodegenBackend for RyoBackend {
     fn provide(&self, providers: &mut Providers) {
         self.llvm.provide(providers);
         // The defaults are `rustc_monomorphize`'s, `rustc_symbol_mangling`'s,
-        // `rustc_codegen_ssa`'s and (`dylib_dependency_formats`) `rustc_metadata`'s, installed before the backend's `provide` runs
+        // `rustc_codegen_ssa`'s and (`dylib_dependency_formats`, `allocator_kind`)
+        // `rustc_metadata`'s, installed before the backend's `provide` runs
         // (`rustc_interface/src/passes.rs:980-981`). `provide` runs once per session, and the
         // providers are plain fns, so a second session would find the same ones.
         let q = &mut providers.queries;
