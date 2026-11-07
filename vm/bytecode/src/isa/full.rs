@@ -803,8 +803,8 @@ pub enum Shape {
     Switch,
     /// The handler doesn't return (`trap`).
     Trap,
-    /// The return value is loaded into `rax`/`rdx`, and the function returns, without a
-    /// handler (`ret`).
+    /// The return value is loaded into its return registers (`rax`, `rdx`, `xmm0`, `xmm1`),
+    /// and the function returns, without a handler (`ret`).
     Ret,
     /// A jump, without a handler (`jmp`).
     Jmp,
@@ -812,7 +812,7 @@ pub enum Shape {
     /// of a VM function of the same image, a symbol or a fn pointer, then the result's
     /// stores (`call`).
     Call,
-    /// The same as a tail call: the argument registers, the epilogue and a jump
+    /// The same as `Call`, as a tail call: the argument registers, the epilogue and a jump
     /// (`tail_call`).
     TailCall,
     /// A direct call of an island, without a handler (`island`).
