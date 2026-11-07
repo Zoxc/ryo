@@ -239,7 +239,7 @@ struct Sel {
     fast: bool,
     lean: bool,
     /// All three `ryo_jit` runs, the corpus under the [`Variant::jit`] variants, jit-private-std,
-    /// jit-atomics.
+    /// jit-atomics, jit-start.
     jit: bool,
     /// The corpus under `ryo`.
     ryo_corpus: bool,

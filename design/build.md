@@ -407,12 +407,14 @@ A plain `y test` runs the fast set plus the tests the changed paths select
     set runs them) and `bench/codegen/`: nothing extra.
   - `lean/`, `tests/lean/`: `y lean` (if `lake` is present).
   - `vm/bytecode/src/{asm/,isa/full.rs,isa/reduced.rs,abi.rs}`: the whole corpus under `ryo`
-    and the JIT variants, all three `ryo_jit` runs, the slow vm tests, `y lean`,
-    `rt-core-only`, `jit-sealed`, `jit-private-std`, `jit-atomics`. The rest of `isa/`
-    (`full_ops.rs` renumbers opcodes) escalates to `--full`.
+    and the JIT variants, all three `ryo_jit` runs, the slow vm tests, codegen.rs, `y lean`,
+    `rt-core-only`, `jit-sealed`, `jit-private-std`, `jit-atomics`, `jit-start`. The rest of
+    `isa/` (`full_ops.rs` renumbers opcodes) escalates to `--full`.
   - `vm/bytecode/src/jit/`, `vm/jit/`: all three `ryo_jit` runs, the corpus under the JIT
-    variants (`ryo-jit-ssa`, `-osr`, `-shuffle` and the `ryo-std-jit*` ones), `jit-private-std`,
-    `jit-atomics`, `rt-core-only`, `jit-sealed`.
+    variants (`ryo-jit-ssa`, `-osr`, `-shuffle`, `ryo-cgu16-jit-ssa`, `ryo-fp-jit-ssa` and the
+    `ryo-std-jit*` ones), codegen.rs, `jit-private-std`, `jit-atomics`, `jit-start`,
+    `rt-core-only`, `jit-sealed`. (codegen.rs checks the handlers, which `asm::layout` and
+    `jit::effects` shape.)
   - `vm/rt/src/vm/handlers.rs`: as other `vm/rt/` paths, plus `y lean`.
   - `vm/rt/src/`, `vm/rt/tests/`, `vm/rt/build.rs`: the `vm` run, codegen.rs,
     `rt-core-only`, `jit-sealed`, `multi-staticlib`, `multi-dylib`.
