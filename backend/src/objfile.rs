@@ -487,13 +487,10 @@ impl ObjectFormat for MachO {
         obj.add_symbol(Symbol { weak: sym.weak, ..defined(name, section, offset, size, SymbolKind::Text, scope) });
     }
 
-    fn relro_section(&self, obj: &mut Object<'static>, name: &str) -> object::write::SectionId {
-        // `__DATA,__const` (ld64 moves it to `__DATA_CONST`, read-only after the fixups) for
-        // the image, the first such section of its object; the small
-        // slots of the image object get sections of their own in `__DATA`, as an object
-        // must not have two sections of the same name.
-        let sect = if name == "ryo_image" { "__const".to_owned() } else { format!("__{name}") };
-        Self::section(obj, "__DATA", &sect, SectionKind::ReadOnlyDataWithRel)
+    fn relro_section(&self, obj: &mut Object<'static>, _name: &str) -> object::write::SectionId {
+        // `__DATA,__const` (ld64 moves it to `__DATA_CONST`, read-only after the fixups). At
+        // most one per object: the image's (`write_image`).
+        Self::section(obj, "__DATA", "__const", SectionKind::ReadOnlyDataWithRel)
     }
 
     fn data_section(&self, obj: &mut Object<'static>, _name: &str) -> object::write::SectionId {
