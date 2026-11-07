@@ -1360,12 +1360,14 @@ pub(super) fn cgu_deterministic(rustc_ryo: &Path, src: &Path, out: &Path) -> Res
         Ok(images)
     };
     let (a, b) = (build("cgu-a")?, build("cgu-b")?);
-    if a.len() < 2 {
-        return Err(format!("expected several image objects at 16 codegen units, got {}", a.len()));
+    // The objects, without their `.ryo` side data (compared too).
+    let objects = a.iter().filter(|(n, _)| n.ends_with(".o")).count();
+    if objects < 2 {
+        return Err(format!("expected several image objects at 16 codegen units, got {objects}"));
     }
     if a != b {
         let names = |v: &[(String, Vec<u8>)]| v.iter().map(|(n, _)| n.clone()).collect::<Vec<_>>();
-        return Err(format!("two builds gave different image objects: {:?} vs {:?}", names(&a), names(&b)));
+        return Err(format!("two builds gave different image objects or side data: {:?} vs {:?}", names(&a), names(&b)));
     }
     Ok(())
 }
