@@ -796,6 +796,8 @@ symbol flags    one byte per symbol (bit 0: indirect, load through the slot; PE 
                 only for the `sym` of `addr.sym.ind`/`call.sym.ind`, never for islands
                 or allocation pointers, [platforms.md](platforms.md). A symbol used
                 both ways has two slots)
+function flags  one byte per function: `#[inline(always)]`, `#[inline(never)]`,
+                `#[cold]`, `#[inline]` (`image::FUNC_FLAGS`)
 symbols         pointer-sized slots, one per referenced native symbol (functions, statics,
                 islands, `rust_eh_personality` on ELF), filled in by the linker
 constants       constant pool: allocations, aligned
@@ -805,6 +807,7 @@ insn lists      bytes, per function: its instruction list
 strings         the source locations' string pool: at each offset a LEB128 length,
                 then UTF-8 bytes; offset 0 is none. Empty without `-Cdebuginfo`
                 ([Source locations](#source-locations))
+constant relocs sorted: the constant pool offset of every relocated (pointer) field
 ```
 
 #### Instruction list

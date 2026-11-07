@@ -17,6 +17,7 @@
 //! | constants | the constant pool, aligned to its most aligned allocation |
 //! | call sites | `[CallSiteEntry]`, each function's in a run ([`FuncEntry::call_sites`]) |
 //! | instruction lists | bytes: each function's instruction list ([`crate::asm::list`], [`FuncEntry::list`]) |
+//! | strings | bytes: the source locations' string pool ([`Header::strings`]; empty without locations) |
 //! | constant relocations | `[u32]`, sorted: the pool offset of every relocated (pointer) field in the pool |
 //!
 //! **Writable**: the fixup area at offset 0 (the [`Data`](crate::full::Data) allocations,
