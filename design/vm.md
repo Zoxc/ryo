@@ -64,8 +64,10 @@ native frames, and unwind natively ([Unwinding](#unwinding)). The runtime lives 
   ([register cache](#register-cache)). Every frame reserves the 32 bytes of shadow space of
   its calls (handlers, islands, VM and native functions) at its bottom, `fp - F` to
   `fp - F + 32` (the lowering, `FnCx::finish`), 8 more where a handler takes a fifth
-  argument on the stack ([Handlers](#handlers)), and island argument blocks start past it:
-  `rsp` doesn't move in the body.
+  argument on the stack ([Handlers](#handlers)), and island argument blocks start past the
+  shadow space, at `fp - F + 32` (`FnCx::island_block`), where a fifth argument goes too: no
+  such handler (`atomic.cxchg`) is called while a block is being filled. `rsp` doesn't move
+  in the body.
 - **Layout**: frames grow downward, and slots are signed offsets from `fp`
   (`ryo_bytecode::abi`):
   ```
@@ -76,7 +78,8 @@ native frames, and unwind natively ([Unwinding](#unwinding)). The runtime lives 
   fp - 1 … fp - L   locals (the arguments' homes included), `_0`, temporaries, the
                     exception slot
   fp - F … fp - F + A   outgoing area: the stack arguments of calls, island argument blocks
-                    (PE: the shadow space first, then a handler's stack argument)
+                    (PE: the shadow space first, then a handler's stack argument or
+                    an island block, at the same bytes)
   ```
   `F = round16(L + largest outgoing area)` (`abi::frame_size`). `rsp` is `fp - F` while the
   function runs, so the outgoing area is at `rsp`, and a callee's `fp` is its caller's

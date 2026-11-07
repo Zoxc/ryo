@@ -13,8 +13,9 @@
 //! fp - F … fp - F + A   outgoing area (the callee's), F = round16(L + largest block)
 //! ```
 //!
-//! An island's argument block sits in the outgoing area, at `fp - F` (on PE at `fp - F + 32`
-//! or `+ 40`, past the shadow space and a handler's fifth argument; design/vm.md).
+//! An island's argument block sits in the outgoing area, at `fp - F` (on PE at `fp - F + 32`,
+//! past the shadow space: the bytes of a handler's fifth argument, which no handler call
+//! writes while a block is being filled; design/vm.md).
 //!
 //! A callee's `fp` is its caller's `fp - F - 16`, so its stack arguments (at its `fp + 16`)
 //! are exactly the caller's outgoing area. VM functions take their inputs by the native
