@@ -14,8 +14,9 @@ pub(crate) struct Program {
     pub(crate) flags: &'static [&'static str],
     /// Functions the ryo build must compile to bytecode (as `RYO_STATS` prints them).
     pub(super) vm: &'static [&'static str],
-    /// Functions compiled to bytecode on PE targets and native elsewhere (`extern "C"` fns
-    /// whose signature only Win64's C convention passes in a shape the VM handles).
+    /// Functions compiled to bytecode on PE targets and native elsewhere: ones whose code has a
+    /// call or signature only the Win64 conventions give a shape the VM handles (`extern "C"`
+    /// callees, their Rust-ABI callers, a variadic call through a fn pointer).
     pub(super) vm_pe: &'static [&'static str],
     /// Functions the ryo build must not compile to bytecode.
     pub(super) native: &'static [&'static str],
