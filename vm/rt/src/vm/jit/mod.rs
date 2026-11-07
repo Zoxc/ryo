@@ -719,9 +719,10 @@ fn link(rec: *mut JitRecord) {
         // JIT thread pops it.
         unsafe { (*rec).next = head };
         // AcqRel: Release publishes `next` and the record to the JIT thread's Acquire swap;
-        // Acquire makes a failing `push`'s `DISABLED` store (before its swap, which this
-        // may follow) visible to the wait in `trip`. The sleep handshake doesn't need SeqCst
-        // here: a sleeper's SeqCst `WAKE` load that reads the `fetch_add` below synchronizes
+        // Acquire makes a failed start's `DISABLED` store (in `start_once` or
+        // `restart_child`, before its `fail_queued` swap, which this may follow) visible to
+        // `push`'s check and the wait in `trip`. The sleep handshake doesn't need SeqCst
+        // here: a sleeper's SeqCst `WAKE` load that reads `push`'s `fetch_add` synchronizes
         // with it, so its `QUEUE` load sees this push.
         match QUEUE.compare_exchange_weak(head, rec, AcqRel, Relaxed) {
             Ok(_) => break,
