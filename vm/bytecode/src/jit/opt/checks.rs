@@ -561,7 +561,9 @@ fn distances(f: &Func, rpo: &[Block]) -> Vec<u32> {
 /// If nothing observes `a`'s address `addrs` but compares that fold, the distance bounds
 /// they rely on ([`distances`]). The address set `T`: the addresses, then the `Sub`s and the
 /// parameters reading a member (no other use: no store, call, return, access through it,
-/// handler or island operand, which would let other values depend on where `a` is). Its
+/// handler or island operand, which would let other values depend on where `a` is; but an
+/// address member may be masked by a constant covering only its known low bits,
+/// [`masked_addr`], which doesn't depend on where `a` is). Its
 /// compares (64-bit) must each be decided, by non-null (an address against 0) or by a
 /// distance bound against a constant, or be a select diamond: a branch to two blocks only
 /// it reaches, holding only `Sub`s of `T`, jumping to one join with the same arguments
