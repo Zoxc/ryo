@@ -500,8 +500,8 @@ enum Piece {
     Branch { cond: Cond, to: Label },
     /// `reg = fp`: `mov reg, rbp`, or without a frame pointer `lea reg, [rsp + F]`.
     Fp(Reg),
-    /// The epilogue before `ret` or a tail jump: `leave`, or without a frame pointer
-    /// `add rsp, F + 8`.
+    /// The epilogue before `ret` or a tail jump ([`epilogue`]): `leave`, without a frame
+    /// pointer `add rsp, F + 8`, or on PE `add rsp, F` (for `F > 0`) and `pop rbp`.
     Epilogue,
     /// `lea rcx, [rip + T]` of the instruction's jump table.
     LeaTable,
