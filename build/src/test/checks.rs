@@ -751,7 +751,7 @@ pub(super) fn jit_private_std(rustc_ryo: &Path, src: &Path, out: &Path) -> Resul
         crate::utils::run(cmd(rustc_ryo).arg("--edition=2024").arg(src).args(flags).arg("-o").arg(&exe))?;
         // A deadlock shows as a hang.
         let res = crate::utils::output_timeout(
-            Command::new(&exe).envs(super::JIT_SYNC.iter().copied()).envs(env.iter().copied()),
+            program(&exe).envs(super::JIT_SYNC.iter().copied()).envs(env.iter().copied()),
             std::time::Duration::from_secs(60),
         )
         .map_err(|e| format!("{name} (a deadlock?): {e}"))?;
@@ -771,7 +771,7 @@ pub(super) fn jit_private_std(rustc_ryo: &Path, src: &Path, out: &Path) -> Resul
 pub(super) fn jit_atomics(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
     let exe = out.join(exe_name("jit_atomics"));
     crate::utils::run(cmd(rustc_ryo).arg("--edition=2024").arg(src).arg("-o").arg(&exe))?;
-    let r = capture(Command::new(&exe).envs(super::JIT_SYNC.iter().copied()).envs([("RYO_JIT_STATS", "1"), ("RYO_JIT_LOG", "1")]))?;
+    let r = capture(program(&exe).envs(super::JIT_SYNC.iter().copied()).envs([("RYO_JIT_STATS", "1"), ("RYO_JIT_LOG", "1")]))?;
     // The summary's `compiled` and `failed` counts.
     let count = |what: &str| {
         let line = r.stderr.lines().find(|l| l.starts_with("[ryo] jit stats:") && l.split_whitespace().nth(3) == Some(what))?;
@@ -808,7 +808,7 @@ pub(super) fn jit_start(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), 
     };
     let run = |what: &str, exe: &Path, args: &[&str], env: &[(&str, &str)]| -> Result<Captured, String> {
         let r = crate::utils::output_timeout(
-            Command::new(exe).args(args).envs(super::JIT_SYNC.iter().copied()).envs(env.iter().copied()),
+            program(exe).args(args).envs(super::JIT_SYNC.iter().copied()).envs(env.iter().copied()),
             std::time::Duration::from_secs(120),
         )
         .map_err(|e| format!("jit-start {what} (a deadlock?): {e}"))?;
