@@ -140,6 +140,8 @@ pub fn output_timeout(cmd: &mut Command, limit: std::time::Duration) -> Result<s
                 #[cfg(unix)]
                 let _ = Command::new("kill").args(["-9", "--", &format!("-{}", child.id())]).stderr(Stdio::null()).status();
                 let _ = child.kill();
+                // Before the child is reaped and its pid can be reused.
+                TIMEOUT_CHILD.store(0, std::sync::atomic::Ordering::SeqCst);
                 let _ = child.wait();
                 // The pipes close with the process, unless it left descendants holding them.
                 drained(std::time::Instant::now() + std::time::Duration::from_secs(1));
@@ -151,7 +153,10 @@ pub fn output_timeout(cmd: &mut Command, limit: std::time::Duration) -> Result<s
                     String::from_utf8_lossy(&take(&err.1))
                 ));
             }
-            Err(e) => return Err(format!("failed to wait for `{}`: {e}", describe(cmd))),
+            Err(e) => {
+                TIMEOUT_CHILD.store(0, std::sync::atomic::Ordering::SeqCst);
+                return Err(format!("failed to wait for `{}`: {e}", describe(cmd)));
+            }
         }
     };
     if !drained((start + limit).max(std::time::Instant::now() + std::time::Duration::from_secs(1))) {
