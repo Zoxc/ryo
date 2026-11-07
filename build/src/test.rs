@@ -243,7 +243,8 @@ struct Sel {
     jit: bool,
     /// The corpus under `ryo`.
     ryo_corpus: bool,
-    /// vm/rt/tests/codegen.rs.
+    /// vm/rt/tests/codegen.rs: it checks the handlers, generated from `ryo_bytecode`'s
+    /// `asm::layout` and `jit::effects` as well as `ryo_rt`.
     codegen: bool,
     /// [`SLOW_VM_TESTS`].
     slow_vm: bool,
@@ -381,7 +382,8 @@ impl Sel {
                 self.lean = true;
                 self.slow_vm = true;
                 self.rt_checks = true;
-                "bytecode (corpus under ryo and the JIT, all ryo_jit runs, slow vm tests, lean, rt-core-only, jit-sealed, jit-private-std, jit-atomics)"
+                self.codegen = true;
+                "bytecode (corpus under ryo and the JIT, all ryo_jit runs, slow vm tests, codegen.rs, lean, rt-core-only, jit-sealed, jit-private-std, jit-atomics, jit-start)"
             }
             Rule::Handlers => {
                 self.area(Area::Rt);
@@ -395,7 +397,8 @@ impl Sel {
             Rule::Jit => {
                 self.jit = true;
                 self.rt_checks = true;
-                "jit (all ryo_jit runs, corpus under the JIT variants, rt-core-only, jit-sealed, jit-private-std, jit-atomics)"
+                self.codegen = true;
+                "jit (all ryo_jit runs, corpus under the JIT variants, codegen.rs, rt-core-only, jit-sealed, jit-private-std, jit-atomics, jit-start)"
             }
             Rule::Backend => {
                 self.area(Area::Backend);
