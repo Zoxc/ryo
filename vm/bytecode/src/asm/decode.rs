@@ -752,7 +752,8 @@ fn insn(c: &mut Cursor<'_>, fr: &Frame, ro: &[u8], hints: &mut &[Hint]) -> Resul
                 Opnd::Targets(t) | Opnd::Cases(_, t) => Some(t.len()),
                 _ => None,
             });
-            match then(c, op, n.unwrap_or(0), hat, &mut sites)? {
+            let n = n.unwrap_or(0);
+            match then(c, op, n, hat, &mut sites)? {
                 Then::Next | Then::Trap => {}
                 Then::Branch { neg, target } => {
                     set(&mut ops, "neg", Opnd::Neg(neg));
@@ -767,7 +768,8 @@ fn insn(c: &mut Cursor<'_>, fr: &Frame, ro: &[u8], hints: &mut &[Hint]) -> Resul
                     }
                 }
             }
-            if super::inline::sequence(op, &ops).is_some() {
+            // A dense switch's index computation is inline below 2^31 cases ([`dense_switch`]).
+            if super::inline::sequence(op, &ops).is_some() || super::inline::dense_width(op, n as u64).is_some() {
                 return Err(err(hat, "handler call of an inlined instruction"));
             }
             Proto::new(op, ops, pos, sites)
