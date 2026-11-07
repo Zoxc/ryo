@@ -170,8 +170,10 @@ reuse under incremental compilation and `rt.rs` the runtime crates' identity.
        `GloballyShared` upstream, and references to an upstream copy must keep upstream's
        symbol.
        That only depends on `instantiation_mode`, not on partitioning, so there is no query
-       cycle. These items, and all other image-referenced `Internal` items whose symbols
-       are already crate-unique (statics, generics), become `External` + `Hidden`.
+       cycle. These items become `WeakODR` + `Hidden` in one CGU ([Incremental](#incremental),
+       "Self-contained images"); all other image-referenced `Internal` items, whose symbols
+       are already crate-unique (statics, functions that aren't `LocalCopy`), become
+       `External` + `Hidden`.
      - **The TLS shim**, which the backend adds itself on ELF and Mach-O (on PE rustc creates and
        exports it, [lowering.md](lowering.md#rvalues)): the same static always gives the same
        body, so it is `WeakODR` + `Hidden`. cg_llvm puts WeakODR functions in their own comdat
@@ -300,8 +302,9 @@ depends on changed (`partition.rs`, `image_part`; the side data and work product
     for an image `WeakODR` + `Hidden`. A `LocalCopy` (or an added item) is made global by one
     CGU only, which the other images link to, their copies staying internal: LLVM's function
     merging (on at `-O2` and up) can turn a copy into an alias, a strong symbol on Mach-O and a
-    per-object weak default on COFF, so two such copies wouldn't link (as for islands). A
-    non-generic `LocalCopy` has the same symbol in every crate, hence `WeakODR`.
+    per-object weak default on COFF, so two such copies wouldn't link (as for islands). Their
+    symbols are crate-unique (the `.ryo<StableCrateId>` suffix, [Pipeline](#pipeline),
+    Linkage), so copies from two crates never meet.
 - **The image's dep node** is a `CompileCodegenUnit` node named
   `<cgu>.ryo.<fingerprint>`, the fingerprint covering the CGU name, its candidates' symbols,
   linkage and visibility, the entry fn's symbol and `SIGPIPE` setting (only in the entry's
