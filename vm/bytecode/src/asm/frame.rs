@@ -29,7 +29,7 @@ pub enum Access {
     Clobber(u32),
     /// Takes the offset's address (`addr`, a call argument passed by address).
     Addr,
-    /// An island's operand: an extent only its template knows.
+    /// An island's operand: an extent its template gives (the island's `Lend` scope records it).
     Opaque,
 }
 
@@ -306,10 +306,9 @@ pub fn remap_slots(code: &[u32], mode: Mode, map: &SlotMap) -> Result<Vec<u32>, 
 /// down by `F + 64`, into a frame of `2F + 64`, and the escaped objects stay (as they must:
 /// pointers to them may be anywhere). So the moved bytes land below every old one, the
 /// outgoing area is at `rsp` again, and accesses keep their relative positions. An access
-/// that would straddle an escaped object and moved bytes pins its bytes too. Fails for an
-/// address taken of bytes no escape covers, and for a function with islands once that
-/// pinning went past the escapes (an island operand's extent isn't known, so its object
-/// might be split).
+/// that would straddle an escaped object and moved bytes pins its bytes too; an island
+/// operand's access is its `Lend` scope's extent. Fails for an address taken of bytes no
+/// escape covers, and for an island operand without a `Lend` scope.
 pub fn shuffle_map(d: &Decoded, mode: Mode) -> Result<SlotMap, FrameError> {
     let f = d.frame_size as i64;
     let insns = insns(&d.words, mode)?;
@@ -320,8 +319,24 @@ pub fn shuffle_map(d: &Decoded, mode: Mode) -> Result<SlotMap, FrameError> {
         }
     }
     let escaped = pinned.clone();
+    // An island operand's extent is its `Lend` scope's (the operand array has offsets only).
+    let lends: Vec<(i32, u32)> = d.scopes.iter().filter(|sc| sc.kind == ScopeKind::Lend).map(|sc| (sc.frame_offset, sc.size)).collect();
+    for i in &insns {
+        for o in &i.opnds {
+            let off = d.words[o.word] as i32;
+            if o.access == Access::Opaque && off < 0 && !lends.iter().any(|l| l.0 == off) {
+                return Err(FrameError { at: i.at, what: "an island operand without an extent" });
+            }
+        }
+    }
     loop {
         let mut changed = false;
+        for &(off, n) in &lends {
+            if pinned.any_in(off, n) && !pinned.all_in(off, n) {
+                pinned.set(off, n, true);
+                changed = true;
+            }
+        }
         for i in &insns {
             for o in &i.opnds {
                 let off = d.words[o.word] as i32;
@@ -340,16 +355,6 @@ pub fn shuffle_map(d: &Decoded, mode: Mode) -> Result<SlotMap, FrameError> {
         }
         if !changed {
             break;
-        }
-    }
-    // An island operand's extent is its template's: an object the pinning above split (a
-    // handler's operand taken at 16 bytes reaching an escaped neighbour, say) may be one,
-    // and would then be read half moved.
-    if pinned != escaped {
-        for i in &insns {
-            if i.opnds.iter().any(|o| o.access == Access::Opaque && (d.words[o.word] as i32) < 0) {
-                return Err(FrameError { at: i.at, what: "an island operand beside split bytes" });
-            }
         }
     }
     let delta = -(f as i32 + 64);

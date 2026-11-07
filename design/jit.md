@@ -389,9 +389,9 @@ frames convert. The JIT compiles the entries with the function (`asm::osr`, `asm
   frame of `2F + 64` (so the outgoing area is at `rsp` again, frames of 2016 bytes and more
   probe, and the moved bytes land below all the old ones); escaped objects stay. An access
   that would straddle an escaped object and moved bytes pins its bytes too, and an address
-  taken of bytes no escape covers keeps the function's AOT layout. Island operands' extents
-  aren't known: each lies in one object, and a function with islands keeps its AOT layout
-  if that pinning went past the escapes (it may have split such an object). A function
+  taken of bytes no escape covers keeps the function's AOT layout. An island operand's
+  access is its `Lend` scope's extent, so it pins likewise (with slot sharing, an escaped
+  local may share bytes with a later, larger island operand). A function
   whose frame can't be shuffled is compiled in its AOT layout (logged with `RYO_JIT_LOG`).
 - **Liveness** (`frame::head_liveness`): which frame bytes each head's entry must move, by a
   backward pass over the reduced code with landing pad edges. It is conservative: inline
