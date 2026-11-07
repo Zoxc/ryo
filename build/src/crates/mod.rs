@@ -677,30 +677,57 @@ fn prepare_local(dir: &Path) -> Result<Sources, String> {
 }
 
 /// The per-package profile override sections of a manifest (`profile.dev.package."*"`), as
-/// headers without spaces. Other forms of them (dotted or inline keys under `[profile.dev]` or
-/// `[profile.dev.package]`) are rejected, as they would escape [`override_configs`].
+/// headers without spaces. Other forms of them (dotted or inline keys under `[profile.dev]`,
+/// `[profile.dev.package]`, `[profile]` or at the top level) are rejected, as they would escape
+/// [`override_configs`].
 fn profile_overrides(text: &str) -> Result<Vec<String>, String> {
+    // `profile.<name>.package.<spec>...`
+    fn is_override(path: &[String]) -> bool {
+        path.len() >= 4 && path[0] == "profile" && path[2] == "package"
+    }
     let mut overrides = Vec::new();
-    let mut section = String::new();
+    // The current table's key path; `None` in an array of tables (`[[bin]]`).
+    let mut section = Some(Vec::new());
     for l in text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')) {
         if let Some(h) = l.strip_prefix('[').filter(|h| !h.starts_with('[')) {
             // `[a . "b"]  # comment`: up to the `]` (package names have no `]`).
-            section = h.split(']').next().unwrap_or("").chars().filter(|c| !c.is_whitespace()).collect();
-            if section.starts_with("profile.") && section.contains(".package.") {
-                overrides.push(section.clone());
+            let header: String = h.split(']').next().unwrap_or("").chars().filter(|c| !c.is_whitespace()).collect();
+            let path = key_path(&header);
+            if is_override(&path) {
+                overrides.push(header);
             }
+            section = Some(path);
         } else if l.starts_with('[') {
-            section.clear();
-        } else if let Some(p) = section.strip_prefix("profile.") {
-            let key = l.split(['=', '.', ' ']).next().unwrap_or("");
-            if p.ends_with(".package") || (!p.contains('.') && key == "package") {
+            section = None;
+        } else if let Some(s) = section.as_ref().filter(|s| !is_override(s)) {
+            let (key, value) = l.split_once('=').unwrap_or((l, ""));
+            let path: Vec<String> = s.iter().cloned().chain(key_path(key)).collect();
+            // `package.<spec>.<key> = ..`, or a `package` in an inline table above it.
+            if path[0] == "profile" && (path.get(2).is_some_and(|p| p == "package") || (path.len() <= 2 && value.contains("package"))) {
+                let at = if s.is_empty() { "the top level".to_owned() } else { format!("[{}]", s.join(".")) };
                 return Err(format!(
-                    "unsupported form of a per-package profile override in [{section}]: `{l}`; use a `[profile.<name>.package.<spec>]` header"
+                    "unsupported form of a per-package profile override in {at}: `{l}`; use a `[profile.<name>.package.<spec>]` header"
                 ));
             }
         }
     }
     Ok(overrides)
+}
+
+/// The parts of a TOML dotted key (`a."b.c" . d`), unquoted.
+fn key_path(key: &str) -> Vec<String> {
+    let mut parts = vec![String::new()];
+    let mut quote = None;
+    for c in key.trim().chars() {
+        match (quote, c) {
+            (None, '"' | '\'') => quote = Some(c),
+            (Some(q), _) if c == q => quote = None,
+            (None, '.') => parts.push(String::new()),
+            (None, c) if c.is_whitespace() => {}
+            (_, c) => parts.last_mut().unwrap().push(c),
+        }
+    }
+    parts
 }
 
 /// `--config` values restating `PROFILE_ENV` in each per-package override section, which
@@ -1035,6 +1062,19 @@ mod tests {
         assert!(profile_overrides("[profile.dev]\npackage.\"*\".opt-level = 3\n").is_err());
         assert!(profile_overrides("[profile.dev.package]\nfoo = { opt-level = 3 }\n").is_err());
         assert!(profile_overrides("[[bin]]\nname = \"package\"\n").unwrap().is_empty());
+        // Under `[profile]`, at the top level, and in an inline table.
+        assert!(profile_overrides("[profile]\ndev.package.\"*\".opt-level = 3\n").is_err());
+        assert!(profile_overrides("profile.dev.package.\"*\".opt-level = 3\n[package]\nname = \"x\"\n").is_err());
+        assert!(profile_overrides("[profile]\ndev = { package = { ws = { opt-level = 3 } } }\n").is_err());
+        assert!(profile_overrides("[profile.dev]\nopt-level = 1\n[profile]\nrelease.debug = 1\n").unwrap().is_empty());
+        assert_eq!(key_path(" a . \"b.c\".d"), ["a", "b.c", "d"]);
+    }
+
+    #[test]
+    fn cleared_env() {
+        assert!(cleared("RYO_JIT") && cleared("RUSTFLAGS") && cleared("CARGO_PROFILE_DEV_DEBUG"));
+        // `y` sets `RYO_SYSROOT=llvm` unless the user chose one: the ryo column needs it.
+        assert!(!cleared("RYO_SYSROOT") && !cleared("RYO_Y_X"));
     }
 
     #[test]
