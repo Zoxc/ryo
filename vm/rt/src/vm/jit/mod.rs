@@ -7,11 +7,14 @@
 //!   slots start at; a function's counter stub calls them when a counter of its stops being
 //!   negative (design/vm.md, "JIT records and counters"). They queue the record if it is
 //!   cold, bias its counters ([`JitRecord`]), and return into the AOT code; in a compiled
-//!   function they continue into its JIT code instead (at a loop head through its OSR dispatcher). Lock-free: a CAS on
-//!   the record's state, a push onto [`QUEUE`], and a futex wake if the JIT thread sleeps.
-//!   They never compile, allocate or start anything: the JIT thread starts at the
-//!   registration of the runtime's first images ([`start_once`]), and in a forked child at
-//!   its first trip ([`restart_child`]).
+//!   function they continue into its JIT code instead (at a loop head through its OSR
+//!   dispatcher). Their own work is lock-free and never compiles: a CAS on the record's
+//!   state, a push onto [`QUEUE`], and a futex wake if the JIT thread sleeps. Beyond it, a
+//!   trip of an image whose registry constructor hasn't run registers it
+//!   ([`super::registry::ensure`]: the runtime lock, an allocation, `RYO_JIT_STATS`'s
+//!   startup line), a forked child's first trip starts its JIT thread ([`restart_child`]),
+//!   and with [`Config::sync`] a trip waits for its compile. Otherwise the JIT thread starts
+//!   at the registration of the runtime's first images ([`start_once`]).
 //! - **The JIT thread** takes the whole queue at once ([`next_batch`]), decodes each
 //!   function from its image ([`ryo_bytecode::image::ImageResolver`]), encodes it again
 //!   without counters, installs the code near the image with its unwind information, and
