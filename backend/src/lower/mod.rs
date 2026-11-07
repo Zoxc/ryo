@@ -21,7 +21,7 @@
 //! | [`cast`] | casts and pointer coercions |
 //! | [`binop`] | binary and unary operations |
 //! | [`terminator`] | terminators other than calls |
-//! | [`call`] | calls: VM calls, `call.ext`, call islands, drops |
+//! | [`call`] | calls: VM calls, `call.sym`, call islands, drops |
 //! | [`intrinsic`] | intrinsic calls |
 //! | [`simd`] | `simd_*` intrinsics with an instruction |
 //! | [`constant`] | constants and constant-pool references |
@@ -125,8 +125,9 @@ pub(crate) fn native<T>(why: impl Into<String>) -> Result<T, NeedsNative> {
 /// What every function's lowering may read: shared, read-only.
 pub struct LowerCx<'a, 'tcx> {
     /// The functions assumed to be VM functions of this image (its CGU). A call of one of them
-    /// is a `call`; a VM function of another image is called by symbol (`call.sym`), as a
-    /// native Rust function; any other local callee is called through an island.
+    /// is a `call`; any other callee with a symbol (a VM function of another image, a native
+    /// function) is called by symbol (`call.sym`/`call.sym.ind`), and one without a symbol
+    /// (an intrinsic) through the `call` island (`call.rs`).
     pub vm: &'a FxHashSet<Instance<'tcx>>,
     /// `ryo_rt`'s items (its island templates).
     pub rt: crate::rt::RtItems,

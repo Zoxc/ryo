@@ -10,10 +10,10 @@ use rustc_session::Session;
 /// (design/platforms.md, design/vm.md#image-format).
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SymRole {
-    /// The `sym` of `addr.sym`/`addr.sym.ind` or `call.ext`/`call.ext.ind`: its address is
+    /// The `sym` of `addr.sym`/`addr.sym.ind` or `call.sym`/`call.sym.ind`: its address is
     /// observable, so on PE it must be the real one.
     Target,
-    /// An `island` instruction's `sym`, or the `island` operand of a call: only ever called.
+    /// An `island` instruction's `isl`: only ever called.
     Island,
 }
 
@@ -22,7 +22,7 @@ pub(crate) enum SymRole {
 /// import slot, exactly where cg_llvm declares the function `dllimport`
 /// (`rustc_codegen_llvm/src/callee.rs`): a foreign function whose library's kind is `dylib`,
 /// `raw-dylib` or unspecified (`NativeLibKind::is_dllimport`). The instruction must then be
-/// the `.ind` form (`addr.sym.ind`, `call.ext.ind`). Everything else is direct, as in native
+/// the `.ind` form (`addr.sym.ind`, `call.sym.ind`). Everything else is direct, as in native
 /// code: upstream Rust functions (also generic instances and Rust dylibs' functions, which
 /// resolve to the import thunk), and foreign functions from a `kind = "static"` library or
 /// without `#[link]`. So no `__imp_` is left for the linker to synthesize (LNK4217). Islands
