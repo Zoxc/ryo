@@ -6,8 +6,9 @@
 //!
 //! - `thread`: the JIT thread: takes the queued records ([`RtApi::next_batch`]), compiles
 //!   each, catching its panics, and reports it ([`RtApi::done`]).
-//! - `install`: the compiler: decodes a function from its image, encodes it again without
-//!   counters, builds its OSR entries, and installs the code near the image.
+//! - `install`: the compiler: decodes a function from its image, compiles it with the SSA
+//!   pipeline (the default) or, as the fallback and with `RYO_JIT_OPT=reencode`, encodes it
+//!   again without counters, builds its OSR entries, and installs the code near the image.
 //!
 //! - `stats`: the counters and `RYO_JIT_STATS`'s output.
 //! - `sys`: what it needs of the OS beyond `vmem` and std (unwind registration).
