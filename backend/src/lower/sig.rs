@@ -306,13 +306,14 @@ fn reg_pieces<'tcx>(tcx: TyCtxt<'tcx>, arg: &ArgAbi<'tcx, Ty<'tcx>>) -> Option<V
 /// optional 8-byte prefix unit at 0 and one rest unit after it, each an integer (of the
 /// remaining size if under 8 bytes: a 12-byte struct's tail is 4 bytes) or a 4- or 8-byte float
 /// (an 8-byte `xmm` unit may hold two `f32`s). `None` for other shapes (vectors, multi-unit
-/// rests, `rest_offset`). Win64 C's `i128` return is a 16-byte opaque vector unit, alone: one
-/// 16-byte `xmm` piece (`xmm0`; only returns get it, `arg_plan` refuses it).
+/// rests, `rest_offset`). A 16-byte opaque vector unit, alone (Win64 C's `i128` return, SysV
+/// C's 16-byte `f128` aggregates such as `[f128; 1]`), is one 16-byte `xmm` piece (`xmm0`;
+/// `arg_plan` refuses it in arguments).
 ///
-/// An SSE eightbyte that isn't 4 bytes is an `f64` unit whatever the value's size, so `{f16}`
-/// or the tail of `{f32, f32, f16}` is an 8-byte unit past the value's end (`value_size`):
-/// such a unit is cut to the value's 2 bytes (an `f16`-sized `xmm` piece), refused for other
-/// sizes, so a return doesn't store past the value.
+/// An SSE eightbyte that isn't 4 bytes is an `f64` unit whatever the value's size, so the SSE
+/// last eightbyte of an align-2 value of size 8k+2 (`{f16}`, `[f16; 5]`) is an 8-byte unit
+/// past the value's end (`value_size`): such a unit is cut to the value's 2 bytes (an
+/// `f16`-sized `xmm` piece), refused for other sizes, so a return doesn't store past the value.
 fn cast_pieces(cast: &CastTarget, value_size: u64) -> Option<Vec<Piece>> {
     let unit = |r: &Reg, off: u32| -> Option<Piece> {
         let size = r.size.bytes() as u32;
@@ -526,7 +527,8 @@ fn arg_plan<'tcx>(tcx: TyCtxt<'tcx>, fn_abi: &FnAbi<'tcx, Ty<'tcx>>, sret: bool,
                     return native("f128 in a pair argument on Win64");
                 }
                 // The PE `i128`/`f128` rules in `State` are for `Direct` scalars (the Rust ABI);
-                // a 16-byte `Cast` unit (Win64 C's `i128` return shape) isn't an argument.
+                // a 16-byte `Cast` unit (Win64 C's `i128` return shape, SysV C's 16-byte `f128`
+                // aggregates) has no plan as an argument.
                 if matches!(arg.mode, PassMode::Cast { .. }) && pieces.iter().any(|p| p.size == 16) {
                     return native("16-byte cast unit in an argument");
                 }
