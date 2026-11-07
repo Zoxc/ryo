@@ -518,8 +518,8 @@ vm/             cargo workspace for everything that ends up in the output progra
   bytecode/     rlib       ryo_bytecode        format: opcodes, machine code, image layout;
                                                used by the backend (writer) and the VM (reader)
   rt/           rlib       ryo_rt              the runtime: handlers, registry,
-                                               island templates, `main` wrapper, the JIT's
-                                               trips; bundles the sealed JIT
+                                               island templates, the JIT's trips; bundles
+                                               the sealed JIT
   jit/          staticlib  ryo_jit             the JIT thread (compiler, installer), sealed
                                                with its own std by `y build`; an rlib in
                                                `vm/`'s tests

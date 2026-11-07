@@ -59,8 +59,8 @@ code that calls the VM's handlers; cg_llvm compiles everything else. Start at
     truth; order = encoding), `asm/` the machine code encoder/decoder and the mapping to the
     reduced set, `image/` the image format, `jit/` the JIT's SSA pipeline.
   - `rt/` `ryo_rt` (`no_std` outside tests): handlers (`src/vm/handlers.rs` lists them,
-    `interp.rs` the handler-kind macros), registry, island templates (`island.rs`), `main`
-    wrapper (`entry.rs`), the JIT trips (`src/vm/jit/`).
+    `interp.rs` the handler-kind macros), registry, island templates (`island.rs`), the JIT
+    trips (`src/vm/jit/`). The C `main` wrapper is built by the backend (`lower/entry.rs`).
   - `jit/` `ryo_jit`: the JIT thread (compile, install); sealed with its own std by
     `y build`, an rlib in `vm/`'s tests.
 - `build/` (workspace): the `y` build tool, its one dependency iced-x86 (`design/build.md`).

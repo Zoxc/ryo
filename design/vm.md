@@ -1064,8 +1064,9 @@ private copy of the runtime (`ryo_rt`, `ryo_bytecode` and the sealed JIT):
 
 ## Runtime crate: `ryo_rt`
 
-The whole runtime is one rlib in the sysroot: the handlers, the registry, the island
-templates and the `main` wrapper. It is a normal Rust dependency of every ryo-built crate.
+The whole runtime is one rlib in the sysroot: the handlers, the registry and the island
+templates (the C `main` wrapper is a VM function the backend builds,
+design/stubs.md#program-entry-main). It is a normal Rust dependency of every ryo-built crate.
 
 - **Generic templates** get instantiated per program, with that program's types, from MIR in
   `ryo_rt`'s metadata.
