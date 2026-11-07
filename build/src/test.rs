@@ -970,6 +970,8 @@ struct Ctx<'a> {
 #[derive(PartialEq)]
 struct RunResult {
     code: Option<i32>,
+    /// The signal that killed it (unix), so that a crash doesn't pass for the reference's abort.
+    signal: Option<i32>,
     stdout: String,
     stderr: String,
 }
@@ -979,13 +981,13 @@ impl RunResult {
     /// run's stderr.
     fn compare(&self, reference: &RunResult) -> Result<(), String> {
         let stderr: String = self.stderr.split_inclusive('\n').filter(|l| !l.starts_with("[ryo] jit")).collect();
-        if self.code == reference.code && self.stdout == reference.stdout && stderr == reference.stderr {
+        if (self.code, self.signal) == (reference.code, reference.signal) && self.stdout == reference.stdout && stderr == reference.stderr {
             return Ok(());
         }
         Err(format!(
-            "output differs\n--- rustc: exit {:?} ---\nstdout:\n{}stderr:\n{}\
-             --- this: exit {:?} ---\nstdout:\n{}stderr:\n{}",
-            reference.code, reference.stdout, reference.stderr, self.code, self.stdout, self.stderr
+            "output differs\n--- rustc: exit {:?}, signal {:?} ---\nstdout:\n{}stderr:\n{}\
+             --- this: exit {:?}, signal {:?} ---\nstdout:\n{}stderr:\n{}",
+            reference.code, reference.signal, reference.stdout, reference.stderr, self.code, self.signal, self.stdout, self.stderr
         ))
     }
 }
@@ -1137,8 +1139,13 @@ impl Ctx<'_> {
         let res = crate::utils::output_timeout(&mut run, std::time::Duration::from_secs(300))?;
         // Panic messages name the source path, which is the same for every variant. Thread ids
         // differ between runs.
+        #[cfg(unix)]
+        let signal = std::os::unix::process::ExitStatusExt::signal(&res.status);
+        #[cfg(not(unix))]
+        let signal = None;
         Ok(RunResult {
             code: res.status.code(),
+            signal,
             stdout: String::from_utf8_lossy(&res.stdout).into_owned(),
             stderr: strip_std_prefix(&normalize_thread_ids(&String::from_utf8_lossy(&res.stderr))),
         })
