@@ -28,7 +28,7 @@
 //! Both sides pin their module when they merge: the winner's registration function and
 //! the joiners' images are used for the rest of the process.
 
-use core::sync::atomic::Ordering::{AcqRel, Acquire, Release};
+use core::sync::atomic::Ordering::{Acquire, Release};
 use core::sync::atomic::fence;
 use core::sync::atomic::{AtomicU32, AtomicUsize};
 use ryo_bytecode::vmem::PAGE;
@@ -52,26 +52,32 @@ struct Page {
 const MAGIC: u64 = u64::from_le_bytes(*b"RYOMERGE");
 const READY: u32 = 1;
 
-/// What this copy decided: [`UNDECIDED`], [`PRIVATE`] (this copy is its own instance: the
-/// winner, or not merged), or the winner's [`RegisterFn`].
+/// What this copy decided: [`UNDECIDED`], [`DECIDING`] (a thread is deciding), [`PRIVATE`]
+/// (this copy is its own instance: the winner, or not merged), or the winner's
+/// [`RegisterFn`].
 static TARGET: AtomicUsize = AtomicUsize::new(UNDECIDED);
 const UNDECIDED: usize = 0;
 const PRIVATE: usize = 1;
+const DECIDING: usize = 2;
 
 /// The winner's registration function if this copy forwards to another copy, else `None`
 /// (this copy is an instance of its own). Decided once, at the first call.
 pub(crate) fn forward() -> Option<RegisterFn> {
-    let t = match TARGET.load(Acquire) {
-        UNDECIDED => {
-            // Two threads of one copy may race here and decide differently (`decide`'s waits
-            // are bounded): the first answer stored wins, and both use it.
-            match TARGET.compare_exchange(UNDECIDED, decide(), AcqRel, Acquire) {
-                Ok(_) => TARGET.load(Acquire),
-                Err(t) => t,
-            }
+    let mut t = TARGET.load(Acquire);
+    while t == UNDECIDED || t == DECIDING {
+        // One thread of the copy decides, and the others wait for its answer (`decide`'s
+        // waits are bounded). Two decisions could disagree, and `decide`'s side effects stay:
+        // a copy could publish a page naming itself and then forward to another copy, which
+        // may have joined that page, so that the two forward to each other. With one, a copy
+        // that publishes a page never forwards.
+        if t == UNDECIDED && TARGET.compare_exchange(UNDECIDED, DECIDING, Acquire, Acquire).is_ok() {
+            t = decide();
+            TARGET.store(t, Release);
+        } else {
+            core::hint::spin_loop();
+            t = TARGET.load(Acquire);
         }
-        t => t,
-    };
+    }
     // SAFETY: a `RegisterFn` stored by `decide`.
     (t != PRIVATE).then(|| unsafe { core::mem::transmute::<usize, RegisterFn>(t) })
 }
