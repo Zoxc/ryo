@@ -286,11 +286,19 @@ impl Phase {
 pub struct CellError {
     pub phase: Phase,
     pub msg: String,
+    /// A timed run sample that failed and was dropped: its failures are also the warm-up's
+    /// (or it is flaky), so it doesn't count as a failure of its own ([`CellError::dropped`]).
+    pub dropped: bool,
 }
 
 impl CellError {
     pub fn new(phase: Phase, msg: impl Into<String>) -> Self {
-        CellError { phase, msg: msg.into() }
+        CellError { phase, msg: msg.into(), dropped: false }
+    }
+
+    /// Run sample `i` of `phase` dropped because of `msg`.
+    pub fn dropped(phase: Phase, i: u32, msg: impl std::fmt::Display) -> Self {
+        CellError { phase, msg: format!("run sample {i} dropped: {msg}"), dropped: true }
     }
 }
 
@@ -561,7 +569,7 @@ fn run_phase(ctx: &Ctx, krate: &Target, sources: &Sources, artifacts: &[Artifact
                 cell.test_run.push(time);
             } else {
                 // A failed or timed-out binary makes the sum meaningless: drop the sample.
-                cell.errors.push(CellError::new(Phase::Test, format!("run sample {i} dropped: {}", outcome.failures.join("; "))));
+                cell.errors.push(CellError::dropped(Phase::Test, i, outcome.failures.join("; ")));
             }
             let w = a.example.as_ref().map(|e| run_timed(Command::new(e).current_dir(&sources.dir), opts.timeout));
             let workload = match &w {
@@ -574,7 +582,7 @@ fn run_phase(ctx: &Ctx, krate: &Target, sources: &Sources, artifacts: &[Artifact
                 Some(Ok((_, out))) if i == 0 => cell.workload_output = Some(out),
                 Some(Ok((t, _))) => cell.workload.push(t),
                 Some(Err(e)) if i == 0 => cell.errors.push(CellError::new(Phase::Workload, e.to_string())),
-                Some(Err(e)) => cell.errors.push(CellError::new(Phase::Workload, format!("run sample {i} dropped: {e}"))),
+                Some(Err(e)) => cell.errors.push(CellError::dropped(Phase::Workload, i, e)),
             }
             eprintln!("[y] {} run {label} [{}]: tests {tests}, workload {workload}", krate.name(), backend.name());
         }

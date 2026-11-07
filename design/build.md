@@ -491,8 +491,8 @@ real crates.io crates, in cargo's `dev` profile only. The default is `llvm,ryo`.
   discarded warm-up; backends are interleaved (llvm clif ryo llvm clif ryo …). Reported:
   median, min, standard deviation, n; a cell is noisy if its standard deviation exceeds 3%
   of its median. Timing is `y`'s own loop (no hyperfine). A run sample in which a test
-  binary fails or times out, or the workload fails, is dropped (and reported), so n shrinks
-  rather than a partial sum being counted. Cargo's target-info probe and `--print` queries
+  binary fails or times out, or the workload fails, is dropped (and listed, but not counted as
+  a failure), so n shrinks rather than a partial sum being counted. Cargo's target-info probe and `--print` queries
   pass through the wrapper unlogged.
 - **Coverage**: ryo's warm-up build runs with `RYO_STATS=1`, which the wrapper strips from
   stderr and logs; the report shows VM/native functions and islands for the library, its

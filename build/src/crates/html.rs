@@ -178,7 +178,7 @@ fn esc(s: &str) -> String {
 }
 
 /// Whether a cell has a problem the tables must show, for a metric of phase `phase`: a failed
-/// build, or the tests' or the workload's failures.
+/// build, or the tests' or the workload's failures (or else dropped run samples).
 fn cell_state(cell: &Cell, phase: Phase) -> Option<String> {
     if cell.build_failed() {
         return Some("build failed".into());
@@ -186,9 +186,11 @@ fn cell_state(cell: &Cell, phase: Phase) -> Option<String> {
     if !matches!(phase, Phase::Test | Phase::Workload) {
         return None;
     }
-    match cell.errors.iter().filter(|e| e.phase == phase).count() {
-        0 => None,
-        n => Some(format!("{n} {} failure(s)", phase.name())),
+    let errors = cell.errors.iter().filter(|e| e.phase == phase);
+    match (errors.clone().filter(|e| !e.dropped).count(), errors.filter(|e| e.dropped).count()) {
+        (0, 0) => None,
+        (0, d) => Some(format!("{d} {} sample(s) dropped", phase.name())),
+        (n, _) => Some(format!("{n} {} failure(s)", phase.name())),
     }
 }
 
@@ -774,6 +776,12 @@ mod tests {
         assert_eq!(cell_state(&cell, Phase::Build), None);
         let cell = Cell { errors: vec![CellError::new(Phase::Build, "error")], ..Cell::default() };
         assert_eq!(cell_state(&cell, Phase::Build).as_deref(), Some("build failed"));
+        // Dropped samples aren't failures of their own.
+        let errors =
+            vec![CellError::new(Phase::Test, "t: x"), CellError::dropped(Phase::Test, 1, "t: x"), CellError::dropped(Phase::Workload, 2, "exit 1")];
+        let cell = Cell { errors, ..Cell::default() };
+        assert_eq!(cell_state(&cell, Phase::Test).as_deref(), Some("1 test failure(s)"));
+        assert_eq!(cell_state(&cell, Phase::Workload).as_deref(), Some("1 workload sample(s) dropped"));
     }
 
     #[test]
