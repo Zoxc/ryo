@@ -656,7 +656,7 @@ offsets in the function, and the function's LSDA, the ELF one.
   as natively.
 - **Unwind phase**: at a cleanup call site, but not in the unwind's target frame, and only
   for C++ exceptions (a C++ catch's unwind is `STATUS_UNWIND_CONSOLIDATE`'s;
-  `seh::is_cxx_unwind`), the handler calls the landing pad on the current stack, below the
+  `seh::is_cxx_unwind`) and `longjmp` (`STATUS_LONGJUMP`), the handler calls the landing pad on the current stack, below the
   unwinder's frames, as the funclets of cg_llvm's code are called. The trampoline
   `ryo_seh_call_pad` (assembly with SEH directives) saves its own nonvolatile registers,
   loads the VM frame's from the `CONTEXT` the unwinder unwound into it (`rbp` its `fp`, and
@@ -667,10 +667,10 @@ offsets in the function, and the function's LSDA, the ELF one.
   per exception, however many VM frames and pads; nothing is copied, re-raised or caught on
   the way, and the panic count, the hook, `__except` filters and foreign exceptions behave as
   through native frames. As in LLVM's code for rustc (`__CxxFrameHandler3` with `/EHs`), an
-  unwind with a non-C++ record (an SEH exception caught by `__except`, which unwinds with the
-  original record, say an access violation's; `longjmp`'s `STATUS_LONGJUMP`) passes the frame
-  without its cleanups, while a C++ exception caught by `__except` keeps its C++ record, so
-  the cleanups run.
+  unwind with another record (an SEH exception caught by `__except`, which unwinds with the
+  original record, say an access violation's) passes the frame without its cleanups, while a
+  C++ exception caught by `__except` keeps its C++ record, and `longjmp` unwinds with
+  `STATUS_LONGJUMP`, so the cleanups run.
 - **Pad region**: on PE the lowering emits the cleanup blocks last
   ([lowering.md](lowering.md#unwinding)): the body, its terminate stubs, then the cleanup
   landing pads, the cleanup blocks and their own terminate stubs (`Asm::begin_region`; the

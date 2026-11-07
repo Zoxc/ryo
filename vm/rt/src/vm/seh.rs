@@ -16,8 +16,8 @@
 //! and foreign exceptions behave as through native frames.
 //!
 //! As LLVM's code for rustc (`__CxxFrameHandler3` with `/EHs`), cleanups run only for C++
-//! exceptions: an SEH exception (an access violation caught by `__except`, `longjmp`) unwinds
-//! the frame without them. And a C++ exception that leaves a cleanup pad (a panic in a drop
+//! exceptions and `longjmp`: an SEH exception (an access violation caught by `__except`)
+//! unwinds the frame without them. And a C++ exception that leaves a cleanup pad (a panic in a drop
 //! during an unwind) terminates the process at once in the search phase, as MSVC's
 //! `__FrameUnwindFilter` does, before anything below unwinds.
 //!
@@ -41,6 +41,8 @@ pub const CXX_EXCEPTION: u32 = 0xE06D_7363;
 /// `STATUS_UNWIND_CONSOLIDATE`: the record of the unwind a C++ `catch` starts (MSVC's
 /// `_UnwindNestedFrames`, which Rust's `catch_unwind` reaches too).
 pub const STATUS_UNWIND_CONSOLIDATE: u32 = 0x8000_0029;
+/// `STATUS_LONGJUMP`: the record of `longjmp`'s unwind.
+pub const STATUS_LONGJUMP: u32 = 0x8000_0026;
 
 /// Whether a record of `code` whose first parameter is `magic` (with `params` parameters) is
 /// a C++ exception: `_CxxThrowException`'s, whose parameters start with one of the
@@ -51,11 +53,12 @@ pub fn is_cxx(code: u32, params: u32, magic: usize) -> bool {
 
 /// Whether the handler acts for a record of `code` (first parameter `magic`, `params`
 /// parameters) with `flags`: a C++ exception ([`is_cxx`]), or in the unwind phase also the
-/// consolidation record of a C++ `catch`'s unwind. `__CxxFrameHandler3` of `/EHs` code (all
-/// LLVM emits) ignores everything else, so no cleanup runs for SEH exceptions.
+/// consolidation record of a C++ `catch`'s unwind or `longjmp`'s. `__CxxFrameHandler3` of
+/// `/EHs` code (all LLVM emits) ignores everything else, so no cleanup runs for SEH
+/// exceptions.
 pub fn is_cxx_unwind(flags: u32, code: u32, params: u32, magic: usize) -> bool {
     let unwinding = flags & (EXCEPTION_UNWINDING | EXCEPTION_EXIT_UNWIND) != 0;
-    is_cxx(code, params, magic) || unwinding && code == STATUS_UNWIND_CONSOLIDATE
+    is_cxx(code, params, magic) || unwinding && matches!(code, STATUS_UNWIND_CONSOLIDATE | STATUS_LONGJUMP)
 }
 
 /// What the handler does for one VM frame.
@@ -109,8 +112,8 @@ pub fn decide(flags: u32, cxx: bool, pc: u32, entered: bool, data: &PeHandlerDat
             (Some(pad), true) if cxx && !unwinding => Action::UnwindTo(pad),
             (Some(_), true) => Action::Continue,
             // Cleanups run while the frame is unwound for C++ exceptions (a C++ catch's
-            // unwind is `STATUS_UNWIND_CONSOLIDATE`'s), but not in the frame the unwind
-            // goes to.
+            // unwind is `STATUS_UNWIND_CONSOLIDATE`'s) and `longjmp`, but not in the frame
+            // the unwind goes to.
             (Some(pad), false) if cxx && unwinding && flags & EXCEPTION_TARGET_UNWIND == 0 => Action::CallPad(pad),
             (Some(_), false) => Action::Continue,
         },
@@ -418,5 +421,8 @@ mod tests {
         assert!(is_cxx_unwind(EXCEPTION_UNWINDING, CXX_EXCEPTION, 4, 0x1993_0520));
         assert!(!is_cxx_unwind(EXCEPTION_UNWINDING, 0xC000_0005, 2, 0));
         assert!(!is_cxx_unwind(0, STATUS_UNWIND_CONSOLIDATE, 15, 0));
+        // `longjmp`'s unwind, as `__CxxFrameHandler3` takes it.
+        assert!(is_cxx_unwind(EXCEPTION_UNWINDING, STATUS_LONGJUMP, 1, 0));
+        assert!(!is_cxx_unwind(0, STATUS_LONGJUMP, 1, 0));
     }
 }
