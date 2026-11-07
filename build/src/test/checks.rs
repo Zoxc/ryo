@@ -269,7 +269,7 @@ fn backtrace_oracle(rustc_ryo: &Path, src: &Path, out: &Path, cases: &[&[&str]])
 /// tables and MIR inlining, std's backtraces give each VM frame's source location, AOT and
 /// JIT (with shuffled frames too), `helper` as an inlined frame of `mid`'s (by its demangled
 /// symbol), and the panic hook's short backtrace starts and ends at its markers (VM or JIT
-/// code here).
+/// code here); and the JIT's inlining of `via` into `mid` shows as one physical frame.
 fn backtrace_lines(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
     let text = crate::utils::read(src)?;
     let line = |name: &str| text.lines().position(|l| l.ends_with(&format!("// @{name}"))).map(|i| i + 1).ok_or(format!("no `// @{name}` line"));
