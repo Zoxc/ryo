@@ -647,7 +647,14 @@ impl<'tcx> Dumper<'tcx> {
         };
         match *t.kind() {
             ty::Bool => tag("bool"),
-            ty::Char => tag("char"),
+            // A pattern type narrowing `char` (`NonZero<char>`): `Ty.char` has no range, so the
+            // `u32` with the pattern's (which, unlike `char`, admits the surrogates).
+            ty::Char => match over {
+                Some(r) if r != self.leaf_range(l, None) => {
+                    ctor("int", vec![("t", Self::int_type(false, l.size.bytes())), ("valid", Self::range(r))])
+                }
+                _ => tag("char"),
+            },
             ty::Int(_) | ty::Uint(_) => {
                 let signed = matches!(t.kind(), ty::Int(_));
                 ctor("int", vec![("t", Self::int_type(signed, l.size.bytes())), ("valid", Self::range(self.leaf_range(l, over)))])

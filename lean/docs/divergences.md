@@ -279,6 +279,9 @@ negative default NaN. Remaining differences:
 - `Discriminant` of a non-enum is 0, as in rustc. `SetDiscriminant` of a niche-encoded variant
   does a validation read, as Miri does (cg_ssa writes nothing). Codegen assumes it holds, so
   the extra UB is Rust's.
+- A pattern type narrowing `char` (`NonZero<char>`'s `char is '\u{1}'..='\u{10ffff}'`) is
+  dumped as a `u32` with the pattern's range, since `Ty.char` has none: surrogates are valid
+  there (less UB). Values only get there by transmutes.
 - `ptr_guaranteed_cmp` may return 2 (daemonic). ryo and LLVM at run time always return the
   exact answer, which the spec includes.
 
