@@ -416,9 +416,12 @@ pub fn dist_abi_tag(dist: &Path) -> Result<String, String> {
         .map_err(|e| format!("{}: {e} (run `./y.sh build`)", dist.join(ABI_FILE).display()))
 }
 
-/// A hash of `files`' contents: the backend dylib and the runtime rlibs.
+/// A hash of `files`' contents (the backend dylib and the runtime rlibs) and of how `y` builds
+/// the ryo sysroot ([`crate::sysroot::recipe_hash`]): the sysroot's other inputs show in these
+/// files or in the rest of `rustc-ryo -vV` (rustc's version, the ABI tag).
 fn build_id(files: &[PathBuf]) -> Result<String, String> {
-    Ok(format!("{:016x}", crate::utils::hash_files(files)?))
+    let h = crate::utils::hash_files(files)?;
+    Ok(format!("{:016x}", crate::utils::hash_bytes(format!("{h:x} {:x}", crate::sysroot::recipe_hash()).as_bytes())))
 }
 
 fn build_wrappers(root: &Path, dist_bin: &Path, info: &RustcInfo, build_id: &str) -> Result<(), String> {

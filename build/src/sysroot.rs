@@ -64,6 +64,13 @@ pub fn ryo_sysroot_status(info: &RustcInfo, dist: &Path) -> SysrootStatus {
     if have.lines().count() != want.lines().count() { SysrootStatus::Stale("stamp format changed".to_owned()) } else { SysrootStatus::Current }
 }
 
+/// A hash of this file, which has `prepare_sources` (how the library is patched) and the
+/// build's flags: in the sysroot's stamp, and in the build id (`dist::build_id`), as cargo
+/// doesn't fingerprint the sysroot's rlibs.
+pub fn recipe_hash() -> u64 {
+    crate::utils::hash_bytes(include_str!("sysroot.rs").as_bytes())
+}
+
 /// The inputs of the ryo sysroot, a `key=value` line each.
 fn stamp(info: &RustcInfo, root: &Path, dist: &Path) -> Result<String, String> {
     use crate::utils::hash_bytes;
@@ -76,8 +83,7 @@ fn stamp(info: &RustcInfo, root: &Path, dist: &Path) -> Result<String, String> {
         src.display(),
         backend_stamp(dist)?,
         vm,
-        // `prepare_sources` (how the library is patched) and the build's flags are in this file.
-        hash_bytes(include_str!("sysroot.rs").as_bytes()),
+        recipe_hash(),
         crate::dist::dist_abi_tag(dist)?,
     ))
 }

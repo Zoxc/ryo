@@ -175,7 +175,8 @@ modeled on cg_clif's `build_system/`.
    Cargo identifies the compiler by `rustc -vV` (hashed into every fingerprint and
    metadata hash; cached in `out/target/.rustc_info.json`, keyed by the compiler's path and
    mtime). For `-vV` (or `-V -v`, `--version --verbose`) `rustc-ryo` appends a line
-   `ryo-build: <hash>` to rustc's output, a hash of the backend dylib and the runtime rlibs
+   `ryo-build: <hash>` to rustc's output, a hash of the backend dylib, the runtime rlibs
+   and `sysroot.rs` (how the ryo sysroot is built, whose rlibs cargo doesn't fingerprint)
    that `y build` bakes in as `RYO_BUILD_ID` (each `y build` relinks the wrapper, so the
    cache sees a new mtime). Plain cargo and `cargo ryo` artifacts thus coexist in one
    target directory, and a new ryo build rebuilds them. Units without a metadata hash
