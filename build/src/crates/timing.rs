@@ -108,10 +108,19 @@ pub fn wrapper(log_dir: OsString) -> ExitCode {
         primary as u8,
         status.success() as u8
     );
-    let file = Path::new(&log_dir).join(format!("{name}-{}.txt", std::process::id()));
     let _ = fs::create_dir_all(&log_dir);
-    if let Err(e) = fs::write(&file, head + &log) {
-        eprintln!("warning: writing {}: {e}", file.display());
+    // A new file: units sharing a crate name and a reused pid mustn't overwrite each other.
+    let (pid, text) = (std::process::id(), head + &log);
+    for n in 0.. {
+        let file = Path::new(&log_dir).join(if n == 0 { format!("{name}-{pid}.txt") } else { format!("{name}-{pid}-{n}.txt") });
+        let res = fs::OpenOptions::new().write(true).create_new(true).open(&file);
+        if res.as_ref().is_err_and(|e| e.kind() == std::io::ErrorKind::AlreadyExists) {
+            continue;
+        }
+        if let Err(e) = res.and_then(|mut f| f.write_all(text.as_bytes())) {
+            eprintln!("warning: writing {}: {e}", file.display());
+        }
+        break;
     }
     exit(status)
 }
