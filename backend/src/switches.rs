@@ -1,7 +1,7 @@
 //! The backend's debugging switches (design/backend.md, "Debugging switches"): every
-//! environment variable the backend reads. `init` reads them for the backend, and the partition
-//! provider (a plain fn, which can't reach the backend) reads them again and threads them
-//! through partitioning and lowering.
+//! environment variable the backend reads. `RyoBackend::new` reads them for the backend, and
+//! the partition provider (a plain fn, which can't reach the backend) reads them again and
+//! threads them through partitioning and lowering.
 
 use std::ffi::OsString;
 pub struct Switches {
