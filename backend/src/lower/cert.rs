@@ -33,7 +33,7 @@ pub enum CallKind {
     DropVm,
     /// `call.ptr` of a vtable's `drop_in_place` entry, with the data pointer.
     VirtualDrop,
-    /// `call.sym` of a thread local's shim, without arguments.
+    /// `call.sym` / `call.sym.ind` of a thread local's shim, without arguments.
     ThreadLocal,
     /// `tail_call fn`.
     TailVm,

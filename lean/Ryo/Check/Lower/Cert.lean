@@ -102,7 +102,7 @@ inductive CallKind
   | dropVm
   /-- `call.ptr` of a vtable's `drop_in_place` entry, with the data pointer. -/
   | virtualDrop
-  /-- `call.sym` of a thread local's shim, without arguments. -/
+  /-- `call.sym` / `call.sym.ind` of a thread local's shim, without arguments. -/
   | threadLocal
   /-- `tail_call fn`. -/
   | tailVm
