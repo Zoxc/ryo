@@ -9,6 +9,7 @@ checked quickly by `RyoTest/Inline.lean`.
 -/
 import Ryo.Vm.Asm
 import Ryo.Vm.OpSem
+import Ryo.Proofs.OpsIn
 
 set_option linter.constructorNameAsVariable false
 

@@ -4,7 +4,7 @@ opcode of `Asm.inlineOps` (aot.md §C2, toward `decode_sound`).
 
 - `all_kindOk`: every opcode whose handler is of an inline class's kind (`inlineKind`) has an
   `opSem` shape, isn't `resume` or `unreachable`, and isn't a `cvt` from `i64` to a signed
-  integer (`kindOk`, `Ryo/Proofs/CacheStep.lean`). A `decide +kernel` over every opcode,
+  integer (`kindOk`, `Ryo/Proofs/CacheStep.lean`). A `decide +kernel` over every opcode (in chunks),
   slow on a busy machine, hence here, outside the default build (like `InlineOps.lean`).
 - `inlineOps_ok`: `(op, cls) ∈ inlineOps` gives `InlineOk op cls` (`shapeOk` is
   `inlineOps_shape`, the rest `all_kindOk` through the handler kind `shapeOk` fixes).
@@ -24,8 +24,59 @@ namespace Ryo.Proofs.CacheStep
 open Ryo.Spec Ryo.Vm Ryo.Vm.OpSem Ryo.X86 Ryo.Vm.Asm Ryo.Proofs.Inline Ryo.Proofs.Scope
   Ryo.Proofs.Step Ryo.Proofs.RegCache
 
+-- In chunks of 100 opcodes (`opsIn`): one `decide +kernel` over `Full.all` peaked at 8.8 GiB.
 set_option maxRecDepth 100000 in
-theorem all_kindOk : Full.all.all kindOk = true := by decide +kernel
+theorem all_kindOk_0 : (opsIn 0 100).all kindOk = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem all_kindOk_100 : (opsIn 100 100).all kindOk = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem all_kindOk_200 : (opsIn 200 100).all kindOk = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem all_kindOk_300 : (opsIn 300 100).all kindOk = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem all_kindOk_400 : (opsIn 400 100).all kindOk = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem all_kindOk_500 : (opsIn 500 100).all kindOk = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem all_kindOk_600 : (opsIn 600 100).all kindOk = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem all_kindOk_700 : (opsIn 700 100).all kindOk = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem all_kindOk_800 : (opsIn 800 100).all kindOk = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem all_kindOk_900 : (opsIn 900 5).all kindOk = true := by
+  decide +kernel
+theorem all_kindOk : Full.all.all kindOk = true := by
+  rw [all_eq_opsIn]
+  have h0 := all_kindOk_0
+  have h1 : (opsIn 0 200).all kindOk = true :=
+    all_opsIn_append (m := 100) (n := 100) rfl h0 all_kindOk_100
+  have h2 : (opsIn 0 300).all kindOk = true :=
+    all_opsIn_append (m := 200) (n := 100) rfl h1 all_kindOk_200
+  have h3 : (opsIn 0 400).all kindOk = true :=
+    all_opsIn_append (m := 300) (n := 100) rfl h2 all_kindOk_300
+  have h4 : (opsIn 0 500).all kindOk = true :=
+    all_opsIn_append (m := 400) (n := 100) rfl h3 all_kindOk_400
+  have h5 : (opsIn 0 600).all kindOk = true :=
+    all_opsIn_append (m := 500) (n := 100) rfl h4 all_kindOk_500
+  have h6 : (opsIn 0 700).all kindOk = true :=
+    all_opsIn_append (m := 600) (n := 100) rfl h5 all_kindOk_600
+  have h7 : (opsIn 0 800).all kindOk = true :=
+    all_opsIn_append (m := 700) (n := 100) rfl h6 all_kindOk_700
+  have h8 : (opsIn 0 900).all kindOk = true :=
+    all_opsIn_append (m := 800) (n := 100) rfl h7 all_kindOk_800
+  have h9 : (opsIn 0 905).all kindOk = true :=
+    all_opsIn_append (m := 900) (n := 5) rfl h8 all_kindOk_900
+  exact h9
 
 set_option maxRecDepth 100000 in
 theorem all_clsOk : inlineOps.all (fun p => clsOk p.2) = true := by

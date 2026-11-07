@@ -1903,19 +1903,7 @@ def layoutAgreeOk (op : Full.Opcode) : Bool :=
 
 /-! The opcode tables below are checked by `decide +kernel` in chunks of 100 opcodes: one
 kernel reduction over all of `Full.all` keeps every intermediate term alive and needs more
-than 12 GiB; per chunk it stays under 4 GiB. -/
-
-/-- The opcodes of values `s, …, s + n - 1`. -/
-def opsIn (s n : Nat) : List Full.Opcode := (List.range' s n).map fun n => ⟨n.toUInt16⟩
-
-theorem all_eq_opsIn : Full.all = opsIn 0 Full.count := by
-  simp only [Full.all, opsIn, List.range_eq_range']
-
-theorem all_opsIn_append {p : Full.Opcode → Bool} {s m n k : Nat} (hk : m + n = k)
-    (h1 : (opsIn s m).all p = true) (h2 : (opsIn (s + m) n).all p = true) :
-    (opsIn s k).all p = true := by
-  rw [← hk, opsIn, ← List.range'_append_1, List.map_append, List.all_append]
-  exact Bool.and_eq_true_iff.2 ⟨h1, h2⟩
+than 12 GiB; per chunk it stays under 4 GiB (`Ryo.Proofs.OpsIn`). -/
 
 set_option maxRecDepth 100000 in
 theorem layoutAgreeTable_0 : (opsIn 0 100).all layoutAgreeOk = true := by
