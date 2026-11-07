@@ -178,7 +178,8 @@ pub enum OperandKind {
 pub enum ElemKind {
     /// [`Target`] (1 word).
     Target,
-    /// Raw `u32` (1 word): island operands.
+    /// Raw `u32` (1 word): island operands, and the calls' argument lists (slot, register
+    /// word pairs).
     Word,
     /// [`Case8`] (2 words).
     Case8,
