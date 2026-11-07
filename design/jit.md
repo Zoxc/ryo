@@ -45,7 +45,8 @@ section; its fields and the counter checks and stubs that use it are in
 `jit_code`, `entry` and `osr` after the writer.
 
 - **Trips** (`ryo_jit_trip_entry`, `ryo_jit_trip_osr`, `vm::trip_entry` and
-  `vm::trip_osr`), lock-free:
+  `vm::trip_osr`), lock-free (the exceptions: [When the JIT thread
+  starts](#when-the-jit-thread-starts)):
   - `Cold`: `state` CAS `Cold → Queued`; the winner pushes the record onto the queue and
     wakes the JIT thread. The counters get the `Queued` bias, and the stub continues the
     AOT code.
@@ -133,7 +134,10 @@ altstack, with `--sysroot ryo`), in a constructor under the loader lock, on a th
 the malloc, stdio or loader lock (a callee of an interposed `malloc`, a `dl_iterate_phdr`
 callback), in a forked child. Starting a thread there (malloc, `dladdr`/`dlopen`,
 `pthread_create`, a few KiB of tables on an 8 KiB altstack) can deadlock or overflow. So the
-trips start nothing; they are a CAS, a Treiber push and a futex wake.
+trips are a CAS, a Treiber push and a futex wake, but for a trip that registers its image
+ahead of its constructor (`registry::ensure`, below: the runtime lock and an allocation), a
+forked child's first trip, which starts its thread ([Forked children](#forked-children)),
+and the `RYO_JIT_SYNC` waits (below).
 
 - **Where**: `ryo_vm_register` calls `start_once` after every registration of a copy that
   doesn't forward to another ([merge](vm.md#several-ryo-runtimes-in-one-process)): the
