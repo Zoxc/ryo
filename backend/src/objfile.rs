@@ -875,9 +875,10 @@ pub fn write_allocator_shim(fmt: &dyn ObjectFormat, fns: &[ShimFn], visibility: 
 
 #[cfg(test)]
 mod tests {
-    //! The Mach-O objects (and one PE/COFF object, `pe_unwind_handler`, and the ELF registry's
-    //! `.debug_gdb_scripts`, `elf_gdb_scripts`), read back with
-    //! `object` (design/platforms.md). Nothing links or runs them here.
+    //! The Mach-O objects (and one PE/COFF object, `pe_unwind_handler`, the ELF registry's
+    //! `.debug_gdb_scripts`, `elf_gdb_scripts`, and the allocator shim in all three formats,
+    //! `allocator_shim`), read back with `object` (design/platforms.md). Nothing links or runs
+    //! them here.
     use object::read::macho::MachOFile64;
     use object::read::{Object as _, ObjectSection as _, ObjectSymbol as _, RelocationTarget};
     use object::{Endianness, RelocationFlags, SymbolScope, macho};
