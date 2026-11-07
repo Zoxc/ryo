@@ -1,14 +1,15 @@
 //! Cold paths out of the way (design/jit.md, "The SSA pipeline"): a block is cold when it is a
 //! landing pad stub, ends in a trap (after a call or handler that doesn't return), has
 //! successors that are all cold, or has predecessors that are all cold. The layout becomes
-//! the hot blocks, then the cold ones, each in their previous order, so the hot paths fall
-//! through and the linear scan's intervals of hot values stop at the hot code's end.
+//! the hot blocks in chains (a block followed by a hot successor whose hot predecessors are
+//! all laid out, [`chain`]), then the cold ones in their previous order, so the hot paths
+//! fall through and the linear scan's intervals of hot values stop at the hot code's end.
 //!
-//! Then a value live into a cold block that ends the path (no successors) and live across a
-//! call there is passed to it as a new parameter instead: the register allocator then keeps
-//! the call crossing to that parameter, defined in cold code, which it spills, and the hot
-//! value needs no callee-saved register (whose save and restore would be on the hot path).
-//! Only blocks whose predecessors all end in jumps, branches or switches (whose edges move
+//! Pure values used only in cold blocks are computed there ([`sink`]). Then a value live into
+//! a cold block that ends the path (no successors) and live across a call there is passed to
+//! it as a new parameter instead: the register allocator then keeps the call crossing to that
+//! parameter, defined in cold code, which it spills, and the hot value needs no callee-saved
+//! register (whose save and restore would be on the hot path). Only blocks whose predecessors all end in jumps, branches or switches (whose edges move
 //! arguments) and that aren't AOT loop heads (whose OSR entries set the parameters) get one.
 
 use alloc::vec::Vec;
