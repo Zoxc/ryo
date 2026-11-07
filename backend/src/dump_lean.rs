@@ -728,7 +728,8 @@ impl<'tcx> Dumper<'tcx> {
             ty::Slice(e) => ctor("slice", vec![("elem", self.ty(e))]),
             ty::Str => ctor("slice", vec![("elem", self.ty(tcx.types.u8))]),
             ty::Dynamic(..) => ctor("traitObject", vec![("t", J::Str(self.name_of(t)))]),
-            ty::Foreign(_) => ctor("traitObject", vec![("t", J::Str(format!("ryo-dump: unsupported extern type {}", self.name_of(t))))]),
+            // zero opaque bytes (`thin_unsized`)
+            ty::Foreign(_) => Self::opaque(l),
             ty::UnsafeBinder(b) => {
                 let inner = tcx.instantiate_bound_regions_with_erased(ty::Binder::from(b));
                 self.ty_with(inner, over)
@@ -743,7 +744,7 @@ impl<'tcx> Dumper<'tcx> {
     /// Fields at their offsets; an unsized last field is the tail.
     fn tuple_ty(&mut self, l: TyAndLayout<'tcx>, pack: Option<u64>) -> J {
         let n = l.fields.count();
-        let unsized_tail = l.is_unsized() && n > 0;
+        let unsized_tail = l.is_unsized() && n > 0 && !self.thin_unsized(l.ty);
         let sized_n = if unsized_tail { n - 1 } else { n };
         let fields = self.fields(l, 0..sized_n);
         let (end, tail) =
@@ -835,9 +836,16 @@ impl<'tcx> Dumper<'tcx> {
         J::Raw(j)
     }
 
+    /// Whether `t` is unsized but its pointers are thin: an extern type (or a struct ending in
+    /// one). The spec has no such types: they are dumped as sized, with the size and alignment of
+    /// their layout (an extern type: 0 and 1), which only places behind such pointers see.
+    fn thin_unsized(&self, t: Ty<'tcx>) -> bool {
+        matches!(self.tcx.struct_tail_for_codegen(t, self.typing_env()).kind(), ty::Foreign(_))
+    }
+
     /// `LayoutStrategy` of `t`.
     fn strategy(&mut self, t: Ty<'tcx>, l: TyAndLayout<'tcx>) -> J {
-        if l.is_sized() {
+        if l.is_sized() || self.thin_unsized(t) {
             return Self::size_align("sized", l.size.bytes(), l.align.abi.bytes());
         }
         match *t.kind() {

@@ -53,7 +53,8 @@ islands):
 **Out of scope** (ryo keeps these native, or they don't occur in runtime MIR): `InlineAsm`,
 `Yield`, `CoroutineDrop`, `FalseEdge`, `FalseUnwind`, coroutines, C-variadic function *definitions* (calls of
 external C-variadic functions go through §A.6),
-non-Rust-ABI function *definitions*, `unsized_fn_params`, extern types, SIMD *operations*
+non-Rust-ABI function *definitions*, `unsized_fn_params`, extern types (dumped as zero opaque
+bytes, behind thin pointers), SIMD *operations*
 (SIMD values may appear as opaque byte blobs), `f16`/`f128` arithmetic, concurrency (D17),
 aliasing models (D16).
 
