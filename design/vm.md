@@ -220,10 +220,12 @@ The common instructions (`asm::has_inline`) are short native sequences instead o
 calls (`asm::inline`): `mov`, `imm`, `addr`, `addr.const`, `addr.sym` and `addr.sym.ind`
 (rip-relative: a `lea` of the allocation, a load of the symbol slot), `ptr.add` (a 32-bit offset), `ptr.index` (a
 stride below 2^31), `load`, `store`, `add`, `sub`, `and`, `or`, `xor`, `mul` and their
-`.imm` forms, the shifts by an immediate below the width, the compares to a `bool` (`eq`
-… `ge.u.imm`), `br` and the compare-branches, the overflow ops `add.ovf`, `sub.ovf` and
-`mul.ovf`, and the extensions and truncations (`zext`, `sext`, `trunc`), all at `w8`–`w64`,
-and `mov.w128` as two 64-bit halves. Everything else, and these with other operands, keeps
+`.imm` forms, `div.s`, `div.u`, `rem.s` and `rem.u`, the shifts by an immediate below the
+width or by a slot, `rotl` and `rotr`, `cttz`, `ctlz` and `bswap`, the compares to a `bool`
+(`eq` … `ge.u.imm`) and `cmp3.s`/`cmp3.u`, `br` and the compare-branches, the overflow ops
+`add.ovf`, `sub.ovf` and `mul.ovf`, and the extensions and truncations (`zext`, `sext`,
+`trunc`), all at `w8`–`w64`, and `mov.w128` as two 64-bit halves; `switch.dense` up to
+`w64` computes its case index inline. Everything else, and these with other operands, keeps
 its handler call. [instructions.md](instructions.md) gives each instruction's sequence.
 
 - **Registers**: the sequences compute in one of the caller-saved registers but `rcx`, and
@@ -235,13 +237,15 @@ its handler call. [instructions.md](instructions.md) gives each instruction's se
   encoder, the cache and the decoder work on them as `[rbp + off]`, and `Asm::finish`
   writes them in the frame's form.
 - **Shape**: a sequence loads its operands (`movzx` for `w8`/`w16`), computes in `rax`, and
-  ends in its one write (`mov.w128` stores its high half from `rcx` first): `mov [fp + d], al…rax`, `mov [fp + d], imm` (`imm`), `setcc
+  ends in its one write (`mov.w128` stores its high half from `rcx` first, an overflow op its
+  result before the flag): `mov [fp + d], al…rax`, `mov [fp + d], imm` (`imm`), `setcc
   [fp + d]` (compares), `mov [rax + k], cl…rcx` (`store`), or for branches a `cmp`/`test`
   and `jcc t` (the condition inverted with `!`), which relaxes like the other branches.
   `w8`/`w16` arithmetic with an immediate computes in 32 bits; 64-bit immediates that
   aren't sign-extended 32-bit ones go through `rcx`.
-- **Overflow ops** compute the result in `rax` and write the flag before it, through `rcx`:
-  `setcc cl; mov [fp + o], cl` (`seto` signed, `setb` unsigned), then the result's store.
+- **Overflow ops** compute the result in `rax` and store it, then write the flag through
+  `rcx` (the store leaves the flags alone): `setcc cl; mov [fp + o], cl` (`seto` signed,
+  `setb` unsigned), so overlapping outputs end as the handlers leave them.
   `add`/`sub` and signed `w32`/`w64` `imul` set the flag themselves; 8 and 16-bit multiplies
   compute the exact product in 32 bits and compare it to the width's range (`seta`), unsigned
   `w32` ones in 64 bits against `u32::MAX`, and unsigned `w64` ones are `mul [b]`, which the

@@ -308,7 +308,19 @@ same); then the store.
 
 No checks: MIR's asserts guarantee a non-zero divisor and no `MIN / -1`.
 
-Handlers `ryo_h_DivSW8` … (`bin_fn`), `I` for `.s` and `T` for `.u`:
+Inline at `w8`–`w64` (clobbering `rdx`):
+
+```
+mov rax, [fp + a]
+cqo                        ; cdq at w32; xor edx, edx for .u
+idiv qword [fp + b]        ; div for .u
+mov [fp + d], rax          ; rdx for rem
+```
+
+At `w8`/`w16` both operands are loaded extended (`movsx`, or `movzx` for `.u`, into `eax`
+and `ecx`) and divided in 32 bits (`cdq; idiv ecx`, `.u` `xor edx, edx; div ecx`), then the store at the width.
+
+The handlers `ryo_h_DivSW8` … (`bin_fn`), `I` for `.s` and `T` for `.u`:
 
 ```rust
 let (a, b) = (frame.read::<I>(a), frame.read::<I>(b));
@@ -320,7 +332,18 @@ frame.write(d, unchecked_div(a, b));  // unchecked_rem; UB if b == 0 or MIN / -1
 `BinOp::Shl` and `Shr` and the funnel shifts. The amount is masked to the width, and `b`
 has width N too: the lowering converts a differently typed amount first.
 
-Always handler calls, `ryo_h_ShlW8` … (`shift`); `shr.s` reads `a` as `I`:
+Inline at `w8`–`w64`, the amount in `cl`:
+
+```
+mov rax, [fp + a]
+mov ecx, [fp + b]          ; the low 4 bytes: shl masks cl to the width at w32/w64
+shl rax, cl                ; sar / shr
+mov [fp + d], rax
+```
+
+At `w8`/`w16` they run in 32 bits (`a` loaded `movsx` for `shr.s`, `movzx` else), the
+amount loaded at the width and masked (`and ecx, N - 1`). The handlers `ryo_h_ShlW8` …
+(`shift`); `shr.s` reads `a` as `I`:
 
 ```rust
 let b = frame.read::<T>(b) as u32;
@@ -344,14 +367,15 @@ frame.write(d, frame.read::<T>(a).wrapping_neg());  // !a for not
 `o`; the lowering passes the offsets of the pair's two fields, since rustc decides the
 field order.
 
-Inline at `w8`–`w64`, the flag stored before the result:
+Inline at `w8`–`w64`, the result stored before the flag (so overlapping outputs end as the
+handlers leave them):
 
 ```
 mov rax, [fp + a]
 add rax, [fp + b]          ; sub
+mov [fp + d], rax
 seto cl                    ; setb for .u
 mov [fp + o], cl
-mov [fp + d], rax
 ```
 
 The multiplies:
@@ -384,7 +408,18 @@ setcc byte [fp + d]        ; e, ne, l, b, le, be
 
 `BinOp::Cmp`, the three-way compare, an `Ordering` as `i8` (-1, 0, 1).
 
-Handlers `ryo_h_Cmp3SW8` … (`cmp3`), `I` for `.s`:
+Inline at `w8`–`w64`, `(a > b) - (a < b)` from one `cmp`:
+
+```
+mov rax, [fp + a]
+cmp rax, [fp + b]
+setl cl                    ; setb for .u
+setg al                    ; seta for .u
+sub al, cl
+mov [fp + d], al
+```
+
+The handlers `ryo_h_Cmp3SW8` … (`cmp3`), `I` for `.s`:
 
 ```rust
 frame.write(d, frame.read::<T>(a).cmp(&frame.read::<T>(b)) as i8);
@@ -394,7 +429,9 @@ frame.write(d, frame.read::<T>(a).cmp(&frame.read::<T>(b)) as i8);
 
 `rotate_left`/`rotate_right`; `b` is a `u32`, as in the intrinsics.
 
-Handlers `ryo_h_RotlW8` … (`rot`):
+Inline at `w8`–`w64`, as the shifts by a slot (`rol rax, cl`, `ror`) but at the width:
+`cl`'s mask (5 bits, 6 at `w64`) keeps the amount modulo the width, and at `w8`/`w16` only
+the amount's low byte or halfword is read. The handlers `ryo_h_RotlW8` … (`rot`):
 
 ```rust
 frame.write(d, frame.read::<T>(a).rotate_left(frame.read::<u32>(b)));  // rotate_right
@@ -405,7 +442,21 @@ frame.write(d, frame.read::<T>(a).rotate_left(frame.read::<u32>(b)));  // rotate
 The counting intrinsics (also `_nonzero`); the result is a `u32`, which the lowering
 converts to the destination's width.
 
-Handlers `ryo_h_CtpopW8` … (`count`):
+`cttz` and `ctlz` are inline at `w8`–`w64`; `bsf`/`bsr` of zero leave the register
+undefined, so a `cmovz` gives that case's result (`bsr` is `N - 1 - clz`):
+
+```
+mov rax, [fp + a]
+bsf rax, rax               ; ctlz: bsr rax, rax
+mov ecx, N                 ; ctlz: 2N - 1
+cmovz eax, ecx
+xor eax, N - 1             ; ctlz only
+mov [fp + d], eax
+```
+
+`cttz` at `w8`/`w16` sets a guard bit above the value instead (`movzx eax, [fp + a]; or eax,
+1 << N; bsf eax, eax`); `ctlz` there runs `bsr` in 32 bits. `ctpop` is a handler call.
+The handlers `ryo_h_CtpopW8` … (`count`):
 
 ```rust
 frame.write(d, frame.read::<T>(a).count_ones());  // leading_zeros, trailing_zeros: u32
@@ -413,8 +464,10 @@ frame.write(d, frame.read::<T>(a).count_ones());  // leading_zeros, trailing_zer
 
 #### `bswap`, `bitreverse` `.wN d, a`
 
-The intrinsics. Handlers `ryo_h_BswapW16`, `ryo_h_BitreverseW8` … (`un`). `bswap` has no
-`w8` form: a one-byte `bswap` lowers to `mov.w8`.
+The intrinsics. `bswap` has no `w8` form: a one-byte `bswap` lowers to `mov.w8`. It is
+inline at `w16`–`w64`: `mov rax, [fp + a]; bswap rax; mov [fp + d], rax`, and at `w16` the
+32-bit swap shifted down (`movzx eax, word [fp + a]; bswap eax; shr eax, 16`). `bitreverse`
+is a handler call. The handlers `ryo_h_BswapW16`, `ryo_h_BitreverseW8` … (`un`):
 
 ```rust
 frame.write(d, frame.read::<T>(a).swap_bytes());  // reverse_bits
