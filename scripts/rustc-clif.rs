@@ -14,9 +14,10 @@ fn main() {
     // cg_clif links against this exact `rustc_driver`, like the ryo backend.
     common::check_driver("rustc-clif", "`./y.sh build` and `./y.sh build-clif`");
     let dist = common::dist_dir();
-    let mut cmd = common::toolchain_command("rustc");
-    cmd.args(clif_args(&dist, std::env::args_os().skip(1).collect()));
-    common::exec(cmd, "rustc")
+    // Options in an `@argfile` count too.
+    let (passed, argfile) = common::expand_argfiles(std::env::args_os().skip(1).collect()).unwrap_or_else(|msg| common::fail(&msg));
+    let cmd = common::toolchain_command("rustc");
+    common::exec_with_args(cmd, clif_args(&dist, passed), argfile, "rustc")
 }
 
 /// The full rustc command line for the user's `passed` arguments.

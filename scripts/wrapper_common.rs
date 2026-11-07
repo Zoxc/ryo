@@ -101,6 +101,58 @@ pub fn exec(mut cmd: Command, what: &str) -> ! {
     std::process::exit(1);
 }
 
+/// `args` with each `@path` argument replaced by the lines of `path`, as rustc expands them (not
+/// recursively; `@shell:path`, which needs `-Zshell-argfiles`, is left to rustc), so a wrapper
+/// sees the options in an argfile (cargo uses one when a command line is too long). Also returns
+/// whether there was one.
+pub fn expand_argfiles(args: Vec<OsString>) -> Result<(Vec<OsString>, bool), String> {
+    let mut out = Vec::with_capacity(args.len());
+    let mut any = false;
+    for a in args {
+        match a.to_str().and_then(|s| s.strip_prefix('@')).filter(|p| !p.starts_with("shell:")) {
+            Some(path) => {
+                let content = std::fs::read_to_string(path).map_err(|err| format!("failed to load argument file {path}: {err}"))?;
+                out.extend(content.lines().map(OsString::from));
+                any = true;
+            }
+            None => out.push(a),
+        }
+    }
+    Ok((out, any))
+}
+
+/// Runs `cmd` (rustc) with `args` in place of this process, like [`exec`]. With `argfile` (the
+/// user's arguments came in one, [`expand_argfiles`]), passes them in a new argfile instead, so
+/// the command line stays as short, and removes it once rustc has exited.
+pub fn exec_with_args(mut cmd: Command, args: Vec<OsString>, argfile: bool, what: &str) -> ! {
+    if !argfile {
+        cmd.args(args);
+        exec(cmd, what);
+    }
+    let mut content = String::new();
+    for a in &args {
+        match a.to_str() {
+            Some(s) if !s.contains('\n') => {
+                content.push_str(s);
+                content.push('\n');
+            }
+            _ => fail(&format!("argument {a:?} can't be passed in an argfile")),
+        }
+    }
+    let file = env::temp_dir().join(format!("ryo-args-{}", std::process::id()));
+    if let Err(err) = std::fs::write(&file, content) {
+        fail(&format!("writing {}: {err}", file.display()));
+    }
+    let mut at = OsString::from("@");
+    at.push(&file);
+    let status = cmd.arg(at).status();
+    let _ = std::fs::remove_file(&file);
+    match status {
+        Ok(status) => std::process::exit(status.code().unwrap_or(1)),
+        Err(err) => fail(&format!("failed to run {what}: {err}")),
+    }
+}
+
 /// Prints `error: <msg>` and exits.
 pub fn fail(msg: &str) -> ! {
     eprintln!("error: {msg}");

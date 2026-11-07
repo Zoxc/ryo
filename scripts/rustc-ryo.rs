@@ -14,7 +14,8 @@ use std::path::{Path, PathBuf};
 #[cfg(not(test))]
 fn main() {
     common::check_driver("rustc-ryo", "`./y.sh build`");
-    let mut passed: Vec<OsString> = std::env::args_os().skip(1).collect();
+    // Options in an `@argfile` count too.
+    let (mut passed, argfile) = common::expand_argfiles(std::env::args_os().skip(1).collect()).unwrap_or_else(|msg| common::fail(&msg));
     let stats = take_ryo_stats(&mut passed).unwrap_or_else(|msg| common::fail(&msg));
     let verbose_version = is_verbose_version(&passed);
     let checked = common::jit_checked();
@@ -22,7 +23,6 @@ fn main() {
     let default = default_sysroot(&dist).unwrap_or_else(|msg| common::fail(&msg));
     let args = ryo_args(&dist, passed, checked, default).unwrap_or_else(|msg| common::fail(&msg));
     let mut cmd = common::toolchain_command("rustc");
-    cmd.args(args);
     if let Some(level) = stats {
         cmd.env("RYO_STATS", level);
     }
@@ -30,7 +30,7 @@ fn main() {
         // Cargo fingerprints the compiler by `rustc -vV`; tell it which ryo build this is
         // (design/build.md#the-y-build-tool).
         use std::io::Write;
-        let out = cmd.output().unwrap_or_else(|err| common::fail(&format!("failed to run rustc: {err}")));
+        let out = cmd.args(args).output().unwrap_or_else(|err| common::fail(&format!("failed to run rustc: {err}")));
         let mut stdout = std::io::stdout().lock();
         let _ = stdout.write_all(&out.stdout);
         if out.status.success() {
@@ -45,7 +45,7 @@ fn main() {
         let _ = std::io::stderr().write_all(&out.stderr);
         std::process::exit(out.status.code().unwrap_or(1));
     }
-    common::exec(cmd, "rustc")
+    common::exec_with_args(cmd, args, argfile, "rustc")
 }
 
 /// Which sysroot a command line without `--sysroot` gets.
@@ -283,6 +283,20 @@ mod tests {
         let got = ryo_args(&dir, args(&["x.rs", "--target=c"]), false, ryo).unwrap();
         assert_eq!(got[..2], args(&["--sysroot", dir.to_str().unwrap()])[..]);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn argfile_options() {
+        let file = std::env::temp_dir().join(format!("ryo-argfile-test-{}", std::process::id()));
+        std::fs::write(&file, "--sysroot\nllvm\n-Zryo-stats\r\n").unwrap();
+        let (mut a, any) = common::expand_argfiles(args(&["x.rs", &format!("@{}", file.display()), "@shell:f"])).unwrap();
+        std::fs::remove_file(&file).unwrap();
+        assert!(any);
+        assert_eq!(take_ryo_stats(&mut a), Ok(Some("1".into())));
+        let got = ryo_args(Path::new("/d"), a, false, LLVM).unwrap();
+        assert_eq!(got.iter().filter(|a| a.to_str().is_some_and(|s| s.starts_with("--sysroot"))).count(), 1, "{got:?}");
+        assert!(got.iter().any(|a| a == "--sysroot=/d") && got.ends_with(&args(&["@shell:f"])), "{got:?}");
+        assert_eq!(common::expand_argfiles(args(&["x.rs"])), Ok((args(&["x.rs"]), false)));
     }
 
     #[test]
