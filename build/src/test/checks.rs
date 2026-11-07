@@ -193,8 +193,17 @@ fn bt_frames(text: &str, file: &str) -> Vec<Vec<(String, String)>> {
             name = None;
         } else if let Some(at) = t.strip_prefix("at ") {
             let (Some(cur), Some(n)) = (out.last_mut(), name.take()) else { continue };
-            let mut parts = at.rsplitn(3, ':');
-            let (_col, line, path) = (parts.next(), parts.next().unwrap_or(""), parts.next().unwrap_or(""));
+            // `path:line:col`, or `path:line` without a column (dbghelp on windows-msvc gives
+            // none); the path may have a drive letter and `\` separators.
+            let num = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+            let (path, line) = match at.rsplit_once(':') {
+                Some((rest, last)) => match rest.rsplit_once(':') {
+                    Some((path, line)) if num(line) && num(last) => (path, line),
+                    _ => (rest, last),
+                },
+                None => ("", ""),
+            };
+            let path = path.replace('\\', "/");
             // By the last path segment: the platform symbolizer names inlined frames by
             // their DWARF names (`act`). `main` differs (ryo's entry wrapper is in the file).
             let last = n.rsplit("::").next().unwrap_or(&n).to_owned();
@@ -1371,5 +1380,13 @@ mod tests {
         // `da::ryo_rt::f`, and `da::g::<da::ryo_rt::S>` with `da` as a back-reference.
         assert!(!super::in_crate("_RNvNtCs1a2B_2da6ryo_rt1f", "6ryo_rt"));
         assert!(!super::in_crate("_RINvCs1a2B_2da1gNtNtB2_6ryo_rt1SEB2_", "6ryo_rt"));
+    }
+
+    /// Unix paths, and Windows ones (`.\`, a drive letter) with and without a column.
+    #[test]
+    fn bt_frames_paths() {
+        let text = "== bt\n   0: x::act::h0123456789abcdef\n             at ./tests/x.rs:12:5\n   1: x::two\n             at .\\tests\\x.rs:20\n   2: x::three\n             at C:\\ryo\\tests\\x.rs:30\n   3: x::four\n             at C:\\ryo\\tests\\x.rs:40:9\n   4: x::other\n             at ./tests/y.rs:1:1\n";
+        let want = Vec::from([("act", "12"), ("two", "20"), ("three", "30"), ("four", "40")].map(|(n, l)| (n.to_owned(), l.to_owned())));
+        assert_eq!(super::bt_frames(text, "x.rs"), vec![want]);
     }
 }
