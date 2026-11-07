@@ -776,6 +776,17 @@ check, with one entry per niche variant and no bound on the span.
 value (more than two below `w128`), the values sorted (unsigned); the handler scans linearly for `n ≤ 4` and searches
 binary above.
 
+`switch.dense` at `w8`–`w64` (with fewer than 2^31 cases) computes the index inline before
+the jump table, in place of its handler call:
+
+```
+mov rax, [fp + s]
+sub rax, base              ; none for base 0; mov rcx, imm64; sub rax, rcx if it doesn't fit
+mov ecx, n
+cmp rax, rcx               ; cmp eax, ecx below w64
+cmovae eax, ecx
+```
+
 Handlers `ryo_h_SwitchDenseW8` … and `ryo_h_SwitchSparseW8` … (`switch_dense`,
 `switch_sparse`) return the case index (`n` for the default); the sparse values are a code
 constant, passed as its address and the count:

@@ -172,7 +172,7 @@ ones, which are [inlined](#inline-instructions):
 |---|---|---|
 | `op` | data movement, arithmetic, conversions, enums, atomics | operand registers, `call ryo_h_<Opcode>` |
 | `br` | `br`, `br.eq`, `br.lt`, `br.gt.imm`, … | handler call (returns a `bool`), `test al, al`, `jnz t` (`jz t` with `!`) |
-| `switch` | `switch.dense`, `switch.sparse` | handler call (returns the case index, `n` for the default), `lea rcx, [rip + T]; movsxd rax, [rcx + rax*4]; add rax, rcx; jmp rax`, then `int3`s to a multiple of 4 and the table `T` inline in the text: one `i32` offset from `T` per case, the default last |
+| `switch` | `switch.dense`, `switch.sparse` | handler call (returns the case index, `n` for the default; for `switch.dense` up to `w64`, with fewer than 2^31 cases, an inline computation of it instead, `asm::inline::dense_index`), `lea rcx, [rip + T]; movsxd rax, [rcx + rax*4]; add rax, rcx; jmp rax`, then `int3`s to a multiple of 4 and the table `T` inline in the text: one `i32` offset from `T` per case, the default last |
 | `trap` | `unreachable`, `abort`, `resume` | handler call, `ud2`; `unreachable` has no handler and is `ud2` alone |
 | `ret` | `ret` | the value's loads into the return registers, epilogue, `ret` |
 | `arg` | `arg` | the store of an argument register |
