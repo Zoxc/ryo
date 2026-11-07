@@ -239,8 +239,9 @@ fn check_outputs(tcx: TyCtxt<'_>) {
     }
 }
 
-/// Whether the crate may have VM code. Proc macros stay native: it keeps VM code out of
-/// rustc's own process, and they gain nothing from it. `RYO_NO_VM` is a debugging switch
+/// Whether the crate may have VM code. Proc macros stay native: it keeps the proc macro's own
+/// code out of the VM (its rlib dependencies still have images, so VM code does run in rustc),
+/// and they gain nothing from it. `RYO_NO_VM` is a debugging switch
 /// (design/backend.md#pipeline, step 2). A panic runtime (`panic_unwind`, `panic_abort`) too:
 /// VM code unwinds natively through it (design/vm.md, Unwinding), and it gains nothing from
 /// the VM.
