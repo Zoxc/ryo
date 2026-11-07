@@ -577,7 +577,7 @@ fn incremental_proc_macro(rustc_ryo: &Path, dir_in: &Path, dir: &Path) -> Result
 }
 
 /// The dynamic symbols a ryo Rust dylib, cdylib, and an executable with `-Zexport-executable-symbols`,
-/// export are exactly plain rustc's (plus the runtime's own) (design/backend.md#query-overrides).
+/// export are exactly plain rustc's, none of the runtime's (design/backend.md#query-overrides).
 /// ELF (`llvm-nm -D`) and Mach-O (`llvm-nm --extern-only`). On Linux, the cdylib's registry constructor doesn't bind
 /// `ryo_vm_register` dynamically.
 pub(super) fn same_exports(info: &crate::utils::RustcInfo, rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), String> {
@@ -605,12 +605,11 @@ pub(super) fn same_exports(info: &crate::utils::RustcInfo, rustc_ryo: &Path, src
                     return Err(format!("{}: `ryo_vm_register` is bound dynamically: {line}", o.display()));
                 }
             }
-            // The runtime's own symbols: in a Rust dylib everything of `ryo_rt` and
-            // `ryo_bytecode`, the handlers included. A cdylib and an executable export none.
-            // Mach-O has no dynamic symbol table: its exports are the external symbols.
+            // Nothing filtered out: each module's runtime copy stays private to it, none of its
+            // symbols exported (design/vm.md#several-ryo-runtimes-in-one-process). Mach-O has
+            // no dynamic symbol table: its exports are the external symbols.
             let table = if cfg!(target_vendor = "apple") { "--extern-only" } else { "-D" };
             let mut syms = crate::utils::nm_symbols(info, &[table, "--defined-only"], &o, &info.host)?;
-            syms.retain(|s| !is_runtime_symbol(s));
             syms.sort();
             lists.push(syms);
         }
