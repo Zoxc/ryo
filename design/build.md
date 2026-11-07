@@ -44,9 +44,10 @@ modeled on cg_clif's `build_system/`.
 1. **Backend**: `cargo build --release -Zembed-metadata=no` for `backend/`, with
    `RUSTFLAGS=-Zallow-features=rustc_private,...`. Only the listed features are allowed,
    even though `RUSTC_BOOTSTRAP` would allow all. The release profile is forced to
-   `CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1` and `CARGO_PROFILE_RELEASE_LTO=fat`, so the
-   backend's own crates are optimized as one unit whatever the user's settings;
-   `librustc_driver` stays a dynamic dependency, outside LTO. `backend/build.rs` bakes in
+   `CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1`, so each of the backend's crates is optimized as
+   one unit whatever the user's settings. There is no LTO: cargo doesn't run it for a
+   `dylib`, which `rustc_codegen_ryo` is (it links `librustc_driver` dynamically).
+   `backend/build.rs` bakes in
    the backend's build ID (`RYO_BACKEND_ID`: a hash of its and `ryo_bytecode`'s sources and
    manifests, the lock file, the compiler's `-vV`, the build settings and the ABI tag
    `RYO_ABI`, [below](#the-abi-tag)), which incremental
