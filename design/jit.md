@@ -164,9 +164,10 @@ trips start nothing; they are a CAS, a Treiber push and a futex wake.
   `__cxa_thread_atexit_impl`, for its TLS destructors, takes `dl_load_lock`), and that lock
   can't be queried: so a wait first waits up to 2 s for the thread to be set up (`JIT_READY`, at
   its first `next_batch`, after it touched its TLS), and skips the compile's wait if it
-  isn't. Once set up, the thread takes no loader lock to compile. The JIT thread blocks
-  asynchronous signals: a process-directed signal whose handler is VM code would otherwise
-  trip there and wait for its own compile.
+  isn't. Once set up, the thread takes no loader lock to compile. The JIT thread runs with
+  the asynchronous signals blocked from its start (`ryo_jit_start` blocks them around the
+  spawn, which the thread's mask inherits): a process-directed signal whose handler is VM
+  code would otherwise trip there and wait for its own compile.
 
 ### Forked children
 

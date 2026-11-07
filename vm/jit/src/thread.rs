@@ -39,7 +39,13 @@ pub(crate) fn start(rt: &'static RtApi, child: bool) -> bool {
         crate::sys::close_frame_registry_at_exit();
         let _ = stats::STARTED_AT.set(std::time::Instant::now());
     }
-    std::thread::Builder::new().name(NAME.into()).spawn(move || main(rt)).is_ok()
+    // The thread starts with the asynchronous signals blocked: it inherits the mask from here.
+    let spawn = || std::thread::Builder::new().name(NAME.into()).spawn(move || main(rt)).is_ok();
+    #[cfg(unix)]
+    let spawned = with_signals_blocked(spawn);
+    #[cfg(not(unix))]
+    let spawned = spawn();
+    spawned
 }
 
 /// The runtime's interface, for [`quiesce`].
@@ -170,11 +176,13 @@ impl Drop for LeaveAll {
     }
 }
 
-/// Blocks the asynchronous signals on the JIT thread: a process-directed signal (`SIGALRM`,
-/// `SIGCHLD`, ...) whose handler is VM code would otherwise trip on this thread and, with
-/// `RYO_JIT_SYNC`, wait for its own compile. The synchronous ones (faults) stay.
+/// Runs `f` (the JIT thread's spawn) with the asynchronous signals blocked on this thread, then
+/// restores its mask: the JIT thread inherits the mask, so they are blocked there from its
+/// first instruction. A process-directed signal (`SIGALRM`, `SIGCHLD`, ...) whose handler is
+/// VM code would otherwise trip on the JIT thread and, with `RYO_JIT_SYNC`, wait for its own
+/// compile. The synchronous ones (faults) stay.
 #[cfg(unix)]
-fn block_signals() {
+fn with_signals_blocked<R>(f: impl FnOnce() -> R) -> R {
     use core::ffi::c_int;
     unsafe extern "C" {
         fn sigfillset(set: *mut u64) -> c_int;
@@ -183,6 +191,7 @@ fn block_signals() {
     }
     // Large enough for every `sigset_t` (glibc's is 128 bytes, Apple's 4).
     let mut set = [0u64; 16];
+    let mut old = [0u64; 16];
     #[cfg(target_vendor = "apple")]
     const SIGS: [c_int; 5] = [4, 5, 8, 10, 11]; // SIGILL, SIGTRAP, SIGFPE, SIGBUS, SIGSEGV
     #[cfg(not(target_vendor = "apple"))]
@@ -191,19 +200,27 @@ fn block_signals() {
     const SIG_BLOCK: c_int = 1;
     #[cfg(not(target_vendor = "apple"))]
     const SIG_BLOCK: c_int = 0;
-    // SAFETY: plain libc calls on a buffer at least as large as a `sigset_t`.
-    unsafe {
+    #[cfg(target_vendor = "apple")]
+    const SIG_SETMASK: c_int = 3;
+    #[cfg(not(target_vendor = "apple"))]
+    const SIG_SETMASK: c_int = 2;
+    // SAFETY: plain libc calls on buffers at least as large as a `sigset_t`.
+    let blocked = unsafe {
         sigfillset(set.as_mut_ptr());
         for s in SIGS {
             sigdelset(set.as_mut_ptr(), s);
         }
-        pthread_sigmask(SIG_BLOCK, set.as_ptr(), core::ptr::null_mut());
+        pthread_sigmask(SIG_BLOCK, set.as_ptr(), old.as_mut_ptr()) == 0
+    };
+    let r = f();
+    if blocked {
+        // SAFETY: as above; `old` is the mask `pthread_sigmask` returned.
+        unsafe { pthread_sigmask(SIG_SETMASK, old.as_ptr(), core::ptr::null_mut()) };
     }
+    r
 }
 
 fn main(rt: &'static RtApi) {
-    #[cfg(unix)]
-    block_signals();
     IS_JIT.set(true);
     let _leave = LeaveAll;
     // `RYO_JIT_TEST_SLOW=<ms>` (tests): every compile starts that late, so that a test can
