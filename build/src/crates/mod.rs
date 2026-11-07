@@ -396,11 +396,12 @@ const CLEARED_ENV: &[&str] = &[
 ];
 
 /// Whether the inherited variable `k` is cleared: [`CLEARED_ENV`], the backend's and the
-/// runtime's switches (`RYO_*`, but not `y`'s own `RYO_Y_*`), cargo profile settings and
-/// unstable features, and per-target `RUSTFLAGS`, runners, linkers and archivers.
+/// runtime's switches (`RYO_*`, but not `y`'s own `RYO_Y_*`, nor `RYO_SYSROOT`: `rustc-ryo`'s
+/// std, which `y` sets to `llvm` unless the user set it), cargo profile settings and unstable
+/// features, and per-target `RUSTFLAGS`, runners, linkers and archivers.
 fn cleared(k: &str) -> bool {
     CLEARED_ENV.contains(&k)
-        || (k.starts_with("RYO_") && !k.starts_with("RYO_Y_"))
+        || (k.starts_with("RYO_") && !k.starts_with("RYO_Y_") && k != crate::wrapper_common::SYSROOT_VAR)
         || k.starts_with("CARGO_PROFILE_")
         || k.starts_with("CARGO_UNSTABLE_")
         || (k.starts_with("CARGO_TARGET_") && ["_RUSTFLAGS", "_RUNNER", "_LINKER", "_AR"].iter().any(|s| k.ends_with(s)))
