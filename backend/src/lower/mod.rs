@@ -382,7 +382,7 @@ impl<'a, 'tcx> FnCx<'a, 'tcx> {
     /// monomorphization (behind a `SwitchInt` on a constant, as `if T::IS_ZST`, or on
     /// `ub_checks()`) is lowered as a lone `unreachable`, as cg_ssa does
     /// (`codegen_block_as_unreachable`), so its calls don't make the image refer to items the
-    /// collector never collected for it (design/lowering.md#blocks). Cleanup blocks are only reached through landing
+    /// collector never collected for it (design/lowering.md#terminators). Cleanup blocks are only reached through landing
     /// pads; on PE they come last, in the pad region (design/vm.md#unwinding), after the
     /// body's unwind targets: the body's terminate stubs and their landing pads, then (the
     /// region's start) the cleanup landing pads, the cleanup blocks and their own terminate
