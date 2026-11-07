@@ -294,7 +294,9 @@ fn prepare_sources(info: &RustcInfo, root: &Path, dst: &Path) -> Result<(), Stri
     }
     // `ryo_rt` and `ryo_bytecode` as members of the library workspace, on its `core`.
     let vm = root.join("vm");
-    let path = |p: PathBuf| p.to_str().map(|s| format!("{s:?}")).ok_or("non-UTF-8 path".to_owned());
+    // TOML basic strings: Rust's `{:?}` would escape some characters as `\u{..}`, which TOML
+    // doesn't accept.
+    let path = |p: PathBuf| p.to_str().map(crate::install::quote).ok_or("non-UTF-8 path".to_owned());
     write_if_changed(
         &dst.join("ryo_bytecode").join("Cargo.toml"),
         &format!(
