@@ -144,7 +144,7 @@ const PCREL_ABSPTR: u8 = 0x10;
 /// through a pointer-sized slot (`DW_EH_PE_indirect`), the LSDA and FDE pointers PC-relative
 /// (32-bit), and the initial rules of a function entry (CFA `rsp + 8`, the return address at
 /// CFA − 8). Returns the position in `eh` of the personality field, which holds the slot's
-/// address less the field's own. The image writer and the JIT (`ryo_rt`) share it.
+/// address less the field's own. The image writer and the JIT (`ryo_jit`) share it.
 pub fn eh_cie(eh: &mut Vec<u8>) -> usize {
     eh_cie_with(eh, EhPointers::Sdata4)
 }
