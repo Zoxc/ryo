@@ -1264,17 +1264,176 @@ theorem Hyps.linkPrivate {S : Setup} (H : Hyps S) : LinkPrivate S := by
   exact Discharge.EscFrom.escapedAt_none_of (Discharge.EscFrom.EscFrom.scopes hf.esc hsc)
     (fun p hp he _ => hesc p hp he o h0 h16)
 
+-- In chunks of 100 opcodes (`all_range'_append`): one `decide +kernel` over the table
+-- peaked at about 8.5 GiB.
 set_option maxRecDepth 100000 in
-theorem privc_ofFullTable : (List.range Reduced.ofFullTable.size).all (fun i =>
-    (Reduced.ofFullTable[i]!).all fun op =>
-      Reduced.toFullTable[op.val.toNat]! == some ⟨i.toUInt16⟩) = true := by
+theorem privc_ofFullTable_0 : (List.range' 0 100).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        Reduced.toFullTable[op.val.toNat]! == some ⟨i.toUInt16⟩) = true := by
   decide +kernel
-
 set_option maxRecDepth 100000 in
+theorem privc_ofFullTable_100 : (List.range' 100 100).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        Reduced.toFullTable[op.val.toNat]! == some ⟨i.toUInt16⟩) = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem privc_ofFullTable_200 : (List.range' 200 100).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        Reduced.toFullTable[op.val.toNat]! == some ⟨i.toUInt16⟩) = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem privc_ofFullTable_300 : (List.range' 300 100).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        Reduced.toFullTable[op.val.toNat]! == some ⟨i.toUInt16⟩) = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem privc_ofFullTable_400 : (List.range' 400 100).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        Reduced.toFullTable[op.val.toNat]! == some ⟨i.toUInt16⟩) = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem privc_ofFullTable_500 : (List.range' 500 100).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        Reduced.toFullTable[op.val.toNat]! == some ⟨i.toUInt16⟩) = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem privc_ofFullTable_600 : (List.range' 600 100).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        Reduced.toFullTable[op.val.toNat]! == some ⟨i.toUInt16⟩) = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem privc_ofFullTable_700 : (List.range' 700 100).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        Reduced.toFullTable[op.val.toNat]! == some ⟨i.toUInt16⟩) = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem privc_ofFullTable_800 : (List.range' 800 100).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        Reduced.toFullTable[op.val.toNat]! == some ⟨i.toUInt16⟩) = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem privc_ofFullTable_900 : (List.range' 900 5).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        Reduced.toFullTable[op.val.toNat]! == some ⟨i.toUInt16⟩) = true := by
+  decide +kernel
+theorem privc_ofFullTable : (List.range Reduced.ofFullTable.size).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        Reduced.toFullTable[op.val.toNat]! == some ⟨i.toUInt16⟩) = true := by
+  rw [Ryo.Proofs.ofFullTable_size, List.range_eq_range']
+  have h0 := privc_ofFullTable_0
+  have h1 : (List.range' 0 200).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        Reduced.toFullTable[op.val.toNat]! == some ⟨i.toUInt16⟩) = true :=
+    Ryo.Proofs.all_range'_append (m := 100) (n := 100) rfl h0 privc_ofFullTable_100
+  have h2 : (List.range' 0 300).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        Reduced.toFullTable[op.val.toNat]! == some ⟨i.toUInt16⟩) = true :=
+    Ryo.Proofs.all_range'_append (m := 200) (n := 100) rfl h1 privc_ofFullTable_200
+  have h3 : (List.range' 0 400).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        Reduced.toFullTable[op.val.toNat]! == some ⟨i.toUInt16⟩) = true :=
+    Ryo.Proofs.all_range'_append (m := 300) (n := 100) rfl h2 privc_ofFullTable_300
+  have h4 : (List.range' 0 500).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        Reduced.toFullTable[op.val.toNat]! == some ⟨i.toUInt16⟩) = true :=
+    Ryo.Proofs.all_range'_append (m := 400) (n := 100) rfl h3 privc_ofFullTable_400
+  have h5 : (List.range' 0 600).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        Reduced.toFullTable[op.val.toNat]! == some ⟨i.toUInt16⟩) = true :=
+    Ryo.Proofs.all_range'_append (m := 500) (n := 100) rfl h4 privc_ofFullTable_500
+  have h6 : (List.range' 0 700).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        Reduced.toFullTable[op.val.toNat]! == some ⟨i.toUInt16⟩) = true :=
+    Ryo.Proofs.all_range'_append (m := 600) (n := 100) rfl h5 privc_ofFullTable_600
+  have h7 : (List.range' 0 800).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        Reduced.toFullTable[op.val.toNat]! == some ⟨i.toUInt16⟩) = true :=
+    Ryo.Proofs.all_range'_append (m := 700) (n := 100) rfl h6 privc_ofFullTable_700
+  have h8 : (List.range' 0 900).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        Reduced.toFullTable[op.val.toNat]! == some ⟨i.toUInt16⟩) = true :=
+    Ryo.Proofs.all_range'_append (m := 800) (n := 100) rfl h7 privc_ofFullTable_800
+  have h9 : (List.range' 0 905).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        Reduced.toFullTable[op.val.toNat]! == some ⟨i.toUInt16⟩) = true :=
+    Ryo.Proofs.all_range'_append (m := 900) (n := 5) rfl h8 privc_ofFullTable_900
+  exact h9
+
+-- In chunks of 100 opcodes (`all_range'_append`): one `decide +kernel` over the table
+-- peaked at about 8.5 GiB.
+set_option maxRecDepth 100000 in
+theorem privc_shapeTable_0 : (List.range' 0 100).all (fun i =>
+      (Full.Opcode.info ⟨i.toUInt16⟩).shape != .arg || i == 901) = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem privc_shapeTable_100 : (List.range' 100 100).all (fun i =>
+      (Full.Opcode.info ⟨i.toUInt16⟩).shape != .arg || i == 901) = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem privc_shapeTable_200 : (List.range' 200 100).all (fun i =>
+      (Full.Opcode.info ⟨i.toUInt16⟩).shape != .arg || i == 901) = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem privc_shapeTable_300 : (List.range' 300 100).all (fun i =>
+      (Full.Opcode.info ⟨i.toUInt16⟩).shape != .arg || i == 901) = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem privc_shapeTable_400 : (List.range' 400 100).all (fun i =>
+      (Full.Opcode.info ⟨i.toUInt16⟩).shape != .arg || i == 901) = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem privc_shapeTable_500 : (List.range' 500 100).all (fun i =>
+      (Full.Opcode.info ⟨i.toUInt16⟩).shape != .arg || i == 901) = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem privc_shapeTable_600 : (List.range' 600 100).all (fun i =>
+      (Full.Opcode.info ⟨i.toUInt16⟩).shape != .arg || i == 901) = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem privc_shapeTable_700 : (List.range' 700 100).all (fun i =>
+      (Full.Opcode.info ⟨i.toUInt16⟩).shape != .arg || i == 901) = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem privc_shapeTable_800 : (List.range' 800 100).all (fun i =>
+      (Full.Opcode.info ⟨i.toUInt16⟩).shape != .arg || i == 901) = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem privc_shapeTable_900 : (List.range' 900 5).all (fun i =>
+      (Full.Opcode.info ⟨i.toUInt16⟩).shape != .arg || i == 901) = true := by
+  decide +kernel
 /-- Only `arg` has the `arg` shape (among the opcodes `ofFull` maps). -/
 theorem privc_shapeTable : (List.range Reduced.ofFullTable.size).all (fun i =>
-    (Full.Opcode.info ⟨i.toUInt16⟩).shape != .arg || i == 901) = true := by
-  decide +kernel
+      (Full.Opcode.info ⟨i.toUInt16⟩).shape != .arg || i == 901) = true := by
+  rw [Ryo.Proofs.ofFullTable_size, List.range_eq_range']
+  have h0 := privc_shapeTable_0
+  have h1 : (List.range' 0 200).all (fun i =>
+      (Full.Opcode.info ⟨i.toUInt16⟩).shape != .arg || i == 901) = true :=
+    Ryo.Proofs.all_range'_append (m := 100) (n := 100) rfl h0 privc_shapeTable_100
+  have h2 : (List.range' 0 300).all (fun i =>
+      (Full.Opcode.info ⟨i.toUInt16⟩).shape != .arg || i == 901) = true :=
+    Ryo.Proofs.all_range'_append (m := 200) (n := 100) rfl h1 privc_shapeTable_200
+  have h3 : (List.range' 0 400).all (fun i =>
+      (Full.Opcode.info ⟨i.toUInt16⟩).shape != .arg || i == 901) = true :=
+    Ryo.Proofs.all_range'_append (m := 300) (n := 100) rfl h2 privc_shapeTable_300
+  have h4 : (List.range' 0 500).all (fun i =>
+      (Full.Opcode.info ⟨i.toUInt16⟩).shape != .arg || i == 901) = true :=
+    Ryo.Proofs.all_range'_append (m := 400) (n := 100) rfl h3 privc_shapeTable_400
+  have h5 : (List.range' 0 600).all (fun i =>
+      (Full.Opcode.info ⟨i.toUInt16⟩).shape != .arg || i == 901) = true :=
+    Ryo.Proofs.all_range'_append (m := 500) (n := 100) rfl h4 privc_shapeTable_500
+  have h6 : (List.range' 0 700).all (fun i =>
+      (Full.Opcode.info ⟨i.toUInt16⟩).shape != .arg || i == 901) = true :=
+    Ryo.Proofs.all_range'_append (m := 600) (n := 100) rfl h5 privc_shapeTable_600
+  have h7 : (List.range' 0 800).all (fun i =>
+      (Full.Opcode.info ⟨i.toUInt16⟩).shape != .arg || i == 901) = true :=
+    Ryo.Proofs.all_range'_append (m := 700) (n := 100) rfl h6 privc_shapeTable_700
+  have h8 : (List.range' 0 900).all (fun i =>
+      (Full.Opcode.info ⟨i.toUInt16⟩).shape != .arg || i == 901) = true :=
+    Ryo.Proofs.all_range'_append (m := 800) (n := 100) rfl h7 privc_shapeTable_800
+  have h9 : (List.range' 0 905).all (fun i =>
+      (Full.Opcode.info ⟨i.toUInt16⟩).shape != .arg || i == 901) = true :=
+    Ryo.Proofs.all_range'_append (m := 900) (n := 5) rfl h8 privc_shapeTable_900
+  exact h9
 
 set_option maxRecDepth 100000 in
 theorem privc_ofFull_lt {f : Full.Opcode} {op : Reduced.Opcode}

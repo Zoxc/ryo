@@ -26,28 +26,10 @@ open Ryo.Proofs.Island (IslandContract)
 
 /-! ### Helpers -/
 
-set_option maxRecDepth 100000 in
-theorem inline_ofFullTable : (List.range Reduced.ofFullTable.size).all (fun i =>
-    (Reduced.ofFullTable[i]!).all fun op =>
-      Reduced.toFullTable[op.val.toNat]! == some ⟨i.toUInt16⟩) = true := by
-  decide +kernel
-
-set_option maxRecDepth 100000 in
-/-- `Opcode.ofFull` and `Opcode.full` agree. -/
+/-- `Opcode.ofFull` and `Opcode.full` agree (`privc_full_of`). -/
 theorem inline_full_of {f : Full.Opcode} {op : Reduced.Opcode}
-    (h : Reduced.Opcode.ofFull f = some op) : op.full = some f := by
-  unfold Reduced.Opcode.ofFull at h
-  have hlt : f.val.toNat < Reduced.ofFullTable.size := by
-    refine Classical.byContradiction fun hn => ?_
-    rw [getElem!_neg Reduced.ofFullTable f.val.toNat hn] at h
-    cases h
-  have := List.all_eq_true.1 inline_ofFullTable f.val.toNat (List.mem_range.2 hlt)
-  rw [h] at this
-  simp only [Option.all_some, beq_iff_eq] at this
-  unfold Reduced.Opcode.full
-  rw [this]
-  congr
-  simp
+    (h : Reduced.Opcode.ofFull f = some op) : op.full = some f :=
+  privc_full_of h
 
 section
 variable {T U : Type} (g : T → U) (a : Option (Opnd T))

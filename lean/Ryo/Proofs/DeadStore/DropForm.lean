@@ -20,7 +20,7 @@ Proposed Lean-only check (decoder side, `DecodeReduced.inlineInsn`'s `accept`, o
 `its[dropAt]` is `.st w r (M.frame s)` with `(s, w.bits / 8) = droppedStore` of the instruction
 it decodes to (equivalently: `Asm.frameWrite its[dropAt] = some (M.frame s, n)` with
 `Frame.droppedStore d k = some (s, n)`). The width half alone is a finite table check over
-`inlineOps` (`decide`, as `inline_ofFullTable`). `DroppedAgree` below states what that check
+`inlineOps` (`decide`, as `privc_ofFullTable`). `DroppedAgree` below states what that check
 gives, for the stores consumed at `k`.
 -/
 import Ryo.Proofs.DeadStore.PtrLive
@@ -1246,12 +1246,100 @@ theorem dropForm_opSem_frame (hD : Decodes S code relocs rodata callSites droppe
     exact hkeep _ hit (M.frame s) 1 rfl rfl (by simp only [M.frame]; omega)
       (by simp only [M.frame]; omega)
 
+-- In chunks of 100 opcodes (`all_range'_append`): one `decide +kernel` over the table
+-- peaked at about 8.5 GiB.
 set_option maxRecDepth 100000 in
+theorem reduced_operandsTable_0 : (List.range' 0 100).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        op.info.operands == (Full.Opcode.info ⟨i.toUInt16⟩).operands) = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem reduced_operandsTable_100 : (List.range' 100 100).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        op.info.operands == (Full.Opcode.info ⟨i.toUInt16⟩).operands) = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem reduced_operandsTable_200 : (List.range' 200 100).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        op.info.operands == (Full.Opcode.info ⟨i.toUInt16⟩).operands) = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem reduced_operandsTable_300 : (List.range' 300 100).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        op.info.operands == (Full.Opcode.info ⟨i.toUInt16⟩).operands) = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem reduced_operandsTable_400 : (List.range' 400 100).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        op.info.operands == (Full.Opcode.info ⟨i.toUInt16⟩).operands) = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem reduced_operandsTable_500 : (List.range' 500 100).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        op.info.operands == (Full.Opcode.info ⟨i.toUInt16⟩).operands) = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem reduced_operandsTable_600 : (List.range' 600 100).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        op.info.operands == (Full.Opcode.info ⟨i.toUInt16⟩).operands) = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem reduced_operandsTable_700 : (List.range' 700 100).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        op.info.operands == (Full.Opcode.info ⟨i.toUInt16⟩).operands) = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem reduced_operandsTable_800 : (List.range' 800 100).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        op.info.operands == (Full.Opcode.info ⟨i.toUInt16⟩).operands) = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+theorem reduced_operandsTable_900 : (List.range' 900 5).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        op.info.operands == (Full.Opcode.info ⟨i.toUInt16⟩).operands) = true := by
+  decide +kernel
 theorem reduced_operandsTable : (List.range Reduced.ofFullTable.size).all (fun i =>
-    (Reduced.ofFullTable[i]!).all fun op =>
-      op.info.operands == (Full.Opcode.info ⟨i.toUInt16⟩).operands) = true := by
-  -- DS-T9: true by `#eval`; `decide +kernel` doesn't finish (operand names are `String`s).
-  sorry
+      (Reduced.ofFullTable[i]!).all fun op =>
+        op.info.operands == (Full.Opcode.info ⟨i.toUInt16⟩).operands) = true := by
+  rw [Ryo.Proofs.ofFullTable_size, List.range_eq_range']
+  have h0 := reduced_operandsTable_0
+  have h1 : (List.range' 0 200).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        op.info.operands == (Full.Opcode.info ⟨i.toUInt16⟩).operands) = true :=
+    Ryo.Proofs.all_range'_append (m := 100) (n := 100) rfl h0 reduced_operandsTable_100
+  have h2 : (List.range' 0 300).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        op.info.operands == (Full.Opcode.info ⟨i.toUInt16⟩).operands) = true :=
+    Ryo.Proofs.all_range'_append (m := 200) (n := 100) rfl h1 reduced_operandsTable_200
+  have h3 : (List.range' 0 400).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        op.info.operands == (Full.Opcode.info ⟨i.toUInt16⟩).operands) = true :=
+    Ryo.Proofs.all_range'_append (m := 300) (n := 100) rfl h2 reduced_operandsTable_300
+  have h4 : (List.range' 0 500).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        op.info.operands == (Full.Opcode.info ⟨i.toUInt16⟩).operands) = true :=
+    Ryo.Proofs.all_range'_append (m := 400) (n := 100) rfl h3 reduced_operandsTable_400
+  have h5 : (List.range' 0 600).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        op.info.operands == (Full.Opcode.info ⟨i.toUInt16⟩).operands) = true :=
+    Ryo.Proofs.all_range'_append (m := 500) (n := 100) rfl h4 reduced_operandsTable_500
+  have h6 : (List.range' 0 700).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        op.info.operands == (Full.Opcode.info ⟨i.toUInt16⟩).operands) = true :=
+    Ryo.Proofs.all_range'_append (m := 600) (n := 100) rfl h5 reduced_operandsTable_600
+  have h7 : (List.range' 0 800).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        op.info.operands == (Full.Opcode.info ⟨i.toUInt16⟩).operands) = true :=
+    Ryo.Proofs.all_range'_append (m := 700) (n := 100) rfl h6 reduced_operandsTable_700
+  have h8 : (List.range' 0 900).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        op.info.operands == (Full.Opcode.info ⟨i.toUInt16⟩).operands) = true :=
+    Ryo.Proofs.all_range'_append (m := 800) (n := 100) rfl h7 reduced_operandsTable_800
+  have h9 : (List.range' 0 905).all (fun i =>
+      (Reduced.ofFullTable[i]!).all fun op =>
+        op.info.operands == (Full.Opcode.info ⟨i.toUInt16⟩).operands) = true :=
+    Ryo.Proofs.all_range'_append (m := 900) (n := 5) rfl h8 reduced_operandsTable_900
+  exact h9
 
 /-- A reduced opcode has its full opcode's operands. -/
 theorem ofFull_operands {f : Full.Opcode} {op : Reduced.Opcode}
