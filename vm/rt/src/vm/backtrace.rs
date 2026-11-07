@@ -30,7 +30,10 @@ pub struct RyoFrame {
     pub file_len: usize,
     pub line: u32,
     pub col: u32,
-    /// An address in the function's AOT code: the call's (minus one past it).
+    /// An address in the function's AOT code, for the caller to find its symbol by: for AOT
+    /// code the `ip` resolved (a return address minus one), for JIT code the start of the
+    /// call's AOT instruction, or the root's AOT entry where there is no call map entry (0 if
+    /// that isn't found either).
     pub aot_pc: usize,
 }
 
