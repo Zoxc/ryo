@@ -216,5 +216,6 @@ unsafe impl Sync for RtCode {}
 /// No parent ([`BtChain::parent`]).
 pub const BT_ROOT: u32 = u32::MAX;
 
-// SAFETY: immutable once built; the pointers are code addresses.
+// SAFETY: immutable once built; the pointers are code addresses, and `code` is an immutable
+// `RtCode`.
 unsafe impl Sync for RtApi {}
