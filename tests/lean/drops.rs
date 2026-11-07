@@ -1,5 +1,5 @@
 //! Drop impls and drop order: locals, fields, temporaries, moves, `mem::forget`,
-//! `ManuallyDrop`, early returns, `Vec` elements, `Option::take`.
+//! `ManuallyDrop`, early returns, `Vec` elements, `Option::take`, `drop_in_place` of a `dyn`.
 include!("common/print.rs");
 use std::hint::black_box;
 use std::mem::{self, ManuallyDrop};
@@ -93,6 +93,11 @@ fn main() {
     out::b(o.is_none());
     let b: Box<[D]> = vec![D(b'B'), D(b'C')].into_boxed_slice();
     drop(b);
+    log(b'|');
+    // `drop_in_place::<dyn Trait>` called directly, as `Rc::<dyn Trait>::drop_slow` does
+    let mut q = ManuallyDrop::new(D(b'q'));
+    let p: *mut dyn Send = &mut *q as *mut D;
+    unsafe { std::ptr::drop_in_place(black_box(p)) };
     log(b'|');
     unsafe {
         let n = LEN;

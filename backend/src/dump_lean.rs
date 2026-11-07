@@ -21,10 +21,13 @@
 //! `null`; always, even where the backend calls the intrinsic's fallback body instead, which
 //! lean/docs/assumptions.md §4 asks for but the dump doesn't do yet), `ext` otherwise
 //! (foreign items, upstream functions without MIR, LLVM intrinsics, virtual calls'
-//! instances). Drop glue of `dyn Trait` is `ext` too: rustc's shim body for it only
-//! drops `*self` again (codegen turns that into a call of the vtable's drop entry, skipped
-//! when it is null). So are thread-local shims, although rustc builds MIR for them: the
-//! interpreter rejects a program when it calls one.
+//! instances). So are thread-local shims, although rustc builds MIR for them: the
+//! interpreter rejects a program when it calls one. Drop glue of `dyn Trait` is a body:
+//! rustc's shim body for it only drops `*self` again, which codegen turns into a call of the
+//! vtable's drop entry (`codegen_drop_terminator`, skipped when the entry is null), and so does
+//! the spec's `Drop` of a `dyn` place; such a `Drop` has no glue instance, since that glue is
+//! the same `Drop` again (a direct call of it, as in `Rc::<dyn Trait>::drop_slow`, runs its
+//! body).
 //!
 //! What the spec's AST can't express becomes a call of an `ext` instance named
 //! `ryo-dump: unsupported <what>`, which the interpreter rejects when it gets there.
@@ -300,9 +303,6 @@ impl<'tcx> Dumper<'tcx> {
                     ctor("body", vec![("b", self.body(i))])
                 }
             }
-            // `drop_in_place::<dyn Trait>`: its shim body is `drop(*_1)` again, which codegen
-            // turns into a call of the vtable's drop entry (`codegen_drop_terminator`).
-            InstanceKind::Shim(ShimKind::DropGlue(_, Some(t))) if matches!(t.kind(), ty::Dynamic(..)) => tag("ext"),
             InstanceKind::Shim(ShimKind::ThreadLocal(_)) => tag("ext"),
             InstanceKind::Shim(_) => ctor("body", vec![("b", self.body(i))]),
         };
@@ -1240,6 +1240,8 @@ impl<'a, 'tcx> FnDump<'a, 'tcx> {
                 let glue = Instance::resolve_drop_glue(tcx, ty);
                 let glue = match glue.def {
                     InstanceKind::Shim(ShimKind::DropGlue(_, None)) => None,
+                    // the vtable's drop entry, not the glue: its body is this `Drop` again
+                    _ if ty.is_trait() => None,
                     _ => Some(num(d.instance(glue))),
                 };
                 ctor(

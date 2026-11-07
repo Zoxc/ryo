@@ -316,8 +316,9 @@ both sides when both ABIs are known, as Miri's `pass_argument` does.
 
 **R27. `Drop` of `dyn Trait`.** rustc's drop glue for `dyn Trait` only drops `*self` again;
 codegen calls the vtable's drop entry (word 0) with the data pointer, skipping a null entry
-(cg_ssa `codegen_drop_terminator`). **Fixed** in the `Drop` terminator; the dumper emits the
-`dyn` glue as `ext`.
+(cg_ssa `codegen_drop_terminator`). **Fixed** in the `Drop` terminator; the dumper gives such
+a `Drop` no glue instance, and dumps the `dyn` glue's body (that `Drop`) for direct calls of
+`drop_in_place::<dyn Trait>` (`Rc::<dyn Trait>::drop_slow`), which it used to dump as `ext`.
 
 **R28. Widened direct tags.** Without a `repr`, rustc widens an enum's tag to the variants'
 alignment (`Option<i128>` has a `u128` tag), which `Ty.wf` rejected (`tag ≤ discrTy`).
