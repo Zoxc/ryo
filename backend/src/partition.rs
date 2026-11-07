@@ -209,7 +209,7 @@ pub fn collect_and_partition_mono_items<'tcx>(tcx: TyCtxt<'tcx>, original: super
     MonoItemPartitions {
         // `CodegenUnit` is arena-allocated (`rustc_middle/src/arena.rs:107`).
         codegen_units: tcx.arena.alloc_from_iter(native),
-        // Keeps every original DefId, VM functions included (design/backend.md#query-overrides).
+        // Keeps every original DefId, VM functions included (design/backend.md#query-overrides-provide).
         all_mono_items: partitions.all_mono_items,
     }
 }
@@ -681,7 +681,7 @@ impl<'a, 'tcx> Partitioner<'a, 'tcx> {
         let mut hidden: Vec<Instance<'tcx>> = Vec::new();
         for unit in &self.units {
             // Items made External or WeakODR + Hidden only for an image aren't exported
-            // (design/backend.md#query-overrides).
+            // (design/backend.md#query-overrides-provide).
             hidden.extend(unit.flips.iter().filter_map(|(item, &(linkage, _))| match *item {
                 MonoItem::Fn(i) if matches!(linkage, Linkage::External | Linkage::WeakODR) && unit.cgu.items()[item].linkage == Linkage::Internal => {
                     Some(i)

@@ -1,5 +1,5 @@
 //! The `upstream_monomorphizations` and `exported_generic_symbols` query overrides
-//! (design/backend.md#query-overrides), which depend on the partitioner's results.
+//! (design/backend.md#query-overrides-provide), which depend on the partitioner's results.
 
 use rustc_data_structures::fx::FxHashSet;
 use rustc_hir::def_id::{CrateNum, DefId};
@@ -14,7 +14,7 @@ use super::rt::is_runtime_crate;
 /// of each instance to link to.
 pub type UpstreamMonos<'tcx> = rustc_hir::def_id::DefIdMap<rustc_data_structures::unord::UnordMap<ty::GenericArgsRef<'tcx>, CrateNum>>;
 
-/// Our `upstream_monomorphizations` (design/backend.md#query-overrides): rustc's, without the
+/// Our `upstream_monomorphizations` (design/backend.md#query-overrides-provide): rustc's, without the
 /// copies in the runtime crates ([`RUNTIME_CRATES`](super::rt::RUNTIME_CRATES)) of other crates' generics. rustc shares
 /// `#[inline(never)]` instances even without share-generics; linking to them would turn the
 /// program's own instances into the runtime's native code. A guard: the runtime used to
@@ -30,7 +30,7 @@ pub fn upstream_monomorphizations<'tcx>(tcx: TyCtxt<'tcx>, map: UpstreamMonos<'t
         .collect()
 }
 
-/// Our local `exported_generic_symbols` (design/backend.md#query-overrides): rustc lists the
+/// Our local `exported_generic_symbols` (design/backend.md#query-overrides-provide): rustc lists the
 /// native CGU's generic items; the VM functions' symbols the image defines are added as
 /// rustc would list them if they were in the CGU (`exported_generic_symbols_provider_local`:
 /// generic `Item` instances and drop glue shims), and items made hidden only for the image

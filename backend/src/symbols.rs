@@ -113,7 +113,7 @@ pub fn local_stable_crate_id(tcx: TyCtxt<'_>) -> u64 {
     tcx.stable_crate_id(LOCAL_CRATE).as_u64()
 }
 
-/// Our `symbol_name` (design/backend.md#query-overrides): local copies of `LocalCopy` instances get
+/// Our `symbol_name` (design/backend.md#query-overrides-provide): local copies of `LocalCopy` instances get
 /// a crate-unique suffix (design/backend.md, Linkage).
 pub fn symbol_name<'tcx>(tcx: TyCtxt<'tcx>, instance: Instance<'tcx>, original: impl FnOnce() -> ty::SymbolName<'tcx>) -> ty::SymbolName<'tcx> {
     let name = original();
