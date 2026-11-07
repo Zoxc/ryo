@@ -30,7 +30,7 @@ use super::switches::Switches;
 use super::symbols::{self, local_stable_crate_id, static_symbol};
 
 /// A value computed once per session and kept in a static: [`Results`], which the partition
-/// provider hands to the exported-symbols providers, and the upstream statics defined here,
+/// provider hands to the `exported_generic_symbols` override (and the backend), and the upstream statics defined here,
 /// which `is_defined_upstream_static` answers from. Query providers are plain fns with no
 /// per-session slot to reach (rustc_codegen_cranelift overrides no queries, so it
 /// keeps all its state in the backend struct and `OngoingCodegen`). It is keyed on the
@@ -137,12 +137,13 @@ pub fn results(tcx: TyCtxt<'_>) -> Option<&'static Results> {
     RESULTS.get(tcx)
 }
 
-/// [`Results`] for the exported-symbols overrides, after forcing the partitioning. The dep
-/// graph sees the results only through the native CGUs (the partition query's hash), not the
-/// images' roots and exports, which can change while the native CGUs don't (a VM function's new
-/// callee). Both queries are `cache_on_disk`, so a green node would load the previous session's
-/// list (design/backend.md#incremental): with VM code they depend on the forever-red node and
-/// rerun every session, as rustc's `create_def` makes its callers do. They are cheap.
+/// [`Results`] for the `exported_generic_symbols` override, after forcing the partitioning.
+/// The dep graph sees the results only through the native CGUs (the partition query's hash),
+/// not the images' roots and exports, which can change while the native CGUs don't (a VM
+/// function's new callee). The query is `cache_on_disk`, so a green node would load the
+/// previous session's list (design/backend.md#incremental): with VM code it depends on the
+/// forever-red node and reruns every session, as rustc's `create_def` makes its callers do.
+/// It is cheap.
 pub(super) fn results_untracked(tcx: TyCtxt<'_>) -> Option<&'static Results> {
     let _ = tcx.collect_and_partition_mono_items(());
     let r = results(tcx)?;
