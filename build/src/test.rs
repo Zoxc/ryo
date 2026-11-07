@@ -349,7 +349,11 @@ impl Sel {
 
     fn area(&mut self, area: Area) {
         match area {
-            Area::Jit => self.jit = true,
+            // As a vm/jit/ change: rt-core-only and jit-sealed check the sealed `ryo_jit`.
+            Area::Jit => {
+                self.jit = true;
+                self.rt_checks = true;
+            }
             Area::Backend => {
                 self.backend = true;
                 self.slow_vm = true;
@@ -1281,6 +1285,18 @@ mod tests {
         assert!(sel.add_path("tests/incremental/new.rs").is_ok());
         use super::Check::*;
         assert_eq!(sel.checks, [RejectUnsupported, MetadataOnly, CargoRyo, Incremental]);
+        let mut sel = super::Sel::fast();
+        assert!(sel.add_path("tests/vm_backtrace_mixed.rs").is_ok());
+        assert_eq!(sel.checks, [Backtrace]);
+        let mut sel = super::Sel::default();
+        sel.area(super::Area::Jit);
+        assert!(sel.check(RtCoreOnly) && sel.check(JitSealed) && sel.check(JitStart));
+        // The handlers codegen.rs checks are shaped by the encoder and the JIT's effects.
+        for path in ["vm/bytecode/src/asm/mod.rs", "vm/bytecode/src/jit/effects.rs"] {
+            let mut sel = super::Sel::fast();
+            assert!(sel.add_path(path).is_ok());
+            assert!(sel.codegen, "{path}");
+        }
     }
 
     #[test]
