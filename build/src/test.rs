@@ -335,8 +335,10 @@ fn test_targets(rel: &str) -> Option<(Vec<&'static str>, Vec<Check>)> {
         .filter(|p| p.crates.iter().any(|c| hit(c.src)) || p.c_main.is_some_and(hit) || p.native_lib.as_ref().is_some_and(|l| hit(l.src)))
         .map(|p| p.name)
         .collect();
-    let checks: Vec<Check> =
-        Check::ALL.into_iter().filter(|c| c.src().is_some_and(|s| rel == s || (s.ends_with('/') && rel.starts_with(s)))).collect();
+    let checks: Vec<Check> = Check::ALL
+        .into_iter()
+        .filter(|c| c.src().into_iter().chain(c.more_srcs().iter().copied()).any(|s| rel == s || (s.ends_with('/') && rel.starts_with(s))))
+        .collect();
     (!programs.is_empty() || !checks.is_empty()).then_some((programs, checks))
 }
 
@@ -569,6 +571,14 @@ impl Check {
             Check::Backtrace => Some("vm_backtrace.rs"),
             Check::MultiStaticlib | Check::MultiDylib | Check::MultiVersion => Some("multi_ryo/"),
             Check::PeImports => Some("pe_imports/"),
+        }
+    }
+
+    /// The other files under `tests/` it builds, besides [`Check::src`].
+    fn more_srcs(self) -> &'static [&'static str] {
+        match self {
+            Check::Backtrace => &["vm_backtrace_inline.rs", "vm_backtrace_mixed.rs"],
+            _ => &[],
         }
     }
 
