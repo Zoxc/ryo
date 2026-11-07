@@ -510,19 +510,24 @@ impl Lock {
     }
 }
 
-/// Removes `dir`; if that fails (on Windows, a running `.exe`/`.dll` in it), renames it to
-/// `<dir>.old`, which the next run deletes.
-fn remove_or_rename(dir: &Path) -> Result<(), String> {
-    if !dir.exists() || fs::remove_dir_all(dir).is_ok() {
-        return Ok(());
+/// Removes `dir`, unless it is in use (on Windows, a running `.exe`/`.dll` in it, which also
+/// keeps it from being renamed): then returns false and leaves it whole, for a later run.
+/// Renames it to `<dir>.old` first, so `remove_dir_all` doesn't delete part of a copy in use,
+/// and a `.old` it can't finish deleting is deleted on the next run.
+fn remove_unless_in_use(dir: &Path) -> Result<bool, String> {
+    if !dir.exists() {
+        return Ok(true);
     }
     let mut old = dir.as_os_str().to_owned();
     old.push(".old");
     let old = PathBuf::from(old);
     let _ = fs::remove_dir_all(&old);
-    fs::rename(dir, &old).map_err(|e| format!("removing {}: {e}", dir.display()))?;
-    eprintln!("[y] {} is in use; renamed it to {} (deleted on the next run)", dir.display(), old.display());
-    Ok(())
+    if let Err(e) = fs::rename(dir, &old) {
+        eprintln!("[y] {} is in use ({e}); kept, deleted by a later run", dir.display());
+        return Ok(false);
+    }
+    let _ = fs::remove_dir_all(&old);
+    Ok(true)
 }
 
 /// Deletes the `*.partial` and `*.old` leftovers of earlier runs in `install/`.
@@ -905,7 +910,9 @@ fn install_version(plan: &InstallPlan, build: &Path, build_id: String, manifest:
     let moved = dest.exists();
     if moved {
         crate::utils::remove_dir_if_exists(&aside)?;
-        fs::rename(&dest, &aside).map_err(|e| format!("renaming {} to {}: {e}", dest.display(), aside.display()))?;
+        // On Windows this fails while the copy is in use (a running `.exe`/`.dll` in it).
+        fs::rename(&dest, &aside)
+            .map_err(|e| format!("renaming {} to {}: {e} (is it in use? rerun once nothing runs from it)", dest.display(), aside.display()))?;
     }
     if let Err(e) = fs::rename(&partial, &dest) {
         if moved {
@@ -953,11 +960,15 @@ fn remove_superseded(plan: &InstallPlan, manifest: &mut Manifest) -> Result<(), 
             run(cmd("cargo").args(["uninstall", "--root"]).arg(r).arg("cargo-ryo"))?;
         }
     }
+    // Versions in use stay recorded, for a later run.
+    let mut kept = Vec::new();
     for v in &plan.old_versions {
-        remove_or_rename(&install.join(v))?;
+        if !remove_unless_in_use(&install.join(v))? {
+            kept.push(v.clone());
+        }
     }
-    if !manifest.old_versions.is_empty() || !manifest.old_cargo_roots.is_empty() {
-        manifest.old_versions.clear();
+    if manifest.old_versions != kept || !manifest.old_cargo_roots.is_empty() {
+        manifest.old_versions = kept;
         manifest.old_cargo_roots.clear();
         manifest.save(install)?;
     }

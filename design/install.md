@@ -93,7 +93,8 @@ y install [--target T]... [--sysroot ryo|llvm] [--no-toolchain-install] [--yes] 
    fails), write `install/current` and the manifest.
 5. **Launchers**: `cargo +1.99.1-<host> install --locked --force --path <checkout>/scripts
    --root <cargo root>` (the pinned toolchain, which is certainly there).
-6. **Previous version**: its `install/<old version>/` is deleted, its launchers in an
+6. **Previous version**: its `install/<old version>/` is deleted (renamed to `*.old` first;
+   one in use is kept, [Windows](#windows)), its launchers in an
    earlier cargo root (if the cargo root changed) are uninstalled, and targets it added that
    this install doesn't need are removed from rustup, and so is what earlier installs added to
    other toolchains (an older pinned version, another host; all shown in the plan). The
@@ -185,9 +186,11 @@ projects' `target/` dirs, and any config selecting ryo.
   --yes)`.
 - No symlinks: `current` is a file, the launchers come from `cargo install`, and the launcher
   waits for the real wrapper instead of `exec`.
-- A running `.exe`/`.dll` can't be deleted: a version dir that fails to delete is renamed to
-  `*.old` and deleted on the next run. If `cargo install` can't replace a running launcher,
-  `current` already names the new version, so the old launchers use it; rerun to update them.
+- A running `.exe`/`.dll` can't be deleted, nor can a directory holding one be renamed: an old
+  version dir in use is kept (still recorded in `old_versions`) and deleted by a later run, and
+  reinstalling the version in use fails (after the copy) until nothing runs from it. If
+  `cargo install` can't replace a running launcher, `current` already names the new version,
+  so the old launchers use it; rerun to update them.
 
 ## Not implemented yet
 
