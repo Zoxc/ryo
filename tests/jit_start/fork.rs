@@ -1,5 +1,6 @@
 //! Forked children of a JIT process (design/jit.md#forked-children), for the `jit-start`
-//! check: `fork` (a child, and its child, compile functions of their own), `inflight` (a fork
+//! check: `fork` (a child, and its child, compile functions of their own), `dfork` (a child
+//! forks again before its first trip: the grandchild still gets a JIT), `inflight` (a fork
 //! while a compile is pending: the child compiles the record again), `quiesce` (forks while
 //! the JIT installs code or unwinds its panics: every child can still unwind), `spawn`
 //! (`Command`s start no JIT). Unix only; elsewhere it prints what it would.
@@ -110,6 +111,26 @@ fn case_fork() -> bool {
     ok
 }
 
+/// A double fork (as a daemon's): the child forks again before it trips anything (no VM call
+/// between the two `fork`s, all in this function's compiled code), and the grandchild
+/// restarts a JIT of its own. The child too, at its call of [`fresh`] after the fork (with
+/// the LLVM std, `reap` is inlined here and the child would call no VM function).
+#[cfg(unix)]
+fn case_dfork() -> bool {
+    // SAFETY: `fork`; the children only compute and exit.
+    let child = unsafe { sys::fork() };
+    assert!(child >= 0, "fork failed");
+    if child == 0 {
+        // SAFETY: as above.
+        let grandchild = unsafe { sys::fork() };
+        if grandchild == 0 {
+            std::process::exit(if fresher(black_box(5)) == 27 { 0 } else { 1 });
+        }
+        std::process::exit(if grandchild > 0 && fresh(black_box(5)) == 16 && reap(grandchild) { 0 } else { 1 });
+    }
+    reap(child)
+}
+
 #[cfg(unix)]
 fn case_inflight() -> bool {
     // A thread trips `long_loop`'s loop and waits (`RYO_JIT_SYNC`) while the JIT delays its
@@ -159,6 +180,7 @@ fn main() {
     #[cfg(unix)]
     let ok = match case.as_str() {
         "fork" => case_fork(),
+        "dfork" => case_dfork(),
         "inflight" => case_inflight(),
         "quiesce" => case_quiesce(),
         "spawn" => case_spawn(),

@@ -835,9 +835,12 @@ extern "C-unwind" fn fork_child() {
             link(r);
         }
     }
-    let had = STARTED.swap(false, Relaxed);
+    // Also after a fork from a child that hasn't restarted its own thread yet (`STARTED`
+    // clear, `CHILD_RESTART` its pid): the handlers are registered once a start succeeded, so
+    // only a failed restart (`DISABLED`) leaves the child without a JIT.
+    STARTED.store(false, Relaxed);
     JIT_PID.store(0, Relaxed);
-    if had && !DISABLED.load(Relaxed) {
+    if !DISABLED.load(Relaxed) {
         CHILD_RESTART.store(super::sys::pid(), Release);
     }
 }

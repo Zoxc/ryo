@@ -766,7 +766,8 @@ pub(super) fn jit_atomics(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<()
 /// compiled at its first call and waited for, each run under a timeout (a deadlock shows as a
 /// hang): `tests/jit_start/`'s
 /// - `fork.rs` (unix): a forked child and its child restart a JIT of their own and compile
-///   (their `RYO_JIT_STATS` summaries count it), a child forked while a compile is pending
+///   (their `RYO_JIT_STATS` summaries count it), also when the child forks before its first
+///   trip, a child forked while a compile is pending
 ///   (`RYO_JIT_TEST_SLOW`) compiles that record, children forked while the JIT installs code
 ///   or unwinds its panics (`RYO_JIT_TEST_PANIC`) can unwind, and `Command` children start no
 ///   JIT;
@@ -812,6 +813,13 @@ pub(super) fn jit_start(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), 
         let s = summaries(&r.stderr);
         if s.len() != 3 || s.iter().any(|&(_, compiled)| compiled == 0) {
             return Err(fail("fork", &r, &format!("expected 3 summaries that compiled, got {s:?}")));
+        }
+        // The grandchild of a child that forked before it tripped: its own JIT too.
+        let r = run("dfork", &fork, &["dfork"], &[stats])?;
+        expect("dfork", &r, "dfork ok\n")?;
+        let s = summaries(&r.stderr);
+        if s.len() != 3 || s.iter().any(|&(_, compiled)| compiled == 0) {
+            return Err(fail("dfork", &r, &format!("expected 3 summaries that compiled, got {s:?}")));
         }
         // The loop threshold only `long_loop` (and `long_loop_ref`) reaches, and each compile
         // delayed: the fork lands while `long_loop`'s is pending.

@@ -187,7 +187,8 @@ by `start_once` (unix), keep the child consistent and let it start a JIT of its 
   **parent** releases it, **child** (atomics only) resets it, queues the in-flight batch's
   records that are still `Queued` again (`IN_FLIGHT`: the batch `next_batch` handed out,
   advanced by `done` once a record is `Done` or `Failed`), clears `STARTED`, `JIT_PID` and
-  `SLEEPING`, and sets `CHILD_RESTART` to its pid.
+  `SLEEPING`, and sets `CHILD_RESTART` to its pid unless a start failed (`DISABLED`): also
+  in the child of a child that hasn't restarted yet (a daemon's double fork).
 - **Restart**: the child's first trip (`restart_child`, not on a signal stack: a later trip
   then) calls `ryo_jit_start(rt, child = true)`: the same `RtApi` and pin, no new hooks or
   `atexit` handlers, zeroed counters, a new `Jit` with new regions (the parent's stay mapped
@@ -1245,8 +1246,8 @@ vector folds and the splat hoist, a vector reassembled from its halves),
   `RYO_JIT_TEST_PANIC`, and again with `RYO_JIT_TEST_OOM`, which must run as without the
   JIT, logging the failed compiles.
 - **Start and fork**: `jit-start` runs `tests/jit_start/` with `RYO_JIT_SYNC` under a
-  timeout: forked children and grandchildren that restart and compile (their summaries), a
-  fork while a compile is pending (`RYO_JIT_TEST_SLOW`), forks in a loop while the JIT
+  timeout: forked children and grandchildren that restart and compile (their summaries,
+  also for a child that forks again before its first trip), a fork while a compile is pending (`RYO_JIT_TEST_SLOW`), forks in a loop while the JIT
   installs code or unwinds `RYO_JIT_TEST_PANIC` panics (each child unwinds), `Command`
   children without a summary, first trips in a `SIGALRM` handler interrupting `malloc`
   (on the thread's stack and on the signal stack), and a cdylib loaded and unloaded at run
