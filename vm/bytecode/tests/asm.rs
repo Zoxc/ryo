@@ -977,6 +977,21 @@ fn rejects_handler_calls_of_inlined_ops() {
     assert!(asm::decode(&asm::Encoded { relocs, ..enc.clone() }, m).is_err());
 }
 
+/// A direct `tail_call` loading `al` isn't one the encoder emits (`asm::return_ok`): its
+/// `movzx edi` patched into `movzx eax` is rejected by both decoders.
+#[test]
+fn rejects_tail_call_loading_al() {
+    let m = Mode { fp_arg: false, frame_pointer: true, align_loops: false, pe: false, counters: false, far_rt: false };
+    let dil = asm::ArgReg { xmm: false, size: 1, index: 0, sext: false }.word();
+    let f = Fn { insns: vec![vec![Opcode::TailCall as u32, 5, 2, -8i32 as u32, dil]], targets: Vec::new(), unwind: Vec::new() };
+    let mut enc = check(&f, 16, m, "tail_call");
+    // `movzx edi, byte [rbp - 8]` -> `movzx eax, byte [rbp - 8]`.
+    let i = enc.code.windows(4).position(|w| w == [0x0f, 0xb6, 0x7d, 0xf8]).expect("the load");
+    enc.code[i + 2] = 0x45;
+    assert!(asm::decode(&enc, m).is_err());
+    assert!(asm::decode_reduced(&enc, m).is_err());
+}
+
 /// Pins the canonical sequences: any change to how an opcode is encoded changes this hash.
 /// When it fails, update the pinned hash.
 #[test]

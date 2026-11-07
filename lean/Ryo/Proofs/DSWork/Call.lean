@@ -486,10 +486,13 @@ theorem call_read_site {fr : Frame} {dropped : List DroppedStore} {c c' : Cursor
     have eE' : cE = atPos c cE.pos := by rw [eE, eps']
     obtain ⟨y, c8, h8, h6⟩ := bind_ok h6
     split at h6
-    · obtain ⟨rfl, rfl⟩ := pure_ok h6
-      obtain ⟨n2, hn2, rfl⟩ := run_tryItem_some h8
-      exact fin_tail false _ _ _ cE n2 (head_tailCall false _) dE' eE' hn2 rfl rfl
-        (fun h => by cases h)
+    · split at h6
+      · obtain ⟨rfl, rfl⟩ := pure_ok h6
+        exact (hnone rfl).elim
+      · obtain ⟨rfl, rfl⟩ := pure_ok h6
+        obtain ⟨n2, hn2, rfl⟩ := run_tryItem_some h8
+        exact fin_tail false _ _ _ cE n2 (head_tailCall false _) dE' eE' hn2 rfl rfl
+          (fun h => by cases h)
     · split at h6
       · obtain ⟨rfl, rfl⟩ := pure_ok h6
         exact (hnone rfl).elim

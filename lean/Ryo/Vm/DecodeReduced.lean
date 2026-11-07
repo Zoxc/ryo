@@ -380,8 +380,9 @@ def callInsn (fr : Frame) (dropped : List DroppedStore) : DM (Option Proto) := d
   let callAt ← pos
   if dropped.head?.any (·.at_ ≤ callAt) then setPos p0; return none
   if !paramsOk fr.mode.pe ps then setPos p0; return none
-  -- A call through `rax` (`call.sym.ind`, `call.ptr`, `tail_call.ptr`) loads no `al`, which
-  -- would overwrite the callee (`asm::return_ok`).
+  -- Only `call` and `call.sym` load `al` (`asm::return_ok`): it would overwrite the callee of
+  -- a call through `rax` (`call.sym.ind`, `call.ptr`, `tail_call.ptr`), and a tail call loads
+  -- none.
   if !pre.isNone && paramsUseRax ps then setPos p0; return none
   let aOp : Opnd Nat := .words ps
   let it ← tryItem
@@ -396,7 +397,8 @@ def callInsn (fr : Frame) (dropped : List DroppedStore) : DM (Option Proto) := d
       setPos callAt
       if !(← expectItems fr.epilogue) then return none
       match ← tryItem, pre with
-      | some (.jmp (.func f)), .none => return some (.tailCall, [.func f, aOp], false)
+      | some (.jmp (.func f)), .none =>
+        if paramsUseRax ps then return none else return some (.tailCall, [.func f, aOp], false)
       -- `rex.w jmp rax` on PE, `jmp rax` elsewhere, as the encoder.
       | some .jmpRax, .ptr p => if fr.mode.pe then return none else return some (.tailCallPtr, [.slot p, aOp], false)
       | some .jmpRaxW, .ptr p => if fr.mode.pe then return some (.tailCallPtr, [.slot p, aOp], false) else return none

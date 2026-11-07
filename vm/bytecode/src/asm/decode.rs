@@ -983,9 +983,11 @@ fn call_insn(c: &mut Cursor<'_>, fr: &Frame, dropped: &[DroppedStore]) -> Option
     if !super::params_ok(&ps) || !pe_ok(&ps) {
         return fail(c);
     }
-    // A call through `rax` (`call.sym.ind`, `call.ptr`, `tail_call.ptr`) loads no `al`: it would
-    // overwrite the callee ([`super::return_ok`]).
-    if !matches!(pre, Pre::None) && super::uses_rax(&ps) {
+    // Only `call` and `call.sym` load `al` ([`super::return_ok`]): it would overwrite the
+    // callee of a call through `rax` (`call.sym.ind`, `call.ptr`, `tail_call.ptr`), and a tail
+    // call loads none.
+    let rax = super::uses_rax(&ps);
+    if !matches!(pre, Pre::None) && rax {
         return fail(c);
     }
     let a_op = Opnd::Words(ps);
@@ -1002,7 +1004,7 @@ fn call_insn(c: &mut Cursor<'_>, fr: &Frame, dropped: &[DroppedStore]) -> Option
                 return fail(c);
             }
             match (c.item(), &pre) {
-                (Ok(Item::Jmp(Ref::Func(f))), Pre::None) => (Opcode::TailCall, vec![Opnd::Func(f), a_op.clone()], false),
+                (Ok(Item::Jmp(Ref::Func(f))), Pre::None) if !rax => (Opcode::TailCall, vec![Opnd::Func(f), a_op.clone()], false),
                 // `rex.w jmp rax` on PE (an epilogue end to the Win64 unwinder), as the encoder.
                 (Ok(Item::JmpRaxW), Pre::Ptr(p)) if fr.mode.pe => (Opcode::TailCallPtr, vec![Opnd::Slot(*p), a_op.clone()], false),
                 (Ok(Item::JmpRax), Pre::Ptr(p)) if !fr.mode.pe => (Opcode::TailCallPtr, vec![Opnd::Slot(*p), a_op.clone()], false),
