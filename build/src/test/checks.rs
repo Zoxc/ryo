@@ -101,15 +101,29 @@ pub(super) fn cargo_smoke(info: &crate::utils::RustcInfo, root: &Path, out: &Pat
     result
 }
 
-/// `RUST_BACKTRACE=1` through VM frames: a panic two VM calls deep, caught by
-/// `catch_unwind`, prints a backtrace naming the VM functions (by their symbols) and the
-/// native frames around them, and the cleanup and the catch still run. PE differs (see below).
+/// `exe` without the caller's `RYO_JIT*` settings: the backtrace and JIT checks assert facts
+/// (frames in JIT code, inlining, compiles) that depend on them, so each run sets the ones it
+/// needs.
+fn program(exe: &Path) -> Command {
+    let mut c = Command::new(exe);
+    for (k, _) in std::env::vars_os() {
+        if k.to_str().is_some_and(|k| k.starts_with("RYO_JIT")) {
+            c.env_remove(k);
+        }
+    }
+    c
+}
+
+/// `RUST_BACKTRACE=1` through VM frames: a panic several VM calls deep (`outer`, `mid`,
+/// `helper`, `via`, `inner`), caught by `catch_unwind`, prints a backtrace naming the VM
+/// functions (by their symbols) and the native frames around them, and the cleanup and the
+/// catch still run. PE differs (see below).
 pub(super) fn backtrace(rustc_ryo: &Path, src: &Path, out: &Path, ryo_sysroot: Result<(), String>) -> Result<(), String> {
     let exe = out.join(exe_name("vm_backtrace"));
     crate::utils::run(cmd(rustc_ryo).arg("--edition=2024").arg(src).arg("-o").arg(&exe))?;
     // Without the JIT, whose code has no symbols (and with `RYO_JIT_THRESHOLD=0` would run
     // every frame).
-    let Captured { status, stdout, stderr } = capture(Command::new(&exe).env("RUST_BACKTRACE", "1").env("RYO_JIT", "off"))?;
+    let Captured { status, stdout, stderr } = capture(program(&exe).env("RUST_BACKTRACE", "1").env("RYO_JIT", "off"))?;
     // On PE the frames of functions with internal linkage, VM or native (`inner`, `outer`,
     // `__rust_try`), are named after the nearest external symbol before them: the PDB lists
     // only external symbols, and neither VM code nor a build without `-g` has CodeView
@@ -136,7 +150,7 @@ pub(super) fn backtrace(rustc_ryo: &Path, src: &Path, out: &Path, ryo_sysroot: R
     // With every frame JIT code, unnamed with this std: the walk must still get through them
     // to `main`'s caller.
     let Captured { status, stdout, stderr } =
-        capture(Command::new(&exe).env("RUST_BACKTRACE", "full").env("RYO_JIT_THRESHOLD", "0").env("RYO_JIT_SYNC", "1"))?;
+        capture(program(&exe).env("RUST_BACKTRACE", "full").env("RYO_JIT_THRESHOLD", "0").env("RYO_JIT_SYNC", "1"))?;
     let (_, in_drop) = stderr.split_once("drop backtrace:").unwrap_or((&stderr, ""));
     if !status.success() || stdout != want_stdout || !in_drop.contains("lang_start") {
         return Err(format!("JIT: {status}, no `lang_start` in the drop backtrace\nstdout:\n{stdout}stderr:\n{stderr}"));
@@ -229,7 +243,7 @@ fn backtrace_oracle(rustc_ryo: &Path, src: &Path, out: &Path, cases: &[&[&str]])
             return Err(format!("{stem} {case:?}: no frames of {file} in plain rustc's backtrace\n{want_err}"));
         }
         for env in runs {
-            let Captured { stdout, stderr, .. } = capture(Command::new(&ryo).args(*case).envs(env.iter().copied()))?;
+            let Captured { stdout, stderr, .. } = capture(program(&ryo).args(*case).envs(env.iter().copied()))?;
             let got = bt_frames(&stderr, &file);
             if stdout != want_out || got != want {
                 return Err(format!(
@@ -277,7 +291,7 @@ fn backtrace_lines(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), Strin
         &[("RYO_JIT_THRESHOLD", "0"), ("RYO_JIT_SYNC", "1"), ("RYO_JIT_SHUFFLE", "1")],
     ];
     for env in runs {
-        let Captured { status, stdout, stderr } = capture(Command::new(&exe).env("RUST_BACKTRACE", "1").envs(env.iter().copied()))?;
+        let Captured { status, stdout, stderr } = capture(program(&exe).env("RUST_BACKTRACE", "1").envs(env.iter().copied()))?;
         let (panic, in_drop) = stderr.split_once("drop backtrace:").unwrap_or((&stderr, ""));
         let missing = |text: &str, want: &[&str]| {
             let mut rest = text;
@@ -299,7 +313,7 @@ fn backtrace_lines(rustc_ryo: &Path, src: &Path, out: &Path) -> Result<(), Strin
     }
     // The JIT inlines `via` into `mid`: in the full format, std prints the inlined frames of
     // one physical frame at its address, so the two share one.
-    let Captured { stderr, .. } = capture(Command::new(&exe).env("RUST_BACKTRACE", "full").env("RYO_JIT_THRESHOLD", "0").env("RYO_JIT_SYNC", "1"))?;
+    let Captured { stderr, .. } = capture(program(&exe).env("RUST_BACKTRACE", "full").env("RYO_JIT_THRESHOLD", "0").env("RYO_JIT_SYNC", "1"))?;
     let addr = |name: &str| {
         stderr.lines().find_map(|l| {
             let (a, n) = l.trim_start().split_once(": ")?.1.split_once(" - ")?;
