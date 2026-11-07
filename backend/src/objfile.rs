@@ -1082,13 +1082,17 @@ mod tests {
     #[test]
     fn pe_unwind_handler() {
         use object::read::coff::CoffFile;
+        use ryo_bytecode::image::{CONTINUE, CleanupEntry};
         let mut w = ImageWriter::new(SCID);
         w.set_cgu_hash(CGU);
         let ext = w.symbol("ext_fn", 0);
         let mut c = CodeBuf::default();
         c.emit(&Insn::CallSym { d: Slot(-16), sym: ext, k: 8, a: List::from_words(&[]) });
         c.emit(&Insn::Ret { s: Slot(0), k: 0 });
-        let def = |name: &str| FunctionDef { name: name.into(), code: c.words.clone(), frame_size: 32, ..Default::default() };
+        // The call unwinds into the caller: a call site without a landing pad.
+        let cleanup = vec![CleanupEntry { offset: 0, target: CONTINUE }];
+        let def =
+            |name: &str| FunctionDef { name: name.into(), code: c.words.clone(), frame_size: 32, cleanup: cleanup.clone(), ..Default::default() };
         w.add_function(def("f"));
         w.add_function(def("g"));
         // PE handlers read `fp` from rbp (`Mode::valid`).
