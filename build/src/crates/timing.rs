@@ -38,10 +38,13 @@ pub fn wrapper(log_dir: OsString) -> ExitCode {
         eprintln!("error: running {}: {e}", rustc.to_string_lossy());
         ExitCode::FAILURE
     };
-    let name = args.iter().position(|a| a == "--crate-name").and_then(|i| args.get(i + 1)).cloned();
+    // What rustc will see: cargo passes the arguments in an `@argfile` when the command line
+    // is too long.
+    let seen = crate::wrapper_common::expand_argfiles(args.clone()).map_or_else(|_| args.clone(), |(a, _)| a);
+    let name = seen.iter().position(|a| a == "--crate-name").and_then(|i| seen.get(i + 1)).cloned();
     // Cargo's target-info probe (`rustc - --crate-name ___ --print=...`) and other `--print`
     // queries aren't compilations.
-    let probe = name.as_ref().is_some_and(|n| n == "___") || args.iter().any(|a| a.to_string_lossy().starts_with("--print"));
+    let probe = name.as_ref().is_some_and(|n| n == "___") || seen.iter().any(|a| a.to_string_lossy().starts_with("--print"));
     let Some(name) = name.filter(|_| !probe) else {
         // `rustc -vV`, `--print` queries and the like.
         return match std::process::Command::new(&rustc).args(&args).status() {
@@ -81,8 +84,8 @@ pub fn wrapper(log_dir: OsString) -> ExitCode {
     };
     let wall = start.elapsed().as_micros();
     let primary = std::env::var_os("CARGO_PRIMARY_PACKAGE").is_some();
-    let test = args.iter().any(|a| a == "--test");
-    let kind = args.iter().position(|a| a == "--crate-type").and_then(|i| args.get(i + 1));
+    let test = seen.iter().any(|a| a == "--test");
+    let kind = seen.iter().position(|a| a == "--crate-type").and_then(|i| seen.get(i + 1));
     let kind = kind.map_or(if test { "test".into() } else { "bin".into() }, |k| k.to_string_lossy().into_owned());
     let name = name.to_string_lossy();
     // Which package, features and source file: crate name and kind alone don't tell apart
@@ -90,7 +93,7 @@ pub fn wrapper(log_dir: OsString) -> ExitCode {
     // the host and the target), or a package's lib and bin tests.
     let var = |k: &str| std::env::var(k).unwrap_or_default();
     let mut package = format!("{} {}", var("CARGO_PKG_NAME"), var("CARGO_PKG_VERSION"));
-    let mut features: Vec<String> = args
+    let mut features: Vec<String> = seen
         .windows(2)
         .filter(|w| w[0] == "--cfg")
         .filter_map(|w| Some(w[1].to_str()?.strip_prefix("feature=\"")?.strip_suffix('"')?.to_owned()))
@@ -99,7 +102,7 @@ pub fn wrapper(log_dir: OsString) -> ExitCode {
     if !features.is_empty() {
         package = format!("{package} [{}]", features.join(","));
     }
-    let src = args.iter().map(|a| a.to_string_lossy()).find(|a| a.ends_with(".rs")).unwrap_or_default();
+    let src = seen.iter().map(|a| a.to_string_lossy()).find(|a| a.ends_with(".rs")).unwrap_or_default();
     let head = format!(
         "crate {name}\nkind {kind}\npackage {package}\nsrc {src}\nprimary {}\nwall {wall}\nstatus {}\n",
         primary as u8,
