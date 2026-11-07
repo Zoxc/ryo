@@ -4,8 +4,9 @@
 //! add/sub/mul, byte swaps, bit counts (`cttz`/`ctlz`), extensions and truncations, shifts (by an
 //! immediate or a slot) and rotates (by a slot), compares (including `cmp3`) and compare-branches, at
 //! widths up to 64 bits (and 128-bit moves, as two 64-bit halves). They are short native
-//! sequences on `rax` and `rcx` instead of handler calls; the register cache ([`Cache`])
-//! renames `rax` as it emits them.
+//! sequences on `rax` and `rcx` (and `rdx` for division and remainder and unsigned 64-bit
+//! `mul.ovf`) instead of handler calls; the register cache ([`Cache`]) renames `rax` as it
+//! emits them.
 //!
 //! Every sequence ends in its last write (to the frame or to memory), or in a conditional
 //! branch. The only earlier writes are `mov.w128`'s store of `rcx` to the frame and an
@@ -229,7 +230,8 @@ pub(super) fn frame_access(op: Opcode) -> Option<Vec<Access>> {
 }
 
 /// Whether instructions of `op` are inlined, for some operands at least: `ptr.add` only with a 32-bit offset, `ptr.index` with a stride
-/// below 2^31, shifts by an immediate below the width.
+/// below 2^31, shifts by an immediate below the width, `mov.w128` with both slots' high
+/// halves (8 bytes up) in the `i32` range.
 pub fn has_inline(op: Opcode) -> bool {
     class(op).is_some()
 }
