@@ -18,11 +18,11 @@ pub const OBJECT: &str = "ryo_jit.o";
 /// the tag and `$`, so that two ryo builds' sealed objects never define the same name.
 const COFF_PREFIX: &str = "__ryo_jit$";
 
-/// Whether the JIT builds for `triple`: x86_64 Linux, windows-msvc and macOS
-/// (design/jit.md#packaging), the supported targets. `ryo_rt` always bundles it, so `y build`
-/// rejects other targets.
+/// Whether the JIT builds for `triple`: x86_64 Linux (glibc), windows-msvc and macOS
+/// (design/jit.md#packaging), the supported targets (design/platforms.md). `ryo_rt` always
+/// bundles it, so `y build` rejects other targets.
 pub fn supported(triple: &str) -> bool {
-    triple.starts_with("x86_64-") && (triple.contains("-linux-") || is_coff(triple) || (is_macho(triple) && triple.ends_with("-darwin")))
+    triple.starts_with("x86_64-") && (triple.ends_with("-linux-gnu") || is_coff(triple) || (is_macho(triple) && triple.ends_with("-darwin")))
 }
 
 /// The flag that keeps `ryo_rt`'s and the JIT's code for Windows out of the memory below
@@ -277,5 +277,8 @@ mod tests {
         assert!(super::supported("x86_64-apple-darwin"));
         assert!(!super::supported("aarch64-apple-darwin"));
         assert!(!super::supported("x86_64-pc-windows-gnu"));
+        for t in ["x86_64-unknown-linux-gnux32", "x86_64-unknown-linux-musl", "x86_64-linux-android", "x86_64-unknown-linux-ohos"] {
+            assert!(!super::supported(t), "{t}");
+        }
     }
 }
