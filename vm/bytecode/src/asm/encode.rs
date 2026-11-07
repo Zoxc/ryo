@@ -31,7 +31,7 @@ pub enum Ref {
     Probe,
     /// A function of the image (call and tail-call targets).
     Func(Func),
-    /// A symbol slot (`addr.sym`, `call.ext`'s symbol, and island calls through it).
+    /// A symbol slot (`addr.sym`, `call.sym`'s symbol, an `island`'s template instance).
     Sym(Sym),
     /// A constant pool offset.
     Const(Const),
@@ -883,9 +883,9 @@ pub struct Asm {
     /// PE: the piece the pad region starts at ([`Asm::begin_region`]).
     region: Option<usize>,
     /// The calls that end their instruction (no result stores after them, or an island's):
-    /// on PE one with a landing pad is followed by a `nop`, so that its
-    /// return address can't be an epilogue's start, where the unwinder takes the frame for one
-    /// being left and calls no handler for it.
+    /// on PE one with a landing pad or without a call site (where the handler aborts) is
+    /// followed by a `nop`, so that its return address can't be an epilogue's start, where the
+    /// unwinder takes the frame for one being left and calls no handler for it.
     bare_calls: Vec<usize>,
     /// The source location tag of the instructions being emitted ([`Asm::set_loc`]).
     cur_loc: u32,
@@ -1470,7 +1470,8 @@ impl Asm {
                 head_checks.push(l.out.len());
                 l.check(true);
             }
-            // PE: the `nop` after a call with a landing pad that ends its instruction.
+            // PE: the `nop` after a call with a landing pad or without a call site that ends its
+            // instruction.
             let mut nop = false;
             // A multi-item epilogue (PE): all but its last item first.
             if matches!(p, Piece::Epilogue) {
@@ -1484,8 +1485,8 @@ impl Asm {
                     let a = site.and_then(|id| unwind[id.0 as usize]);
                     if let Some(Unwind::Pad { pad, .. }) = a {
                         sites.push((out.len(), lab(&pad)));
-                        nop = mode.pe && bare_calls.binary_search(&k).is_ok();
                     }
+                    nop = mode.pe && !matches!(a, Some(Unwind::Continue | Unwind::Nounwind)) && bare_calls.binary_search(&k).is_ok();
                     Laid::Fixed {
                         item,
                         site: a.map(|a| match a {

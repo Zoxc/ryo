@@ -454,7 +454,7 @@ follows the decoder's structure:
   registers (`Hyps.regArgs`; other handler calls may have PE's stack argument, whose bytes at
   the frame's bottom `Hyps.peStackArg` makes private, `HandlerStackArg`). On PE the frame keeps no saved `rsi`/`rdi`: they are
   callee-saved registers the function's code never changes (`FrameFacts.saved` over
-  `Call.Saved`), and the PE `nop` after a call with a landing pad is part of the iteration
+  `Call.Saved`), and the PE `nop` after a call with a landing pad or no call site is part of the iteration
   (`NopRead`). The open prerequisites are
   named hypotheses (`Hyps`): of the decoded code, checkable (`FrameBounds`, `MoreBounds`: handler
   writes and call result slots in the window; `RelocsIn`, relocated

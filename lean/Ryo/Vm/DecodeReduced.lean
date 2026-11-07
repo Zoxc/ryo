@@ -26,8 +26,8 @@ registers set in order, and recovers every operand, the frame size and the unwin
 - loop-head padding (`Mode.alignLoops`), jump tables and their `int3` padding;
 - the call sites (from the LSDA) against the calls, landing pads that are `lpad`s, and the
   scopes, placed before the first instruction at or after their position;
-- PE (design/vm.md#unwinding): the `nop` after a call with a landing pad that ends its
-  instruction (`Proto.bare`), and the pad region: from the first cleanup landing pad on, behind
+- PE (design/vm.md#unwinding): the `nop` after a call with a landing pad or without a call
+  site that ends its instruction (`Proto.bare`), and the pad region: from the first cleanup landing pad on, behind
   its entry `sub rsp, 40; jmp r11` after the counter stubs, with no padding or counter checks,
   `resume` as `add rsp, 40; ret` (taking the landing pads' exception slot, `resumeSlots`), and no
   branch across its start.
@@ -743,17 +743,18 @@ def insn (fr : Frame) (ro : ByteArray) : DM Proto := do
 
 /-! ### The instruction loop and the function -/
 
-/-- PE: a `nop` follows proto `q`, a call with a landing pad that ends its instruction. -/
+/-- PE: a `nop` follows proto `q`, a call with a landing pad or without a call site (where
+the handler aborts) that ends its instruction. -/
 def nopAfter (mode : Mode) (callSites : Array CallSite) (q : Proto) : Bool :=
-  mode.pe && q.bare && q.sites.any fun (at_, _) => callSites.any fun cs => cs.start == at_ && cs.pad.isSome
+  mode.pe && q.bare && q.sites.any fun (at_, _) => (callSites.find? (·.start == at_)).all (·.pad.isSome)
 
-/-- PE: the `nop` after proto `q`, a call with a landing pad that ends its instruction
-(`nopAfter`): a `0x90` with no relocation in it. -/
+/-- PE: the `nop` after proto `q`, a call with a landing pad or without a call site that ends
+its instruction (`nopAfter`): a `0x90` with no relocation in it. -/
 def nopStep (mode : Mode) (callSites : Array CallSite) (q : Proto) : DM Unit := do
   if nopAfter mode callSites q then
     let c ← get
     if !(c.code[c.pos]? == some 0x90 && c.relocsHere 1 == []) then
-      err c.pos "no nop after a call with a landing pad"
+      err c.pos "no nop after a call with a landing pad or without a call site"
     setPos (c.pos + 1)
 
 /-- The instructions from the cursor to `limit` (`instructions`), and whether each is padded.

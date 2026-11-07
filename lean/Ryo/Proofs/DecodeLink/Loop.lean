@@ -444,7 +444,8 @@ theorem argInsn_none {mode : Mode} {c c' : Cursor}
 /-! ### The loop -/
 
 set_option maxHeartbeats 1000000 in
-/-- What `nopStep` reads: PE's `nop` after a call with a landing pad (`NopRead`). -/
+/-- What `nopStep` reads: PE's `nop` after a call with a landing pad or no call site
+(`NopRead`). -/
 theorem nopStep_read {fr : Frame} {callSites : Array CallSite} {c c' c'' : Cursor} {q : Proto}
     {u : Unit} (h : (nopStep fr.mode callSites q).run c' = .ok (u, c''))
     (hc : c' = atPos c c'.pos) :

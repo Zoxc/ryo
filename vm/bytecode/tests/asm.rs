@@ -572,6 +572,34 @@ fn pe_pad_region() {
     }
 }
 
+/// PE: a bare call without a call site in a function with landing pads (MIR's `Unreachable`
+/// unwind there) is followed by a `nop` too: returning into the epilogue, the unwinder would
+/// call no handler, so `ryo_seh_handler` couldn't abort. A continue site's call gets none.
+#[test]
+fn pe_nop_after_call_without_site() {
+    for mode in MODES.into_iter().filter(|m| m.pe) {
+        let f = Fn {
+            insns: vec![
+                vec![Opcode::Call as u32, 0, 0, 0, 0], // 0: with the terminate pad
+                vec![Opcode::Call as u32, 0, 1, 0, 0], // 1: no call site
+                vec![Opcode::Call as u32, 0, 1, 0, 0], // 2: continue
+                vec![Opcode::Ret as u32, 0, 0],
+                vec![Opcode::Lpad as u32, -8i32 as u32],
+                vec![Opcode::Jmp as u32, 0],
+                vec![Opcode::Abort as u32],
+            ],
+            targets: vec![(5, 1, 6)],
+            unwind: vec![(0, Some((4, true))), (2, None)],
+        };
+        let enc = check(&f, 48, mode, "call without a call site");
+        // The byte after each `call rel32`, from its relocation.
+        let after: Vec<u8> = enc.relocs.iter().filter(|r| matches!(r.to, asm::Ref::Func(_))).map(|r| enc.code[r.at as usize + 4]).collect();
+        assert_eq!(after.len(), 3, "{mode:?}");
+        assert_eq!((after[0], after[1]), (0x90, 0x90), "{mode:?}");
+        assert_ne!(after[2], 0x90, "{mode:?}");
+    }
+}
+
 /// Branches that need `rel32`, chains of them, and loops (padded with alignment on).
 #[test]
 fn long_branches_and_loops() {

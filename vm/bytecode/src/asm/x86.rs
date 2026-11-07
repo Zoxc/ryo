@@ -1557,7 +1557,8 @@ impl<'a> Cursor<'a> {
         !self.relocs_in(at, len).is_empty()
     }
 
-    /// Reads a 1-byte `nop` with no relocation in it (PE's after a call with a landing pad).
+    /// Reads a 1-byte `nop` with no relocation in it (PE's after a call with a landing pad or
+    /// no call site).
     pub fn nop1(&mut self) -> bool {
         let ok = self.bytes(1) == Ok(&[0x90][..]) && !self.reloc_in(self.pos, 1);
         if ok {

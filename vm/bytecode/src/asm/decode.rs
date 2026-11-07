@@ -78,7 +78,8 @@ struct Proto {
     /// position after the check, where the stub returns to.
     counter: Option<(u32, u32)>,
     /// Its last item is its call (a call storing no result, a PE island),
-    /// which on PE a `nop` follows if it has a landing pad (`encode::Asm::bare_calls`).
+    /// which on PE a `nop` follows if it has a landing pad or no call site
+    /// (`encode::Asm::bare_calls`).
     bare: bool,
 }
 
@@ -640,10 +641,11 @@ fn instructions(
                 }
             }
         };
-        // PE: the `nop` after a call with a landing pad that ends its instruction.
-        if fr.mode.pe && p.bare && p.sites.iter().any(|&(at, _)| site_at(call_sites, at).is_some_and(|cs| cs.pad.is_some())) {
+        // PE: the `nop` after a call with a landing pad or without a call site that ends its
+        // instruction.
+        if fr.mode.pe && p.bare && p.sites.iter().any(|&(at, _)| site_at(call_sites, at).is_none_or(|cs| cs.pad.is_some())) {
             if !c.nop1() {
-                return Err(err(c.pos, "no nop after a call with a landing pad"));
+                return Err(err(c.pos, "no nop after a call with a landing pad or without a call site"));
             }
         }
         protos.push(Proto { pos, counter, ..p });

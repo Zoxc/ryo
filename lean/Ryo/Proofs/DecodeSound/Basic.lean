@@ -216,7 +216,7 @@ structure Setup where
   body : Cursor
   rs : Array Reloc
   ro : ByteArray
-  /-- The call sites (the LSDA's): PE's `nop` after a call with a landing pad. -/
+  /-- The call sites (the LSDA's): PE's `nop` after a call with a landing pad or none. -/
   callSites : Array CallSite
   /-- The branch targets of the decoder's first pass (the cache is cleared there). -/
   targets : Array Nat
@@ -2030,7 +2030,7 @@ theorem notCleanup_of {S : Setup} {k : Nat} (hCL : CleansLinked S) (hnc : NoPeCl
 /-- What a body lemma knows of proto `k`, read at `p` as `q` ending at `c'` with cache `cache'`:
 the proto (`q` with the iteration's position and counter), its R instruction, the relocation
 boundary at `p`, and where the next iteration starts (after PE's `nop` after a call with a
-landing pad, `NopRead`). -/
+landing pad or no call site, `NopRead`). -/
 structure ProtoFacts (S : Setup) (k p : Nat) (q : Proto) (c' : Cursor) (cache' : Cache) : Prop where
   lt : k < S.r.protos.size
   proto : ∃ p1 counter, S.r.protos[k]? = some { q with pos := p1, counter }

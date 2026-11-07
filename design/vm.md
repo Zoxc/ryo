@@ -690,9 +690,9 @@ offsets in the function, and the function's LSDA, the ELF one.
   message), as MSVC's `__FrameUnwindFilter` does, rather than going through
   `panic_in_cleanup` as on ELF.
 - **Epilogues**: the unwinder calls no handler for a frame whose pc is in an epilogue, which
-  it recognizes by the code at the pc. So on PE a call with a landing pad that ends its
-  instruction (one storing no result, an island in the region) is followed by a `nop`: its
-  return address is never an epilogue's start.
+  it recognizes by the code at the pc. So on PE a call with a landing pad or without a call
+  site (whose abort is the handler's) that ends its instruction (one storing no result, an
+  island) is followed by a `nop`: its return address is never an epilogue's start.
 - **JIT**: the JIT's code gets the same, through a thunk to the handler in its code memory
   ([jit.md](jit.md#unwinding-and-profiling)); the SSA pipeline leaves functions with cleanup
   landing pads to re-encoding.
