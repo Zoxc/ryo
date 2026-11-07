@@ -193,9 +193,13 @@ by `start_once` (unix), keep the child consistent and let it start a JIT of its 
   then) calls `ryo_jit_start(rt, child = true)`: the same `RtApi` and pin, no new hooks or
   `atexit` handlers, zeroed counters, a new `Jit` with new regions (the parent's stay mapped
   and in use; the hint search skips them). Records the dead thread was re-checking
-  (`Recheck`) may stay AOT. A child that never trips (fork + `exec`) never starts a thread.
-  `pthread_create` in the child of a multithreaded process is outside POSIX's
-  async-signal-safe set; glibc and libSystem support it once malloc is reset.
+  (`Recheck`) may stay AOT, as may a record whose trip had made it `Queued` but not yet
+  pushed it when another thread forked (a few instructions; trips don't take the quiesce
+  lock): it is in neither list, so nothing compiles it in the child, and with
+  `RYO_JIT_SYNC` the child's trips on it wait for good. A child that never trips (fork +
+  `exec`) never starts a thread. `pthread_create` in the child of a multithreaded process
+  is outside POSIX's async-signal-safe set; glibc and libSystem support it once malloc is
+  reset.
 - **Without the handlers**: `vfork`, `posix_spawn` and `clone(CLONE_VFORK)` run none and
   share or replace the memory: `CHILD_RESTART` stays 0 (or another process's pid), so they
   never restart. A raw `fork` syscall's child keeps `STARTED` but not `JIT_PID`'s pid: AOT,

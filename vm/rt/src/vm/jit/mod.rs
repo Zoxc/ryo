@@ -820,7 +820,9 @@ extern "C-unwind" fn fork_parent() {
 
 /// `pthread_atfork`'s child handler: atomics only (the child of a multithreaded process may
 /// only make async-signal-safe calls). The child has no JIT thread: its batch goes back to
-/// the queue, and the first trip restarts the thread ([`restart_child`]).
+/// the queue, and the first trip restarts the thread ([`restart_child`]). A record that
+/// another thread's [`trip`] had made `Queued` but not linked yet is lost (in neither list):
+/// trips don't take [`FORK_LOCK`] (design/jit.md#forked-children).
 #[cfg(unix)]
 extern "C-unwind" fn fork_child() {
     FORK_LOCK.store(0, Relaxed);
