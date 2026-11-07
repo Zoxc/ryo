@@ -664,7 +664,9 @@ innermost first, so a value invariant in several levels leaves each in turn.
   passes, each latch passes on, and the entry's landing computes again from the entry's
   values of the head's parameters (OSR-transparently: an invariant parameter is its normal
   value there, and a load nothing in the loop writes reads the same bytes at the head on every
-  iteration). Identical hoisted instructions are one.
+  iteration). Nothing moves out of such a loop if another head's OSR entry reaches one of its
+  latches without passing the head (an outer loop's latch after an inner loop): that latch
+  would pass the parameter on unset. Identical hoisted instructions are one.
 - **Register pressure**: a hoisted value is live across the whole loop, and the linear
   scan's intervals are hulls in the layout. An instruction moves only if something in the
   loop uses it (not one only an exit or a cold path uses). The expensive ones (divisions,

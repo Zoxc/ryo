@@ -25,7 +25,9 @@
 //!   the OSR-transparency rule ([`super::osr`]): an invariant head parameter is the value of
 //!   its normal edges also when the head is entered by OSR, so the copy computes the same
 //!   value, and a load nothing in the loop writes reads the same bytes at the head on every
-//!   iteration.
+//!   iteration. Nothing moves out of such a loop if another head's OSR entry reaches a latch
+//!   without passing the head (an outer loop's, after an inner loop): that latch would pass
+//!   the parameter on without it ever being set.
 //! - **Loads** (`Load`, `ALoad`) move when nothing in the loop may write their bytes
 //!   ([`super::mem`], what [`super::lvn`] forgets them for too: a pointer store but one
 //!   through the same pointer to other bytes, a handler touching memory or naming the alloca,
@@ -233,6 +235,12 @@ fn licm(f: &mut Func, an: &Analysis, l: &Loop) -> bool {
             }
             stack.extend(f.blocks[b.idx()].term.edges().map(|e| e.to));
         }
+    }
+    // A value hoisted to a head with an OSR entry becomes a head parameter that each latch
+    // passes on, but a latch in `other_osr` (an outer loop's, after an inner loop entered by
+    // OSR) would pass it on unset.
+    if osr.is_some() && normal_preds(f, h).any(|(p, _)| l.body[p.idx()] && other_osr.get(p.idx()).copied().unwrap_or(false)) {
+        return false;
     }
     let mut cand: Vec<Inst> = Vec::new();
     let mut is_cand = alloc::vec![false; f.values.len()];

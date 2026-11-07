@@ -1068,6 +1068,63 @@ fn licm_through_an_osr_head() {
     assert!(f.layout.contains(&land) && f.layout[0] == b0, "{f}");
 }
 
+/// Nested loops, both heads with OSR entries, the outer one dividing by a load nothing
+/// writes (a division always moves). The inner entry reaches the outer latch without passing
+/// the outer head, so a hoisted value's head parameter would reach the head unset that way:
+/// the outer loop keeps its division (bug #38).
+#[test]
+fn licm_not_past_an_inner_osr_entry() {
+    use ryo_bytecode::jit::ir::{BinOp, Cc};
+    let mut f = IrFunc::default();
+    let b0 = f.block(BlockKind::Entry);
+    let [b1, b3, b4, b5, b6, b7] = [(); 6].map(|_| f.block(BlockKind::Body));
+    let (bo1, bo3) = (f.block(BlockKind::Osr(0)), f.block(BlockKind::Osr(1)));
+    f.blocks[b1.idx()].head = Some(0);
+    f.blocks[b3.idx()].head = Some(1);
+    f.osr = vec![Some(bo1), Some(bo3)];
+    let (z, one, four, ten) = (f.konst(0, 8), f.konst(1, 8), f.konst(4, 8), f.konst(10, 8));
+    let (k, ptr) = (f.konst(1_000_003, 8), f.konst(0x1000, 8));
+    f.terminate(b0, Term::Jmp(Edge { to: b1, args: vec![z, z] }));
+    let ls: Vec<_> = (1..=2).map(|o| f.inst(bo1, Op::OsrLoad(-8 * o, 8), vec![], &[8])).collect();
+    let ls = ls.into_iter().map(|i| f.result(i)).collect();
+    f.terminate(bo1, Term::Jmp(Edge { to: b1, args: ls }));
+    let ls: Vec<_> = (1..=3).map(|o| f.inst(bo3, Op::OsrLoad(-8 * o, 8), vec![], &[8])).collect();
+    let ls = ls.into_iter().map(|i| f.result(i)).collect();
+    f.terminate(bo3, Term::Jmp(Edge { to: b3, args: ls }));
+    // b1: the outer head (i, s): s += 1_000_003 / *ptr.
+    let (i, s) = (f.param(b1, 8), f.param(b1, 8));
+    let d = f.inst(b1, Op::Load(8, 0), vec![ptr], &[8]);
+    let d = f.result(d);
+    let q = f.inst(b1, Op::Bin(BinOp::DivU, 8), vec![k, d], &[8]);
+    let q = f.result(q);
+    let s1 = f.inst(b1, Op::Bin(BinOp::Add, 8), vec![s, q], &[8]);
+    let s1 = f.result(s1);
+    f.terminate(b1, Term::Jmp(Edge { to: b3, args: vec![z, s1, i] }));
+    // b3: the inner head (j, t, i): t += j, until j reaches 10.
+    let (j, t, i3) = (f.param(b3, 8), f.param(b3, 8), f.param(b3, 8));
+    let t2 = f.inst(b3, Op::Bin(BinOp::Add, 8), vec![t, j], &[8]);
+    let t2 = f.result(t2);
+    let j2 = f.inst(b3, Op::Bin(BinOp::Add, 8), vec![j, one], &[8]);
+    let j2 = f.result(j2);
+    let c = f.inst(b3, Op::Cmp(Cc::LtU, 8), vec![j2, ten], &[1]);
+    let c = f.result(c);
+    f.terminate(b3, Term::Br { cond: c, t: Edge::to(b4), f: Edge::to(b5) });
+    f.terminate(b4, Term::Jmp(Edge { to: b3, args: vec![j2, t2, i3] }));
+    // b5, b6: the outer latch, after the inner loop.
+    let i2 = f.inst(b5, Op::Bin(BinOp::Add, 8), vec![i3, one], &[8]);
+    let i2 = f.result(i2);
+    let c2 = f.inst(b5, Op::Cmp(Cc::LtU, 8), vec![i2, four], &[1]);
+    let c2 = f.result(c2);
+    f.terminate(b5, Term::Br { cond: c2, t: Edge::to(b6), f: Edge::to(b7) });
+    f.terminate(b6, Term::Jmp(Edge { to: b1, args: vec![i2, t2] }));
+    f.terminate(b7, Term::Ret { k: 8, parts: vec![t2] });
+    f.layout = vec![b0, b1, b3, b4, b5, b6, b7];
+    f.licm = true;
+    let f = opt(f);
+    let div = |ops: Vec<Op>| ops.iter().any(|o| matches!(o, Op::Bin(BinOp::DivU, _)));
+    assert!(div(block_ops(&f, b1)), "{f}");
+}
+
 /// `while i < 100 { i += 1 }` with an OSR entry at the head, and the exit using `i`: rotation
 /// copies the test to the end of the latch, which branches back into the body; the head stays
 /// for the entry and the OSR entry, and the body and the exit take `i` as parameters.
