@@ -304,18 +304,20 @@ depends on changed (`partition.rs`, `image_part`; the side data and work product
     non-generic `LocalCopy` has the same symbol in every crate, hence `WeakODR`.
 - **The image's dep node** is a `CompileCodegenUnit` node named
   `<cgu>.ryo.<fingerprint>`, the fingerprint covering the CGU name, its candidates' symbols,
-  linkage and visibility, the entry fn's symbol (only in the entry's own CGU's key), the
-  `asm::Mode`, the crate's `StableCrateId`, `RYO_ASM_ALIGN`, the backend's build ID
-  (`RYO_BACKEND_ID`, baked in by `backend/build.rs`: a hash of the backend's and
-  `ryo_bytecode`'s sources and manifests, the lock file, the compiler's `-vV` and the build
-  settings; baked in rather than read from the dylib's file, which a rebuild may replace
-  while a session runs, and the same for a `-Zcodegen-backend=<name>`), and `ryo_rt`'s crate
-  hash (an image that calls no island reads nothing else of `ryo_rt`). `RYO_ASM_CHECK` is
-  not in it: it only checks the code it encodes, without changing it. A change to any of
-  these gives a node the previous session didn't have. The lowering runs inside
-  `dep_graph.with_task(node, ..)`, so the queries it reads (MIR, layouts, ABIs, symbol
-  names, constants) are its edges; reading rustc's partition there would be a cycle (this
-  runs inside the partition query), which the fingerprint replaces.
+  linkage and visibility, the entry fn's symbol and `SIGPIPE` setting (only in the entry's
+  own CGU's key: the C `main` wrapper sets `SIGPIPE`), the `asm::Mode`, the crate's
+  `StableCrateId`, `RYO_ASM_ALIGN`, the backend's build ID (`RYO_BACKEND_ID`, baked in by
+  `backend/build.rs`: a hash of the backend's and `ryo_bytecode`'s sources and manifests,
+  the lock file, the compiler's `-vV` and the build settings; baked in rather than read from
+  the dylib's file, which a rebuild may replace while a session runs, and the same for a
+  `-Zcodegen-backend=<name>`), `ryo_rt`'s crate hash (an image that calls no island reads
+  nothing else of `ryo_rt`), and the upstream statics the crate defines (references reach
+  them directly on PE, [platforms.md](platforms.md)). `RYO_ASM_CHECK` is not in it: it only
+  checks the code it encodes, without changing it. A change to any of these gives a node the
+  previous session didn't have. The lowering runs inside `dep_graph.with_task(node, ..)`, so
+  the queries it reads (MIR, layouts, ABIs, symbol names, constants) are its edges; reading
+  rustc's partition there would be a cycle (this runs inside the partition query), which the
+  fingerprint replaces.
 - **Reuse.** If the previous session has the work product `<cgu>.ryo` (files `o`, the image
   object, and `ryo`, its side data) and `try_mark_green` marks the node green, the image
   isn't lowered: the side data (`CguVm`: the VM functions and which have global symbols, the
