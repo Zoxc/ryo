@@ -297,8 +297,9 @@ fn needs_frame_pointer(sess: &rustc_session::Session) -> bool {
     fp != FramePointer::MayOmit
 }
 
-/// A VM function: its lowering, and whether native code or the image calls it by name (then
-/// the image defines its symbol globally, with its linkage; an internal one becomes hidden).
+/// A VM function: its lowering, and whether the image defines its symbol globally, with its
+/// linkage (an internal one becomes hidden): all but internal `LocalCopy` copies, which native
+/// code links to a native copy of instead (`build_cgu`, `Partitioner::native_ref`).
 pub(super) struct VmFn<'tcx> {
     /// The function's instance; for the entry wrapper ([`VmFn::wrapper`]), the entry fn's.
     pub(super) instance: Instance<'tcx>,

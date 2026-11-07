@@ -155,12 +155,13 @@ platform calling convention for the function's Rust-ABI signature
 ([vm.md](vm.md#calls-and-islands)). Native callers, other crates, fn pointers and vtables
 link to it unchanged.
 
-- **Symbol and linkage**: when native code or the image refers to the function by name
-  (`partition.rs`, `need_symbol`), the symbol is global, with the function's linkage and
+- **Symbol and linkage**: unless the function is an `Internal` `LocalCopy` (which may be
+  copied into several CGUs), the symbol is global, with the function's linkage and
   visibility from the partition; an `Internal` one becomes hidden, since the image is a
-  separate object. Otherwise it is local. `#[no_mangle]`/`#[export_name]` VM functions keep
-  their `SymbolExportLevel::C` export through the exported-symbols queries
-  ([backend.md](backend.md#query-overrides-provide)).
+  separate object. An `Internal` `LocalCopy`'s is local, and native code that refers to it
+  gets a native copy ([backend.md](backend.md#pipeline), step 1).
+  `#[no_mangle]`/`#[export_name]` VM functions keep their `SymbolExportLevel::C` export
+  through the exported-symbols queries ([backend.md](backend.md#query-overrides-provide)).
 - **`#[track_caller]` functions** take their `Location` as the last ABI input, as natively
   (`rustc_ty_utils/src/abi.rs:600`). Their `Shim(Reify)` instance (fn pointers, vtables)
   has its own symbol and no `Location`.

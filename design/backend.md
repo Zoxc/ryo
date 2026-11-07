@@ -26,23 +26,21 @@ reuse under incremental compilation and `rt.rs` the runtime crates' identity.
      stay inside the image)
    - each item's `linkage`/`visibility` is what rustc decided. The image object defines each
      VM function's symbol with it ([stubs.md](stubs.md#vm-functions-as-native-functions)).
-   - VM functions that are `Internal` and not referenced by native code get a local symbol.
-     "Referenced by native code" means referenced by any of:
-     - a native function, or a stub neighbor (via `items_of_instance`)
+   - A VM function gets a global symbol (`partition.rs`, `build_cgu`; `objfile.rs`,
+     `global_function`), with its linkage and visibility, if it isn't `Internal` or if it
+     exists once in the crate (not `LocalCopy`, `unique`); an `Internal` one becomes hidden.
+     The C `main` the backend adds to the entry fn's image is global too
+     ([stubs.md](stubs.md#program-entry-main)). An `Internal` `LocalCopy`, which may be
+     copied into several CGUs, gets a local symbol: the image refers to it by that symbol,
+     and if native code of its CGU references it, the CGU also keeps a native `Internal`
+     copy, which that code links to (`native_ref`). "Native code references it" means any
+     of:
+     - a native function (its neighbors, which include vtable methods), or a stub neighbor
+       (via `items_of_instance`)
      - the initializer of a native static: the provenance of its allocation, from
        `eval_static_initializer`, covering fn pointers and vtables in statics
-     - the C `main` the backend adds to the entry fn's image, which takes its address
-       ([stubs.md](stubs.md#program-entry-main))
-     - any vtable that the image or a native item references
      - a `sym` operand of a `global_asm!` (resolved like the collector does,
        `rustc_monomorphize/src/collector.rs:493-535`)
-
-     VM functions referenced that way, those that are not `Internal`, and those the image
-     refers to by symbol (fn-pointer constants, vtables, `call.sym`) get a global symbol
-     (`partition.rs`, `need_symbol`; `objfile.rs`, `global_function`), with their linkage
-     and visibility; an `Internal` one becomes hidden. An `Internal` copy in several CGUs
-     gets the global symbol in one of them only (the first that needs it, `exposed`), and
-     the others' references resolve to it: two would define the symbol twice.
 
    A crate with no VM code (a proc
    macro, a panic runtime, a runtime-internal crate, `RYO_NO_VM`, step 2) skips all of this: the provider returns
@@ -138,7 +136,8 @@ reuse under incremental compilation and `rt.rs` the runtime crates' identity.
      the collector's `should_codegen_locally` (`collector.rs:1075`) runs on every neighbor,
      and it is public as the hook `tcx.should_codegen_locally` (`rustc_middle/src/hooks/mod.rs:90`),
      which the lowering uses for callees. Neighbors are always native. A neighbor that is a VM
-     function of the same CGU gets a global symbol instead. One that exists once per crate
+     function of the same CGU is linked to if its symbol is global, else kept native too
+     (`native_ref`, step 1). One that exists once per crate
      (a static, or a function that isn't `LocalCopy`) must not get a second copy (a second
      counter, lock or `OnceLock`): if another CGU holds it, it is referenced, and made
      linkable there as for the image (`Internal` → `External` + `Hidden`, linkonce → weak,
