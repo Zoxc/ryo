@@ -22,9 +22,11 @@ fn rt_item(tcx: TyCtxt<'_>, krate: CrateNum, name: Symbol) -> Option<DefId> {
     tcx.diagnostic_items(krate).name_to_id.get(&name).copied()
 }
 
-/// `ryo_rt`'s crate and template items, found through its diagnostic items. `None` if
-/// `ryo_rt` isn't loaded (rustc wasn't run through `rustc-ryo`); a fatal error if it is
-/// loaded but lacks an item (a `ryo_rt` from another source version).
+/// `ryo_rt`'s crate, whose template items are found through its diagnostic items. `None` if
+/// `ryo_rt` isn't loaded (rustc wasn't run through `rustc-ryo`). Nothing is checked up front:
+/// a missing item (a `ryo_rt` from another source version) is found when it is used, a fatal
+/// error for a template the merge pass instantiates (`merge::island_instance`), while a
+/// missing intrinsic wrapper keeps the caller native (`island::templates::wrapper`).
 pub fn rt_items(tcx: TyCtxt<'_>) -> Option<RtItems> {
     let krate = *tcx.crates(()).iter().find(|&&c| is_rt_crate(tcx, c))?;
     Some(RtItems { krate })
