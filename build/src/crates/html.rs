@@ -147,7 +147,7 @@ const METRICS: &[Metric] = &[
         id: "size-workload",
         phase: Phase::Workload,
         title: "Binary size: workload",
-        what: "the workload executable (debuginfo=0, not stripped)",
+        what: "the workload executable (not stripped; debuginfo=0 unless --stock)",
         unit: Measure::Bytes,
         pick: |c| c.workload_size.map(|s| s as f64).into_iter().collect(),
         summary: true,
