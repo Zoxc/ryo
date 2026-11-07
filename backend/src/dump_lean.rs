@@ -355,8 +355,8 @@ impl<'tcx> Dumper<'tcx> {
 
     fn fn_abi(&self, fn_abi: &FnAbi<'tcx, Ty<'tcx>>, abi: rustc_abi::ExternAbi) -> J {
         // `rust-call` is kept apart (its arguments are spread); otherwise the lowered
-        // convention, as rustc and Miri compare it: `system`, `sysv64`, … are C where they
-        // lower to it.
+        // convention, as rustc and Miri compare it: `system`, `cdecl`, … are C where they
+        // lower to it (`sysv64` and `win64` never do: they lower to `X86(..)`).
         let conv = match (abi, fn_abi.conv) {
             (rustc_abi::ExternAbi::RustCall, _) => tag("rustCall"),
             (_, rustc_abi::CanonAbi::Rust) => tag("rust"),
