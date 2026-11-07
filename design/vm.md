@@ -966,7 +966,7 @@ calls it by name, local otherwise (backtraces, profilers) ([backend.md](backend.
   exists. `ryo_rt` being `#![no_std]` rules out direct calls into std and alloc, but not
   core's panic path: under `--sysroot ryo` the `#[panic_handler]` is std's, a VM function, so
   a panic in the runtime (a bounds check, `unwrap`, core's sorts) would enter the VM too. So
-  runtime code uses `get` + `fatal`, its own insertion sort, and `C-unwind` for its exported
+  runtime code uses `get` + `fatal`, its own heapsort, and `C-unwind` for its exported
   C entry points (no abort-on-unwind guard, which calls `core::panicking`). `y test`
   (`rt-core-only`) checks both: the rlibs' undefined symbols name no crate but `core`,
   `compiler_builtins` and `ryo_bytecode` (plus libc and the unwinder), and no call path from
@@ -977,7 +977,7 @@ calls it by name, local otherwise (backtraces, profilers) ([backend.md](backend.
   thread, which uses std, is the sealed object the rlib bundles, with a std of its own
   ([Packaging](jit.md#packaging)): the check skips that member (`jit-sealed` checks it), and the
   runtime reaches it only through `ryo_jit_start`.
-- **Registry**: `ryo_vm_register(start, end)` is called by the registry stub's constructor
+- **Registry**: `ryo_vm_register(start, end, anchor)` is called by the registry stub's constructor
   with the bounds of the link unit's entry list (the non-null entries are image headers), so
   also when a shared object loads at run time (`dlopen`/`LoadLibrary`). It skips images
   already registered (by header address), appends the others to a global list under `ryo_rt`'s lock, applies the PE fixups, and publishes the
@@ -1104,7 +1104,8 @@ design/stubs.md#program-entry-main). It is a normal Rust dependency of every ryo
 - **`vm`**: the handlers (`vm::h`, generated, plus the assembly ones), the registry and the
   JIT's trip entry points (`vm::trip_entry`, `vm::trip_osr`) and the rest of its runtime
   side (`vm::jit`, [jit.md](jit.md)). Everything uses `core` only.
-  - `vm::register`: `#[no_mangle] extern "C-unwind" fn ryo_vm_register(images, n)`.
+  - `vm::ryo_vm_register`: `extern "C-unwind" fn ryo_vm_register(start, end, anchor)`, an
+    internal, tagged symbol (`#[rustc_std_internal_symbol]`).
   - `vm::MODE`: how the handlers `ryo_h_<Opcode>` take `fp`, in `rdi` (on Windows in `rbp`);
     `vm::FP_MODE`: the frame-pointer set `ryo_hf_<Opcode>` (off Windows and Apple), which
     reads `rbp`. The backend picks the set per crate ([Handlers](#handlers)); `handler_for`
