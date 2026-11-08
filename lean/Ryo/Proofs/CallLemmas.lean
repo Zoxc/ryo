@@ -532,7 +532,37 @@ theorem step_call_region {c : R.Code} {s : R.RState} {ch : OpSem.Choice} {op : R
         s1.st.writeFrame dst.toInt (List.replicate n .uninit) = .ok s'.st) ∧
       s'.pc = s1.pc ∧ s'.fp = s1.fp ∧ s'.args = s1.args ∧
       q = ⟨.call cal regs ch.sp (List.replicate (c.stackSize s1.pc) .uninit), s'.world⟩ := by
-  sorry -- PE-P8
+  unfold R.step at h
+  simp only [hi, bind, Except.bind] at h
+  cases hsc : (c.scopesAt s.pc).foldlM R.applyScope s with
+  | error e => simp [hsc] at h
+  | ok s1 =>
+    have hreg1 : c.inRegion s1.pc = true := by rw [(scopes_keeps _ hsc).pc]; exact hreg
+    simp only [hsc, hf, hsh, hreg1, ↓reduceIte, pure, Except.pure] at h
+    cases hp : R.retRegs k.toNat false with
+    | error e => simp [hp] at h
+    | ok parts =>
+    simp only [hp] at h
+    cases hc : R.callee s1.st f fo with
+    | error e => simp [hc] at h
+    | ok cal =>
+    simp only [hc] at h
+    cases ha : R.argRegs s1.st ws with
+    | error e => simp [ha] at h
+    | ok regs =>
+    simp only [ha] at h
+    refine ⟨s1, parts, cal, regs, rfl, rfl, hc, ha, ?_⟩
+    split at h
+    · rename_i n dst _ _
+      cases hw : s1.st.writeFrame dst.toInt (List.replicate n .uninit) with
+      | error e => simp [hw] at h
+      | ok st' =>
+        simp only [hw, Except.ok.injEq, R.Out.ext.injEq] at h
+        obtain ⟨rfl, rfl⟩ := h
+        exact ⟨.inr ⟨n, dst, hw⟩, rfl, rfl, rfl, rfl⟩
+    · simp only [Except.ok.injEq, R.Out.ext.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      exact ⟨.inl rfl, rfl, rfl, rfl, rfl⟩
 
 /-- `answer_ret` in PE's pad region: no frame bytes written for the outgoing area. -/
 theorem answer_ret_region {c : R.Code} {s : R.RState} {op : Reduced.Opcode} {d : BitVec 32}
@@ -545,7 +575,15 @@ theorem answer_ret_region {c : R.Code} {s : R.RState} {op : Reduced.Opcode} {d :
     (hst : parts.foldlM (init := (s.withWorld a.world).st) (fun st (q : RetPart × R.Reg) =>
       st.writeFrame (d.toInt + q.1.off) ((regs.get q.2).take q.1.size)) = .ok st2) :
     R.answer c s a = .ok (.step ⟨s.pc + 1, s.fp, st2, s.args⟩) := by
-  sorry -- PE-P8
+  unfold R.answer
+  simp only [hi, hf, hsh, bind, Except.bind]
+  have e1 : (s.withWorld a.world).pc = s.pc := rfl
+  simp only [e1, hreg, ↓reduceIte, pure, Except.pure, hres, hp]
+  rw [show (fun (st : OpSem.State) (x : RetPart × R.Reg) =>
+      match x with | (p, r) => st.writeFrame (d.toInt + ↑p.off) (List.take p.size (regs.get r))) =
+      (fun st (q : RetPart × R.Reg) => st.writeFrame (d.toInt + q.1.off) ((regs.get q.2).take q.1.size))
+      from rfl, hst]
+  rfl
 
 /-- `answer_unwind` in PE's pad region. -/
 theorem answer_unwind_region {c : R.Code} {s : R.RState} {op : Reduced.Opcode} {d : BitVec 32}
@@ -557,7 +595,13 @@ theorem answer_unwind_region {c : R.Code} {s : R.RState} {op : Reduced.Opcode} {
     (hpad : c.cleanupAt s.pc = some (some pad, cat)) :
     R.answer c s a = .ok (.step ⟨pad, s.fp,
       { (s.withWorld a.world).st with exception := exc }, s.args⟩) := by
-  sorry -- PE-P8
+  unfold R.answer
+  simp only [hi, hf, hsh, bind, Except.bind]
+  have e1 : (s.withWorld a.world).pc = s.pc := rfl
+  simp only [e1, hreg, ↓reduceIte, pure, Except.pure, hres]
+  unfold R.unwindAt
+  simp only [hpad]
+  rfl
 
 open Ryo.Proofs.ArgRet in
 /-- `ret_parts`' part decoder (store form: integer parts of 1 to 8 bytes). -/

@@ -928,6 +928,10 @@ def readParts (fr : Frame) (ro : ByteArray) (callSites : Array CallSite)
   match regionAt with
   | none => return (protos, padded, bodyEnd)
   | some r =>
+    -- Every body instruction starts before the region's entry: what makes `read`'s `rs` (the
+    -- count of instructions before the region's first) the body's count. Lean-side only (for
+    -- the proofs; the padding and reads that would break it stop at the entry's bytes).
+    expect (protos.all (·.pos < limit)) bodyEnd "a body instruction at or past the pad region's entry"
     let (rp, rpad) ← readRegion fr ro callSites droppedRegion targets size r
     return (protos ++ rp, padded ++ rpad, bodyEnd)
 

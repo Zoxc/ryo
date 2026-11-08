@@ -481,30 +481,32 @@ theorem cache_good (hD : Decodes S code relocs rodata callSites dropped scopes m
   | succ k ih =>
     intro hk
     have hg := ih (by omega)
-    have hit := hD.iters k (by omega)
+    have hkl : k < S.r.protos.toList.length := by omega
+    by_cases hlast : S.c.inRegion k = false ∧ S.c.inRegion (k + 1) = true
+    · rw [hD.cache_regionStart hlast.1 hlast.2]; exact good_empty _
+    obtain ⟨fr, q, p', ca', dr', hfm, -, hit, hend⟩ := hD.iterAt k hkl
+    have hca : ca' = S.cache (k + 1) := (hend (Ryo.Proofs.DecodeSound.not_last_cases hlast)).2.1
+    rw [← hca]
+    clear hca hend hlast
     revert hit
-    generalize S.cache (k + 1) = c'
     generalize S.cache k = c0 at hg ⊢
     generalize S.args k = a
     generalize S.start k = p
     generalize S.dr k = d0
-    generalize S.start (k + 1) = p'
-    generalize S.dr (k + 1) = d'
-    generalize S.r.protos.toList[k] = q
     intro hit
     cases hit with
     | empty _ hrun => exact good_inline hg hrun
     | main _ _ hpr _ =>
-      have hg' : ∀ b : Bool, Good S.c.mode.pe (if b = true then { pe := S.fr.mode.pe } else c0) := by
+      have hg' : ∀ b : Bool, Good S.c.mode.pe (if b = true then { pe := fr.mode.pe } else c0) := by
         intro b
         split
-        · exact good_empty _
+        · rw [hfm]; exact good_empty _
         · exact hg
       cases hpr with
       | arg _ => exact hg' _
-      | call _ _ => exact good_empty _
+      | call _ _ => rw [hfm]; exact good_empty _
       | inline _ _ hrun => exact good_inline (hg' _) hrun
-      | insn _ _ _ _ => exact good_empty _
+      | insn _ _ _ _ => rw [hfm]; exact good_empty _
 
 /-- `CacheRegsOk` (unfolded), for every instruction index up to the iterations' count. -/
 theorem cacheRegsOk_of_decodes (hD : Decodes S code relocs rodata callSites dropped scopes mode) :

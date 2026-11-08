@@ -17,6 +17,8 @@ and the other natives (island, `arg`, `jmp`, `lpad`, `resume`, `unreachable`).
 import Ryo.Proofs.DeadStore.Defs
 import Ryo.Proofs.DeadStore.Rel
 import Ryo.Proofs.DeadStore.Names
+import Ryo.Proofs.DeadStore.Covered
+import Ryo.Proofs.MnemonicChars
 
 namespace Ryo.Proofs.DeadStore
 
@@ -1957,11 +1959,32 @@ theorem layoutAgreeTable : Full.all.all layoutAgreeOk = true := by
     all_opsIn_append (m := 900) (n := 5) rfl h8 layoutAgreeTable_900
   exact h9
 
+/-- An `Option.bind` that is `some`: its argument is, and so is the continuation there. -/
+theorem bind_some_iff' {α β : Type} {x : Option α} {f : α → Option β} {b : β} :
+    x.bind f = some b ↔ ∃ a, x = some a ∧ f a = some b := by
+  cases x <;> simp
+
+/-- `bind_some_iff'` for `>>=`. -/
+theorem bindM_some_iff' {α β : Type} {x : Option α} {f : α → Option β} {b : β} :
+    (x >>= f) = some b ↔ ∃ a, x = some a ∧ f a = some b := by
+  cases x <;> simp [bind, Option.bind]
+
 theorem footprintOf_names {k : Handlers.HandlerKind} {ps : List String} {fp : OpSem.Footprint}
     (h : OpSem.footprintOf k ps = some fp) :
     (fp.reads ++ fp.writes).map (fun a => (a.opnd, extentNames a.extent)) = namesOf k ∧
       fp.addrs = addrsOf k := by
-  sorry -- DS-T8 (footprintOf's names per handler kind; checked true by #eval)
+  cases k <;> simp only [OpSem.footprintOf, bindM_some_iff', bind_some_iff', pure,
+    Option.some.injEq] at h <;>
+    (repeat (obtain ⟨_, -, h⟩ := h)) <;> (try subst h) <;> exact ⟨rfl, rfl⟩
+
+/-- `footprintOf`'s frame accesses have extents `Frame.handler` evaluates (`slotVal` and `cases`
+appear only in `derefs`). -/
+theorem footprintOf_lenExt {k : Handlers.HandlerKind} {ps : List String} {fp : OpSem.Footprint}
+    (h : OpSem.footprintOf k ps = some fp) :
+    (fp.reads ++ fp.writes).all (fun a => lenExt a.extent) = true := by
+  cases k <;> simp only [OpSem.footprintOf, bindM_some_iff', bind_some_iff', pure,
+    Option.some.injEq] at h <;>
+    (repeat (obtain ⟨_, -, h⟩ := h)) <;> (try subst h) <;> rfl
 
 set_option maxRecDepth 100000 in
 theorem footprintNamesTable'_0 : (opsIn 0 100).all footprintNamesOk' = true := by
@@ -2028,7 +2051,30 @@ theorem mem_all_of_handler {op : Full.Opcode} {hi : Handlers.HandlerInfo}
   cases op; simp
 
 theorem footprintNamesTable : Full.all.all footprintNamesOk = true := by
-  sorry -- DS-T8 (via footprintOf_names; checked true by #eval)
+  have h' := List.all_eq_true.1 footprintNamesTable'
+  refine List.all_eq_true.2 fun op hop => ?_
+  have h1 := h' op hop
+  unfold footprintNamesOk' at h1
+  unfold footprintNamesOk OpSem.footprint
+  cases hh : op.handler? with
+  | none => rfl
+  | some hi =>
+    simp only [Option.bind]
+    cases hf : OpSem.footprintOf hi.kind hi.params with
+    | none => rfl
+    | some fp =>
+      obtain ⟨hn, ha⟩ := footprintOf_names hf
+      have hl := List.all_eq_true.1 (footprintOf_lenExt hf)
+      simp only [hh, namesOk, Bool.and_eq_true] at h1
+      obtain ⟨⟨hnd, hL⟩, hA⟩ := h1
+      have hL' := List.all_eq_true.1 hL
+      simp only [Bool.and_eq_true]
+      refine ⟨⟨hnd, List.all_eq_true.2 fun a ha' => ?_⟩, by rw [ha]; exact hA⟩
+      have hm : (a.opnd, extentNames a.extent) ∈ namesOf hi.kind := by
+        rw [← hn]; exact List.mem_map_of_mem ha'
+      have h2 := hL' _ hm
+      simp only [Bool.and_eq_true] at h2 ⊢
+      exact ⟨⟨h2.1, h2.2⟩, hl a ha'⟩
 
 /-- What `opndRanges` reads covers stays covered. -/
 theorem opndStep_keep (f : Nat) (isCall : Bool) (eb : Nat) {i : Nat} (hi : i < f)
@@ -3739,13 +3785,103 @@ theorem reduced_handler_inline {op : Reduced.Opcode} {f : Full.Opcode} (h : op.f
   rw [h] at this
   simpa [hh] using this
 
-/-- **Open (DS-T8)**: Lean's `classOf` (by mnemonic) recognises every opcode Rust's
-`has_inline` marks. Needs the mnemonics as characters (`Full.mnemonicChars`, not yet tied to
-`Full.Opcode.mnemonic` in Lean) and `dsClassOfL` over them; both compare Strings in the
-kernel, so not done by `decide +kernel` here. -/
+/-- `op` has no inline form, or `dsClassOfL` (`classOf` on characters) recognises its mnemonic
+characters. -/
+def inlineClassOk (op : Full.Opcode) : Bool :=
+  !op.hasInline || match Full.mnemonicChars[op.val.toNat]? with
+    | some cs => (dsClassOfL cs).isSome
+    | none => false
+
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 0 in
+theorem inlineClassTable_0 : (opsIn 0 100).all inlineClassOk = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 0 in
+theorem inlineClassTable_100 : (opsIn 100 100).all inlineClassOk = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 0 in
+theorem inlineClassTable_200 : (opsIn 200 100).all inlineClassOk = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 0 in
+theorem inlineClassTable_300 : (opsIn 300 100).all inlineClassOk = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 0 in
+theorem inlineClassTable_400 : (opsIn 400 100).all inlineClassOk = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 0 in
+theorem inlineClassTable_500 : (opsIn 500 100).all inlineClassOk = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 0 in
+theorem inlineClassTable_600 : (opsIn 600 100).all inlineClassOk = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 0 in
+theorem inlineClassTable_700 : (opsIn 700 100).all inlineClassOk = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 0 in
+theorem inlineClassTable_800 : (opsIn 800 100).all inlineClassOk = true := by
+  decide +kernel
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 0 in
+theorem inlineClassTable_900 : (opsIn 900 5).all inlineClassOk = true := by
+  decide +kernel
+theorem inlineClassTable : Full.all.all inlineClassOk = true := by
+  rw [all_eq_opsIn]
+  have h1 : (opsIn 0 200).all inlineClassOk = true :=
+    all_opsIn_append (m := 100) (n := 100) rfl inlineClassTable_0 inlineClassTable_100
+  have h2 : (opsIn 0 300).all inlineClassOk = true :=
+    all_opsIn_append (m := 200) (n := 100) rfl h1 inlineClassTable_200
+  have h3 : (opsIn 0 400).all inlineClassOk = true :=
+    all_opsIn_append (m := 300) (n := 100) rfl h2 inlineClassTable_300
+  have h4 : (opsIn 0 500).all inlineClassOk = true :=
+    all_opsIn_append (m := 400) (n := 100) rfl h3 inlineClassTable_400
+  have h5 : (opsIn 0 600).all inlineClassOk = true :=
+    all_opsIn_append (m := 500) (n := 100) rfl h4 inlineClassTable_500
+  have h6 : (opsIn 0 700).all inlineClassOk = true :=
+    all_opsIn_append (m := 600) (n := 100) rfl h5 inlineClassTable_600
+  have h7 : (opsIn 0 800).all inlineClassOk = true :=
+    all_opsIn_append (m := 700) (n := 100) rfl h6 inlineClassTable_700
+  have h8 : (opsIn 0 900).all inlineClassOk = true :=
+    all_opsIn_append (m := 800) (n := 100) rfl h7 inlineClassTable_800
+  have h9 : (opsIn 0 905).all inlineClassOk = true :=
+    all_opsIn_append (m := 900) (n := 5) rfl h8 inlineClassTable_900
+  exact h9
+
+/-- Lean's `classOf` (by mnemonic) recognises every opcode Rust's `has_inline` marks: by
+`inlineClassTable` on the mnemonic characters (`mnemonic_chars`, `dsClassOfL_eq`). -/
 theorem hasInline_classOf {f : Full.Opcode} (h : f.hasInline = true) :
     (Asm.classOf f).isSome = true := by
-  sorry -- DS-T8 (classOf vs has_inline; String link)
+  have hlt : f.val.toNat < Full.count := by
+    refine Classical.byContradiction fun hn => ?_
+    have hsz : Asm.asmInfos.size = Full.count := by decide +kernel
+    unfold Full.Opcode.hasInline Full.Opcode.asm at h
+    rw [getElem!_neg Asm.asmInfos f.val.toNat (by omega)] at h
+    exact absurd h (by decide)
+  have hmem : f ∈ Full.all := by
+    unfold Full.all
+    refine List.mem_map.2 ⟨f.val.toNat, List.mem_range.2 hlt, ?_⟩
+    cases f; simp
+  have ht := List.all_eq_true.1 inlineClassTable f hmem
+  unfold inlineClassOk at ht
+  have ha : Full.all[f.val.toNat]? = some f := by
+    unfold Full.all
+    rw [List.getElem?_map, List.getElem?_range hlt]
+    cases f; simp
+  have e := congrArg (fun l => l[f.val.toNat]?) Ryo.Proofs.Inline.mnemonic_chars
+  cases hc : Full.mnemonicChars[f.val.toNat]? with
+  | none => simp [h, hc] at ht
+  | some cs =>
+    simp [List.getElem?_map, ha, hc] at e
+    unfold Asm.classOf
+    rw [e, ← dsClassOfL_eq]
+    simpa [h, hc] using ht
 
 /-- A non-inline native has no footprint. -/
 theorem native_footprint_none {op : Reduced.Opcode} {f : Full.Opcode} (hf : op.full = some f)

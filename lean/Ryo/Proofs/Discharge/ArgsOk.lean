@@ -137,15 +137,17 @@ theorem argsOk_proto (hD : Decodes S code relocs rodata callSites dropped scopes
       S.r.protos.toList[j].ops = [.slot d, .imm (BitVec.ofNat 64 a.word)] ∧
       S.r.protos.toList[j].handler = none ∧
       ArgReg.of? (BitVec.ofNat 64 a.word).toNat true = some a ∧ (S.c.mode.pe → a.index < 4) := by
-  have it := hD.iters j hj
-  generalize S.r.protos.toList[j] = pr at hop it ⊢
-  generalize S.cache (j + 1) = c1 at it
+  obtain ⟨fr, q0, p', ca', dr', hfm, hpq, it, -⟩ := hD.iterAt j hj
+  have hpr : S.r.protos.toList[j] = q0 := by
+    rcases hpq with h | h
+    · exact h
+    · rw [h]; refine S.fixResume_of_ne ?_
+      rw [← (S.fixResume_keep q0).1, ← h, hop]; decide
+  rw [hpr] at hop ⊢
   generalize S.cache j = c0 at it
   generalize S.args j = a0 at it
   generalize S.start j = s0 at it
-  generalize S.start (j + 1) = s1 at it
   generalize S.dr j = d0 at it
-  generalize S.dr (j + 1) = d1 at it
   cases it with
   | empty _ hin =>
     exact absurd (by simpa using hop) (argsOk_inline_ne hInl hin)
@@ -153,6 +155,7 @@ theorem argsOk_proto (hD : Decodes S code relocs rodata callSites dropped scopes
     have hq : q.op = .arg := hop
     cases hpr with
     | arg h =>
+      rw [hfm] at h
       obtain ⟨a, d, hq, hs, hi, hofs, -, -, hpe⟩ := argInsn_bounds h
       subst hq
       have hw : (BitVec.ofNat 64 a.word).toNat = a.word := by

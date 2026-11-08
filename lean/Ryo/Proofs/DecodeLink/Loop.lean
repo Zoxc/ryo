@@ -1181,7 +1181,9 @@ theorem readParts_pos {fr : Frame} {ro : ByteArray} {callSites : Array CallSite}
   obtain ⟨-, rfl⟩ := expect_ok h4
   split at h
   · obtain ⟨-, rfl⟩ := pure_ok h; rw [e2]
-  · obtain ⟨⟨rp, rpd⟩, c5, h5, h⟩ := bind_ok h
+  · obtain ⟨u, c4', h4', h⟩ := bind_ok h
+    obtain ⟨-, rfl⟩ := expect_ok h4'
+    obtain ⟨⟨rp, rpd⟩, c5, h5, h⟩ := bind_ok h
     obtain ⟨-, rfl⟩ := pure_ok h
     unfold readRegion at h5
     obtain ⟨u, c6, h6, h5⟩ := bind_ok h5

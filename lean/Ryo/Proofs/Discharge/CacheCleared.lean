@@ -12,7 +12,8 @@ decoder used is empty at branch targets and landing pads) from the Lean-only che
   (`inlineInsn` reads only opcodes with an inline form, `classOf_of_mem`; `argInsn` only `arg`).
 - `Hyps.cacheCleared`: `targets` is `Hyps.cacheTargets`; at a pad, the cache used is empty at a
   target (`Setup.used`), at instruction 0 (`Decodes.cache0`), or after an instruction that
-  `clearsCache` (`Decodes.iters`, `iter_clears`).
+  `clearsCache` (`Decodes.iterAt`, `iter_clears`; the region's first instruction by
+  `Decodes.regionAt`).
 -/
 import Ryo.Proofs.DSWork.Boundary
 import Ryo.Vm.CacheClearedCheck
@@ -229,8 +230,18 @@ theorem Hyps.cacheCleared (H : Hyps S)
           | some q =>
             rw [hq] at hp
             obtain ⟨hj, hqe⟩ := Array.getElem?_eq_some_iff.1 hq
-            have hit := hD.iters j (by simpa using hj)
-            simp only [Array.getElem_toList] at hit
-            exact iter_clears hit (by rw [hqe]; exact hp)
+            have hjl : j < S.r.protos.toList.length := by simpa using hj
+            by_cases hlast : S.c.inRegion j = false ∧ S.c.inRegion (j + 1) = true
+            · exact hD.cache_regionStart hlast.1 hlast.2
+            obtain ⟨fr, q0, p', ca', dr', hfm, hpq, hit, hend⟩ := hD.iterAt j hjl
+            have hca : ca' = S.cache (j + 1) := (hend (not_last_cases hlast)).2.1
+            have hop : q0.op = q.op := by
+              have e : S.r.protos.toList[j] = q := by simp [hqe]
+              rcases hpq with h | h
+              · rw [← h, e]
+              · rw [← (S.fixResume_keep q0).1, ← h, e]
+            have hc0 : clearsCache q0 = true := by
+              unfold clearsCache at hp ⊢; rw [hop]; exact hp
+            rw [← hca, iter_clears hit hc0, hfm]
 
 end Ryo.Proofs.DecodeSound

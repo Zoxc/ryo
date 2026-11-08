@@ -23,6 +23,142 @@ import Ryo.Proofs.DeadStore.KeptRead
 import Ryo.Proofs.DeadStore.PtrLive
 import Ryo.Proofs.DeadStore.DropForm
 
+/-! ### `dinline_pre_apart`'s pieces (DS-T9): the order of an emitted sequence's items -/
+
+namespace Ryo.Proofs.CacheStep
+
+open Ryo.Spec Ryo.Vm Ryo.Vm.OpSem Ryo.X86 Ryo.Vm.Asm Ryo.Proofs.Inline Ryo.Proofs.Scope
+  Ryo.Proofs.Step Ryo.Proofs.RegCache
+
+/-- `y` comes before `x` in `l`. -/
+def Before (l : List Item) (y x : Item) : Prop := ∃ pre post, l = pre ++ x :: post ∧ y ∈ pre
+
+theorem before_cons {a y x : Item} {l : List Item} (h : Before (a :: l) y x) :
+    (y = a ∧ x ∈ l) ∨ Before l y x := by
+  obtain ⟨pre, post, e, hy⟩ := h
+  cases pre with
+  | nil => cases hy
+  | cons p pre =>
+    simp only [List.cons_append, List.cons.injEq] at e
+    obtain ⟨rfl, rfl⟩ := e
+    rcases List.mem_cons.1 hy with rfl | hy'
+    · exact .inl ⟨rfl, List.mem_append_right _ (List.mem_cons.2 (.inl rfl))⟩
+    · exact .inr ⟨pre, post, rfl, hy'⟩
+
+theorem before_nil {y x : Item} (h : Before [] y x) : False := by
+  obtain ⟨pre, post, e, -⟩ := h
+  cases pre <;> simp at e
+
+theorem before_cons_of {a y x : Item} {l : List Item} (h : Before l y x) : Before (a :: l) y x := by
+  obtain ⟨pre, post, e, hy⟩ := h
+  subst e
+  exact ⟨a :: pre, post, rfl, List.mem_cons_of_mem _ hy⟩
+
+/-- `EmitRel` at a split of its output: the item there and those before have their sources at
+a split of the input. -/
+theorem EmitRel.split {xr : Reg} (pre : List Item) : ∀ {es its : List Item} {x : Item}
+    {post : List Item}, EmitRel xr es its → es = pre ++ x :: post →
+    ∃ pre' x' post', its = pre' ++ x' :: post' ∧ EmitRel xr pre pre' ∧
+      (x = ren xr x' ∨ ∃ i : Nat, x = withRm (ren xr x') (.reg pool[i]!)) := by
+  induction pre with
+  | nil =>
+    intro es its x post h e
+    subst e
+    cases h with
+    | cons he _ => exact ⟨[], _, _, rfl, .nil, he⟩
+  | cons a pre ih =>
+    intro es its x post h e
+    subst e
+    cases h with
+    | cons he hr =>
+      obtain ⟨pre', x', post', h1, h2, h3⟩ := ih hr rfl
+      exact ⟨_ :: pre', x', post', by simp [h1], .cons he h2, h3⟩
+
+theorem EmitRel.mem' {xr : Reg} {es its : List Item} (h : EmitRel xr es its) {y : Item}
+    (hy : y ∈ es) :
+    ∃ y' ∈ its, (y = ren xr y' ∨ ∃ i : Nat, y = withRm (ren xr y') (.reg pool[i]!)) := by
+  revert hy
+  induction h with
+  | nil => intro hy; cases hy
+  | @cons e it es its he _ ih =>
+    intro hy
+    rcases List.mem_cons.1 hy with rfl | hy'
+    · exact ⟨it, List.mem_cons.2 (.inl rfl), he⟩
+    · obtain ⟨y', h1, h2⟩ := ih hy'
+      exact ⟨y', List.mem_cons_of_mem _ h1, h2⟩
+
+/-- What `emit` makes of a frame store: a frame store at the same place, from `rcx` if the
+source's is. -/
+theorem rel_st_frame {xr : Reg} {e : Item} {w : W} {r : Reg} {d : BitVec 32}
+    (h : e = ren xr (.st w r (M.frame d)) ∨
+      ∃ i : Nat, e = withRm (ren xr (.st w r (M.frame d))) (.reg pool[i]!)) :
+    ∃ r2, e = .st w r2 (M.frame d) ∧ (r = .rcx → r2 = .rcx) := by
+  rcases h with rfl | ⟨i, rfl⟩ <;> exact ⟨_, rfl, fun hr => by subst hr; rfl⟩
+
+/-- A store not from `rcx`. -/
+def isStNR (it : Item) : Bool :=
+  match it with
+  | .st _ r _ => r != .rcx
+  | _ => false
+
+/-- No possible frame writer before a store not from `rcx`. -/
+def preNR : List Item → Bool
+  | [] => true
+  | y :: l => (!pw y || !(l.any isStNR)) && preNR l
+
+theorem preNR_spec : ∀ (pre : List Item) {x : Item} {post : List Item},
+    preNR (pre ++ x :: post) = true → isStNR x = true → ∀ y ∈ pre, pw y = false
+  | [], _, _, _, _, y, hy => by cases hy
+  | a :: pre, x, post, h, hx, y, hy => by
+    simp only [List.cons_append, preNR, Bool.and_eq_true, Bool.or_eq_true,
+      Bool.not_eq_true'] at h
+    rcases List.mem_cons.1 hy with rfl | hy'
+    · rcases h.1 with h1 | h1
+      · exact h1
+      · exfalso
+        have : (pre ++ x :: post).any isStNR = true := List.any_eq_true.2 ⟨x, by simp, hx⟩
+        rw [this] at h1
+        cases h1
+    · exact preNR_spec pre h.2 hx y hy'
+
+/-- (DS-T9) An overflow op's sequence: no frame writer before its result store (the only store
+not from `rcx`). -/
+theorem seq_preNR {T : Type} {cls : Class} {ops : List (R.Opnd T)} {cand : List Item}
+    {br : Option Cond} (h : sequence cls ops = some (cand, br)) (hc : isOvf cls = true) :
+    preNR cand = true := by
+  cases cls <;> simp only [isOvf, Bool.false_eq_true] at hc
+  all_goals seq_open0
+  all_goals rfl
+
+/-- (DS-T9) An overflow op's only store from `rcx` is its flag store `mov [o], cl`. -/
+theorem seq_ovf_rcx {T : Type} {cls : Class} {ops : List (R.Opnd T)} {cand : List Item}
+    {br : Option Cond} (h : sequence cls ops = some (cand, br)) (hc : isOvf cls = true)
+    {w : W} {m : M} (hx : Item.st w .rcx m ∈ cand) :
+    ∃ s, ops[1]? = some (.slot s) ∧ w = .b ∧ m = M.frame s := by
+  cases cls <;> simp only [isOvf, Bool.false_eq_true] at hc
+  all_goals seq_open0
+  all_goals simp [flagSeq, Asm.ld, Asm.st, Asm.C, Asm.R] at hx
+  all_goals first
+    | exact ⟨_, ‹_›, hx⟩
+    | (obtain ⟨rfl, rfl⟩ := hx; exact ⟨_, ‹_›, rfl, rfl⟩)
+
+/-- (DS-T9) `mov128`'s sequence: the high halves, then the low ones. -/
+theorem seq_mov128 {T : Type} {ops : List (R.Opnd T)} {cand : List Item} {br : Option Cond}
+    (h : sequence .mov128 ops = some (cand, br)) :
+    ∃ a b : BitVec 32, b.toInt + 8 < 2 ^ 31 ∧
+      cand = [Asm.ld .q (M.frame a), .ld .q false Asm.C (M.frame (a + 8)),
+        .st .q Asm.C (M.frame (b + 8)), Asm.st .q (M.frame b)] := by
+  seq_open0
+  all_goals
+    have hg := ‹¬((_ || _) = true)›
+    simp only [Bool.or_eq_true, decide_eq_true_eq, not_or, M.frame, Int.not_le,
+      ge_iff_le] at hg
+    refine ⟨_, _, ?_, rfl⟩
+    simp only [M.frame] at hg ⊢
+    omega
+
+end Ryo.Proofs.CacheStep
+
 namespace Ryo.Proofs.DeadStore
 
 open Ryo.Spec Ryo.Vm Ryo.Vm.R Ryo.X86 Ryo.Vm.Asm Ryo.Proofs.DecodeSound Ryo.Proofs.DecodeLink
@@ -518,15 +654,17 @@ theorem args_of_argOp (hD : Decodes S code relocs rodata callSites dropped scope
     (H : Hyps S) {j : Nat} (hj : j < S.r.protos.toList.length)
     (hop : S.r.protos.toList[j].op = .arg) : S.args j = true := by
   have hInl := H.inlineOk
-  have it := hD.iters j hj
-  generalize S.r.protos.toList[j] = pr at hop it
-  generalize S.cache (j + 1) = c1 at it
+  obtain ⟨fr, q0, p', ca', dr', hfm, hpq, it, -⟩ := hD.iterAt j hj
+  have hpr0 : S.r.protos.toList[j] = q0 := by
+    rcases hpq with h | h
+    · exact h
+    · rw [h]; refine S.fixResume_of_ne ?_
+      rw [← (S.fixResume_keep q0).1, ← h, hop]; decide
+  rw [hpr0] at hop
   generalize S.cache j = c0 at it
   generalize ha : S.args j = a0 at it
   generalize S.start j = s0 at it
-  generalize S.start (j + 1) = s1 at it
   generalize S.dr j = d0 at it
-  generalize S.dr (j + 1) = d1 at it
   cases it with
   | empty _ hin =>
     exact absurd (by simpa using hop) (argsOk_inline_ne hInl hin)
@@ -1261,12 +1399,65 @@ theorem dinline_tail {oc : Option (Cert S)} (DH : DHyps S oc) {k : Nat} {cache c
   rw [e] at ht
   exact tailOk_ripFree S.ctx (CacheStep.tailK_spec pre ht (by rw [hf]; rfl) it hit)
 
-/-- **Open** (DS-T9): the items before the consumed dropped store write none of its bytes. Per
-class: they write no frame byte, but `mov128`'s high half before its low half (apart:
-`[s + 8, s + 16)` against `[s, s + 8)`) and an overflow op's result store before its flag
-store (never the dropped one: `flagApart`, as in `dropForm_flag`). -/
+/-- A slot operand of the mapped operands is one of the operands. -/
+theorem opnd_slot_of_map {T U : Type} {f : T → U} {ops : List (R.Opnd T)} {s : BitVec 32}
+    (h : (ops.map (opndMap f))[1]? = some (.slot s)) : ops[1]? = some (.slot s) := by
+  rw [List.getElem?_map] at h
+  cases hv : ops[1]? with
+  | none => rw [hv] at h; cases h
+  | some v =>
+    rw [hv] at h
+    cases v <;> simp [opndMap] at h ⊢
+    all_goals exact h
+
+/-- An overflow op's flag store `mov [o], cl` is never a dropped store
+(`droppedFormOk_flagApart`, as in `dropForm_flag`). -/
+theorem flag_not_dropped (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    (C : Cert S) {k p : Nat} {cache : Cache} {q : Proto} {c' : Cursor} {cache' : Cache}
+    {dr' : List DroppedStore} (hP : ProtoFacts S k p q c' cache')
+    (hr : (inlineInsn cache (S.dr k) true).run (atPos S.body p) =
+      .ok (some (q, cache', dr'), c'))
+    {ds : List DroppedStore} (hds : S.dr k = ds ++ dr') {d : DroppedStore} (hd : d ∈ ds)
+    {fo : BitVec 32} (hde : d.item = .st .b .rcx (X86.M.frame fo))
+    (hfs0 : Frame.flagSlot S.c.d k = some fo) : False := by
+  obtain ⟨_, _, _, pre, _, _, hpre, hcons, hne, hdit, _, _⟩ := inlineInsn_consumed hr
+  have hdp : ds = pre := List.append_cancel_right (hds.symm.trans hpre)
+  have hd' : d ∈ pre := hdp ▸ hd
+  clear hd hds hdp
+  have hk := dropForm_mem_dropped hD hP (hne (List.ne_nil_of_mem hd'))
+  obtain ⟨sl, n, hst, hfw⟩ := dropForm_agree hD C hP hr hpre hk d hd'
+  have hfe : Asm.frameWrite (Item.st .b .rcx (X86.M.frame fo)) = some (X86.M.frame fo, 1) := by
+    simp [Asm.frameWrite, X86.M.frame, Ryo.X86.W.bits]
+  rw [hde, hfe] at hfw
+  simp only [Option.some.injEq, Prod.mk.injEq, X86.M.frame, X86.M.mk.injEq, true_and] at hfw
+  obtain ⟨rfl, rfl⟩ := hfw
+  rcases droppedFormOk_flagApart (C.hform k hk) hst hfs0 with hap | ⟨w', src, m, hdk, hsrc⟩
+  · omega
+  · obtain ⟨hdi0, hco0⟩ := dropForm_at hD hP.lt
+    obtain ⟨p1, counter, hpk⟩ := hP.proto
+    have hpk' : S.r.protos[k]'hP.lt = { q with pos := p1, counter } := by
+      rw [Array.getElem?_eq_getElem hP.lt] at hpk; exact Option.some.inj hpk
+    rw [hpk'] at hdi0 hco0
+    have hq : q.droppedItem = some (.st w' src m) := Option.some.inj (hdi0.symm.trans hdk)
+    obtain ⟨d1, hd1, hx⟩ := hdit _ hq
+    have hlen : pre.length = 1 := hcons.symm.trans (dropForm_consumed_one hD C hP hk)
+    obtain ⟨d0, rfl⟩ : ∃ d0, pre = [d0] := by
+      rcases pre with _ | ⟨d0, _ | ⟨d2, tl⟩⟩
+      · simp at hlen
+      · exact ⟨d0, rfl⟩
+      · simp only [List.length_cons] at hlen; omega
+    rw [List.mem_singleton] at hd' hd1
+    subst hd' hd1
+    rw [hde] at hx
+    cases hx
+    exact hsrc rfl
+
+/-- The items before the consumed dropped store write none of its bytes. Per class: they write
+no frame byte (`preB`), but `mov128`'s high half before its low half (apart: `[s + 8, s + 16)`
+against `[s, s + 8)`) and an overflow op's result store before its flag store (`preNR`: the
+flag store is never the dropped one, `flag_not_dropped`). -/
 theorem dinline_pre_apart (hD : Decodes S code relocs rodata callSites dropped scopes mode)
-    {oc : Option (Cert S)} (DH : DHyps S oc) {k p : Nat} {cache : Cache} {q : Proto}
+    (H : Hyps S) {oc : Option (Cert S)} (DH : DHyps S oc) {k p : Nat} {cache : Cache} {q : Proto}
     {c' : Cursor} {cache' : Cache} {dr' : List DroppedStore} (hP : ProtoFacts S k p q c' cache')
     (hr : (inlineInsn cache (S.dr k) true).run (atPos S.body p) =
       .ok (some (q, cache', dr'), c'))
@@ -1275,12 +1466,128 @@ theorem dinline_pre_apart (hD : Decodes S code relocs rodata callSites dropped s
     ∀ ds, S.dr k = ds ++ dr' → ∀ (pre : List Item) (d : DroppedStore) (post : List Item),
       out = pre ++ d.item :: post → d ∈ ds → ∀ it ∈ pre, ∀ o, Writes it o →
         ¬ Writes d.item o := by
-  intro ds hds pre d post e hd it hit o hw _
-  obtain ⟨cls, -, hseq⟩ := decodeInline_spec hdi
+  intro ds hds pre d post e hd it hit o hw hwd
+  obtain ⟨cls, hmem, hseq⟩ := decodeInline_spec hdi
   by_cases hc : cls = .mov128 ∨ CacheStep.isOvf cls = true
   · -- `mov128`: the high half `[s + 8, s + 16)` before the low `[s, s + 8)`; overflow ops: the
     -- result store before the flag store, never the consumed one (`flagApart`)
-    sorry -- DS-T9 (`mov128`, overflow ops)
+    obtain ⟨xr, rest, -, hrest, hrel⟩ := CacheStep.emit_rel cache cand
+    simp only [hemit] at hrel
+    obtain ⟨pre', x', post', hsplit, hpre', hx'⟩ := CacheStep.EmitRel.split pre hrel e
+    obtain ⟨it', hit', hrit⟩ := CacheStep.EmitRel.mem' hpre' hit
+    obtain ⟨w, r, off, hf⟩ := DH.forms k d (by rw [hds]; exact List.mem_append_left _ hd)
+    have hpw : CacheStep.pw it' = true := by
+      obtain ⟨m, n, hfw, -, -⟩ := hw
+      exact CacheStep.pw_emit hrit (CacheStep.pw_of_fw (by simp [hfw]))
+    have hsx : CacheStep.isStB x' = true := by
+      rw [← CacheStep.isStB_emit hx', hf] <;> rfl
+    rcases hc with rfl | hov
+    · -- `mov128`
+      obtain ⟨a, b, hb, hcand⟩ := CacheStep.seq_mov128 hseq
+      have hB4 : CacheStep.Before cand it' x' := by
+        have hB : CacheStep.Before rest it' x' := ⟨pre', post', hsplit, hit'⟩
+        rcases hrest with h0 | ⟨w0, m0, h0⟩
+        · rw [← h0]; exact hB
+        · rw [h0]; exact CacheStep.before_cons_of hB
+      rw [hcand] at hB4
+      rcases CacheStep.before_cons hB4 with ⟨rfl, -⟩ | hB3
+      · simp [CacheStep.pw, Asm.ld] at hpw
+      rcases CacheStep.before_cons hB3 with ⟨rfl, -⟩ | hB2
+      · simp [CacheStep.pw] at hpw
+      rcases CacheStep.before_cons hB2 with ⟨rfl, hx⟩ | hB1
+      · rw [List.mem_singleton] at hx
+        subst hx
+        have hx'' : d.item = ren xr (.st .q Asm.R (X86.M.frame b)) ∨
+            ∃ i : Nat, d.item = withRm (ren xr (.st .q Asm.R (X86.M.frame b))) (.reg pool[i]!) :=
+          hx'
+        obtain ⟨r2, hit2, -⟩ := CacheStep.rel_st_frame hrit
+        obtain ⟨r3, hd3, -⟩ := CacheStep.rel_st_frame hx''
+        obtain ⟨m, n, hfw, h1, h2⟩ := hw
+        obtain ⟨m', n', hfw', h1', h2'⟩ := hwd
+        rw [hit2] at hfw
+        rw [hd3] at hfw'
+        simp [Asm.frameWrite, X86.M.frame, Ryo.X86.W.bits] at hfw hfw'
+        obtain ⟨rfl, rfl⟩ := hfw
+        obtain ⟨rfl, rfl⟩ := hfw'
+        have e8 : (b + 8).toInt = b.toInt + 8 := by
+          have := Ryo.Proofs.Inline.toInt_bounds b
+          rw [BitVec.toInt_add_of_not_saddOverflow]
+          · rfl
+          · simp [BitVec.saddOverflow]; omega
+        have e8' : (b + 8#32).toInt = b.toInt + 8 := e8
+        simp only at h1 h2 h1' h2'
+        omega
+      rcases CacheStep.before_cons hB1 with ⟨-, hx⟩ | hB0
+      · cases hx
+      · exact (CacheStep.before_nil hB0).elim
+    · -- overflow ops: no frame writer before the result store; the flag store isn't dropped
+      have hpn : CacheStep.preNR rest = true := by
+        have h0 := CacheStep.seq_preNR hseq hov
+        rcases hrest with h1 | ⟨w0, m0, h1⟩
+        · rw [h1]; exact h0
+        · rw [h1] at h0
+          simp only [CacheStep.preNR, Bool.and_eq_true] at h0
+          exact h0.2
+      cases hnr : CacheStep.isStNR x'
+      · -- a store from `rcx`: the flag store
+        obtain ⟨w', m', rfl⟩ : ∃ w' m', x' = .st w' .rcx m' := by
+          cases x' <;> simp [CacheStep.isStB, CacheStep.isStNR] at hsx hnr
+          subst hnr
+          exact ⟨_, _, rfl⟩
+        have hxr : Item.st w' .rcx m' ∈ rest := by
+          rw [hsplit]; exact List.mem_append_right _ (List.mem_cons.2 (.inl rfl))
+        have hxm : Item.st w' .rcx m' ∈ cand := by
+          rcases hrest with h0 | ⟨w0, m0, h0⟩
+          · rw [← h0]; exact hxr
+          · rw [h0]; exact List.mem_cons_of_mem _ hxr
+        obtain ⟨s, h1, rfl, rfl⟩ := CacheStep.seq_ovf_rcx hseq hov hxm
+        obtain ⟨r2, hd2, hr2⟩ := CacheStep.rel_st_frame hx'
+        have hde : d.item = .st .b .rcx (X86.M.frame s) := by rw [hd2, hr2 rfl]
+        cases oc with
+        | none =>
+          obtain ⟨_, _, _, pc, _, _, hpc, _, hne, _, _, _⟩ := inlineInsn_consumed hr
+          have hdp : ds = pc := List.append_cancel_right (hds.symm.trans hpc)
+          subst hdp
+          have hk := dropForm_mem_dropped hD hP (hne (List.ne_nil_of_mem hd))
+          have he := DH.none_empty rfl
+          have hsz : S.c.d.dropped.size = 0 := by simpa [Array.isEmpty] using he
+          have hnil : S.c.d.dropped.toList = [] :=
+            List.eq_nil_of_length_eq_zero (by rw [Array.length_toList]; exact hsz)
+          rw [hnil] at hk
+          cases hk
+        | some C =>
+          refine flag_not_dropped hD C hP hr hds hd hde ?_
+          -- the flag slot is `ops[1]`, the `"o"` operand
+          obtain ⟨⟨r0, -⟩, hocls⟩ := Ryo.Proofs.Inline.shapeOk_spec (H.inlineOk _ _ hmem).shape
+          obtain ⟨i, hi', hio⟩ := hP.insn
+          obtain ⟨p1, counter, hpk⟩ := hP.proto
+          have hpk' : S.r.protos[k]'hP.lt = { q with pos := p1, counter } := by
+            rw [Array.getElem?_eq_getElem hP.lt] at hpk; exact Option.some.inj hpk
+          have hio' := hio hP.lt
+          rw [hpk'] at hio'
+          unfold InsnOf at hio'
+          have hh := (inlineInsn_read_drop hr).2.1
+          simp only [hh] at hio'
+          obtain ⟨op, ops, hof, rfl, hmap⟩ := hio'
+          have hmap' : ops.map (opndMap (posOf S.r)) = q.ops := hmap
+          have hopnds : op.info.operands = Ryo.Proofs.Inline.classOperands cls :=
+            (ofFull_operands hof).trans hocls
+          have hoc : Ryo.Proofs.Inline.classOperands cls =
+              ⟨"d", .slot⟩ :: ⟨"o", .slot⟩ :: [⟨"a", .slot⟩, ⟨"b", .slot⟩] := by
+            cases cls <;> simp only [Ryo.Proofs.CacheStep.isOvf, Bool.false_eq_true] at hov <;> rfl
+          have h1m : (ops.map (opndMap (posOf S.r)))[1]? = some (.slot s) := by
+            rw [hmap']; exact h1
+          have h1' := opnd_slot_of_map h1m
+          unfold Frame.flagSlot
+          rw [hi']
+          simp only
+          rw [hopnds, hoc]
+          rcases ops with _ | ⟨a0, _ | ⟨a1, rest'⟩⟩ <;> simp at h1'
+          subst h1'
+          simp [List.zip, List.find?]
+      · have h0 := CacheStep.preNR_spec pre' (by rw [← hsplit]; exact hpn) hnr it' hit'
+        rw [h0] at hpw
+        cases hpw
   · have hp : CacheStep.preB out = true := by
       have := CacheStep.emit_preB hseq hc cache
       rw [hemit] at this
@@ -1324,7 +1631,7 @@ theorem dinline_items (hD : Decodes S code relocs rodata callSites dropped scope
       out = pre ++ d.item :: post → d ∈ ds → ∀ it ∈ pre, ∀ o, Writes it o →
         ¬ Writes d.item o) := by
   exact ⟨dinline_kept_eq hD DH hP hr hdi hemit hs.toSkip, dinline_consumed_dropped hr,
-    dinline_tail DH hdi hemit, dinline_pre_apart hD DH hP hr hdi hemit⟩
+    dinline_tail DH hdi hemit, dinline_pre_apart hD H DH hP hr hdi hemit⟩
 
 /-- `dinline_items` for a position-free `Skip` (without a frame pointer the
 kept items are placed by their sizes in memory, so the read gives no `SkipAt`). -/
@@ -1344,7 +1651,7 @@ theorem dinline_items_free (hD : Decodes S code relocs rodata callSites dropped 
       out = pre ++ d.item :: post → d ∈ ds → ∀ it ∈ pre, ∀ o, Writes it o →
         ¬ Writes d.item o) := by
   exact ⟨dinline_kept_eq hD DH hP hr hdi hemit hs, dinline_consumed_dropped hr,
-    dinline_tail DH hdi hemit, dinline_pre_apart hD DH hP hr hdi hemit⟩
+    dinline_tail DH hdi hemit, dinline_pre_apart hD H DH hP hr hdi hemit⟩
 
 /-- T6 piece 3, part (b): the kept items of inline instruction `s.pc`, run from the real
 virtual state `y` agreeing with the ghost's `yh` but at `P`, read no byte of `P`: `rbp`-based
@@ -1616,7 +1923,13 @@ theorem dinline_machine_fp (hD : Decodes S code relocs rodata callSites dropped 
     rw [S.virt_eq hsp]
     exact hrbp'
   have hfj : ∀ a, FrameInv S s' (y'.jump a) := fun a => hf'.congr rfl rfl rfl
-  have hstop : S.start (k + 1) = c'.pos := inline_nop_none (inline_read_bare hr) hP.nop
+  have hnext : s'.pc = k + 1 → S.c.inRegion (k + 1) = false := fun h => by
+    obtain ⟨p1', ctr', hpq'⟩ := hP.proto
+    have h1 := hD.nextBody hs hP.body (.step hstep) hP.lt
+      (by rw [(Array.getElem?_eq_some_iff.1 hpq').2]; exact (inline_read_sites hr : q.sites = []))
+    rwa [h] at h1
+  have hstop : S.c.inRegion (k + 1) = false → S.start (k + 1) = c'.pos := fun h =>
+    inline_nop_none (inline_read_bare hr) (hP.nop h)
   rcases hd with ⟨rfl, hdd⟩ | ⟨cond, tgt, long, hbrs, hdd⟩
   · have hpc : s'.pc = k + 1 := by
       have h : s'.pc = s.pc + 1 := hbr
@@ -1629,8 +1942,8 @@ theorem dinline_machine_fp (hD : Decodes S code relocs rodata callSites dropped 
       refine Reach.steps hsteps (.done ⟨s', y'.jump x'.rip, ds, hstep, ?_, hds, hdq, ?_⟩)
       · refine bInv_of_sp hsp ⟨hfj _, .inl ⟨?_, ?_⟩⟩
         · show x'.rip = _
-          rw [hxr', hpc, hstop]
-        · rw [hpc, hP.cache]
+          rw [hxr', hpc, hstop (hnext hpc)]
+        · rw [hpc, hP.cache (hnext hpc)]
           exact (Ryo.Proofs.RegCache.inv_jump cache' y' x'.rip).2 hcc
       · unfold XAgree
         rw [hvf']
@@ -1642,8 +1955,8 @@ theorem dinline_machine_fp (hD : Decodes S code relocs rodata callSites dropped 
     refine Reach.steps hsteps (.done ⟨s', y'.jump x'.rip, ds, hstep, ?_, hds, hdq, ?_⟩)
     · refine bInv_of_sp hsp ⟨hfj _, .inl ⟨?_, ?_⟩⟩
       · show x'.rip = _
-        rw [hxr', hpc, hstop]
-      · rw [hpc, hP.cache]
+        rw [hxr', hpc, hstop (hnext hpc)]
+      · rw [hpc, hP.cache (hnext hpc)]
         exact (Ryo.Proofs.RegCache.inv_jump cache' y' x'.rip).2 hcc
     · unfold XAgree
       rw [hvf']
@@ -1680,8 +1993,8 @@ theorem dinline_machine_fp (hD : Decodes S code relocs rodata callSites dropped 
         simp only [Bool.false_eq_true, ↓reduceIte] at hpc ⊢
         refine .inl ⟨?_, ?_⟩
         · show x1.rip + _ = _
-          rw [hpc, hs, hstop, hqm, hxr1, hbsz, ← addrAt_add]
-        · rw [hpc, hs, hP.cache]
+          rw [hpc, hs, hstop (hnext (by rw [hpc, hs])), hqm, hxr1, hbsz, ← addrAt_add]
+        · rw [hpc, hs, hP.cache (hnext (by rw [hpc, hs]))]
           exact (Ryo.Proofs.RegCache.inv_jump cache' y' _).2 hcc
       | true =>
         simp only [↓reduceIte] at hpc ⊢
@@ -1911,7 +2224,13 @@ theorem dinline_machine_nofp (hD : Decodes S code relocs rodata callSites droppe
         (fun i => if i = X86.Reg.rbp.idx then xh.reg .rbp else (y'.jump A).regs i)
       exact congrArg (fun r : Fin 16 → BitVec 64 => fun i =>
         if i = X86.Reg.rbp.idx then xh.reg .rbp else r i) hr1
-    have hstop : S.start (k + 1) = c'.pos := inline_nop_none (inline_read_bare hr) hP.nop
+    have hnext : s'.pc = k + 1 → S.c.inRegion (k + 1) = false := fun h => by
+      obtain ⟨p1', ctr', hpq'⟩ := hP.proto
+      have h1 := hD.nextBody hs hP.body (.step hstep) hP.lt
+        (by rw [(Array.getElem?_eq_some_iff.1 hpq').2]; exact (inline_read_sites hr : q.sites = []))
+      rwa [h] at h1
+    have hstop : S.c.inRegion (k + 1) = false → S.start (k + 1) = c'.pos := fun h =>
+      inline_nop_none (inline_read_bare hr) (hP.nop h)
     obtain ⟨p1, counter, hpk⟩ := hP.proto
     have hpk' : S.r.protos[k] = { q with pos := p1, counter } := by
       rw [Array.getElem?_eq_getElem hk] at hpk; exact Option.some.inj hpk
@@ -1927,8 +2246,8 @@ theorem dinline_machine_nofp (hD : Decodes S code relocs rodata callSites droppe
         simp only [Bool.false_eq_true, ↓reduceIte] at hpc ⊢
         refine .inl ⟨?_, ?_⟩
         · show (FForm.real (some F) (x.reg .rbp) xv').rip + _ = _
-          rw [hpc, hs, hstop, hqm, hxR, hbsz, ← addrAt_add]
-        · rw [hpc, hs, hP.cache]
+          rw [hpc, hs, hstop (hnext (by rw [hpc, hs])), hqm, hxR, hbsz, ← addrAt_add]
+        · rw [hpc, hs, hP.cache (hnext (by rw [hpc, hs]))]
           exact (Ryo.Proofs.RegCache.inv_jump cache' y' _).2 hcc
       | true =>
         simp only [↓reduceIte] at hpc ⊢
@@ -2117,14 +2436,20 @@ theorem dinline_machine_nofp (hD : Decodes S code relocs rodata callSites droppe
     have hpc : s'.pc = k + 1 := by
       have h : s'.pc = s.pc + 1 := hbr
       rw [h, hs]
-    have hstop : S.start (k + 1) = c'.pos := inline_nop_none (inline_read_bare hr) hP.nop
+    have hnext : s'.pc = k + 1 → S.c.inRegion (k + 1) = false := fun h => by
+      obtain ⟨p1', ctr', hpq'⟩ := hP.proto
+      have h1 := hD.nextBody hs hP.body (.step hstep) hP.lt
+        (by rw [(Array.getElem?_eq_some_iff.1 hpq').2]; exact (inline_read_sites hr : q.sites = []))
+      rwa [h] at h1
+    have hstop : S.c.inRegion (k + 1) = false → S.start (k + 1) = c'.pos := fun h =>
+      inline_nop_none (inline_read_bare hr) (hP.nop h)
     refine Reach.steps hsteps (.done ⟨s', (y'.jump xv'.rip).setReg .rbp (xh.reg .rbp), ds, hstep,
       ⟨⟨by rw [hvh]; exact hf'.congr rfl rfl rfl,
         fun h => (X86.State.reg_setReg _ .rbp (xh.reg .rbp)).trans (hfr.2 h)⟩, .inl ⟨?_, ?_⟩⟩,
       hds, hdq ds hds, ?_⟩)
     · show xv'.rip = _
-      rw [hxvr, hpc, hstop, hq]
-    · rw [hvh, hpc, hP.cache]
+      rw [hxvr, hpc, hstop (hnext hpc), hq]
+    · rw [hvh, hpc, hP.cache (hnext hpc)]
       exact (Ryo.Proofs.RegCache.inv_jump cache' y' xv'.rip).2 hcc
     · refine xAgree_of_virt hregs ?_
       rw [hvR, hvh]
@@ -2270,14 +2595,20 @@ theorem dinline_machine_nofp (hD : Decodes S code relocs rodata callSites droppe
   have hpc : s'.pc = k + 1 := by
     have h : s'.pc = s.pc + 1 := hbr
     rw [h, hs]
-  have hstop : S.start (k + 1) = c'.pos := inline_nop_none (inline_read_bare hr) hP.nop
+  have hnext : s'.pc = k + 1 → S.c.inRegion (k + 1) = false := fun h => by
+    obtain ⟨p1', ctr', hpq'⟩ := hP.proto
+    have h1 := hD.nextBody hs hP.body (.step hstep) hP.lt
+      (by rw [(Array.getElem?_eq_some_iff.1 hpq').2]; exact (inline_read_sites hr : q.sites = []))
+    rwa [h] at h1
+  have hstop : S.c.inRegion (k + 1) = false → S.start (k + 1) = c'.pos := fun h =>
+    inline_nop_none (inline_read_bare hr) (hP.nop h)
   refine Reach.steps hsteps (.done ⟨s', (y'.jump xv'.rip).setReg .rbp (xh.reg .rbp), ds, hstep,
     ⟨⟨by rw [hvh]; exact hf'.congr rfl rfl rfl,
       fun h => (X86.State.reg_setReg _ .rbp (xh.reg .rbp)).trans (hfr.2 h)⟩, .inl ⟨?_, ?_⟩⟩,
     hds, hdq ds hds, ?_⟩)
   · show xv'.rip = _
-    rw [hxvr, hpc, hstop, hq]
-  · rw [hvh, hpc, hP.cache]
+    rw [hxvr, hpc, hstop (hnext hpc), hq]
+  · rw [hvh, hpc, hP.cache (hnext hpc)]
     exact (Ryo.Proofs.RegCache.inv_jump cache' y' xv'.rip).2 hcc
   · refine xAgree_of_virt hregs ?_
     rw [hvR, hvh]
@@ -2974,7 +3305,7 @@ theorem dinsn_main (hD : Decodes S code relocs rodata callSites dropped scopes m
   -- The body, from `p2` with the cache `used k`.
   have body : ∀ (hb2 : Boundary S.rs p2), DBodySim S oc k p2 (S.used k) := fun hb2 => by
     have hPF : ProtoFacts S k p2 q c' cache' :=
-      ⟨hk, ⟨p1, counter, by simp [hk, hq]⟩, hinsn, hb2, hnop, hcache, hargs, hbody, hncl⟩
+      ⟨hk, ⟨p1, counter, by simp [hk, hq]⟩, hinsn, hb2, fun _ => hnop, fun _ => hcache, hargs, hbody, hncl⟩
     by_cases hni : InlineAt S k
     · generalize ha' : S.args k = a at hpr
       cases hpr with
@@ -3077,7 +3408,7 @@ theorem dinsn_empty (hD : Decodes S code relocs rodata callSites dropped scopes 
     exact .none (by simp [nopAfter, inline_read_bare hr])
   have hP : ProtoFacts S k (S.start k) q c' cache' :=
     ⟨hk, ⟨S.start k, q.counter, by simp [hk, hpk]⟩, hinsn,
-      boundary_start hD hf.code (prologue_dec hD) k (Nat.le_of_lt hk), hnop, hca1, hargs, hbody,
+      boundary_start hD hf.code (prologue_dec hD) k (Nat.le_of_lt hk), fun _ => hnop, fun _ => hca1, hargs, hbody,
       hncl⟩
   have hcro : CacheRegsOk S (S.cache k) := by
     have := CacheRegs.cacheRegsOk_of_decodes hD k (by rw [Array.length_toList]; exact Nat.le_of_lt hk)
@@ -3120,7 +3451,7 @@ theorem decode_sound_d (hD : Decodes S code relocs rodata callSites dropped scop
     obtain ⟨_, _, _, hbi, _⟩ := id hdi
     have hncl : NotCleanup S s.pc :=
       notCleanup_of (H.cleansLinked hD hbi.1.1.code.small) hnc
-    have hit := hD.iters s.pc (by simpa using hk)
+    have hit := hD.itersB s.pc (by simpa using hk) (hnr _)
     simp only [Array.getElem_toList] at hit
     generalize hpk : S.r.protos[s.pc] = pk at hit
     generalize hdr : S.dr s.pc = drk at hit

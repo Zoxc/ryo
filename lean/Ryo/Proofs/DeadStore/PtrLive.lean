@@ -102,38 +102,44 @@ theorem iter_items (hD : Decodes S code relocs rodata callSites dropped scopes m
     (hk : k < S.r.protos.size) :
     (∃ (d : DroppedStore) (dr : List DroppedStore) (p : Nat) (q : Proto) (c' : Cursor)
         (cache' : Cache) (dr' : List DroppedStore), S.dr k = d :: dr ∧ d.at_ = p ∧
-        p = S.start k ∧ S.r.protos[k] = { q with pos := p } ∧
+        p = S.start k ∧ (S.r.protos[k] = { q with pos := p } ∨
+          S.r.protos[k] = S.fixResume { q with pos := p }) ∧
         (inlineInsn (S.cache k) (d :: dr) true).run (atPos S.body p) =
           .ok (some (q, cache', dr'), c') ∧
         S.c.d.items[k]? = some q.items) ∨
-      ∃ (p1 p2 : Nat) (counter : Option (Nat × Nat)) (q : Proto) (c' : Cursor) (cache' : Cache)
-        (dr' : List DroppedStore), S.r.protos[k] = { q with pos := p1, counter } ∧
-        ProtoRead S.fr S.ro true S.body p2 (S.used k) (S.dr k) (S.args k) q c' cache' dr' ∧
+      ∃ (fr : Vm.Frame) (p1 p2 : Nat) (counter : Option (Nat × Nat)) (q : Proto) (c' : Cursor)
+        (cache' : Cache) (dr' : List DroppedStore),
+        (S.r.protos[k] = { q with pos := p1, counter } ∨
+          S.r.protos[k] = S.fixResume { q with pos := p1, counter }) ∧
+        ProtoRead fr S.ro true S.body p2 (S.used k) (S.dr k) (S.args k) q c' cache' dr' ∧
         S.c.d.items[k]? = some q.items := by
-  have hit := hD.iters k (by simpa using hk)
-  simp only [Array.getElem_toList] at hit
-  have hit0 := items_at hD hk
-  generalize hpk : S.r.protos[k] = pk at hit hit0
+  obtain ⟨fr, q0, p', ca', dr0', hfm, hpq, hit, -⟩ := hD.iterAt k (by simpa using hk)
+  have hpq' : S.r.protos[k] = q0 ∨ S.r.protos[k] = S.fixResume q0 := by simpa using hpq
+  have hit0 : S.c.d.items[k]? = some q0.items := by
+    rw [items_at hD hk]
+    rcases hpq' with h | h
+    · rw [h]
+    · rw [h, (S.fixResume_keep q0).2.2.2.2.2.2]
+  clear hpq
+  revert hpq' hit0
   generalize hdr : S.dr k = drk at hit
-  generalize hst1 : S.start (k + 1) = st1 at hit
-  generalize hca1 : S.cache (k + 1) = ca1 at hit
-  generalize hdr1 : S.dr (k + 1) = dr1 at hit
   cases hit with
   | empty hd hr =>
-    first
-      | exact .inl ⟨_, _, _, _, _, _, _, rfl, hd, rfl, rfl, hr, hit0⟩
-      | exact .inl ⟨_, _, _, _, _, _, _, rfl, hd, rfl, hpk, hr, hit0⟩
-      | exact .inl ⟨_, _, _, _, _, _, _, hdr, hd, rfl, rfl, hr, hit0⟩
-      | exact .inl ⟨_, _, _, _, _, _, _, hdr, hd, rfl, hpk, hr, hit0⟩
-  | main hpad hctr hpr hnop =>
-    have hp1 := posOf_eq (r := S.r) hk
-    rw [hpk] at hp1
-    try simp only at hp1
+    intro hpq' hit0
+    exact .inl ⟨_, _, _, _, _, _, _, rfl, hd, rfl, hpq', hr, hit0⟩
+  | @main p1 p2 _ _ _ _ _ counter q c' hpad hctr hpr hnop =>
+    intro hpq' hit0
+    subst hdr
+    have hp1 : posOf S.r k = p1 := by
+      rw [posOf_eq hk]
+      rcases hpq' with h | h
+      · simp [h]
+      · simp [h, (S.fixResume_keep _).2.2.1]
     have e : S.used k = (if (some S.targets).any (sortedContains · (posOf S.r k)) then
-        ({ pe := S.fr.mode.pe } : Cache) else S.cache k) := by
-      simp [Setup.used, Setup.fr, Option.any]
+        ({ pe := fr.mode.pe } : Cache) else S.cache k) := by
+      rw [hfm]; simp [Setup.used, Option.any]
     rw [← hp1, ← e] at hpr
-    exact .inr ⟨_, _, _, _, _, _, _, rfl, hpr, hit0⟩
+    exact .inr ⟨fr, _, _, _, _, _, _, _, hpq', hpr, hit0⟩
 
 end
 
@@ -221,7 +227,7 @@ theorem items_inline (hD : Decodes S code relocs rodata callSites dropped scopes
         (inlineInsn cache dr true).run cur = .ok (some (q, cache', dr'), c') ∧
         S.c.d.items[k]? = some q.items := by
   rcases iter_items hD hk with ⟨d, dr, p, q, c', cache', dr', -, -, -, -, hr, hi⟩ |
-      ⟨p1, p2, counter, q, c', cache', dr', -, hpr, hi⟩
+      ⟨fr, p1, p2, counter, q, c', cache', dr', -, hpr, hi⟩
   · exact .inr ⟨_, _, _, _, _, _, _, .inr rfl, hr, hi⟩
   · rcases protoRead_items hpr with he | ⟨cur', hr⟩
     · exact .inl (by rw [hi, he])
@@ -232,6 +238,7 @@ theorem items_inline (hD : Decodes S code relocs rodata callSites dropped scopes
 first) isn't at a branch target (`DHyps.emptyNotTarget`, `hnt`), so its `S.cache k` is `S.used k`
 (as in `Sim.dinsn_empty`). -/
 theorem items_inline_used (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    (hInl : ∀ f cls, (f, cls) ∈ inlineOps → Step.InlineOk f cls)
     {k : Nat} (hk : k < S.r.protos.size)
     (hnt : ∀ d dr, S.dr k = d :: dr → d.at_ = S.start k →
       sortedContains S.targets (S.start k) = false) :
@@ -241,9 +248,20 @@ theorem items_inline_used (hD : Decodes S code relocs rodata callSites dropped s
         S.r.protos[k].ops = q.ops ∧ S.r.protos[k].handler = q.handler ∧
         (inlineInsn (S.used k) dr true).run cur = .ok (some (q, cache', dr'), c') ∧
         S.c.d.items[k]? = some q.items := by
-  rcases iter_items hD hk with ⟨d, dr, p, q, c', cache', dr', hdr, hd, hp, hpk, hr, hi⟩ |
-      ⟨p1, p2, counter, q, c', cache', dr', hpk2, hpr, hi⟩
+  -- An inline proto isn't a `resume`, so `fixResume` keeps it.
+  have hnr : ∀ {cache cache' : Cache} {dr dr' : List DroppedStore} {cur c' : Cursor} {q : Proto},
+      (inlineInsn cache dr true).run cur = .ok (some (q, cache', dr'), c') → q.op ≠ .resume := by
+    intro cache cache' dr dr' cur c' q hr
+    obtain ⟨-, -, cand, br, out, hdi, -⟩ := inlineInsn_read_drop hr
+    obtain ⟨cls, hmem, -⟩ := decodeInline_spec hdi
+    exact (hInl _ _ hmem).notResume
+  rcases iter_items hD hk with ⟨d, dr, p, q, c', cache', dr', hdr, hd, hp, hpk0, hr, hi⟩ |
+      ⟨fr, p1, p2, counter, q, c', cache', dr', hpk0, hpr, hi⟩
   · subst hp
+    have hpk : S.r.protos[k] = { q with pos := S.start k } := by
+      rcases hpk0 with h | h
+      · exact h
+      · rw [h]; exact S.fixResume_of_ne (fun h => hnr hr h)
     have hp1 : posOf S.r k = S.start k := by rw [posOf_eq hk, hpk]
     have hused : S.used k = S.cache k := by
       have := hnt d dr hdr hd
@@ -252,7 +270,11 @@ theorem items_inline_used (hD : Decodes S code relocs rodata callSites dropped s
     exact .inr ⟨_, _, _, _, _, _, hdr.symm, by rw [hpk], by rw [hpk], by rw [hpk], hr, hi⟩
   · rcases protoRead_items hpr with he | ⟨cur', hr⟩
     · exact .inl (by rw [hi, he])
-    · exact .inr ⟨_, _, _, _, _, _, rfl, by rw [hpk2], by rw [hpk2], by rw [hpk2], hr, hi⟩
+    · have hpk2 : S.r.protos[k] = { q with pos := p1, counter } := by
+        rcases hpk0 with h | h
+        · exact h
+        · rw [h]; exact S.fixResume_of_ne (fun h => hnr hr h)
+      exact .inr ⟨_, _, _, _, _, _, rfl, by rw [hpk2], by rw [hpk2], by rw [hpk2], hr, hi⟩
 
 /-- The R instruction at `k` of a proto without a handler (an inline one): native, its opcode the
 proto's (`Opcode.full`), its operands the proto's in index form (`InsnOf`). -/
@@ -1048,7 +1070,7 @@ theorem kept_ptr_reads {S : Setup} (H : Hyps S) {P : Int → Prop}
             (∃ sy, shapeOk f .addrSymInd = true ∧ ops[1]? = some (.sym sy) ∧
               readBytes it ≤ 8 ∧ y'.ea m = yh.mem.read64 (S.ctx.addrOf (.sym sy)))) := by
   intro pre it post e y' hy m hm hb hrb0
-  rcases items_inline_used hD hpc hnt with hnil |
+  rcases items_inline_used hD H.inlineOk hpc hnt with hnil |
       ⟨dr, cur, c', q, cache', dr', hdr, hop, hops, hhd, hr, hi⟩
   · have hk0 : kept = [] := Option.some.inj (hkept.symm.trans hnil)
     subst hk0

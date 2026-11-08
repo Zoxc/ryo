@@ -1486,7 +1486,14 @@ theorem FrameSep.callApartR {Owned : BitVec 64 → Prop} {lo : BitVec 64} {F n f
     (hF : F ≤ fp) (hown : ∀ o, -(F : Int) ≤ o → o < K → ¬ Owned (fpAddr x o))
     (hsp : sp + n ≤ fp - F) :
     CallApartR Owned lo sp n st x := by
-  sorry -- PE-P8
+  intro o h1 h2 he hu hmw
+  obtain ⟨i1, i2⟩ := hs.init o he hu
+  have htop := hw.top
+  rcases hmw with hst | ⟨id, al, hg, hl, hin⟩ | how
+  · simp only [InStack, fpAddr, hb, BitVec.toNat_add, BitVec.toNat_ofInt, BitVec.toNat_ofNat] at hst
+    omega
+  · exact hs.frameApart id al o hg hl he hu h1 h2 hin
+  · exact hown o i1 i2 how
 
 /-- `answer_rel` in PE's pad region: the answer's world, no frame bytes written. -/
 theorem answer_rel_region {Owned : BitVec 64 → Prop} {lo : BitVec 64} {sp n : Nat}
@@ -1496,7 +1503,64 @@ theorem answer_rel_region {Owned : BitVec 64 → Prop} {lo : BitVec 64} {sp n : 
     Rel (s.withWorld a.world).st x' ∧ EscWF (s.withWorld a.world).st ∧
       MemRel (s.withWorld a.world).st x' ∧
       EscOnly s.st a.world.mem (s.withWorld a.world).st.mem := by
-  sorry -- PE-P8
+  have hwr : WorldRel a.world x' := hce.world
+  have hmr0 : MemRel (s.withWorld a.world).st x' := hwr
+  generalize hst0 : (s.withWorld a.world).st = st0 at hmr0 ⊢
+  have he0 : st0.escaped = s.st.escaped := by rw [← hst0]; rfl
+  have hm0 : st0.mem = a.world.mem := by rw [← hst0]; rfl
+  have hea : ∀ o, st0.escapedAt o = s.st.escapedAt o := by
+    intro o; unfold OpSem.State.escapedAt; rw [he0]
+  have hfpx : ∀ o, fpAddr x' o = fpAddr x1 o := fun o => by simp [fpAddr, hrbp]
+  have hlay : Layout st0 x' := by
+    intro e he al hal
+    rw [he0] at he; rw [hm0] at hal
+    obtain ⟨al0, hal0⟩ : ∃ al0, s.st.mem.get? e.id = some al0 :=
+      Option.isSome_iff_exists.1 (get?_isSome.2 (hr.wf.idLt e he))
+    obtain ⟨a', ha', haddr, -⟩ := hce.grows.keep e.id al0 hal0
+    rw [ha'] at hal; cases hal
+    rw [haddr, hfpx]; exact hr.rel.layout e he al0 hal0
+  have hzs : ∀ p ∈ st0.zeroSized, BitVec.ofNat 64 p.2 = fpAddr x' p.1 := by
+    intro p hp
+    have : st0.zeroSized = s.st.zeroSized := by rw [← hst0]; rfl
+    rw [this] at hp; rw [hfpx]; exact hr.rel.zeroSized p hp
+  have hfr' : ∀ o : Int, -2 ^ 63 ≤ o → o < 2 ^ 63 →
+      ∀ b, st0.byteAt o = .ok b → ByteRel b (x'.mem (fpAddr x' o)) := by
+    intro o h1 h2 b hb'
+    unfold OpSem.State.byteAt at hb'
+    cases hf : st0.escapedAt o with
+    | none =>
+      rw [hf] at hb'
+      simp only [pure, Except.pure, Except.ok.injEq] at hb'
+      have hf' : s.st.escapedAt o = none := by rw [← hea]; exact hf
+      have hfr0 : st0.frame o = s.st.frame o := by rw [← hst0]; rfl
+      have hb0 : s.st.byteAt o = .ok b := by
+        unfold OpSem.State.byteAt; rw [hf', ← hb', hfr0]; rfl
+      by_cases hu : s.st.frame o = .uninit
+      · rw [← hb', hfr0, hu]; trivial
+      rw [hfpx, hce.mem _ (hap o h1 h2 hf' hu)]
+      exact hr.rel.frame o h1 h2 b hb0
+    | some e =>
+      rw [hf] at hb'
+      simp only at hb'
+      split at hb'
+      · rename_i al hal
+        split at hb'
+        · cases hb'
+        · rename_i hlv
+          split at hb'
+          · rename_i b' hb2
+            cases hb'
+            have hl : al.live = true := by simpa using hlv
+            obtain ⟨hj, hjb⟩ := Array.getElem?_eq_some_iff.1 hb2
+            rw [hm0] at hal
+            have := hwr e.id al hal hl _ hj
+            rw [hjb] at this
+            rw [← addr_of_hit hlay hf (by rw [hm0]; exact hal)]
+            exact this
+          · cases hb'
+      · cases hb'
+  have hwf0 : EscWF st0 := EscWF.of_extends hr.wf he0 (by rw [hm0]; exact hce.grows)
+  exact ⟨⟨hfr', hlay, hzs⟩, hwf0, hmr0, by rw [hm0]; exact EscOnly.refl _ _⟩
 
 /-! ### Calls -/
 
@@ -1699,7 +1763,90 @@ theorem call_query_region (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.St
       x1.mem.read64 x1.rsp = x.rip + BitVec.ofNat 64 (items.map Item.size).sum ∧
       (∀ i, Saved c.mode.pe i → x1.regs i = x.regs i) ∧
       (∀ b, ¬ InStack lo x.rsp b → x1.mem b = x.mem b) := by
-  sorry -- PE-P8
+  obtain ⟨s1, parts, cal, regs, hsc, -, hc, ha, hsret, hpc', hfp', hargs', hq⟩ :=
+    CallLemmas.step_call_region hi hf hsh hreg h
+  have hk := scopes_keeps _ hsc
+  obtain ⟨hr1, hm1⟩ := ScopeMem.memRel_foldlM _ hsz hr hm hsc
+  have hS : Rel s'.st x ∧ EscWF s'.st ∧ MemRel s'.st x := by
+    rcases hsret with heq | ⟨n, dst, hw⟩
+    · rw [heq]; exact ⟨hr1.rel, hr1.wf, hm1⟩
+    · obtain ⟨hrel, hsame⟩ := rel_writeUninit hr1.rel hw
+      exact ⟨hrel, escWF_of_sameButWrites hr1.wf hsame, ScopeMem.memRel_writeUninit hm1 hw⟩
+  obtain ⟨hrel', hwf', hm'⟩ := hS
+  -- the items
+  simp only [callSeq, Option.bind_eq_bind, Option.pure_def] at hs
+  cases hh : callHead f fo with
+  | none => simp [hh] at hs
+  | some pc =>
+  obtain ⟨pre, ci⟩ := pc
+  cases hps : paramItems c.mode.pe ws with
+  | none => simp [hh, hps] at hs
+  | some ps =>
+  simp only [hh, hps, Option.bind_some, Option.some.injEq] at hs
+  subst hs
+  obtain ⟨y0, e0, m0, rs0, x0, p0, hci⟩ := head_exec ctx hh hc hr1.rel
+  have hy0b : y0.reg .rbp = x.reg .rbp := rs0 5 (by decide)
+  obtain ⟨y, e1, m1, p1, rs1, hlist, -⟩ := exec_params ctx c.mode.pe hr1.rel ws regs ps y0 ha hps
+    m0 hy0b
+  have hkeep : ∀ i : Fin 16, (i = 4 ∨ i = 5 ∨ Saved c.mode.pe i) → y.regs i = y0.regs i := by
+    intro i hi
+    refine rs1 i (fun j hj => intArg_keep hj i (.inr hi)) ?_ (.inl ?_)
+    · rcases hi with rfl | rfl | hs
+      · decide
+      · decide
+      · intro h11; subst h11; have := saved_ne hs; exact this.2.2.1 rfl
+    · rcases hi with rfl | rfl | hs
+      · decide
+      · decide
+      · exact (saved_ne hs).1
+  have hyrax : f = .callSymInd ∨ f = .callPtr → y.reg .rax = y0.reg .rax := fun hf' =>
+    rs1 0 (fun j hj => intArg_keep hj 0 (.inl rfl)) (by decide) (.inr (hrax hf'))
+  have hymem : y.mem = x.mem := m1.trans m0
+  obtain ⟨tgt, eci, htgt⟩ := hci y hymem hyrax
+  have hyrsp : y.rsp = x.rsp := by
+    show y.regs 4 = x.regs 4; rw [hkeep 4 (by simp), rs0 4 (by decide)]
+  have hyrbp : y.reg .rbp = x.reg .rbp := by
+    show y.regs 5 = x.regs 5; rw [hkeep 5 (by simp), rs0 5 (by decide)]
+  generalize hnext : y.rip + BitVec.ofNat 64 ci.size = next at eci
+  generalize hx1 : ((y.jump next).push next).jump tgt = x1 at eci
+  have hx1mem : x1.mem = y.mem.write (x.rsp - 8) 8 next.toNat := by
+    rw [← hx1, ← hyrsp]; rfl
+  have hx1rsp : x1.rsp = x.rsp - 8 := by
+    rw [← hx1, ← hyrsp]; simp [State.jump, State.push, State.setMem, State.setReg, State.rsp, State.reg]
+  have hx1regs : ∀ i : Fin 16, i ≠ 4 → x1.regs i = y.regs i := by
+    intro i hi; rw [← hx1]; simp [State.jump, State.push, State.setMem, State.setReg, hi]
+  have hx1xmm : x1.xmm = y.xmm := by rw [← hx1]; rfl
+  have hx1rip : x1.rip = tgt := by rw [← hx1]; rfl
+  have hmem : ∀ b, ¬ InStack lo x.rsp b → x1.mem b = x.mem b := by
+    intro b hb'
+    rw [hx1mem, X86.Mem.write_other _ _ _ _ _ (push_other lo x.rsp b hlo hb'), hymem]
+  have hx1rbp : x1.reg .rbp = x.reg .rbp := by
+    show x1.regs 5 = x.regs 5; rw [hx1regs 5 (by decide)]; exact hyrbp
+  obtain ⟨hrelx1, hmx1⟩ := rel_push hrel' hm' hap hmem hx1rbp
+  refine ⟨cal, regs, x1, by rw [hq, hk.pc], ?_, ⟨?_, ?_, ?_, ?_, hmx1⟩,
+    ⟨hrelx1, by rw [hx1rbp, hfp', hk.fp]; exact hr.rbp, hwf'⟩, hmx1,
+    by rw [hpc', hk.pc], by rw [hfp', hk.fp], by rw [hargs', hk.args], hx1rsp, ?_, ?_, hmem⟩
+  · rw [ArgRet.execItems_append, ArgRet.execItems_append, e0]
+    show (execItems ctx ps y0 >>= fun s1 => execItems ctx [ci] s1) = _
+    rw [e1]
+    show execItems ctx [ci] y = _
+    rw [ArgRet.execItems_cons_ok eci]; rfl
+  · rw [hx1rip]; exact htgt lo x.rsp x1.mem hmem hsym
+  · refine ArgRet.ArgsRel.congr (argsRel_of hlist) (fun i hi => ?_) (fun i _ => by rw [hx1xmm])
+    exact hx1regs _ (fun h => intArg_keep hi 4 (by simp) h.symm)
+  · rw [hx1rsp, BitVec.sub_add_cancel]
+    apply BitVec.eq_of_toNat_eq
+    simp [BitVec.toNat_ofNat]
+  · rw [List.length_replicate]
+    have := Ryo.Proofs.ArgRet.BytesRel.uninit
+      (bytesAt x1.mem (BitVec.ofNat 64 x.rsp.toNat) (c.stackSize s.pc))
+    rwa [bytesAt_length] at this
+  · rw [hx1rsp, hx1mem, ← hnext, read64_write_self]
+    rw [p1, p0]
+    simp [BitVec.add_assoc, BitVec.ofNat_add]
+  · intro i hi
+    have := saved_ne hi
+    rw [hx1regs i this.2.2.2, hkeep i (by simp [hi]), rs0 i this.1]
 
 /-- The full R step of a call that returns: `call_query` then `call_return`. -/
 theorem call_sound (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.State}

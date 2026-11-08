@@ -726,7 +726,10 @@ theorem stubsBoundary_of_decodes (hD : Decodes S code relocs rodata callSites dr
     {m : Mem} (hL : LinkOkF S.ctx m S.body S.rs S.c.mode) :
     ∀ k (hk : k < S.r.protos.size) stub back, S.r.protos[k].counter = some (stub, back) →
       Boundary S.rs stub := by
-  obtain ⟨c0, c7, tg, st, pd, hc0, hrun, hpro, hall⟩ := hD.readStubsR
+  cases hnr : regionPad mode callSites with
+  | some _ => exact hD.stubsBoundaryR (by rw [hnr]; simp) m hL
+  | none =>
+  obtain ⟨c0, c7, tg, st, pd, hc0, hrun, hpro, hall⟩ := hD.readStubsRNR hnr
   have key : c0 = atPos S.body c0.pos := by
     calc c0 = bodyCursor { code := code.data, pos := 0, fields := .relocs relocs } mode
             S.r.frameSize c0.pos := hc0

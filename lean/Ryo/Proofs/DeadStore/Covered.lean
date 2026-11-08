@@ -201,6 +201,26 @@ theorem iter_out {fr : Vm.Frame} {ro : ByteArray} {T : Array Nat} {cs : Array Ca
       · exact slotless_empty _
       · exact hs
 
+/-- `iter_out` for instruction `k` of `S` (its iteration by `Decodes.iterAt`; at the region's
+first instruction the cache is empty, `Decodes.cache_regionStart`). -/
+theorem iter_out_at (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    (k : Nat) (hk : k < S.r.protos.toList.length) :
+    Slotless (S.cache (k + 1)) ∨
+      (S.r.protos.toList[k].cacheOut = some (cacheSlots (S.cache (k + 1))) ∧
+        S.r.protos.toList[k].op ≠ .arg) ∨
+      (S.args k = true ∧ (Slotless (S.cache k) → Slotless (S.cache (k + 1)))) := by
+  by_cases hlast : S.c.inRegion k = false ∧ S.c.inRegion (k + 1) = true
+  · left; rw [hD.cache_regionStart hlast.1 hlast.2]; exact slotless_empty _
+  obtain ⟨fr, q0, p', ca', dr', -, hpq, it, hend⟩ := hD.iterAt k hk
+  have hca : ca' = S.cache (k + 1) := (hend (not_last_cases hlast)).2.1
+  subst hca
+  have hk1 : S.r.protos.toList[k].op = q0.op ∧ S.r.protos.toList[k].cacheOut = q0.cacheOut := by
+    rcases hpq with h | h
+    · rw [h]; exact ⟨rfl, rfl⟩
+    · rw [h]; exact ⟨(S.fixResume_keep q0).1, (S.fixResume_keep q0).2.2.2.2.2.1⟩
+  rw [hk1.1, hk1.2]
+  exact iter_out it
+
 /-- Through the leading `arg`s the cache is empty. -/
 theorem cache_args (hD : Decodes S code relocs rodata callSites dropped scopes mode) :
     ∀ k, k ≤ S.r.protos.toList.length → S.args k = true → Slotless (S.cache k) := by
@@ -214,7 +234,7 @@ theorem cache_args (hD : Decodes S code relocs rodata callSites dropped scopes m
     intro hk ha
     have hk' : k < S.r.protos.toList.length := by omega
     rw [hD.argsSucc k hk', Bool.and_eq_true] at ha
-    rcases iter_out (hD.iters k hk') with h1 | ⟨-, hne⟩ | ⟨-, h1⟩
+    rcases iter_out_at hD k hk' with h1 | ⟨-, hne⟩ | ⟨-, h1⟩
     · exact h1
     · exact absurd (by simpa using ha.2) hne
     · exact h1 (ih (by omega) ha.1)
@@ -251,7 +271,7 @@ theorem covered_cache (hD : Decodes S code relocs rodata callSites dropped scope
     have hj : j < S.r.protos.toList.length := by simpa using hj'
     unfold Frame.coveredAt
     simp only [Nat.add_one_ne_zero, ↓reduceIte, Nat.add_sub_cancel]
-    rcases iter_out (hD.iters j hj) with hsl | ⟨hout, -⟩ | ⟨ha, himp⟩
+    rcases iter_out_at hD j hj with hsl | ⟨hout, -⟩ | ⟨ha, himp⟩
     · exact absurd hsl hno
     · have hout' : S.r.protos[j].cacheOut = some (cacheSlots (S.cache (j + 1))) := by
         simpa using hout

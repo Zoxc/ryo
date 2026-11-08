@@ -4,6 +4,7 @@ import Ryo.Proofs.Discharge.RelocsIn
 import Ryo.Proofs.Discharge.ArgsOk
 import Ryo.Proofs.Discharge.SpDisp
 import Ryo.Proofs.DecodeSound.NoFp
+import Ryo.Proofs.DecodeSound.Region
 
 set_option linter.constructorNameAsVariable false
 
@@ -481,26 +482,31 @@ theorem arg_cache_empty (hD : Decodes S code relocs rodata callSites dropped sco
     rw [hD.argsSucc k hk', Bool.and_eq_true] at ha
     obtain ⟨hak, hop⟩ := ha
     have ih := arg_cache_empty hD H k (by omega) hak
-    have it := hD.iters k hk'
-    generalize S.r.protos.toList[k] = pr at hop it
-    generalize S.cache (k + 1) = c1 at it ⊢
+    obtain ⟨fr, q0, p', ca', dr', hfm, hpq, it, hend⟩ := hD.iterAt k hk'
+    by_cases hlast : S.c.inRegion k = false ∧ S.c.inRegion (k + 1) = true
+    · exact hD.cache_regionStart hlast.1 hlast.2
+    have hca : ca' = S.cache (k + 1) := (hend (not_last_cases hlast)).2.1
+    rw [← hca]
+    have hop0 : (q0.op == .arg) = true := by
+      rcases hpq with h | h
+      · rw [← h]; exact hop
+      · rw [← (S.fixResume_keep q0).1, ← h]; exact hop
+    clear hpq hend hca hlast
     generalize S.cache k = c0 at it ih
     subst ih
     generalize S.args k = a0 at it
     generalize S.start k = s0 at it
-    generalize S.start (k + 1) = s1 at it
     generalize S.dr k = d0 at it
-    generalize S.dr (k + 1) = d1 at it
     cases it with
     | empty _ hin =>
-      exact absurd (by simpa using hop) (arg_inline_ne H hin)
+      exact absurd (by simpa using hop0) (arg_inline_ne H hin)
     | main _ _ hpr _ =>
-      rw [show S.fr.mode.pe = S.c.mode.pe from rfl, ite_self] at hpr
+      rw [hfm, ite_self] at hpr
       cases hpr with
       | arg _ => rfl
-      | call _ _ => rfl
-      | inline _ _ hin => exact absurd (by simpa using hop) (arg_inline_ne H hin)
-      | insn _ _ _ _ => rfl
+      | call _ _ => rw [hfm]
+      | inline _ _ hin => exact absurd (by simpa using hop0) (arg_inline_ne H hin)
+      | insn _ _ _ _ => rw [hfm]
 
 theorem arg_used_empty (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     (H : Hyps S) {k : Nat} (hk : k < S.r.protos.size) (ha : S.args k = true) : S.used k = { pe := S.c.mode.pe } := by
@@ -618,10 +624,12 @@ theorem bodySim_argB (hD : Decodes S code relocs rodata callSites dropped scopes
     obtain ⟨b, hb⟩ := Option.isSome_iff_exists.mp hofs
     rw [hb, of_word_eq hs32 hi24 hb]
   have hargsk := hP.args
-  have hcache := hP.cache
+  have hb1 : S.c.inRegion (k + 1) = false := ProtoFacts.inRegion_next hD hP (by
+    rw [hq]; simp [Proto.fallsThrough, arg_shape])
+  have hcache := hP.cache hb1
   subst hq
   have hstop : S.start (k + 1) = c'.pos := by
-    have hn := hP.nop
+    have hn := hP.nop hb1
     generalize S.start (k + 1) = e at hn ⊢
     generalize c'.pos = e0 at hn ⊢
     cases hn with

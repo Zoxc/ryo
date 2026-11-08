@@ -5,6 +5,7 @@ import Ryo.Proofs.Discharge.PadsLinked
 import Ryo.Proofs.Discharge.CacheCleared
 import Ryo.Proofs.DSWork.Virt
 import Ryo.Proofs.Discharge.SpDisp
+import Ryo.Proofs.DecodeSound.RegionEntry
 
 set_option linter.constructorNameAsVariable false
 
@@ -650,7 +651,8 @@ theorem isl_vstart (hD : Decodes S code relocs rodata callSites dropped scopes m
       (∀ x1, execItems S.ctx (Island.islandPre S.c.mode isl o) xv = .ok x1 →
         x1.reg .rbp = xv.reg .rbp → Steps S.ctx xr (x1.setReg .rbp r)) ∧
       (∀ (y : X86.State) (s' : R.RState), y.rsp = xv.rsp → y.reg .rbp = r →
-        FrameInv S s' (y.setReg .rbp (xv.reg .rbp)) → FrameInvR S s' y) := by
+        FrameInv S s' (y.setReg .rbp (xv.reg .rbp)) → FrameInvR S s' y) ∧
+      (S.body.spFrame = none → xv = xr ∧ r = xr.reg .rbp) := by
   cases hsp : S.body.spFrame with
   | none =>
     have hvx : S.virt xr = xr := S.virt_eq hsp
@@ -658,7 +660,7 @@ theorem isl_vstart (hD : Decodes S code relocs rodata callSites dropped scopes m
     have hlk : LinkOk S.ctx xr.mem (atPos S.body p) S.rs :=
       ⟨hfx.code.fields, hfx.code.sorted, hfx.code.loaded, hfx.code.small, hsp⟩
     obtain ⟨hca, hend, -⟩ := hlk.dec hd hbd
-    refine ⟨xr, xr.reg .rbp, hfx, ?_, ?_, ?_⟩
+    refine ⟨xr, xr.reg .rbp, hfx, ?_, ?_, ?_, fun _ => ⟨rfl, rfl⟩⟩
     · rw [hrip, addrAt_add', hend]
     · intro x1 he hr1
       rw [← hr1, X86.State.setReg_reg_self]
@@ -678,7 +680,7 @@ theorem isl_vstart (hD : Decodes S code relocs rodata callSites dropped scopes m
     rw [hsp', setup_virt_mem] at hca
     rw [hsp'] at hend
     refine ⟨FForm.virtAt (some F) (Island.islandPre S.c.mode isl o) xr, xr.reg .rbp, ?_, ?_, ?_,
-      ?_⟩
+      ?_, fun h => by cases h⟩
     · have := hfR.1
       rw [hvx] at this
       exact this.congr rfl rfl rfl
@@ -727,6 +729,7 @@ theorem bodySim_islandB (hD : Decodes S code relocs rodata callSites dropped sco
   have hcur := noArg_insn hn hr
   subst hcur
   have hncK := hP.notClean
+  have hbodyK := hP.body
   obtain ⟨hlt, ⟨p1, ctr, hpq⟩, ⟨i, hi, hio⟩, hbd, hnop, hcache, hargs⟩ := hP
   cases hr with
   | handler _ _ _ hhh => simp only at hop; subst hop; simp [noHandler] at hhh
@@ -752,6 +755,10 @@ theorem bodySim_islandB (hD : Decodes S code relocs rodata callSites dropped sco
   subst hops'
   have hf := island_ofFull hof
   have hsh := Island.island_shape
+  have hb1 : S.c.inRegion (k + 1) = false := hD.fallBody hbodyK hi
+    (by simp only [RSucc.insnFalls, DeadStore.reduced_shape hf, hsh] <;> decide)
+  replace hnop := hnop hb1
+  replace hcache := hcache hb1
   rw [← hs] at hi
   -- The code, and the virtual state `x` the call's setup runs from (`isl_vstart`; `xr` is
   -- the real one).
@@ -760,7 +767,7 @@ theorem bodySim_islandB (hD : Decodes S code relocs rodata callSites dropped sco
   obtain ⟨hs2, hsd⟩ := island_site_read hic
   obtain ⟨-, hsite, -⟩ := (hfR.code'.atPos p).dec hsd hbd
   have hsite6 : c'.pos = site.1 + 6 := isl_site6 hq' hsite
-  obtain ⟨x, r, hfi, hripE, hsteps1, hconv⟩ := isl_vstart hD H hfR hrip hd hbd
+  obtain ⟨x, r, hfi, hripE, hsteps1, hconv, -⟩ := isl_vstart hD H hfR hrip hd hbd
   -- The scopes.
   cases hsc : (S.c.scopesAt s.pc).foldlM R.applyScope s with
   | error e =>
@@ -830,7 +837,7 @@ theorem bodySim_islandB (hD : Decodes S code relocs rodata callSites dropped sco
       (Handler.stack_off_window (by rw [hrbpN, hrspN]; omega) (by rw [hrbpN]; omega))
       (HI.allocs s x s1 hfi hsc)
   obtain ⟨x1, -, hex, hat, hrr1, -, -, -, -, hrsp1, hret1, hsv1, hmemS⟩ :=
-    Island.island_query S.ctx hi hf hsh hfi.rrel hfi.mem (hfb.scope_size _) hrspF hlo hroOps
+    Island.island_query S.ctx hi hf hsh hfi.rrel hfi.mem (hfb.scope_size _) hlo hroOps
       hroA hsym hstep hap
   have hrbp1 : x1.reg .rbp = x.reg .rbp := hat.rbp.trans hfi.rrel.rbp.symm
   -- The lends.
@@ -1102,7 +1109,502 @@ theorem bodySim_islandRB (hfp : S.c.mode.framePointer = true)
     (hP : ProtoFactsN S k p q c' { pe := S.fr.mode.pe }) (hn : NoArg S.fr S.body p a cur)
     (hr : InsnRead S.fr S.ro cur q c') (hop : q.op = .island) :
     BodySimRB S k p := by
-  sorry -- PE-P6
+  have hF32 : S.c.mode.pe = true → 32 ≤ S.F := H.peShadow
+  have HI := island_hyps hD H hF32
+  have hshF : S.c.islandShadow ≤ S.c.d.frameSize ∧ S.c.islandShadow ≤ 32 := by
+    unfold R.Code.islandShadow; split
+    · exact ⟨hF32 (by assumption), by omega⟩
+    · omega
+  have hshE : (S.c.islandShadow : Int) = Island.shadow S.c.mode.pe := rfl
+  intro s xr hs hfx hrip hbx hsafe
+  have hfR : FrameInvR S s xr := (frameInvR_iff hfp).2 hfx
+  have hcur := noArg_insn hn hr
+  subst hcur
+  obtain ⟨hlt, ⟨p1, ctr, hpq⟩, ⟨i, hi, hio⟩, hbd, hnop, hcache, hargs, hbody⟩ := hP
+  have hbodyK := hbody
+  cases hr with
+  | handler _ _ _ hhh => simp only at hop; subst hop; simp [noHandler] at hhh
+  | ret => simp only at hop; exact absurd hop (by decide)
+  | jmp => simp only at hop; exact absurd hop (by decide)
+  | unreachable _ => simp only at hop; exact absurd hop (by decide)
+  | resume => simp only at hop; exact absurd hop (by decide)
+  | dense hd =>
+    obtain ⟨w, hw, -⟩ := denseSwitch_some hd
+    rw [hw] at hop; cases w <;> exact absurd hop (by decide)
+  | @island isl o site ws c'' hic hws =>
+  -- The instruction.
+  have hpk := (Array.getElem?_eq_some_iff.1 hpq).2
+  have hio' := hpk ▸ hio hlt
+  simp only [InsnOf] at hio'
+  obtain ⟨op, ops, hof, rfl, hops⟩ := hio'
+  have hops' : ops = [.sym isl, .words ws] := by
+    rcases ops with _ | ⟨o1, _ | ⟨o2, _ | ⟨o3, l⟩⟩⟩ <;> simp at hops
+    obtain ⟨h1, h2⟩ := hops
+    cases o1 <;> simp [opndMap] at h1
+    cases o2 <;> simp [opndMap] at h2
+    subst h1 h2; rfl
+  subst hops'
+  have hf := island_ofFull hof
+  have hsh := Island.island_shape
+  have hik := hi
+  have hb1 : S.c.inRegion (k + 1) = false := hD.fallBody hbodyK hi
+    (by simp only [RSucc.insnFalls, DeadStore.reduced_shape hf, hsh] <;> decide)
+  replace hnop := hnop hb1
+  replace hcache := hcache hb1
+  rw [← hs] at hi
+  -- The code, and the virtual state `x` the call's setup runs from (`isl_vstart`; `xr` is
+  -- the real one).
+  obtain ⟨hd, -⟩ := islandCall_read hic
+  obtain ⟨-, hq', hbq⟩ := (hfR.code'.atPos p).dec hd hbd
+  obtain ⟨hs2, hsd⟩ := island_site_read hic
+  obtain ⟨-, hsite, -⟩ := (hfR.code'.atPos p).dec hsd hbd
+  have hsite6 : c'.pos = site.1 + 6 := isl_site6 hq' hsite
+  obtain ⟨x, r, hfi, hripE, hsteps1, hconv, hvfp⟩ := isl_vstart hD H hfR hrip hd hbd
+  -- With a frame pointer the virtual state is the real one.
+  obtain ⟨hxx, hrx0⟩ := hvfp (hfi.code.fp hfp)
+  have hrx : r = x.reg .rbp := by rw [hrx0, hxx]
+  -- The scopes.
+  cases hsc : (S.c.scopesAt s.pc).foldlM R.applyScope s with
+  | error e =>
+    obtain ⟨m, rfl⟩ := hsafe.1 {} e (island_step_scopes_err hi hsc)
+    exact (island_noNB_scopes _ _ m hsc).elim
+  | ok s1 =>
+  have hstep := island_step_ok hi hf hsc
+  have hk := scopes_keeps _ hsc
+  rw [hk.pc, hk.fp] at hstep
+  have hsafeQ := hsafe.2 {} _ s1 hstep
+  have hfb := H.frameBounds
+  have hwinT : (s.fp : Int) + S.K ≤ 2 ^ 64 := hfi.win
+  have hwin := hfb.window hwinT
+  have hsepF : FrameSep (-(S.c.d.frameSize : Int)) S.K s.st x := hfi.sep
+  have hfpF : S.c.d.frameSize ≤ s.fp := hfi.fpF
+  have hrspF : x.rsp = x.reg .rbp - BitVec.ofNat 64 S.c.d.frameSize := hfi.rsp
+  have hsep1 := (sep_foldlM _ (hfb.scopesIn _) hwin hfi.rrel hsepF hsc).2
+  -- Numbers.
+  have hK : (16 : Int) ≤ S.K := by have := H.argSizeK; omega
+  have hfp64 : s.fp < 2 ^ 64 := by omega
+  have hrbpN : (x.reg .rbp).toNat = s.fp := by
+    rw [hfi.rrel.rbp, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hfp64]
+  have hrspN : x.rsp.toNat = s.fp - S.c.d.frameSize :=
+    island_rsp_toNat hfi.rrel.rbp hfp64 hfpF hrspF
+  have hlo : S.lo.toNat + 8 ≤ x.rsp.toNat := by
+    have := hfi.room; omega
+  have hkept := HI.kept s x s1 _ hfi hbx.choose_spec hsc
+  have hrspSh : x.rsp.toNat ≤ (x.rsp + BitVec.ofNat 64 (Island.shadow S.c.mode.pe)).toNat := by
+    have hsh : Island.shadow S.c.mode.pe ≤ S.c.d.frameSize ∧ Island.shadow S.c.mode.pe ≤ 32 := by
+      unfold Island.shadow; split
+      · have := hF32 (by assumption); exact ⟨this, by omega⟩
+      · omega
+    rw [BitVec.toNat_add, BitVec.toNat_ofNat,
+      Nat.mod_eq_of_lt (show Island.shadow S.c.mode.pe < 2 ^ 64 by omega), hrspN,
+      Nat.mod_eq_of_lt (by omega)]
+    omega
+  have hnotStack : ∀ b, IslandKept S x b → ¬ InStack S.lo x.rsp b :=
+    fun b hb hst => hkept b hb (Or.inl ⟨hst.1, Nat.lt_of_lt_of_le hst.2 hrspSh⟩)
+  -- The operand array.
+  have hroOps := opsAt_of_opsArray hfi.ro hws
+  have hroA : ∀ j < 4 * (ws.length + 1),
+      ¬ InStack S.lo x.rsp (S.ctx.addrOf (.ro o) - 4 + BitVec.ofNat 64 j) := by
+    intro j hj
+    obtain ⟨base, ha, -⟩ := hfi.ro
+    obtain ⟨ho, ⟨n, hn, hnl⟩, hw⟩ := opsArray_spec hws
+    apply hnotStack
+    refine Or.inr (Or.inr (Or.inl ⟨o - 4 + j, ?_, ?_⟩))
+    · have h0 : o - 4 + 4 ≤ S.ro.size := by
+        unfold rdLE at hn; split at hn
+        · omega
+        · cases hn
+      rcases Nat.eq_zero_or_pos ws.length with hl | hl
+      · omega
+      · have := hw (ws.length - 1) (by omega)
+        unfold rdLE at this; split at this
+        · omega
+        · cases this
+    · rw [ha, ha]
+      have e : BitVec.ofNat 64 o = BitVec.ofNat 64 (o - 4) + 4 := by
+        rw [show (4 : BitVec 64) = BitVec.ofNat 64 4 from rfl, ← BitVec.ofNat_add,
+          Nat.sub_add_cancel ho]
+      rw [e, BitVec.ofNat_add]
+      bv_omega
+  have hsym := HI.syms s x hfi
+  have hap : Handler.StackApart S.lo s1.st x :=
+    Handler.FrameSep.stackApart hsep1
+      (Handler.stack_off_window (by rw [hrbpN, hrspN]; omega) (by rw [hrbpN]; omega))
+      (HI.allocs s x s1 hfi hsc)
+  obtain ⟨x1, -, hex, hat, hrr1, -, -, -, -, hrsp1, hret1, hsv1, hmemS⟩ :=
+    Island.island_query S.ctx hi hf hsh hfi.rrel hfi.mem (hfb.scope_size _) hlo hroOps
+      hroA hsym hstep hap
+  have hrbp1 : x1.reg .rbp = x.reg .rbp := hat.rbp.trans hfi.rrel.rbp.symm
+  -- The lends.
+  have hlendsIn : ∀ l ∈ S.c.lendsAt s.pc, -(S.c.d.frameSize : Int) ≤ l.1 ∧ l.1 + l.2 ≤ S.K := by
+    intro l hl
+    obtain ⟨sc, hsc', rfl⟩ := island_lends_mem hl
+    exact hfb.scopes s.pc sc hsc'
+  have hlends : ∀ l ∈ S.c.lendsAt s.pc, -2 ^ 62 < l.1 ∧ l.1 + l.2 < 2 ^ 62 := by
+    intro l hl
+    have := hlendsIn l hl; have := hfb.F_le; have := hfb.K_le
+    omega
+  have hFle : (S.c.d.frameSize : Int) ≤ 2 ^ 31 := hfb.F_le
+  have hshB : -2 ^ 62 < -(S.c.d.frameSize : Int) ∧
+      -(S.c.d.frameSize : Int) + S.c.islandShadow < 2 ^ 62 := ⟨by omega, by omega⟩
+  -- The template's writes below `fp - F + shadow`: only the shadow space, which R's answer
+  -- makes `Uninit`, is left out.
+  have hiap : Island.IslandApart S.Owned S.lo (x1.rsp + 8 + BitVec.ofNat 64
+      (Island.shadow S.c.mode.pe)) s1.fp (S.c.lendsAt s.pc)
+      (-(S.c.d.frameSize : Int), S.c.islandShadow) s1.st := by
+    rw [hrsp1, hk.fp]
+    have hrspT : (x.rsp + BitVec.ofNat 64 (Island.shadow S.c.mode.pe)).toNat ≤
+        x.rsp.toNat + Island.shadow S.c.mode.pe := by
+      rw [BitVec.toNat_add, BitVec.toNat_ofNat]
+      exact Nat.le_trans (Nat.mod_le _ _) (Nat.add_le_add_left (Nat.mod_le _ _) _)
+    refine Island.FrameSep.islandApart hsep1 ⟨by omega, hwin.hi_le, hwin.top⟩ (by omega)
+      hfi.rrel.rbp (by omega) ?_ hlends
+      (fun o h1 h2 => HI.owned s x hfi o (by have eF : (S.F : Int) = S.c.d.frameSize := rfl; omega) h2)
+    intro o h1 _ hn
+    have hn' : ¬ (-(S.c.d.frameSize : Int) ≤ o ∧
+        o < -(S.c.d.frameSize : Int) + S.c.islandShadow) := hn
+    omega
+  have hi1 : S.c.d.insns[s1.pc]? = some (.native op [.sym isl, .words ws]) := by
+    rw [hk.pc]; exact hi
+  have hretA : x1.mem.read64 x1.rsp = addrAt S.ctx c'.pos := by
+    rw [hret1]; exact hripE
+  -- The template, entered on the real state (`rbp = r`).
+  have hatB := isl_atB hat r
+  have hx1b : (x1.setReg .rbp r).setReg .rbp (x.reg .rbp) = x1 := by
+    rw [vt_setReg_setReg, ← hrbp1, X86.State.setReg_reg_self]
+  have hx1rsp : (x1.setReg .rbp r).rsp = x1.rsp := Handler.setRbp_rsp x1 r
+  have hx1rbp : (x1.setReg .rbp r).reg .rbp = r := X86.State.reg_setReg x1 .rbp r
+  refine Reach.steps (hsteps1 _ hex hrbp1)
+    (Reach.env (H.envOutside.island _ _ _ _ _ _ hatB) fun y hy => ?_)
+  -- The virtual state after the template, `rbp := x.reg .rbp` (`yv` below).
+  have hyvm : (y.setReg .rbp (x.reg .rbp)).mem = y.mem := rfl
+  have hyvx : (y.setReg .rbp (x.reg .rbp)).xmm = y.xmm := rfl
+  have hyvrip : (y.setReg .rbp (x.reg .rbp)).rip = y.rip := rfl
+  have hyvrsp : (y.setReg .rbp (x.reg .rbp)).rsp = y.rsp := Handler.setRbp_rsp y _
+  have hyv5 : ∀ z : X86.State, z.regs = y.regs →
+      (z.setReg .rbp (x.reg .rbp)).regs = (y.setReg .rbp (x.reg .rbp)).regs := fun z hz => by
+    funext i
+    show (if i = Reg.rbp.idx then _ else z.regs i) = (if i = Reg.rbp.idx then _ else y.regs i)
+    rw [hz]
+  have hzrsp : ∀ z : X86.State, z.regs = y.regs → z.rsp = y.rsp := fun z hz => by
+    simp [X86.State.rsp, X86.State.reg, hz]
+  have hzrbp : ∀ z : X86.State, z.regs = y.regs → z.reg .rbp = y.reg .rbp := fun z hz => by
+    simp [X86.State.reg, hz]
+  by_cases hry : y.rip = (x1.setReg .rbp r).mem.read64 (x1.setReg .rbp r).rsp
+  · -- It returns.
+    obtain ⟨a', hretR, hal⟩ := (H.sepAcross.island isl _ _ _ _ s1.st s1.world (x1.setReg .rbp r)
+      y x hatB hsafeQ hsep1).1 ⟨hy, hry⟩
+    have hyr : y.reg .rbp = r := by
+      show y.regs 5 = r
+      rw [hretR.saved 5 (Island.saved_rbp _)]; exact hx1rbp
+    have hret0 : Island.IslandReturn S.c.mode.pe S.Owned S.lo _ _ s1.world
+        ((x1.setReg .rbp r).setReg .rbp (x.reg .rbp)) (y.setReg .rbp (x.reg .rbp)) a' :=
+      ⟨Island.islandEnd_setRbp _ hretR.toIslandEnd, hretR.result, by
+        show y.rip = (x1.setReg .rbp r).mem.read64
+          ((x1.setReg .rbp r).setReg .rbp (x.reg .rbp)).rsp
+        rw [Handler.setRbp_rsp (x1.setReg .rbp r)]; exact hretR.rip, by
+        show (y.setReg .rbp (x.reg .rbp)).rsp =
+          ((x1.setReg .rbp r).setReg .rbp (x.reg .rbp)).rsp + 8
+        rw [Handler.setRbp_rsp y, Handler.setRbp_rsp (x1.setReg .rbp r)]; exact hretR.rsp,
+        Handler.setRbp_saved hretR.saved⟩
+    rw [hx1b] at hret0
+    have hyrip : y.rip = addrAt S.ctx c'.pos := by
+      rw [hry, hx1rsp]; exact hretA
+    generalize hyv : y.setReg .rbp (x.reg .rbp) = yv at hret0 hyvm hyvx hyvrip hyvrsp hyv5
+    have hret' : Island.IslandReturn S.c.mode.pe S.Owned S.lo s1.fp (S.c.lendsAt s.pc) s1.world
+        x1 yv a' := by rw [hk.fp]; exact hret0
+    obtain ⟨st1, st, hw, hw2, hrel⟩ := Island.answer_core hret'.toIslandEnd hrr1 hlends hshB hiap
+    obtain ⟨regs, hres⟩ := hret0.result
+    have hmemKy : ∀ b, IslandKept S x b → yv.mem b = x.mem b := by
+      intro b hb
+      have hnw := hkept b hb
+      rw [hret0.mem b (by rw [hrsp1]; exact hnw), hmemS b (fun h => hnw (Or.inl ⟨h.1, Nat.lt_of_lt_of_le h.2 hrspSh⟩))]
+    have hrbp'' : yv.reg .rbp = x.reg .rbp := by
+      show yv.regs 5 = x.regs 5
+      rw [hret0.saved 5 (Island.saved_rbp _)]; exact hrbp1
+    have hrbpS : yv.reg .rbp = BitVec.ofNat 64 s1.fp := by rw [hrbp'', hfi.rrel.rbp, hk.fp]
+    obtain ⟨hR'', hM'', hW''⟩ := hrel yv rfl hrbpS
+    have hw1 : R.writeRanges (s1.withWorld a'.world).st (S.c.lendsAt s1.pc) a'.frame = .ok st1 := by
+      rw [hk.pc]; exact hw
+    have hans : R.answer S.c s1 a' = .ok (.step { s1.withWorld a'.world with st, pc := s1.pc + 1 }) := by
+      rw [IslandLemmas.answer_island a' hi1 hf hsh, IslandLemmas.islandWrites_ok hw1 hw2, hres]; rfl
+    have hrspX : yv.rsp = x.rsp := by rw [hret0.rsp, hrsp1]
+    have hsv'' : ∀ i, Saved S.c.mode.pe i → yv.regs i = x.regs i := fun i hi => by
+      rw [hret0.saved i hi, hsv1 i hi]
+    have hsepW : FrameSep (-(S.c.d.frameSize : Int)) S.K (s1.withWorld a'.world).st yv :=
+      FrameSep.extend hsep1 hrbp'' rfl hal.1 hsep1.init hal.2.1 hal.2.2
+    have hsep'' := island_sep_writeFrame (island_sep_writeRanges hsepW hlendsIn hw) hw2
+      (Int.le_refl _) (by rw [List.length_replicate]; omega)
+    have hpc'' : s1.pc + 1 = k + 1 := by rw [hk.pc, hs]
+    have hlkyF := island_link_keptF hfi.code hmemKy
+    have hFI : FrameInv S { s1.withWorld a'.world with st, pc := s1.pc + 1 } yv := by
+      refine ⟨⟨hR'', hrbpS, hW''⟩, hM'', hsep'', by show (s1.fp : Int) + _ ≤ _; rw [hk.fp]; exact hwinT,
+        by show S.c.d.frameSize ≤ s1.fp; rw [hk.fp]; exact hfpF,
+        by rw [hrspX, hrbp'']; exact hrspF, by rw [hrspX]; exact hfi.room,
+        hlkyF, island_ro_kept hfi.ro hmemKy, ?_,
+        island_frame_kept hfi.frame hmemKy hrbp'' (fun i hi _ => hsv'' i hi),
+        (((H.slots_scopes hfi hsc).congr (st' := (s1.withWorld a'.world).st) rfl
+          (fun _ _ _ => rfl)).writeRanges hw (Discharge.PeStackArg.miss_of_ge
+            (Discharge.PeStackArg.lends_lo H.boundsOk s.pc))).writeFrame_uninit hw2,
+        (((hfi.esc.scopes hsc).mono (pc' := s1.pc + 1) (fun h => hk.pc ▸ LeadArg.prev hD h)
+          (by have := hk.pc; omega)).congr
+          (by rw [writeFrame_escaped hw2, Discharge.EscFrom.writeRanges_escaped hw]; rfl) :)⟩
+      rintro ⟨hlt', ha⟩
+      change s1.pc + 1 < S.r.protos.size at hlt'
+      change S.args (s1.pc + 1 + 1) = true at ha
+      rw [hpc''] at hlt' ha
+      have hia : (Full.Opcode.island == Full.Opcode.arg) = false := by decide
+      have h1 : S.args (k + 1) = false := by rw [hargs, hop, hia, Bool.and_false]
+      have h2 := hD.argsSucc (k + 1) (by simpa using hlt')
+      rw [h1] at h2
+      simp [h2] at ha
+    -- A call falls through in the body (`Decodes.fallBody`).
+    have hfall : S.c.inRegion (s1.pc + 1) = false := by
+      rw [hpc'']
+      refine hD.fallBody hbody hik ?_
+      simp only [RSucc.insnFalls, DeadStore.reduced_shape hf, hsh]
+      all_goals decide
+    have fin : ∀ z : X86.State, z.regs = y.regs → z.xmm = y.xmm → z.mem = y.mem →
+        z.rip = addrAt S.ctx (S.start (k + 1)) → Reach S.ctx S.E (RSNextE S s) z := by
+      intro z hzr hzx hzm hzrip
+      have hzFI : FrameInv S { s1.withWorld a'.world with st, pc := s1.pc + 1 }
+          (z.setReg .rbp (x.reg .rbp)) :=
+        hFI.congr (hyv5 z hzr) (by rw [hyvx]; exact hzx) (by rw [hyvm]; exact hzm)
+      have hzrsp' : z.rsp = x.rsp := by rw [hzrsp z hzr, ← hyvrsp]; exact hrspX
+      have hzrbp' : z.reg .rbp = r := (hzrbp z hzr).trans hyr
+      refine .done (.inl ⟨_, .answer hstep hans,
+        ⟨(rbInv_body (s := { s1.withWorld a'.world with st, pc := s1.pc + 1 }) hfall).2
+          ⟨hconv z _ hzrsp' hzrbp' hzFI, .inl ⟨?_, ?_⟩⟩, .inl ⟨?_, ?_⟩⟩⟩)
+      · change z.rip = addrAt S.ctx (S.start (s1.pc + 1))
+        rw [hpc'']; exact hzrip
+      · change CacheInv (S.cache (s1.pc + 1)) (S.virt z)
+        rw [hpc'', hcache]; exact CacheInv.emptyPe _ _
+      · change z.rip = addrAt S.ctx (S.start (s1.pc + 1))
+        rw [hpc'']; exact hzrip
+      · change S.cache (s1.pc + 1) = { pe := S.c.mode.pe }
+        rw [hpc'']; exact hcache
+    generalize hE : S.start (k + 1) = pE at hnop fin
+    generalize hC : c'.pos = pC at hnop hyrip hbq
+    cases hnop with
+    | none _ => exact fin y rfl rfl rfl hyrip
+    | nop hn9 hby hrl =>
+      -- Only on PE, so with a frame pointer.
+      have hpe : S.c.mode.pe = true := by
+        simp only [nopAfter, Bool.and_eq_true] at hn9
+        exact hn9.1.1
+      have hfpm := vt_fp_of_pe hD.modeValid hpe
+      have hlky := island_link_kept (hfi.code.toLinkOk hfpm) hmemKy
+      rw [hyvm] at hlky
+      obtain ⟨hit, -, -⟩ := nop_itemAt hlky (p := pC) (n := 1) (by omega) (by omega)
+        (island_nop_bytes hby) hrl hbq
+      refine reach_padding (ns := [1]) (by simp) ⟨hit, trivial⟩ hyrip fun z h1 h2 h3 h4 => ?_
+      refine fin z h1 h2 h3 ?_
+      rw [h4]; rfl
+  · -- It unwinds.
+    obtain ⟨a', exc, hres, hendR, hlandR, hal⟩ := (H.sepAcross.island isl _ _ _ _ s1.st s1.world
+      (x1.setReg .rbp r) y x hatB hsafeQ hsep1).2 ⟨hy, hry⟩
+    -- The language handler's test at the return address (`Call.Landing`, `CleansLinked`).
+    have hclS := (H.cleansLinked hD hfi.code.small) k hlt site (by rw [hpk]; simp) c'.pos
+      (by omega) (by omega)
+    have htestEq : (S.c.mode.pe && S.cleans ((x1.setReg .rbp r).mem.read64
+        (x1.setReg .rbp r).rsp)) = (S.c.mode.pe && S.cleans (addrAt S.ctx c'.pos)) := by
+      rw [hx1rsp]
+      show (S.c.mode.pe && S.cleans (x1.mem.read64 x1.rsp)) = _
+      rw [hretA]
+    cases htest : (S.c.mode.pe && S.cleans (addrAt S.ctx c'.pos)) with
+    | true =>
+      -- A PE cleanup site: the unwind comes back through the pad region's entry
+      -- (`Call.PadCalled`), which reaches the pad (`reach_regionPad`).
+      have hpe : S.c.mode.pe = true := by
+        cases h : S.c.mode.pe
+        · rw [h] at htest; simp at htest
+        · rfl
+      have hcT : S.cleans (addrAt S.ctx c'.pos) = true := by
+        rw [hpe] at htest; simpa using htest
+      obtain ⟨pad, hcl⟩ : ∃ pad, S.c.cleanupAt k = some (some pad, false) := by
+        rw [hcT] at hclS
+        cases hc : S.c.cleanupAt k with
+        | none => rw [hc] at hclS; simp at hclS
+        | some e =>
+          obtain ⟨po, cat⟩ := e
+          cases po with
+          | none => rw [hc] at hclS; cases cat <;> simp at hclS
+          | some pad =>
+            cases cat with
+            | false => exact ⟨pad, rfl⟩
+            | true => rw [hc] at hclS; simp at hclS
+      have hlandP := hlandR.padCalled (htestEq.trans htest)
+      have hx1e : x1.setReg .rbp r = x1 := by
+        rw [hrx, ← hrbp1, X86.State.setReg_reg_self]
+      rw [hx1e] at hlandP
+      have hyr : y.reg .rbp = r := by
+        show y.regs 5 = r
+        rw [hlandP.saved 5 (Island.saved_rbp _)]
+        exact hrbp1.trans hrx.symm
+      have hyy : y.setReg .rbp (x.reg .rbp) = y := by
+        rw [← hrx, ← hyr, X86.State.setReg_reg_self]
+      have hend := Island.islandEnd_setRbp (x.reg .rbp) hendR
+      rw [hx1b] at hend
+      generalize hyv : y.setReg .rbp (x.reg .rbp) = yv at hend hyvm hyvx hyvrip hyvrsp hyv5
+      have hyvy : yv = y := hyv.symm.trans hyy
+      have hpad' : S.c.cleanupAt s1.pc = some (some pad, false) := by rw [hk.pc, hs]; exact hcl
+      have hend' : Island.IslandEnd S.c.mode.pe S.Owned S.lo s1.fp (S.c.lendsAt s.pc) s1.world
+          x1 yv a' := by rw [hk.fp]; exact hend
+      obtain ⟨st1, st, hw, hw2, hrel⟩ := Island.answer_core hend' hrr1 hlends hshB hiap
+      have hmemKy : ∀ b, IslandKept S x b → yv.mem b = x.mem b := by
+        intro b hb
+        have hnw := hkept b hb
+        rw [hend.mem b (by rw [hrsp1]; exact hnw), hmemS b (fun h => hnw (Or.inl ⟨h.1, Nat.lt_of_lt_of_le h.2 hrspSh⟩))]
+      have hrbpY : yv.reg .rbp = x.reg .rbp := by rw [hyvy, hyr, hrx]
+      have hrbpS : yv.reg .rbp = BitVec.ofNat 64 s1.fp := by rw [hrbpY, hfi.rrel.rbp, hk.fp]
+      obtain ⟨hR1, hM1, hW1⟩ := hrel yv rfl hrbpS
+      have hw1 : R.writeRanges (s1.withWorld a'.world).st (S.c.lendsAt s1.pc) a'.frame = .ok st1 := by
+        rw [hk.pc]; exact hw
+      have hans : R.answer S.c s1 a' = .ok (.step { s1.withWorld a'.world with
+          st := { st with exception := exc }, pc := pad }) := by
+        rw [IslandLemmas.answer_island a' hi1 hf hsh, IslandLemmas.islandWrites_ok hw1 hw2, hres]
+        simp only [bind, Except.bind]
+        unfold R.unwindAt
+        simp only [R.RState.withWorld, hpad']
+        rfl
+      have hsvY : ∀ i, Saved S.c.mode.pe i → yv.regs i = x.regs i := fun i hi => by
+        rw [hyvy, hlandP.saved i (hpe ▸ hi), hsv1 i hi]
+      have hsepW : FrameSep (-(S.c.d.frameSize : Int)) S.K (s1.withWorld a'.world).st yv :=
+        FrameSep.extend hsep1 hrbpY rfl hal.1 hsep1.init hal.2.1 hal.2.2
+      have hsepY := island_sep_writeFrame (island_sep_writeRanges hsepW hlendsIn hw) hw2
+        (Int.le_refl _) (by rw [List.length_replicate]; omega)
+      have hcore : FrameCore S { s1.withWorld a'.world with
+          st := { st with exception := exc }, pc := pad } yv :=
+        ⟨⟨⟨hR1.frame, hR1.layout, hR1.zeroSized⟩, hrbpS, ⟨hW1.idLt, hW1.idInj, hW1.size, hW1.disj⟩⟩, hM1,
+          ⟨hsepY.own, hsepY.init, hsepY.dis, hsepY.space, hsepY.esc⟩,
+          by show (s1.fp : Int) + _ ≤ _; rw [hk.fp]; exact hwinT,
+          by show S.c.d.frameSize ≤ s1.fp; rw [hk.fp]; exact hfpF,
+          island_link_keptF hfi.code hmemKy, island_ro_kept hfi.ro hmemKy,
+          island_frame_kept hfi.frame hmemKy hrbpY (fun i hi _ => hsvY i hi),
+          ((((H.slots_scopes hfi hsc).congr (st' := (s1.withWorld a'.world).st) rfl
+              (fun _ _ _ => rfl)).writeRanges hw (Discharge.PeStackArg.miss_of_ge
+                (Discharge.PeStackArg.lends_lo H.boundsOk s.pc))).writeFrame_uninit hw2).congr
+              (st' := { st with exception := exc }) rfl (fun _ _ _ => rfl),
+          ((hfi.esc.scopes hsc).of_not (HI.padArgs k pad false hcl)).congr
+            (st' := { st with exception := exc })
+            (by rw [writeFrame_escaped hw2, Discharge.EscFrom.writeRanges_escaped hw]; rfl)⟩
+      rw [hyvy] at hcore
+      -- The entry's numbers: the island's return address below the frame's bottom.
+      have hbelow : x1.rsp.toNat ≤ (y.reg .rbp).toNat - S.F := by
+        rw [hyr, hrx, hrbpN]
+        have h := congrArg BitVec.toNat hrsp1
+        rw [BitVec.toNat_add] at h
+        have h8 : (8 : BitVec 64).toNat = 8 := rfl
+        rw [h8] at h
+        have := x1.rsp.isLt
+        have eF : S.F = S.c.d.frameSize := rfl
+        omega
+      have hraP : x1.mem.read64 x1.rsp = addrAt S.ctx (site.1 + site.2) := by
+        rw [hretA, hsite6, hs2]
+      refine (reach_regionPad hD H hpe hlt hcl rfl (by rw [hpk]; simp) hraP (by omega) hlandP
+        hcore hbelow).mono ?_
+      rintro z ⟨hzR, hzrip⟩
+      exact .inl ⟨_, .answer hstep hans, hzR, .inr ⟨hzrip, (H.cacheCleared hD).pads k pad false hcl⟩⟩
+    | false =>
+    -- Not a PE cleanup site: the unwind lands at the pad.
+    have hlandR := hlandR.landed (htestEq.trans htest)
+    have hyr : y.reg .rbp = r := by
+      show y.regs 5 = r
+      rw [hlandR.saved 5 (Island.saved_rbp _)]; exact hx1rbp
+    have hend := Island.islandEnd_setRbp (x.reg .rbp) hendR
+    have hland := Island.landed_setRbp (x.reg .rbp) hlandR
+    rw [hx1b] at hend hland
+    rw [hx1rsp] at hland
+    generalize hyv : y.setReg .rbp (x.reg .rbp) = yv at hend hland hyvm hyvx hyvrip hyvrsp hyv5
+    have hpads := (H.padsLinked hD hfi.code.small) k hlt site (by rw [hpk]; simp)
+      c'.pos (by omega) (by omega)
+    have hl := hland.rip
+    rw [hretA, hpads] at hl
+    cases hcl : S.c.cleanupAt k with
+    | none => rw [hcl] at hl; cases hl
+    | some e =>
+    obtain ⟨pad?, cat⟩ := e
+    cases pad? with
+    | none => rw [hcl] at hl; cases hl
+    | some pad =>
+    rw [hcl] at hl
+    have hyrip : yv.rip = addrAt S.ctx (posOf S.r pad) := by
+      rw [← Option.some.inj hl]
+      have h32 := Nat.lt_of_le_of_lt (posOf_le_size hD (pad_lpad hD hcl).1) hfi.code.small
+      have e : (pos32 S.r pad).setWidth 64 = BitVec.ofNat 64 (posOf S.r pad) := by
+        apply BitVec.eq_of_toNat_eq
+        rw [BitVec.toNat_setWidth, pos32, BitVec.toNat_ofNat, BitVec.toNat_ofNat,
+          Nat.mod_eq_of_lt h32]
+      rw [e]; rfl
+    have hpad' : S.c.cleanupAt s1.pc = some (some pad, cat) := by rw [hk.pc, hs]; exact hcl
+    have hend' : Island.IslandEnd S.c.mode.pe S.Owned S.lo s1.fp (S.c.lendsAt s.pc) s1.world
+        x1 yv a' := by rw [hk.fp]; exact hend
+    obtain ⟨st1, st, hw, hw2, hrel⟩ := Island.answer_core hend' hrr1 hlends hshB hiap
+    have hmemKy : ∀ b, IslandKept S x b → yv.mem b = x.mem b := by
+      intro b hb
+      have hnw := hkept b hb
+      rw [hend.mem b (by rw [hrsp1]; exact hnw), hmemS b (fun h => hnw (Or.inl ⟨h.1, Nat.lt_of_lt_of_le h.2 hrspSh⟩))]
+    have hrbpY : yv.reg .rbp = x.reg .rbp := by
+      show yv.regs 5 = x.regs 5
+      rw [hland.saved 5 (Island.saved_rbp _)]; exact hrbp1
+    have hrbpS : yv.reg .rbp = BitVec.ofNat 64 s1.fp := by rw [hrbpY, hfi.rrel.rbp, hk.fp]
+    obtain ⟨hR1, hM1, hW1⟩ := hrel yv rfl hrbpS
+    have hw1 : R.writeRanges (s1.withWorld a'.world).st (S.c.lendsAt s1.pc) a'.frame = .ok st1 := by
+      rw [hk.pc]; exact hw
+    have hans : R.answer S.c s1 a' = .ok (.step { s1.withWorld a'.world with
+        st := { st with exception := exc }, pc := pad }) := by
+      rw [IslandLemmas.answer_island a' hi1 hf hsh, IslandLemmas.islandWrites_ok hw1 hw2, hres]
+      simp only [bind, Except.bind]
+      unfold R.unwindAt
+      simp only [R.RState.withWorld, hpad']
+      rfl
+    have hrspX : yv.rsp = x.rsp := by rw [hland.rsp, hrsp1]
+    have hsvY : ∀ i, Saved S.c.mode.pe i → yv.regs i = x.regs i := fun i hi => by
+      rw [hland.saved i hi, hsv1 i hi]
+    have hsepW : FrameSep (-(S.c.d.frameSize : Int)) S.K (s1.withWorld a'.world).st yv :=
+      FrameSep.extend hsep1 hrbpY rfl hal.1 hsep1.init hal.2.1 hal.2.2
+    have hsepY := island_sep_writeFrame (island_sep_writeRanges hsepW hlendsIn hw) hw2
+      (Int.le_refl _) (by rw [List.length_replicate]; omega)
+    have hFIu : FrameInv S { s1.withWorld a'.world with
+        st := { st with exception := exc }, pc := pad } yv := by
+      refine ⟨⟨⟨hR1.frame, hR1.layout, hR1.zeroSized⟩, hrbpS, ⟨hW1.idLt, hW1.idInj, hW1.size, hW1.disj⟩⟩, hM1,
+        ⟨hsepY.own, hsepY.init, hsepY.dis, hsepY.space, hsepY.esc⟩,
+        by show (s1.fp : Int) + _ ≤ _; rw [hk.fp]; exact hwinT,
+        by show S.c.d.frameSize ≤ s1.fp; rw [hk.fp]; exact hfpF,
+        by rw [hrspX, hrbpY]; exact hrspF, by rw [hrspX]; exact hfi.room,
+        island_link_keptF hfi.code hmemKy, island_ro_kept hfi.ro hmemKy, ?_,
+        island_frame_kept hfi.frame hmemKy hrbpY (fun i hi _ => hsvY i hi),
+        ((((H.slots_scopes hfi hsc).congr (st' := (s1.withWorld a'.world).st) rfl
+            (fun _ _ _ => rfl)).writeRanges hw (Discharge.PeStackArg.miss_of_ge
+              (Discharge.PeStackArg.lends_lo H.boundsOk s.pc))).writeFrame_uninit hw2).congr
+            (st' := { st with exception := exc }) rfl (fun _ _ _ => rfl),
+        ((hfi.esc.scopes hsc).of_not (HI.padArgs k pad cat hcl)).congr
+          (st' := { st with exception := exc })
+          (by rw [writeFrame_escaped hw2, Discharge.EscFrom.writeRanges_escaped hw]; rfl)⟩
+      intro h
+      exact absurd h (HI.padArgs k pad cat hcl)
+    -- Back on the real state.
+    have hrspR : y.rsp = x.rsp := by rw [← hyvrsp]; exact hrspX
+    have hyripR : y.rip = addrAt S.ctx (posOf S.r pad) := by rw [← hyvrip]; exact hyrip
+    -- Not a PE cleanup site, so the pad is in the body (`RegionFacts.bodyEnd`).
+    have hpadB : S.c.inRegion pad = false := by
+      cases hrg : S.c.inRegion pad with
+      | false => rfl
+      | true =>
+        exfalso
+        obtain ⟨pad', hpe', hcl2, -⟩ := hD.region.bodyEnd s _ (by rw [hs]; exact hbody)
+          (.answer hstep hans) hrg
+        rw [hs] at hcl2
+        simp only [hcl2] at hclS
+        simp [hpe', hclS] at htest
+    refine .done (.inl ⟨_, .answer hstep hans,
+      ⟨(rbInv_body (s := { s1.withWorld a'.world with
+          st := { st with exception := exc }, pc := pad }) hpadB).2 ⟨hconv y _ hrspR hyr (by rw [hyv]; exact hFIu), .inr ⟨hyripR, ?_⟩⟩,
+        .inr ⟨hyripR, ?_⟩⟩⟩)
+    · change CacheInv (S.used pad) (S.virt y)
+      rw [(H.cacheCleared hD).pads k pad cat hcl]; exact CacheInv.emptyPe _ _
+    · change S.used pad = { pe := S.c.mode.pe }
+      exact (H.cacheCleared hD).pads k pad cat hcl
 
 end Insn
 

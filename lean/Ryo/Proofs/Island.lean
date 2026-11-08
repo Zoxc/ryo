@@ -46,8 +46,8 @@ template writes must not count (for islands, `Safe` is where the trust that the 
 - `island_unwind`: every `Unw x1 x'` lands at the island's landing pad, related to R's
   `unwindAt`.
 
-**Hypotheses** beyond the shape: `rsp = fp - F` (`hsp`, which `island_query` takes but its
-proof doesn't use), `MemRel` before the call (`hm`, which `island_return` and `island_unwind`
+**Hypotheses** beyond the shape: `rsp = fp - F` (`hsp`, which `island_sound` takes but doesn't use;
+`island_query` doesn't take it), `MemRel` before the call (`hm`, which `island_return` and `island_unwind`
 take but don't use), the stack has room (`hlo`), the operand
 array is in memory as the decoder read it (`hro`, the rodata relocation) and off the stack
 (`hroA`), the symbol slots off the stack (`Call.SymsApart`), no initialized private frame byte
@@ -406,7 +406,6 @@ theorem island_query (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.State}
     (hi : c.d.insns[s.pc]? = some (.native op [.sym isl, .words ws]))
     (hf : op.full = some f) (hsh : f.info.shape = .island)
     (hr : RRel s x) (hm : MemRel s.st x) (hsz : ∀ sc ∈ c.scopesAt s.pc, sc.size < 2 ^ 62)
-    (_hsp : x.rsp = x.reg .rbp - BitVec.ofNat 64 c.d.frameSize)
     (hlo : lo.toNat + 8 ≤ x.rsp.toNat)
     (hro : OpsAt x.mem (ctx.addrOf (.ro o)) (ws.map (·.toInt)))
     (hroA : ∀ i < 4 * (ws.length + 1), ¬ InStack lo x.rsp (ctx.addrOf (.ro o) - 4 + BitVec.ofNat 64 i))
@@ -538,7 +537,7 @@ theorem island_sound (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.State}
     (hi : c.d.insns[s.pc]? = some (.native op [.sym isl, .words ws]))
     (hf : op.full = some f) (hsh : f.info.shape = .island)
     (hr : RRel s x) (hm : MemRel s.st x) (hsz : ∀ sc ∈ c.scopesAt s.pc, sc.size < 2 ^ 62)
-    (hsp : x.rsp = x.reg .rbp - BitVec.ofNat 64 c.d.frameSize)
+    (_hsp : x.rsp = x.reg .rbp - BitVec.ofNat 64 c.d.frameSize)
     (hlo : lo.toNat + 8 ≤ x.rsp.toNat)
     (hro : OpsAt x.mem (ctx.addrOf (.ro o)) (ws.map (·.toInt)))
     (hroA : ∀ i < 4 * (ws.length + 1), ¬ InStack lo x.rsp (ctx.addrOf (.ro o) - 4 + BitVec.ofNat 64 i))
@@ -560,7 +559,7 @@ theorem island_sound (ctx : Ctx) {c : R.Code} {s s' : R.RState} {x : X86.State}
         x'.rip = x.rip + BitVec.ofNat 64 ((islandPre c.mode isl o).map Item.size).sum ∧
         x'.rsp = x.rsp ∧ (∀ i, Saved c.mode.pe i → x'.regs i = x.regs i) := by
   obtain ⟨x1, hq, hex, hat, hrr, hmm, hpc, hfp, -, hrsp, hret, hsaved, -⟩ :=
-    island_query ctx hi hf hsh hr hm hsz hsp hlo hro hroA hsym h hap
+    island_query ctx hi hf hsh hr hm hsz hlo hro hroA hsym h hap
   refine ⟨x1, hq, hex, hat, fun x' hR => ?_⟩
   have hi' : c.d.insns[s'.pc]? = some (.native op [.sym isl, .words ws]) := by rw [hpc]; exact hi
   have hat' : IslandAt ctx c.mode.pe isl s'.fp (ws.map (·.toInt)) s'.st s'.world x1 := by

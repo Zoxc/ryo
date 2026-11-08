@@ -5,6 +5,7 @@ import Ryo.Proofs.OpFacts
 import Ryo.Proofs.Discharge.PadsLinked
 import Ryo.Proofs.HandlerStackArg
 import Ryo.Proofs.Discharge.SpDisp
+import Ryo.Proofs.DecodeSound.Region
 
 set_option linter.constructorNameAsVariable false
 
@@ -665,9 +666,9 @@ theorem hdl_base_setWidth (ctx : Ctx) (t : BitVec 32) :
   apply BitVec.eq_of_toNat_eq
   simp only [BitVec.toNat_setWidth, BitVec.toNat_ofNat]
 
-/-- The numbers behind a boundary's frame: `rbp = fp`, `rsp = fp - F`, the entry `rsp = fp + 8`. -/
-theorem hdl_nums (H : Hyps S) {s : R.RState} {x : X86.State} (hf : FrameInv S s x) :
-    (x.reg .rbp).toNat = s.fp ∧ x.rsp.toNat = s.fp - S.F ∧ S.x0.rsp.toNat = s.fp + 8 ∧
+/-- The numbers behind a frame without `rsp` (`FrameCore`): `rbp = fp`, the entry `rsp = fp + 8`. -/
+theorem hdl_nums_core (H : Hyps S) {s : R.RState} {x : X86.State} (hf : FrameCore S s x) :
+    (x.reg .rbp).toNat = s.fp ∧ S.x0.rsp.toNat = s.fp + 8 ∧
       s.fp + 16 ≤ 2 ^ 64 ∧ S.F ≤ s.fp ∧ (S.K : Int) ≤ 2 ^ 31 ∧ 16 ≤ S.K := by
   have hK := H.argSizeK
   have hKl := H.frameBounds.K_le
@@ -676,12 +677,24 @@ theorem hdl_nums (H : Hyps S) {s : R.RState} {x : X86.State} (hf : FrameInv S s 
   have hb := hf.rrel.rbp
   have hlt : s.fp < 2 ^ 64 := by omega
   have hrb : (x.reg .rbp).toNat = s.fp := by rw [hb, BitVec.toNat_ofNat, Nat.mod_eq_of_lt hlt]
-  refine ⟨hrb, ?_, ?_, by omega, hfp, hKl, by omega⟩
-  · rw [hf.rsp, BitVec.toNat_sub, hrb, BitVec.toNat_ofNat]
-    have : S.F < 2 ^ 64 := by omega
-    rw [Nat.mod_eq_of_lt this]; omega
-  · have e : S.x0.rsp = x.reg .rbp + 8 := by have := hf.frame.rbp; bv_omega
-    rw [e, BitVec.toNat_add, hrb]; simp; omega
+  refine ⟨hrb, ?_, by omega, hfp, hKl, by omega⟩
+  have e : S.x0.rsp = x.reg .rbp + 8 := by have := hf.frame.rbp; bv_omega
+  rw [e, BitVec.toNat_add, hrb]; simp; omega
+
+/-- The numbers behind a boundary's frame: `rbp = fp`, `rsp = fp - F`, the entry `rsp = fp + 8`. -/
+theorem hdl_nums (H : Hyps S) {s : R.RState} {x : X86.State} (hf : FrameInv S s x) :
+    (x.reg .rbp).toNat = s.fp ∧ x.rsp.toNat = s.fp - S.F ∧ S.x0.rsp.toNat = s.fp + 8 ∧
+      s.fp + 16 ≤ 2 ^ 64 ∧ S.F ≤ s.fp ∧ (S.K : Int) ≤ 2 ^ 31 ∧ 16 ≤ S.K := by
+  obtain ⟨hrb, h0, h16, hfp, hKl, hK16⟩ := hdl_nums_core H hf.toCore
+  refine ⟨hrb, ?_, h0, h16, hfp, hKl, hK16⟩
+  rw [hf.rsp, BitVec.toNat_sub, hrb, BitVec.toNat_ofNat]
+  have : S.F < 2 ^ 64 := by omega
+  rw [Nat.mod_eq_of_lt this]; omega
+
+/-- At a boundary `rsp` is the frame's bottom (the core lemmas' `hle`). -/
+theorem hdl_rsp_bottom (H : Hyps S) {s : R.RState} {x : X86.State} (hf : FrameInv S s x) :
+    x.rsp.toNat ≤ s.fp - S.F := by
+  obtain ⟨-, h2, -⟩ := hdl_nums H hf; omega
 
 theorem hdl_rsp_le (H : Hyps S) {s : R.RState} {x : X86.State} (hf : FrameInv S s x) :
     x.rsp.toNat ≤ S.x0.rsp.toNat := by
@@ -692,64 +705,96 @@ theorem hdl_inStack_lift (H : Hyps S) {s : R.RState} {x : X86.State} (hf : Frame
   have := hdl_rsp_le H hf
   intro ⟨h1, h2⟩; exact h ⟨h1, by omega⟩
 
+/-- `hdl_inStack_lift` with `rsp` at or below the frame's bottom (`hle`; PE's pad region too). -/
+theorem hdl_inStack_lift_core (H : Hyps S) {s : R.RState} {x : X86.State} (hf : FrameCore S s x)
+    (hle : x.rsp.toNat ≤ s.fp - S.F) {a : BitVec 64} (h : ¬ InStack S.lo S.x0.rsp a) :
+    ¬ InStack S.lo x.rsp a := by
+  obtain ⟨-, h0, -⟩ := hdl_nums_core H hf
+  intro ⟨h1, h2⟩; exact h ⟨h1, by omega⟩
+
 /-- The frame window is apart from what the handler call may write (`S.Owned`, the stack below
-`rsp`). -/
-theorem hdl_window_apart (H : Hyps S) (HC : HdlApart S) {s : R.RState} {x : X86.State}
-    (hf : FrameInv S s x) {o : Int} (h1 : -(S.F : Int) ≤ o) (h2 : o < S.K) :
+`rsp`, with `rsp` at or below the frame's bottom). -/
+theorem hdl_window_apart_core (H : Hyps S) {s : R.RState} {x : X86.State}
+    (hf : FrameCore S s x) (hle : x.rsp.toNat ≤ s.fp - S.F) {o : Int} (h1 : -(S.F : Int) ≤ o)
+    (h2 : o < S.K) :
     ¬ S.Owned (fpAddr x o) ∧ ¬ InStack S.lo x.rsp (fpAddr x o) := by
-  refine ⟨HC.window s x hf o h1 h2, fun ⟨_, hs⟩ => ?_⟩
-  obtain ⟨hrb, hrsp, -, hw, hF, hKl, -⟩ := hdl_nums H hf
+  refine ⟨by rw [hf.fpAddr_eq]; exact H.envApart.window o h1 h2, fun ⟨_, hs⟩ => ?_⟩
+  obtain ⟨hrb, -, hw, hF, hKl, -⟩ := hdl_nums_core H hf
   have hwin := hf.win
-  rw [hrsp] at hs
   simp only [fpAddr, BitVec.toNat_add, hrb, BitVec.toNat_ofInt] at hs
   omega
+
+/-- The frame window is apart from what the handler call may write (`S.Owned`, the stack below
+`rsp`). -/
+theorem hdl_window_apart (H : Hyps S) (_HC : HdlApart S) {s : R.RState} {x : X86.State}
+    (hf : FrameInv S s x) {o : Int} (h1 : -(S.F : Int) ≤ o) (h2 : o < S.K) :
+    ¬ S.Owned (fpAddr x o) ∧ ¬ InStack S.lo x.rsp (fpAddr x o) :=
+  hdl_window_apart_core H hf.toCore (hdl_rsp_bottom H hf) h1 h2
 
 /-- `m` agrees with `x`'s memory outside what the handler call may write (`S.Owned`, and the
 stack in `[S.lo, rsp)`). -/
 abbrev hdl_Keeps (S : Setup) (x : X86.State) (m : Mem) : Prop :=
   ∀ a, ¬ S.Owned a → ¬ InStack S.lo x.rsp a → m a = x.mem a
 
-theorem hdl_linkOk (H : Hyps S) (HC : HdlApart S) {s : R.RState} {x : X86.State}
-    (hf : FrameInv S s x) {m : Mem} (hm : hdl_Keeps S x m) :
+theorem hdl_linkOk_core (H : Hyps S) {s : R.RState} {x : X86.State}
+    (hf : FrameCore S s x) (hle : x.rsp.toNat ≤ s.fp - S.F) {m : Mem} (hm : hdl_Keeps S x m) :
     LinkOkF S.ctx m S.body S.rs S.c.mode := by
   have hc : ∀ j, j < S.body.code.size → m (addrAt S.ctx j) = x.mem (addrAt S.ctx j) := by
     intro j hj
     obtain ⟨ho, hst, -⟩ := H.codeApart (addrAt S.ctx j) (.inl ⟨j, hj, rfl⟩)
-    exact hm _ ho (hdl_inStack_lift H hf hst)
+    exact hm _ ho (hdl_inStack_lift_core H hf hle hst)
   obtain ⟨hfl, hso, ⟨hl1, hl2⟩, hsm, hfp⟩ := hf.code
   refine ⟨hfl, hso, ⟨fun j hj hr => ?_, fun r hr k hk => ?_⟩, hsm, hfp⟩
   · rw [hc j hj]; exact hl1 j hj hr
-  · rw [hc _ (by have := HC.relocs r hr; omega)]; exact hl2 r hr k hk
+  · rw [hc _ (by have := H.relocsIn r hr; omega)]; exact hl2 r hr k hk
 
-theorem hdl_roLoaded (H : Hyps S) {s : R.RState} {x : X86.State}
-    (hf : FrameInv S s x) {m : Mem} (hm : hdl_Keeps S x m) : RoLoaded S.ctx m S.ro := by
+theorem hdl_linkOk (H : Hyps S) (_HC : HdlApart S) {s : R.RState} {x : X86.State}
+    (hf : FrameInv S s x) {m : Mem} (hm : hdl_Keeps S x m) :
+    LinkOkF S.ctx m S.body S.rs S.c.mode :=
+  hdl_linkOk_core H hf.toCore (hdl_rsp_bottom H hf) hm
+
+theorem hdl_roLoaded_core (H : Hyps S) {s : R.RState} {x : X86.State}
+    (hf : FrameCore S s x) (hle : x.rsp.toNat ≤ s.fp - S.F) {m : Mem} (hm : hdl_Keeps S x m) :
+    RoLoaded S.ctx m S.ro := by
   obtain ⟨base, h1, h2⟩ := hf.ro
   refine ⟨base, h1, fun j hj => ?_⟩
   obtain ⟨ho, hst, -⟩ := H.codeApart (base + BitVec.ofNat 64 j) (.inr ⟨j, hj, (h1 j).symm⟩)
-  rw [hm _ ho (hdl_inStack_lift H hf hst)]; exact h2 j hj
+  rw [hm _ ho (hdl_inStack_lift_core H hf hle hst)]; exact h2 j hj
 
-theorem hdl_read64 (H : Hyps S) (HC : HdlApart S) {s : R.RState} {x : X86.State}
-    (hf : FrameInv S s x) {m : Mem} (hm : hdl_Keeps S x m) {o : Int}
-    (h1 : -(S.F : Int) ≤ o) (h2 : o + 8 ≤ S.K) : m.read64 (fpAddr x o) = x.mem.read64 (fpAddr x o) := by
+theorem hdl_roLoaded (H : Hyps S) {s : R.RState} {x : X86.State}
+    (hf : FrameInv S s x) {m : Mem} (hm : hdl_Keeps S x m) : RoLoaded S.ctx m S.ro :=
+  hdl_roLoaded_core H hf.toCore (hdl_rsp_bottom H hf) hm
+
+theorem hdl_read64_core (H : Hyps S) {s : R.RState} {x : X86.State}
+    (hf : FrameCore S s x) (hle : x.rsp.toNat ≤ s.fp - S.F) {m : Mem} (hm : hdl_Keeps S x m)
+    {o : Int} (h1 : -(S.F : Int) ≤ o) (h2 : o + 8 ≤ S.K) :
+    m.read64 (fpAddr x o) = x.mem.read64 (fpAddr x o) := by
   unfold Mem.read64; congr 1
   apply readNat_congr
   intro i hi
   rw [← fpAddr_add]
-  obtain ⟨a1, a2⟩ := hdl_window_apart H HC hf (o := o + i) (by omega) (by omega)
+  obtain ⟨a1, a2⟩ := hdl_window_apart_core H hf hle (o := o + i) (by omega) (by omega)
   exact hm _ a1 a2
 
+theorem hdl_read64 (H : Hyps S) (_HC : HdlApart S) {s : R.RState} {x : X86.State}
+    (hf : FrameInv S s x) {m : Mem} (hm : hdl_Keeps S x m) {o : Int}
+    (h1 : -(S.F : Int) ≤ o) (h2 : o + 8 ≤ S.K) : m.read64 (fpAddr x o) = x.mem.read64 (fpAddr x o) :=
+  hdl_read64_core H hf.toCore (hdl_rsp_bottom H hf) hm h1 h2
+
 /-- A frame byte `opSem` can read and that is initialized is apart from the handler call's
-writes (`S.Owned`, the stack below `rsp`). -/
-theorem hdl_byte_apart (H : Hyps S) (HC : HdlApart S) {s : R.RState} {x : X86.State}
-    (hf : FrameInv S s x) {o : Int} {b : AbstractByte} (hb : s.st.byteAt o = .ok b)
-    (hu : b ≠ .uninit) :
+writes (`S.Owned`, the stack below `rsp`), given `rsp` at or below the frame's bottom (`hle`) and
+no live allocation owned or below `rsp` (`hal`). -/
+theorem hdl_byte_apart_core (H : Hyps S) {s : R.RState} {x : X86.State}
+    (hf : FrameCore S s x) (hle : x.rsp.toNat ≤ s.fp - S.F)
+    (hal : ∀ a, Call.InAlloc s.world a → ¬ S.Owned a ∧ ¬ InStack S.lo x.rsp a)
+    {o : Int} {b : AbstractByte} (hb : s.st.byteAt o = .ok b) (hu : b ≠ .uninit) :
     ¬ S.Owned (fpAddr x o) ∧ ¬ InStack S.lo x.rsp (fpAddr x o) := by
   unfold OpSem.State.byteAt at hb
   split at hb
   · rename_i hn
     have hb' : s.st.frame o = b := by simpa [pure, Except.pure] using hb
     obtain ⟨i1, i2⟩ := hf.sep.init o hn (by rw [hb']; exact hu)
-    exact hdl_window_apart H HC hf i1 i2
+    exact hdl_window_apart_core H hf hle i1 i2
   · rename_i e he
     split at hb
     · rename_i a hg
@@ -768,39 +813,49 @@ theorem hdl_byte_apart (H : Hyps S) (HC : HdlApart S) {s : R.RState} {x : X86.St
           have hsp := hf.sep.space e.id a hg (by simpa using hlive)
           have haddr : fpAddr x o = BitVec.ofNat 64 a.addr + BitVec.ofNat 64 (o - e.off).toNat := by
             rw [hlay, ← fpAddr_add, hn]; congr 1; omega
-          refine HC.allocs s x hf _ ⟨e.id, a, hg, by simpa using hlive, ?_⟩
+          refine hal _ ⟨e.id, a, hg, by simpa using hlive, ?_⟩
           rw [haddr, hdl_add_sub_left, BitVec.toNat_ofNat]
           simp only [Allocation.size] at *
           omega
         · cases hb
     · cases hb
 
-/-- `FrameInv` survives a state that agrees with `x` (`Counter.Agree`), at an instruction past
-the leading `arg`s. -/
-theorem hdl_frameInv (H : Hyps S) (HC : HdlApart S) {s : R.RState} {x y : X86.State}
-    (hf : FrameInv S s x) (hag : Counter.Agree S.Owned S.lo x y)
-    (hsv : ∀ i, Saved S.c.mode.pe i → y.regs i = x.regs i) (ha : ¬ LeadArg S s.pc) :
-    FrameInv S s y := by
+/-- A frame byte `opSem` can read and that is initialized is apart from the handler call's
+writes (`S.Owned`, the stack below `rsp`). -/
+theorem hdl_byte_apart (H : Hyps S) (HC : HdlApart S) {s : R.RState} {x : X86.State}
+    (hf : FrameInv S s x) {o : Int} {b : AbstractByte} (hb : s.st.byteAt o = .ok b)
+    (hu : b ≠ .uninit) :
+    ¬ S.Owned (fpAddr x o) ∧ ¬ InStack S.lo x.rsp (fpAddr x o) :=
+  hdl_byte_apart_core H hf.toCore (hdl_rsp_bottom H hf) (HC.allocs s x hf) hb hu
+
+/-- `FrameCore` survives a state that agrees with `x` (`Counter.Agree`), given `rsp` at or below
+the frame's bottom (`hle`) and no live allocation owned or below `rsp` (`hal`): in the body
+(`hdl_frameInv`) and in PE's pad region. -/
+theorem hdl_frameCore (H : Hyps S) {s : R.RState} {x y : X86.State}
+    (hf : FrameCore S s x) (hle : x.rsp.toNat ≤ s.fp - S.F)
+    (hal : ∀ a, Call.InAlloc s.world a → ¬ S.Owned a ∧ ¬ InStack S.lo x.rsp a)
+    (hag : Counter.Agree S.Owned S.lo x y)
+    (hsv : ∀ i, Saved S.c.mode.pe i → y.regs i = x.regs i) :
+    FrameCore S s y := by
   have hrbp : y.reg .rbp = x.reg .rbp := hag.2.1 5 (Or.inr (Or.inl rfl))
   have hfp : ∀ o, fpAddr y o = fpAddr x o := fun o => by simp [fpAddr, hrbp]
   have hm : hdl_Keeps S x y.mem := hag.2.2
-  obtain ⟨hrb, hrsp, -, hw, hF, hKl, hK16⟩ := hdl_nums H hf
+  obtain ⟨hrb, -, hw, hF, hKl, hK16⟩ := hdl_nums_core H hf
   refine ⟨⟨⟨fun o h1 h2 b hb => ?_, fun e he a h => ?_, fun p hp => ?_⟩, hrbp.trans hf.rrel.rbp,
     hf.rrel.wf⟩, fun id a hg hl i hi => ?_, hf.sep.congr hrbp, hf.win, hf.fpF,
-    by rw [hag.1, hrbp]; exact hf.rsp, by rw [hag.1]; exact hf.room, hdl_linkOk H HC hf hm,
-    hdl_roLoaded H hf hm, fun h => absurd h ha, ?_, hf.slots, hf.esc⟩
+    hdl_linkOk_core H hf hle hm, hdl_roLoaded_core H hf hle hm, ?_, hf.slots, hf.esc⟩
   · have hr := hf.rrel.rel.frame o h1 h2 b hb
     rw [hfp]
     cases b with
     | uninit => trivial
     | init v p =>
-      obtain ⟨a1, a2⟩ := hdl_byte_apart H HC hf hb (by simp)
+      obtain ⟨a1, a2⟩ := hdl_byte_apart_core H hf hle hal hb (by simp)
       rw [hm _ a1 a2]; exact hr
   · rw [hfp]; exact hf.rrel.rel.layout e he a h
   · rw [hfp]; exact hf.rrel.rel.zeroSized p hp
   · have hr := hf.mem id a hg hl i hi
     have hsp := hf.sep.space id a hg hl
-    obtain ⟨a1, a2⟩ := HC.allocs s x hf (BitVec.ofNat 64 (a.addr + i)) ⟨id, a, hg, hl, by
+    obtain ⟨a1, a2⟩ := hal (BitVec.ofNat 64 (a.addr + i)) ⟨id, a, hg, hl, by
       rw [BitVec.ofNat_add, hdl_add_sub_left, BitVec.toNat_ofNat]
       simp only [Allocation.size] at *
       omega⟩
@@ -810,8 +865,20 @@ theorem hdl_frameInv (H : Hyps S) (HC : HdlApart S) {s : R.RState} {x y : X86.St
     have e0 : x.reg .rbp = fpAddr x 0 := by simp [fpAddr]
     refine ⟨by rw [hrbp]; exact f1, ?_, ?_, fun i hi h5 => by
       rw [hsv i hi]; exact f5 i hi h5⟩
-    · rw [hrbp, e8, hdl_read64 H HC hf hm (by omega) (by omega), ← e8]; exact f2
-    · intro hfp3; rw [hrbp, e0, hdl_read64 H HC hf hm (by omega) (by omega), ← e0]; exact f3 hfp3
+    · rw [hrbp, e8, hdl_read64_core H hf hle hm (by omega) (by omega), ← e8]; exact f2
+    · intro hfp3; rw [hrbp, e0, hdl_read64_core H hf hle hm (by omega) (by omega), ← e0]
+      exact f3 hfp3
+
+/-- `FrameInv` survives a state that agrees with `x` (`Counter.Agree`), at an instruction past
+the leading `arg`s. -/
+theorem hdl_frameInv (H : Hyps S) (HC : HdlApart S) {s : R.RState} {x y : X86.State}
+    (hf : FrameInv S s x) (hag : Counter.Agree S.Owned S.lo x y)
+    (hsv : ∀ i, Saved S.c.mode.pe i → y.regs i = x.regs i) (ha : ¬ LeadArg S s.pc) :
+    FrameInv S s y := by
+  have hrbp : y.reg .rbp = x.reg .rbp := hag.2.1 5 (Or.inr (Or.inl rfl))
+  exact FrameInv.ofCore
+    (hdl_frameCore H hf.toCore (hdl_rsp_bottom H hf) (HC.allocs s x hf) hag hsv)
+    (by rw [hag.1, hrbp]; exact hf.rsp) (by rw [hag.1]; exact hf.room) (fun h => absurd h ha)
 
 
 theorem handler_dense_op {fr : Vm.Frame} {c c' : Cursor} {q : Proto}
@@ -996,15 +1063,15 @@ theorem hdl_home_le (H : Hyps S) {k : Nat} {h : Full.Opcode} {args : List R.Arg}
   · rw [if_neg hpe]
     exact Nat.zero_le _
 
-/-- `R.clearHome` at `-F` with at most `F` bytes keeps `FrameInv`: the cleared bytes are `Uninit`,
+/-- `R.clearHome` at `-F` with at most `F` bytes keeps `FrameCore`: the cleared bytes are `Uninit`,
 which relates to any x86 byte (`CallLemmas.rel_writeFrame_in`, `ScopeMem.memRel_writeUninit`),
 lie in the window (`island_sep_writeFrame`) and keep the slots (`ArgSlots.writeFrame_uninit`). -/
-theorem hdl_frameInv_clear (H : Hyps S) {s : R.RState} {x : X86.State} {st'' : OpSem.State}
-    {n : Nat} (hf : FrameInv S s x) (hn : R.handlerHome S.c.mode.pe n ≤ S.F)
+theorem hdl_frameCore_clear (H : Hyps S) {s : R.RState} {x : X86.State} {st'' : OpSem.State}
+    {n : Nat} (hf : FrameCore S s x) (hn : R.handlerHome S.c.mode.pe n ≤ S.F)
     (hcl : R.clearHome S.c.mode.pe n (-(S.F : Int)) s.st = .ok st'') :
-    FrameInv S { s with st := st'' } x := by
+    FrameCore S { s with st := st'' } x := by
   have hFle : (S.F : Int) ≤ 2 ^ 31 := H.frameBounds.F_le
-  obtain ⟨-, -, -, -, -, -, hK16⟩ := hdl_nums H hf
+  obtain ⟨-, -, -, -, -, hK16⟩ := hdl_nums_core H hf
   rcases Shapes.clearHome_cases hcl with ⟨-, hw⟩ | ⟨-, rfl⟩
   · obtain ⟨hesc, hsz⟩ := Shapes.clearHome_keeps hcl
     have hbs : BytesRel (List.replicate (R.handlerHome S.c.mode.pe n) .uninit)
@@ -1024,6 +1091,13 @@ theorem hdl_frameInv_clear (H : Hyps S) {s : R.RState} {x : X86.State} {st'' : O
       slots := hf.slots.clearHome hcl
       esc := hf.esc.congr hesc }
   · exact hf
+
+/-- `hdl_frameCore_clear` for `FrameInv`. -/
+theorem hdl_frameInv_clear (H : Hyps S) {s : R.RState} {x : X86.State} {st'' : OpSem.State}
+    {n : Nat} (hf : FrameInv S s x) (hn : R.handlerHome S.c.mode.pe n ≤ S.F)
+    (hcl : R.clearHome S.c.mode.pe n (-(S.F : Int)) s.st = .ok st'') :
+    FrameInv S { s with st := st'' } x :=
+  FrameInv.ofCore (hdl_frameCore_clear H hf.toCore hn hcl) hf.rsp hf.room hf.args
 
 set_option maxRecDepth 100000 in
 /-- A handler leaves the code, the rodata and the frame's link slots alone, and none is on the
@@ -1944,8 +2018,10 @@ theorem handler_general'B (hD : Decodes S code relocs rodata callSites dropped s
       rcases hsh with h | h <;> cases h
     have hnl : ¬ LeadArg S (s.pc + 1) := by rw [hs]; exact hdl_next_notLead hD hP harg
     have hfi := hFI (s.pc + 1) hnl
-    exact hdl_fallthrough hD (pC := hat + len) hP.nop hfi.code' hbe' hripT (.step hstep)
-      (by show s.pc + 1 = k + 1; rw [hs]) hfi hP.cache
+    have hb1 : S.c.inRegion (k + 1) = false := hD.fallBody hP.body (by rw [← hs]; exact hi)
+      (by rcases hsh with h | h <;> simp [RSucc.insnFalls, h])
+    exact hdl_fallthrough hD (pC := hat + len) (hP.nop hb1) hfi.code' hbe' hripT (.step hstep)
+      (by show s.pc + 1 = k + 1; rw [hs]) hfi (hP.cache hb1)
   | br hsh hcond hdecT hc3 =>
     obtain ⟨j, rfl, hj⟩ := thenMap_branch ht'
     obtain ⟨b, rfl, hpc'⟩ := hdl_succ_branch hpc
@@ -1955,7 +2031,9 @@ theorem handler_general'B (hD : Decodes S code relocs rodata callSites dropped s
       cases hsh
     exact hdl_br hD H (pT := hat + len) hs hlt
       (by rw [hpk]; simp [Proto.targets, R.Then.targets]) hj hcond hdecT hbe' hripT hctl hFI
-      hpc' hstep (hdl_next_notLead hD hP harg) hP.nop hP.cache
+      hpc' hstep (hdl_next_notLead hD hP harg)
+      (hP.nop (hD.fallBody hP.body (by rw [← hs]; exact hi) (by simp [RSucc.insnFalls, hsh])))
+      (hP.cache (hD.fallBody hP.body (by rw [← hs]; exact hi) (by simp [RSucc.insnFalls, hsh])))
   | switch hsh htr =>
     obtain ⟨tb, pE, es, hdT, rfl, hes, -⟩ := table_read htr
     obtain ⟨rs', rfl, hmap⟩ := thenMap_table ht'
@@ -1993,6 +2071,8 @@ theorem handler_general' (hD : Decodes S code relocs rodata callSites dropped sc
     BodySim S k p (S.used k) :=
   BodySimB.used (handler_general'B hD H hP hn hr hh hres hnd htable).toB
 
+set_option maxHeartbeats 1000000 in
+set_option maxRecDepth 100000 in
 /-- T2.4: `resume`'s handler call on PE never comes back (`Hyps.resumePe`): from the setup
 steps to the handler's entry (as `handler_resume'B`) the environment runs (`EnvOutside.handler`)
 and no return is possible, so any post-condition holds (at a PE cleanup site, too:
@@ -2003,7 +2083,85 @@ theorem handler_resume_pe (hD : Decodes S code relocs rodata callSites dropped s
     (hr : InsnRead S.fr S.ro cur q c') (hres : q.op = .resume) :
     ∀ s x, s.pc = k → FrameInv S s x → x.rip = addrAt S.ctx p → RSafe S.Safe S.c s →
       Reach S.ctx S.E (fun _ => False) x := by
-  sorry -- PE-P6
+  intro s xr hs hfx hrip hsafe
+  have hfp := vt_fp_of_pe hD.modeValid hpe
+  have hfR : FrameInvR S s xr := (frameInvR_iff hfp).2 hfx
+  have hcur := noArg_insn hn hr
+  subst hcur
+  obtain ⟨i, hi, hio0⟩ := hP.insn
+  have hlt := hP.lt
+  obtain ⟨p1, ctr, hpq⟩ := hP.proto
+  have hpk : S.r.protos[k] = { q with pos := p1, counter := ctr } := by
+    rw [Array.getElem?_eq_some_iff] at hpq
+    exact hpq.2
+  have hio : InsnOf (posOf S.r) { q with pos := p1, counter := ctr } i := hpk ▸ hio0 hlt
+  cases hr with
+  | ret => simp only at hres; exact absurd hres (by decide)
+  | unreachable => simp only at hres; exact absurd hres (by decide)
+  | jmp => simp only at hres; exact absurd hres (by decide)
+  | island => simp only at hres; exact absurd hres (by decide)
+  | resume hrg => exact absurd hrg (by simp [Setup.fr])
+  | dense hd =>
+    obtain ⟨w, hw⟩ := handler_dense_op hd
+    rw [hw] at hres; cases w <;> exact absurd hres (by decide)
+  | @handler items hat n len nn op args t sites c'' hd hcall hnop hhh hsetup hthen =>
+  simp only at hres
+  subst hres
+  obtain ⟨rfl, rfl⟩ := handler_thenSeq_resume hthen
+  simp only [InsnOf] at hio
+  obtain ⟨t', rfl, ht'⟩ := hio
+  have := thenMap_trap ht'
+  subst this
+  rw [← hs] at hi
+  -- `args` fits the handler registers (R's view of the instruction, `R.unpack`)
+  cases hsc : (S.c.scopesAt s.pc).foldlM R.applyScope s with
+  | error e =>
+    exfalso
+    obtain ⟨m, rfl⟩ := hsafe.1 {} e (step_scopes_err hi hsc)
+    exact handler_scopes_err hsc m rfl
+  | ok s1 =>
+  have hst := Shapes.step_handler (ch := {}) hi hsc
+  have hE : ∀ e, R.step S.c s {} = .error e → handler_NotNB e → False := fun e h1 h2 => by
+    obtain ⟨m, hm⟩ := hsafe.1 {} e h1; exact h2 m hm
+  cases hv : R.view S.c.mode S.c.ρ (.handler .resume args .trap) with
+  | none =>
+    exfalso
+    obtain ⟨msg, hmsg⟩ : ∃ msg, R.stepView S.c s1 (.handler .resume args .trap) {} =
+        .error (.illFormed msg) := by
+      unfold R.stepView; simp only [hv]; exact ⟨_, rfl⟩
+    exact hE _ (hst.trans hmsg) (handler_illFormed_notNB _)
+  | some v =>
+  obtain ⟨vals, hu, rfl⟩ := handler_view hv
+  -- the x86 side: the setup and `call resume` (as `handler_resume'B`)
+  obtain ⟨-, -, hbh⟩ := (hfR.code'.atPos p).dec hd hP.bound
+  obtain ⟨-, hlen, -, -⟩ := decodeItem_itemAt_F ((hfR.code'.atPos p).atPos hat) hbh hcall
+  have hlen5 : len = 5 := by
+    have e : ∀ f : FForm, (FForm.item f (Item.call (.handler n))).size = 5 := fun f => by
+      cases f <;> rfl
+    rw [e] at hlen; exact hlen.symm
+  subst hlen5
+  obtain ⟨xv, r, hfx', -, -, -, hsteps4, -, -⟩ :=
+    hdl_vstart hD H hfR hrip hd hcall hsetup hP.bound
+  have hlo : S.lo.toNat + 8 ≤ xv.rsp.toNat := by have := hfx'.room; omega
+  have hreg : args.length ≤ (handlerRegs S.fr.mode.pe).length := by
+    have h := resume_regs_le S.c.mode.fpArg S.c.mode.pe
+    cases hl : Full.Opcode.resume.layout S.c.mode.fpArg S.c.mode.pe with
+    | none => simp [R.unpack, hl] at hu
+    | some l =>
+      rw [hl] at h
+      have : args.length = l.regs := by
+        by_cases hne : args.length = l.regs
+        · exact hne
+        · simp [R.unpack, hl, hne] at hu
+      rw [this]; exact h
+  obtain ⟨x2, hx2, hat2, -, -, hsaved2, -, -⟩ :=
+    handler_call_ret (lo := S.lo) (x := xv) S.ctx H.linked hnop hsetup hreg hlo
+  have hrbp2 : x2.reg .rbp = xv.reg .rbp := hsaved2 5 (Island.saved_rbp _)
+  have hsteps := hsteps4 hreg x2 hx2 hrbp2
+  have hat2r : Handler.AtHandler S.ctx .resume (x2.setReg .rbp r) := hat2
+  -- the handler never returns on PE (`Hyps.resumePe`)
+  exact Reach.steps hsteps (.env (H.envOutside.handler .resume (x2.setReg .rbp r) hat2r)
+    fun x' hret => (H.resumePe hpe _ x' hat2r hret).elim)
 
 /-- `bodySim_handler'`: `resume` by `handler_resume'`, every other handler call by
 `handler_general'` (`noArg_insn`, `InsnRead.handler` as in `link_handler`; `handler_rside` for

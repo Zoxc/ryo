@@ -954,13 +954,16 @@ theorem pad_lpad (hD : Decodes S code relocs rodata callSites dropped scopes mod
   · rw [getElem!_neg S.r.protos pad hp] at hl
     exact absurd hl (by decide)
 
-/-- Every proto lies within the code: `hD.run`'s `instructions` reads each at a position at
+/-- Every proto lies within the code: `hD.runNR`'s `instructions` reads each at a position at
 most the code's size (`instructions_pos_le`). -/
 theorem posOf_le_size (hD : Decodes S code relocs rodata callSites dropped scopes mode) {k : Nat}
     (hk : k < S.r.protos.size) : posOf S.r k ≤ S.body.code.size := by
-  obtain ⟨stub, padded, c1, hrun⟩ := hD.run
-  rw [posOf_eq hk]
-  exact instructions_pos_le hrun (Nat.le_refl _) _ (Array.getElem_mem_toList hk)
+  cases hnr : regionPad mode callSites with
+  | none =>
+    obtain ⟨stub, padded, c1, hrun⟩ := hD.runNR hnr
+    rw [posOf_eq hk]
+    exact instructions_pos_le hrun (Nat.le_refl _) _ (Array.getElem_mem_toList hk)
+  | some _ => exact hD.posLeR (by rw [hnr]; simp) k hk
 
 /-- A landing pad is not a leading `arg`: it is an `lpad`. -/
 theorem pad_not_leadArg (hD : Decodes S code relocs rodata callSites dropped scopes mode)

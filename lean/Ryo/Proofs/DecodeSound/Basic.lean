@@ -758,16 +758,40 @@ structure Decodes (S : Setup) (code : ByteArray) (relocs : Array Reloc) (rodata 
   callSitesEq : S.callSites = callSites
   bodyEq : S.body = bodyCursor { code := code.data, pos := 0, fields := .relocs relocs } mode
     S.r.frameSize S.body.pos
-  run : ∃ stub padded c1, (instructions S.fr rodata dropped.toList (some S.targets) stub
-    S.body.code.size callSites).run S.body = .ok ((S.r.protos, padded), c1)
+  /-- Without a pad region: one `instructions` pass over the whole function (with one, the
+  body's and the region's passes are `itersB`/`itersLast`/`itersR`). -/
+  runNR : regionPad mode callSites = none → ∃ stub padded c1, (instructions S.fr rodata
+    dropped.toList (some S.targets) stub S.body.code.size callSites).run S.body =
+      .ok ((S.r.protos, padded), c1)
   start0 : S.start 0 = S.body.pos
   cache0 : S.cache 0 = { pe := mode.pe }
-  dr0 : S.dr 0 = dropped.toList
+  /-- Without a pad region (with one, the body's dropped stores are those before its entry). -/
+  dr0 : regionPad mode callSites = none → S.dr 0 = dropped.toList
   args0 : S.args 0 = true
   argsSucc : ∀ k (hk : k < S.r.protos.toList.length),
     S.args (k + 1) = (S.args k && S.r.protos.toList[k].op == .arg)
-  iters : Indexed S.fr S.ro (some S.targets) S.callSites S.body S.r.protos.toList S.start S.cache
-    S.dr S.args
+  /-- The body's iterations (read with `S.fr`) but its last when a pad region follows: each
+  ends where the next starts. -/
+  itersB : ∀ k (hk : k < S.r.protos.toList.length), S.c.inRegion (k + 1) = false →
+    Iter S.fr S.ro (some S.targets) S.callSites S.body (S.args k) (S.start k) (S.cache k) (S.dr k)
+      S.r.protos.toList[k] (S.start (k + 1)) (S.cache (k + 1)) (S.dr (k + 1))
+  /-- The body's last iteration before PE's pad region: it ends at the body's end (the counter
+  stubs and the region's entry follow), not at the region's first instruction's start. -/
+  itersLast : ∀ k (hk : k < S.r.protos.toList.length), S.c.inRegion k = false →
+    S.c.inRegion (k + 1) = true → ∃ p' ca' dr',
+      Iter S.fr S.ro (some S.targets) S.callSites S.body (S.args k) (S.start k) (S.cache k)
+        (S.dr k) S.r.protos.toList[k] p' ca' dr'
+  /-- PE's pad region's iterations, read with `S.frR` (`readRegion`); the read's proto is the
+  iteration's after `resumeSlots` (`S.fixResume`). `S.args k` is `false` there
+  (`region_not_leadArg`): `readRegion`'s own run starts with `true`, but its first proto is an
+  `lpad`, not an `arg`. -/
+  itersR : ∀ k (hk : k < S.r.protos.toList.length), S.c.inRegion k = true → ∃ q,
+    S.r.protos.toList[k] = S.fixResume q ∧
+    Iter S.frR S.ro (some S.targets) S.callSites S.body (S.args k) (S.start k) (S.cache k)
+      (S.dr k) q (S.start (k + 1)) (S.cache (k + 1)) (S.dr (k + 1))
+  /-- PE: the region's iterations start right after its entry, with the cache empty. -/
+  regionAt : ∀ rs, S.c.mode.pe = true → S.c.d.regionStart = some rs →
+    S.start rs = posOf S.r rs ∧ S.cache rs = { pe := mode.pe }
   /-- The prologue (the entry's counter check, the frame's `prologue`) is read item by item from
   0 to the body's start (frame-pointer form: the body cursor is the code's). -/
   prologue : S.c.mode.framePointer = true → ∃ items, Dec S.body 0 items S.body.pos
@@ -791,8 +815,10 @@ structure Decodes (S : Setup) (code : ByteArray) (relocs : Array Reloc) (rodata 
     ∀ k (hk : k < S.r.protos.size) stub back, S.r.protos[k].counter = some (stub, back) →
       ∃ n t long q, t.toNat = back ∧ Dec c9 stub [.lea .r11 .record,
         .setReg .rax (BitVec.ofNat 64 n), .callR11 16, .branch .always t long] q
-  /-- The counter stubs come after the body's instructions (`sl_read_stubs_R`). -/
-  readStubsR : ∃ (c0 c7 : Cursor) (targets : Array Nat) (stub : Option Nat) (padded : Array Bool),
+  /-- Without a pad region: the counter stubs come after the body's instructions
+  (`sl_read_stubs_R`). -/
+  readStubsRNR : regionPad mode callSites = none →
+    ∃ (c0 c7 : Cursor) (targets : Array Nat) (stub : Option Nat) (padded : Array Bool),
     c0 = bodyCursor { code := code.data, pos := 0, fields := .relocs relocs } mode
       S.r.frameSize c0.pos ∧
     (instructions ⟨S.r.frameSize, mode, false⟩ rodata dropped.toList (some targets) stub
@@ -805,6 +831,97 @@ structure Decodes (S : Setup) (code : ByteArray) (relocs : Array Reloc) (rodata 
         R stub
   /-- PE's pad region as `read` lays it out (`RegionFacts`). -/
   region : RegionFacts S callSites mode
+  /-- PE: the region's entry `sub rsp, 40; jmp r11` starts at a relocation boundary (B1: the
+  body's end without counters, the counter stubs' end with them). -/
+  regionBoundary : ∀ rs, S.c.mode.pe = true → S.c.d.regionStart = some rs → ∀ m,
+    LinkOkF S.ctx m S.body S.rs S.c.mode → Boundary S.rs (posOf S.r rs - regionEntryLen)
+  /-- With a pad region: every proto lies within the code (the body's and the region's
+  `instructions` passes, `resumeSlots` keeping positions). -/
+  posLeR : regionPad mode callSites ≠ none → ∀ k (hk : k < S.r.protos.size),
+    posOf S.r k ≤ S.body.code.size
+  /-- With a pad region: each counter stub starts at a relocation boundary (the stubs follow one
+  after the other from the body's end to the region's entry). -/
+  stubsBoundaryR : regionPad mode callSites ≠ none → ∀ m, LinkOkF S.ctx m S.body S.rs S.c.mode →
+    ∀ k (hk : k < S.r.protos.size) stub back, S.r.protos[k].counter = some (stub, back) →
+      Boundary S.rs stub
+
+/-! #### Any instruction's iteration (P1b: from `itersB`/`itersLast`/`itersR`) -/
+
+section IterAt
+
+variable {S : Setup} {code : ByteArray} {relocs : Array Reloc} {rodata : ByteArray}
+  {callSites : Array CallSite} {dropped : Array DroppedStore} {scopes : Array R.Scope}
+  {mode : Ryo.Obj.Mode}
+
+/-- `S.fixResume` changes only a `resume`'s handler. -/
+theorem Setup.fixResume_keep (q : Proto) : (S.fixResume q).op = q.op ∧
+    (S.fixResume q).ops = q.ops ∧ (S.fixResume q).pos = q.pos ∧
+    (S.fixResume q).counter = q.counter ∧ (S.fixResume q).sites = q.sites ∧
+    (S.fixResume q).cacheOut = q.cacheOut ∧
+    (S.fixResume q).items = q.items := by
+  unfold Setup.fixResume
+  split
+  · split <;> exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  · exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+theorem Setup.fixResume_of_ne {q : Proto} (h : q.op ≠ .resume) : S.fixResume q = q := by
+  unfold Setup.fixResume
+  rw [if_neg (by simpa using h)]
+
+/-- Where the body ends and PE's pad region starts: instruction `k + 1` is the region's first. -/
+theorem inRegion_start {c : R.Code} {k : Nat} (h0 : c.inRegion k = false)
+    (h1 : c.inRegion (k + 1) = true) : c.mode.pe = true ∧ c.d.regionStart = some (k + 1) := by
+  unfold R.Code.inRegion at h0 h1
+  cases hp : c.mode.pe with
+  | false => rw [hp] at h1; cases h1
+  | true =>
+    refine ⟨rfl, ?_⟩
+    rw [hp] at h0 h1
+    cases hr : c.d.regionStart with
+    | none => rw [hr] at h1; cases h1
+    | some L =>
+      rw [hr] at h0 h1
+      simp only [Bool.true_and, Option.any_some, decide_eq_true_eq, decide_eq_false_iff_not] at h0 h1
+      congr 1
+      omega
+
+/-- Instruction `k`'s iteration, read with the body's or the region's frame (both of `S`'s
+mode), its proto `read`'s (in the region before `resumeSlots`); it ends at `k + 1`'s start
+unless `k` is the body's last instruction before the region. -/
+theorem Decodes.iterAt (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    (k : Nat) (hk : k < S.r.protos.toList.length) :
+    ∃ (fr : Vm.Frame) (q : Proto) (p' : Nat) (ca' : Cache) (dr' : List DroppedStore),
+      fr.mode = S.c.mode ∧
+      (S.r.protos.toList[k] = q ∨ S.r.protos.toList[k] = S.fixResume q) ∧
+      Iter fr S.ro (some S.targets) S.callSites S.body (S.args k) (S.start k) (S.cache k)
+        (S.dr k) q p' ca' dr' ∧
+      ((S.c.inRegion (k + 1) = false ∨ S.c.inRegion k = true) →
+        p' = S.start (k + 1) ∧ ca' = S.cache (k + 1) ∧ dr' = S.dr (k + 1)) := by
+  cases hr : S.c.inRegion k with
+  | true =>
+    obtain ⟨q, hq, hit⟩ := hD.itersR k hk hr
+    exact ⟨_, q, _, _, _, rfl, .inr hq, hit, fun _ => ⟨rfl, rfl, rfl⟩⟩
+  | false =>
+    cases hr1 : S.c.inRegion (k + 1) with
+    | false =>
+      exact ⟨_, _, _, _, _, rfl, .inl rfl, hD.itersB k hk hr1, fun _ => ⟨rfl, rfl, rfl⟩⟩
+    | true =>
+      obtain ⟨p', ca', dr', hit⟩ := hD.itersLast k hk hr hr1
+      exact ⟨_, _, p', ca', dr', rfl, .inl rfl, hit, fun h => by
+        rcases h with h | h <;> cases h⟩
+
+/-- Not the body's last instruction before the region: `Decodes.iterAt`'s end condition. -/
+theorem not_last_cases {a b : Bool} (h : ¬ (a = false ∧ b = true)) : b = false ∨ a = true := by
+  cases a <;> cases b <;> simp_all
+
+/-- At the region's first instruction the cache is empty (`Decodes.regionAt`). -/
+theorem Decodes.cache_regionStart (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    {k : Nat} (h0 : S.c.inRegion k = false) (h1 : S.c.inRegion (k + 1) = true) :
+    S.cache (k + 1) = { pe := S.c.mode.pe } := by
+  obtain ⟨hpe, hrs⟩ := inRegion_start h0 h1
+  rw [(hD.regionAt (k + 1) hpe hrs).2, hD.modeEq]
+
+end IterAt
 
 /-- `readFrame` succeeds only on a valid mode. -/
 theorem readFrame_valid {mode : Ryo.Obj.Mode} {c c' : Cursor} {a : Option (Nat × Nat) × Nat}
@@ -1264,6 +1381,17 @@ theorem Hyps.linkPrivate {S : Setup} (H : Hyps S) : LinkPrivate S := by
   exact Discharge.EscFrom.escapedAt_none_of (Discharge.EscFrom.EscFrom.scopes hf.esc hsc)
     (fun p hp he _ => hesc p hp he o h0 h16)
 
+/-- `Hyps.linkPrivate` from `FrameCore` (it reads only `esc`; PE's pad region too). -/
+theorem Hyps.linkPrivate_core {S : Setup} (H : Hyps S) {s s1 : R.RState} {x : X86.State}
+    (hf : FrameCore S s x) (hsc : (S.c.scopesAt s.pc).foldlM R.applyScope s = .ok s1) :
+    ∀ o : Int, 0 ≤ o → o < 16 →
+      s1.st.escapedAt o = none ∧ ∀ l ∈ S.c.lendsAt s.pc, ¬ (l.1 ≤ o ∧ o < l.1 + l.2) := by
+  intro o h0 h16
+  obtain ⟨hesc, hlend⟩ := Discharge.PrivCheck.link_of_check H.privOk
+  refine ⟨?_, fun l hl => hlend s.pc l hl o h0 h16⟩
+  exact Discharge.EscFrom.escapedAt_none_of (Discharge.EscFrom.EscFrom.scopes hf.esc hsc)
+    (fun p hp he _ => hesc p hp he o h0 h16)
+
 -- In chunks of 100 opcodes (`all_range'_append`): one `decide +kernel` over the table
 -- peaked at about 8.5 GiB.
 set_option maxRecDepth 100000 in
@@ -1639,6 +1767,12 @@ theorem Hyps.peStackArg {S : Setup} (H : Hyps S) : S.c.mode.pe = true →
 /-- `FrameInv.slots` after the scopes (`Discharge.PeStackArg.ArgSlots.scopes`). -/
 theorem Hyps.slots_scopes {S : Setup} (H : Hyps S) {s s1 : R.RState} {x : X86.State} {k : Nat}
     (hf : FrameInv S s x) (hsc : (S.c.scopesAt k).foldlM R.applyScope s = .ok s1) :
+    Discharge.PeStackArg.ArgSlots S.c s1.st :=
+  Discharge.PeStackArg.ArgSlots.scopes H.boundsOk hf.slots hsc
+
+/-- `Hyps.slots_scopes` from `FrameCore` (PE's pad region too). -/
+theorem Hyps.slots_scopes_core {S : Setup} (H : Hyps S) {s s1 : R.RState} {x : X86.State}
+    {k : Nat} (hf : FrameCore S s x) (hsc : (S.c.scopesAt k).foldlM R.applyScope s = .ok s1) :
     Discharge.PeStackArg.ArgSlots S.c s1.st :=
   Discharge.PeStackArg.ArgSlots.scopes H.boundsOk hf.slots hsc
 
@@ -2133,6 +2267,13 @@ theorem FrameInv.fpAddr_eq {s : R.RState} {x : X86.State} (h : FrameInv S s x) (
   have e : x.reg .rbp = S.x0.rsp - 8 := by bv_omega
   simp only [fpAddr, Setup.winAddr, e]
 
+/-- `FrameInv.fpAddr_eq` for `FrameCore` (`FrameFacts.rbp` only). -/
+theorem FrameCore.fpAddr_eq {s : R.RState} {x : X86.State} (h : FrameCore S s x) (o : Int) :
+    fpAddr x o = S.winAddr o := by
+  have h1 := h.frame.rbp
+  have e : x.reg .rbp = S.x0.rsp - 8 := by bv_omega
+  simp only [fpAddr, Setup.winAddr, e]
+
 /-- `FrameInv` sees only the registers, the `xmm` registers and memory. -/
 theorem FrameInv.congr {s : R.RState} {x y : X86.State} (h : FrameInv S s x)
     (hr : y.regs = x.regs) (hx : y.xmm = x.xmm) (hm : y.mem = x.mem) : FrameInv S s y := by
@@ -2189,15 +2330,17 @@ theorem notCleanup_of {S : Setup} {k : Nat} (hCL : CleansLinked S) (hnc : NoPeCl
 /-- What a body lemma knows of proto `k`, read at `p` as `q` ending at `c'` with cache `cache'`:
 the proto (`q` with the iteration's position and counter), its R instruction, the relocation
 boundary at `p`, and where the next iteration starts (after PE's `nop` after a call with a
-landing pad or no call site, `NopRead`). -/
+landing pad or no call site, `NopRead`) and its cache, when `k + 1` is in the body (not past the
+body's last instruction: an instruction that falls through gets it from `Decodes.fallBody` or
+`Decodes.nextBody`). -/
 structure ProtoFacts (S : Setup) (k p : Nat) (q : Proto) (c' : Cursor) (cache' : Cache) : Prop where
   lt : k < S.r.protos.size
   proto : ∃ p1 counter, S.r.protos[k]? = some { q with pos := p1, counter }
   insn : ∃ i, S.c.d.insns[k]? = some i ∧ ∀ hk : k < S.r.protos.size,
     InsnOf (posOf S.r) S.r.protos[k] i
   bound : Boundary S.rs p
-  nop : NopRead S.fr S.callSites S.body q c'.pos (S.start (k + 1))
-  cache : S.cache (k + 1) = cache'
+  nop : S.c.inRegion (k + 1) = false → NopRead S.fr S.callSites S.body q c'.pos (S.start (k + 1))
+  cache : S.c.inRegion (k + 1) = false → S.cache (k + 1) = cache'
   args : S.args (k + 1) = (S.args k && q.op == .arg)
   /-- A body instruction (not in PE's pad region). -/
   body : S.c.inRegion k = false
@@ -2214,8 +2357,8 @@ structure ProtoFactsN (S : Setup) (k p : Nat) (q : Proto) (c' : Cursor) (cache' 
   insn : ∃ i, S.c.d.insns[k]? = some i ∧ ∀ hk : k < S.r.protos.size,
     InsnOf (posOf S.r) S.r.protos[k] i
   bound : Boundary S.rs p
-  nop : NopRead S.fr S.callSites S.body q c'.pos (S.start (k + 1))
-  cache : S.cache (k + 1) = cache'
+  nop : S.c.inRegion (k + 1) = false → NopRead S.fr S.callSites S.body q c'.pos (S.start (k + 1))
+  cache : S.c.inRegion (k + 1) = false → S.cache (k + 1) = cache'
   args : S.args (k + 1) = (S.args k && q.op == .arg)
   body : S.c.inRegion k = false
 
@@ -2242,7 +2385,18 @@ doesn't reach the region but by a cleanup unwind (`RegionFacts.bodyEnd`), so `RB
 theorem bodySimBE_of_RB (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     {k p : Nat} (hb : S.c.inRegion k = false) (hnc : NoPeClean S k) (h : BodySimRB S k p) :
     BodySimFpBE S k p := by
-  sorry -- PE-P5
+  intro s x hs hf hrip hbx hsafe
+  have hbs : S.c.inRegion s.pc = false := by rw [hs]; exact hb
+  refine (h s x hs hf hrip hbx hsafe).mono fun x' hx' => ?_
+  rcases hx' with ⟨s', hn, hb', hce⟩ | hd
+  · refine .inl ⟨s', hn, ?_, hce⟩
+    cases hr : S.c.inRegion s'.pc with
+    | false => exact (rbInv_body hr).1 hb'
+    | true =>
+      obtain ⟨pad, hpe, hcl, -⟩ := hD.region.bodyEnd s s' hbs hn hr
+      rw [hs] at hcl
+      exact absurd hcl (hnc hpe pad)
+  · exact .inr hd
 
 theorem protoFacts_insnOf {k p : Nat} {q : Proto} {c' : Cursor} {cache' : Cache}
     (hP : ProtoFacts S k p q c' cache') :
@@ -2638,8 +2792,23 @@ theorem boundary_start (hD : Decodes S code relocs rodata callSites dropped scop
     exact (hL.dec hd (boundary_zero _)).2.2
   | succ k ih =>
     intro hk
-    have hit := hD.iters k (by simp; omega)
-    exact bs_iter hL (ih (Nat.le_of_succ_le hk)) hit
+    obtain ⟨fr, q, p', ca', dr', -, -, hit, hend⟩ := hD.iterAt k (by simp; omega)
+    cases h0 : S.c.inRegion k with
+    | true =>
+      rw [← (hend (.inr h0)).1]
+      exact bs_iter hL (ih (Nat.le_of_succ_le hk)) hit
+    | false =>
+    cases h1 : S.c.inRegion (k + 1) with
+    | false =>
+      rw [← (hend (.inl h1)).1]
+      exact bs_iter hL (ih (Nat.le_of_succ_le hk)) hit
+    | true =>
+      -- The region's first instruction: right after its entry, from a relocation boundary
+      -- (`Decodes.regionBoundary`, `RegionFacts.start`).
+      obtain ⟨hpe, hrs⟩ := inRegion_start h0 h1
+      rw [(hD.regionAt (k + 1) hpe hrs).1]
+      obtain ⟨-, -, -, hdec⟩ := hD.region.start (k + 1) hpe hrs
+      exact (hL.dec hdec (hD.regionBoundary (k + 1) hpe hrs m hL)).2.2
 
 /-- An instruction index outside the code: R's step is `illFormed`, excluded by `RSafe`. -/
 theorem insnSim_oob (hD : Decodes S code relocs rodata callSites dropped scopes mode)

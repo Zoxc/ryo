@@ -16,6 +16,7 @@ PE-T1).
 import Ryo.Proofs.DecodeSound.Basic
 import Ryo.Proofs.DSWork.Boundary
 import Ryo.Proofs.RSucc
+import Ryo.Proofs.Discharge.ArgsOk
 
 namespace Ryo.Proofs.DecodeSound
 
@@ -713,6 +714,8 @@ theorem readParts_region {fr : Frame} {ro : ByteArray} {callSites : Array CallSi
   obtain ⟨u, c4, h4, h⟩ := bind_ok h
   obtain ⟨-, rfl⟩ := expect_ok h4
   try dsimp only at h
+  obtain ⟨u, c4', h4', h⟩ := bind_ok h
+  obtain ⟨-, rfl⟩ := expect_ok h4'
   obtain ⟨⟨rp, rpd⟩, c5, h5, h⟩ := bind_ok h
   unfold readRegion at h5
   obtain ⟨u, c6, h6, h5⟩ := bind_ok h5
@@ -1424,12 +1427,406 @@ theorem Decodes.fallBody (hD : Decodes S code relocs rodata callSites dropped sc
         rw [insnFalls_of hio, hnf] at hfl
         cases hfl
 
+/-! #### Helpers for A2-A4 -/
+
+/-- The leading `arg` run is a prefix: `S.args` is antitone up to the protos' count
+(`Decodes.argsSucc`). -/
+theorem Decodes.args_le (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    {i j : Nat} (hij : i ≤ j) (hj : j ≤ S.r.protos.size) (ha : S.args j = true) :
+    S.args i = true := by
+  obtain ⟨d, rfl⟩ := Nat.exists_eq_add_of_le hij
+  induction d with
+  | zero => simpa using ha
+  | succ d ih =>
+    apply ih (by omega) (by omega)
+    have h := hD.argsSucc (i + d) (by simpa using (show i + d < S.r.protos.size by omega))
+    rw [← Nat.add_assoc, h, Bool.and_eq_true] at ha
+    exact ha.1
+
+/-- A proto whose op is `arg` has no handler (`argInsn`'s and `inlineInsn`'s protos have none;
+a call or `insn` is never an `arg`). -/
+theorem arg_proto_handler (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    {j : Nat} (hj : j < S.r.protos.toList.length) (hop : S.r.protos.toList[j].op = .arg) :
+    S.r.protos.toList[j].handler = none := by
+  obtain ⟨fr, q0, p', ca', dr', hfm, hpq, it, -⟩ := hD.iterAt j hj
+  have hpr0 : S.r.protos.toList[j] = q0 := by
+    rcases hpq with h | h
+    · exact h
+    · rw [h]; refine S.fixResume_of_ne ?_
+      rw [← (S.fixResume_keep q0).1, ← h, hop]; decide
+  rw [hpr0] at hop ⊢
+  generalize S.cache j = c0 at it
+  generalize S.args j = a0 at it
+  generalize S.start j = s0 at it
+  generalize S.dr j = d0 at it
+  cases it with
+  | empty _ hin =>
+    have hin' : (inlineInsn _ _ true).run _ = .ok (some (_, _, _), _) := hin
+    exact (inlineInsn_read_drop hin').2.1
+  | @main _ _ _ _ _ _ _ _ q _ _ _ hpr _ =>
+    have hq : q.op = .arg := hop
+    cases hpr with
+    | arg h =>
+      obtain ⟨a, d, hqe, -⟩ := argInsn_bounds h
+      subst hqe
+      rfl
+    | call _ h => exact (argsOk_call_ne h hq).elim
+    | inline _ _ hin =>
+      have hin' : (inlineInsn _ _ true).run _ = .ok (some (q, _, _), _) := hin
+      exact (inlineInsn_read_drop hin').2.1
+    | insn _ _ _ h => exact (argsOk_insn_ne h hq).elim
+
+/-- `actionsOf` gives an action only to an instruction with call sites, or (a `resume`) from
+`rs` on. -/
+theorem actionsOf_sites {callSites : Array CallSite} {protos : Array Proto} {rs : Nat}
+    {c c' : Cursor} {acts : Array (Option (Option Nat × Bool))}
+    (h : (actionsOf callSites protos rs).run c = .ok (acts, c')) :
+    ∀ i e, acts[i]! = some e → protos[i]!.sites ≠ [] ∨ rs ≤ i := by
+  let J : Array (Option (Option Nat × Bool)) → Prop := fun a =>
+    ∀ i e, a[i]! = some e → protos[i]!.sites ≠ [] ∨ rs ≤ i
+  have hset : ∀ (a : Array (Option (Option Nat × Bool))) (i : Nat) (v : Option (Option Nat × Bool)),
+      J a → (protos[i]!.sites ≠ [] ∨ rs ≤ i) → J (a.set! i v) := by
+    intro a i v hJ hv j e hj
+    by_cases hij : i = j
+    · subst hij
+      exact hv
+    · rw [Array.getElem!_set!_ne _ _ _ _ hij] at hj
+      exact hJ j e hj
+  unfold actionsOf at h
+  obtain ⟨st, cA, hA, h⟩ := bind_ok h
+  have key := forIn_range_inv (fun (b : _ × Nat) (_ : Cursor) => J b.1)
+    (fun b _ => J b.1) _ ?_ _ _ _ _ _ ?_ hA
+  rotate_left
+  · intro i b cur r cur' hI hr
+    obtain ⟨st, c1, h1, hr⟩ := bind_ok hr
+    try dsimp only at hr
+    split at hr
+    · rename_i pad catches hst
+      have hs : protos[i]!.sites ≠ [] := by
+        intro hs
+        simp only [hs, List.forIn_nil] at h1
+        obtain ⟨rfl, -⟩ := pure_ok h1
+        simp at hst
+      rcases dm_ite_ok hr with ⟨-, hr⟩ | ⟨-, hr⟩
+      · obtain ⟨_, _, h', -⟩ := bind_ok hr; exact (err_ok h').elim
+      rcases dm_ite_ok hr with ⟨-, hr⟩ | ⟨-, hr⟩
+      · obtain ⟨_, _, h', -⟩ := bind_ok hr; exact (err_ok h').elim
+      split at hr
+      · obtain ⟨_, _, h2, hr⟩ := bind_ok hr
+        obtain ⟨rfl, rfl⟩ := pure_ok h2
+        obtain ⟨rfl, -⟩ := pure_ok hr
+        exact hset _ _ _ hI (.inl hs)
+      · obtain ⟨j, c3, h3, hr⟩ := bind_ok hr
+        rcases dm_ite_ok hr with ⟨-, hr⟩ | ⟨-, hr⟩
+        · obtain ⟨_, _, h', -⟩ := bind_ok hr; exact (err_ok h').elim
+        obtain ⟨_, _, h2, hr⟩ := bind_ok hr
+        obtain ⟨rfl, rfl⟩ := pure_ok h2
+        obtain ⟨rfl, -⟩ := pure_ok hr
+        exact hset _ _ _ hI (.inl hs)
+    · rcases dm_ite_ok hr with ⟨hc, hr⟩ | ⟨-, hr⟩
+      · obtain ⟨rfl, -⟩ := pure_ok hr
+        refine hset _ _ _ hI (.inr ?_)
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
+        exact hc.2
+      · obtain ⟨rfl, -⟩ := pure_ok hr; exact hI
+  · intro j e hj
+    try dsimp only at hj
+    by_cases hlt : j < (Array.replicate protos.size (none : Option (Option Nat × Bool))).size
+    · rw [getElem!_pos _ j hlt] at hj
+      simp at hj
+    · rw [getElem!_neg _ j hlt] at hj
+      simp at hj
+  rcases dm_ite_ok h with ⟨-, h⟩ | ⟨-, h⟩
+  · obtain ⟨_, _, h', -⟩ := bind_ok h; exact (err_ok h').elim
+  rcases dm_ite_ok h with ⟨-, h⟩ | ⟨-, h⟩
+  · obtain ⟨_, _, h', -⟩ := bind_ok h; exact (err_ok h').elim
+  rcases dm_ite_ok h with ⟨-, h⟩ | ⟨-, h⟩
+  · obtain ⟨_, _, h', -⟩ := bind_ok h; exact (err_ok h').elim
+  obtain ⟨he, -⟩ := pure_ok h
+  subst he
+  exact key.elim id id
+
+/-- `read` without a pad region: its actions are `actionsOf` with `rs` the protos' count. -/
+theorem read_actions_noRegion {ro : ByteArray} {callSites : Array CallSite}
+    {dropped : List DroppedStore} {scopes : Array R.Scope} {mode : Ryo.Obj.Mode} {c c' : Cursor}
+    {r : ReadResult} (h : (Vm.read ro callSites dropped scopes mode).run c = .ok (r, c'))
+    (hnr : regionPad mode callSites = none) :
+    ∃ c11 c12, (actionsOf callSites r.protos r.protos.size).run c11 = .ok (r.actions, c12) := by
+  unfold Vm.read at h
+  obtain ⟨⟨entry, fs⟩, c1, h1, h⟩ := bind_ok h
+  dsimp only at h
+  obtain ⟨x, c2, h2, h⟩ := bind_ok h
+  obtain ⟨hx, hc2⟩ := get_run h2
+  rw [hx, hc2] at h
+  obtain ⟨ra, c3, h3, h⟩ := bind_ok h
+  have hra : ra = none := by
+    unfold regionEntry at h3; rw [hnr] at h3
+    exact (pure_ok h3).1.symm
+  rw [hra] at h
+  try dsimp only at h
+  obtain ⟨body, c4, -, h⟩ := bind_ok h
+  try dsimp only at h
+  obtain ⟨_, c5, -, h⟩ := bind_ok h
+  try dsimp only at h
+  obtain ⟨⟨protos, padded, bodyEnd⟩, c6, -, h⟩ := bind_ok h
+  try dsimp only at h
+  obtain ⟨u, c8, -, h⟩ := bind_ok h
+  obtain ⟨heads, c9, -, h⟩ := bind_ok h
+  obtain ⟨u, c10, -, h⟩ := bind_ok h
+  simp only [Nat.lt_irrefl, ↓reduceIte] at h
+  obtain ⟨protos', c11, h11, h⟩ := bind_ok h
+  obtain ⟨rfl, rfl⟩ := pure_ok h11
+  obtain ⟨acts, c12, h12, h⟩ := bind_ok h
+  obtain ⟨he, -⟩ := pure_ok h
+  subst he
+  exact ⟨_, _, h12⟩
+
+set_option maxRecDepth 100000 in
+theorem reduced_toFull_ne_resume :
+    Reduced.toFullTable.toList.all (· != some Full.Opcode.resume) = true := by
+  decide +kernel
+
+/-- No reduced opcode is `resume` (a handler call only). -/
+theorem reduced_full_ne_resume {op : Reduced.Opcode} : op.full ≠ some .resume := by
+  intro h
+  unfold Reduced.Opcode.full at h
+  have hlt : op.val.toNat < Reduced.toFullTable.size := Classical.byContradiction fun hn => by
+    rw [getElem!_neg Reduced.toFullTable op.val.toNat hn] at h
+    cases h
+  rw [getElem!_pos Reduced.toFullTable op.val.toNat hlt] at h
+  have := List.all_eq_true.1 reduced_toFull_ne_resume _
+    (Array.mem_toList_iff.2 (Array.getElem_mem hlt))
+  rw [h] at this
+  exact absurd this (by decide)
+
+set_option maxRecDepth 8000 in
+/-- `stepView` of an instruction whose view isn't `resume`: the shape's control flow, or the
+end (`stepView_out` without the unwinding). -/
+theorem stepView_plain {c : R.Code} {s : R.RState} {i : R.Insn} {ch : OpSem.Choice} {o : R.Out}
+    (h : R.stepView c s i ch = .ok o)
+    (hres : ∀ v, R.view c.mode c.ρ i = some v → (v.op == .resume) = false) :
+    (∃ v t ctl pc', R.view c.mode c.ρ i = some v ∧ v.ctl = some t ∧ t.succ s.pc ctl = some pc' ∧
+      ∃ st, o = .step { s with pc := pc', st }) ∨ ∃ f, o = .done f := by
+  unfold R.stepView at h
+  generalize hview : R.view c.mode c.ρ i = ov at h
+  cases ov with
+  | none => simp [OpSem.illFormed, throw, throwThe, MonadExceptOf.throw] at h
+  | some v =>
+    cases hctl : v.ctl with
+    | none => simp [hctl, OpSem.illFormed, throw, throwThe, MonadExceptOf.throw] at h
+    | some t =>
+      have hr' : (v.op == .resume) = false := hres v hview
+      by_cases hu : (v.op == .unreachable) = true
+      · simp [hctl, hr', hu, bind, Except.bind, throw, throwThe, MonadExceptOf.throw] at h
+      · have hu' : (v.op == .unreachable) = false := by
+          revert hu; cases (v.op == .unreachable) <;> simp
+        simp only [hctl, hr', hu', Bool.false_eq_true, ↓reduceIte, bind, Except.bind] at h
+        generalize ho : OpSem.opSem v.op v.ops s.st ch = oo at h
+        cases oo with
+        | error e => simp at h
+        | ok r =>
+          obtain ⟨ctl, st⟩ := r
+          cases i with
+          | handler hh args tt =>
+            try simp only at h
+            generalize hcl : R.clearHome c.mode.pe args.length (-(c.d.frameSize : Int)) st = oc
+              at h
+            cases oc with
+            | error e => simp at h
+            | ok st2 =>
+              try simp only at h
+              generalize hp : t.succ s.pc ctl = op' at h
+              cases op' with
+              | none => simp [OpSem.illFormed, throw, throwThe, MonadExceptOf.throw] at h
+              | some pc' =>
+                simp only [pure, Except.pure, Except.ok.injEq] at h
+                exact .inl ⟨v, t, ctl, pc', rfl, hctl, hp, st2, h.symm⟩
+          | native op ops =>
+            try simp only [pure, Except.pure] at h
+            generalize hp : t.succ s.pc ctl = op' at h
+            cases op' with
+            | none => simp [OpSem.illFormed, throw, throwThe, MonadExceptOf.throw] at h
+            | some pc' =>
+              simp only [pure, Except.pure, Except.ok.injEq] at h
+              exact .inl ⟨v, t, ctl, pc', rfl, hctl, hp, st, h.symm⟩
+
+set_option maxRecDepth 100000 in
+/-- An answer is to a native call or island. -/
+theorem answer_callIsland {c : R.Code} {s : R.RState} {a : R.Answer} {o : R.Out}
+    (h : R.answer c s a = .ok o) :
+    ∃ op ops f, c.d.insns[s.pc]? = some (.native op ops) ∧ op.full = some f ∧
+      (f.info.shape = .call ∨ f.info.shape = .island) := by
+  unfold R.answer at h
+  cases hi : c.d.insns[s.pc]? with
+  | none => simp [hi, OpSem.illFormed, throw, throwThe, MonadExceptOf.throw] at h
+  | some i =>
+    cases i with
+    | handler _ _ _ => simp [hi, OpSem.illFormed, throw, throwThe, MonadExceptOf.throw] at h
+    | native op ops =>
+      cases hf : op.full with
+      | none => simp [hi, hf, OpSem.illFormed, throw, throwThe, MonadExceptOf.throw] at h
+      | some f =>
+        refine ⟨op, ops, f, rfl, hf, ?_⟩
+        simp only [hi, hf] at h
+        cases hsh : f.info.shape <;> (try rw [hsh] at h)
+        all_goals first
+          | exact .inl rfl
+          | exact .inr rfl
+          | (simp [OpSem.illFormed, throw, throwThe, MonadExceptOf.throw] at h; done)
+
+set_option maxRecDepth 8000 in
+/-- A step of an instruction that is neither a call, an island nor a `resume`: the next
+instruction (when it falls through) or a target (`step_out` without the unwinding). -/
+theorem step_plain {c : R.Code} {s s' : R.RState} {ch : OpSem.Choice}
+    (h : R.step c s ch = .ok (.step s')) {i : R.Insn} (hi : c.d.insns[s.pc]? = some i)
+    (hnc : ∀ (op : Reduced.Opcode) (ops : List (R.Opnd Nat)) (f : Full.Opcode),
+      i = .native op ops → op.full = some f → f.info.shape ≠ .call ∧ f.info.shape ≠ .island)
+    (hnr : ∀ (args : List R.Arg) (t : R.Then Nat), i ≠ .handler .resume args t) :
+    (s'.pc = s.pc + 1 ∧ RSucc.insnFalls i = true) ∨ s'.pc ∈ RSucc.insnTargets i := by
+  cases i with
+  | handler hh args t =>
+    obtain ⟨s1, hsc⟩ := Ryo.Proofs.DeadStore.step_scopes_ok h
+    have hpc : s1.pc = s.pc := (Ryo.Proofs.Scope.scopes_keeps _ hsc).pc
+    rw [Ryo.Proofs.Shapes.step_handler hi hsc] at h
+    have hres : ∀ v, R.view c.mode c.ρ (.handler hh args t) = some v →
+        (v.op == .resume) = false := by
+      intro v hv
+      rw [(Ryo.Proofs.DeadStore.view_handler hv).1]
+      apply beq_false_of_ne
+      intro e
+      exact hnr args t (by rw [e])
+    rcases stepView_plain h hres with ⟨v, t0, ctl, pc', hv, hctl, hsucc, st, he⟩ | ⟨fin, he⟩
+    · cases he
+      obtain ⟨-, hct⟩ := Ryo.Proofs.DeadStore.view_handler hv
+      have ht0 : t0 = t := Option.some.inj (hctl.symm.trans hct)
+      subst ht0
+      rw [hpc] at hsucc
+      rcases RSucc.then_succ hsucc with ⟨hpc', hform⟩ | hmem
+      · refine .inl ⟨hpc', ?_⟩
+        rcases hform with hn | ⟨n, x, hb⟩
+        · rcases (RSucc.view_handler_shape hv).1 hn with e | e <;>
+            simp only [RSucc.insnFalls, e] <;> decide
+        · simp only [RSucc.insnFalls, (RSucc.view_handler_shape hv).2 n x hb] <;> decide
+      · exact .inr hmem
+    · cases he
+  | native op ops =>
+    cases hf : op.full with
+    | none =>
+      unfold R.step at h
+      simp only [hi] at h
+      obtain ⟨s1, -, h⟩ := Ryo.Proofs.DecodeLink.ebind_ok h
+      simp [hf, OpSem.illFormed, throw, throwThe, MonadExceptOf.throw] at h
+    | some f =>
+      obtain ⟨hnc1, hnc2⟩ := hnc op ops f rfl hf
+      unfold R.step at h
+      simp only [hi] at h
+      obtain ⟨s1, hsc, h⟩ := Ryo.Proofs.DecodeLink.ebind_ok h
+      have hpc : s1.pc = s.pc := (Ryo.Proofs.Scope.scopes_keeps _ hsc).pc
+      simp only [hf] at h
+      cases hsh : f.info.shape <;> (try rw [hsh] at h)
+      case call => exact absurd hsh hnc1
+      case island => exact absurd hsh hnc2
+      case jmp =>
+        split at h
+        all_goals try contradiction
+        all_goals try (simp [OpSem.illFormed, throw, throwThe, MonadExceptOf.throw] at h; done)
+        simp only [pure, Except.pure, Except.ok.injEq, R.Out.step.injEq] at h
+        subst h
+        first
+          | exact .inr (by simp [RSucc.insnTargets, R.Opnd.targetsOf])
+          | (subst_vars; exact .inr (by simp [RSucc.insnTargets, R.Opnd.targetsOf]))
+      case arg =>
+        split at h
+        all_goals try contradiction
+        all_goals try (simp [OpSem.illFormed, throw, throwThe, MonadExceptOf.throw] at h; done)
+        split at h
+        all_goals try (simp [OpSem.illFormed, throw, throwThe, MonadExceptOf.throw] at h; done)
+        obtain ⟨st, -, h⟩ := Ryo.Proofs.DecodeLink.ebind_ok h
+        simp only [pure, Except.pure, Except.ok.injEq, R.Out.step.injEq] at h
+        subst h
+        refine .inl ⟨by simp [hpc], ?_⟩
+        simp only [RSucc.insnFalls, Ryo.Proofs.DeadStore.reduced_shape hf, hsh] <;> decide
+      case ret =>
+        split at h
+        all_goals try contradiction
+        all_goals try (simp [OpSem.illFormed, throw, throwThe, MonadExceptOf.throw] at h; done)
+        repeat (obtain ⟨_, -, h⟩ := Ryo.Proofs.DecodeLink.ebind_ok h)
+        first | (simp [pure, Except.pure] at h; done) | cases h
+      case tailCall =>
+        split at h
+        all_goals try contradiction
+        all_goals try (simp [OpSem.illFormed, throw, throwThe, MonadExceptOf.throw] at h; done)
+        repeat (obtain ⟨_, -, h⟩ := Ryo.Proofs.DecodeLink.ebind_ok h)
+        first | (simp [pure, Except.pure] at h; done) | cases h
+      -- the shapes `opSem` gives the meaning of: `stepView`
+      all_goals
+        have hs : R.opShape f = true := by unfold R.opShape; rw [hsh]
+        have hv : R.stepView c s1 (.native op ops) ch = .ok (.step s') := h
+        have hres : ∀ v, R.view c.mode c.ρ (.native op ops) = some v →
+            (v.op == .resume) = false := by
+          intro v hview
+          obtain ⟨vals, t, -, -, rfl⟩ := Ryo.Proofs.Step.view_native hf hs hview
+          show (f == Full.Opcode.resume) = false
+          apply beq_false_of_ne
+          intro e
+          exact reduced_full_ne_resume (by rw [← e]; exact hf)
+        rcases stepView_plain hv hres with ⟨v, t0, ctl, pc', hview, hctl, hsucc, st, he⟩ |
+            ⟨fin, he⟩
+        · cases he
+          obtain ⟨vals, t, -, hnc', rfl⟩ := Ryo.Proofs.Step.view_native hf hs hview
+          have ht0 : t0 = t := (Option.some.inj hctl).symm
+          subst ht0
+          rw [hpc] at hsucc
+          exact RSucc.native_succ hf hnc' hsucc
+        · cases he
+
 /-- A2: no leading `arg` reaches the region (an `arg` falls through, the body's last instruction
 doesn't; `Decodes.argsSucc`). -/
 theorem region_not_leadArg (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     {k : Nat} (hk : k ≤ S.r.protos.size) (hr : S.c.inRegion k = true) :
     ¬ LeadArg S k ∧ S.args k = false := by
-  sorry -- PE-P2
+  obtain ⟨c', hread⟩ := hD.read
+  have hred := hD.reduced
+  have hm := hD.modeEq
+  have hak : S.args k = false := by
+    cases ha : S.args k with
+    | false => rfl
+    | true =>
+      exfalso
+      unfold R.Code.inRegion at hr
+      cases hpe : S.c.mode.pe with
+      | false => rw [hpe] at hr; simp at hr
+      | true =>
+        cases hst : S.c.d.regionStart with
+        | none => rw [hpe, hst] at hr; simp at hr
+        | some L =>
+          rw [hpe, hst] at hr
+          have hLk : L ≤ k := by simpa using hr
+          have hpe' : mode.pe = true := by rw [← hm]; exact hpe
+          obtain ⟨i0, hact⟩ := cleanup_action hred (List.min?_mem hst)
+          obtain ⟨p, hp⟩ := regionPad_some hread hpe' hact
+          obtain ⟨L', hL'sz, hleast, -, -, -, -, -, hL0, hnf⟩ := read_region_start hread hp
+          have hst2 := hst
+          rw [regionStart_eq hred, hleast] at hst2
+          have hLL : L' = L := Option.some.inj hst2
+          rw [hLL] at hnf hL0 hL'sz
+          -- every proto up to `k` is an `arg`, so `L - 1` is one, but it doesn't fall through
+          have hj : L - 1 < S.r.protos.size := by omega
+          have hjl : L - 1 < S.r.protos.toList.length := by simpa using hj
+          have hL1 : S.args (L - 1 + 1) = true :=
+            hD.args_le (show L - 1 + 1 ≤ k by omega) hk ha
+          rw [hD.argsSucc (L - 1) hjl, Bool.and_eq_true] at hL1
+          have hop : S.r.protos.toList[L - 1].op = .arg := by simpa using hL1.2
+          have hh := arg_proto_handler hD hjl hop
+          have e : S.r.protos.toList[L - 1] = S.r.protos[L - 1]! := by
+            rw [getElem!_pos S.r.protos (L - 1) hj]; simp
+          rw [e] at hop hh
+          unfold Proto.fallsThrough at hnf
+          rw [hh, hop, argsOk_arg_shape] at hnf
+          first | (simp at hnf; done) | exact absurd hnf (by decide)
+  refine ⟨fun ⟨hk1, ha1⟩ => ?_, hak⟩
+  rw [hD.argsSucc k (by simpa using hk1), hak] at ha1
+  cases ha1
 
 /-- A3: a body instruction with a cleanup entry has call sites (`actionsOf` maps call sites to
 the protos holding their return addresses). -/
@@ -1437,7 +1834,83 @@ theorem cleanup_sites (hD : Decodes S code relocs rodata callSites dropped scope
     {k : Nat} (hk : k < S.r.protos.size) {e : Option Nat × Bool}
     (hcl : S.c.cleanupAt k = some e) (hb : S.c.inRegion k = false) :
     S.r.protos[k].sites ≠ [] := by
-  sorry -- PE-P2
+  obtain ⟨c', hread⟩ := hD.read
+  have hred := hD.reduced
+  have hm := hD.modeEq
+  have hact := cleanupAt_inv hred hcl
+  -- `actionsOf`'s action at `k` comes from a call site, or `k` is past its `rs` (in the region)
+  have key : ∀ rs c11 c12, (actionsOf callSites S.r.protos rs).run c11 = .ok (S.r.actions, c12) →
+      (rs ≤ k → rs < S.r.protos.size → S.c.inRegion k = true) → S.r.protos[k].sites ≠ [] := by
+    intro rs c11 c12 hao hreg
+    rcases actionsOf_sites hao k e hact with h | h
+    · rw [getElem!_pos S.r.protos k hk] at h
+      exact h
+    · rw [hreg h (by omega)] at hb
+      cases hb
+  cases hp : regionPad mode callSites with
+  | none =>
+    obtain ⟨c11, c12, hao⟩ := read_actions_noRegion hread hp
+    exact key _ c11 c12 hao (fun _ h => absurd h (Nat.lt_irrefl _))
+  | some p =>
+    obtain ⟨-, protos0, fr, c10, c11, c12, -, -, -, hao, -⟩ := read_region hread hp
+    refine key _ c11 c12 hao (fun hle hlt => ?_)
+    have hpe : mode.pe = true := by
+      unfold regionPad at hp
+      cases h : mode.pe with
+      | true => rfl
+      | false => rw [h] at hp; simp at hp
+    unfold R.Code.inRegion
+    rw [hm, hpe, regionStart_eq hred, actionsOf_least hao hlt]
+    simp [hle]
+
+/-- A handler's `thenSeq` has call sites only for `resume`. -/
+theorem thenSeq_sites {op : Full.Opcode} {nn hat : Nat} {c c' : Cursor} {t : Then Nat}
+    {sites : List (Nat × Nat)} (h : (thenSeq op nn hat).run c = .ok ((t, sites), c'))
+    (hop : op ≠ .resume) : sites = [] := by
+  unfold thenSeq at h
+  split at h
+  · obtain ⟨he, -⟩ := pure_ok h; cases he; rfl
+  · obtain ⟨he, -⟩ := pure_ok h; cases he; rfl
+  · obtain ⟨u, c1, h1, h⟩ := bind_ok h
+    obtain ⟨at_, c2, h2, h⟩ := bind_ok h
+    obtain ⟨x, c3, h3, h⟩ := bind_ok h
+    split at h
+    · split at h
+      · obtain ⟨he, -⟩ := pure_ok h; cases he; rfl
+      · exact (err_ok h).elim
+    · exact (err_ok h).elim
+  · obtain ⟨ts, c1, h1, h⟩ := bind_ok h
+    obtain ⟨he, -⟩ := pure_ok h; cases he; rfl
+  · obtain ⟨u, c1, h1, h⟩ := bind_ok h
+    obtain ⟨he, -⟩ := pure_ok h; cases he
+    simp [hop]
+  · exact (err_ok h).elim
+
+/-- A body proto that falls through isn't the body's last: `k + 1` is in the body
+(`Decodes.fallBody`). -/
+theorem ProtoFacts.inRegion_next (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    {k p : Nat} {q : Proto} {c' : Cursor} {cache' : Cache} (hP : ProtoFacts S k p q c' cache')
+    (hfl : q.fallsThrough = true) : S.c.inRegion (k + 1) = false := by
+  obtain ⟨i, hi, hio⟩ := hP.insn
+  obtain ⟨p1, ctr, hpq⟩ := hP.proto
+  have hpk := (Array.getElem?_eq_some_iff.1 hpq).2
+  have hf := insnFalls_of (hio hP.lt)
+  rw [hpk] at hf
+  exact hD.fallBody hP.body hi (hf.trans hfl)
+
+/-- A body instruction without call sites has no successor in PE's pad region: it has no cleanup
+entry (`cleanup_sites`), and R reaches the region from the body only by such an unwind
+(`RegionFacts.bodyEnd`). -/
+theorem Decodes.nextBody (hD : Decodes S code relocs rodata callSites dropped scopes mode)
+    {s s' : R.RState} {k : Nat} (hsk : s.pc = k) (hb : S.c.inRegion k = false)
+    (hn : RNext S.c s s') (hk : k < S.r.protos.size) (hs : S.r.protos[k].sites = []) :
+    S.c.inRegion s'.pc = false := by
+  subst hsk
+  cases hr : S.c.inRegion s'.pc with
+  | false => rfl
+  | true =>
+    obtain ⟨pad, -, hcl, -⟩ := hD.region.bodyEnd s s' hb hn hr
+    exact absurd hs (cleanup_sites hD hk hcl hb)
 
 /-- A4: an instruction that is neither a call, an island nor a `resume` goes to the next one
 (when it falls through) or to one of its targets: it doesn't unwind (`stepView`'s non-resume
@@ -1448,7 +1921,19 @@ theorem rnext_plain {c : R.Code} {s s' : R.RState} (h : RNext c s s') {i : R.Ins
       i = .native op ops → op.full = some f → f.info.shape ≠ .call ∧ f.info.shape ≠ .island)
     (hnr : ∀ (args : List R.Arg) (t : R.Then Nat), i ≠ .handler .resume args t) :
     (s'.pc = s.pc + 1 ∧ RSucc.insnFalls i = true) ∨ s'.pc ∈ RSucc.insnTargets i := by
-  sorry -- PE-P2
+  cases h with
+  | step hs => exact step_plain hs hi hnc hnr
+  | answer hs ha =>
+    -- only a call or an island has an answer
+    exfalso
+    obtain ⟨i', -, -, h2⟩ := RSucc.step_out hs
+    have hpc := h2 _ _ rfl
+    obtain ⟨op, ops, f, hio, hf, hsh⟩ := answer_callIsland ha
+    rw [hpc, hi] at hio
+    obtain ⟨h1, h2⟩ := hnc op ops f (Option.some.inj hio) hf
+    rcases hsh with e | e
+    · exact h1 e
+    · exact h2 e
 
 /-- B1: the region's entry `sub rsp, 40; jmp r11` starts at a relocation boundary (the body's
 end without counters, `readParts`'s `bodyEnd = limit`; with counters the counter stubs' end,
@@ -1456,8 +1941,8 @@ end without counters, `readParts`'s `bodyEnd = limit`; with counters the counter
 theorem regionEntry_boundary (hD : Decodes S code relocs rodata callSites dropped scopes mode)
     {rs : Nat} (hpe : S.c.mode.pe = true) (hrs : S.c.d.regionStart = some rs) {m : Mem}
     (hL : LinkOkF S.ctx m S.body S.rs S.c.mode) :
-    Boundary S.rs (posOf S.r rs - regionEntryLen) := by
-  sorry -- PE-P2
+    Boundary S.rs (posOf S.r rs - regionEntryLen) :=
+  hD.regionBoundary rs hpe hrs m hL
 
 /-- B2: no `ret` or tail call in the region (`regionLayoutOk_shape`; `resumeSlots` keeps the
 opcodes). -/
