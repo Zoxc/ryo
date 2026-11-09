@@ -217,7 +217,7 @@ theorem fold_getElem0 {bs : List AbstractByte} {d : Array AbstractByte} {off : N
 /-- Writing a whole private local: L0's store and R's frame write of related bytes keep the
 local related (and live), and keep `MemInj` (no R memory changes). -/
 theorem writeLocal_priv {ι : Inj} {fp : Nat} {st st' : OpSem.State} {m0 m0' : Memory}
-    {slot : LocalSlot} {p : ThinPointer} {lv : Bool} (hm : MemInj ι m0 st.mem)
+    {slot : LocalSlot} {p : ThinPointer} (hm : MemInj ι m0 st.mem)
     (a : AllocId) (x : Allocation) (hp : p.prov = some a) (hι : ι a = none)
     (hx : m0.get? a = some x) (hlive : x.live = true)
     (haddr : (x.addr : Int) = fp + slot.off) (hpaddr : p.addr = x.addr)

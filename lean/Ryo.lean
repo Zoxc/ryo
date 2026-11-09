@@ -72,3 +72,5 @@ import Ryo.Proofs.DeadStore.Covered
 import Ryo.Proofs.DeadStore.Sim
 import Ryo.Proofs.Lower.MemInj
 import Ryo.Proofs.Lower.FrameRel
+import Ryo.Proofs.Lower.IntBin
+import Ryo.Proofs.Lower.SimBinOp
