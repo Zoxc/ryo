@@ -6,9 +6,10 @@
 //! address on top), the whole state in the AOT frame. The *dispatcher* jumps through a table
 //! to the head's entry. An entry drops the return address, keeps `fp` (the return address,
 //! the caller's frame and the stack arguments don't move), moves `rsp` to `fp - F_jit`, moves
-//! the live values whose slots differ ([`super::frame::osr_moves`]) through a scratch area
-//! below both frames, loads first and stores second (a parallel move), and jumps to the head
-//! in the JIT code. A head it can't enter (`None`) returns to the stub, which continues the
+//! the live values whose slots differ through a scratch area below both frames, loads first
+//! and stores second (a parallel move), and jumps to the head in the JIT code. The SSA
+//! pipeline builds its entries from the pieces here (`jit::emit`); [`osr_code`], whole
+//! entries from lists of moves, is what the Lean x86 vectors check (`tests/lean_x86_vectors.rs`). A head it can't enter (`None`) returns to the stub, which continues the
 //! AOT code.
 
 use alloc::vec::Vec;

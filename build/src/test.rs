@@ -76,7 +76,6 @@ const VARIANTS: &[Variant] = &[
     // (design/jit.md#testing), also with frames the JIT lays out differently.
     Variant { name: "ryo-std-jit", ryo_std: true, env: JIT_SYNC, jit: true, ..VARIANT },
     Variant { name: "ryo-std-jit-shuffle", ryo_std: true, env: JIT_SHUFFLE, jit: true, ..VARIANT },
-    Variant { name: "ryo-std-jit-reencode", ryo_std: true, env: JIT_REENCODE, jit: true, ..VARIANT },
     // The JIT's SSA pipeline (design/jit.md#the-ssa-pipeline), with its checkers, on the corpus's
     // own VM functions: from their first call, and entered by OSR at the first loop head.
     Variant { name: "ryo-jit-ssa", env: JIT_SSA, jit: true, ..VARIANT },
@@ -106,8 +105,6 @@ const JIT_SYNC: &[(&str, &str)] = &[("RYO_JIT_THRESHOLD", "0"), ("RYO_JIT_SYNC",
 const JIT_OFF: &[(&str, &str)] = &[("RYO_JIT", "off")];
 /// [`JIT_SYNC`], with shuffled JIT frames.
 const JIT_SHUFFLE: &[(&str, &str)] = &[("RYO_JIT_THRESHOLD", "0"), ("RYO_JIT_SYNC", "1"), ("RYO_JIT_SHUFFLE", "1")];
-/// [`JIT_SYNC`], through the re-encoding pipeline instead of the SSA pipeline.
-const JIT_REENCODE: &[(&str, &str)] = &[("RYO_JIT_THRESHOLD", "0"), ("RYO_JIT_SYNC", "1"), ("RYO_JIT_OPT", "reencode")];
 /// [`JIT_SYNC`], through the SSA pipeline with its checkers.
 const JIT_SSA: &[(&str, &str)] = &[("RYO_JIT_THRESHOLD", "0"), ("RYO_JIT_SYNC", "1"), ("RYO_JIT_OPT", "ssa"), ("RYO_JIT_CHECK", "1")];
 /// The SSA pipeline entered by OSR at the first loop head pass of each function's first call
@@ -461,13 +458,11 @@ const CARGO_RUN: CargoRun =
     CargoRun { name: "", args: &[], env: &[], selected: |s| s.jit, target_subdir: None, codegen_tests: false, slow_tests: false };
 
 const JIT_SSA_RUN: &[(&str, &str)] = &[("RYO_JIT_OPT", "ssa"), ("RYO_JIT_CHECK", "1")];
-const JIT_REENCODE_RUN: &[(&str, &str)] = &[("RYO_JIT_OPT", "reencode"), ("RYO_JIT_CHECK", "1")];
 const JIT_NAIVE_RUN: &[(&str, &str)] = &[("RYO_JIT_OPT", "ssa-naive"), ("RYO_JIT_CHECK", "1")];
 
 /// The runtime's own tests (its JIT side included, and both handler sets, design/vm.md#handlers)
 /// are the `vm` run's. The JIT's tests, through the runtime's trips (design/jit.md#testing),
-/// run through its SSA pipeline (the default) with its checkers, through the naive allocator,
-/// and through the re-encoding pipeline.
+/// run through its SSA pipeline (the default) with its checkers, and through the naive allocator.
 const CARGO_RUNS: &[CargoRun] = &[
     CargoRun {
         name: "vm",
@@ -485,7 +480,6 @@ const CARGO_RUNS: &[CargoRun] = &[
         target_subdir: Some("jit"),
         ..CARGO_RUN
     },
-    CargoRun { name: "vm jit reencode", args: &["test", "-p", "ryo_jit"], env: JIT_REENCODE_RUN, target_subdir: Some("jit"), ..CARGO_RUN },
     CargoRun { name: "vm jit ssa-naive", args: &["test", "-p", "ryo_jit"], env: JIT_NAIVE_RUN, target_subdir: Some("jit"), ..CARGO_RUN },
 ];
 

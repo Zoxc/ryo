@@ -16,9 +16,22 @@ use std::io::{self, Write};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
-/// Why the JIT thread failed a record. The reasons but `Other` are counted on their own.
+/// Why the SSA pipeline declined a function, which then stays in its AOT code: not a failure,
+/// counted apart ([`Stats::fail`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Decline {
+    /// The SSA pipeline doesn't handle it, for this reason.
+    Unsupported(&'static str),
+    /// It is over `RYO_JIT_SSA_LIMIT`.
+    SsaLimit,
+}
+
+/// Why the JIT thread failed a record, leaving it in its AOT code for good. The reasons but
+/// `Other` are counted on their own; `Declined` apart from the failures.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Fail {
+    /// The SSA pipeline declined it.
+    Declined(Decline),
     /// The image has no `rust_eh_personality` slot.
     NoPersonality,
     /// The compile panicked.
@@ -38,9 +51,11 @@ impl Fail {
     /// The reasons counted on their own, in slot order; "other" is the last slot.
     const COUNTED: [Fail; FAIL_SLOTS - 1] = [Fail::NoPersonality, Fail::Panicked, Fail::RegionFull, Fail::SsaCheck];
 
-    /// Its slot in [`Stats::failed`].
+    /// Its slot in [`Stats::failed`] (none for `Declined`, which [`Stats::fail`] counts
+    /// apart: given the last).
     const fn slot(self) -> usize {
         match self {
+            Fail::Declined(_) => FAIL_SLOTS - 1,
             Fail::NoPersonality => 0,
             Fail::Panicked => 1,
             Fail::RegionFull => 2,
@@ -52,6 +67,7 @@ impl Fail {
     /// Its name in the summary.
     fn label(self) -> &'static str {
         match self {
+            Fail::Declined(_) => "declined",
             Fail::NoPersonality => "no personality slot",
             Fail::Panicked => "panicked",
             Fail::RegionFull => "region full",
@@ -61,14 +77,16 @@ impl Fail {
     }
 
     /// The reason, as `RYO_JIT_LOG` prints it.
-    pub(crate) fn message(self) -> &'static str {
-        match self {
+    pub(crate) fn message(self) -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed(match self {
+            Fail::Declined(Decline::Unsupported(why)) => return std::format!("declined, stays in AOT code: ssa: {why}").into(),
+            Fail::Declined(Decline::SsaLimit) => "declined, stays in AOT code: over RYO_JIT_SSA_LIMIT",
             Fail::NoPersonality => "no personality slot",
             Fail::Panicked => "panicked",
             Fail::RegionFull => "region full",
             Fail::SsaCheck => "the SSA pipeline's checkers failed",
             Fail::Other(why) => why,
-        }
+        })
     }
 }
 
@@ -120,17 +138,13 @@ stats! {
     /// Batches taken, and the largest.
     batches,
     largest_batch,
-    /// Records published, by tier, and their code's bytes by tier.
+    /// Records published, and their code's bytes.
     compiled,
-    ssa,
-    reencode,
-    code_ssa,
-    code_reencode,
-    /// Why published functions were re-encoded: the SSA pipeline doesn't handle them, they
-    /// were over `RYO_JIT_SSA_LIMIT`, `RYO_JIT_OPT=reencode`.
+    code,
+    /// Records the SSA pipeline declined ([`Decline`]), which stay in their AOT code: it
+    /// doesn't handle them, they were over `RYO_JIT_SSA_LIMIT`.
     ssa_unsupported,
     ssa_limit,
-    opt_reencode,
     /// Calls the SSA pipeline made direct, and calls it inlined, in published code.
     devirt,
     inlined,
@@ -165,13 +179,23 @@ pub(crate) fn max(c: &AtomicU64, n: u64) {
 impl Stats {
     /// Counts a record that failed for `why`.
     pub(crate) fn fail(&self, why: Fail) {
-        add(&self.failed[why.slot()], 1);
+        match why {
+            Fail::Declined(Decline::Unsupported(_)) => add(&self.ssa_unsupported, 1),
+            Fail::Declined(Decline::SsaLimit) => add(&self.ssa_limit, 1),
+            _ => add(&self.failed[why.slot()], 1),
+        }
     }
 }
 
 impl Snapshot {
+    /// Records failed, the declined ones not included.
     pub fn failed_total(&self) -> u64 {
         self.failed.iter().sum()
+    }
+
+    /// Records the SSA pipeline declined.
+    pub fn declined(&self) -> u64 {
+        self.ssa_unsupported + self.ssa_limit
     }
 
     /// Records the SSA pipeline's checkers failed.
@@ -188,13 +212,12 @@ fn mib(bytes: u64) -> f64 {
 pub(crate) fn progress(s: &Snapshot, since: Duration, w: &mut impl Write) -> io::Result<()> {
     writeln!(
         w,
-        "[ryo] jit stats: +{}s compiled {} (ssa {}, reencode {}), failed {}, code {:.1} MiB",
+        "[ryo] jit stats: +{}s compiled {}, declined {}, failed {}, code {:.1} MiB",
         since.as_secs(),
         s.compiled,
-        s.ssa,
-        s.reencode,
+        s.declined(),
         s.failed_total(),
-        mib(s.code_ssa + s.code_reencode)
+        mib(s.code)
     )
 }
 
@@ -203,28 +226,17 @@ pub(crate) fn summary(s: &Snapshot, pid: u32, since: Duration, w: &mut impl Writ
     const P: &str = "[ryo] jit stats:";
     writeln!(w, "{P} summary, pid {pid}, {:.2}s since the JIT started", since.as_secs_f64())?;
     writeln!(w, "{P}   queued    {:>4} records in {} batches (largest {})", s.queued, s.batches, s.largest_batch)?;
-    writeln!(
-        w,
-        "{P}   compiled  {:>4}: ssa {}, reencode {} (ssa unsupported {}, ssa-limit {}, RYO_JIT_OPT=reencode {})",
-        s.compiled, s.ssa, s.reencode, s.ssa_unsupported, s.ssa_limit, s.opt_reencode
-    )?;
+    writeln!(w, "{P}   compiled  {:>4}", s.compiled)?;
+    writeln!(w, "{P}   declined  {:>4}: ssa unsupported {}, ssa-limit {} (stay in AOT code)", s.declined(), s.ssa_unsupported, s.ssa_limit)?;
     write!(w, "{P}   failed    {:>4}:", s.failed_total())?;
     for f in Fail::COUNTED {
         write!(w, " {} {},", f.label(), s.failed[f.slot()])?;
     }
     writeln!(w, " {} {}", Fail::Other("").label(), s.failed[Fail::Other("").slot()])?;
-    let in_flight = s.queued.saturating_sub(s.compiled).saturating_sub(s.failed_total());
+    let in_flight = s.queued.saturating_sub(s.compiled).saturating_sub(s.declined()).saturating_sub(s.failed_total());
     writeln!(w, "{P}   in flight {in_flight:>4} (taken, not yet reported; approximate at exit)")?;
     writeln!(w, "{P}   ssa: devirt {}, inlined {} calls", s.devirt, s.inlined)?;
-    writeln!(
-        w,
-        "{P}   code   {:.1} MiB (ssa {:.1}, reencode {:.1}) in {} regions; region-full retries {}",
-        mib(s.code_ssa + s.code_reencode),
-        mib(s.code_ssa),
-        mib(s.code_reencode),
-        s.regions,
-        s.region_retries
-    )?;
+    writeln!(w, "{P}   code   {:.1} MiB in {} regions; region-full retries {}", mib(s.code), s.regions, s.region_retries)?;
     let ms = |ns: u64| ns as f64 / 1e6;
     writeln!(
         w,
@@ -278,13 +290,10 @@ mod tests {
             queued: 1203,
             batches: 97,
             largest_batch: 143,
-            compiled: 1171,
-            ssa: 1102,
-            reencode: 69,
-            code_ssa: 2202010,
-            code_reencode: 209715,
+            compiled: 1102,
+            code: 2411725,
             ssa_unsupported: 61,
-            opt_reencode: 8,
+            ssa_limit: 8,
             devirt: 5,
             inlined: 40,
             regions: 3,
@@ -300,18 +309,16 @@ mod tests {
             "\
 [ryo] jit stats: summary, pid 41213, 2.84s since the JIT started
 [ryo] jit stats:   queued    1203 records in 97 batches (largest 143)
-[ryo] jit stats:   compiled  1171: ssa 1102, reencode 69 (ssa unsupported 61, ssa-limit 0, RYO_JIT_OPT=reencode 8)
+[ryo] jit stats:   compiled  1102
+[ryo] jit stats:   declined    69: ssa unsupported 61, ssa-limit 8 (stay in AOT code)
 [ryo] jit stats:   failed      12: no personality slot 9, panicked 1, region full 0, ssa check failed 0, other 2
 [ryo] jit stats:   in flight   20 (taken, not yet reported; approximate at exit)
 [ryo] jit stats:   ssa: devirt 5, inlined 40 calls
-[ryo] jit stats:   code   2.3 MiB (ssa 2.1, reencode 0.2) in 3 regions; region-full retries 2
+[ryo] jit stats:   code   2.3 MiB in 3 regions; region-full retries 2
 [ryo] jit stats:   time   compile 1.21s (mean 1.0ms, max 38ms)
 "
         );
-        assert_eq!(
-            text(|w| progress(&s, Duration::from_secs(60), w)),
-            "[ryo] jit stats: +60s compiled 1171 (ssa 1102, reencode 69), failed 12, code 2.3 MiB\n"
-        );
+        assert_eq!(text(|w| progress(&s, Duration::from_secs(60), w)), "[ryo] jit stats: +60s compiled 1102, declined 69, failed 12, code 2.3 MiB\n");
         // The summary fits the report's buffer.
         assert!(text(|w| summary(&s, u32::MAX, Duration::from_secs(1 << 40), w)).len() < 1024);
     }
@@ -329,6 +336,11 @@ mod tests {
         for why in [Fail::Panicked, Fail::Panicked, Fail::RegionFull, Fail::SsaCheck, Fail::Other("no such function")] {
             st.fail(why);
         }
-        assert_eq!(st.load_all().failed, [0, 2, 1, 1, 1]);
+        for d in [Decline::Unsupported("calls"), Decline::Unsupported("calls"), Decline::SsaLimit] {
+            st.fail(Fail::Declined(d));
+        }
+        let s = st.load_all();
+        assert_eq!(s.failed, [0, 2, 1, 1, 1]);
+        assert_eq!((s.ssa_unsupported, s.ssa_limit, s.declined()), (2, 1, 3));
     }
 }

@@ -701,8 +701,8 @@ offsets in the function, and the function's LSDA, the ELF one.
   site (whose abort is the handler's) that ends its instruction (one storing no result, an
   island) is followed by a `nop`: its return address is never an epilogue's start.
 - **JIT**: the JIT's code gets the same, through a thunk to the handler in its code memory
-  ([jit.md](jit.md#unwinding-and-profiling)); the SSA pipeline leaves functions with cleanup
-  landing pads to re-encoding.
+  ([jit.md](jit.md#unwinding-and-profiling)); the SSA pipeline declines functions with cleanup
+  landing pads, which stay in their AOT code.
 
 On Windows `y test --full` runs it: panics, C++ exceptions and `__except` access violations
 through VM frames ([platforms.md](platforms.md)).
@@ -879,7 +879,7 @@ see only symbols.
   run of the function there; in published JIT code, the chain of AOT calls the call stands
   for, each expanded as its AOT call's run, so a JIT frame prints as the AOT frames (and
   JIT- and MIR-inlined frames) it came from. Frames without a run (no debuginfo, the
-  stubs, re-encoded code) report the function with no location. Lock-free and
+  stubs) report the function with no location. Lock-free and
   allocation-free, without core's panic path.
 - **JIT chains**: decoding keeps each instruction's AOT byte position (`Decoded::ipos`).
   Each call instruction of the SSA IR carries a chain link (`InstData::loc`,

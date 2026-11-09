@@ -634,8 +634,7 @@ fn statistics() {
     // Other tests compile concurrently, so only lower bounds.
     let now = ryo_jit::stats();
     assert!(now.compiled > before.compiled);
-    assert!(now.ssa + now.reencode > before.ssa + before.reencode);
-    assert!(now.code_ssa + now.code_reencode > before.code_ssa + before.code_reencode);
+    assert!(now.code > before.code);
     assert!(now.queued > before.queued && now.batches > before.batches && now.largest_batch >= 1);
     assert!(now.regions >= 1);
     // Stored after the compile: they may lag.
@@ -684,21 +683,11 @@ fn note_call(a: &mut Asm, s_note: Sym, slot: i32) -> u32 {
     a.i(Insn::CallSym { d: Slot(0), sym: s_note, k: 0, a: List::from_words(&regs(&[slot])) })
 }
 
-/// How much further down `rsp` is in the JIT code than in the AOT code of a function of frame
-/// size `f` (`asm::frame::shuffle_map`).
-fn jit_rsp_delta(f: u32, shuffle: bool) -> u64 {
-    if shuffle { f as u64 + 64 } else { 0 }
-}
-
 /// Checks how far `rsp` moved between the AOT code's `note` (`first`) and the JIT code's
-/// (`last`): by the frames' difference. The SSA pipeline (the default, but for
-/// `RYO_JIT_OPT=reencode`) lays out frames of its own, so there only by a multiple of 16.
-fn check_rsp(first: u64, last: u64, f: u32, shuffle: bool, what: &str) {
-    if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
-        assert_eq!(first.wrapping_sub(last) % 16, 0, "{what}: rsp");
-    } else {
-        assert_eq!(first - last, jit_rsp_delta(f, shuffle), "{what}: rsp");
-    }
+/// (`last`): by the frames' difference, which the SSA pipeline lays out on its own, so by a
+/// multiple of 16.
+fn check_rsp(first: u64, last: u64, what: &str) {
+    assert_eq!(first.wrapping_sub(last) % 16, 0, "{what}: rsp");
 }
 
 /// A loop moves into the JIT code at the head pass that trips, with every value live at the
@@ -802,7 +791,7 @@ fn osr_values_at(shuffle: bool, frame: u32, k: i64) {
     let o = |a: &AtomicU64| a.load(std::sync::atomic::Ordering::SeqCst);
     assert!(in_aot(&img, f, o(&obs.first)), "{what}: started at {:#x}", o(&obs.first));
     assert!(in_jit(&img, f, o(&obs.last)), "{what}: ended at {:#x}", o(&obs.last));
-    check_rsp(o(&obs.first_sp), o(&obs.last_sp), frame, shuffle, &what);
+    check_rsp(o(&obs.first_sp), o(&obs.last_sp), &what);
 }
 
 /// Nested loops: OSR at the outer head (its first pass) or the inner one (later passes),
@@ -849,7 +838,7 @@ fn osr_nested_loops() {
             let o = |a: &AtomicU64| a.load(std::sync::atomic::Ordering::SeqCst);
             assert!(in_aot(&img, f, o(&obs.first)), "{what}");
             assert!(in_jit(&img, f, o(&obs.last)), "{what}: ended at {:#x}", o(&obs.last));
-            check_rsp(o(&obs.first_sp), o(&obs.last_sp), 32, shuffle, &what);
+            check_rsp(o(&obs.first_sp), o(&obs.last_sp), &what);
         }
     }
 }
@@ -900,7 +889,7 @@ fn osr_unwinding() {
             assert!(in_jit(&img, f, o(&obs.last)), "{what}: ran at {:#x}", o(&obs.last));
             if k > 0 {
                 assert!(in_aot(&img, f, o(&obs.first)), "{what}");
-                check_rsp(o(&obs.first_sp), o(&obs.last_sp), 48, shuffle, &what);
+                check_rsp(o(&obs.first_sp), o(&obs.last_sp), &what);
             }
         }
     }
@@ -988,7 +977,7 @@ fn running_calls_switch_over() {
     }
 }
 
-// ---- SSA pipeline (the default, but for `RYO_JIT_OPT=reencode`) ----
+// ---- SSA pipeline ----
 
 fn o(a: &AtomicU64) -> u64 {
     a.load(std::sync::atomic::Ordering::SeqCst)
@@ -1038,8 +1027,8 @@ fn osr_escaped_after_head() {
 }
 
 /// A backward jump that is no loop: its target's counter check trips. The SSA pipeline has no OSR
-/// entry at a head on no cycle, so there the activation finishes in AOT code (the old pipeline
-/// moves into the JIT code); the next call runs the JIT code.
+/// entry at a head on no cycle, so there the activation finishes in AOT code; the next call
+/// runs the JIT code.
 #[test]
 fn acyclic_head() {
     init();
@@ -1063,10 +1052,9 @@ fn acyclic_head() {
     let obs = Obs::default();
     assert_eq!(ok::<_, u64>(img.id(f), (10u64, &raw const obs as u64)), 15);
     assert!(in_aot(&img, f, o(&obs.first)));
-    // The old pipeline has OSR entries at every head, the SSA pipeline only at cyclic ones.
-    let ssa = std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode");
+    // The SSA pipeline has OSR entries only at cyclic heads.
     let last = o(&obs.last);
-    assert!(if ssa { in_aot(&img, f, last) } else { in_jit(&img, f, last) }, "finished at {last:#x}");
+    assert!(in_aot(&img, f, last), "finished at {last:#x}");
     for x in [0u64, 7, 1 << 40] {
         let obs = Obs::default();
         assert_eq!(ok::<_, u64>(img.id(f), (x, &raw const obs as u64)), x + 5);
@@ -1451,29 +1439,11 @@ fn pe_code_at(shuffle: bool, frame: u32, k: Option<i64>) {
     if let Some(k) = k {
         img.trip_after(f, 1, k);
     }
-    // The JIT code's prologue is the one its `UNWIND_INFO` describes (`image::pe_unwind_info`):
-    // `push rbp; mov rbp, rsp`, the probe, `sub rsp, F`.
-    let ssa = std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode");
+    // The JIT code's prologue is the SSA pipeline's own, which its `UNWIND_INFO` describes
+    // (its forms: `tests/jit_pe.rs`, and `ssa.rs`'s `pe_frames`): from `push rbp`.
     let check_prologue = || {
         let code = unsafe { std::slice::from_raw_parts((*img.record(f)).jit_code, 32) };
-        if ssa {
-            // The SSA pipeline's own (its forms: `tests/jit_pe.rs`, and `ssa.rs`'s `pe_frames`).
-            assert_eq!(code[0], 0x55, "{what}");
-            return;
-        }
-        assert_eq!(code[..4], [0x55, 0x48, 0x89, 0xe5], "{what}");
-        let jf = if shuffle { 2 * frame + 64 } else { frame };
-        let sub = if frame >= 4096 {
-            assert_eq!((code[4], &code[5..9], code[9]), (0xb8, &jf.to_le_bytes()[..], 0xe8), "{what}: the probe");
-            &code[14..]
-        } else {
-            &code[4..]
-        };
-        if jf < 128 {
-            assert_eq!(sub[..4], [0x48, 0x83, 0xec, jf as u8], "{what}");
-        } else {
-            assert_eq!(sub[..7], [&[0x48, 0x81, 0xec][..], &jf.to_le_bytes()].concat()[..], "{what}");
-        }
+        assert_eq!(code[0], 0x55, "{what}");
     };
     let saved =
         [0x1111111111111111, 0x2222222222222222, 0x3333333333333333, 0x4444444444444444, 0x5555555555555555, 0x6666666666666666, 0x7777777777777777];
@@ -1488,16 +1458,16 @@ fn pe_code_at(shuffle: bool, frame: u32, k: Option<i64>) {
         assert!(in_jit(&img, f, o(&obs.last)), "{what}, call {call}: ended at {:#x}", o(&obs.last));
         if call == 0 && k.is_some() {
             assert!(in_aot(&img, f, o(&obs.first)), "{what}: started at {:#x}", o(&obs.first));
-            check_rsp(o(&obs.first_sp), o(&obs.last_sp), frame, shuffle, &what);
+            check_rsp(o(&obs.first_sp), o(&obs.last_sp), &what);
         } else {
             assert!(in_jit(&img, f, o(&obs.first)), "{what}, call {call}: started at {:#x}", o(&obs.first));
         }
     }
 }
 
-/// PE code with a cleanup landing pad through the JIT (design/vm.md#unwinding): re-encoded
-/// with its pad region after the body (the SSA pipeline leaves such functions to re-encoding),
-/// and running as the AOT code on the normal path, callee-saved registers intact.
+/// PE code with a cleanup landing pad (design/vm.md#unwinding), whose pad region the SSA
+/// pipeline doesn't lay out: it declines the function, which stays in its AOT code for good
+/// (its record failed, so it isn't queued again), callee-saved registers intact.
 #[test]
 fn pe_pad_region() {
     init();
@@ -1521,12 +1491,7 @@ fn pe_pad_region() {
     obj.unwind.clear();
     let img = link(obj, &[("note_pe", note_pe as *const () as usize)]);
     register(&[&img]);
-    // Functions the SSA pipeline left (to the re-encoding pipeline, or failed by its checkers).
-    let ssa_left = || {
-        let s = ryo_jit::stats();
-        s.ssa_unsupported + s.ssa_check_failed()
-    };
-    let fallbacks = ssa_left();
+    let declined = ryo_jit::stats().ssa_unsupported;
     let saved =
         [0x1111111111111111, 0x2222222222222222, 0x3333333333333333, 0x4444444444444444, 0x5555555555555555, 0x6666666666666666, 0x7777777777777777];
     let o = |a: &AtomicU64| a.load(std::sync::atomic::Ordering::SeqCst);
@@ -1535,17 +1500,12 @@ fn pe_pad_region() {
         let mut regs = [0u64; 7];
         assert_eq!(call_checked(img.code(f), 9, &raw const obs as u64, &mut regs), 9, "call {call}");
         assert_eq!(regs, saved, "call {call}: callee-saved registers");
-        assert_eq!(state(&img, f), JIT_DONE);
-        assert!(in_jit(&img, f, o(&obs.last)), "call {call}: ended at {:#x}", o(&obs.last));
+        assert_eq!(state(&img, f), ryo_bytecode::image::JIT_FAILED, "call {call}");
+        assert!(in_aot(&img, f, o(&obs.first)) && in_aot(&img, f, o(&obs.last)), "call {call}: ran at {:#x}", o(&obs.last));
     }
-    // Re-encoded: the AOT form's prologue, and the region's entry after the body.
-    let rec = unsafe { &*img.record(f) };
-    let code = unsafe { std::slice::from_raw_parts(rec.jit_code, ryo_jit::code_len(rec)) };
-    assert_eq!(code[..4], [0x55, 0x48, 0x89, 0xe5]);
-    assert!(code.windows(7).any(|w| w == [0x48, 0x83, 0xec, 0x28, 0x41, 0xff, 0xe3]), "the region's entry");
-    if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
-        assert!(ssa_left() > fallbacks, "the SSA pipeline left it");
-    }
+    assert!(unsafe { (*img.record(f)).jit_code.is_null() }, "no JIT code");
+    // Declined once (other tests compile concurrently: a lower bound).
+    assert!(ryo_jit::stats().ssa_unsupported > declined, "the SSA pipeline declined it");
 }
 
 /// Win64 arguments of the kinds `i128`, `f16` and `f128` lower to (design/platforms.md): an

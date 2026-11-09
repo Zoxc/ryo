@@ -87,6 +87,6 @@ Running:
 - `RYO_JIT=off`: AOT code only.
 - `RYO_JIT_THRESHOLD=0`: compile on the first call (or `n`, or `e,l`).
 - `RYO_JIT_SYNC=1`: compile synchronously (deterministic; needed for cachegrind).
-- `RYO_JIT_OPT=ssa|ssa-naive|reencode`: the JIT tier.
+- `RYO_JIT_OPT=ssa|ssa-naive`: the SSA pipeline's register allocation (linear scan or naive).
 - `RYO_JIT_CHECK=1`, `RYO_JIT_LOG=1`, `RYO_JIT_DUMP=dir`: check, log, dump.
-- `RYO_JIT_SSA_LIMIT=n`: only the first `n` functions through the SSA pipeline, for bisecting.
+- `RYO_JIT_SSA_LIMIT=n`: only the first `n` functions compiled (the rest stay AOT), for bisecting.

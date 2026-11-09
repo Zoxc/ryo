@@ -160,10 +160,10 @@ of the function and of everything inlined into it, the intermediate IRs with the
 certificates, and the JIT's bytes, OSR code and unwind tables. The Lean side decodes the AOT
 bytes itself, so the JIT's own decoder is not trusted.
 
-- **Today's JIT** (decode, re-encode, optionally shuffle the frame, OSR entries,
-  [jit.md](jit.md)) emits canonical code, so the same decoder reads its output. The checker
-  verifies that the JIT program is the AOT program with its frame remapped, which in R is a
-  change of layout, and that each OSR entry moves the bytes live at its head.
+- **The re-encoding JIT** (decode, re-encode, optionally shuffle the frame, OSR entries)
+  was removed (2026-11): the JIT is the SSA pipeline alone, and a function it declines stays
+  in its AOT code. What remains of that plan is the OSR entry's soundness, for the SSA
+  pipeline's entries.
 - **The SSA pipeline** (its first step is implemented, [jit.md](jit.md#the-ssa-pipeline), without
   the offline log yet; `RYO_JIT_DUMP` writes the IR, locations and code): R → R-SSA (Braun's construction with promotion of non-escaped
   objects) → passes and inlining → register allocation → register-allocated x86. Each step

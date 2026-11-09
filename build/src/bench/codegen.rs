@@ -225,7 +225,7 @@ fn jit_functions(dir: &Path, names: &AotNames) -> Result<Vec<(String, u32, Strin
 }
 
 /// Appends a JIT code dump `text` of the function `path` to `code` in the AOT dumps' form:
-/// `ext` lines dropped, `tier` as `fn <path>` (with the tier if it isn't the SSA pipeline), and
+/// `ext` lines dropped, `tier` as `fn <path>` (with the `RYO_JIT_OPT` if it isn't `ssa`), and
 /// image references in `reloc` lines named by `local`.
 fn rewrite_code(code: &mut String, text: &str, path: &str, local: &dyn Fn(&str) -> String) -> Result<(), String> {
     for line in text.lines() {

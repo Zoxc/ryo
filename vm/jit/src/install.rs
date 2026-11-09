@@ -1,23 +1,20 @@
 //! The JIT thread's compiler: decodes a function from its image, compiles it with the SSA
-//! pipeline (`RYO_JIT_OPT=ssa`, the default) or, as the fallback and with `reencode`, encodes it
-//! again without counters (in another frame layout with `RYO_JIT_SHUFFLE`), builds the OSR
-//! entries of its loop heads, and installs the code near the image: code memory, relocation, unwind
-//! information, the perf map, and the record's publication (design/jit.md, "Compiling and installing").
+//! pipeline (`RYO_JIT_OPT=ssa` or `ssa-naive`), and installs the code near the image: code
+//! memory, relocation, unwind information, the perf map, and the record's publication
+//! (design/jit.md, "Compiling and installing"). A function the SSA pipeline declines stays in
+//! its AOT code.
 
 use core::ptr;
+use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering::{Acquire, Relaxed, Release};
-use core::sync::atomic::{AtomicU64, AtomicUsize};
 use std::collections::HashMap;
 use std::io::Write;
 use std::vec::Vec;
 
-use ryo_bytecode::asm::frame::{self, SlotMap};
-use ryo_bytecode::asm::osr::OsrEntry;
 use ryo_bytecode::asm::{self, FUNC_FAR, FUNC_KINDS, FUNC_NEAR, FUNC_SLOT, Mode, Ref};
 use ryo_bytecode::full::{Const, Data, Func, Sym};
 use ryo_bytecode::image::{
-    EhFunc, Image, ImageResolver, JIT_DONE, JitRecord, eh_cie, eh_fde, eh_fde_rows, jit_count, jit_unbiased, pe_handler_data, pe_osr_unwind_info,
-    pe_region_unwind_info, pe_unwind_info, pe_with_handler,
+    Image, ImageResolver, JIT_DONE, JitRecord, eh_cie, eh_fde_rows, jit_count, jit_unbiased, pe_handler_data, pe_osr_unwind_info, pe_with_handler,
 };
 use ryo_bytecode::jit;
 use ryo_bytecode::jit::inline::VmFunc;
@@ -25,7 +22,7 @@ use ryo_bytecode::jit::ir::CallTarget;
 use ryo_bytecode::jit_abi::{JIT_ENTRY_PREFIX, JIT_ENTRY_PREFIX_BYTES, JitOpt, RtApi, RtCode};
 use ryo_bytecode::{Opcode, reduced, vmem};
 
-use crate::stats::{self, Fail, STATS};
+use crate::stats::{self, Decline, Fail, STATS};
 
 mod callees;
 mod dump;
@@ -83,7 +80,7 @@ pub(crate) fn settled(rec: *mut JitRecord) -> bool {
     })
 }
 
-/// A function's machine code, from either pipeline, before it is installed.
+/// A function's machine code, from the SSA pipeline, before it is installed.
 struct Gen {
     code: Vec<u8>,
     relocs: Vec<asm::Reloc>,
@@ -92,18 +89,13 @@ struct Gen {
     body: Body,
     osr: Option<asm::osr::OsrCode>,
     osr_at: usize,
-    /// PE: where the pad region starts (`code.len()` if there is none, as for the SSA pipeline's code).
-    region: usize,
-    /// The SSA pipeline's call map for backtraces ([`jit::Output::calls`], `chains`); empty
-    /// for re-encoded code, whose frames are named after the function.
+    /// The call map for backtraces ([`jit::Output::calls`], `chains`).
     calls: Vec<(u32, u32)>,
     chains: Vec<jit::ir::ChainLink>,
 }
 
 /// The unwind rules of a function's body.
 enum Body {
-    /// As the encoder lays out frames.
-    Aot(EhFunc),
     /// The SSA pipeline's rows.
     Rows(Vec<(u32, Vec<u8>)>),
     /// The SSA pipeline's PE `UNWIND_INFO`.
@@ -132,23 +124,6 @@ impl From<&'static str> for CompileError {
     }
 }
 
-/// Which pipeline compiled a function.
-#[derive(Clone, Copy)]
-enum Tier {
-    Ssa,
-    Reencode,
-}
-
-impl Tier {
-    /// Its name in `RYO_JIT_DUMP`'s `.code` files.
-    fn name(self) -> &'static str {
-        match self {
-            Tier::Ssa => "ssa",
-            Tier::Reencode => "reencode",
-        }
-    }
-}
-
 pub(crate) struct Jit {
     rt: &'static RtApi,
     /// The handlers each image's code calls, for [`ImageResolver`].
@@ -170,8 +145,8 @@ pub(crate) struct Jit {
     dump: Option<String>,
     /// How many functions went to the SSA pipeline so far ([`ryo_bytecode::jit_abi::JitSettings::ssa_limit`]).
     ssa_tried: u64,
-    /// The statistics of the compile in progress that count only once it is published: why it
-    /// is re-encoded, and the SSA pipeline's direct and inlined calls.
+    /// The statistics of the compile in progress that count only once it is published: the
+    /// SSA pipeline's direct and inlined calls.
     pending: Pending,
     /// The inliner's callee IR, by (image header, function) ([`InlineEnv`]).
     ir_cache: IrCache,
@@ -228,33 +203,23 @@ impl Jit {
             let v = Vec::<u8>::with_capacity(std::hint::black_box(usize::MAX / 2));
             std::hint::black_box(&v);
         }
-        // The SSA pipeline (`RYO_JIT_OPT`), else, or where it doesn't compile the function, the
-        // re-encoding pipeline. `RYO_JIT_SSA_LIMIT=n` (debugging: bisects a miscompile): only
-        // the first `n` functions go through the SSA pipeline. Decided once, so that a retry
-        // neither counts the function again nor switches its tier.
-        let settings = self.rt.settings;
-        let ssa = settings.opt != JitOpt::Reencode && self.ssa_tried < settings.ssa_limit;
-        if ssa {
-            self.ssa_tried += 1;
+        // `RYO_JIT_SSA_LIMIT=n` (debugging: bisects a miscompile): only the first `n` functions
+        // are compiled, the rest stay in their AOT code. Counted once, not again on a retry.
+        if self.ssa_tried >= self.rt.settings.ssa_limit {
+            return Err(Fail::Declined(Decline::SsaLimit));
         }
-        let why = if ssa {
-            None
-        } else if settings.opt == JitOpt::Reencode {
-            Some(&STATS.opt_reencode)
-        } else {
-            Some(&STATS.ssa_limit)
-        };
-        self.pending = Pending { why, ..Pending::default() };
+        self.ssa_tried += 1;
+        self.pending = Pending::default();
         // Again in another region if the one it was compiled for filled up. That one may be a
         // used region reaching the image, so it can be full as well (each retry retires one);
         // a newly mapped region is empty, and the function fits half of one.
-        let mut r = self.compile_once(rec, ssa, false);
+        let mut r = self.compile_once(rec, false);
         for _ in 0..4 {
             if !matches!(r, Err(CompileError::Retry)) {
                 break;
             }
             stats::add(&STATS.region_retries, 1);
-            r = self.compile_once(rec, ssa, true);
+            r = self.compile_once(rec, true);
         }
         r.map_err(|e| match e {
             CompileError::Retry => Fail::RegionFull,
@@ -262,10 +227,9 @@ impl Jit {
         })
     }
 
-    /// Compiles `rec`'s function with the SSA pipeline if `ssa`, else (or where that doesn't
-    /// compile it) by re-encoding; `retry` for any attempt after the first, whose logs and
-    /// dumps the first one already wrote.
-    fn compile_once(&mut self, rec: *mut JitRecord, ssa: bool, retry: bool) -> Result<(), CompileError> {
+    /// Compiles `rec`'s function with the SSA pipeline and installs it; `retry` for any attempt
+    /// after the first, whose logs and dumps the first one already wrote.
+    fn compile_once(&mut self, rec: *mut JitRecord, retry: bool) -> Result<(), CompileError> {
         // SAFETY: a record of a linked image, whose header it points at.
         let (func, img) = unsafe { ((*rec).func, Image::from_header((*rec).header.cast()).map_err(|_| "invalid image")?) };
         let h = img.header();
@@ -279,52 +243,13 @@ impl Jit {
         let shuffled = (self.rt.shuffled)(h as *const _ as *const u8);
         let job = Job { rec, func, img: &img, d: &d, mode, shuffled, place, personality, retry };
 
-        if ssa {
-            // The AOT layout's words (the SSA pipeline lays out its own frame); the calls are
-            // retargeted after inlining, by the rules `reencode` uses.
-            if let Some((out, ssa_ext)) = self.compile_ssa(&job)? {
-                return self.install(&job, &ssa_ext, Tier::Ssa, out);
-            }
-        }
-        let (out, ext) = self.reencode(&job)?;
-        self.install(&job, &ext, Tier::Reencode, out)
+        let (out, ext) = self.compile_ssa(&job)?;
+        self.install(&job, &ext, out)
     }
 
-    /// Compiles `job`'s function through the re-encoding pipeline: its code and callees.
-    fn reencode(&self, job: &Job<'_>) -> Result<(Gen, Vec<Ext>), CompileError> {
-        let Job { rec, d, mode, shuffled, img, .. } = *job;
-        // The JIT frame layout: the AOT one, or with `RYO_JIT_SHUFFLE` one that moves every
-        // slot it can (frame::shuffle_map), to catch reliance on matching frames.
-        let mut map = SlotMap::identity(d.frame_size);
-        let mut words = None;
-        if shuffled {
-            match frame::shuffle_map(d, mode).and_then(|m| Ok((frame::remap_slots(&d.words, mode, &m)?, m))) {
-                Ok((w, m)) => {
-                    words = Some(w);
-                    map = m;
-                }
-                Err(e) => {
-                    if self.rt.settings.log && !job.retry {
-                        self.log(rec, e.what);
-                    }
-                }
-            }
-        }
-        let mut words = words.unwrap_or_else(|| d.words.clone());
-        // Every call but a self-call by its callee's form for the region (design/jit.md,
-        // "Calls"): a VM function not compiled yet through a call slot, which holds its JIT
-        // code once it is (through its AOT entry, every call would pass the counter check and
-        // its stub, and mispredict the entry prefix's `ret`); a known address (compiled JIT
-        // code, native code) directly, or through `r11` out of reach.
-        let mut ext = Vec::new();
-        let mut memo = HashMap::new();
-        self.retarget(job, &mut words, &mut ext, &mut memo)?;
-        Ok((compile_reencode(d, &words, &map, img, mode)?, ext))
-    }
-
-    /// Compiles `job`'s function through the SSA pipeline: its code and callees, or `None` where
-    /// the SSA pipeline doesn't handle it (the re-encoding pipeline does).
-    fn compile_ssa(&mut self, job: &Job<'_>) -> Result<Option<(Gen, Vec<Ext>)>, CompileError> {
+    /// Compiles `job`'s function through the SSA pipeline: its code and callees.
+    /// [`Decline::Unsupported`] where the pipeline doesn't handle it: it stays in its AOT code.
+    fn compile_ssa(&mut self, job: &Job<'_>) -> Result<(Gen, Vec<Ext>), CompileError> {
         let Job { rec, func, img, d, mode, shuffled, place, .. } = *job;
         let h = img.header();
         let opts = jit::Options {
@@ -357,7 +282,6 @@ impl Jit {
                 if let (Some(dir), Some(text)) = (&self.dump, o.dump.take()) {
                     let _ = std::fs::write(dump::dump_path(dir, func, h as *const _ as usize, "txt"), text);
                 }
-                let len = o.code.len();
                 let out = Gen {
                     code: o.code,
                     relocs: o.relocs,
@@ -366,24 +290,20 @@ impl Jit {
                     body: if mode.pe { Body::Pe(o.pe_unwind) } else { Body::Rows(o.cfi) },
                     osr: o.osr,
                     osr_at: o.osr_at as usize,
-                    region: len,
                     calls: o.calls,
                     chains: o.chains,
                 };
                 self.pending.devirt = o.devirt as u64;
                 self.pending.inlined = o.inlined as u64;
-                Ok(Some((out, ssa_ext)))
+                Ok((out, ssa_ext))
             }
+            // Logged as the record fails ([`crate::thread`]).
             Err(jit::Error::Unsupported(u)) => {
-                self.pending.why = Some(&STATS.ssa_unsupported);
                 if let Some(dir) = self.dump.as_ref().filter(|_| !job.retry) {
                     let text = std::format!("; unsupported: {}\n{}", u.0, reduced::Disasm(&d.words));
                     let _ = std::fs::write(dump::dump_path(dir, func, h as *const _ as usize, "txt"), text);
                 }
-                if self.rt.settings.log && !job.retry {
-                    self.log(rec, &std::format!("ssa: {}", u.0));
-                }
-                Ok(None)
+                Err(CompileError::Fail(Fail::Declined(Decline::Unsupported(u.0))))
             }
             // A checker found a bug: always on stderr, so that tests see it, and the function
             // stays in its AOT code (`Failed`), which tests that expect JIT code notice.
@@ -394,18 +314,18 @@ impl Jit {
         }
     }
 
-    /// Installs the code `out` of `job`'s function, compiled by `tier` with the callees `ext`:
-    /// code memory, relocation, unwind information, the perf map and the publication.
-    fn install(&mut self, job: &Job<'_>, ext: &[Ext], tier: Tier, out: Gen) -> Result<(), CompileError> {
+    /// Installs the code `out` of `job`'s function, with the callees `ext`: code memory,
+    /// relocation, unwind information, the perf map and the publication.
+    fn install(&mut self, job: &Job<'_>, ext: &[Ext], out: Gen) -> Result<(), CompileError> {
         let mode = job.mode;
-        let Gen { code: enc_code, mut relocs, rodata, call_sites, body, osr, osr_at, region, calls, chains } = out;
+        let Gen { code: enc_code, mut relocs, rodata, call_sites, body, osr, osr_at, calls, chains } = out;
         let code_len = enc_code.len();
         // The OSR code's stack probes, relocated as the body's.
         if let Some(o) = &osr {
             relocs.extend(o.probes.iter().map(|&p| asm::Reloc { at: (osr_at + p as usize) as u32, to: Ref::Probe }));
         }
         let osr_len = osr.as_ref().map_or(0, |o| o.code.len());
-        let mut eh = Eh::build(&body, osr.as_ref(), osr_at, &call_sites, code_len, region, mode)?;
+        let mut eh = Eh::build(&body, osr.as_ref(), osr_at, &call_sites, code_len, mode)?;
 
         // Code memory: the entry prefix, the code, the OSR code, on PE the handler's thunk
         // (`jmp [rip]; .quad ryo_seh_handler`), then its code constants.
@@ -421,7 +341,7 @@ impl Jit {
         let jit_f = base + CODE_AT;
         self.relocate(job, ext, &mut code, base, ro_at, &relocs, &slot_of)?;
         if self.dump.is_some() {
-            self.dump_code(job, ext, tier, &enc_code, &relocs, osr.as_ref().map(|o| (osr_at, o)));
+            self.dump_code(job, ext, &enc_code, &relocs, osr.as_ref().map(|o| (osr_at, o)));
         }
         eh.patch(eh_base, job.personality, jit_f, osr.is_some().then_some(osr_at), base, base + thunk_at)?;
         if mode.pe {
@@ -433,7 +353,7 @@ impl Jit {
         let _q = crate::thread::quiesce();
         map_and_register(&code, &eh, base, eh_base, mode)?;
         self.publish_calls(job, jit_f, code_len, &calls, &chains);
-        self.publish(job, tier, jit_f, osr.is_some().then(|| jit_f + osr_at), code_len, osr_len, ro_at + rodata.len());
+        self.publish(job, jit_f, osr.is_some().then(|| jit_f + osr_at), code_len, osr_len, ro_at + rodata.len());
         Ok(())
     }
 
@@ -532,11 +452,11 @@ impl Jit {
         Ok(())
     }
 
-    /// Publishes the installed code of `job`'s function, compiled by `tier`, at `jit_f` with its OSR dispatcher at
+    /// Publishes the installed code of `job`'s function at `jit_f` with its OSR dispatcher at
     /// `osr_entry`: the perf map (the `code_len` bytes of code and the `osr_len` of OSR code),
     /// the record, the call slots of it, and the log. `bytes` is
     /// the size of its code memory, for the statistics.
-    fn publish(&mut self, job: &Job<'_>, tier: Tier, jit_f: usize, osr_entry: Option<usize>, code_len: usize, osr_len: usize, bytes: usize) {
+    fn publish(&mut self, job: &Job<'_>, jit_f: usize, osr_entry: Option<usize>, code_len: usize, osr_len: usize, bytes: usize) {
         let (rec, func) = (job.rec, job.func);
         let h = job.img.header();
         if let Some(m) = &mut self.perfmap {
@@ -551,25 +471,15 @@ impl Jit {
         // `thread::oom_panics`) would report a published record as failed.
         let line = self.rt.settings.log.then(|| {
             let c = counts(rec, self.rt.thresholds);
-            self.log_text(rec, &std::format!("compiled ({}, {} calls, {} loop iterations)", tier.name(), c.calls, c.iters))
+            self.log_text(rec, &std::format!("compiled ({}, {} calls, {} loop iterations)", self.rt.settings.opt.name(), c.calls, c.iters))
         });
         // Counted before the record's `Done`, whose `SeqCst` store makes the counts visible
         // to a `RYO_JIT_SYNC` waiter (stats.rs); after it, a test could miss them.
         stats::add(&STATS.compiled, 1);
-        let (n, b) = match tier {
-            Tier::Ssa => (&STATS.ssa, &STATS.code_ssa),
-            Tier::Reencode => (&STATS.reencode, &STATS.code_reencode),
-        };
-        stats::add(n, 1);
-        stats::add(b, bytes as u64);
+        stats::add(&STATS.code, bytes as u64);
         let p = std::mem::take(&mut self.pending);
-        match tier {
-            Tier::Ssa => {
-                stats::add(&STATS.devirt, p.devirt);
-                stats::add(&STATS.inlined, p.inlined);
-            }
-            Tier::Reencode => p.why.into_iter().for_each(|c| stats::add(c, 1)),
-        }
+        stats::add(&STATS.devirt, p.devirt);
+        stats::add(&STATS.inlined, p.inlined);
         // The dispatcher, at the start of the OSR code: every head's stub calls it from now.
         // SAFETY: the record is this thread's until `Done`.
         unsafe { JitRecord::publish(rec, jit_f as *const u8, (jit_f - JIT_ENTRY_PREFIX) as *mut u8, osr_entry.map(|a| a as *mut u8)) };
@@ -601,8 +511,6 @@ impl Jit {
 /// [`Jit::pending`].
 #[derive(Default)]
 struct Pending {
-    /// The reason counter of a re-encoded function.
-    why: Option<&'static AtomicU64>,
     devirt: u64,
     inlined: u64,
 }
@@ -627,15 +535,10 @@ struct Job<'a> {
 
 /// A function's unwind information, before its PC-relative fields are patched
 /// ([`Eh::patch`]). ELF: the CIE, the FDE, the OSR code's FDE, the terminator, then the
-/// LSDA. PE: the `RUNTIME_FUNCTION`s, then their `UNWIND_INFO`s: the body's
-/// (`pe_unwind_info`, the AOT code's form, or the SSA pipeline's own, from the same encoder,
-/// `pe_unwind_codes`); for the AOT form, over the OSR code too unless a pad region lies
-/// between: past the prologue every `rsp` is described by `rbp`, the OSR code's included,
-/// which keeps the AOT frame's `rbp`; the pad region's; and if apart, or always for the SSA
-/// pipeline's code, the OSR code's (the body's, all of it past the prologue; for the SSA pipeline's
-/// without a pad region, `pe_osr_unwind_info`). The body's and the region's name `ryo_seh_handler` through a thunk
-/// after the code, with the LSDA as their handler data (design/jit.md, "Unwinding and
-/// profiling").
+/// LSDA. PE: the `RUNTIME_FUNCTION`s, then their `UNWIND_INFO`s: the body's (the SSA
+/// pipeline's, `pe_unwind_codes`), which names `ryo_seh_handler` through a thunk after the code,
+/// with the LSDA as its handler data, and the OSR code's (`pe_osr_unwind_info`)
+/// (design/jit.md, "Unwinding and profiling").
 enum Eh {
     Elf(ElfEh),
     Pe(PeEh),
@@ -662,21 +565,19 @@ struct PeEh {
 }
 
 impl Eh {
-    /// The information of `body` (`code_len` bytes, its pad region at `region`, `code_len`
-    /// if none) and its OSR code `osr` at `osr_at`.
+    /// The information of `body` (`code_len` bytes) and its OSR code `osr` at `osr_at`.
     fn build(
         body: &Body,
         osr: Option<&asm::osr::OsrCode>,
         osr_at: usize,
         call_sites: &[asm::CallSite],
         code_len: usize,
-        region: usize,
         mode: Mode,
     ) -> Result<Eh, CompileError> {
         Ok(if mode.pe {
-            Eh::Pe(PeEh::build(body, osr, osr_at, call_sites, code_len, region, mode)?)
+            Eh::Pe(PeEh::build(body, osr, osr_at, call_sites, code_len)?)
         } else {
-            Eh::Elf(ElfEh::build(body, osr, call_sites, code_len, mode)?)
+            Eh::Elf(ElfEh::build(body, osr, call_sites, code_len)?)
         })
     }
 
@@ -715,12 +616,11 @@ impl Eh {
 }
 
 impl ElfEh {
-    fn build(body: &Body, osr: Option<&asm::osr::OsrCode>, call_sites: &[asm::CallSite], code_len: usize, mode: Mode) -> Result<ElfEh, CompileError> {
+    fn build(body: &Body, osr: Option<&asm::osr::OsrCode>, call_sites: &[asm::CallSite], code_len: usize) -> Result<ElfEh, CompileError> {
         let mut b = Vec::new();
         let pers_field = eh_cie(&mut b);
         let mut fdes = std::vec![b.len()];
         let fields = match body {
-            Body::Aot(ef) => eh_fde(&mut b, 0, ef, mode),
             Body::Rows(rows) => eh_fde_rows(&mut b, 0, code_len as u32, rows),
             Body::Pe(_) => return Err("PE unwind info off PE".into()),
         };
@@ -755,47 +655,17 @@ impl PeEh {
         osr_at: usize,
         call_sites: &[asm::CallSite],
         code_len: usize,
-        region: usize,
-        mode: Mode,
     ) -> Result<PeEh, CompileError> {
         let info = match body {
-            Body::Aot(ef) => {
-                if ef.prologue != 0 || ef.entry_stub as usize != region {
-                    return Err("PE code with a counter check".into());
-                }
-                pe_unwind_info(ef, mode)
-            }
             Body::Pe(info) => info.clone(),
             Body::Rows(_) => return Err("DWARF rows on PE".into()),
         };
-        let osr_len = osr.map_or(0, |o| o.code.len());
         let lsda = asm::lsda::write(call_sites);
-        let has_region = region < code_len;
-        let r = if has_region { region as u32 } else { 0 };
-        // The entries: their ranges in the code, `UNWIND_INFO`s and handler data.
-        let mut entries: Vec<((usize, usize), Vec<u8>, Option<Vec<u8>>)> = Vec::new();
-        // The SSA pipeline's OSR code: its own entry ([`pe_osr_unwind_info`]); the entries' post
-        // parts are in the body's code.
-        let ssa_osr = matches!(body, Body::Pe(_)) && osr.is_some();
-        let body_end = if has_region || ssa_osr {
-            if has_region { region } else { code_len }
-        } else if osr.is_some() {
-            osr_at + osr_len
-        } else {
-            code_len
-        };
-        entries.push(((0, body_end), info.clone(), Some(pe_handler_data(0, r, &lsda))));
-        if ssa_osr && !has_region {
-            entries.push(((osr_at, osr_at + osr_len), pe_osr_unwind_info(), None));
-        }
-        if has_region {
-            entries.push(((region, code_len), pe_region_unwind_info(), Some(pe_handler_data(r, r, &lsda))));
-            if osr.is_some() {
-                // Never in its prologue: the codes apply from its first byte.
-                let mut past = info;
-                past[1] = 0;
-                entries.push(((osr_at, osr_at + osr_len), past, None));
-            }
+        // The entries: their ranges in the code, `UNWIND_INFO`s and handler data. The OSR code
+        // has its own ([`pe_osr_unwind_info`]); the entries' post parts are in the body's code.
+        let mut entries: Vec<((usize, usize), Vec<u8>, Option<Vec<u8>>)> = std::vec![((0, code_len), info, Some(pe_handler_data(0, 0, &lsda)))];
+        if let Some(o) = osr {
+            entries.push(((osr_at, osr_at + o.code.len()), pe_osr_unwind_info(), None));
         }
         // The `RUNTIME_FUNCTION`s (patched later), then the `UNWIND_INFO`s.
         let mut eh = PeEh { bytes: std::vec![0; 12 * entries.len()], rfs: Vec::new(), handlers: Vec::new() };
@@ -895,49 +765,6 @@ fn patch_rel32(field: &mut [u8], from: usize, target: usize) -> Result<(), &'sta
 /// `r11` if `far_rt`.
 fn jit_mode(img: &Image<'_>, far_rt: bool) -> Mode {
     Mode { counters: false, far_rt, ..img.mode() }
-}
-
-/// The re-encoding pipeline: `d`'s reduced code `words`, retargeted and in the frame layout
-/// `map`, encoded again without counters, with OSR entries for its loop heads.
-fn compile_reencode(d: &asm::Decoded, words: &[u32], map: &SlotMap, img: &Image<'_>, mode: Mode) -> Result<Gen, CompileError> {
-    // Scopes keep their bytes' new offsets; an end over bytes that move apart only ends
-    // escapes, which stay, so it is dropped (scopes are side data, not code).
-    let scopes: Vec<asm::Scope> =
-        d.scopes.iter().filter_map(|sc| Some(asm::Scope { frame_offset: map.map_range(sc.frame_offset, sc.size)?, ..*sc })).collect();
-    let (enc, starts) =
-        asm::encode_reduced_at(words, map.frame_size, &d.cleanup, &scopes, &d.dropped, img.code_consts(), mode).map_err(|_| "encode")?;
-
-    // OSR entries, one per AOT loop head, landing at the head in the JIT code. Values
-    // move where the layouts differ and the head's liveness says they matter.
-    let live = if map.is_identity() { Vec::new() } else { frame::head_liveness(d, mode).map_err(|e| e.what)? };
-    let mut entries = Vec::with_capacity(d.heads.len());
-    for (n, &hd) in d.heads.iter().enumerate() {
-        // An `arg` reads an argument register and an `lpad` the exception object in
-        // `rax`, which a head's stub doesn't keep: no entry there.
-        let w = &words[hd as usize..];
-        let enterable = match reduced::Opcode::from_u16(w[0] as u16) {
-            Some(reduced::Opcode::Arg) => false,
-            Some(reduced::Opcode::Handler) => w[1] != Opcode::Lpad as u32,
-            _ => true,
-        };
-        let landing = starts.binary_search_by_key(&hd, |s| s.0).map(|i| starts[i].1).map_err(|_| "loop head")?;
-        entries.push(enterable.then(|| OsrEntry { landing, moves: live.get(n).map(|l| frame::osr_moves(l, map)).unwrap_or_default() }));
-    }
-    let osr_at = enc.code.len().next_multiple_of(16);
-    let osr = (!entries.is_empty()).then(|| asm::osr::osr_code(&entries, d.frame_size, map.frame_size, mode, osr_at as u32));
-    let ef = EhFunc::new(&enc, map.frame_size);
-    Ok(Gen {
-        code: enc.code,
-        relocs: enc.relocs,
-        rodata: enc.rodata,
-        call_sites: enc.call_sites,
-        body: Body::Aot(ef),
-        osr,
-        osr_at,
-        region: enc.region as usize,
-        calls: Vec::new(),
-        chains: Vec::new(),
-    })
 }
 
 /// Writes `line` to stderr, straight to the file descriptor rather than through std's

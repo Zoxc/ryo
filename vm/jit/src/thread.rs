@@ -316,7 +316,7 @@ fn compile_one(jit: &mut Jit, rt: &RtApi, rec: *mut JitRecord, recheck: &mut Rec
         // visible to a `RYO_JIT_SYNC` waiter (stats.rs).
         STATS.fail(why);
         if rt.settings.log {
-            let _ = catch(|| jit.log(rec, why.message()));
+            let _ = catch(|| jit.log(rec, &why.message()));
         }
     }
     (rt.done)(rec, why.is_none());

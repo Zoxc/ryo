@@ -348,39 +348,3 @@ pub(super) fn callee(place: Place, c: Callee, name: Name, ext: &mut Vec<Ext>, me
     memo.insert(c, op);
     op
 }
-
-impl Jit {
-    /// Rewrites the `call`s, `call.sym`s and `tail_call`s of `words` (the code of `job`'s
-    /// function) to their callees' forms for its region ([`callee`]): every call but a
-    /// self-call, and those through a symbol whose slot holds no address.
-    pub(super) fn retarget(&self, job: &Job<'_>, words: &mut [u32], ext: &mut Vec<Ext>, memo: &mut HashMap<Callee, u32>) -> Result<(), &'static str> {
-        let Job { func, img, place, .. } = *job;
-        let h = img.header();
-        let header = h as *const _ as usize;
-        let mut at = 0;
-        while at < words.len() {
-            let op = reduced::Opcode::from_u16(words[at] as u16);
-            let call = match op {
-                Some(reduced::Opcode::Call) => Some((at + 2, Callee::Vm(header, words[at + 2]), Name::Func(words[at + 2]))),
-                Some(reduced::Opcode::TailCall) => Some((at + 1, Callee::Vm(header, words[at + 1]), Name::Func(words[at + 1]))),
-                Some(reduced::Opcode::CallSym) => {
-                    let s = words[at + 2];
-                    sym_callee(self.rt, img, s).map(|c| (at + 2, c, Name::Sym(s)))
-                }
-                _ => None,
-            };
-            if let Some((field, c, name)) = call
-                && c != Callee::Vm(header, func)
-            {
-                // Of the callee's image: a symbol may name another image's function.
-                let c = c.checked().ok_or("function out of range")?;
-                words[field] = callee(place, c, name, ext, memo);
-                if op == Some(reduced::Opcode::CallSym) {
-                    words[at] = reduced::Opcode::Call as u32;
-                }
-            }
-            at += reduced::insn_len(&words[at..]).map_err(|_| "reduced code")?;
-        }
-        Ok(())
-    }
-}

@@ -243,7 +243,7 @@ This gives a third backend, built from the same toolchain, to compare against.
   `ryo-jit-ssa-osr` run the corpus through the JIT's SSA pipeline with its checkers, every VM
   function from its first call or entered by OSR at its first loop head pass
   ([jit.md](jit.md#testing)); `test` runs the JIT's own tests through the SSA pipeline (`vm jit`),
-  its naive allocator (`vm jit ssa-naive`) and the re-encoding pipeline (`vm jit reencode`).
+  and its naive allocator (`vm jit ssa-naive`).
   The `ryo-fp` variants build with `-Cforce-frame-pointers=yes`, so VM code calls `ryo_rt`'s
   frame-pointer handler set ([vm.md](vm.md#handlers)), AOT and through the JIT. rustc's default merges the corpus's small crates into one codegen
   unit; the `ryo-cgu*` variants ask for 1, 16 and 256 (also with `-Zshare-generics`, `-O3`
@@ -291,9 +291,8 @@ This gives a third backend, built from the same toolchain, to compare against.
   and `ryo-std-abort` (`-Cpanic=abort`,
   compared with plain rustc's `-Cpanic=abort` build; programs with a Rust dylib are skipped),
   `ryo-std-jit` (run with `RYO_JIT_THRESHOLD=0 RYO_JIT_SYNC=1`: every VM function, std's
-  included, runs its JIT code from its first call), `ryo-std-jit-shuffle` (also
-  `RYO_JIT_SHUFFLE=1`) and `ryo-std-jit-reencode` (through the re-encoding pipeline instead
-  of the SSA pipeline). Without a current one (missing, or stale against its inputs), an
+  included, runs its JIT code from its first call) and `ryo-std-jit-shuffle` (also
+  `RYO_JIT_SHUFFLE=1`). Without a current one (missing, or stale against its inputs), an
   explicit `--full`, `--only std` or `--variant ryo-std-*` fails; otherwise (the fast suite,
   `--only jit`, changed test programs, or `--full` reached from the changed paths) they are
   skipped with a warning.
@@ -359,7 +358,7 @@ This gives a third backend, built from the same toolchain, to compare against.
   depend on timing, and with `RYO_JIT_DUMP` ([jit.md](jit.md#settings)), and writes, per
   function the JIT compiled, by path as in the AOT dumps: its code to
   `bench/codegen/<program>.jit.s` (printed as `<program>.s`; a function the SSA pipeline
-  doesn't handle is marked `(reencode)`, and the OSR code follows `; OSR entries`), and the
+  declines stays in its AOT code and isn't listed, and the OSR code follows `; OSR entries`), and the
   SSA pipeline's IR to `<program>.jit-ssa-pre.txt` (as construction leaves it: Braun et al.'s
   construction with its copy and constant propagation and trivial-parameter removal) and
   `<program>.jit-ssa-post.txt` (after the folds, as register allocation gets it). Their

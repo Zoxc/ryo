@@ -1,7 +1,8 @@
 //! Frame slots of reduced code ([`crate::reduced`], as [`super::Decoded`] gives it): which
-//! bytes each instruction reads and writes, a liveness pass over frame bytes, and renaming
-//! slots to another frame layout ([`SlotMap`], [`remap_slots`]), which the JIT's OSR entries
-//! convert between (design/jit.md, "OSR").
+//! bytes each instruction reads and writes (the encoder's inline forms use [`Access`]), and
+//! renaming slots to another frame layout ([`SlotMap`], [`remap_slots`], [`shuffle_map`]),
+//! which the Lean decoder vectors use for code in frames of another size
+//! (`tests/lean_reduced_vectors.rs`).
 //!
 //! Extents: inline instructions, calls, `ret` and `arg` access their operands at the widths
 //! the opcode or the return kind gives. A handler's slot operands are taken to reach 16
@@ -15,7 +16,6 @@ use alloc::vec::Vec;
 
 use super::{ARG_ADDR, Decoded, Mode, ScopeKind, layout, param_reg, ret_parts};
 use crate::full::{self, List, OperandKind, Shape};
-use crate::image::Cleanup;
 use crate::reduced::{self, Arg};
 
 /// How an instruction uses one of its frame operands.
@@ -391,11 +391,6 @@ impl Bytes {
         }
     }
 
-    fn all(&mut self) {
-        let f = self.frame_size;
-        self.set(-(f as i32), f, true);
-    }
-
     fn get(&self, b: usize) -> bool {
         self.bits[b / 64] >> (b % 64) & 1 != 0
     }
@@ -432,111 +427,4 @@ impl Bytes {
             (b > lo).then(|| ((lo as i64 - f) as i32, (b - lo) as u32))
         })
     }
-
-    /// Removes the bytes of `o`.
-    fn subtract(&mut self, o: &Bytes) {
-        for (a, b) in self.bits.iter_mut().zip(&o.bits) {
-            *a &= !b;
-        }
-    }
-
-    fn union(&mut self, o: &Bytes) -> bool {
-        let mut changed = false;
-        for (a, b) in self.bits.iter_mut().zip(&o.bits) {
-            let n = *a | b;
-            changed |= n != *a;
-            *a = n;
-        }
-        changed
-    }
-}
-
-/// The frame bytes (`-F .. 0`) live at each loop head of `d` ([`Decoded::heads`], in order):
-/// those some path from the head may read before writing them, landing pads included. It
-/// is conservative: handlers kill nothing, calls and islands read everything, and escaped
-/// bytes are only as live as their accesses make them (the caller keeps them in place).
-pub fn head_liveness(d: &Decoded, mode: Mode) -> Result<Vec<Bytes>, FrameError> {
-    let insns = insns(&d.words, mode)?;
-    let index = |w: u32| insns.binary_search_by_key(&w, |i| i.at).ok();
-    let n = insns.len();
-    let mut succ: Vec<Vec<usize>> = alloc::vec![Vec::new(); n];
-    for (k, i) in insns.iter().enumerate() {
-        if i.next && k + 1 < n {
-            succ[k].push(k + 1);
-        }
-        for &t in &i.targets {
-            succ[k].push(index(t).ok_or(FrameError { at: i.at, what: "a branch target" })?);
-        }
-    }
-    // Unwinding edges: a call site to its landing pad, past nothing it writes.
-    let mut pad: Vec<Option<usize>> = alloc::vec![None; n];
-    for e in &d.cleanup {
-        if let Cleanup::Pad(p, _) = e.action() {
-            let at = index(e.offset).ok_or(FrameError { at: e.offset, what: "a cleanup entry" })?;
-            pad[at] = Some(index(p).ok_or(FrameError { at: e.offset, what: "a landing pad" })?);
-        }
-    }
-    let f = d.frame_size;
-    // The bytes each instruction reads (`gen`) and writes for sure (`kill`).
-    let mut gen_ = Vec::with_capacity(n);
-    let mut kill = Vec::with_capacity(n);
-    for i in &insns {
-        let mut g = Bytes::new(f);
-        let mut k = Bytes::new(f);
-        if i.reads_all {
-            g.all();
-        }
-        for o in &i.opnds {
-            let off = d.words[o.word] as i32;
-            match o.access {
-                Access::Read(n) => g.set(off, n, true),
-                Access::Write(n) => k.set(off, n, true),
-                Access::Clobber(_) | Access::Addr => {}
-                Access::Opaque => g.all(),
-            }
-        }
-        // A byte read and written by the same instruction is read first.
-        k.subtract(&g);
-        gen_.push(g);
-        kill.push(k);
-    }
-    let mut live_in: Vec<Bytes> = alloc::vec![Bytes::new(f); n];
-    let mut changed = true;
-    while changed {
-        changed = false;
-        for k in (0..n).rev() {
-            let mut out = Bytes::new(f);
-            for &s in &succ[k] {
-                out.union(&live_in[s]);
-            }
-            out.subtract(&kill[k]);
-            out.union(&gen_[k]);
-            if let Some(p) = pad[k] {
-                out.union(&live_in[p]);
-            }
-            changed |= live_in[k].union(&out);
-        }
-    }
-    d.heads.iter().map(|&h| index(h).map(|i| live_in[i].clone()).ok_or(FrameError { at: h, what: "a loop head" })).collect()
-}
-
-/// The moves an OSR entry makes at a head from the AOT layout to `map`'s: the live bytes that
-/// `map` moves, as runs `(from, to, len)` of AOT and new offsets.
-pub fn osr_moves(live: &Bytes, map: &SlotMap) -> Vec<(i32, i32, u32)> {
-    let mut out: Vec<(i32, i32, u32)> = Vec::new();
-    let mut off = -(live.frame_size as i64);
-    while off < 0 {
-        let (d, end) = map.segment(off as i32);
-        let end = end.min(0);
-        if d != 0 {
-            for (o, n) in live.runs(off as i32, (end - off) as u32, true) {
-                match out.last_mut() {
-                    Some((from, to, len)) if *from + *len as i32 == o && *to - *from == d => *len += n,
-                    _ => out.push((o, o + d, n)),
-                }
-            }
-        }
-        off = end;
-    }
-    out
 }

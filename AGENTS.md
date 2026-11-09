@@ -83,7 +83,7 @@ code that calls the VM's handlers; cg_llvm compiles everything else. Start at
 - JIT (`design/jit.md`): counters in each function's JIT record trip into `ryo_rt`, which
   queues the function for the `ryo_jit` thread. It decodes the AOT code back to the reduced
   set and compiles it with the SSA pipeline (`vm/bytecode/src/jit/`, `RYO_JIT_OPT=ssa`, the
-  default) or re-encodes it (`reencode`), then installs it through call slots.
+  default); functions it declines stay in AOT code. It installs the result through call slots.
 - OSR: running calls switch to JIT code at loop heads (`design/jit.md#osr`).
 
 ## `./y.sh` commands (`./y.sh --help`)
@@ -120,7 +120,7 @@ code that calls the VM's handlers; cg_llvm compiles everything else. Start at
   `RYO_BACKEND_MARKER`, `RYO_DUMP_LEAN=<dir>`.
 - Runtime/JIT (`design/jit.md#settings`): `RYO_JIT=off`, `RYO_JIT_THRESHOLD=n` (or `e,l`;
   0 = first call), `RYO_JIT_SYNC=1` (deterministic; needed for cachegrind),
-  `RYO_JIT_OPT=ssa|ssa-naive|reencode`, `RYO_JIT_CHECK=1`, `RYO_JIT_DUMP=<dir>`,
+  `RYO_JIT_OPT=ssa|ssa-naive`, `RYO_JIT_CHECK=1`, `RYO_JIT_DUMP=<dir>`,
   `RYO_JIT_LOG=1`, `RYO_JIT_SHUFFLE=1`, `RYO_JIT_PERFMAP=1`, `RYO_JIT_SSA_LIMIT=n` (bisect
   miscompiles), `RYO_JIT_LICM=1` (general LICM, off by default), `RYO_JIT_ROTATE=1` (loop rotation, off by
   default), `RYO_JIT_STATS=1|2` (startup

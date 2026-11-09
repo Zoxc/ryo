@@ -7,9 +7,9 @@ for it: each function counts its calls and loop iterations in a *JIT record* and
 through a stub into the runtime when a counter stops being negative ([vm.md](vm.md#jit-records-and-counters)).
 
 The JIT code is the function compiled through an SSA pipeline with a register allocator ([The
-SSA pipeline](#the-ssa-pipeline)), or, where that pipeline doesn't handle it (or with
-`RYO_JIT_OPT=reencode`), decoded and encoded again without counters. Its frame may differ from the AOT code's (it does with
-`RYO_JIT_SHUFFLE`), and nothing relies on them matching: a call running the AOT code moves
+SSA pipeline](#the-ssa-pipeline)); a function that pipeline declines stays in its AOT code,
+which is the fallback (there is no second JIT tier). Its frame differs from the AOT code's
+(more with `RYO_JIT_SHUFFLE`), and nothing relies on them matching: a call running the AOT code moves
 over at its next loop head through an OSR entry that converts the frame ([OSR](#osr)). On
 PE, `ryo_jit_start` fails for now (the JIT isn't ported), so the trips act as the no-op JIT
 after the first.
@@ -222,11 +222,11 @@ by `start_once` (unix), keep the child consistent and let it start a JIT of its 
   tables ([vm.md](vm.md#several-ryo-runtimes-in-one-process)). The decoder reads the counters'
   checks and stubs as part of the canonical form and lists the loop heads
   (`Decoded::heads`, [vm.md](vm.md#jit-records-and-counters)).
-- **Encoding**: the SSA pipeline's `jit::compile` ([The SSA pipeline](#the-ssa-pipeline)), or, for a
-  function it doesn't handle, `asm::encode_reduced_at` in the image's mode without counters
-  (in another frame layout with `RYO_JIT_SHUFFLE`, [OSR](#osr)), which also gives the
-  instructions' positions for the OSR entries, then the OSR entries. A failure (decode, encode, reach,
-  memory) or a panic marks the record `Failed` (its counters get the `Failed` bias), and the thread goes on.
+- **Encoding**: the SSA pipeline's `jit::compile` ([The SSA pipeline](#the-ssa-pipeline)) in
+  the image's mode without counters, OSR entries included. A function it declines
+  (`jit::Unsupported`, or over `RYO_JIT_SSA_LIMIT`), a failure (decode, encode, reach,
+  memory, a checker) or a panic marks the record `Failed` (its counters get the `Failed`
+  bias, so they never trip again): the function stays in its AOT code, and the thread goes on.
 - **Entry redirection**: the stub `call`s through `entry`, so the JIT code must get rid of
   the stub's return address. The JIT code starts with `lea r11, [rip + code]; mov [rsp],
   r11; ret` (12 bytes, `JIT_ENTRY_PREFIX`), at which `entry` points: the `ret` replaces the
@@ -248,8 +248,7 @@ by `start_once` (unix), keep the child consistent and let it start a JIT of its 
   from the image (a result out of reach is unmapped and the next hint tried). A function
   takes whole pages from a mapping's start: the entry prefix at byte 4, the code at 16, the
   OSR code ([OSR](#osr)) 16-aligned, then its code constants (`Encoded::rodata`)
-  16-aligned, copied next to the code rather than pointing at the image's (they are equal
-  for an exact re-encode, but needn't stay so). The pages turn read-execute once written
+  16-aligned (the SSA pipeline's own, not the image's). The pages turn read-execute once written
   and are never written again or reused, so no cross-modifying code. Unwind information and
   call slots are taken from the mapping's end and stay read-write. A full mapping is
   retired and another mapped; a function of more than half a mapping fails.
@@ -267,7 +266,8 @@ by `start_once` (unix), keep the child consistent and let it start a JIT of its 
   calls of another image's functions, and of functions compiled later, run their JIT code
   without the entry's counter check and stub once it exists. The reduced code carries the
   forms as function operands with a `FUNC_SLOT`, `FUNC_NEAR` or `FUNC_FAR` bit
-  (`asm::FUNC_KINDS`) and the callee's index in the compile's list; both encoders emit them.
+  (`asm::FUNC_KINDS`) and the callee's index in the compile's list; the SSA pipeline retargets
+  its calls after inlining and its encoder emits them.
   A `call.sym` whose slot holds 0 (a weak symbol) stays through the image's symbol slot, as
   do `call.sym.ind` (PE) and island calls. Function pointers are untouched: `addr.sym` and
   native callers still get the AOT entry.
@@ -296,8 +296,8 @@ by `start_once` (unix), keep the child consistent and let it start a JIT of its 
 
 ## Unwinding and profiling
 
-- **Unwind information**: per function an `.eh_frame` (`image::eh_cie` and `image::eh_fde`,
-  shared with the image writer: the same CIE and rules), the OSR code's FDE
+- **Unwind information**: per function an `.eh_frame` (`image::eh_cie`, shared with the
+  image writer, and `image::eh_fde_rows` of the SSA pipeline's rows), the OSR code's FDE
   ([OSR](#osr)), the zero terminator, and its LSDA (`asm::lsda::write` of the JIT code's
   call sites), all PC-relative, registered with libgcc's `__register_frame`, which is the
   program's unwinder (the sealed object only references it). The personality is the
@@ -305,29 +305,18 @@ by `start_once` (unix), keep the child consistent and let it start a JIT of its 
   address, which the runtime passes in (`RtApi::personality`): in the JIT that name is its
   own std's. So panics unwind through JIT frames and their landing pads run. The entry
   prefix before the FDE's range runs before the frame exists and calls nothing.
-- **PE** (`sys/windows.rs`): per function one `RUNTIME_FUNCTION` over the body and the OSR
-  code, and the AOT code's `UNWIND_INFO` (`image::pe_unwind_info`: `push rbp; mov rbp,
-  rsp`, the probe, `sub`, `rbp` the frame register at offset 0), in the
-  region's read-write end, registered with `RtlAddFunctionTable` (base: the function's
-  allocation, below both; never deleted, code is never freed). One entry covers the OSR
-  code too: there the AOT frame's `rbp` is already in place (the
-  stub's return address and the moving `rsp` don't matter with a frame register), so the
-  body's description past its prologue is the OSR code's at every instruction, and an
-  entry's `jmp` to its head stays inside the function, which the unwinder's epilogue check
-  requires (a separate entry would make `pop rcx; jmp head` look like an epilogue). As in
-  the AOT code, the `UNWIND_INFO` names `ryo_seh_handler` ([vm.md](vm.md#pe-seh)), with the
-  LSDA of the JIT code's call sites as handler data: the handler RVA can't reach `ryo_rt`
-  from the allocation, so it is a thunk after the OSR code, `jmp [rip]; .quad` the handler's
-  address (`RtApi::seh_handler`). Re-encoded code keeps the AOT code's pad region at the end
-  of the code, with its own entry and handler; then the OSR code, after it, gets an entry
-  of its own, the body's `UNWIND_INFO` without a prologue (`SizeOfProlog` 0), and the
-  `pop rcx; jmp head` concern above holds there only for asynchronous unwinders (nothing
-  in it calls code that unwinds). The SSA pipeline doesn't lay out pad regions: it leaves
-  functions with cleanup landing pads, its inlined callees' included, to re-encoding
-  (`Unsupported`). The entry prefix has no entry: a leaf, the return address at `rsp` (the
-  AOT stub's, then the body's start, whose prologue hasn't run). The SSA pipeline's functions
-  get their own `UNWIND_INFO` (`jit::Output::pe_unwind`, [PE frames](#back-end)). Their OSR
-  entries keep `rbp` and store the other saves (`rdi` and `rsi` among them, which the AOT
+- **PE** (`sys/windows.rs`): per function a `RUNTIME_FUNCTION` over the body, with the SSA
+  pipeline's `UNWIND_INFO` (`jit::Output::pe_unwind`, [PE frames](#back-end)), and one over
+  the OSR code (below), in the region's read-write end, registered with
+  `RtlAddFunctionTable` (base: the function's allocation, below both; never deleted, code is
+  never freed). As in the AOT code, the body's `UNWIND_INFO` names `ryo_seh_handler`
+  ([vm.md](vm.md#pe-seh)), with the LSDA of the JIT code's call sites as handler data: the
+  handler RVA can't reach `ryo_rt` from the allocation, so it is a thunk after the OSR code,
+  `jmp [rip]; .quad` the handler's address (`RtApi::seh_handler`). The SSA pipeline doesn't
+  lay out pad regions: it declines functions with cleanup landing pads, its inlined callees'
+  included (`Unsupported`), which stay in their AOT code. The entry prefix has no entry: a
+  leaf, the return address at `rsp` (the AOT stub's, then the body's start, whose prologue
+  hasn't run). The OSR entries keep `rbp` and store the other saves (`rdi` and `rsi` among them, which the AOT
   code never touches, and the used `xmm6`–`xmm15`) at slots that may hold AOT frame bytes the
   entry reads first, so until then the body's description would take the caller's registers
   from those bytes. Each entry is split where its saves are stored: the part before, with
@@ -360,68 +349,44 @@ loop head (on-stack replacement), so entry into the JIT code is bounded: a call 
 returns (a `main` in a loop) switches over too, and calls switch at their entry. At an AOT
 loop head the state is all in the AOT frame (the register cache is empty at branch targets,
 and dropped stores are flushed before them, [vm.md](vm.md#register-cache)), so that is where
-frames convert. The JIT compiles the entries with the function (`asm::osr`, `asm::frame`).
+frames convert. The SSA pipeline compiles the entries with the function (`jit::emit`, from
+the pieces in `asm::osr`; which heads get one and what they load: [its OSR](#osr-1)).
 
 - **Dispatcher**: the record's `osr` slot points at it, after the JIT function's code. The
   head's stub calls it with `eax` the head's index (`Decoded::heads`) and `rsp` at
   `fp - F_aot - 8`: `lea r11, [rip + T]; movsxd rax, [r11 + rax*4]; add rax, r11; jmp rax`,
   `T` a table of `i32` offsets of the entries.
-- **Entries**, one per head: `pop rcx` (the stub's return address), then, if the frames
-  differ, `rdx = fp` (`lea rdx, [rsp + F_aot]`, or `rbp` with a frame pointer), the probe
-  if the stack grows by 4096 or more, `rsp` to a scratch area below both frames, the live
-  bytes that move loaded from their AOT slots into it and then stored to their JIT ones (a
-  parallel move, in 8, 4, 2 and 1-byte pieces), `rsp = fp - F_jit`, and `jmp` to the head in
-  the JIT code. With equal frames an entry is `pop rcx; jmp`. `fp` doesn't move, so the
-  return address, the caller's frame and the stack arguments stay. A head at an `arg` or an
-  `lpad` (registers live that the stub doesn't keep; the lowering emits neither) has no
-  entry: its table entry is a `ret`, back to the AOT code.
-- **Layouts**: `asm::frame::SlotMap` maps AOT frame offsets to JIT ones by ranges of
-  translated bytes (injective, so the parallel move never overwrites a byte it still
-  reads); bytes in no range keep their offset, as escaped objects must (pointers to them may
-  be anywhere) and the incoming arguments do. `remap_slots` renames every frame operand of
-  the reduced code: native instructions' slots and memory pointers, call argument lists,
-  island operand words, and handler arguments that hold slots (found through the handler's
-  layout, a 32-bit half for a shared register). Positions don't change, so targets, cleanup
-  entries, dropped stores and heads stay valid; scopes keep their bytes' new offsets. By
-  default the JIT keeps the AOT layout (the identity map), so every entry is a jump.
-- **Shuffled layout** (`RYO_JIT_SHUFFLE`, `frame::shuffle_map`), to catch any reliance on
-  matching frames: every byte below `fp` that no escape covers moves down by `F + 64`, into a
-  frame of `2F + 64` (so the outgoing area is at `rsp` again, frames of 2016 bytes and more
-  probe, and the moved bytes land below all the old ones); escaped objects stay. An access
-  that would straddle an escaped object and moved bytes pins its bytes too, and an address
-  taken of bytes no escape covers keeps the function's AOT layout. An island operand's
-  access is its `Lend` scope's extent, so it pins likewise (with slot sharing, an escaped
-  local may share bytes with a later, larger island operand). A function
-  whose frame can't be shuffled is compiled in its AOT layout (logged with `RYO_JIT_LOG`).
-- **Liveness** (`frame::head_liveness`): which frame bytes each head's entry must move, by a
-  backward pass over the reduced code with landing pad edges. It is conservative: inline
-  instructions, `ret`, `arg` and call results read and write exactly their widths (a
-  result in two parts with a gap between them clobbers its extent instead), handlers
-  read 16 bytes per slot operand (or the lengths of `copy`, `const`, `zero`, `load.copy`,
-  `store.copy` and `fill`) and kill nothing, and calls and islands read every byte (the stack
-  arguments and the island operands' extents aren't in the code). Escaped bytes don't move,
-  so their liveness doesn't matter.
+- **Entries**, one per cyclic head: `pop rcx` (the stub's return address), then the SSA
+  pipeline's entry code ([its OSR](#osr-1)): the AOT frame's bytes read into a scratch area
+  below both frames, the JIT frame set up, and `jmp` to the head in the JIT code. `fp`
+  doesn't move, so the return address, the caller's frame and the stack arguments stay. A
+  head without an entry (acyclic, or at an `arg` or an `lpad`: registers live that the stub
+  doesn't keep; the lowering emits neither) has a `ret` in the table, back to the AOT code.
+- **Shuffled layout** (`RYO_JIT_SHUFFLE`, the SSA pipeline's `stress`), to catch any
+  reliance on matching frames: the moved allocas are laid out in reverse with gaps.
 - **Unwinding**: the OSR code has an FDE of its own, without an LSDA (nothing in it unwinds
   but through the probe). With a frame pointer its rules are the body's (CFA = `rbp + 16`);
   without, CFA = `rsp + F_aot + 24` while the stub's return address is on the stack,
-  `rsp + F_aot + 16` after the `pop`, and `rdx + 16` once `rdx` is `fp`; in the SSA
-  pipeline's entries, where a head parameter may go to `rdx`, `rsp + low + 16` before the
+  `rsp + F_aot + 16` after the `pop`, and `rdx + 16` once `rdx` is `fp`; where a
+  head parameter may go to `rdx`, `rsp + low + 16` before the
   register parameters are loaded and `rsp + F_jit + 16` after `rsp` is set, until the jump
   into the body, whose FDE describes `F_jit`.
 
 ## The SSA pipeline
 
-By default (`RYO_JIT_OPT=ssa`; `ssa-naive` and `reencode`, [Settings](#settings)) the JIT
-compiles a function through an SSA pipeline instead of re-encoding it: decoded reduced code → an SSA IR whose frame
+The JIT compiles a function through an SSA pipeline (`RYO_JIT_OPT=ssa`, the default, or
+`ssa-naive`, [Settings](#settings)): decoded reduced code → an SSA IR whose frame
 slots are *allocas* with provenance, promoted to SSA values where no pointer can reach
 them → x86-64 with a register allocator. It lives in `ryo_bytecode::jit` (`alloc`), so
-that it is tested without the runtime; `install.rs` calls `jit::compile` in place of
-`asm::encode_reduced_at`. A function it doesn't handle (`jit::Unsupported`, with the reason
-under `RYO_JIT_LOG`) goes through the re-encoding pipeline, which stays the fallback and the
-`reencode` mode: on PE, frames without room for their saves (see [PE frames](#back-end)), 16-byte SSE arguments and results, an island operand without a
+that it is tested without the runtime; `install.rs` calls `jit::compile`. A function it
+doesn't handle (`jit::Unsupported`, with the reason under `RYO_JIT_LOG`, counted as
+`declined` by `RYO_JIT_STATS`) stays in its AOT code: on PE, frames without room for their
+saves and cleanup landing pads (see [PE frames](#back-end)), 16-byte SSE arguments and results, an island operand without a
 `Lend` scope, a frame access in the return address's 16 bytes or below the frame, more than
-about 65 000 slot shapes or 8 million variable × block definitions. In the corpus that is
-about one function in 500. Handlers stay calls, and nothing is speculated: the AOT code stays the
+about 65 000 slot shapes or 8 million variable × block definitions. In the corpus (2026-11,
+every function from its first call) that is 22 of about 4 400 functions with the ryo
+sysroot, all for 16-byte SSE arguments and results (`c_abi`, `vm_abi`, `vm_aggregates`), and
+none in the benches. Handlers stay calls, and nothing is speculated: the AOT code stays the
 baseline the SSA pipeline refines.
 
 ### IR
@@ -733,7 +698,7 @@ head stays for the preheader and its OSR entry, which still lands there.
   saves upward from `rbp - K`, `K` at most 240, so with pinned allocas the saves go into the
   caller's home space (`fp + 16` to `fp + 48`, unless a stack argument is read there) and
   the 8-byte slots within 240 bytes below `rbp` that no pinned alloca covers, the rest of
-  the frame below them; without room the function is re-encoded. The epilogue is the
+  the frame below them; without room the function is declined (it stays in its AOT code). The epilogue is the
   stored saves' and the `xmm` saves' loads, `lea rsp, [rbp - 8n]`, the pops, then `ret` or the tail jump, a
   register one as `rex.w jmp` and a far one as `jmp [rip]; .quad` so that the unwinder
   sees an epilogue (nothing between the pops and the jump). Calls (handlers, VM
@@ -957,7 +922,8 @@ the units that inline it.
 - Handlers stay calls, through their register entries where they have one; native handler
   operations (overflow arithmetic, extensions, …) are the follow-up, as are splitting and
   rematerialization.
-- The re-encoding pipeline stays, as the fallback and the `reencode` mode.
+- A function the pipeline declines stays in its AOT code: no second JIT tier (a re-encoding
+  one existed until 2026-11).
 - Only 1, 2, 4 and 8-byte integer fields and whole vectors are promoted (`w128` integers and
   floats stay in memory; floats move through general-purpose registers at calls).
 - AOT code keeps its counter checks at acyclic heads, and the dispatcher returns into the
@@ -1083,17 +1049,17 @@ for shuffled frames per image, `RtApi::shuffled`):
 | `RYO_JIT_THRESHOLD=n` | registration starts the counters at `n / 16` calls and `n` loop iterations (`e,l`: `e` and `l`); 0: trip at the first call |
 | `RYO_JIT_SYNC=1` | a trip that finds its record queued waits on a futex on `state` until it leaves `Queued`, then continues in the JIT code; nested trips on that thread and trips on the JIT thread never wait |
 | `RYO_JIT_PERFMAP=1` | the [perf map](#unwinding-and-profiling) |
-| `RYO_JIT_LOG=1` | a line on stderr per compiled or failed function, and per function whose frame couldn't be shuffled, and the JIT thread's panics |
-| `RYO_JIT_SHUFFLE=1` | JIT frames in another layout ([OSR](#osr)) |
+| `RYO_JIT_LOG=1` | a line on stderr per compiled, declined or failed function, and the JIT thread's panics |
+| `RYO_JIT_SHUFFLE=1` | JIT frames in another layout: the SSA pipeline lays allocas out in reverse with gaps ([OSR](#osr)) |
 | `RYO_JIT_TEST_PANIC=1` | tests: every compile panics, which must fail the function and nothing else |
 | `RYO_JIT_TEST_OOM=1` | tests: every compile fails an allocation (`isize::MAX` bytes), which must fail the function and nothing else |
 | `RYO_JIT_TEST_SLOW=<ms>` | tests: every compile starts that many milliseconds late, so that a test can fork while one is pending |
-| `RYO_JIT_OPT=…` | `ssa` (the default), `ssa-naive` or `reencode`: how functions are compiled ([The SSA pipeline](#the-ssa-pipeline)); with `RYO_JIT_SHUFFLE` the SSA pipeline lays allocas out in reverse with gaps |
-| `RYO_JIT_CHECK=1` | the SSA pipeline's checkers: a failure is printed on stderr and the function falls back |
+| `RYO_JIT_OPT=…` | `ssa` (the default) or `ssa-naive` (every value in a stack slot): the SSA pipeline's register allocation ([The SSA pipeline](#the-ssa-pipeline)) |
+| `RYO_JIT_CHECK=1` | the SSA pipeline's checkers: a failure is printed on stderr and the function stays in its AOT code |
 | `RYO_JIT_DUMP=dir` | the SSA pipeline writes each function's reduced code, IR before and after value numbering and the folds, locations and code (or, for one it doesn't handle, the reason and the reduced code) to `dir/f<index>-<image header address>.txt`, and every installed function's code with its relocations by name to `dir/f<index>-<image header address>.code` (for `y bench codegen`, [build.md](build.md#test-and-bench)); read by the JIT thread itself, not passed in `RtApi` |
 | `RYO_JIT_LICM=1` | the SSA pipeline's general [loop-invariant code motion](#loop-invariant-code-motion); off by default, when only splats are hoisted |
 | `RYO_JIT_ROTATE=1` | the SSA pipeline's [loop rotation](#loop-rotation); off by default |
-| `RYO_JIT_SSA_LIMIT=n` | debugging: only the first `n` functions the JIT compiles go to the SSA pipeline, the rest are re-encoded (bisects a miscompile) |
+| `RYO_JIT_SSA_LIMIT=n` | debugging: only the first `n` functions the JIT is given are compiled, the rest are declined and stay in their AOT code (bisects a miscompile) |
 | `RYO_JIT_STATS=1\|2` | [statistics](#statistics) on stderr: `1` a startup line at the first image registration and a summary at exit, `2` also a progress line from the JIT thread at most once a minute; another value warns and means `1`. Independent of `RYO_JIT_LOG` |
 
 ### Statistics
@@ -1103,14 +1069,15 @@ the stderr it compares), each with one `write`:
 
 ```
 [ryo] jit: on, ssa, thresholds 64 calls / 1024 iterations (RYO_JIT_THRESHOLD), sync, pid 41213
-[ryo] jit stats: +60s compiled 412 (ssa 398, reencode 14), failed 3, code 1.9 MiB
+[ryo] jit stats: +60s compiled 398, declined 14, failed 3, code 1.9 MiB
 [ryo] jit stats: summary, pid 41213, 2.84s since the JIT started
 [ryo] jit stats:   queued    1203 records in 97 batches (largest 143)
-[ryo] jit stats:   compiled  1171: ssa 1102, reencode 69 (ssa unsupported 61, ssa-limit 0, RYO_JIT_OPT=reencode 8)
+[ryo] jit stats:   compiled  1102
+[ryo] jit stats:   declined    69: ssa unsupported 61, ssa-limit 8 (stay in AOT code)
 [ryo] jit stats:   failed      12: no personality slot 9, panicked 1, region full 0, ssa check failed 0, other 2
 [ryo] jit stats:   in flight   20 (taken, not yet reported; approximate at exit)
 [ryo] jit stats:   ssa: devirt 5, inlined 40 calls
-[ryo] jit stats:   code   2.3 MiB (ssa 2.1, reencode 0.2) in 3 regions; region-full retries 2
+[ryo] jit stats:   code   2.3 MiB in 3 regions; region-full retries 2
 [ryo] jit stats:   time   compile 1.21s (mean 1.0ms, max 38ms)
 ```
 
@@ -1145,7 +1112,7 @@ the stderr it compares), each with one `write`:
   macOS the restart is best effort (fork without `exec` of a multithreaded process is
   fragile there anyway).
 - The JIT runs on Linux, Windows and x86_64 macOS (`sys`). On Windows `y test` passes with the JIT
-  from the first call, by OSR, shuffled, with each tier and `RYO_JIT_CHECK=1`, and with
+  from the first call, by OSR, shuffled, with each `RYO_JIT_OPT` and `RYO_JIT_CHECK=1`, and with
   `RYO_JIT_TEST_PANIC`/`RYO_JIT_TEST_OOM`, including panics unwinding through JIT frames
   (Windows 11, 2026-10-29); `jit.rs` and `ssa.rs` don't build there (Linux and Apple only),
   and the exit race, regions far apart (`VirtualAlloc` at each hint, which fails where taken;
@@ -1190,14 +1157,14 @@ the stderr it compares), each with one `write`:
   called through `r11`, also with a panic unwinding through the far call. With and without shuffled frames, OSR at every head pass of a few loops keeps the
   values live at the head (integers of every width, floats, `w128`, an escaped local read
   through a pointer and directly), at the outer and inner heads of nested loops, a panic
-  after OSR runs the JIT frame's landing pad, `rsp` moves by the frames' difference, and a
+  after OSR runs the JIT frame's landing pad, `rsp` moves by a multiple of 16, and a
   thread spinning in an AOT loop and one deep in a self-recursion, both started before the
   compile, reach JIT code without returning (a native callee checks its return address).
   `pe_code` runs an image's VM code in the PE form on Linux (Win64 natives, `ryo_rt`'s
   `pe-test` handlers, its `.pdata` dropped; the JIT registers nothing for PE code off
   Windows): compiled at the entry and by
   OSR, with and without shuffled frames, with a probed frame, its results are the AOT
-  code's, the JIT prologue is the one `pe_unwind_info` describes, and every callee-saved
+  code's, the JIT prologue is the SSA pipeline's, and every callee-saved
   register of both conventions, `rdi` and `rsi` included, survives. `pe_numeric_args` calls
   a PE function through `extern "win64"` with the pieces `i128`, `f16` and `f128` lower to
   (an `i128` straddling `r9` and the stack, `f16`s in an `xmm` and a stack slot, an `f128`
@@ -1225,12 +1192,12 @@ the stderr it compares), each with one `write`:
   that way (`ryo-std-jit`, `ryo-std-jit-shuffle`), std's own VM functions included
   ([build.md](build.md#test-and-bench)).
 - **The SSA pipeline**: `y test` runs `vm/jit/tests/` through the SSA pipeline with its checkers, then
-  with `RYO_JIT_OPT=ssa-naive` and with `reencode` (through
-  the SSA pipeline `rsp` moves by a multiple of 16 instead of the frames' difference), whose SSA-specific tests cover an alloca escaped only
-  after the head (moved at OSR), an acyclic head (the trip returns into the AOT code), a slot
+  with `RYO_JIT_OPT=ssa-naive`; its SSA-specific tests cover an alloca escaped only
+  after the head (moved at OSR), an acyclic head (the trip returns into the AOT code), a PE
+  function with a cleanup landing pad (declined: it stays in its AOT code), a slot
   reused at two widths, handler results feeding branches, a value live into a landing pad
   across a call, and sixteen values live across a call. `vm/jit/tests/ssa.rs` (a process of
-  its own) checks, by `ryo_jit::stats()`, that its functions go through the SSA pipeline: switch
+  its own) checks, by `ryo_jit::stats()`, that the SSA pipeline compiles its functions, declining none: switch
   tables with edge arguments, sparse switches, tail calls with stack arguments and through
   a pointer, SSE arguments and results, a catching landing pad, probed 12 KiB frames entered
   by OSR, an alloca pinned at the head, and every SIMD instruction and fold
@@ -1239,7 +1206,7 @@ the stderr it compares), each with one `write`:
   passes). Then the corpus on its own VM
   functions through the SSA pipeline (`ryo-jit-ssa`, threshold 0, and `ryo-jit-ssa-osr`, OSR at the
   first head pass; with a ryo sysroot, `ryo-std-jit` and `ryo-std-jit-shuffle` go through
-  the SSA pipeline too, and `ryo-std-jit-reencode` through the re-encoding pipeline). `vm/bytecode/tests/jit_ssa.rs`
+  the SSA pipeline too). `vm/bytecode/tests/jit_ssa.rs`
   builds hand-written functions' IR (promotion, block parameters at a loop head and its OSR
   loads, reaching shapes, pinned and moved escaped locals, handler slots sharing a register)
 and checks the passes on it and on hand-built IR (value numbering, constants through a loop

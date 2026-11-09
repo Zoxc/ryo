@@ -41,8 +41,7 @@ pub mod regalloc;
 #[cfg(feature = "alloc")]
 pub mod x86;
 
-/// Why the SSA pipeline doesn't compile a function (it then goes through the re-encoding
-/// pipeline).
+/// Why the SSA pipeline doesn't compile a function (it then stays in its AOT code).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Unsupported(pub &'static str);
 
@@ -62,8 +61,7 @@ pub enum Allocator {
 #[derive(Clone, Copy, Debug)]
 pub struct Options {
     pub alloc: Allocator,
-    /// Frames laid out differently on purpose (allocas reversed, with gaps), as
-    /// `RYO_JIT_SHUFFLE` does for the re-encoding pipeline.
+    /// Frames laid out differently on purpose (allocas reversed, with gaps): `RYO_JIT_SHUFFLE`.
     pub stress: bool,
     /// Check the IR and the allocation (`RYO_JIT_CHECK`).
     pub check: bool,
@@ -105,7 +103,7 @@ pub fn compile(
     mut env: Option<&mut dyn inline::Env>,
 ) -> Result<Output, Error> {
     // PE: cleanup landing pads run in a pad region (design/vm.md#unwinding), which this pipeline
-    // doesn't lay out; re-encoding does.
+    // doesn't lay out: such functions stay in their AOT code.
     let pe_cleanup = |sites: &[crate::asm::CallSite]| mode.pe && sites.iter().any(|cs| cs.pad.is_some() && !cs.catch);
     if mode.pe && crate::asm::pe_region_start(&d.cleanup).is_some() {
         return Err(Error::Unsupported(Unsupported("PE cleanup landing pads")));

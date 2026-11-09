@@ -5,26 +5,18 @@ use super::*;
 impl Jit {
     /// `RYO_JIT_DUMP`: the installed code of `job`'s function `func` as
     /// `dir/f<func>-<header>.code`, for `y
-    /// bench codegen` to disassemble: `tier`, `code <hex>` (the body, then from `osr <offset>`
+    /// bench codegen` to disassemble: `tier <RYO_JIT_OPT>`, `code <hex>` (the body, then from `osr <offset>`
     /// the OSR code) and a `reloc <offset> <target>` per relocated field, the targets by
     /// image index as the backend's `RYO_DUMP_CODE` names them (`fn3`, `sym2`, `k16`,
     /// `ryo_h_AddOvf`), and per retargeted callee `ext fn<operand> <form> <name>`: the code
     /// and the IR call it as function `operand` ([`asm::FUNC_KINDS`]), which is the caller's
     /// function or symbol `name`, through a call slot (`slot`), directly (`near`) or through
     /// `r11` (`far`).
-    pub(super) fn dump_code(
-        &self,
-        job: &Job<'_>,
-        ext: &[Ext],
-        tier: Tier,
-        code: &[u8],
-        relocs: &[asm::Reloc],
-        osr: Option<(usize, &asm::osr::OsrCode)>,
-    ) {
+    pub(super) fn dump_code(&self, job: &Job<'_>, ext: &[Ext], code: &[u8], relocs: &[asm::Reloc], osr: Option<(usize, &asm::osr::OsrCode)>) {
         let Some(dir) = &self.dump else { return };
         let (func, header) = (job.func, job.img.header() as *const _ as usize);
         use core::fmt::Write as _;
-        let mut s = std::format!("tier {}\ncode ", tier.name());
+        let mut s = std::format!("tier {}\ncode ", self.rt.settings.opt.name());
         let hex = |s: &mut std::string::String, bytes: &[u8]| {
             for b in bytes {
                 let _ = write!(s, "{b:02x}");

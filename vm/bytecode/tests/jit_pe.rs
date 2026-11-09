@@ -559,7 +559,7 @@ fn saves_below_a_pinned_alloca() {
         });
         assert!(stored && home == (want == "home"), "pinned at {lo}: stored {stored}, home {home}");
     }
-    // Neither the home space nor two free slots below `rbp`: re-encoded.
+    // Neither the home space nor two free slots below `rbp`: declined (stays in its AOT code).
     let (v, frame, sc) = pinned_loop(-1000, 992, true);
     let r = compile(&v, frame, &sc, Allocator::LinearScan, false);
     assert!(matches!(&r, Err(jit::Error::Unsupported(u)) if u.0.contains("room")), "{r:?}");
@@ -648,10 +648,10 @@ fn vectors_below_a_pinned_alloca() {
 }
 
 /// The SSA pipeline doesn't lay out PE pad regions (design/vm.md#pe-seh): a function with a
-/// cleanup landing pad is left to re-encoding (`Unsupported`), one with only a terminate
+/// cleanup landing pad is declined (`Unsupported`: it stays in its AOT code), one with only a terminate
 /// stub's (a catching pad, entered by `RtlUnwindEx` with the frame's `rsp`) compiles.
 #[test]
-fn cleanup_pads_go_to_reencoding() {
+fn cleanup_pads_are_declined() {
     use ryo_bytecode::image::{CATCH, CONTINUE, CleanupEntry};
     for catch in [false, true] {
         // 0: the call, 1: ret, 2: its landing pad, 3: resume, or a terminate stub's abort.

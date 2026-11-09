@@ -1,7 +1,7 @@
-//! The JIT's SSA pipeline (the default, but for `RYO_JIT_OPT=reencode`): hand-assembled
+//! The JIT's SSA pipeline: hand-assembled
 //! functions using switches, tail calls, SSE arguments and results, catching landing pads,
-//! large frames and escaped locals across OSR. Each test checks the results, that the code ran in the JIT code, and, in an SSA
-//! mode, that every function it compiled went through the SSA pipeline ([`ssa_stats`]; a
+//! large frames and escaped locals across OSR. Each test checks the results, that the code ran in the JIT code, and
+//! that the SSA pipeline compiled every function it was given, declining none ([`ssa_stats`]; a
 //! separate test binary, so that the counters are this file's alone).
 
 #![cfg(all(target_arch = "x86_64", any(target_os = "linux", target_vendor = "apple")))]
@@ -23,11 +23,11 @@ fn init() {
     ONCE.call_once(|| assert!(ryo_rt::vm::configure_jit(true, Some(0)), "the JIT's settings were read already"));
 }
 
-/// How many functions the SSA pipeline compiled, and how many it left (to the re-encoding
-/// pipeline, or failed by its checkers).
+/// How many functions the SSA pipeline compiled, and how many it left (declined, which stay in
+/// their AOT code, or failed by its checkers).
 fn ssa_stats() -> (u64, u64) {
     let s = ryo_jit::stats();
-    (s.ssa, s.ssa_unsupported + s.ssa_check_failed())
+    (s.compiled, s.declined() + s.ssa_check_failed())
 }
 
 /// Serializes the tests, so that each one's [`ssa_stats`] deltas are its own.
@@ -40,13 +40,11 @@ fn start() -> (MutexGuard<'static, ()>, (u64, u64)) {
     (g, ssa_stats())
 }
 
-/// In an SSA mode: exactly `n` more functions compiled by the SSA pipeline since `before`, none fell back.
+/// Exactly `n` more functions compiled by the SSA pipeline since `before`, none declined or failed.
 fn check_stats(before: (u64, u64), n: usize) {
-    if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
-        let now = ssa_stats();
-        assert_eq!(now.0 - before.0, n as u64, "functions the SSA pipeline compiled ({before:?} -> {now:?})");
-        assert_eq!(now.1, before.1, "fallbacks to re-encoding ({before:?} -> {now:?})");
-    }
+    let now = ssa_stats();
+    assert_eq!(now.0 - before.0, n as u64, "functions the SSA pipeline compiled ({before:?} -> {now:?})");
+    assert_eq!(now.1, before.1, "functions declined or failed ({before:?} -> {now:?})");
 }
 
 /// Native: its own return address, so the VM code calling it learns where it runs.
@@ -819,7 +817,7 @@ fn inline_callee_with_caller_local() {
             assert_eq!(out[0], e, "{k:?} round {round}");
             assert!(in_jit(&img, f, out[1]), "{k:?}: ran at {:#x}", out[1]);
         }
-        if k != Some(3) && std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
+        if k != Some(3) {
             assert_eq!(state(&img, b), JIT_COLD, "{k:?}: bump was inlined, never called from AOT code");
         }
     }
@@ -968,9 +966,7 @@ fn inline_recursion_and_callee_allocas() {
         assert_eq!(ok::<_, u64>(img.id(top), (n, out.as_mut_ptr() as u64)), want(n), "n = {n}");
         assert!(in_jit(&img, rec, out[0]) || in_jit(&img, top, out[0]), "n = {n}: the base case ran at {:#x}", out[0]);
     }
-    if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
-        assert_eq!(state(&img, b), JIT_COLD, "bump inlined");
-    }
+    assert_eq!(state(&img, b), JIT_COLD, "bump inlined");
     // top, rec, and sq, called from rec's AOT code before rec tripped (bump inlined into
     // both).
     check_stats(before, 3);
@@ -1024,9 +1020,7 @@ fn inline_two_unwinding_calls_into_one_pad() {
         assert_eq!(ok::<_, u64>(img.id(f), (7u64,)), 1001, "round {round}");
         assert_eq!(ok::<_, u64>(img.id(f), (6u64,)), 1002, "round {round}");
     }
-    if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
-        assert_eq!(state(&img, g), JIT_COLD, "g inlined");
-    }
+    assert_eq!(state(&img, g), JIT_COLD, "g inlined");
     check_stats(before, 1);
 }
 
@@ -1082,18 +1076,14 @@ fn inline_nounwind_call() {
     let h = catching(&mut w, g);
     let img = build(w, &syms());
 
-    let reencode = std::env::var("RYO_JIT_OPT").is_ok_and(|o| o == "reencode");
     for round in 0..3 {
         assert_eq!(ok::<_, u64>(img.id(f), (5u64,)), 6, "round {round}");
         assert_eq!(ok::<_, u64>(img.id(h), (5u64,)), 6, "round {round}");
-        // Re-encoded, `f` still calls `leaf`, whose frame has the continue entry.
-        let want = if reencode { 1000 } else { 9000 + URC_FATAL_PHASE1_ERROR + 1 };
+        let want = 9000 + URC_FATAL_PHASE1_ERROR + 1;
         assert_eq!(ok::<_, u64>(img.id(f), (7u64,)), want, "round {round}: through f's inlined leaf");
         assert_eq!(ok::<_, u64>(img.id(h), (7u64,)), 1000, "round {round}: through g's inlined leaf");
     }
-    if !reencode {
-        assert_eq!(state(&img, leaf), JIT_COLD, "leaf inlined");
-    }
+    assert_eq!(state(&img, leaf), JIT_COLD, "leaf inlined");
     // f, g and h.
     check_stats(before, 3);
 }
@@ -1144,9 +1134,7 @@ fn inline_call_in_a_pruned_pad() {
     }
     // `f` compiled with `leaf` inlined (a panic would leave `f` in AOT code calling a
     // compiled `leaf`).
-    if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
-        assert_eq!(state(&img, leaf), JIT_COLD, "leaf inlined");
-    }
+    assert_eq!(state(&img, leaf), JIT_COLD, "leaf inlined");
     check_stats(before, 1);
 }
 
@@ -1197,9 +1185,7 @@ fn inline_constant_trials() {
     for (x, m) in [(5u64, 0u64), (7, 1), (9, 2), (u64::MAX, 7)] {
         assert_eq!(ok::<_, u64>(img.id(f), (x, m)), p(0, x).wrapping_add(p(1, x)).wrapping_add(p(m, x)), "f({x}, {m})");
     }
-    if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
-        assert_eq!(state(&img, pick), JIT_COLD, "pick inlined");
-    }
+    assert_eq!(state(&img, pick), JIT_COLD, "pick inlined");
     check_stats(before, 1);
 }
 
@@ -1261,9 +1247,6 @@ fn inlined_with_flags(n: usize, flags: u8, iters: u64) -> bool {
 /// `#[inline(always)]` lifts a callee far over the ratio bar; without it, it isn't inlined.
 #[test]
 fn inline_always_over_the_bar() {
-    if std::env::var("RYO_JIT_OPT").is_ok_and(|o| o == "reencode") {
-        return;
-    }
     assert!(!inlined_with_flags(150, 0, 1), "a large callee without the attribute");
     assert!(inlined_with_flags(150, FUNC_INLINE_ALWAYS, 1), "an inline(always) callee");
 }
@@ -1271,9 +1254,6 @@ fn inline_always_over_the_bar() {
 /// `#[inline(never)]` keeps even a callee small enough to always be inlined out of line.
 #[test]
 fn inline_never_under_the_always_cost() {
-    if std::env::var("RYO_JIT_OPT").is_ok_and(|o| o == "reencode") {
-        return;
-    }
     assert!(inlined_with_flags(1, 0, 3), "a tiny callee");
     assert!(!inlined_with_flags(1, FUNC_INLINE_NEVER, 3), "an inline(never) callee");
 }
@@ -1282,9 +1262,6 @@ fn inline_never_under_the_always_cost() {
 /// a callee inlined in a loop isn't once it is cold.
 #[test]
 fn inline_cold_callee_in_a_loop() {
-    if std::env::var("RYO_JIT_OPT").is_ok_and(|o| o == "reencode") {
-        return;
-    }
     assert!(inlined_with_flags(12, 0, 50), "a medium callee in a loop");
     assert!(!inlined_with_flags(12, FUNC_COLD, 50), "a cold callee in a loop");
 }
@@ -1324,9 +1301,7 @@ fn inline_not_between_stack_arguments_and_their_call() {
     for x in [1u64, 5, 1 << 40] {
         assert_eq!(ok::<_, u64>(img.id(r), (x,)), 3 * x + 200, "r({x})");
     }
-    if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
-        assert_ne!(state(&img, g), JIT_COLD, "g not inlined into r");
-    }
+    assert_ne!(state(&img, g), JIT_COLD, "g not inlined into r");
     let _ = h;
     check_stats(before, 3);
 }
@@ -1359,9 +1334,7 @@ fn inline_callee_returning_unused_part() {
     for x in [1u64, 5, 1 << 40, u64::MAX] {
         assert_eq!(ok::<_, u64>(img.id(f), (x,)), x.wrapping_mul(3).wrapping_add(1), "f({x})");
     }
-    if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
-        assert_eq!(state(&img, init), JIT_COLD, "init inlined");
-    }
+    assert_eq!(state(&img, init), JIT_COLD, "init inlined");
     check_stats(before, 1);
 }
 
@@ -1444,9 +1417,7 @@ fn inline_for_promotion() {
     for x in [1u64, 5, 1 << 40, u64::MAX] {
         assert_eq!(ok::<_, u64>(img.id(f), (x,)), model(x), "f({x})");
     }
-    if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
-        assert_eq!(state(&img, rounds), JIT_COLD, "rounds inlined");
-    }
+    assert_eq!(state(&img, rounds), JIT_COLD, "rounds inlined");
     check_stats(before, 1);
 }
 
@@ -1517,10 +1488,8 @@ fn inline_across_images() {
         assert_eq!(ok::<_, u64>(img_a.id(f), (x,)), want, "f({x})");
         assert_eq!(B_STATIC.load(SeqCst), n as u64 + 1, "f({x}): b_static");
     }
-    if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
-        assert_eq!(state(&img_b, g), JIT_COLD, "g inlined into f");
-        assert_eq!(state(&img_b, h), JIT_COLD, "h inlined into f");
-    }
+    assert_eq!(state(&img_b, g), JIT_COLD, "g inlined into f");
+    assert_eq!(state(&img_b, h), JIT_COLD, "h inlined into f");
     check_stats(before, 1);
 }
 
@@ -1566,9 +1535,7 @@ fn inline_island_across_images() {
     for x in [0u64, 3, 1 << 40] {
         assert_eq!(ok::<_, u64>(img_a.id(f), (x,)), x.wrapping_mul(10).wrapping_add(8).wrapping_mul(2), "f({x})");
     }
-    if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
-        assert_eq!(state(&img_b, g), JIT_COLD, "g inlined into f");
-    }
+    assert_eq!(state(&img_b, g), JIT_COLD, "g inlined into f");
     check_stats(before, 1);
 }
 
@@ -1619,9 +1586,7 @@ fn inline_sparse_switch_across_images() {
         let want = vals.iter().position(|&v| v == x).map_or(99, |i| 100 + i as u64) + 1;
         assert_eq!(ok::<_, u64>(img_a.id(f), (x,)), want, "f({x:#x})");
     }
-    if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
-        assert_eq!(state(&img_b, g), JIT_COLD, "g inlined into f");
-    }
+    assert_eq!(state(&img_b, g), JIT_COLD, "g inlined into f");
     check_stats(before, 1);
 }
 
@@ -1662,9 +1627,7 @@ fn inline_indirect_symbol_call_across_images() {
     for x in [0u64, 5, 1 << 40] {
         assert_eq!(ok::<_, u64>(img_a.id(f), (x,)), x.wrapping_mul(3).wrapping_add(1).wrapping_mul(2), "f({x})");
     }
-    if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
-        assert_eq!(state(&img_b, g), JIT_COLD, "g inlined into f");
-    }
+    assert_eq!(state(&img_b, g), JIT_COLD, "g inlined into f");
     check_stats(before, 1);
 }
 
@@ -2168,13 +2131,9 @@ fn constant_pool_loads() {
 }
 
 /// How many calls through constant pointers the SSA pipeline made direct in its roots since
-/// `before` (none through re-encoding).
+/// `before`.
 fn devirt_since(before: u64) -> u64 {
     ryo_jit::stats().devirt - before
-}
-
-fn ssa() -> bool {
-    std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode")
 }
 
 /// A function calling `g(x)` through `p` (`p` set up by `setup`, which gets the slot):
@@ -2231,16 +2190,12 @@ fn devirt_symbol_and_pool_pointer() {
         assert_eq!(ok::<_, u64>(img.id(f1), (x,)), rounds_value(1, x) + 1, "f1({x})");
         assert_eq!(ok::<_, u64>(img.id(f2), (x,)), rounds_value(1, x) + 1, "f2({x})");
     }
-    if ssa() {
-        assert_eq!(state(&img, g), JIT_COLD, "g inlined into f1 and f2");
-        assert_eq!(devirt_since(d0), 2, "calls made direct");
-    }
+    assert_eq!(state(&img, g), JIT_COLD, "g inlined into f1 and f2");
+    assert_eq!(devirt_since(d0), 2, "calls made direct");
     for x in [0u64, 5, 1 << 40] {
         assert_eq!(ok::<_, u64>(img.id(f3), (x,)), rounds_value(1, x), "f3({x})");
     }
-    if ssa() {
-        assert_eq!(devirt_since(d0), 3, "calls made direct");
-    }
+    assert_eq!(devirt_since(d0), 3, "calls made direct");
     check_stats(before, 4);
 }
 
@@ -2297,11 +2252,9 @@ fn devirt_targets() {
         assert_eq!(ok::<_, u64>(img.id(f_mul3), (x,)), x.wrapping_mul(3) + 1, "f_mul3({x})");
         assert_eq!(ok::<_, u64>(img.id(f_inside), (x,)), x, "f_inside({x})");
     }
-    if ssa() {
-        assert_ne!(state(&img, n), JIT_COLD, "n, inline(never), called");
-        assert_eq!(state(&img_b, gb), JIT_COLD, "B's g inlined into f_gb");
-        assert_eq!(devirt_since(d0), 2, "calls made direct: f_n's and f_gb's");
-    }
+    assert_ne!(state(&img, n), JIT_COLD, "n, inline(never), called");
+    assert_eq!(state(&img_b, gb), JIT_COLD, "B's g inlined into f_gb");
+    assert_eq!(devirt_since(d0), 2, "calls made direct: f_n's and f_gb's");
     // f_n, f_gb, f_mul3, f_inside and n.
     check_stats(before, 5);
 }
@@ -2361,17 +2314,13 @@ fn devirt_per_image_and_cache() {
         assert_eq!(ok::<_, u64>(a1.id(f1), (x,)), x.wrapping_mul(3) + 1, "A1 f({x})");
         assert_eq!(ok::<_, u64>(a2.id(f2), (x,)), rounds_value(1, x) + 1, "A2 f({x})");
     }
-    if ssa() {
-        assert_eq!(devirt_since(d0), 1, "only A2's call made direct");
-    }
+    assert_eq!(devirt_since(d0), 1, "only A2's call made direct");
     for x in [1u64, 5, 1 << 40] {
         assert_eq!(ok::<_, u64>(a1.id(u1), (x,)), rounds_value(1, x) + 2, "A1 u({x})");
         assert_eq!(ok::<_, u64>(img_b.id(k), (x,)), rounds_value(1, x) + 2, "B k({x})");
     }
-    if ssa() {
-        assert_eq!(state(&img_b, h), JIT_COLD, "h inlined into u and k");
-        assert_eq!(state(&img_b, g), JIT_COLD, "g inlined into A2's f, u and k");
-    }
+    assert_eq!(state(&img_b, h), JIT_COLD, "h inlined into u and k");
+    assert_eq!(state(&img_b, g), JIT_COLD, "g inlined into A2's f, u and k");
     // A1's f, A2's f, u, k.
     check_stats(before, 4);
 }
@@ -2430,19 +2379,15 @@ fn devirt_second_round() {
     for x in [1u64, 5, 1 << 40] {
         assert_eq!(ok::<_, u64>(img.id(f), (x,)), rounds_value(1, x) + 2, "f({x})");
     }
-    if ssa() {
-        assert_eq!(state(&img, inner), JIT_COLD, "inner inlined");
-        assert_eq!(state(&img, g), JIT_COLD, "g inlined in the second round");
-        assert_eq!(devirt_since(d0), 1, "f's call made direct");
-    }
+    assert_eq!(state(&img, inner), JIT_COLD, "inner inlined");
+    assert_eq!(state(&img, g), JIT_COLD, "g inlined in the second round");
+    assert_eq!(devirt_since(d0), 1, "f's call made direct");
     for x in [1u64, 5, 1 << 40] {
         assert_eq!(ok::<_, u64>(img.id(f3), (x,)), rounds_value(2, x) + 3, "f3({x})");
     }
-    if ssa() {
-        assert_eq!(state(&img, g3), JIT_COLD, "g3 inlined in the second round");
-        assert_ne!(state(&img, g2), JIT_COLD, "g2 called: no third round");
-        assert_eq!(devirt_since(d0), 3, "f3's two calls made direct");
-    }
+    assert_eq!(state(&img, g3), JIT_COLD, "g3 inlined in the second round");
+    assert_ne!(state(&img, g2), JIT_COLD, "g2 called: no third round");
+    assert_eq!(devirt_since(d0), 3, "f3's two calls made direct");
     // f, f3, g2.
     check_stats(before, 3);
 }
@@ -2484,9 +2429,7 @@ fn inline_simd_handlers() {
         assert_eq!(ok::<_, u64>(img.id(f), (bytes.as_ptr() as u64, tag as u64, out.as_mut_ptr() as u64)), want, "tag {tag}");
         assert!(in_jit(&img, f, out[0]), "ran at {:#x}", out[0]);
     }
-    if std::env::var("RYO_JIT_OPT").map_or(true, |o| o != "reencode") {
-        assert_eq!(state(&img, e), JIT_COLD, "eqmask was inlined, never called");
-    }
+    assert_eq!(state(&img, e), JIT_COLD, "eqmask was inlined, never called");
     check_stats(before, 1);
 }
 

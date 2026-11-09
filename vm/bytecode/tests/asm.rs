@@ -335,15 +335,13 @@ fn reencodes(enc: &asm::Encoded, mode: Mode, what: &str) {
     }
 }
 
-/// The JIT's frame renaming (`asm::frame`) on decoded code `d`: the identity changes nothing,
-/// the liveness pass runs, and the shuffled layout's code (`RYO_JIT_SHUFFLE`) encodes and
+/// Frame renaming (`asm::frame`, which the Lean decoder vectors' shuffled frames use) on
+/// decoded code `d`: the identity changes nothing, and the shuffled layout's code encodes and
 /// decodes back to the renamed words, in the new frame size.
 fn shuffles(d: &asm::Decoded, rodata: &[u8], mode: Mode, what: &str) {
     use asm::frame;
     let id = frame::remap_slots(&d.words, mode, &frame::SlotMap::identity(d.frame_size)).unwrap_or_else(|e| panic!("{what} {mode:?}: {e:?}"));
     assert_eq!(id, d.words, "{what} {mode:?}");
-    let live = frame::head_liveness(d, mode).unwrap_or_else(|e| panic!("{what} {mode:?}: {e:?}"));
-    assert_eq!(live.len(), d.heads.len());
     let Ok(map) = frame::shuffle_map(d, mode) else { return };
     let words = frame::remap_slots(&d.words, mode, &map).unwrap();
     let scopes: Vec<asm::Scope> =

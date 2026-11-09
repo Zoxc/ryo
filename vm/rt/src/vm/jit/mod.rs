@@ -61,8 +61,8 @@ struct Config {
     /// and continues in its JIT code, so threshold 0 runs every function's JIT code from its
     /// first call (tests).
     sync: bool,
-    /// `RYO_JIT_SHUFFLE=1`: JIT code gets another frame layout than the AOT code's
-    /// (`asm::frame::shuffle_map`), so that OSR entries convert frames (tests).
+    /// `RYO_JIT_SHUFFLE=1`: JIT code gets another frame layout than the AOT code's (the SSA
+    /// pipeline's `stress` layout), so that OSR entries convert frames (tests).
     shuffle: bool,
     /// What the JIT gets: its flags from [`FLAGS`] (`RYO_JIT_TEST_PANIC`: the JIT catches its
     /// panics even in a `-Cpanic=abort` program), `RYO_JIT_OPT`, `RYO_JIT_SSA_LIMIT` and
@@ -1207,10 +1207,10 @@ mod tests {
         cfg.sync = false;
         cfg.shuffle = false;
         cfg.jit.check = false;
-        cfg.jit.opt = JitOpt::Reencode;
+        cfg.jit.opt = JitOpt::SsaNaive;
         cfg.jit.ssa_limit = 7;
         let [e, l] = cfg.thresholds();
-        assert_eq!(line(&cfg), std::format!("[ryo] jit: on, reencode, thresholds {e} calls / {l} iterations, ssa-limit 7, pid 41213\n"));
+        assert_eq!(line(&cfg), std::format!("[ryo] jit: on, ssa-naive, thresholds {e} calls / {l} iterations, ssa-limit 7, pid 41213\n"));
         cfg.enabled = false;
         assert_eq!(line(&cfg), "[ryo] jit: off (RYO_JIT=off), pid 41213\n");
     }

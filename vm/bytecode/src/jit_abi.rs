@@ -35,8 +35,6 @@ pub const JIT_ENTRY_PREFIX_BYTES: [u8; 12] = [0x4c, 0x8d, 0x1d, 5, 0, 0, 0, 0x4c
 #[repr(u8)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum JitOpt {
-    /// Re-encodes the AOT code (`reencode`).
-    Reencode,
     /// The SSA pipeline with every value in a stack slot (`ssa-naive`).
     SsaNaive,
     /// The SSA pipeline with its register allocator (`ssa`, the default).
@@ -48,7 +46,6 @@ impl JitOpt {
     #[inline]
     pub const fn name(self) -> &'static str {
         match self {
-            JitOpt::Reencode => "reencode",
             JitOpt::SsaNaive => "ssa-naive",
             JitOpt::Ssa => "ssa",
         }
@@ -59,7 +56,7 @@ impl JitOpt {
     /// core's panic path.)
     #[inline]
     pub fn parse(s: &[u8]) -> Option<JitOpt> {
-        [JitOpt::Reencode, JitOpt::SsaNaive, JitOpt::Ssa].into_iter().find(|o| o.name().as_bytes() == s)
+        [JitOpt::SsaNaive, JitOpt::Ssa].into_iter().find(|o| o.name().as_bytes() == s)
     }
 }
 
@@ -82,8 +79,8 @@ pub struct JitSettings {
     pub check: bool,
     /// How functions are compiled (`RYO_JIT_OPT`).
     pub opt: JitOpt,
-    /// Only the first this many functions go to the SSA pipeline, the rest are re-encoded
-    /// (`RYO_JIT_SSA_LIMIT`, debugging: bisects a miscompile); `u64::MAX` for all.
+    /// Only the first this many functions go to the SSA pipeline, the rest stay in their AOT
+    /// code (`RYO_JIT_SSA_LIMIT`, debugging: bisects a miscompile); `u64::MAX` for all.
     pub ssa_limit: u64,
     /// General loop-invariant code motion in the SSA pipeline (`RYO_JIT_LICM`), off by default.
     pub licm: bool,
