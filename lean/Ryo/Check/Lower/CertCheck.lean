@@ -78,6 +78,7 @@ import Std.Data.HashMap
 import Ryo.Check.Lower.Cert
 import Ryo.Check.Image.Common
 import Ryo.Vm.Frame
+import Ryo.Check.Lower.Stmt
 
 namespace Ryo.Check.Lower
 
@@ -548,8 +549,33 @@ structure Report where
   notDead : Nat := 0
   /-- The dropped stores the facts-free check doesn't show dead (for comparison). -/
   notDeadPlain : Nat := 0
+  /-- Lowering coverage (`Stmt.lean`): statements checked, validated, unsupported by rule. -/
+  stmts : Nat := 0
+  stmtOk : Nat := 0
+  unsupported : HashMap String Nat := {}
   errors : Array String := #[]
   deriving Inhabited
+
+/-- The lowering rules over a function's statements: per statement lowered on its own (fused
+ones are the terminator's), `checkStmt` on its certificate range. The placement of addressed
+things is left out (`ρ` gives none): the rules so far take slot operands only, whose view
+doesn't depend on it. -/
+def lowerCoverage (body : Body) (fc : FuncCert) (d : Decoded) (mode : Ryo.Obj.Mode) :
+    Array Verdict := Id.run do
+  let esc := d.scopes.toList.filterMap fun (_, sc) =>
+    if sc.kind matches .escape _ then some (sc.frameOffset.toInt, sc.frameOffset.toInt + sc.size)
+    else none
+  let Γ : StmtCtx := { body, slots := fc.locals, mode, ρ := fun _ => none,
+                       escaped := fun o => esc.any fun (lo, hi) => lo ≤ o && o < hi }
+  let mut out := #[]
+  for h : bi in [0:fc.blocks.size] do
+    let blk := fc.blocks[bi]
+    let some bd := body.blocks[bi]? | continue
+    for h : si in [0:blk.stmts.size] do
+      let some st := bd.stmts[si]? | continue
+      let (lo, hi) := blk.stmts[si]
+      out := out.push (checkStmt Γ st (d.insns.extract lo hi).toList)
+  return out
 
 def Report.ok (r : Report) : Bool := r.errors.isEmpty
 
@@ -608,6 +634,13 @@ def checkObject (prog : Program) (cert : Cert) (o : ImageObject) : Report := Id.
       addrs := { addrs := rep.addrs.addrs + fr.addrs.addrs, inside := rep.addrs.inside + fr.addrs.inside,
                  atEnd := rep.addrs.atEnd + fr.addrs.atEnd, zeroSized := rep.addrs.zeroSized + fr.addrs.zeroSized,
                  args := rep.addrs.args + fr.addrs.args } }
+    if let some ⟨_, .body b⟩ := c.inst[name]? then
+      for v in lowerCoverage b c.certs[name]! d fi.mode do
+        rep := { rep with stmts := rep.stmts + 1 }
+        match v with
+        | .ok => rep := { rep with stmtOk := rep.stmtOk + 1 }
+        | .unsupported why => rep := { rep with unsupported := rep.unsupported.insert why (rep.unsupported.getD why 0 + 1) }
+        | .rejected why => rep := { rep with errors := rep.errors.push s!"{funcLabel o i}: lowering rejected: {why}" }
     -- The dead-store check with the facts.
     if d.dropped.isEmpty then continue
     rep := { rep with dropped := rep.dropped + d.dropped.size }
@@ -647,7 +680,8 @@ def deadFacts (prog : Program) (cert : Cert) (o : ImageObject) :
 then the errors. -/
 def Report.render (r : Report) (path : String) : Array String :=
   #[s!"cert-check {path}: funcs {r.funcs} certs {r.certs} in-dump {r.inDump} undecoded {r.undecoded} sig-abi {r.sigAbi} blocks {r.blocks} truncated {r.truncated} calls {r.calls} by-entry {r.byEntry} by-abi {r.byAbi} unverified {r.unverified} islands {r.islands} addrs {r.addrs.addrs} by-escape {r.addrs.inside} at-end {r.addrs.atEnd} zero-sized {r.addrs.zeroSized} addr-args {r.addrs.args} errors {r.errors.size}",
-    s!"dead-check {path}: dropped {r.dropped} not-shown-dead {r.notDead} (without facts {r.notDeadPlain})"]
+    s!"dead-check {path}: dropped {r.dropped} not-shown-dead {r.notDead} (without facts {r.notDeadPlain})",
+    s!"lower-check {path}: statements {r.stmts} validated {r.stmtOk} unsupported {r.unsupported.toList.map fun (k, n) => s!"{k}: {n}"}"]
     ++ r.errors.map ("error: " ++ ·)
 
 /-- The certificate images no checked object has (the image map's other direction). -/

@@ -74,3 +74,6 @@ import Ryo.Proofs.Lower.MemInj
 import Ryo.Proofs.Lower.FrameRel
 import Ryo.Proofs.Lower.IntBin
 import Ryo.Proofs.Lower.SimBinOp
+import Ryo.Check.Lower.Stmt
+import Ryo.Proofs.Lower.SimMove
+import Ryo.Proofs.Lower.SimBinImm

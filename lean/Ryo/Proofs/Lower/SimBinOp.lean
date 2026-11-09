@@ -71,9 +71,9 @@ theorem sim_binop {ι : Inj} {fp : Nat} {st : OpSem.State} {o : Spec.Oracle}
     (hsized : xd.data.size = sd.size)
     (hprivd : ∀ k < sd.size, st.escapedAt (sd.off + k) = none)
     -- the instruction
-    {opc : Full.Opcode} {kd : Handlers.HandlerKind} {r : Option String} {ty : String}
+    {opc : Full.Opcode} {kd : Handlers.HandlerKind} {r : Option String} {ty : String} {sg : Bool}
     (hkd : kd = .bin ∨ kd = .binop) (hh : opc.handler? = some ⟨kd, [ty, m], r⟩)
-    (hty : OpSem.Ty.parse ty = some (.int t.size t.signed))
+    (hty : OpSem.Ty.parse ty = some (.int t.size sg))
     (ho : opc.info.operands = [⟨"d", .slot⟩, ⟨"a", .slot⟩, ⟨"b", .slot⟩])
     (hfits : -2 ^ 31 ≤ sd.off ∧ sd.off < 2 ^ 31 ∧ -2 ^ 31 ≤ sa.off ∧ sa.off < 2 ^ 31 ∧
       -2 ^ 31 ≤ sb.off ∧ sb.off < 2 ^ 31)
@@ -118,7 +118,7 @@ theorem sim_binop {ι : Inj} {fp : Nat} {st : OpSem.State} {o : Spec.Oracle}
   have hdb' := decodeBits_inj hib hdb
   have hva : asNat ba = .ok ua := by unfold asNat; rw [hda']; rfl
   have hvb : asNat bb = .ok ub := by unfold asNat; rw [hdb']; rfl
-  obtain ⟨res, hres, hrn⟩ := intBin_wrap hm t t.signed ua ub
+  obtain ⟨res, hres, hrn⟩ := intBin_wrap hm t sg ua ub
   -- R's write
   have hbeq : intBytes t.size res.toNat =
       encodeBits t.size (t.toBits (wrapResult op t (t.ofBits ua) (t.ofBits ub))) := by
