@@ -1110,11 +1110,20 @@ impl<'a> E<'a> {
     }
 
     /// Moves values into ABI registers (call arguments or return parts): `xmm` ones first
-    /// (nothing else writes them), then a parallel move of the integer ones (with `callee`
-    /// into `rax`), then narrow integers zero-extended.
+    /// (nothing else writes them; vectors, the only values in `xmm` registers, in parallel
+    /// before the scalars), then a parallel move of the integer ones (with `callee` into
+    /// `rax`), then narrow integers zero-extended.
     fn to_abi(&mut self, regs: &[AbiReg], vals: &[Value], callee: Option<Value>) {
+        let vs = regs.iter().zip(vals).filter_map(|(&r, &v)| match r {
+            AbiReg::X(x, 16) => Some((x86::X::X(x), self.xsrc(v))),
+            _ => None,
+        });
+        let vs = vs.collect();
+        self.xmoves(vs);
         for (&r, &v) in regs.iter().zip(vals) {
-            if let AbiReg::X(x, size) = r {
+            if let AbiReg::X(x, size) = r
+                && size != 16
+            {
                 let Some(s) = self.rm(v, S1) else { continue };
                 self.a.x().movq_to_xmm(x, s, if size == 8 { 8 } else { 4 });
             }
@@ -1143,20 +1152,31 @@ impl<'a> E<'a> {
     }
 
     /// Moves values out of ABI registers (call results or parameters) into their locations:
-    /// the integer ones in parallel, then the `xmm` ones.
+    /// the integer ones in parallel, then the scalar `xmm` ones, then the vectors in parallel
+    /// (which may take the scalars' `xmm` registers).
     fn from_abi(&mut self, regs: &[AbiReg], vals: &[Value]) {
         let mut ms = Vec::new();
         for (&r, &v) in regs.iter().zip(vals) {
-            if let (AbiReg::G(g, ..), Some(d)) = (r, self.dst(v)) {
+            if let AbiReg::G(g, ..) = r
+                && let Some(d) = self.dst(v)
+            {
                 ms.push((d, Src::R(g)));
             }
         }
         self.moves(ms);
+        let mut xs = Vec::new();
         for (&r, &v) in regs.iter().zip(vals) {
-            if let (AbiReg::X(x, size), Some(d)) = (r, self.dst(v)) {
-                self.a.x().movq_from_xmm(d, x, if size == 8 { 8 } else { 4 });
+            match r {
+                AbiReg::X(x, 16) => xs.extend(self.xdst(v).map(|d| (d, XSrc::X(x)))),
+                AbiReg::X(x, size) => {
+                    if let Some(d) = self.dst(v) {
+                        self.a.x().movq_from_xmm(d, x, if size == 8 { 8 } else { 4 });
+                    }
+                }
+                AbiReg::G(..) => {}
             }
         }
+        self.xmoves(xs);
     }
 
     /// Sets `r` to the value of the handler call's argument position `k` (see
@@ -1262,7 +1282,7 @@ impl<'a> E<'a> {
                 let rv = self.xreg(args[0], self.xs()[0]);
                 self.a.x().movdqu_store(m, rv);
             }
-            Op::HCall(_) | Op::Call(_) if args.iter().chain(res).any(|&v| self.f.w(v) == 16) => {
+            Op::HCall(_) if args.iter().chain(res).any(|&v| self.f.w(v) == 16) => {
                 return Err(Unsupported("a vector operand of a call"));
             }
             Op::Bin(op @ (BinOp::DivS | BinOp::DivU | BinOp::RemS | BinOp::RemU), w) => self.divrem(op, w, args[0], args[1], res[0]),

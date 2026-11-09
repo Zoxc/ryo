@@ -381,12 +381,11 @@ them → x86-64 with a register allocator. It lives in `ryo_bytecode::jit` (`all
 that it is tested without the runtime; `install.rs` calls `jit::compile`. A function it
 doesn't handle (`jit::Unsupported`, with the reason under `RYO_JIT_LOG`, counted as
 `declined` by `RYO_JIT_STATS`) stays in its AOT code: on PE, frames without room for their
-saves and cleanup landing pads (see [PE frames](#back-end)), 16-byte SSE arguments and results, an island operand without a
+saves and cleanup landing pads (see [PE frames](#back-end)), an island operand without a
 `Lend` scope, a frame access in the return address's 16 bytes or below the frame, more than
 about 65 000 slot shapes or 8 million variable × block definitions. In the corpus (2026-11,
-every function from its first call) that is 22 of about 4 400 functions with the ryo
-sysroot, all for 16-byte SSE arguments and results (`c_abi`, `vm_abi`, `vm_aggregates`), and
-none in the benches. Handlers stay calls, and nothing is speculated: the AOT code stays the
+every function from its first call, every variant on Linux) that is none, nor in the
+benches. Handlers stay calls, and nothing is speculated: the AOT code stays the
 baseline the SSA pipeline refines.
 
 ### IR
@@ -958,7 +957,11 @@ operations, not handler calls, with exact 16-byte accesses (2 for `vmsb`'s mask,
   ([PE frames](#back-end)). No `xmm` register survives a call: a vector live across one
   takes a 16-byte spill slot (two 8-byte ones). The checker checks the classes, the reserved
   registers and that no vector is in an `xmm` register across a call; edge moves, OSR entries
-  (`OsrLoad`s of 16 bytes) and parameters handle both classes.
+  (`OsrLoad`s of 16 bytes) and parameters handle both classes. A 16-byte SSE argument,
+  parameter or result (`f128`, `__m128` and the like, a whole `xmm` register) is a vector:
+  calls and returns move the vectors into or out of their `xmm` registers in parallel (a
+  cycle through `xmm15`), before the scalar `xmm` arguments' `movq`s and after the scalar
+  results'; a vector parameter or result prefers the register it comes in.
 - **Emission** (SSE2, the x86-64 baseline): `movdqu` loads and stores, `movdqa` between
   registers, packed operations register to register only (a legacy SSE memory operand must
   be aligned): `pcmpeqb`, `pcmpgtb` with the operands swapped for `vlt.s`, `pand`/`por`/`pxor`;

@@ -865,9 +865,10 @@ pub fn build(code: &Code, fr: &Frame, frame_size: u32, mode: crate::asm::Mode) -
     Ok(s.f)
 }
 
-/// The width of the value in a register of `size` bytes: the size, or 8 for an odd one.
+/// The width of the value in a register of `size` bytes: the size (16 for a vector in an `xmm`
+/// register), or 8 for an odd one.
 fn reg_width(size: u32) -> u8 {
-    if matches!(size, 1 | 2 | 4 | 8) { size as u8 } else { 8 }
+    if matches!(size, 1 | 2 | 4 | 8 | 16) { size as u8 } else { 8 }
 }
 
 /// The instruction index after `i`; an error for the last instruction.

@@ -3,6 +3,12 @@
 Rust-side changes that the Lean model or proofs don't reflect yet. Add an entry per change;
 remove it once a Lean session has handled it.
 
+- 16-byte SSE values through calls in the SSA pipeline (commit "JIT SSA: Pass 16-byte SSE
+  arguments and results"): an `arg`, a call argument or a `ret`/call result part of 16 bytes
+  in an `xmm` register (`f128`, `__m128`) is a 16-byte R-SSA value (no longer declined), so
+  `docs/jit.md`'s R-SSA call and return rules (M7a) take vector operands, and the emission
+  templates (M7b) the parallel `xmm` moves of `jit::emit`'s `to_abi`/`from_abi`.
+
 - The JIT's re-encoding pipeline is gone (commit "JIT: Remove the re-encoding pipeline; AOT
   code is the fallback"): the JIT compiles with the SSA pipeline only, and a function it
   declines (`jit::Unsupported`, over `RYO_JIT_SSA_LIMIT`) stays in its AOT code (record

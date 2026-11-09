@@ -279,10 +279,22 @@ impl Call {
     }
 
     /// The bytes of argument `ai` that the call defines: it zero-extends the argument to its
-    /// register's size (at most 8); past that, the register's bytes are unspecified.
+    /// register's size (at most 8, or 16 for a vector); past that, the register's bytes are
+    /// unspecified.
     pub fn arg_width(&self, ai: usize) -> u8 {
-        (self.regs[ai].size as u8).min(8)
+        reg_arg_width(&self.regs[ai])
     }
+
+    /// The widths the call reads its arguments at (the callee first, for a pointer call).
+    fn arg_widths(&self) -> Vec<u8> {
+        let callee = (self.target == CallTarget::Ptr).then_some(8);
+        callee.into_iter().chain(self.regs.iter().map(reg_arg_width)).collect()
+    }
+}
+
+/// The width of an argument in register `r`: [`Call::arg_width`].
+fn reg_arg_width(r: &ArgReg) -> u8 {
+    if r.size == 16 { 16 } else { (r.size as u8).min(8) }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1353,13 +1365,15 @@ impl Func {
             let tws: Option<Vec<u8>> = match &bd.term {
                 Term::BrCmp { w, .. } => Some(alloc::vec![*w, *w]),
                 Term::Switch { .. } => Some(alloc::vec![8]),
-                Term::TailCall { call, .. } => {
-                    let mut v: Vec<u8> = Vec::new();
-                    if call.target == CallTarget::Ptr {
-                        v.push(8);
+                Term::TailCall { call, .. } => Some(call.arg_widths()),
+                // A vector part whole, the others at least a byte.
+                Term::Ret { k, parts } if *k != 0 => {
+                    let ps = crate::asm::ret_parts(*k, true).ok_or_else(|| format!("{b}: return kind {k:#x}"))?;
+                    let ws: Vec<u8> = ps.into_iter().flatten().map(|p| if p.size == 16 { 16 } else { 1 }).collect();
+                    if ws.len() != parts.len() {
+                        return Err(format!("{b}: {} return parts, wants {}", parts.len(), ws.len()));
                     }
-                    v.extend(call.regs.iter().map(|r| r.size.min(8) as u8));
-                    Some(v)
+                    Some(ws)
                 }
                 _ => None,
             };
@@ -1412,14 +1426,7 @@ impl Func {
             Op::StoreIx(w, _, _) => alloc::vec![8, 8, *w],
             Op::AStore(_, _, n) => alloc::vec![if n.is_power_of_two() { *n } else { 8 }],
             Op::HCall(_) => id.args.iter().map(|_| 1).collect(),
-            Op::Call(c) => {
-                let mut v: Vec<u8> = Vec::new();
-                if c.target == CallTarget::Ptr {
-                    v.push(8);
-                }
-                v.extend(c.regs.iter().map(|r| r.size.min(8) as u8));
-                v
-            }
+            Op::Call(c) => c.arg_widths(),
         }
     }
 }

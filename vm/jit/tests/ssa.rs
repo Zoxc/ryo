@@ -10,6 +10,7 @@
 mod common;
 use common::*;
 
+use core::arch::x86_64::__m128i;
 use ryo_bytecode::asm::{ArgReg, RetPart, Scope, ScopeKind, ret_kind};
 use ryo_bytecode::image::{FUNC_COLD, FUNC_INLINE_ALWAYS, FUNC_INLINE_NEVER, Image};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering::SeqCst};
@@ -154,6 +155,7 @@ fn syms() -> Vec<(&'static str, usize)> {
         ("note", note as *const () as usize),
         ("mul3", mul3 as *const () as usize),
         ("mix", mix as *const () as usize),
+        ("vsub", vsub as *const () as usize),
         ("throw", throw as *const () as usize),
         ("delete_exc", delete_exc as *const () as usize),
         ("throw_all", throw_all as *const () as usize),
@@ -444,6 +446,77 @@ fn sse_arguments_and_results() {
         let mut out = [0u64; 1];
         assert_eq!(fin(x, 41, out.as_mut_ptr()), IF(42, x + x), "fi({x})");
         assert!(in_jit(&img, fi, out[0]), "fi ran at {:#x}", out[0]);
+    }
+    check_stats(before, 2);
+}
+
+/// Native: lane-wise `x - y` on two 64-bit lanes.
+#[allow(improper_ctypes_definitions)]
+extern "C" fn vsub(x: __m128i, y: __m128i) -> __m128i {
+    let (x, y) = (lanes(x), lanes(y));
+    from_lanes([x[0].wrapping_sub(y[0]), x[1].wrapping_sub(y[1])])
+}
+
+fn lanes(v: __m128i) -> [u64; 2] {
+    unsafe { std::mem::transmute(v) }
+}
+
+fn from_lanes(l: [u64; 2]) -> __m128i {
+    unsafe { std::mem::transmute(l) }
+}
+
+/// 16-byte SSE arguments and results (`__m128i`): parameters in `xmm0`/`xmm1`, a
+/// native call taking them swapped (a cycle in the parallel move), a vector live across a
+/// call, a VM call returning one in `xmm0`, and a parameter's half read as an integer.
+#[test]
+fn sse_vector_arguments_and_results() {
+    let (_g, before) = start();
+    let mut w = ImageWriter::new(unique_scid());
+    let s_ret = w.symbol("ret_addr", 0);
+    let s_vsub = w.symbol("vsub", 0);
+    let x16 = |i| ArgReg { xmm: true, size: 16, index: i, sext: false }.word();
+    let k_v = ret_kind(&[RetPart { xmm: true, size: 16, off: 0 }]);
+    // v(a: xmm0, b: xmm1, out: rdi) = vsub(vsub(b, a), a); out[0] = where it runs, out[1] =
+    // a's low lane. a@-16, b@-32, out@-40, r@-64, r2@-80, tmp@-88.
+    let mut a = Asm::new();
+    a.i(Insn::Arg { d: Slot(-16), r: x16(0) });
+    a.i(Insn::Arg { d: Slot(-32), r: x16(1) });
+    a.i(arg(-40, 0));
+    where_at(&mut a, s_ret, -88, -40, 0);
+    a.i(Insn::CallSym { d: Slot(-64), sym: s_vsub, k: k_v, a: List::from_words(&[-32i32 as u32, x16(0), -16i32 as u32, x16(1)]) });
+    a.i(Insn::CallSym { d: Slot(-80), sym: s_vsub, k: k_v, a: List::from_words(&[-64i32 as u32, x16(0), -16i32 as u32, x16(1)]) });
+    a.i(Insn::AddImmW64 { d: Slot(-88), a: Slot(-16), imm: 0 });
+    a.i(Insn::StoreW64 { m: Mem { p: Slot(-40), k: 8 }, s: Slot(-88) });
+    a.i(Insn::Ret { s: Slot(-80), k: k_v });
+    let mut fd = func(a.done(), 96, 0, 0);
+    (fd.ret_size, fd.ret_kind) = (16, k_v);
+    let v = w.add_function(fd);
+    // c(a: xmm0, b: xmm1, out: rdi) = v(b, a, out): a VM call with the vectors swapped.
+    // a@-16, b@-32, out@-40, r@-64.
+    let mut a = Asm::new();
+    a.i(Insn::Arg { d: Slot(-16), r: x16(0) });
+    a.i(Insn::Arg { d: Slot(-32), r: x16(1) });
+    a.i(arg(-40, 0));
+    let x8 = ArgReg { xmm: false, size: 8, index: 0, sext: false }.word();
+    a.i(Insn::Call { d: Slot(-64), f: v, k: k_v, a: List::from_words(&[-16i32 as u32, x16(1), -32i32 as u32, x16(0), -40i32 as u32, x8]) });
+    a.i(Insn::Ret { s: Slot(-64), k: k_v });
+    let mut fd = func(a.done(), 64, 0, 0);
+    (fd.ret_size, fd.ret_kind) = (16, k_v);
+    let c = w.add_function(fd);
+    let img = build(w, &syms());
+
+    let vfn: extern "C" fn(__m128i, __m128i, *mut u64) -> __m128i = unsafe { std::mem::transmute(img.code(v)) };
+    let cfn: extern "C" fn(__m128i, __m128i, *mut u64) -> __m128i = unsafe { std::mem::transmute(img.code(c)) };
+    for (x, y) in [([1u64, 2], [10u64, 20]), ([u64::MAX, 7], [3, 1 << 63]), ([0, 0], [0, 0])] {
+        let want = |a: [u64; 2], b: [u64; 2]| [b[0].wrapping_sub(a[0].wrapping_mul(2)), b[1].wrapping_sub(a[1].wrapping_mul(2))];
+        let mut out = [0u64; 2];
+        assert_eq!(lanes(vfn(from_lanes(x), from_lanes(y), out.as_mut_ptr())), want(x, y), "v({x:?}, {y:?})");
+        assert!(in_jit(&img, v, out[0]), "v ran at {:#x}", out[0]);
+        assert_eq!(out[1], x[0], "v({x:?}, {y:?})'s low lane");
+        let mut out = [0u64; 2];
+        assert_eq!(lanes(cfn(from_lanes(x), from_lanes(y), out.as_mut_ptr())), want(y, x), "c({x:?}, {y:?})");
+        assert!(in_jit(&img, v, out[0]) || in_jit(&img, c, out[0]), "v (from c) ran at {:#x}", out[0]);
+        assert_eq!(out[1], y[0], "c({x:?}, {y:?})'s low lane");
     }
     check_stats(before, 2);
 }

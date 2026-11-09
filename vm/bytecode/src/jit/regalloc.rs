@@ -629,10 +629,17 @@ pub fn linear_scan(f: &Func, uses: &[u32], frame_pointer: bool) -> Alloc {
                 Loc::Xmm(r) => Some(r),
                 _ => None,
             };
-            // A hint: the first operand's register (two-address forms), an argument's for a
-            // parameter.
+            // A hint: the register the value comes in (a call's result, a parameter), else the
+            // first operand's register (two-address forms), an argument's for a parameter.
             let hint = match f.values[v].def {
-                ValueDef::Inst(i, _) => f.insts[i.idx()].args.first().and_then(|&x| xmm_of(x)),
+                ValueDef::Inst(i, n) => match &f.insts[i.idx()].op {
+                    // `xmm0`, `xmm1` in order for the `xmm` parts (emit's `ret_regs`).
+                    Op::Call(c) => Some(c.parts[..n as usize].iter().filter(|q| q.xmm).count() as u8),
+                    _ => f.insts[i.idx()].args.first().and_then(|&x| xmm_of(x)),
+                },
+                ValueDef::Param(blk, n) if f.blocks[blk.idx()].kind == super::ir::BlockKind::Entry && (n as usize) < f.entry_regs.len() => {
+                    Some(f.entry_regs[n as usize].index as u8)
+                }
                 ValueDef::Param(blk, n) => pred_args(f, blk, n).find_map(xmm_of),
                 _ => None,
             };
