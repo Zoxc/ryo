@@ -22,6 +22,9 @@ Rules:
   `mov` of `t`'s width between the slots.
 - `constInt`: `_d = const` with an integer constant, lowered to one `imm` of `t`'s width on
   `_d`'s slot, the immediate's low `t.size` bytes the constant's (`imm` writes `intBytes n`).
+- `copyBool`, `copyPtr`: `_d = _a` at `bool` or at a thin pointer type, lowered to one `mov`
+  of 1 or 8 bytes (`mov` copies bytes, provenance included).
+- `constBool`: `_d = const bits : bool`, lowered to one `imm` of 1 byte.
 - `storageLive`/`storageDead`: lower to no instruction (their effect on R is the scopes').
 -/
 import Ryo.Check.Lower.Cert
@@ -176,6 +179,34 @@ inductive LowerStmt (Γ : StmtCtx) : Statement → List Insn → Prop where
       (hpriv : ∀ k < sd.size, Γ.escaped (sd.off + k) = false)
       (hi : immInsnOk Γ i t.size sd.off bits = true) :
       LowerStmt Γ (.assign ⟨d, []⟩ (.use (.const (.scalar bits) (.int t valid)))) [i]
+  | copyBool {d a : Local} {oa : Operand} {sd sa : LocalSlot} {i : Insn}
+      (ha : oa.local? = some a)
+      (htd : Γ.body.locals[d]? = some .bool) (hta : Γ.body.locals[a]? = some .bool)
+      (hsd : Γ.slots[d]? = some sd) (hsa : Γ.slots[a]? = some sa)
+      (hsize : sd.size = 1 ∧ sa.size = 1)
+      (hoff : offOk sd.off ∧ offOk sa.off)
+      (hpriv : ∀ k < sd.size, Γ.escaped (sd.off + k) = false)
+      (hi : movInsnOk Γ i 1 sd.off sa.off = true) :
+      LowerStmt Γ (.assign ⟨d, []⟩ (.use oa)) [i]
+  | copyPtr {d a : Local} {oa : Operand} {pt : PtrType} {valid : ValidRange}
+      {sd sa : LocalSlot} {i : Insn}
+      (hk : pt.metaKind = .none) (ha : oa.local? = some a)
+      (htd : Γ.body.locals[d]? = some (.ptr pt valid))
+      (hta : Γ.body.locals[a]? = some (.ptr pt valid))
+      (hsd : Γ.slots[d]? = some sd) (hsa : Γ.slots[a]? = some sa)
+      (hsize : sd.size = 8 ∧ sa.size = 8)
+      (hoff : offOk sd.off ∧ offOk sa.off)
+      (hpriv : ∀ k < sd.size, Γ.escaped (sd.off + k) = false)
+      (hi : movInsnOk Γ i 8 sd.off sa.off = true) :
+      LowerStmt Γ (.assign ⟨d, []⟩ (.use oa)) [i]
+  | constBool {d : Local} {bits : Nat} {sd : LocalSlot} {i : Insn}
+      (htd : Γ.body.locals[d]? = some .bool)
+      (hsd : Γ.slots[d]? = some sd)
+      (hsize : sd.size = 1)
+      (hoff : offOk sd.off)
+      (hpriv : ∀ k < sd.size, Γ.escaped (sd.off + k) = false)
+      (hi : immInsnOk Γ i 1 sd.off bits = true) :
+      LowerStmt Γ (.assign ⟨d, []⟩ (.use (.const (.scalar bits) .bool))) [i]
   | storageLive (l : Local) : LowerStmt Γ (.storageLive l) []
   | storageDead (l : Local) : LowerStmt Γ (.storageDead l) []
 
@@ -269,6 +300,103 @@ def checkConstInt (Γ : StmtCtx) (d : Local) (bits : Nat) (t : IntType) (valid :
       | _, _ => .unsupported "const: slot or instruction count"
   | none => .unsupported "const: no local"
 
+/-- A `mov` at `n` bytes from `_a`'s slot to `_d`'s, both of `n` bytes, `_d`'s never escaped. -/
+def movSlotsOk (Γ : StmtCtx) (d a : Local) (n : Nat) (i : Insn) : Bool :=
+  match Γ.slots[d]?, Γ.slots[a]? with
+  | some sd, some sa =>
+    sd.size == n && sa.size == n && offOk sd.off && offOk sa.off && privOk Γ sd.off sd.size &&
+      movInsnOk Γ i n sd.off sa.off
+  | _, _ => false
+
+theorem movSlotsOk_spec {Γ : StmtCtx} {d a : Local} {n : Nat} {i : Insn}
+    (h : movSlotsOk Γ d a n i = true) :
+    ∃ sd sa, Γ.slots[d]? = some sd ∧ Γ.slots[a]? = some sa ∧ (sd.size = n ∧ sa.size = n) ∧
+      (offOk sd.off ∧ offOk sa.off) ∧ (∀ k < sd.size, Γ.escaped (sd.off + k) = false) ∧
+      movInsnOk Γ i n sd.off sa.off = true := by
+  unfold movSlotsOk at h
+  split at h
+  next sd sa hsd hsa =>
+    simp only [Bool.and_eq_true, beq_iff_eq] at h
+    obtain ⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩ := h
+    exact ⟨sd, sa, hsd, hsa, ⟨h1, h2⟩, ⟨h3, h4⟩, privOk_spec h5, h6⟩
+  · cases h
+
+/-- A copy lowered to one `mov` at `n` bytes. -/
+def checkCopyN (Γ : StmtCtx) (d a : Local) (n : Nat) (is : List Insn) : Verdict :=
+  match is with
+  | [i] => if movSlotsOk Γ d a n i then .ok else .unsupported "copy: slots or instruction form"
+  | _ => .unsupported "copy: instruction count"
+
+theorem checkCopyN_ok {Γ : StmtCtx} {d a : Local} {n : Nat} {is : List Insn}
+    (h : checkCopyN Γ d a n is = .ok) : ∃ i, is = [i] ∧ movSlotsOk Γ d a n i = true := by
+  unfold checkCopyN at h
+  split at h
+  next i =>
+    split at h
+    next hm => exact ⟨i, rfl, hm⟩
+    · cases h
+  · cases h
+
+/-- `copyBool`'s and `copyPtr`'s checker. -/
+def checkCopyOther (Γ : StmtCtx) (d : Local) (oa : Operand) (is : List Insn) : Verdict :=
+  match oa.local? with
+  | some a =>
+    match Γ.body.locals[d]?, Γ.body.locals[a]? with
+    | some .bool, some .bool => checkCopyN Γ d a 1 is
+    | some (.ptr pt valid), some ta =>
+      if pt.metaKind = .none ∧ ta = .ptr pt valid then checkCopyN Γ d a 8 is
+      else .unsupported "copy: wide pointer or mixed types"
+    | _, _ => .unsupported "copy: not integers, bools or thin pointers"
+  | none => .unsupported "use: operand"
+
+theorem checkCopyOther_sound {Γ : StmtCtx} {d : Local} {oa : Operand} {is : List Insn}
+    (h : checkCopyOther Γ d oa is = .ok) : LowerStmt Γ (.assign ⟨d, []⟩ (.use oa)) is := by
+  unfold checkCopyOther at h
+  split at h
+  next a ha =>
+    split at h
+    next htd hta =>
+      obtain ⟨i, rfl, hm⟩ := checkCopyN_ok h
+      obtain ⟨sd, sa, hsd, hsa, hsz, hoff, hpriv, hi⟩ := movSlotsOk_spec hm
+      exact .copyBool ha htd hta hsd hsa hsz hoff hpriv hi
+    next pt valid ta htd hta =>
+      split at h
+      next hc =>
+        obtain ⟨hk, rfl⟩ := hc
+        obtain ⟨i, rfl, hm⟩ := checkCopyN_ok h
+        obtain ⟨sd, sa, hsd, hsa, hsz, hoff, hpriv, hi⟩ := movSlotsOk_spec hm
+        exact .copyPtr hk ha htd hta hsd hsa hsz hoff hpriv hi
+      · cases h
+    · cases h
+  · cases h
+
+/-- A copy: `copyInt`, else (other types) `copyBool`/`copyPtr`. -/
+def checkUse (Γ : StmtCtx) (d : Local) (oa : Operand) (is : List Insn) : Verdict :=
+  if checkCopyInt Γ d oa is = .unsupported "copy: not integers" then checkCopyOther Γ d oa is
+  else checkCopyInt Γ d oa is
+
+/-- `constBool`'s checker. -/
+def checkConstBool (Γ : StmtCtx) (d : Local) (bits : Nat) (is : List Insn) : Verdict :=
+  match Γ.body.locals[d]?, Γ.slots[d]?, is with
+  | some .bool, some sd, [i] =>
+    if sd.size = 1 ∧ offOk sd.off = true ∧ privOk Γ sd.off sd.size = true ∧
+        immInsnOk Γ i 1 sd.off bits = true then .ok
+    else .unsupported "const bool: slot or instruction form"
+  | _, _, _ => .unsupported "const bool: type, slot or instruction count"
+
+theorem checkConstBool_sound {Γ : StmtCtx} {d : Local} {bits : Nat} {is : List Insn}
+    (h : checkConstBool Γ d bits is = .ok) :
+    LowerStmt Γ (.assign ⟨d, []⟩ (.use (.const (.scalar bits) .bool))) is := by
+  unfold checkConstBool at h
+  split at h
+  next sd i htd hsd =>
+    split at h
+    next hc =>
+      obtain ⟨h1, h2, h3, h4⟩ := hc
+      exact .constBool htd hsd h1 h2 (privOk_spec h3) h4
+    · cases h
+  · cases h
+
 /-- Decide `LowerStmt` for the rules so far. -/
 def checkStmt (Γ : StmtCtx) : Statement → List Insn → Verdict
   | .storageLive _, [] | .storageDead _, [] => .ok
@@ -278,7 +406,8 @@ def checkStmt (Γ : StmtCtx) : Statement → List Insn → Verdict
   | .assign ⟨d, []⟩ (.binaryOp op oa ob), is => checkBinop Γ d op oa ob is
   | .assign ⟨d, []⟩ (.use (.const (.scalar bits) (.int t valid))), is =>
     checkConstInt Γ d bits t valid is
-  | .assign ⟨d, []⟩ (.use oa), is => checkCopyInt Γ d oa is
+  | .assign ⟨d, []⟩ (.use (.const (.scalar bits) .bool)), is => checkConstBool Γ d bits is
+  | .assign ⟨d, []⟩ (.use oa), is => checkUse Γ d oa is
   | _, _ => .unsupported "statement"
 
 theorem checkBinop_sound {Γ : StmtCtx} {d : Local} {op : BinOp} {oa ob : Operand}
@@ -410,6 +539,13 @@ theorem checkConstInt_sound {Γ : StmtCtx} {d : Local} {bits : Nat} {t : IntType
       · cases h
   · cases h
 
+theorem checkUse_sound {Γ : StmtCtx} {d : Local} {oa : Operand} {is : List Insn}
+    (h : checkUse Γ d oa is = .ok) : LowerStmt Γ (.assign ⟨d, []⟩ (.use oa)) is := by
+  unfold checkUse at h
+  split at h
+  · exact checkCopyOther_sound h
+  · exact checkCopyInt_sound h
+
 theorem checkStmt_sound {Γ : StmtCtx} {st : Statement} {is : List Insn}
     (h : checkStmt Γ st is = .ok) : LowerStmt Γ st is := by
   unfold checkStmt at h
@@ -420,7 +556,8 @@ theorem checkStmt_sound {Γ : StmtCtx} {st : Statement} {is : List Insn}
     | exact checkBinopImm_sound h
     | exact checkBinop_sound h
     | exact checkConstInt_sound h
-    | exact checkCopyInt_sound h
+    | exact checkConstBool_sound h
+    | exact checkUse_sound h
     | (cases h; done)
 
 end Ryo.Check.Lower

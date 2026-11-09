@@ -18,6 +18,7 @@ import Ryo.Check.Image.Pool
 import Ryo.Check.Image.Dump
 import Ryo.Check.Image
 import Ryo.Check.Lower.CertCheck
+import Ryo.Check.Lower.Fn
 import Ryo.Vm.OpSem
 import Ryo.Vm.R.View
 import Ryo.Vm.R.Run
@@ -79,3 +80,12 @@ import Ryo.Proofs.Lower.SimMove
 import Ryo.Proofs.Lower.SimBinImm
 import Ryo.Proofs.Lower.ScopeRel
 import Ryo.Proofs.Lower.StepBridge
+import Ryo.Proofs.Lower.StepTerm
+import Ryo.Proofs.Lower.L0Inv
+import Ryo.Proofs.Lower.SimProlog
+import Ryo.Proofs.Lower.FnRel
+import Ryo.Proofs.Lower.SimPtr
+import Ryo.Proofs.Lower.SimBool
+import Ryo.Proofs.Lower.ProvBound
+import Ryo.Proofs.Lower.SimTerm
+import Ryo.Proofs.Lower.FnSim

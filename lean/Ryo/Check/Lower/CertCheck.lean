@@ -79,6 +79,10 @@ import Ryo.Check.Lower.Cert
 import Ryo.Check.Image.Common
 import Ryo.Vm.Frame
 import Ryo.Check.Lower.Stmt
+import Ryo.Check.Lower.Term
+import Ryo.Check.Lower.Live
+import Ryo.Check.Lower.Prolog
+import Ryo.Check.Lower.Fn
 
 namespace Ryo.Check.Lower
 
@@ -552,6 +556,8 @@ structure Report where
   /-- Lowering coverage (`Stmt.lean`): statements checked, validated, unsupported by rule. -/
   stmts : Nat := 0
   stmtOk : Nat := 0
+  /-- Functions all of whose statements, terminators and layout checks validate. -/
+  fnOk : Nat := 0
   unsupported : HashMap String Nat := {}
   errors : Array String := #[]
   deriving Inhabited
@@ -575,6 +581,21 @@ def lowerCoverage (body : Body) (fc : FuncCert) (d : Decoded) (mode : Ryo.Obj.Mo
       let some st := bd.stmts[si]? | continue
       let (lo, hi) := blk.stmts[si]
       out := out.push (checkStmt Γ st (d.insns.extract lo hi).toList)
+    let Γt : TermCtx := { Γ with blocks := fc.blocks, retKind := fc.retKind }
+    out := out.push (checkBlockTerm Γt blk bd.term d.insns)
+  -- The prologue (`Prolog.lean`): its `arg`s, register inputs only.
+  let pro : List Insn := (d.insns.extract fc.prologue.1 fc.prologue.2).toList
+  let pv : Verdict := match fc.plan with
+    | some plan =>
+      let Γp : PrologCtx := ⟨fc.locals, fc.argHomes, plan, Γ.escaped⟩
+      prologVerdict Γp pro
+    | none => .unsupported "prologue: no plan"
+  out := out.push pv
+  -- The liveness, storage and slot-layout checks (`Live.lean`); a failure only keeps the
+  -- function from validating.
+  out := out.push (match runLiveChecks body fc.locals with
+    | .rejected why => .unsupported s!"layout: {why}"
+    | v => v)
   return out
 
 def Report.ok (r : Report) : Bool := r.errors.isEmpty
@@ -635,7 +656,11 @@ def checkObject (prog : Program) (cert : Cert) (o : ImageObject) : Report := Id.
                  atEnd := rep.addrs.atEnd + fr.addrs.atEnd, zeroSized := rep.addrs.zeroSized + fr.addrs.zeroSized,
                  args := rep.addrs.args + fr.addrs.args } }
     if let some ⟨_, .body b⟩ := c.inst[name]? then
-      for v in lowerCoverage b c.certs[name]! d fi.mode do
+      let vs := lowerCoverage b c.certs[name]! d fi.mode
+      -- Validated: every item checks and `checkFn` (`Fn.lean`, what `fn_sim` takes) accepts it.
+      if vs.all (· == .ok) && checkFn (fnCtx b c.certs[name]! fi.mode (fun _ => none)) d then
+        rep := { rep with fnOk := rep.fnOk + 1 }
+      for v in vs do
         rep := { rep with stmts := rep.stmts + 1 }
         match v with
         | .ok => rep := { rep with stmtOk := rep.stmtOk + 1 }
@@ -681,7 +706,7 @@ then the errors. -/
 def Report.render (r : Report) (path : String) : Array String :=
   #[s!"cert-check {path}: funcs {r.funcs} certs {r.certs} in-dump {r.inDump} undecoded {r.undecoded} sig-abi {r.sigAbi} blocks {r.blocks} truncated {r.truncated} calls {r.calls} by-entry {r.byEntry} by-abi {r.byAbi} unverified {r.unverified} islands {r.islands} addrs {r.addrs.addrs} by-escape {r.addrs.inside} at-end {r.addrs.atEnd} zero-sized {r.addrs.zeroSized} addr-args {r.addrs.args} errors {r.errors.size}",
     s!"dead-check {path}: dropped {r.dropped} not-shown-dead {r.notDead} (without facts {r.notDeadPlain})",
-    s!"lower-check {path}: statements {r.stmts} validated {r.stmtOk} unsupported {r.unsupported.toList.map fun (k, n) => s!"{k}: {n}"}"]
+    s!"lower-check {path}: items {r.stmts} validated {r.stmtOk} functions {r.fnOk} unsupported {r.unsupported.toList.map fun (k, n) => s!"{k}: {n}"}"]
     ++ r.errors.map ("error: " ++ ·)
 
 /-- The certificate images no checked object has (the image map's other direction). -/

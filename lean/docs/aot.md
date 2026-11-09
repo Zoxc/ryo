@@ -262,10 +262,30 @@ statements (no instructions). `check-cert` reports per object how many statement
 and the unsupported ones by rule. Each rule's handler step is proved against L0
 (`Proofs/Lower/SimBinOp.lean`, `SimBinImm.lean`, `SimMove.lean`): from related states, a
 successful L0 run of the statement is matched by a successful `opSem`, keeping `MemInj`, the
-destination's `LocalRel` and every disjoint local's. Next: R's scopes against the relation
-(`Proofs/Lower/ScopeRel.lean`: `Escape` maps private locals through an extended `ι` under the
-`Hidden` invariant, `End` needs the locals it frees dead), lifting the rules to R's `step`
-over a statement's range, terminators, the prologue, and the function theorem.
+destination's `LocalRel` and every disjoint local's. R's scopes against the relation are in
+`Proofs/Lower/ScopeRel.lean` (`Escape` maps private locals through an extended `ι` under the
+`Hidden` invariant, `End` needs the locals it frees dead). More rules: `bool` and thin-pointer
+copies and `bool` constants (`SimPtr.lean`, `SimBool.lean`; `mov` copies bytes with their
+provenance). **Terminators** (`Check/Lower/Term.lean`, `Proofs/Lower/SimTerm.lean`): `goto`
+(a `jmp` or fall-through), `return` (unit or an integer `_0` in `rax`), `SwitchInt` with no or
+one case (`br` on a `bool`, `br.eq.imm` on an integer). **Prologue** (`Prolog.lean`,
+`SimProlog.lean`): integer register inputs, one `arg` each. **Checks** (`Live.lean`):
+semantic liveness (a local whose address is taken, or used by projection, call, drop or
+assert, is live everywhere), storage liveness, and that overlapping slots are never live
+together, each a post-fixpoint check with its soundness. **The function theorem**
+(`Check/Lower/Fn.lean`, `Proofs/Lower/FnSim.lean`): `checkFn` decides `LowersFn` (every block,
+statement and terminator by a rule, the checks above, no scopes, all slots disjoint);
+`FnRel` (`FnRel.lean`) is `FrameRel` with `Hidden` for the private locals, distinct
+provenance and disjoint slots of storage-live locals, kept by each rule's lift (`lift_*`, the
+R step through `step_of_opSem`) and by `StorageLive`/`StorageDead`; `ProvBounded` (`ProvBound.lean`)
+gives a fresh allocation's `Hidden`. `fn_sim`: an L0 run from `Match` (pc at the statement's
+first instruction, `FnRel` at the recomputed liveness) is matched by R steps to `Match`, or
+ends in L0's return matched by R's `ret`. Assumed: L0's `StorageLive` address is the slot
+(`PicksAt`, the daemonic choice the simulation makes) and R's incoming-argument read succeeds
+(`IncomingOk`). `check-cert` reports `functions`, those `checkFn` and every item check accept
+(129 on the -O0 corpus). Left for M5a: `Match` at entry from `prolog_sim`, `sim_ret`'s value
+relation in `fn_sim`'s return, functions with scopes (escaped locals), and slot sharing
+(`LayoutOk` instead of disjoint slots).
 
 ## C2. Bytes → R: `decodeReduced` and `decode_sound` (proved once)
 
