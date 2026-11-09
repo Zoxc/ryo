@@ -189,7 +189,7 @@ in-process validation (Lean runtime or extracted checkers) or sampling, which is
 | M1b | the backend's MIR dump and differential runs of the Lean interpreter against native and ryo builds |
 | M2, M2b | Lean x86 encoder/decoder, ELF and image readers, the decoder to R, co-simulation of x86 against the CPU; the image checks |
 | M3 | `opSem` and the handler contracts, R's semantics with provenance and the relocation lemma, `decode_sound` |
-| M4 | validation of today's JIT |
+| M4 | dropped with the re-encoding JIT; its OSR entry lemma is in M7b |
 | M5a–c | the lowering checker C1' and its simulation lemmas: memory relation first, then places and aggregates, then calls, islands and unwinding |
 | M6 | composition: the AOT theorems, the linked-executable check |
 | M7a–d | the SSA pipeline's validators: construction, register allocation and emission, passes, inlining |

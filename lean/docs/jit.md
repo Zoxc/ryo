@@ -5,43 +5,27 @@ the Lean decoder reads from the AOT code it was compiled from. Composed with the
 ([aot.md](aot.md) §C5), validated JIT code refines L0. R, its provenance and its frame
 layouts are in [reduced.md](reduced.md).
 
-Two pipelines are covered: today's JIT ([jit.md](../../design/jit.md): decode, re-encode in
-the same or a shuffled frame layout, OSR entries), and the planned optimizing SSA pipeline
-(§E.3), which turns frame objects into allocas with provenance and emits register-allocated
-x86.
+The JIT is the SSA pipeline ([jit.md](../../design/jit.md#the-ssa-pipeline), §E.3): it turns
+frame objects into allocas with provenance and emits register-allocated x86. A function it
+declines (`jit::Unsupported`, or over `RYO_JIT_SSA_LIMIT`) stays in its AOT code (record
+`Failed`), which `decode_sound` already covers.
 
-## E.1 Today's JIT (decode → re-encode → remap → OSR entries)
+## E.1 The removed re-encoding JIT
 
-Its output is canonical, so it is validated with `decodeReduced`. It stays relevant as long
-as it is the JIT (and as the SSA pipeline's fallback), and its OSR lemma generalizes to the SSA
-pipeline.
+The first JIT (decode, re-encode in the same or a shuffled frame layout, OSR entries) was
+removed ("JIT: Remove the re-encoding pipeline; AOT code is the fallback"), and with it the
+plan to validate it with `decodeReduced`, a remap check and a liveness check (old milestone
+M4). What carries over is the OSR entry lemma, `osr_entry_sound` over the relocation lemma
+([reduced.md](reduced.md) §C0.7), for the SSA pipeline's entries: step 7 of §E.4 and §E.5,
+in M7b. The SSA pipeline's OSR code (`jit::emit`'s `osr_code`) is built from `asm::osr`'s
+pieces; `Ryo/X86/Extra.lean`'s `osrCode`/`decodeOsr` still port the old `asm::osr::osr_code`
+(and `RyoTest/X86.lean` checks them against its vectors), so they are the starting point for
+step 7's decoder, to be retargeted to the SSA pipeline's entry code. Rust keeps
+`asm::frame::{SlotMap, remap_slots, shuffle_map}` and `asm::osr::{osr_code, OsrEntry}` only for
+the Lean vectors (`lean_reduced_vectors.rs`' shuffled frames, `lean_x86_vectors.rs`' OSR
+entries); they can go once those tests are retargeted.
 
-- **Log** (`RYO_JIT_DUMP=<dir>`, a planned runtime setting), per compiled function: the AOT
-  bytes + side data + `LinkMap`, the JIT bytes at their address, the `SlotMap`, the OSR code
-  and its entries, the FDE and LSDA.
-- **Checker**:
-  1. decode both with `decodeReduced` (counters on for AOT, off for JIT)
-  2. check `P_jit = remap map P_aot`
-  3. check `map` is injective, fixes escaped bytes and the incoming area (`fp ≥ 0`), and
-     keeps every access within one side (moved or pinned)
-  4. recompute head liveness in Lean, and check each OSR entry's moves cover the live bytes
-     that `map` moves
-  5. decode the OSR code (the extra forms of [x86.md](x86.md) §B.1) and check its landing
-     positions against the JIT program's head positions
-  6. check the JIT FDE and LSDA as [aot.md](aot.md) §C4 does for AOT
-- **Theorems**: in the terms of [reduced.md](reduced.md) §C0.2, `remap map` is a change of
-  frame layout, `R(P_jit) = R(φ_map)` with `φ_map = map ∘ φ_AOT` on the moved objects.
-  - Entry: R is parametric in `φ`, so entering at the function's start needs nothing more.
-  - `osr_entry_sound`: from an L2 state at AOT head `h` related to `R(φ_AOT)`, the entry code
-    reaches the JIT head `h'` related to `R(φ_map)`, given the move set covers
-    `live(h) ∩ moved`. Covers the parallel move via scratch below both frames, `rsp`, the
-    probe, and `fp` staying put. The change of layout mid-execution is the **relocation
-    lemma** ([reduced.md](reduced.md) §C0.7): moved bytes are not escaped at `h`, so nothing
-    refers to them (zero-sized objects, whose addresses `addr` may have taken without
-    provenance, stay put). This replaces a separate `remap_sound`.
-  - `trip_sound`: the trip contract holds for the published code.
-
-## E.2 Trip contract (used by C2, E.1 and E.5)
+## E.2 Trip contract (used by C2 and E.5)
 
 `ryo_jit_trip_entry` / `ryo_jit_trip_osr`, called from the stubs with `r11` = record:
 
@@ -60,7 +44,7 @@ The optimizing SSA pipeline builds a CFG SSA IR with block parameters from the d
 (Braun et al.'s on-the-fly construction), and emits register-allocated x86. Two new
 semantics:
 
-- **R-SSA**: blocks with parameters; values are bit-vectors of 1, 2, 4 or 8 bytes, as lists
+- **R-SSA**: blocks with parameters; values are bit-vectors of 1, 2, 4, 8 or 16 bytes, as lists
   of abstract bytes. Instructions are the reduced native ops on values, handler calls with
   their exact frame effects, calls, islands, `alloca.addr`, `load`/`store` on allocas and on
   pointers, and `osr.load` (a read of the AOT frame in an OSR entry block).
@@ -197,6 +181,11 @@ of every inlined callee. Composed with the AOT theorem, the JIT code refines L0.
   folds, the splat hoist (`opt::hoist`), and LVN reassembling a value from its shifted
   pieces. Rules against `opSem`'s vector handlers (`bv_decide`). ("JIT SSA: native SSE2 for
   the SIMD instructions".)
+- **16-byte SSE values through calls**: an `arg`, a call argument or a `ret`/call result part
+  of 16 bytes in an `xmm` register (`f128`, `__m128`) is a 16-byte R-SSA value (no longer
+  declined), so the R-SSA call and return rules (M7a) take vector operands, and the emission
+  templates (M7b) include the parallel `xmm` moves of `jit::emit`'s `to_abi`/`from_abi`.
+  ("JIT SSA: Pass 16-byte SSE arguments and results".)
 - **Division and variable shifts**: the `div`/`rem` and variable-shift handlers decode as
   native `BinOp`s (`DivS`/`DivU`/`RemS`/`RemU`; shift amounts masked to the width), allocated
   with fixed-register clobbers (`regalloc::clobbers`). Rule: the op equals `opSem` where the
@@ -388,7 +377,7 @@ validator to recompute the address.
 - **The trip contract and the AOT theorem**: [aot.md](aot.md) §C5. The AOT theorem with the
   JIT on assumes every compilation of the run is validated.
 - **Rust-side debug validators** (an IR verifier, an allocation checker, frame and OSR
-  checkers that make a failing function fall back to the re-encode pipeline) are robustness
+  checkers that make a failing function stay in its AOT code) are robustness
   features, not part of the proof. The proof-backed guarantee comes from the Lean checkers
   run offline on logs (or from extracted checkers, §E.9).
 - Trusted on the JIT runtime side: publication ordering (release stores, no cross-modifying

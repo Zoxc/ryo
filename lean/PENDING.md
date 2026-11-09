@@ -3,26 +3,6 @@
 Rust-side changes that the Lean model or proofs don't reflect yet. Add an entry per change;
 remove it once a Lean session has handled it.
 
-- 16-byte SSE values through calls in the SSA pipeline (commit "JIT SSA: Pass 16-byte SSE
-  arguments and results"): an `arg`, a call argument or a `ret`/call result part of 16 bytes
-  in an `xmm` register (`f128`, `__m128`) is a 16-byte R-SSA value (no longer declined), so
-  `docs/jit.md`'s R-SSA call and return rules (M7a) take vector operands, and the emission
-  templates (M7b) the parallel `xmm` moves of `jit::emit`'s `to_abi`/`from_abi`.
-
-- The JIT's re-encoding pipeline is gone (commit "JIT: Remove the re-encoding pipeline; AOT
-  code is the fallback"): the JIT compiles with the SSA pipeline only, and a function it
-  declines (`jit::Unsupported`, over `RYO_JIT_SSA_LIMIT`) stays in its AOT code (record
-  `Failed`). `docs/jit.md` §E.1 (decode → re-encode → remap → OSR entries, the `SlotMap`/
-  liveness checks) and its intro, `docs/plan.md`'s M4 (remap check, liveness check) and the
-  §E notes on falling back to re-encoding describe a pipeline that no longer exists. M4
-  reduces to the OSR entry lemma (`osr_entry_sound` over the relocation lemma) for the SSA
-  pipeline's OSR code (`jit::emit`'s `osr_code`, from `asm::osr`'s pieces), to fold into M7.
-  The JIT no longer uses `asm::frame::{SlotMap, remap_slots, shuffle_map}` or
-  `asm::osr::{osr_code, OsrEntry}`; they stay only for the Lean vectors
-  (`vm/bytecode/tests/lean_reduced_vectors.rs`' shuffled frames, `lean_x86_vectors.rs`' OSR
-  entries) and can go with those vectors once the Lean side drops them.
-  `frame::head_liveness` and `frame::osr_moves` were removed.
-
 - C-ABI plans (commits "Backend: Call SysV extern \"C\" functions directly", "… Compile SysV
   extern \"C\" fns as VM functions", "… C ABI on Win64", "… C-unwind and variadic C calls in VM
   code" and the `f16` SSE cut): the model and checkers are done (`Check/Lower/Plan.lean` with

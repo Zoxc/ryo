@@ -2,7 +2,7 @@
 Ryo.X86.Extra — the machine code ryo emits outside `asm::x86::Item` (x86.md §B.1), as `Item`-like
 forms with encode, decode and semantics:
 
-- the OSR code of today's JIT (`vm/bytecode/src/asm/osr.rs`, `osr_code`): the dispatcher
+- the OSR code of the removed re-encoding JIT (`vm/bytecode/src/asm/osr.rs`, `osr_code`): the dispatcher
   (`lea r11, [rip + table]; movsxd rax, [r11 + rax*4]; add rax, r11; jmp rax`, `int3` padding,
   the table of `i32` offsets), and per loop head `ret` (not enterable) or `pop rcx`, loads and
   stores of 1/2/4/8 bytes between `rax` and `[rdx|rbp|rsp + disp32]`, `lea rdx|rsp, [_ + disp32]`,
