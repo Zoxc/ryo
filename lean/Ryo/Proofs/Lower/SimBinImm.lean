@@ -16,7 +16,7 @@ import Ryo.Proofs.Lower.SimBinOp
 namespace Ryo.Proofs.Lower
 
 open Ryo.Spec Ryo.Spec.Sem Ryo.Vm Ryo.Vm.OpSem
-open Ryo.Check.Lower (LocalSlot)
+open Ryo.Check.Lower (LocalSlot binMethod)
 
 /-! ### L0 -/
 

@@ -253,9 +253,19 @@ deallocation. `FrameRel.lean`: `LocalRel` relates a storage-live local to its ce
 either private (unmapped, R's private bytes refine it when semantically live) or escaped (inside
 one escaped object whose allocation is at `fp + e.off`). `FrameRel` combines this with
 `MemInj`. Proved: whole-local reads (`readLocal_inj`), private writes (`writeLocal_priv`) and
-disjoint private writes (`LocalRel.writeFrame_apart`). Next: the invariant that no L0 byte
-carries an unmapped local's provenance, escaped writes, and then the relational spec and
-per-statement simulation for straight-line integer, bool and pointer code.
+disjoint private writes (`LocalRel.writeFrame_apart`). **First statement rules** (`Ryo/Check/Lower/Stmt.lean`): the
+relational spec `LowerStmt` and its checker `checkStmt` (`checkStmt_sound`). The rules cover:
+integer binops on whole locals (wrapping and bitwise operators) lowered to one `bin`/`binop`
+handler, the same with a constant second operand to `bin_imm`/`binop_imm`, integer copies to
+`mov`, integer constants to `imm`, all into a destination no `Escape` covers, and storage
+statements (no instructions). `check-cert` reports per object how many statements validate,
+and the unsupported ones by rule. Each rule's handler step is proved against L0
+(`Proofs/Lower/SimBinOp.lean`, `SimBinImm.lean`, `SimMove.lean`): from related states, a
+successful L0 run of the statement is matched by a successful `opSem`, keeping `MemInj`, the
+destination's `LocalRel` and every disjoint local's. Next: R's scopes against the relation
+(`Proofs/Lower/ScopeRel.lean`: `Escape` maps private locals through an extended `ι` under the
+`Hidden` invariant, `End` needs the locals it frees dead), lifting the rules to R's `step`
+over a statement's range, terminators, the prologue, and the function theorem.
 
 ## C2. Bytes → R: `decodeReduced` and `decode_sound` (proved once)
 

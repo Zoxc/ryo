@@ -13,24 +13,16 @@ locals (M5a): `_d = op(copy _a, copy _b)` lowered to one handler instruction `op
 -/
 import Ryo.Proofs.Lower.FrameRel
 import Ryo.Proofs.Inline.OpSem
+import Ryo.Check.Lower.Stmt
 
 namespace Ryo.Proofs.Lower
 
 open Ryo.Spec Ryo.Spec.Sem Ryo.Vm Ryo.Vm.OpSem
+open Ryo.Check.Lower (binMethod)
 
 /-- Running an L0 computation from state `s` with oracle `o`. -/
 def runOn {α : Type} (x : SemM α) (o : Spec.Oracle) (s : Spec.State) : Except Outcome α × Spec.State :=
   ((x.run).run s).run o
-
-/-- The R method of an L0 operator the lowering maps to a `bin`/`binop` handler without a check. -/
-def binMethod : BinOp → Option String
-  | .add => some "wrapping_add"
-  | .sub => some "wrapping_sub"
-  | .mul => some "wrapping_mul"
-  | .bitAnd => some "&"
-  | .bitOr => some "|"
-  | .bitXor => some "^"
-  | _ => none
 
 /-- L0's result of a `binMethod` operator. -/
 def wrapResult (op : BinOp) (t : IntType) (a b : Int) : Int :=

@@ -13,7 +13,7 @@ import Ryo.Proofs.Lower.IntBin
 namespace Ryo.Proofs.Lower
 
 open Ryo.Spec Ryo.Spec.Sem Ryo.Vm Ryo.Vm.OpSem
-open Ryo.Check.Lower (LocalSlot)
+open Ryo.Check.Lower (LocalSlot binMethod)
 
 /-- An L0 store into another allocation (or of no bytes) leaves an allocation unchanged. -/
 theorem get?_store_other {m0 m0' : Memory} {q : ThinPointer} {bs : List AbstractByte}
