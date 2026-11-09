@@ -100,9 +100,13 @@ per-frame relation `R_Γ (s0 : L0 frame) (s1 : R frame)`:
   callee's function-table entry.
 - **Unwinding**: L0 `unwind` from a callee ↔ R landing at the call's cleanup entry, `lpad x`
   storing the exception object in slot `x`, `resume x` ↔ `UnwindResume`. Terminate pads ↔
-  D18's lang-item call. `UnwindAction::Unreachable` (and a non-unwinding C callee) ↔ a
-  `NOUNWIND` call-site entry (no pad, written to the LSDA as a plain continue one) in a body
-  without landing pads, none in a body with them (L0 UB to unwind there, so anything goes).
+  D18's lang-item call. `UnwindAction::Cleanup` to a no-op landing pad (rustc's
+  `find_noop_landing_pads`, as cg_ssa) ↔ a plain continue entry. `UnwindAction::Unreachable`
+  (and a non-unwinding C callee) ↔ a `NOUNWIND` call-site entry (no pad, written to the LSDA as
+  a plain continue one) in a body without landing pads, none in a body with them (L0 UB to
+  unwind there, so anything goes). A body has landing pads if one of its emitted call-like
+  instructions got one (a `Cleanup` to a block that isn't a no-op pad, or a `Terminate`), so
+  unemitted (mono-unreachable) blocks, drops without glue and folded asserts don't count.
   `extern "C-unwind"` calls get a call-site entry like Rust calls.
 - **Islands**: each template family has a **contract** at R (`Ryo/Vm/R/Islands.lean`): which
   slots it reads at which types, which it writes, and which L0 operation it performs.

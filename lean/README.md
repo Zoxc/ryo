@@ -1,7 +1,9 @@
 # ryo-lean: verifying ryo in Lean 4
 
 The Lean side of ryo's verification ([design/verification.md](../design/verification.md)).
-So far it holds milestone M1: L0, an executable semantics of the runtime MIR ryo compiles,
+It holds milestones M1 to M3 (M2 and M2b's readers and image checks, M3's `decode_sound`:
+the AOT machine code implements its decoded R program; [docs/plan.md](docs/plan.md#3-milestones))
+and, at its base, L0: an executable semantics of the runtime MIR ryo compiles,
 built on MiniRust's semantic core ([github.com/minirust/minirust](https://github.com/minirust/minirust),
 commit `d821c6e3`) with rustc/LLVM behavior where they differ (divergences D1–D36,
 [docs/mir-spec.md](docs/mir-spec.md) §A.7).

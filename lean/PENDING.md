@@ -26,24 +26,9 @@ remove it once a Lean session has handled it.
   landing pad, none otherwise. `docs/aot.md` (Unwinding) states the rule and the image checks
   accept the entry. `Proofs/Discharge/Nounwind.lean` proves the entry's meaning (L0's
   `Unreachable` unwind is UB; R unwinds out at a `NOUNWIND` entry, never catches there; the
-  unwinder finds no pad; the image encodes and reads it back) against `unwindEntry`, a mirror of
-  `FnCx::unwind_entry`. Left: no Lean checker derives cleanup entries from MIR, so that the
-  decoded entries are `unwindEntry` of the body's actions is unproved; non-unwinding `C`
-  callees are treated as `Unreachable`.
-
-- When a body has landing pads (follow-up to the `UnwindAction::Unreachable` entry above;
-  commit "Backend: Decide nounwind entries by the landing pads actually emitted"):
-  `FnCx::unwind_entry`'s `has_pads` is no longer "some MIR terminator has a `Cleanup`/
-  `Terminate` action" but "some emitted call-like instruction got a landing pad", known only
-  once the body is lowered (`Unreachable` sites are collected and get their `NOUNWIND` entries
-  at the end of `FnCx::blocks`). Mono-unreachable blocks, drops without glue and folded asserts
-  no longer count. Also, `Cleanup(bb)` to a post-mono no-op landing pad (rustc's
-  `find_noop_landing_pads`, as cg_ssa) is now a plain `CONTINUE` entry. `unwindEntry` in
-  `Proofs/Discharge/Nounwind.lean` and `docs/aot.md` (Unwinding) state the old rule.
-
-- Scopes after code-less instructions (commit ba1600cf, "JIT: Map a scope past instructions
-  without code at its position"): the decoder's `read` now maps each scope to the first instruction with code
-  at or after the scope's byte offset, skipping instructions with no code at that position
-  (before, an island's `Lend` landed on the code-less instruction before the island). `read`
-  in `Ryo/Vm/DecodeReduced.lean` (around line 1118) still maps a scope to the first
-  instruction at its offset.
+  unwinder finds no pad; the image encodes and reads it back) against `unwindEntries`, a mirror
+  of `FnCx::unwind_entry` over the emitted call-like instructions' actions (`has_pads` from the
+  pads they got, `Cleanup` to a no-op landing pad a continue entry). Left: no Lean checker
+  derives cleanup entries from MIR, so that the decoded entries are `unwindEntries` of the
+  emitted instructions' actions is unproved; non-unwinding `C` callees are treated as
+  `Unreachable`.

@@ -41,6 +41,7 @@ sysroot's objects) and `lake build` in lean/ first.
 """
 
 import argparse
+import os
 import difflib
 import re
 import sys
@@ -317,8 +318,14 @@ def main():
     args = ap.parse_args()
 
     require(args.ryo_lean)
+    # The reference recognizes the runtime symbols by `out/dist/`'s ABI tag (`ryo_bytecode::ABI_TAG`,
+    # from `RYO_ABI` as `y build` sets it), and builds `ryo_bytecode` as `y` does (RUSTC_BOOTSTRAP).
+    env = dict(os.environ, RUSTC_BOOTSTRAP="1")
+    tag = ROOT / "out" / "dist" / "abi-tag"
+    if tag.exists():
+        env["RYO_ABI"] = tag.read_text().strip()
     code, _, err = run(["cargo", "build", "--release", "--quiet", "--manifest-path", str(REF_DIR / "Cargo.toml"),
-                       "--target-dir", str(REF_TARGET)])
+                       "--target-dir", str(REF_TARGET)], env=env)
     if code != 0:
         sys.exit("building scripts/lean-decode-ref failed:\n" + err.decode(errors="replace"))
     ref = REF_TARGET / "release" / "lean-decode-ref"

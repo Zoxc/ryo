@@ -1088,6 +1088,14 @@ def actionsOf (callSites : Array CallSite) (protos : Array Proto) (rs : Nat) :
       a pad region resume with a call site"
   return actions
 
+/-- `decode.rs`'s scope index: from `i`, past every instruction whose successor has the same
+position. -/
+def scopeIndex (ipos : Array Nat) (i : Nat) : Nat :=
+  if h : i + 1 < ipos.size then
+    if ipos[i + 1] = ipos[i] then scopeIndex ipos (i + 1) else i
+  else i
+termination_by ipos.size - i
+
 /-- `read`, handler calls in the reduced form. -/
 def read (ro : ByteArray) (callSites : Array CallSite) (dropped : List DroppedStore)
     (scopes : Array Scope) (mode : Mode) : DM ReadResult := do
@@ -1122,9 +1130,12 @@ def read (ro : ByteArray) (callSites : Array CallSite) (dropped : List DroppedSt
   -- `resume` in the pad region takes the landing pads' exception slot.
   let protos ← if rs < protos.size then resumeSlots protos rs fr else pure protos
   let actions ← actionsOf callSites protos rs
-  -- Scopes: before the first instruction at or after their position.
+  -- Scopes: before the first instruction with code at or after their position (`decode.rs`'s
+  -- `read`). One after an instruction without code (a cache-hit reload, a dropped store) shares
+  -- that instruction's position but belongs after it, so the index skips past every instruction
+  -- at the same position as the next one.
   let ipos := protos.map (·.pos)
-  let scopes := scopes.map fun sc => ((ipos.filter (· < sc.codeOffset)).size, sc)
+  let scopes := scopes.map fun sc => (scopeIndex ipos (ipos.filter (· < sc.codeOffset)).size, sc)
   return { protos, frameSize, actions, scopes, heads }
 
 /-- The R form of a function read (`decode.rs`'s `words_of`, with `reduce::words`). The loop
