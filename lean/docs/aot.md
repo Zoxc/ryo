@@ -237,6 +237,26 @@ that each island symbol is the template instance the dump names). Remaining: the
 spec itself (`LowerPlace` … `LowerProlog`), the frame map against the body's locals and
 storage, the stack pieces and `Indirect` copies, unwind actions and landing pads.
 
+**Implemented: the memory and frame relations** (M5a's first part, `Ryo/Proofs/Lower/`).
+`MemInj.lean`: an `Inj` maps each L0 allocation to the R allocation holding it at the same
+addresses, or to none (zero-sized and non-escaped locals). It is not injective, because the pool
+and a merged `Escape` object each hold several L0 allocations. Bytes are related by `ByteInj`
+(`Uninit` is refined by anything, data agrees, provenance maps through `ι`, and R may carry
+extra provenance), which contains MiniRust's order at `ι = some` (`BytesInj.of_leDefined`).
+`MemInj ι m0 m1` says every mapped L0 allocation lies inside its R allocation, live and
+writable when it is, and its bytes refine R's while it is live. Proved: integer and pointer
+decoding (`decodeBits_inj`, `decodePtr_inj`); loads and stores through a mapped provenance
+(`load_inj`, `store_inj`, given that the other live L0 allocations in the same R object are
+disjoint from the stored range); R's resolving access (`resolve_inj`, `stLoad_inj`); extending
+`ι` at an escape (`MemInj.mono`); R-only stores, allocations on either side, and L0
+deallocation. `FrameRel.lean`: `LocalRel` relates a storage-live local to its certificate slot,
+either private (unmapped, R's private bytes refine it when semantically live) or escaped (inside
+one escaped object whose allocation is at `fp + e.off`). `FrameRel` combines this with
+`MemInj`. Proved: whole-local reads (`readLocal_inj`), private writes (`writeLocal_priv`) and
+disjoint private writes (`LocalRel.writeFrame_apart`). Next: the invariant that no L0 byte
+carries an unmapped local's provenance, escaped writes, and then the relational spec and
+per-statement simulation for straight-line integer, bool and pointer code.
+
 ## C2. Bytes → R: `decodeReduced` and `decode_sound` (proved once)
 
 Rather than relating the Rust encoder to anything, prove the **Lean decoder** correct:

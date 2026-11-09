@@ -70,3 +70,5 @@ import Ryo.Proofs.DeadStore.DropForm
 import Ryo.Proofs.DeadStore.KeptRead
 import Ryo.Proofs.DeadStore.Covered
 import Ryo.Proofs.DeadStore.Sim
+import Ryo.Proofs.Lower.MemInj
+import Ryo.Proofs.Lower.FrameRel
