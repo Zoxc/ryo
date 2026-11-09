@@ -283,9 +283,13 @@ first instruction, `FnRel` at the recomputed liveness) is matched by R steps to 
 ends in L0's return matched by R's `ret`. Assumed: L0's `StorageLive` address is the slot
 (`PicksAt`, the daemonic choice the simulation makes) and R's incoming-argument read succeeds
 (`IncomingOk`). `check-cert` reports `functions`, those `checkFn` and every item check accept
-(129 on the -O0 corpus). Left for M5a: `Match` at entry from `prolog_sim`, `sim_ret`'s value
-relation in `fn_sim`'s return, functions with scopes (escaped locals), and slot sharing
-(`LayoutOk` instead of disjoint slots).
+(129 on the -O0 corpus). Slots may be shared by locals never storage-live together
+(`shareCheck`). **Entry** (`Proofs/Lower/FnEntry.lean`): `match_entry` runs the prologue to
+`Match` from L0's entry frame (its `callBody` facts stated as hypotheses), and `fn_sound`
+combines it with `fn_sim_ret`, whose return case relates `rax`'s low bytes to `_0`'s value
+(`RetVal`). M5a is done; functions with scopes (escaped locals: `Escape` comes with taking an
+address or a by-address argument, which no rule yet covers) go with M5b's places and
+references, and L0's `callBody` facts with M5c's calls.
 
 ## C2. Bytes → R: `decodeReduced` and `decode_sound` (proved once)
 

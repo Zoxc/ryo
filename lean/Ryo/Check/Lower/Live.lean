@@ -458,6 +458,50 @@ theorem layoutCheck_sound {body : Body} {slots : Array LocalSlot} {lv sl : Point
       decide_eq_true_eq] at hov
     exact hov
 
+/-- Distinct locals that are both storage-live at a point have disjoint slots: L0 allocates
+them at their slots (the simulation's address choice), and live allocations don't overlap.
+Slots may still be shared by locals never storage-live together. -/
+def ShareOk (body : Body) (slots : Array LocalSlot) (sl : BasicBlock → Nat → Local → Bool) :
+    Prop :=
+  ∀ b bd, body.blocks[b]? = some bd → ∀ i ≤ bd.stmts.length, ∀ l l', l ≠ l' →
+    sl b i l = true → sl b i l' = true →
+    ∀ s s', slots[l]? = some s → slots[l']? = some s' →
+      s.off + s.size ≤ s'.off ∨ s'.off + s'.size ≤ s.off
+
+/-- `ShareOk` over the overlapping pairs, and the frame map no longer than the locals. -/
+def shareCheck (body : Body) (slots : Array LocalSlot) (sl : PointTable) : Bool :=
+  let ps := overlapPairs slots sl.n
+  decide (slots.size ≤ body.locals.size) &&
+  (List.range body.blocks.size).all fun b => match body.blocks[b]? with
+    | some bd => (List.range (bd.stmts.length + 1)).all fun i => ps.all fun p =>
+        !(sl.get b i p.1 && sl.get b i p.2)
+    | none => true
+
+theorem shareCheck_sound {body : Body} {slots : Array LocalSlot} {sl : PointTable}
+    (h : shareCheck body slots sl = true) :
+    slots.size ≤ body.locals.size ∧ ShareOk body slots sl.get := by
+  unfold shareCheck at h
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at h
+  refine ⟨h.1, ?_⟩
+  intro b bd hb i hi l l' hne h3 h4 s s' hs hs'
+  have hlt : b < body.blocks.size := (Array.getElem?_eq_some_iff.mp hb).1
+  have hB := List.all_eq_true.mp h.2 b (List.mem_range.mpr hlt)
+  simp only [hb] at hB
+  have hI := List.all_eq_true.mp hB i (List.mem_range.mpr (Nat.lt_succ_of_le hi))
+  by_cases hov : slotsOverlap s s' = true
+  · have hmem : (l, l') ∈ overlapPairs slots sl.n := by
+      unfold overlapPairs
+      apply List.mem_flatMap.mpr
+      refine ⟨l, List.mem_range.mpr (PointTable.lt_of_get h3), ?_⟩
+      apply List.mem_filterMap.mpr
+      refine ⟨l', List.mem_range.mpr (PointTable.lt_of_get h4), ?_⟩
+      simp [hs, hs', hne, hov]
+    have := List.all_eq_true.mp hI _ hmem
+    simp [h3, h4] at this
+  · simp only [slotsOverlap, Bool.not_eq_true, Bool.not_eq_false', Bool.or_eq_true,
+      decide_eq_true_eq] at hov
+    exact hov
+
 /-! ### Running the checks -/
 
 /-- Compute both liveness tables and run the three checks on a body and its frame map. -/

@@ -629,8 +629,17 @@ theorem stmt_sim {Γ : TermCtx} {c : R.Code} {ι : Inj} {o : Spec.Oracle} {ch : 
         cases this
     have happ : ∀ l' (p' : ThinPointer) sl', l' ≠ l → f.locals[l']? = some (some p') →
         Γ.toStmtCtx.slots[l']? = some sl' → SlotsApart sd sl' ∧ SlotsApart sl' sd :=
-      fun l' _ sl' hne _ hsl' =>
-        ⟨hfn.apart l l' sd sl' (Ne.symm hne) hsd hsl', hfn.apart l' l sl' sd hne hsl' hsd⟩
+      fun l' p' sl' hne hp' hsl' => by
+        have hsS := hfn.storage.stmt f.bb bd M.hbd f.stmt _ hst
+        have hl'1 := hsS.1 l' (M.sl l' p' hp') (by intro e; cases e)
+        have hlt : l < Γ.body.locals.size :=
+          Nat.lt_of_lt_of_le (Array.getElem?_eq_some_iff.mp hsd).1 hfn.share.1
+        have hl1 := hsS.2 l rfl hlt
+        have hi : f.stmt + 1 ≤ bd.stmts.length :=
+          Nat.succ_le_of_lt (List.getElem?_eq_some_iff.mp hst).1
+        exact ⟨hfn.share.2 f.bb bd M.hbd (f.stmt + 1) hi l l' (Ne.symm hne) hl1 hl'1 sd sl'
+            hsd hsl',
+          hfn.share.2 f.bb bd M.hbd (f.stmt + 1) hi l' l hne hl'1 hl1 sl' sd hsl' hsd⟩
     have hbd' : f.body.blocks[f.bb]? = some bd := by rw [M.body]; exact M.hbd
     have hlive' : ∀ l', (computeLive Γ.body).get f.bb (f.stmt + 1) l' = true →
         l' = l ∨ (computeLive Γ.body).get f.bb f.stmt l' = true := by

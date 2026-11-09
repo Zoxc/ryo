@@ -6,8 +6,9 @@ the MIR body and the certificate in `Γ`, and `checkFn` decides it (`checkFn_sou
 M5a's restrictions: no scopes anywhere in the function (so no escaped locals: every local is
 private), not PE, every block neither fused nor dead, every statement and terminator lowered by
 a rule of `Stmt.lean`/`Term.lean`, every instruction a plain view (`PlainView`), and no two
-locals' slots overlapping (`apart`, stronger than `Live.lean`'s `LayoutOk`, which allows slot
-sharing between locals never live together). Liveness: `computeLive` with its post-fixpoint
+locals with overlapping slots storage-live together (`share`: `Live.lean`'s `ShareOk`; slots
+may be shared by locals never storage-live at the same point, since L0 allocates each local at
+its slot and live allocations don't overlap). Liveness: `computeLive` with its post-fixpoint
 check, a `StorageDead`'d local dead right after, and a `StorageLive`'d local storage-dead before
 it (`computeStorage` over-approximates storage), its slot the size of its type.
 
@@ -59,8 +60,7 @@ structure LowersFn (Γ : TermCtx) (d : Decoded) : Prop where
   ints : IntsSized Γ.body
   live : LiveSound Γ.body (computeLive Γ.body).get
   storage : StorageSound Γ.body (computeStorage Γ.body).get
-  apart : ∀ (l l' : Local) sl sl', l ≠ l' → Γ.slots[l]? = some sl → Γ.slots[l']? = some sl' →
-    SlotsApart sl sl'
+  share : Γ.slots.size ≤ Γ.body.locals.size ∧ ShareOk Γ.body Γ.slots (computeStorage Γ.body).get
   deadAfter : ∀ (b : Nat) bd (i : Nat) (l : Local), Γ.body.blocks[b]? = some bd → bd.stmts[i]? = some (.storageDead l) →
     (computeLive Γ.body).get b (i + 1) l = false
   fresh : ∀ (b : Nat) bd (i : Nat) (l : Local), Γ.body.blocks[b]? = some bd → bd.stmts[i]? = some (.storageLive l) →
@@ -149,22 +149,6 @@ theorem intsCheck_sound {body : Body} (h : intsCheck body = true) : IntsSized bo
   rw [hl] at this
   simpa using this
 
-def apartCheck (slots : Array LocalSlot) : Bool :=
-  (List.range slots.size).all fun l => (List.range slots.size).all fun l' =>
-    l == l' || match slots[l]?, slots[l']? with
-      | some a, some b => decide (a.off + a.size ≤ b.off ∨ b.off + b.size ≤ a.off)
-      | _, _ => true
-
-theorem apartCheck_sound {slots : Array LocalSlot} (h : apartCheck slots = true) :
-    ∀ (l l' : Local) sl sl', l ≠ l' → slots[l]? = some sl → slots[l']? = some sl' → SlotsApart sl sl' := by
-  intro l l' sl sl' hne h1 h2
-  unfold apartCheck at h
-  simp only [List.all_eq_true, List.mem_range] at h
-  have := h l (Array.getElem?_eq_some_iff.mp h1).1 l' (Array.getElem?_eq_some_iff.mp h2).1
-  rw [h1, h2] at this
-  simp only [Bool.or_eq_true, beq_iff_eq, hne, false_or, decide_eq_true_eq] at this
-  exact this
-
 /-- The storage statements' checks (`LowersFn.deadAfter`, `fresh`). -/
 def storageStmtsCheck (body : Body) (slots : Array LocalSlot) (lv sl : PointTable) : Bool :=
   (List.range body.blocks.size).all fun b => match body.blocks[b]? with
@@ -223,7 +207,8 @@ def checkFn (Γ : TermCtx) (d : Decoded) : Bool :=
   d.scopes.size == 0 && !Γ.mode.pe &&
     Γ.blocks.size == Γ.body.blocks.size && blocksCheck Γ d && plainsCheck Γ d &&
     intsCheck Γ.body && liveCheck Γ.body (computeLive Γ.body) &&
-    storageCheck Γ.body (computeStorage Γ.body) && apartCheck Γ.slots &&
+    storageCheck Γ.body (computeStorage Γ.body) &&
+    shareCheck Γ.body Γ.slots (computeStorage Γ.body) &&
     storageStmtsCheck Γ.body Γ.slots (computeLive Γ.body) (computeStorage Γ.body)
 
 /-- `checkFn` at `fnCtx` (whose `escaped` is constantly false). -/
@@ -236,7 +221,7 @@ theorem checkFn_sound {body : Body} {fc : FuncCert} {mode : Ryo.Obj.Mode} {ρ : 
   exact { noScopes := hsc, notPe := hpe, noEsc := fun _ => rfl, blocksSize := hbs,
           block := blocksCheck_sound hb, plain := plainsCheck_sound hp,
           ints := intsCheck_sound hi, live := liveCheck_sound hl,
-          storage := storageCheck_sound hs, apart := apartCheck_sound ha,
+          storage := storageCheck_sound hs, share := shareCheck_sound ha,
           deadAfter := storageStmtsCheck_dead hst, fresh := storageStmtsCheck_live hst }
 
 /-- The coverage verdict of a whole function (`CertCheck`'s `functions` count). -/

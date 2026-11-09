@@ -89,3 +89,4 @@ import Ryo.Proofs.Lower.SimBool
 import Ryo.Proofs.Lower.ProvBound
 import Ryo.Proofs.Lower.SimTerm
 import Ryo.Proofs.Lower.FnSim
+import Ryo.Proofs.Lower.FnEntry
