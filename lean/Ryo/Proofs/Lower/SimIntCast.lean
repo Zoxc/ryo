@@ -21,6 +21,7 @@ Beyond the common lift hypotheses, `lift_intCast` takes `IntsSized f.body` (`Low
 `_d`'s slot is not empty, so `FnRel.priv_dst` applies.
 -/
 import Ryo.Proofs.Lower.FnSim
+import Ryo.Proofs.Lower.WriteDst
 import Ryo.Check.Lower.IntCast
 
 namespace Ryo.Proofs.Lower
@@ -398,12 +399,8 @@ theorem sim_castExt {ι : Inj} {fp : Nat} {st : OpSem.State} {o : Spec.Oracle}
     (hpa : f.locals[a]? = some (some pa))
     (hmem : MemInj ι s.mem st.mem)
     (hra : LocalRel ι fp st s.mem sa pa true)
-    -- `_d` private
-    (ad : AllocId) (xd : Allocation) (hpdp : pd.prov = some ad) (hιd : ι ad = none)
-    (hxd : s.mem.get? ad = some xd) (hlived : xd.live = true)
-    (haddrd : (xd.addr : Int) = fp + sd.off) (hpaddrd : pd.addr = xd.addr)
-    (hsized : xd.data.size = sd.size)
-    (hprivd : ∀ k < sd.size, st.escapedAt (sd.off + k) = none)
+    -- `_d`, private or escaped (`FnRel.dstWriteAll`)
+    (hW : DstWriteAll ι fp st s.mem sd pd)
     -- the instruction
     {opc : Full.Opcode} {r : Option String} {tx ty : String} {sx sy : Bool}
     (hh : opc.handler? = some ⟨.cvt, [tx, ty], r⟩)
@@ -444,29 +441,15 @@ theorem sim_castExt {ι : Inj} {fp : Nat} {st : OpSem.State} {o : Spec.Oracle}
   -- R's write
   have hlenw : (intBytes t'.size (cvtInt ts.size sx t'.size ua)).length = t'.size :=
     Ryo.Spec.Theorems.encodeBits_length _ _
-  have hpw : ∀ k < (intBytes t'.size (cvtInt ts.size sx t'.size ua)).length,
-      st.escapedAt (sd.off + k) = none := by
-    intro k hk
-    rw [hlenw, ← hsd] at hk
-    exact hprivd k hk
-  obtain ⟨st', hwr⟩ : ∃ st',
-      st.writeFrame sd.off (intBytes t'.size (cvtInt ts.size sx t'.size ua)) = .ok st' := by
-    unfold OpSem.State.writeFrame
-    rw [writeEscaped_private' hpw]
-    exact ⟨_, rfl⟩
-  have hop := opSem_cvt_fwd (ch := ch) hh htx hty ho hfits hrfa hva hwr
-  have hwr' := hwr
-  rw [cvt_bytes ts t' sx hu hsx] at hwr'
-  have hbs := encodeBits_inj ι t'.size (t'.toBits (t'.bringInBounds (ts.ofBits ua)))
+  have hbs : BytesInj ι (encodeBits t'.size (t'.toBits (t'.bringInBounds (ts.ofBits ua))))
+      (intBytes t'.size (cvtInt ts.size sx t'.size ua)) := by
+    rw [cvt_bytes ts t' sx hu hsx]; exact encodeBits_inj ι _ _
   have hlen0 : (encodeBits t'.size (t'.toBits (t'.bringInBounds (ts.ofBits ua)))).length =
       sd.size := by
     rw [Ryo.Spec.Theorems.encodeBits_length, hsd]
-  obtain ⟨hmi, hrd⟩ := writeLocal_priv hmem ad xd hpdp hιd hxd hlived haddrd hpaddrd hsized
-    hprivd hbs hlen0 hsto hwr'
-  refine ⟨st', hop, hmi, hrd, ?_⟩
-  intro slot p lv hr hne hap
-  have h1 := LocalRel.store_other hr hsto (.inl (Ne.symm hne))
-  exact LocalRel.writeFrame_apart h1 hwr hpw (by rw [hlenw, ← hsd]; exact hap)
+  obtain ⟨st', hwr, -, hmi, hrd, hoth⟩ := hW _ _ _ hlen0 hsto _ hbs
+  have hop := opSem_cvt_fwd (ch := ch) hh htx hty ho hfits hrfa hva hwr
+  exact ⟨st', hop, hmi, hrd, hoth⟩
 
 /-- `castMov`'s simulation: a `mov` of `t'.size` bytes from `_a`'s slot to `_d`'s.
 
@@ -484,12 +467,8 @@ theorem sim_castMov {ι : Inj} {fp : Nat} {st : OpSem.State} {o : Spec.Oracle}
     (hpa : f.locals[a]? = some (some pa))
     (hmem : MemInj ι s.mem st.mem)
     (hra : LocalRel ι fp st s.mem sa pa true)
-    -- `_d` private
-    (ad : AllocId) (xd : Allocation) (hpdp : pd.prov = some ad) (hιd : ι ad = none)
-    (hxd : s.mem.get? ad = some xd) (hlived : xd.live = true)
-    (haddrd : (xd.addr : Int) = fp + sd.off) (hpaddrd : pd.addr = xd.addr)
-    (hsized : xd.data.size = sd.size)
-    (hprivd : ∀ k < sd.size, st.escapedAt (sd.off + k) = none)
+    -- `_d`, private or escaped (`FnRel.dstWriteAll`)
+    (hW : DstWriteAll ι fp st s.mem sd pd)
     -- the instruction
     {opc : Full.Opcode} {r : Option String} {ty : String} {sg : Bool}
     (hh : opc.handler? = some ⟨.mov, [ty], r⟩)
@@ -523,24 +502,12 @@ theorem sim_castMov {ι : Inj} {fp : Nat} {st : OpSem.State} {o : Spec.Oracle}
   have hda' := decodeBits_inj hia hda
   have hlenb : ba.length = t'.size := ((BytesInj.length hia).symm.trans hlena).trans hw
   -- R's write
-  have hpw : ∀ k < ba.length, st.escapedAt (sd.off + k) = none := by
-    intro k hk
-    rw [hlenb, ← hsd] at hk
-    exact hprivd k hk
-  obtain ⟨st', hwr⟩ : ∃ st', st.writeFrame sd.off ba = .ok st' := by
-    unfold OpSem.State.writeFrame
-    rw [writeEscaped_private' hpw]
-    exact ⟨_, rfl⟩
-  have hop := opSem_mov_fwd (ch := ch) hh hty ho hfits hrfa hlenb hwr
   have hbs : BytesInj ι (encodeBits t'.size ua) ba := bytesInj_encodeBits_of_decode hda' hlenb
   have hlen0 : (encodeBits t'.size ua).length = sd.size := by
     rw [Ryo.Spec.Theorems.encodeBits_length, hsd]
-  obtain ⟨hmi, hrd⟩ := writeLocal_priv hmem ad xd hpdp hιd hxd hlived haddrd hpaddrd hsized
-    hprivd hbs hlen0 hsto hwr
-  refine ⟨st', hop, hmi, hrd, ?_⟩
-  intro slot p lv hr hne hap
-  have h1 := LocalRel.store_other hr hsto (.inl (Ne.symm hne))
-  exact LocalRel.writeFrame_apart h1 hwr hpw (by rw [hlenb, ← hsd]; exact hap)
+  obtain ⟨st', hwr, -, hmi, hrd, hoth⟩ := hW _ _ _ hlen0 hsto _ hbs
+  have hop := opSem_mov_fwd (ch := ch) hh hty ho hfits hrfa hlenb hwr
+  exact ⟨st', hop, hmi, hrd, hoth⟩
 
 /-! ### The lift -/
 
@@ -563,13 +530,13 @@ theorem lift_intCast {Γ : StmtCtx} {c : R.Code} {s1 : R.RState} {ch : OpSem.Cho
     (hlow : LowerIntCast Γ (.assign ⟨d, []⟩ rv) [i])
     (hi : c.d.insns[s1.pc]? = some i) (hsc : c.scopesAt s1.pc = []) (hpe : c.mode.pe = false)
     (hpl : PlainView c.mode c.ρ i) (hrel : FnRel Γ ι live f s.mem s1)
-    (hpb : ProvBounded s.mem)
+    (hpb : ProvBounded s.mem) (hld : Ryo.Proofs.Provenance.LiveDisjoint s.mem)
     (hlo : ∀ l ∈ rvalueLocals rv, live l = true)
     (hlive' : ∀ l, live' l = true → l = d ∨ live l = true)
     (h : runOn (evalStatement (.assign ⟨d, []⟩ rv)) o s = (.ok (), s')) :
     LiftOut Γ c ch ι live' f s s' s1 := by
   cases hlow with
-  | @castMov _ _ _ _ _ _ _ _ sd sa _ ha htd hta hts hw hsd hsa hsize hoff hpriv hmi0 =>
+  | @castMov _ _ _ _ _ _ _ _ sd sa _ ha htd hta hts hw hsd hsa hsize hoff hmi0 =>
     obtain ⟨v, ty, r, hv, hh, hty, ho, hops, hctl⟩ := movInsnOk_spec hmi0
     rw [hmode, hρ] at hv
     obtain ⟨sg, hty'⟩ := intTyOk_spec hty
@@ -579,12 +546,11 @@ theorem lift_intCast {Γ : StmtCtx} {c : R.Code} {s1 : R.RState} {ch : OpSem.Cho
       assign_intCast_inv hs ha h
     have hra := hrel.opnd hpa hsa hla
     have hpos : 0 < sd.size := by rw [hsize.1]; exact hwf _ _ _ htd
-    obtain ⟨ad, xd, hp, hι, hxd, hl, haddr, hpaddr, hsz, hpv⟩ :=
-      hrel.priv_dst hpd hsd hpos hpriv
+    have hW := hrel.dstWriteAll hld hpd hsd hpos
     have hf1 := offOk_spec hoff.1
     have hf2 := offOk_spec hoff.2
     obtain ⟨st', hop, hmi, hrd, hoth⟩ := sim_castMov (ch := ch) hs ha htd hta hts hw hsize.1
-      hsize.2 hpd hpa hrel.frame.mem hra ad xd hp hι hxd hl haddr hpaddr hsz hpv hh hty' ho
+      hsize.2 hpd hpa hrel.frame.mem hra hW hh hty' ho
       ⟨hf1.1, hf1.2, hf2.1, hf2.2⟩ h
     have e4 := Option.some.inj (htd'.symm.trans htd)
     subst e4
@@ -595,7 +561,7 @@ theorem lift_intCast {Γ : StmtCtx} {c : R.Code} {s1 : R.RState} {ch : OpSem.Cho
     exact ⟨st', step_of_view hi hsc hpe hpl hv hctl (by rw [hops]; exact hop),
       by subst hs'; rfl,
       hrel.after hpd hsd hmi hrd hoth (hrel.hidden.store_noprov hsto' hnp) hesc hlive', hpb', hle⟩
-  | @castExt _ _ _ _ _ _ _ _ sd sa _ ha htd hta hts hsd hsa hsize hoff hpriv hci =>
+  | @castExt _ _ _ _ _ _ _ _ sd sa _ ha htd hta hts hsd hsa hsize hoff hci =>
     obtain ⟨v, tx, ty, r, sx, sy, hv, hh, htx, hty, hsx, ho, hops, hctl⟩ := castInsnOk_spec hci
     rw [hmode, hρ] at hv
     rw [hbody] at htd hta
@@ -604,12 +570,11 @@ theorem lift_intCast {Γ : StmtCtx} {c : R.Code} {s1 : R.RState} {ch : OpSem.Cho
       assign_intCast_inv hs ha h
     have hra := hrel.opnd hpa hsa hla
     have hpos : 0 < sd.size := by rw [hsize.1]; exact hwf _ _ _ htd
-    obtain ⟨ad, xd, hp, hι, hxd, hl, haddr, hpaddr, hsz, hpv⟩ :=
-      hrel.priv_dst hpd hsd hpos hpriv
+    have hW := hrel.dstWriteAll hld hpd hsd hpos
     have hf1 := offOk_spec hoff.1
     have hf2 := offOk_spec hoff.2
     obtain ⟨st', hop, hmi, hrd, hoth⟩ := sim_castExt (ch := ch) hs ha htd hta hts hsize.1
-      hsize.2 hpd hpa hrel.frame.mem hra ad xd hp hι hxd hl haddr hpaddr hsz hpv hh htx hty hsx
+      hsize.2 hpd hpa hrel.frame.mem hra hW hh htx hty hsx
       ho ⟨hf1.1, hf1.2, hf2.1, hf2.2⟩ h
     have e4 := Option.some.inj (htd'.symm.trans htd)
     subst e4

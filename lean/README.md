@@ -179,7 +179,8 @@ Ryo/Check/Lower/                   the lowering check C1' (docs/aot.md §C1): Pl
 Ryo/Proofs/Lower/                  C1' proved: the memory and frame relations (MemInj,
                                    FrameRel, FnRel, ScopeRel), a simulation per rule (`Sim*`),
                                    and the function theorem (FnStep, FnEntry `fn_sound`,
-                                   SimPrologX `fn_soundX`); M5b in progress (docs/plan.md §3)
+                                   SimPrologX `fn_soundX`, FnSimX `fn_soundEsc`); M5b done
+                                   (docs/plan.md §3)
 Ryo/Examples.lean                  example programs for `ryo-lean example`
 Ryo/X86/                           L2 (docs/x86.md Part B): Item (asm::x86's items), Encode,
                                    Decode (canonical, unlinked or linked), State, Exec (per

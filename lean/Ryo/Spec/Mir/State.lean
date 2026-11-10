@@ -17,8 +17,9 @@ Differences:
 - D12: `aliased` locals live in the caller's memory (in-place `Move` arguments, the return
   place) and are not deallocated by the callee.
 - D14: `callerLocation`, the hidden argument of `#[track_caller]` bodies.
-- D6, D7: function addresses and constant allocations are instantiated on demand; the copies
-  are remembered so that later choices can reuse them.
+- D6, D7: function addresses are instantiated on demand, constant and vtable allocations once
+  at the start (`Sem.instantiateConsts`) and again whenever a choice asks for a fresh copy;
+  the copies are remembered so that later choices can reuse them.
 - Events (external calls) are recorded for traces (`Ryo.Spec.Mir.Behavior`).
 
 `SemM` is the semantics monad: exceptions are outcomes (the state survives an exception, so

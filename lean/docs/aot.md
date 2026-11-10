@@ -281,17 +281,19 @@ R step through `step_of_opSem`) and by `StorageLive`/`StorageDead`; `ProvBounded
 gives a fresh allocation's `Hidden`. `fn_sim`: an L0 run from `Match` (pc at the statement's
 first instruction, `FnRel` at the recomputed liveness) is matched by R steps to `Match`, or
 ends in L0's return matched by R's `ret`. Assumed: L0's `StorageLive` address is the slot
-(`PicksAt`, the daemonic choice the simulation makes) and R's incoming-argument read succeeds
+and a NaN's payload R's choice (`PicksAt`, the daemonic choices the simulation makes) and R's
+incoming-argument read succeeds
 (`IncomingOk`). `check-cert` reports `functions`, those `checkFn` and every item check accept
-(129 on the -O0 corpus). Slots may be shared by locals never storage-live together
-(`shareCheck`). **Entry** (`Proofs/Lower/FnEntry.lean`): `match_entry` runs the prologue to
+(129 on the -O0 corpus). Slots may be shared by locals of which neither may be storage-live at
+the other's storage statements (`shareCheck`, the backend's sharing condition). **Entry**
+(`Proofs/Lower/FnEntry.lean`): `match_entry` runs the prologue to
 `Match` from L0's entry frame (its `callBody` facts stated as hypotheses), and `fn_sound`
 combines it with `fn_sim_ret`, whose return case relates `rax`'s low bytes to `_0`'s value
 (`RetVal`). M5a is done; functions with scopes (escaped locals: `Escape` comes with taking an
 address or a by-address argument, which no rule yet covers) go with M5b's places and
 references, and L0's `callBody` facts with M5c's calls.
 
-**M5b** (in progress). More rule families, each a `Check/Lower/` relation with its checker and a
+**M5b** (done). More rule families, each a `Check/Lower/` relation with its checker and a
 `Proofs/Lower/Sim*.lean` simulation, joined in `LowerStmtX` (`StmtExt.lean`; `checkFamilies`
 tries each in turn) and `LowerTermX` (`TermExt.lean`), and simulated by `stmt_sim`
 (`FnStep.lean`): copies at any well-formed type by one `mov` of 1 to 16 bytes, bit casts and thin
@@ -316,13 +318,49 @@ reaches is rejected); the invariant is `MatchX` (`SimReach.lean`: `MatchAt` at a
 or `MatchMid`). A dead `otherwise` target ends the simulation in `DeadAt` (no successful L0 step
 follows, `dead_no_step`), `fn_sim_ret`'s and `fn_sound`'s third outcome. The prologue (`PrologX`):
 one `arg` per register piece (pairs, `xmm`, ZSTs, `Cast` units, the sret pointer, the
-`track_caller` location), related by `ArgRelX`, giving `match_entryX` and `fn_soundX`. 1022
-corpus functions validate (`check-cert`). Not covered yet: escaped locals and `&`/`&raw` (in
-progress, over `LowerRef`/`ScopesOk`/`LowersFnX` in `Ref.lean`, `FnX.lean`), static switches,
-sparse switches, division, remainder, shifts and overflow binops, pool constants (they need a
-global/pool invariant), sret returns, `Indirect`, stack and spread inputs, `assert`,
-`unreachable` and `resume` terminators, escaped destinations, niche discriminants and unions;
-calls and drops are M5c's.
+`track_caller` location), related by `ArgRelX`, giving `match_entryX` and `fn_soundX`.
+
+The later families, by area (constructors of `LowerStmtX`, `LowerTermX`, `LowerFused`):
+- references and loads/stores: `ref` (`&`/`&raw` of a local's projection), `refDeref*` (of a
+  place through a pointer: field, downcast, index, wide), `deref*` (wide, split, cast, field
+  stores, ZSTs), `idxRead`, `splitRead`, `storeTemp` (a computed value stored through a pointer);
+- binops: `binX`/`binXConst`/`binMore` (div/rem with their checks, shifts, by constant or
+  projected operands), `divConst`, `ovf*` (overflow), `offset*`, `cmpX`/`cmpConst`, `boolBin`;
+- floats (`binFloat`, `cmpFloat`, `floatCast`; L0's NaN payload is R's `Choice`, `NanPicks`),
+  casts and intrinsics (`castMore`, `intrinsic`);
+- aggregates: unions, raw pointers, escaped destinations (`stmtEsc`, `SimAggEsc`/`SimDst`),
+  field writes (`fieldWrite`, `fieldCopyN`), `CopyNonOverlapping` by a constant count (`copyNO`);
+- enums: niche reads (`nicheRead`), discriminants of places (`discrPlace`);
+- switches on static operands (`SwitchStatic`), fused niche switches as chains and dense tables
+  (`Niche`, `NicheDense`); terminators
+  `assert`, `unreachable`, `resume` and fused asserts (`TermMore`);
+- prologue: `Indirect`, spread and stack inputs (`PrologInd`/`PrologSpread`/`PrologStack`);
+  sret returns (`RetSret`);
+- globals: pool constants and slices (`PoolConst`), function pointers and vtable unsizing
+  (`FnPtrCast`), ZST reads (`zstRead`).
+
+**Escaped locals.** `LowersFnX` (`FnX.lean`) allows scopes (`ScopesOk`); the relation is
+`FnRelEsc.lean`'s `MatchAtX`. `stmt_simX` (`StmtSimX.lean`, no `sorry`) and `TermSimX.lean`
+simulate one statement or terminator, `fn_simX`/`fn_soundEsc` (`FnSimX.lean`) the function;
+scope-free functions keep the `FnStep`/`FnEntry` path. Slot sharing is checked at storage
+statements only (`shareCheck`). `EscIdOff` (`SimAggEsc.lean`) keeps an escaped object's id
+apart from its source's.
+
+**Invariants.** `DerefInv` is a structure; its `below` field (`AllocsBelow`) keeps L0's live
+allocations below `ADDR_LIMIT`. Constants: L0 copies every constant and vtable once at the
+start (D7, `instantiateConsts`); `PoolInv` (`SimPoolConst.lean`) relates the first copy to R's
+pool placement, the oracle reusing it (`ReusesAt`); functions likewise by `FnInv` and
+`FnReusesAt` (`SimFnPtrCast.lean`), over R's symbol slots. Both carry over a step by `GlobKept`
+(`GlobKept.lean`: proved for statements and non-call terminators); `FnInv` also needs
+`SymsKept` (R keeps its symbol slots), an unproved hypothesis of `fn_simX`. `CertCheck` runs
+the checkers at `ρ := Image.addrs` (where the image places R's code) and fills `Γ.pool` and
+`Γ.fnSym` from check-pool's validated placements.
+
+**Coverage** (`check-cert`, -O0 corpus): 286239 of 320828 lowering items and 2001 functions
+validate (from 248551 and 1022). Of the ~5400 non-call rejections left, the largest are
+transmute leftovers (886), `indirect` pool constants (422) and zero-sized references (197); calls
+(24502) and drops (4660) are M5c's, as are `GlobKept`'s call paths, `SymsKept`, and the entry
+facts `PoolInv`/`FnInv`/`DerefInv` (with M6).
 
 ## C2. Bytes → R: `decodeReduced` and `decode_sound` (proved once)
 

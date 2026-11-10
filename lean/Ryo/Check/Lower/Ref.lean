@@ -6,9 +6,11 @@ with escaped locals needs (`Ryo/Proofs/Lower/FnRelEsc.lean`).
 Rule (`LowerRef`):
 - `ref`: `_d = &_a.f₁.….fₖ` or `_d = &raw const|mut _a.f₁.….fₖ` (`refPlace?`; `k ≥ 0`, the
   projections all `.field`, as `Field.lean`'s `fieldPath`, so the place is `_a`'s pointer
-  offset by `off`, L0's offsets), `_d` a thin pointer local (`metaKind = .none`, 8 bytes) whose
-  slot no `Escape` covers, `_d ≠ _a`, the offset inside `_a`'s slot (`off < sa.size`: not the
-  end of the slot, where `addrOf` takes the at-end case), lowered to one `addr` handler
+  offset by `off`, L0's offsets), `_d` a thin pointer local (`metaKind = .none`, 8 bytes; its
+  slot may be escaped: the simulation writes it through `FnRel.write_dst`), `_d ≠ _a`, the
+  offset inside `_a`'s non-empty slot or at its end (`off ≤ sa.size`; at the end, `addrOf` takes
+  its at-end case, which gives `_a`'s object only when no escaped object starts there: `hend`,
+  no `Escape` of the function covers that offset), lowered to one `addr` handler
   instruction (`addrInsnOk`) from slot offset `sa.off + off` to `_d`'s slot. Every offset of
   `_a`'s slot is covered by some `Escape` of the function (`hesc`): the backend
   (`place.rs` `addr_into`, `frame.rs` `escape`) escapes `_a`'s whole slot before the `addr`;
@@ -22,7 +24,8 @@ instruction, and an `addr` puts the `Escape` of its object right before itself. 
 `k` of a non-empty range, the scopes are, in order, the `End`s of the instruction-less
 statements before it whose range also starts at `k` (`pendSpecs`: a `StorageDead _l` whose slot
 some `Escape` covers, `endSpec`), then the statement's own (`ownSpec`: a `ref` statement's
-`Escape` of its referent's whole slot, alignment at most the referent type's; none for any other
+`Escape` of its referent's whole slot, alignment at most the referent type's; the same for a
+read `_d = copy _a.pre[_l].post` of a local through an index, `useSpec`; none for any other
 statement or terminator). `ScopesOk` requires exactly that (`specsOk`, ignoring `codeOffset`), no
 scope inside a range after its first index, no pending `End` at a block's end whose terminator
 has no instruction (its scopes would sit in another block), and every `StorageDead _l` with an
@@ -34,6 +37,7 @@ these facts.
 import Ryo.Check.Lower.Field
 import Ryo.Check.Lower.Term
 import Ryo.Check.Lower.Live
+import Ryo.Check.Lower.Enum
 
 namespace Ryo.Check.Lower
 
@@ -91,9 +95,9 @@ inductive LowerRef (Γ : StmtCtx) : Statement → List Insn → Prop where
       (hta : Γ.body.locals[a]? = some ta) (hpath : fieldPath ta projs = some (off, ty))
       (htd : Γ.body.locals[d]? = some (.ptr pt valid)) (hk : pt.metaKind = .none)
       (hsd : Γ.slots[d]? = some sd) (hsa : Γ.slots[a]? = some sa)
-      (hsize : sd.size = 8 ∧ off < sa.size)
+      (hsize : sd.size = 8 ∧ off ≤ sa.size ∧ 0 < sa.size)
+      (hend : off = sa.size → Γ.escaped (sa.off + sa.size) = false)
       (hoff : offOk sd.off ∧ offOk sa.off ∧ offOk (sa.off + off))
-      (hpriv : ∀ k < sd.size, Γ.escaped (sd.off + k) = false)
       (hesc : ∀ k < sa.size, Γ.escaped (sa.off + k) = true)
       (hi : addrInsnOk Γ i sd.off (sa.off + off) = true) :
       LowerRef Γ (.assign ⟨d, []⟩ rv) [i]
@@ -113,11 +117,12 @@ def checkRefPlace (Γ : StmtCtx) (d a : Local) (projs : List ProjElem) (is : Lis
         if pt.metaKind = .none then
           match Γ.slots[d]?, Γ.slots[a]?, is with
           | some sd, some sa, [i] =>
-            if !(sd.size == 8 && decide (off < sa.size)) then
-              .unsupported "ref: slot sizes or the end of the referent"
+            if !(sd.size == 8 && (decide (off ≤ sa.size) && decide (0 < sa.size))) then
+              .unsupported "ref: slot sizes or a zero-sized referent"
             else if !(offOk sd.off && (offOk sa.off && offOk (sa.off + off))) then
               .rejected "ref: offsets"
-            else if !privOk Γ sd.off sd.size then .unsupported "ref: escaped destination"
+            else if !(off != sa.size || !Γ.escaped (sa.off + sa.size)) then
+              .unsupported "ref: end of the referent, escaped bytes after it"
             else if !escAll Γ sa.off sa.size then .rejected "ref: referent never escaped"
             else if addrInsnOk Γ i sd.off (sa.off + off) then .ok
             else .unsupported "ref: instruction form"
@@ -162,15 +167,18 @@ theorem checkRefPlace_sound {Γ : StmtCtx} {d a : Local} {rv : Rvalue} {projs : 
                 next hoff =>
                   split at h
                   · cases h
-                  next hpriv =>
+                  next hend =>
                     split at h
                     · cases h
                     next hesc =>
                       split at h
                       next hi =>
-                        exact .ref hrv hne hta hpath htd hk hsd hsa (by simpa using hsz)
-                          (by simpa using hoff) (privOk_spec (by simpa using hpriv))
-                          (escAll_spec (by simpa using hesc)) hi
+                        have hsz' : sd.size = 8 ∧ off ≤ sa.size ∧ ¬sa.size = 0 := by
+                          simpa using hsz
+                        exact .ref hrv hne hta hpath htd hk hsd hsa
+                          ⟨hsz'.1, hsz'.2.1, Nat.pos_of_ne_zero hsz'.2.2⟩
+                          (fun he => by subst he; simpa using hend)
+                          (by simpa using hoff) (escAll_spec (by simpa using hesc)) hi
                       · cases h
             · cases h
           · cases h
@@ -234,16 +242,105 @@ def endSpec (Γ : StmtCtx) : Statement → List ScopeSpec
     | none => []
   | _ => []
 
+/-- Projections `pre ++ .index l :: post`, `pre` and `post` fields: the split. -/
+@[simp] def idxSplit : List ProjElem → Option (List ProjElem × Local × List ProjElem)
+  | [] => none
+  | .index l :: post => if post.all isFieldProj then some ([], l, post) else none
+  | .field f t :: ps => (idxSplit ps).map fun (pre, l, post) => (.field f t :: pre, l, post)
+  | _ :: _ => none
+where
+  /-- A field projection. -/
+  isFieldProj : ProjElem → Bool
+    | .field .. => true
+    | _ => false
+
+/-- The `Escape` before a read of `_a.pre[_l].post` (`idxSplit`): the backend takes the element's
+address from `_a`'s slot (`addr`, then `ptr.index`), escaping `_a`'s whole non-empty slot first
+(`frame.rs` `escape`, `Asm::escape` skips empty ones). The `fieldPath`/`downcastPath` conditions
+are implied by `idxSplit` (both fail on an index); they let `simp_all` see the spec empty from
+a family's path hypothesis. -/
+@[simp] def idxPlaceSpec (Γ : StmtCtx) (p : MPlace) : List ScopeSpec :=
+  match Γ.body.locals[p.base]? with
+  | some ta =>
+    if (idxSplit p.proj).isSome && (fieldPath ta p.proj).isNone &&
+        (downcastPath ta p.proj).isNone then
+      match Γ.slots[p.base]? with
+      | some sa => if 0 < sa.size then [.escS sa.off sa.size ta.align.exp] else []
+      | none => []
+    else []
+  | none => []
+
+/-- The own scopes of `_d = use o`: `idxPlaceSpec` of a non-local place operand. -/
+@[simp] def useSpec (Γ : StmtCtx) (o : Operand) : List ScopeSpec :=
+  if o.local?.isSome then []
+  else match operandPlace? o with
+    | some p => idxPlaceSpec Γ p
+    | none => []
+
+/-- No index projection in `o`'s place: no own scope. -/
+theorem useSpec_of_noIdx {Γ : StmtCtx} {o : Operand}
+    (h : ∀ p, operandPlace? o = some p → idxSplit p.proj = none) : useSpec Γ o = [] := by
+  unfold useSpec
+  split
+  · rfl
+  · split
+    next p hp =>
+      unfold idxPlaceSpec
+      split
+      · simp [h p hp]
+      · rfl
+    · rfl
+
+/-- An `Agg.lean` field operand (a whole local or a constant) has no own scope. -/
+theorem useSpec_aggField {Γ : StmtCtx} {sd : LocalSlot} {op : Operand} {off : Nat} {t : Ty}
+    {src : AggSrc} (h : AggField Γ sd op off t src) : useSpec Γ op = [] := by
+  apply useSpec_of_noIdx
+  intro p hp
+  cases h with
+  | slot ha =>
+    cases op with
+    | copy q =>
+      obtain ⟨a, ps⟩ := q
+      cases ps with
+      | nil => simp [operandPlace?] at hp; subst hp; rfl
+      | cons x xs => simp [Operand.local?] at ha
+    | move q =>
+      obtain ⟨a, ps⟩ := q
+      cases ps with
+      | nil => simp [operandPlace?] at hp; subst hp; rfl
+      | cons x xs => simp [Operand.local?] at ha
+    | const c ty => simp [operandPlace?] at hp
+    | runtimeChecks k b => simp [operandPlace?] at hp
+  | imm => simp [operandPlace?] at hp
+  | zst _ _ _ hop =>
+    cases op with
+    | copy q =>
+      obtain ⟨a, ps⟩ := q
+      cases ps with
+      | nil => simp [operandPlace?] at hp; subst hp; rfl
+      | cons x xs => simp [zstOperand] at hop
+    | move q =>
+      obtain ⟨a, ps⟩ := q
+      cases ps with
+      | nil => simp [operandPlace?] at hp; subst hp; rfl
+      | cons x xs => simp [zstOperand] at hop
+    | const c ty => simp [operandPlace?] at hp
+    | runtimeChecks k b => simp [operandPlace?] at hp
+
 /-- A statement's own scopes, before its first instruction: a `ref`'s `Escape` of its
-referent's whole slot. -/
+referent's whole slot, and a read through an index of a local's (`useSpec`). -/
 def ownSpec (Γ : StmtCtx) : Statement → List ScopeSpec
   | .assign ⟨_, []⟩ rv =>
     match refPlace? rv with
     | some p =>
       match Γ.slots[p.base]?, Γ.body.locals[p.base]? with
-      | some sa, some ta => [.escS sa.off sa.size ta.align.exp]
+      | some sa, some ta =>
+        if (fieldPath ta p.proj).isSome then [.escS sa.off sa.size ta.align.exp] else []
       | _, _ => []
-    | none => []
+    | none =>
+      match rv with
+      | .use o => useSpec Γ o
+      | _ => []
   | _ => []
 
 /-- The `End`s pending at statement `i` (or the terminator, `i = bd.stmts.length`): those of

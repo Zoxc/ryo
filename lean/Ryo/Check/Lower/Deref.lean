@@ -108,7 +108,6 @@ inductive LowerDeref (Γ : StmtCtx) : Statement → List Insn → Prop where
       (hsd : Γ.slots[d]? = some sd) (hsp : Γ.slots[p]? = some sp)
       (hsize : sd.size = n ∧ sp.size = 8)
       (hoff : offOk sd.off ∧ offOk sp.off ∧ offOk (off : Int))
-      (hpriv : ∀ k < sd.size, Γ.escaped (sd.off + k) = false)
       (hi : loadInsnOk Γ i n sd.off sp.off off = true) :
       LowerDeref Γ (.assign ⟨d, []⟩ (.use oa)) [i]
   | store {p a : Local} {oa : Operand} {pointee ty : Ty} {fields : List ProjElem} {pt : PtrType}
@@ -152,7 +151,6 @@ def checkDerefLoad (Γ : StmtCtx) (d p : Local) (pointee : Ty) (fields : List Pr
                   if !(sd.size == n && sp.size == 8) then .rejected "deref: slot sizes"
                   else if !(offOk sd.off && offOk sp.off && offOk (off : Int)) then
                     .rejected "deref: offsets"
-                  else if !privOk Γ sd.off sd.size then .unsupported "deref: escaped destination"
                   else if loadInsnOk Γ i n sd.off sp.off off then .ok
                   else .unsupported "deref: instruction form"
                 | _, _, _ => .unsupported "deref: slots or instruction count"
@@ -246,15 +244,11 @@ theorem checkDerefLoad_sound {Γ : StmtCtx} {d p : Local} {oa : Operand} {pointe
                         · cases h
                         next hoff =>
                           split at h
+                          next hi =>
+                            exact .load ha htp hk hpath htd hn (Nat.pos_of_ne_zero hn0) hwf'
+                              hsd hsp (by simpa using hsz)
+                              (by simp at hoff; exact ⟨hoff.1.1, hoff.1.2, hoff.2⟩) hi
                           · cases h
-                          next hpriv =>
-                            split at h
-                            next hi =>
-                              exact .load ha htp hk hpath htd hn (Nat.pos_of_ne_zero hn0) hwf'
-                                hsd hsp (by simpa using hsz)
-                                (by simp at hoff; exact ⟨hoff.1.1, hoff.1.2, hoff.2⟩)
-                                (privOk_spec (by simpa using hpriv)) hi
-                            · cases h
                     · cases h
     · cases h
   · cases h

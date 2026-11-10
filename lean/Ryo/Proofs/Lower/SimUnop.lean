@@ -17,6 +17,7 @@ Ryo.Proofs.Lower.SimUnop — the simulation of the unary-operator rules (M5b, `L
 `ints`), for `0 < sd.size` in the integer rule.
 -/
 import Ryo.Proofs.Lower.FnSim
+import Ryo.Proofs.Lower.WriteDst
 import Ryo.Check.Lower.Unop
 
 namespace Ryo.Proofs.Lower
@@ -269,12 +270,8 @@ theorem sim_unop {ι : Inj} {fp : Nat} {st : OpSem.State} {o : Spec.Oracle}
     (hpa : f.locals[a]? = some (some pa))
     (hmem : MemInj ι s.mem st.mem)
     (hra : LocalRel ι fp st s.mem sa pa true)
-    -- `_d` private
-    (ad : AllocId) (xd : Allocation) (hpdp : pd.prov = some ad) (hιd : ι ad = none)
-    (hxd : s.mem.get? ad = some xd) (hlived : xd.live = true)
-    (haddrd : (xd.addr : Int) = fp + sd.off) (hpaddrd : pd.addr = xd.addr)
-    (hsized : xd.data.size = sd.size)
-    (hprivd : ∀ k < sd.size, st.escapedAt (sd.off + k) = none)
+    -- `_d`, private or escaped (`FnRel.dstWriteAll`)
+    (hW : DstWriteAll ι fp st s.mem sd pd)
     -- the instruction
     {opc : Full.Opcode} {r : Option String} {ty : String} {sg : Bool}
     (hh : opc.handler? = some ⟨.un, [ty, m], r⟩)
@@ -319,27 +316,15 @@ theorem sim_unop {ι : Inj} {fp : Nat} {st : OpSem.State} {o : Spec.Oracle}
     rw [hrn]; rfl
   have hlen : (intBytes t.size res.toNat).length = t.size := by
     rw [hbeq]; exact Ryo.Spec.Theorems.encodeBits_length _ _
-  have hpw : ∀ i < (intBytes t.size res.toNat).length, st.escapedAt (sd.off + i) = none := by
-    intro i hi
-    rw [hlen, ← hsd] at hi
-    exact hprivd i hi
-  obtain ⟨st', hwr⟩ : ∃ st', st.writeFrame sd.off (intBytes t.size res.toNat) = .ok st' := by
-    unfold OpSem.State.writeFrame
-    rw [writeEscaped_private' hpw]
-    exact ⟨_, rfl⟩
-  have hop := opSem_un_fwd (ch := ch) hh hty ho hfits hrfa hva hres hwr
   have hbs : BytesInj ι (encodeBits t.size (t.toBits (unResult op t (t.ofBits ua))))
       (intBytes t.size res.toNat) := by
     rw [hbeq]; exact encodeBits_inj ι _ _
   have hlen0 : (encodeBits t.size (t.toBits (unResult op t (t.ofBits ua)))).length =
       sd.size := by
     rw [Ryo.Spec.Theorems.encodeBits_length, hsd]
-  obtain ⟨hmi, hrd⟩ := writeLocal_priv hmem ad xd hpdp hιd hxd hlived haddrd hpaddrd hsized
-    hprivd hbs hlen0 hsto hwr
-  refine ⟨st', hop, hmi, hrd, ?_⟩
-  intro slot p lv hr hne hap
-  have h1 := LocalRel.store_other hr hsto (.inl (Ne.symm hne))
-  exact LocalRel.writeFrame_apart h1 hwr hpw (by rw [hlen, ← hsd]; exact hap)
+  obtain ⟨st', hwr, -, hmi, hrd, hoth⟩ := hW _ _ _ hlen0 hsto _ hbs
+  have hop := opSem_un_fwd (ch := ch) hh hty ho hfits hrfa hva hres hwr
+  exact ⟨st', hop, hmi, hrd, hoth⟩
 
 /-- `notBool`'s simulation: `xor.imm.w8 d, a, v` with `v`'s low byte 1.
 
@@ -364,12 +349,8 @@ theorem sim_notBool {ι : Inj} {fp : Nat} {st : OpSem.State} {o : Spec.Oracle}
     (hpa : f.locals[a]? = some (some pa))
     (hmem : MemInj ι s.mem st.mem)
     (hra : LocalRel ι fp st s.mem sa pa true)
-    -- `_d` private
-    (ad : AllocId) (xd : Allocation) (hpdp : pd.prov = some ad) (hιd : ι ad = none)
-    (hxd : s.mem.get? ad = some xd) (hlived : xd.live = true)
-    (haddrd : (xd.addr : Int) = fp + sd.off) (hpaddrd : pd.addr = xd.addr)
-    (hsized : xd.data.size = sd.size)
-    (hprivd : ∀ k < sd.size, st.escapedAt (sd.off + k) = none)
+    -- `_d`, private or escaped (`FnRel.dstWriteAll`)
+    (hW : DstWriteAll ι fp st s.mem sd pd)
     -- the instruction
     {opc : Full.Opcode} {kd : Handlers.HandlerKind} {r : Option String} {ty : String}
     {sg : Bool} {k : OperandKind} {v : Nat}
@@ -430,17 +411,6 @@ theorem sim_notBool {ι : Inj} {fp : Nat} {st : OpSem.State} {o : Spec.Oracle}
   -- R's write
   have hlen : (intBytes 1 (BitVec.ofNat (8 * 1) (if b then 1 else 0 : Nat) ^^^
       BitVec.ofNat (8 * 1) 1).toNat).length = 1 := by rw [hib]; rfl
-  have hpw : ∀ i < (intBytes 1 (BitVec.ofNat (8 * 1) (if b then 1 else 0 : Nat) ^^^
-      BitVec.ofNat (8 * 1) 1).toNat).length, st.escapedAt (sd.off + i) = none := by
-    intro i hi
-    rw [hlen, ← hsd] at hi
-    exact hprivd i hi
-  obtain ⟨st', hwr⟩ : ∃ st', st.writeFrame sd.off (intBytes 1 (BitVec.ofNat (8 * 1)
-      (if b then 1 else 0 : Nat) ^^^ BitVec.ofNat (8 * 1) 1).toNat) = .ok st' := by
-    unfold OpSem.State.writeFrame
-    rw [writeEscaped_private' hpw]
-    exact ⟨_, rfl⟩
-  have hop := opSem_binImm_fwd (ch := ch) hkd hh hty ho hfits hfk hrfa hva hres hwr
   have hbs : BytesInj ι [.init (if !b then 1 else 0) none] (intBytes 1 (BitVec.ofNat (8 * 1)
       (if b then 1 else 0 : Nat) ^^^ BitVec.ofNat (8 * 1) 1).toNat) := by
     rw [hib]
@@ -450,12 +420,9 @@ theorem sim_notBool {ι : Inj} {fp : Nat} {st : OpSem.State} {o : Spec.Oracle}
       | (cases b <;> simp [BytesInj, ByteInj])
   have hlen0 : ([.init (if !b then 1 else 0) none] : List AbstractByte).length = sd.size := by
     rw [hsd]; rfl
-  obtain ⟨hmi, hrd⟩ := writeLocal_priv hmem ad xd hpdp hιd hxd hlived haddrd hpaddrd hsized
-    hprivd hbs hlen0 hsto hwr
-  refine ⟨st', hop, hmi, hrd, ?_⟩
-  intro slot p lv hr hne hap
-  have h1 := LocalRel.store_other hr hsto (.inl (Ne.symm hne))
-  exact LocalRel.writeFrame_apart h1 hwr hpw (by rw [hlen, ← hsd]; exact hap)
+  obtain ⟨st', hwr, -, hmi, hrd, hoth⟩ := hW _ _ _ hlen0 hsto _ hbs
+  have hop := opSem_binImm_fwd (ch := ch) hkd hh hty ho hfits hfk hrfa hva hres hwr
+  exact ⟨st', hop, hmi, hrd, hoth⟩
 
 /-! ### The lift -/
 
@@ -482,13 +449,13 @@ theorem lift_unop {Γ : StmtCtx} {c : R.Code} {s1 : R.RState} {ch : OpSem.Choice
     (hlow : LowerUnop Γ (.assign ⟨d, []⟩ rv) [i])
     (hi : c.d.insns[s1.pc]? = some i) (hsc : c.scopesAt s1.pc = []) (hpe : c.mode.pe = false)
     (hpl : PlainView c.mode c.ρ i) (hrel : FnRel Γ ι live f s.mem s1)
-    (hpb : ProvBounded s.mem)
+    (hpb : ProvBounded s.mem) (hld : Ryo.Proofs.Provenance.LiveDisjoint s.mem)
     (hlo : ∀ l ∈ rvalueLocals rv, live l = true)
     (hlive' : ∀ l, live' l = true → l = d ∨ live l = true)
     (h : runOn (evalStatement (.assign ⟨d, []⟩ rv)) o s = (.ok (), s')) :
     LiftOut Γ c ch ι live' f s s' s1 := by
   cases hlow with
-  | @intUn d a oa op m t valid sd sa i hm ha htd hta hsd hsa hsize hoff hpriv hi0 =>
+  | @intUn d a oa op m t valid sd sa i hm ha htd hta hsd hsa hsize hoff hi0 =>
     have hla := hlo _ (operand_local_mem ha)
     rw [eval_unop_norm ha] at h
     obtain ⟨v, ty, r, hv, hh, hty, ho, hops, hctl⟩ := unInsnOk_spec hi0
@@ -499,12 +466,11 @@ theorem lift_unop {Γ : StmtCtx} {c : R.Code} {s1 : R.RState} {ch : OpSem.Choice
       assign_unop_inv hs h
     have hra := hrel.opnd hpa hsa hla
     have hpos : 0 < sd.size := by rw [hsize.1]; exact hwf d _ _ htd
-    obtain ⟨ad, xd, hp, hι, hxd, hl, haddr, hpaddr, hsz, hpv⟩ :=
-      hrel.priv_dst hpd hsd hpos hpriv
+    have hW := hrel.dstWriteAll hld hpd hsd hpos
     have hf1 := offOk_spec hoff.1
     have hf2 := offOk_spec hoff.2
     obtain ⟨st', hop, hmi, hrd, hoth⟩ := sim_unop (ch := ch) hs hm htd hta hsize.1 hsize.2
-      hpd hpa hrel.frame.mem hra ad xd hp hι hxd hl haddr hpaddr hsz hpv hh hty' ho
+      hpd hpa hrel.frame.mem hra hW hh hty' ho
       ⟨hf1.1, hf1.2, hf2.1, hf2.2⟩ h
     -- the L0 store is provenance-free
     have e5 := Option.some.inj (hta'.symm.trans hta)
@@ -518,7 +484,7 @@ theorem lift_unop {Γ : StmtCtx} {c : R.Code} {s1 : R.RState} {ch : OpSem.Choice
     obtain ⟨hpb', hle⟩ := memInv_store hpb hsto hnp
     exact ⟨st', step_of_view hi hsc hpe hpl hv hctl (by rw [hops]; exact hop), hstk,
       hrel.after hpd hsd hmi hrd hoth (hrel.hidden.store_noprov hsto hnp) hesc hlive', hpb', hle⟩
-  | @notBool d a oa sd sa i ha htd hta hsd hsa hsize hoff hpriv hbi =>
+  | @notBool d a oa sd sa i ha htd hta hsd hsa hsize hoff hbi =>
     have hla := hlo _ (operand_local_mem ha)
     rw [eval_unop_norm ha] at h
     obtain ⟨v, kd, ty, r, hv, hh, hkd, hty, hn, hk, hops, hctl⟩ := binImmInsnOk_spec hbi
@@ -534,12 +500,11 @@ theorem lift_unop {Γ : StmtCtx} {c : R.Code} {s1 : R.RState} {ch : OpSem.Choice
       assign_unop_inv hs h
     have hra := hrel.opnd hpa hsa hla
     have hpos : 0 < sd.size := by rw [hsize.1]; exact Nat.one_pos
-    obtain ⟨ad, xd, hp, hι, hxd, hl, haddr, hpaddr, hsz, hpv⟩ :=
-      hrel.priv_dst hpd hsd hpos hpriv
+    have hW := hrel.dstWriteAll hld hpd hsd hpos
     have hf1 := offOk_spec hoff.1
     have hf2 := offOk_spec hoff.2
     obtain ⟨st', hop, hmi, hrd, hoth⟩ := sim_notBool (ch := ch) hs htd hta hsize.1 hsize.2
-      hpd hpa hrel.frame.mem hra ad xd hp hι hxd hl haddr hpaddr hsz hpv hkd hh hty' ho
+      hpd hpa hrel.frame.mem hra hW hkd hh hty' ho
       ⟨hf1.1, hf1.2, hf2.1, hf2.2⟩ hfk hx h
     -- the L0 store: one byte without provenance
     have e4 : td = .bool := Option.some.inj (htd'.symm.trans htd)

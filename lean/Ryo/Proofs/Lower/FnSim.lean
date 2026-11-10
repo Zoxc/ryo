@@ -13,7 +13,8 @@ no id at or past its end (so `ι` never maps a fresh allocation).
 
 Trusted inputs, stated as hypotheses:
 - `PicksAt`: L0's daemonic address choice for a `StorageLive` is the local's slot (`fp + off`):
-  the simulation picks it (aot.md §C1 "Locals").
+  the simulation picks it (aot.md §C1 "Locals"); and a NaN payload L0's oracle picks is the one
+  R's choice resolves to (`NanPicks`).
 - `IncomingOk`: R's incoming-argument read at `ret` succeeds (R's side of `sim_ret`).
 
 `fn_step_sim` is one L0 step; `fn_sim` composes them over an L0 run. Open: `sim_ret` (SimTerm).
@@ -24,6 +25,7 @@ import Ryo.Proofs.Lower.SimPtr
 import Ryo.Proofs.Lower.SimBool
 import Ryo.Proofs.Lower.ProvBound
 import Ryo.Proofs.Provenance
+import Ryo.Proofs.Lower.AllocsBelow
 
 namespace Ryo.Proofs.Lower
 
@@ -123,9 +125,13 @@ def Unmapped (ι : Inj) (m : Memory) (a : AllocId) : Prop :=
   ι a = none ∧ ∃ x, m.get? a = some x ∧ x.live = true ∧ 0 < x.data.size
 
 /-- The deref rules' memory invariant (`SimDeref`): no live byte carries the provenance of a
-live, non-empty allocation `ι` drops, and L0's live allocations don't overlap. -/
-def DerefInv (ι : Inj) (m : Memory) : Prop :=
-  Hidden m (Unmapped ι m) ∧ LiveDisjoint m
+live, non-empty allocation `ι` drops, L0's live allocations don't overlap, and they end below
+`ADDR_LIMIT` (`AllocsBelow`, for the split deref store). A structure, so `.1`/`.2` stay the
+first two. -/
+structure DerefInv (ι : Inj) (m : Memory) : Prop where
+  hid : Hidden m (Unmapped ι m)
+  ld : LiveDisjoint m
+  below : AllocsBelow m
 
 /-- See the module comment. -/
 structure MatchAt (Γ : TermCtx) (ι : Inj) (s : Spec.State) (s1 : R.RState) (f : Spec.Frame)
@@ -147,14 +153,24 @@ structure MatchAt (Γ : TermCtx) (ι : Inj) (s : Spec.State) (s1 : R.RState) (f 
 def Match (Γ : TermCtx) (ι : Inj) (s : Spec.State) (s1 : R.RState) : Prop :=
   ∃ f rest blk bd, MatchAt Γ ι s s1 f rest blk bd
 
-/-- L0's address choice for a `StorageLive` at `s` is the local's slot at `fp` (see the module
-comment). -/
-def PicksAt (Γ : TermCtx) (o : Spec.Oracle) (s : Spec.State) (fp : Nat) : Prop :=
-  ∀ f rest bd l sd ty p m' s2, s.stack = f :: rest → f.body.blocks[f.bb]? = some bd →
+/-- The oracle answers a NaN choice at `s` with what R's choice `ch` resolves it to
+(`SimBinFloat`, `SimFloatCast`; see the module comment). -/
+def NanPicks (o : Spec.Oracle) (s : Spec.State) (ch : OpSem.Choice) : Prop :=
+  ∀ (f : FloatTy) (cs : List Nat),
+    cs.contains (o.answer s.choiceCount (Ryo.Spec.Choice.nanBits f cs) s) = true →
+      resolveNaN ch (.nan cs) = .ok (o.answer s.choiceCount (Ryo.Spec.Choice.nanBits f cs) s)
+
+/-- L0's daemonic choices at `s` are the ones R makes: a `StorageLive`'s address is the local's
+slot at `fp`, and a NaN's payload is what R's choice `ch` resolves it to (`NanPicks`; see the
+module comment). -/
+def PicksAt (Γ : TermCtx) (o : Spec.Oracle) (ch : OpSem.Choice) (s : Spec.State) (fp : Nat) :
+    Prop :=
+  (∀ f rest bd l sd ty p m' s2, s.stack = f :: rest → f.body.blocks[f.bb]? = some bd →
     bd.stmts[f.stmt]? = some (.storageLive l) → Γ.slots[l]? = some sd →
     f.body.locals[l]? = some ty →
     runOn (s.mem.allocate .stack sd.size ty.align : SemM (ThinPointer × Memory)) o s =
-      (.ok (p, m'), s2) → (p.addr : Int) = fp + sd.off
+      (.ok (p, m'), s2) → (p.addr : Int) = fp + sd.off) ∧
+  NanPicks o s ch
 
 /-- R's incoming-argument read succeeds (see the module comment). -/
 def IncomingOk (c : R.Code) : Prop := ∀ st : OpSem.State, ∃ bs, st.readFrame 16 c.argSize = .ok bs
@@ -301,13 +317,13 @@ theorem memInv_store {s s' : Spec.State} (hpb : ProvBounded s.mem) {pd : ThinPoi
 provenance-free bytes, deallocations). -/
 theorem DerefInv.of_memKept {ι : Inj} {m m' : Memory} (h : DerefInv ι m) (hk : MemKept m m') :
     DerefInv ι m' := by
-  obtain ⟨hmap, hld⟩ := h
+  obtain ⟨hmap, hld, hbl⟩ := h
   obtain ⟨hf, hh⟩ := hk
   have hU : ∀ a, Unmapped ι m' a → Unmapped ι m a := by
     rintro a ⟨hι, x', hx', hl', hp'⟩
     obtain ⟨x, hx, -, el, es⟩ := hf a x' hx'
     exact ⟨hι, x, hx, el hl', by omega⟩
-  refine ⟨(hh _ hmap).mono hU, ?_⟩
+  refine ⟨(hh _ hmap).mono hU, ?_, hbl.of_kept hf⟩
   intro i j a b x hi hj hla hlb h1 h2 h3 h4
   obtain ⟨a0, ha0, ea, el, es⟩ := hf i a hi
   obtain ⟨b0, hb0, eb, el', es'⟩ := hf j b hj
@@ -342,7 +358,7 @@ allocation overlaps, `addrOk`); no byte carries its id (`ProvBounded`). -/
 theorem DerefInv.push {ι : Inj} {m : Memory} (h : DerefInv ι m) (hpb : ProvBounded m)
     {a : Allocation} {size : Nat} {al : Align} (hdata : a.data = Array.replicate size .uninit)
     (hok : m.addrOk a.addr size al = true) : DerefInv ι { allocs := m.allocs.push a } := by
-  obtain ⟨hmap, hld⟩ := h
+  obtain ⟨hmap, hld, hbl⟩ := h
   have hget : ∀ c, ({ allocs := m.allocs.push a } : Memory).get? c =
       if c = m.allocs.size then some a else m.get? c := by
     intro c
@@ -377,7 +393,7 @@ theorem DerefInv.push {ι : Inj} {m : Memory} (h : DerefInv ι m) (hpb : ProvBou
     unfold Memory.addrOk at hok
     rw [hany] at hok
     simp at hok
-  refine ⟨?_, ?_⟩
+  refine ⟨?_, ?_, hbl.push hdata hok⟩
   · intro c x hx hlv i hi fr hfr hU
     rw [hget] at hx
     split at hx
@@ -692,7 +708,7 @@ theorem stmt_sim_base {Γ : TermCtx} {c : R.Code} {ι : Inj} {o : Spec.Oracle} {
     (hfn : LowersFn Γ c.d) (hmode : c.mode = Γ.mode) (hρ : c.ρ = Γ.ρ)
     {s s1x : Spec.State} {s1 : R.RState} {f : Spec.Frame} {rest : List Spec.Frame}
     {blk : BlockCert} {bd : BlockData} (M : MatchAt Γ ι s s1 f rest blk bd)
-    (hpick : PicksAt Γ o s s1.fp)
+    (hpick : PicksAt Γ o ch s s1.fp)
     {st : Statement} (hst : bd.stmts[f.stmt]? = some st) {r : Range}
     (hr : blk.stmts[f.stmt]? = some r) (h1 : r.1 ≤ r.2) (h2 : r.2 ≤ c.d.insns.size)
     (hlow : LowerStmt Γ.toStmtCtx st (rangeInsns c.d r))
@@ -809,16 +825,9 @@ theorem stmt_sim_base {Γ : TermCtx} {c : R.Code} {ι : Inj} {o : Spec.Oracle} {
     have happ : ∀ l' (p' : ThinPointer) sl', l' ≠ l → f.locals[l']? = some (some p') →
         Γ.toStmtCtx.slots[l']? = some sl' → SlotsApart sd sl' ∧ SlotsApart sl' sd :=
       fun l' p' sl' hne hp' hsl' => by
-        have hsS := hfn.storage.stmt f.bb bd M.hbd f.stmt _ hst
-        have hl'1 := hsS.1 l' (M.sl l' p' hp') (by intro e; cases e)
-        have hlt : l < Γ.body.locals.size :=
-          Nat.lt_of_lt_of_le (Array.getElem?_eq_some_iff.mp hsd).1 hfn.share.1
-        have hl1 := hsS.2 l rfl hlt
-        have hi : f.stmt + 1 ≤ bd.stmts.length :=
-          Nat.succ_le_of_lt (List.getElem?_eq_some_iff.mp hst).1
-        exact ⟨hfn.share.2 f.bb bd M.hbd (f.stmt + 1) hi l l' (Ne.symm hne) hl1 hl'1 sd sl'
-            hsd hsl',
-          hfn.share.2 f.bb bd M.hbd (f.stmt + 1) hi l' l hne hl'1 hl1 sl' sd hsl' hsd⟩
+        have hd := hfn.share.2 f.bb bd M.hbd f.stmt l (.inl hst) l' (Ne.symm hne)
+          (M.sl l' p' hp') sd sl' hsd hsl'
+        exact ⟨hd, hd.symm⟩
     have hbd' : f.body.blocks[f.bb]? = some bd := by rw [M.body]; exact M.hbd
     have hlive' : ∀ l', (computeLive Γ.body).get f.bb (f.stmt + 1) l' = true →
         l' = l ∨ (computeLive Γ.body).get f.bb f.stmt l' = true := by
@@ -829,7 +838,7 @@ theorem stmt_sim_base {Γ : TermCtx} {c : R.Code} {ι : Inj} {o : Spec.Oracle} {
           (by intro h; exact e (Option.some.inj h).symm))
     obtain ⟨f', hs', hb', hbb', hst', hrel'⟩ := lift_storageLive M.stack M.rel hl hsd
       (fun ty hty => hsz ty (by rw [← M.body]; exact hty))
-      (fun ty p m' s2 hty hal => hpick f rest bd l sd ty p m' s2 M.stack hbd' hst hsd hty hal)
+      (fun ty p m' s2 hty hal => hpick.1 f rest bd l sd ty p m' s2 M.stack hbd' hst hsd hty hal)
       hpriv happ M.pb.hidden (M.fresh _ (Nat.le_refl _)) hlive' hev
     -- the new frame and memory, from the inversion
     obtain ⟨ty, size, p, m', s2, hty, hsz', hal, hs2, hs1x⟩ :=

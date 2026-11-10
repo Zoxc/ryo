@@ -3,7 +3,7 @@ Ryo.Check.Lower.Copy — statement rules for whole-local copies and bit-preservi
 to one `mov` (aot.md §C1, M5b).
 
 Every rule moves a whole local `_a` (`copy`/`move`, `Operand.local?`) into a whole local `_d`
-whose slot no `Escape` covers, with one `mov` handler instruction (`movInsnOk`) of `n` bytes
+(private or escaped), with one `mov` handler instruction (`movInsnOk`) of `n` bytes
 between the slots, `n` the size of both types and both slots. `mov` exists at 1, 2, 4, 8 and
 16 bytes (`mov.w8` .. `mov.w128`, handler types `u8` .. `u128`; `movWidth`); other sizes are
 split by the backend (`operand.rs` `mov`) into several instructions, which these rules do not
@@ -64,7 +64,6 @@ inductive LowerCopy (Γ : StmtCtx) : Statement → List Insn → Prop where
       (hsd : Γ.slots[d]? = some sd) (hsa : Γ.slots[a]? = some sa)
       (hsize : sd.size = n ∧ sa.size = n)
       (hoff : offOk sd.off ∧ offOk sa.off)
-      (hpriv : ∀ k < sd.size, Γ.escaped (sd.off + k) = false)
       (hi : movInsnOk Γ i n sd.off sa.off = true) :
       LowerCopy Γ (.assign ⟨d, []⟩ (.use oa)) [i]
   | bitCast {d a : Local} {oa : Operand} {k : CastKind} {ty ta : Ty} {n : Nat}
@@ -76,7 +75,6 @@ inductive LowerCopy (Γ : StmtCtx) : Statement → List Insn → Prop where
       (hsd : Γ.slots[d]? = some sd) (hsa : Γ.slots[a]? = some sa)
       (hsize : sd.size = n ∧ sa.size = n)
       (hoff : offOk sd.off ∧ offOk sa.off)
-      (hpriv : ∀ k < sd.size, Γ.escaped (sd.off + k) = false)
       (hi : movInsnOk Γ i n sd.off sa.off = true) :
       LowerCopy Γ (.assign ⟨d, []⟩ (.cast k oa ty)) [i]
   | ptrCast {d a : Local} {oa : Operand} {k : CastKind} {ty : Ty} {ptd pta : PtrType}
@@ -88,31 +86,29 @@ inductive LowerCopy (Γ : StmtCtx) : Statement → List Insn → Prop where
       (hsd : Γ.slots[d]? = some sd) (hsa : Γ.slots[a]? = some sa)
       (hsize : sd.size = 8 ∧ sa.size = 8)
       (hoff : offOk sd.off ∧ offOk sa.off)
-      (hpriv : ∀ k < sd.size, Γ.escaped (sd.off + k) = false)
       (hi : movInsnOk Γ i 8 sd.off sa.off = true) :
       LowerCopy Γ (.assign ⟨d, []⟩ (.cast k oa ty)) [i]
 
-/-- The slots and the instruction of a `mov` of `n` bytes from `_a` to `_d`; `rule` prefixes
-the reasons. -/
-def checkMov (Γ : StmtCtx) (rule : String) (d a : Local) (n : Nat) (is : List Insn) :
+/-- The slots and the instruction of a `mov` of `n` bytes from `_a` to `_d` (private or
+escaped: the simulation writes either, `Ryo.Proofs.Lower.FnRel.write_dst`); `rule` prefixes the
+reasons. -/
+def checkMovAny (Γ : StmtCtx) (rule : String) (d a : Local) (n : Nat) (is : List Insn) :
     Verdict :=
   if !movWidth n then .unsupported s!"{rule}: not a mov width"
   else match Γ.slots[d]?, Γ.slots[a]?, is with
     | some sd, some sa, [i] =>
       if !(sd.size == n && sa.size == n) then .rejected s!"{rule}: slot sizes"
       else if !(offOk sd.off && offOk sa.off) then .rejected s!"{rule}: offsets"
-      else if !privOk Γ sd.off sd.size then .unsupported s!"{rule}: escaped destination"
       else if movInsnOk Γ i n sd.off sa.off then .ok
       else .unsupported s!"{rule}: instruction form"
     | _, _, _ => .unsupported s!"{rule}: slots or instruction count"
 
-theorem checkMov_ok {Γ : StmtCtx} {rule : String} {d a : Local} {n : Nat} {is : List Insn}
-    (h : checkMov Γ rule d a n is = .ok) :
+theorem checkMovAny_ok {Γ : StmtCtx} {rule : String} {d a : Local} {n : Nat} {is : List Insn}
+    (h : checkMovAny Γ rule d a n is = .ok) :
     ∃ i sd sa, is = [i] ∧ Γ.slots[d]? = some sd ∧ Γ.slots[a]? = some sa ∧
       (sd.size = n ∧ sa.size = n) ∧ (offOk sd.off ∧ offOk sa.off) ∧
-      (∀ k < sd.size, Γ.escaped (sd.off + k) = false) ∧
       movInsnOk Γ i n sd.off sa.off = true ∧ 0 < n := by
-  unfold checkMov at h
+  unfold checkMovAny at h
   split at h
   · cases h
   next hw =>
@@ -126,13 +122,9 @@ theorem checkMov_ok {Γ : StmtCtx} {rule : String} {d a : Local} {n : Nat} {is :
         · cases h
         next hoff =>
           split at h
+          next hi =>
+            exact ⟨i, sd, sa, rfl, hsd, hsa, by simpa using hsz, by simpa using hoff, hi, hpos⟩
           · cases h
-          next hpriv =>
-            split at h
-            next hi =>
-              exact ⟨i, sd, sa, rfl, hsd, hsa, by simpa using hsz, by simpa using hoff,
-                privOk_spec (by simpa using hpriv), hi, hpos⟩
-            · cases h
     · cases h
 
 /-- `copyAny`'s checker: `_d = _a`. -/
@@ -142,7 +134,7 @@ def checkCopyAny (Γ : StmtCtx) (d a : Local) (is : List Insn) : Verdict :=
     if td != ta then .unsupported "copy any: mixed types"
     else if !td.wf then .unsupported "copy any: ill-formed type"
     else match td.size? with
-      | some n => checkMov Γ "copy any" d a n is
+      | some n => checkMovAny Γ "copy any" d a n is
       | none => .unsupported "copy any: unsized type"
   | _, _ => .unsupported "copy any: locals"
 
@@ -155,7 +147,7 @@ def checkBitCast (Γ : StmtCtx) (d a : Local) (ty : Ty) (is : List Insn) : Verdi
     else match td.size?, ta.size? with
       | some n, some na =>
         if n != na then .unsupported "bit cast: sizes"
-        else checkMov Γ "bit cast" d a n is
+        else checkMovAny Γ "bit cast" d a n is
       | _, _ => .unsupported "bit cast: unsized type"
   | _, _ => .unsupported "bit cast: locals"
 
@@ -163,7 +155,7 @@ def checkBitCast (Γ : StmtCtx) (d a : Local) (ty : Ty) (is : List Insn) : Verdi
 def checkPtrCast (Γ : StmtCtx) (d a : Local) (is : List Insn) : Verdict :=
   match Γ.body.locals[d]?, Γ.body.locals[a]? with
   | some (.ptr ptd _), some (.ptr pta _) =>
-    if ptd.metaKind = .none ∧ pta.metaKind = .none then checkMov Γ "pointer cast" d a 8 is
+    if ptd.metaKind = .none ∧ pta.metaKind = .none then checkMovAny Γ "pointer cast" d a 8 is
     else .unsupported "pointer cast: wide pointer"
   | _, _ => .unsupported "pointer cast: not pointers"
 
@@ -200,8 +192,8 @@ theorem checkCopyAny_sound {Γ : StmtCtx} {d a : Local} {oa : Operand} {is : Lis
       next hwf =>
         split at h
         next n hn =>
-          obtain ⟨i, sd, sa, rfl, hsd, hsa, hsz, hoff, hpriv, hi, hpos⟩ := checkMov_ok h
-          exact .copyAny ha htd hta (by simpa using hwf) hn hpos hsd hsa hsz hoff hpriv hi
+          obtain ⟨i, sd, sa, rfl, hsd, hsa, hsz, hoff, hi, hpos⟩ := checkMovAny_ok h
+          exact .copyAny ha htd hta (by simpa using hwf) hn hpos hsd hsa hsz hoff hi
         · cases h
   · cases h
 
@@ -228,8 +220,8 @@ theorem checkBitCast_sound {Γ : StmtCtx} {d a : Local} {oa : Operand} {k : Cast
           next hne =>
             have hne : n = na := by simpa using hne
             subst hne
-            obtain ⟨i, sd, sa, rfl, hsd, hsa, hsz, hoff, hpriv, hi, hpos⟩ := checkMov_ok h
-            exact .bitCast hk ha htd hta hwf.1 hwf.2 hnd hna hpos hsd hsa hsz hoff hpriv hi
+            obtain ⟨i, sd, sa, rfl, hsd, hsa, hsz, hoff, hi, hpos⟩ := checkMovAny_ok h
+            exact .bitCast hk ha htd hta hwf.1 hwf.2 hnd hna hpos hsd hsa hsz hoff hi
         · cases h
   · cases h
 
@@ -242,8 +234,8 @@ theorem checkPtrCast_sound {Γ : StmtCtx} {d a : Local} {oa : Operand} {k : Cast
   next ptd vd pta va htd hta =>
     split at h
     next hc =>
-      obtain ⟨i, sd, sa, rfl, hsd, hsa, hsz, hoff, hpriv, hi, -⟩ := checkMov_ok h
-      exact .ptrCast hk ha hc.1 hc.2 htd hta hsd hsa hsz hoff hpriv hi
+      obtain ⟨i, sd, sa, rfl, hsd, hsa, hsz, hoff, hi, -⟩ := checkMovAny_ok h
+      exact .ptrCast hk ha hc.1 hc.2 htd hta hsd hsa hsz hoff hi
     · cases h
   · cases h
 

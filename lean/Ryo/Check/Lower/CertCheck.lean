@@ -83,9 +83,14 @@ import Ryo.Check.Lower.TermExt
 import Ryo.Check.Lower.Live
 import Ryo.Check.Lower.Prolog
 import Ryo.Check.Lower.PrologX
+import Ryo.Check.Lower.PrologInd
+import Ryo.Check.Lower.PrologSpread
 import Ryo.Check.Lower.Fn
+import Ryo.Check.Lower.FnX
 import Ryo.Check.Lower.Fused
 import Ryo.Check.Lower.Reach
+import Ryo.Check.Image.Pool
+import Ryo.Vm.R.Run
 
 namespace Ryo.Check.Lower
 
@@ -193,7 +198,7 @@ def Cert.facts (r : FuncCheck) : Frame.Facts :=
 
 /-- What the check reads besides the function. -/
 structure Ctx where
-  prog : Program
+  prog : Spec.Program
   o : ImageObject
   pe : Bool
   /-- Dumped instances by symbol. -/
@@ -212,7 +217,7 @@ def Cert.imagesOf (cert : Cert) (o : ImageObject) : Array CertImage :=
 def Cert.functionsOf (cert : Cert) (o : ImageObject) : Array (String × FuncCert) :=
   ((cert.imagesOf o)[0]?.map (·.functions)).getD #[]
 
-def Ctx.make (prog : Program) (cert : Cert) (o : ImageObject) : Ctx :=
+def Ctx.make (prog : Spec.Program) (cert : Cert) (o : ImageObject) : Ctx :=
   { prog, o, pe := o.image.mode.pe,
     inst := prog.instances.foldl (init := {}) fun m i => m.insert i.symbol i,
     certs := (cert.functionsOf o).foldl (init := {}) fun m (s, c) => if m.contains s then m else m.insert s c,
@@ -320,14 +325,14 @@ def prologueArgs (fc : FuncCert) (plan : ArgPlan) : Except String (List (Int × 
   return out
 
 /-- The ABI the dump gives the callee of terminator `t`, if any. -/
-def termAbi (prog : Program) : Terminator → Option FnAbiSummary
+def termAbi (prog : Spec.Program) : Terminator → Option FnAbiSummary
   | .call _ _ _ _ _ _ abi | .tailCall _ _ _ abi => abi
   | .drop _ (some g) _ _ => (prog.body? g).bind (·.abi)
   | .assert _ _ msg _ _ => (prog.body? msg.panicFn).bind (·.abi)
   | _ => none
 
 /-- Whether the dumper truncated the block ending in `t`: a call of `ryo-dump: unsupported …`. -/
-def truncated (prog : Program) : Terminator → Bool
+def truncated (prog : Spec.Program) : Terminator → Bool
   | .call (.inst i) .. => (prog.symbol i).startsWith "ryo-dump: unsupported"
   | _ => false
 
@@ -565,17 +570,85 @@ structure Report where
   errors : Array String := #[]
   deriving Inhabited
 
+/-- The placement of addressed things the checkers see: the image's, `Image.addrs`
+(`Ryo/Vm/R/Run.lean`), which is the `ρ` of the R code of each image function (`Image.imageCode`,
+`imageProgram`). So the functions' theorems (`fn_soundEsc`'s `hρ : c.ρ = Γ.ρ`) hold for the
+image's R code as it is, and an instruction's view (`view mode ρ i`) is the one R runs. -/
+def imageAddrs : Addrs := Ryo.Vm.R.Image.addrs
+
+/-- The pool constants of `body`'s statements that `checkPoolConst` claims (`PoolConst.lean`:
+a pointer to a global at offset 0, a slice constant), each with the pool offset its first
+instruction takes the address of (an `addr.const`'s). -/
+def poolCandidates (body : Body) (fc : FuncCert) (d : Decoded) : List (GlobalId × Nat) := Id.run do
+  let mut out : List (GlobalId × Nat) := []
+  for h : bi in [0:fc.blocks.size] do
+    let blk := fc.blocks[bi]
+    let some bd := body.blocks[bi]? | continue
+    for h : si in [0:blk.stmts.size] do
+      let some st := bd.stmts[si]? | continue
+      -- the global and the index of the `addr.const` in the range (a vtable unsizing's is
+      -- after the data pointer's `mov`, `FnPtrCast.lean`)
+      let g? : Option (GlobalId × Nat) := match st with
+        | .assign ⟨_, []⟩ (.use (.const (.ptr (.alloc g) 0) _)) => some (g, 0)
+        | .assign ⟨_, []⟩ (.use (.const (.slice g _) _)) => some (g, 0)
+        | .assign ⟨_, []⟩ (.cast (.pointerCoercion (.unsize (.vtable g))) _ _) => some (g, 1)
+        | _ => none
+      let some (g, j) := g? | continue
+      match d.insns[blk.stmts[si].1 + j]? with
+      | some (.native _ [_, .const k]) => out := (g, k) :: out
+      | _ => pure ()
+  return out
+
+/-- The fn coercions of `body`'s statements (`FnPtrCast.lean`'s `fnPtr`), each with the symbol
+slot its `addr.sym` reads, where the object's symbol table names that slot by the instance's
+symbol. These are the function's `StmtCtx.fnSym`: what the function invariant
+(`SimFnPtrCast.lean`'s `FnInv`) states, for M6 to discharge. -/
+def fnSymCandidates (prog : Spec.Program) (o : ImageObject) (body : Body) (fc : FuncCert)
+    (d : Decoded) : List (InstanceId × Nat) := Id.run do
+  let mut out : List (InstanceId × Nat) := []
+  for h : bi in [0:fc.blocks.size] do
+    let blk := fc.blocks[bi]
+    let some bd := body.blocks[bi]? | continue
+    for h : si in [0:blk.stmts.size] do
+      let some st := bd.stmts[si]? | continue
+      let i? : Option InstanceId := match st with
+        | .assign ⟨_, []⟩ (.cast k _ _) => fnCoercion k
+        | _ => none
+      let some i := i? | continue
+      match d.insns[blk.stmts[si].1]? with
+      | some (.native _ [_, .sym n]) =>
+        match o.slotName n with
+        | .ok nm => if nm == prog.symbol i then out := (i, n) :: out
+        | .error _ => pure ()
+      | _ => pure ()
+  return out
+
+/-- The placements of `cands` check-pool validates (`Pool.validate`: the pool holds the dumped
+global at that offset, its pointers relocated to valid placements, transitively), threading
+check-pool's memo `st`. These are the function's `StmtCtx.pool`: what the pool invariant
+(`SimPoolConst.lean`'s `PoolInv`) states, for M6 to discharge from check-pool's facts. -/
+def validPool (pc : Pool.Ctx) (cands : List (GlobalId × Nat)) (st : Pool.St) :
+    List (GlobalId × Nat) × Pool.St := Id.run do
+  let mut st := st
+  let mut out : List (GlobalId × Nat) := []
+  for n in cands do
+    let (r, st') := (Pool.validate pc n).run st
+    st := st'
+    if r matches .ok _ then out := n :: out
+  return (out, st)
+
 /-- The lowering rules over a function's statements: per statement lowered on its own (fused
-ones are the terminator's), `checkStmt` on its certificate range. The placement of addressed
-things is left out (`ρ` gives none): the rules so far take slot operands only, whose view
-doesn't depend on it. -/
-def lowerCoverage (body : Body) (fc : FuncCert) (d : Decoded) (mode : Ryo.Obj.Mode) :
+ones are the terminator's), `checkStmt` on its certificate range, at the image's placement
+(`imageAddrs`) and the function's pool placements `pool`. -/
+def lowerCoverage (body : Body) (fc : FuncCert) (d : Decoded) (mode : Ryo.Obj.Mode)
+    (pool : List (GlobalId × Nat) := []) (fnSym : List (InstanceId × Nat) := []) :
     Array Verdict := Id.run do
   let esc := d.scopes.toList.filterMap fun (_, sc) =>
     if sc.kind matches .escape _ then some (sc.frameOffset.toInt, sc.frameOffset.toInt + sc.size)
     else none
-  let Γ : StmtCtx := { body, slots := fc.locals, mode, ρ := fun _ => none,
-                       escaped := fun o => esc.any fun (lo, hi) => lo ≤ o && o < hi }
+  let Γ : StmtCtx := { body, slots := fc.locals, mode, ρ := imageAddrs,
+                       escaped := fun o => esc.any fun (lo, hi) => lo ≤ o && o < hi, pool,
+                       fnSym }
   let reach := computeReach body
   let mut out := #[]
   for h : bi in [0:fc.blocks.size] do
@@ -585,7 +658,7 @@ def lowerCoverage (body : Body) (fc : FuncCert) (d : Decoded) (mode : Ryo.Obj.Mo
       let some st := bd.stmts[si]? | continue
       let (lo, hi) := blk.stmts[si]
       out := out.push (checkStmtX Γ st (d.insns.extract lo hi).toList)
-    let Γt : TermCtx := { Γ with blocks := fc.blocks, retKind := fc.retKind }
+    let Γt : TermCtx := { Γ with blocks := fc.blocks, retKind := fc.retKind, sret := fc.sret }
     -- A dead block needs no rule unless L0 can reach it (`Reach.lean`); a fused block's last
     -- statement is lowered with its terminator (`Fused.lean`).
     let v : Verdict :=
@@ -596,14 +669,20 @@ def lowerCoverage (body : Body) (fc : FuncCert) (d : Decoded) (mode : Ryo.Obj.Mo
           (d.insns.extract blk.term.1 blk.term.2).toList
       else checkBlockTermX Γt blk bd.term d.insns
     out := out.push v
-  -- The prologue (`Prolog.lean`): its `arg`s, register inputs only.
+  -- The prologue (`PrologInd.lean`): its `arg`s and `Indirect` inputs' copies.
   let pro : List Insn := (d.insns.extract fc.prologue.1 fc.prologue.2).toList
   let pv : Verdict := match fc.plan with
     | some plan =>
       let Γp0 : PrologCtx := ⟨fc.locals, fc.argHomes, plan, Γ.escaped⟩
-      let Γp : PrologXCtx := { Γp0 with
-        sret := fc.sret, callerLoc := fc.callerLocation, spread := fc.spreadArg.isSome }
-      prologXVerdict Γp pro
+      let Γp : PrologICtx := { Γp0 with
+        sret := fc.sret, callerLoc := fc.callerLocation, spread := fc.spreadArg.isSome,
+        argPtrs := fc.argPtrs, mode := mode, ρ := imageAddrs }
+      -- a spread argument's fields: (offset, size) from its tuple type
+      let fields : List (Nat × Nat) := match fc.spreadArg.bind (body.locals[·]?) with
+        | some (.tuple fs _ none) =>
+          (fs.mapM fun (p : Nat × Ryo.Spec.Ty) => p.2.size?.map (p.1, ·)).getD []
+        | _ => []
+      prologSVerdict { Γp with spreadFields := fields } pro
     | none => .unsupported "prologue: no plan"
   out := out.push pv
   -- The liveness, storage and slot-layout checks (`Live.lean`); a failure only keeps the
@@ -629,7 +708,7 @@ def orderError (cgu : String) (syms names : Array String) : Option String :=
 
 /-- Checks the image object `o` against the dump `prog` and its certificate image in `cert`
 (`Cert.imagesOf`). -/
-def checkObject (prog : Program) (cert : Cert) (o : ImageObject) : Report := Id.run do
+def checkObject (prog : Spec.Program) (cert : Cert) (o : ImageObject) : Report := Id.run do
   let mut rep : Report := { funcs := o.funcs.size }
   let ims := cert.imagesOf o
   if ims.size != 1 then
@@ -642,6 +721,9 @@ def checkObject (prog : Program) (cert : Cert) (o : ImageObject) : Report := Id.
   let count : HashMap String Nat := fs.foldl (init := {}) fun m (s, _) => m.insert s (m.getD s 0 + 1)
   let decs := decodeAll o
   let extents := Frame.incomingExtents (decs.map (·.decoded.toOption)) o.image.mode
+  -- check-pool's context for the pool placements (`validPool`), its memo shared by the functions
+  let pc := Pool.Ctx.make prog (Pool.poolOf o)
+  let mut pst : Pool.St := {}
   let inObj : HashSet String := names.foldl (·.insert ·) {}
   for (s, _) in fs do
     unless inObj.contains s do
@@ -671,9 +753,15 @@ def checkObject (prog : Program) (cert : Cert) (o : ImageObject) : Report := Id.
                  atEnd := rep.addrs.atEnd + fr.addrs.atEnd, zeroSized := rep.addrs.zeroSized + fr.addrs.zeroSized,
                  args := rep.addrs.args + fr.addrs.args } }
     if let some ⟨_, .body b⟩ := c.inst[name]? then
-      let vs := lowerCoverage b c.certs[name]! d fi.mode
-      -- Validated: every item checks and `checkFn` (`Fn.lean`, what `fn_sim` takes) accepts it.
-      if vs.all (· == .ok) && checkFn (fnCtx b c.certs[name]! fi.mode (fun _ => none)) d then
+      let (pool, pst') := validPool pc (poolCandidates b c.certs[name]! d) pst
+      pst := pst'
+      let fnSym := fnSymCandidates prog o b c.certs[name]! d
+      let vs := lowerCoverage b c.certs[name]! d fi.mode pool fnSym
+      -- Validated: every item checks and `checkFn` (`Fn.lean`, what `fn_sim` takes) or, for
+      -- functions with escaped locals or pool constants, `checkFnX` (`FnX.lean`, what `fn_simX`
+      -- takes) accepts it.
+      if vs.all (· == .ok) && (checkFn (fnCtx b c.certs[name]! fi.mode imageAddrs) d ||
+          checkFnX (fnCtxX b c.certs[name]! fi.mode imageAddrs d pool fnSym) d) then
         rep := { rep with fnOk := rep.fnOk + 1 }
       for v in vs do
         rep := { rep with stmts := rep.stmts + 1 }
@@ -695,7 +783,7 @@ def checkObject (prog : Program) (cert : Cert) (o : ImageObject) : Report := Id.
 check gives (`Cert.facts`; none for a function without exactly one certificate, not decoded,
 or whose check fails, nor for any function when `checkObject` rejects the object's certificate
 image), and the islands' templates by symbol. -/
-def deadFacts (prog : Program) (cert : Cert) (o : ImageObject) :
+def deadFacts (prog : Spec.Program) (cert : Cert) (o : ImageObject) :
     (Nat → Frame.Facts) × (String → Option String) :=
   let c := Ctx.make prog cert o
   let decs := decodeAll o

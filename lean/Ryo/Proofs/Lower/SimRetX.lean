@@ -293,14 +293,26 @@ theorem lowerRetX_of_retOk {Γ : TermCtx} {i : Insn} (h : retOk Γ i = true) :
     subst hp
     simp [hsz]
 
-/-- A `return`'s `LowerTermX` is a `LowerRetX`. -/
+/-- A `return`'s `LowerTermX` is a `LowerRetX` or an sret return (`RetSret.lean`). -/
+theorem _root_.Ryo.Check.Lower.LowerTermX.ret_cases
+    {Γ : TermCtx} {next : Nat} {is : List Insn}
+    (h : LowerTermX Γ next .«return» is) :
+    LowerRetX Γ .«return» is ∨ ∃ so, Γ.sret = some so ∧ LowerRetSret Γ so .«return» is := by
+  rcases h with h | h | h | h | h | h
+  · cases h with
+    | ret hok => exact .inl (lowerRetX_of_retOk hok)
+  · cases h
+  · exact .inl h
+  · cases h
+  · cases h
+  · exact .inr h
+
+/-- Without an sret slot, a `return`'s `LowerTermX` is a `LowerRetX`. -/
 theorem _root_.Ryo.Check.Lower.LowerTermX.retX_of
     {Γ : TermCtx} {next : Nat} {is : List Insn}
-    (h : LowerTermX Γ next .«return» is) : LowerRetX Γ .«return» is := by
-  rcases h with h | h | h
-  · cases h with
-    | ret hok => exact lowerRetX_of_retOk hok
-  · cases h
+    (h : LowerTermX Γ next .«return» is) (hns : Γ.sret = none) : LowerRetX Γ .«return» is := by
+  rcases h.ret_cases with h | ⟨so, hso, -⟩
   · exact h
+  · rw [hns] at hso; cases hso
 
 end Ryo.Proofs.Lower

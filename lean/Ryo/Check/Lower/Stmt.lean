@@ -52,6 +52,22 @@ structure StmtCtx where
   ρ : Addrs
   /-- Frame offsets some `Escape` scope of the function covers. -/
   escaped : Int → Bool
+  /-- Where the constant pool holds globals' copies: `(g, k)`, global `g` at pool offset `k`
+  (check-pool's valid placements, `Check/Image/Pool.lean`), for the pool-constant rules
+  (`PoolConst.lean`, `StmtCtx.poolAt`); empty for the scope-free functions (`LowersFn.noPool`). -/
+  pool : List (GlobalId × Nat) := []
+  /-- The symbol slots of functions: `(i, n)`, instance `i`'s address in symbol slot `n` (the
+  object's symbol table names it), for the fn pointer rule (`FnPtrCast.lean`,
+  `StmtCtx.fnSymAt`); empty for the scope-free functions (`LowersFn.noFnSym`). -/
+  fnSym : List (InstanceId × Nat) := []
+
+/-- The pool offset of global `g`'s copy, if `Γ.pool` places it. -/
+def StmtCtx.poolAt (Γ : StmtCtx) (g : GlobalId) : Option Nat :=
+  (Γ.pool.find? (·.1 == g)).map (·.2)
+
+/-- The symbol slot of instance `i`'s address, if `Γ.fnSym` names it. -/
+def StmtCtx.fnSymAt (Γ : StmtCtx) (i : InstanceId) : Option Nat :=
+  (Γ.fnSym.find? (·.1 == i)).map (·.2)
 
 /-- An operand that reads a whole local (`copy _l` or `move _l`). -/
 def _root_.Ryo.Spec.Operand.local? : Operand → Option Local

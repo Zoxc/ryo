@@ -9,8 +9,9 @@ Divergences:
 - D6: a function's address is a daemonic choice per reification (`Choice.fnAddr`): an existing
   copy or a fresh zero-size `function` allocation. Function pointers are mapped back to
   instances through their provenance (`State.fnAllocs`).
-- D7: constant and vtable allocations are instantiated on demand; each evaluation picks a
-  copy (`Choice.constCopy`). Statics have one (lazily created) allocation. Constants, vtables
+- D7: constant and vtable allocations get one copy each at the start (`instantiateConsts`,
+  Step.lean); each evaluation picks a copy (`Choice.constCopy`), an existing one or a fresh
+  one. Statics have one (lazily created) allocation. Constants, vtables
   and statics without interior mutability are read-only.
 - D12: `Move` operands are `Copy` (in call arguments they are handled by `Ryo.Spec.Mir.Call`).
 - D23: `RuntimeChecks` evaluate to their recorded value.

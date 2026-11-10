@@ -169,6 +169,24 @@ def constValues : Program := program do
     assumeEq (copy ((place v).field 1 u32)) (cint u32 9)
     ret
 
+/-- D7: every constant has its copy before `main` runs, used or not, and an evaluation
+reuses it (the concrete oracle picks the first copy). -/
+def eagerCopies : Except String Unit := do
+  let p := program do
+    let g ← constBytes [1, 2] 1
+    let _ ← constBytes [3] 1
+    addFn "main" <| body unit [] do
+      let r ← newLocal (rawTo u8)
+      storageLive r
+      assignL r (.use (.const (.ptr (.alloc g) 0) (rawTo u8)))
+      ret
+  let r := runWith concreteOracle p
+  match r.result with
+  | .ok _ =>
+    check ((r.state.constCopies.getD 0 []).length == 1) "the used constant should have one copy"
+    check ((r.state.constCopies.getD 1 []).length == 1) "an unused constant should have one copy"
+  | _ => throw s!"expected a return, got {describe r}"
+
 /-! ### D8: zero-sized allocations may share addresses -/
 
 def sameAddrOracle : Oracle where
@@ -361,6 +379,7 @@ def tests : List TestCase := [
   ⟨"D7/static_mut", fun _ => expectReturnValue (staticProg true) (.int 6)⟩,
   ⟨"D7/static_immutable", fun _ => expectUb (staticProg false) "store to read-only memory"⟩,
   ⟨"D7/const_values", fun _ => expectReturn constValues⟩,
+  ⟨"D7/eager_copies", fun _ => eagerCopies⟩,
   ⟨"D8/zst_sharing", fun _ => zstSharing⟩,
   ⟨"D13/uninit_int", fun _ => expectUb uninitInt "violates the language invariant"⟩,
   ⟨"D17/atomics", fun _ => expectReturnValue (atomics false) (.int 10)⟩,

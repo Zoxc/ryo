@@ -1,6 +1,6 @@
 /-
 Ryo.Proofs.Lower.SimRef — the simulation of `ref` (`Check/Lower/Ref.lean`, M5b): `_d = &_a.fs` /
-`&raw _a.fs` lowered to one `addr` from `_a`'s slot at `off` into `_d`'s private slot, after
+`&raw _a.fs` lowered to one `addr` from `_a`'s slot at `off` into `_d`'s slot (private or escaped), after
 the `Escape` of `_a`'s whole slot (the statement's own scope, `ownSpec`), with pending `End`s
 before it (`FnRelEsc.lean`'s design).
 
@@ -11,7 +11,9 @@ pa.prov⟩` (`assign_ref_inv`). R: the `Escape` makes `_a` escaped (`scope_escap
 gives `⟨y.addr + (sa.off + off - e.off), some e.id⟩` for `_a`'s object `e` at `y.addr = fp +
 e.off`, the same address as L0's (`pa.addr = fp + sa.off`), with the object's provenance, which
 `ι'` maps `_a`'s allocation to (`addrOf_inj`); its encoding refines L0's bytes
-(`encodePtr_inj`), so `writeLocal_priv` relates `_d`. The stored provenance is `_a`'s, no longer
+(`encodePtr_inj`), so `FnRel.write_dst` (`WriteDst.lean`, with L0's `LiveDisjoint` from
+`DerefInv`) writes and relates `_d`; a frame write keeps R's allocations' addresses, liveness and
+sizes (`writeFrame_allocsKept`), which `FnRelX`'s `free`, `idLt`, `addrAt` read. The stored provenance is `_a`'s, no longer
 private, so `Hidden` holds for `PrivAlloc ι'`; `ProvBounded` by `LocalRel.prov_lt`.
 
 Hypotheses beyond the family interface's: the scopes before the instruction (`hsc`, `hpre`,
@@ -23,28 +25,16 @@ the conclusion is `LiftOutX` (`ι` grows).
 `c.dropScopes` from the fold (`stmt_simX_family`, `stmt_simX_single`), `ref` (`stmt_simX_ref`),
 `StorageDead` (`stmt_simX_storageDead`; its `End` located by `LowersFnX.stmtsX.endAt`).
 
-## Open (`stmt_simX`'s `sorry`s, then the function level)
+`ScopeMulti.lean` holds the rest of `stmt_simX`'s cases: `StorageLive` (`storageLive_privX`,
+`live_fnRelX`) and the deref `store`, `enum`, `agg` (their lifts on `c.cut`, the code without
+scopes and cut at the range's end, so a `LiftOutN` run stays in the range: `run_cut`,
+`stmtOutX_of_liftN`).
 
-- `StorageLive _l` (`base`): R doesn't step; the pending count is unchanged (`pendSpecs_succ`,
-  `endSpec = []`). Needs, as `stmt_sim_base`: `lift_storageLive` with `hpriv` from
-  `storageLive_privX` (its `hlt` from `share.1` and the slot), `happ` from `ShareOk`, `PicksAt`;
-  then `FnRelX` for the new frame and memory: `objs`/`disj`/`free`/`idLt`/`addrAt` unchanged
-  (R unchanged, `objs` locals only grow), `owned` (the new allocation is fresh, `ι` doesn't map
-  it), `aligned` for `_l` (needs `allocate`'s address aligned to the type: `Memory.addrOk`),
-  `DerefInv.push` as in `stmt_sim_base`.
-- Multi-instruction families under scopes (deref `store` with a projected place, `enum`,
-  `agg`): their lifts give `LiftOutN` on scope-free code. Plan: (1) `step c s = step
-  c.dropScopes s` when `c.scopesAt s.pc = []` for a fall-through view (as `step_dropScopes`;
-  `stmtInner` gives empty scopes after a range's first index); (2) the first step through
-  `step_dropScopes` from `s0`; (3) `step_plain_keeps` over a `StepsTo` by induction (escaped
-  objects, `AllocsKept`, `fp`), every instruction a fall-through view (`stmtsX.next`); (4) a
-  `LiftOutN` → `LiftOutX`-with-`StepsTo` lemma like `liftOutX_of_liftOut`, then a
-  `StmtOutX` assembly like `stmtOutX_of_liftX` (pending count 0 after, `stmtsX.pend0`). `enum`'s
-  `setDiscr`-implicit case has an empty range (as `StorageLive`, no scopes folded).
-- Terminators with pending `End`s (the edit to `SimTerm.TermAt` in `FnRelEsc.lean`'s design:
-  `scopes` only for `0 < j` plus the first step from the fold `s0`), `fn_step_sim`/`fn_sim`
-  over `MatchEsc` (with `∃ ι' ≥ ι`), the entry (M5c: `free`, `aligned`, no objects), and
-  `CertCheck`'s use of `fnVerdictX`.
+## The function level
+
+Terminators with pending `End`s are `TermSimX.lean`'s, the run and the entry `FnSimX.lean`'s
+(`fn_simX`, `match_entryEsc`, `fn_soundEsc`); the entry's `free`, `aligned` and no-object facts
+are hypotheses there, for M5c.
 -/
 import Ryo.Proofs.Lower.FnRelEsc
 import Ryo.Proofs.Lower.SimField
@@ -233,6 +223,79 @@ theorem addrOf_inj {ι : Inj} {fp : Nat} {st : OpSem.State} {m0 : Memory} {sa : 
         rw [hp]
         simp only [ProvInj, hι]
 
+/-- Two escaped objects of a pairwise disjoint list that both cover offset `o` are the same. -/
+theorem escaped_eq_of_overlap {l : List OpSem.EscapedObj}
+    (hl : l.Pairwise fun (e e' : OpSem.EscapedObj) =>
+      e.off + (e.size : Int) ≤ e'.off ∨ e'.off + (e'.size : Int) ≤ e.off)
+    {x y : OpSem.EscapedObj} (hx : x ∈ l) (hy : y ∈ l) {o : Int}
+    (hox : x.off ≤ o ∧ o < x.off + x.size) (hoy : y.off ≤ o ∧ o < y.off + y.size) : x = y := by
+  induction l with
+  | nil => cases hx
+  | cons a t ih =>
+    rw [List.pairwise_cons] at hl
+    obtain ⟨ha, ht⟩ := hl
+    rcases List.mem_cons.mp hx with rfl | hx'
+    · rcases List.mem_cons.mp hy with rfl | hy'
+      · rfl
+      · rcases ha y hy' with h | h <;> omega
+    · rcases List.mem_cons.mp hy with rfl | hy'
+      · rcases ha x hx' with h | h <;> omega
+      · exact ih ht hx' hy'
+
+/-- `addrOf_inj` at the end of `_a`'s slot (`addrOf`'s at-end case): when no escaped object
+covers that offset, `_a`'s object `e` ends there (it covers the slot's last byte), it is the
+only non-empty object ending there (`escaped_eq_of_overlap`, the objects being disjoint), and
+`addrOf` gives its allocation's address plus `e.size`, `pa.addr + sa.size`, with `e`'s
+provenance. -/
+theorem addrOf_end_inj {ι : Inj} {fp : Nat} {st : OpSem.State} {m0 : Memory} {sa : LocalSlot}
+    {pa : ThinPointer} {lv : Bool} (hr : LocalRel ι fp st m0 sa pa lv)
+    (hesc : st.escapedAt sa.off ≠ none) (hpos : 0 < sa.size)
+    (hnone : st.escapedAt (sa.off + sa.size) = none)
+    (hdisj : st.escaped.Pairwise fun (e e' : OpSem.EscapedObj) =>
+      e.off + (e.size : Int) ≤ e'.off ∨ e'.off + (e'.size : Int) ≤ e.off) :
+    ∃ p1, st.addrOf (sa.off + sa.size) = .ok p1 ∧
+      PtrInj ι ⟨pa.addr + sa.size, pa.prov⟩ p1 := by
+  cases hr with
+  | priv a x hp hι hx hlive haddr hpaddr hsize hpriv hbytes =>
+    exact (hesc (by simpa using hpriv 0 hpos)).elim
+  | esc a x e y hp hι hx hlive haddr hpaddr hsize hin hy hylive hyaddr hysize =>
+    have he := hin (sa.size - 1) (by omega)
+    obtain ⟨hmem, hle, hlt⟩ := end_escapedAt_some he
+    have hnone' := hnone
+    unfold OpSem.State.escapedAt at hnone'
+    have hn := List.find?_eq_none.mp hnone' e hmem
+    simp only [decide_eq_true_eq] at hn
+    have hn2 : ¬ (sa.off + (sa.size : Int) < e.off + e.size) := fun h => hn ⟨by omega, h⟩
+    have hend : e.off + (e.size : Int) = sa.off + sa.size := by omega
+    have hfind : st.escaped.find? (fun e' : OpSem.EscapedObj =>
+        e'.size != 0 && e'.off + e'.size == sa.off + sa.size) = some e := by
+      cases hf : st.escaped.find? (fun e' : OpSem.EscapedObj =>
+          e'.size != 0 && e'.off + e'.size == sa.off + sa.size) with
+      | none =>
+        have h1 := List.find?_eq_none.mp hf e hmem
+        have hs0 : e.size ≠ 0 := by omega
+        exact (h1 (by simp [hs0, hend])).elim
+      | some e' =>
+        have h1 := List.find?_some hf
+        have h2 := List.mem_of_find?_eq_some hf
+        simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq] at h1
+        obtain ⟨h1a, h1b⟩ := h1
+        have hee : e' = e := escaped_eq_of_overlap hdisj h2 hmem
+          (o := sa.off + sa.size - 1) ⟨by omega, by omega⟩ ⟨by omega, by omega⟩
+        rw [hee]
+    refine ⟨⟨y.addr + e.size, some e.id⟩, ?_, ?_⟩
+    · first
+        | (simp only [OpSem.State.addrOf, hnone, hfind, hy, pure, Except.pure]; done)
+        | (simp only [OpSem.State.addrOf, hnone, hfind, hy, pure, Except.pure] <;> rfl)
+        | (unfold OpSem.State.addrOf; rw [hnone]; simp only [hfind, hy]; rfl)
+    · unfold PtrInj
+      refine ⟨?_, ?_⟩
+      · dsimp only
+        omega
+      · dsimp only
+        rw [hp]
+        simp only [ProvInj, hι]
+
 /-- The same address bytes with related provenances. -/
 theorem ptrBytes_inj {ι : Inj} (L : List UInt8) {pr0 pr1 : Option AllocId}
     (h : ProvInj ι pr0 pr1) :
@@ -281,15 +344,14 @@ Proof: `cases hlow`; `addrInsnOk_spec hi` for the view; `assign_ref_inv` for L0 
 `hown` is `[.escS sa.off sa.size ta.align.exp]` against `[sc]` (`ownSpec`, `hrv`, `hsa`,
 `hta`). `scope_escape_rel` (with `hlo` at `_a`: `placeLocals`' base) gives `ι'`, `s0'` and
 `_a`'s object; `hrel'.rel.opnd` gives `_a`'s `LocalRel ι' … true` (`esc`), `addrOf_inj` R's
-pointer `p1`. `_d`'s slot is private at `s0'` (`FnRel.priv_dst` with `hpriv`); `writeFrame` of
-`encodePtr p1` there succeeds (private bytes), `opSem_addr_fwd` gives the instruction,
+pointer `p1`. `FnRel.write_dst` at `s0'` (`_d` private or escaped, `hdi.2`) gives the
+`writeFrame` of `encodePtr p1`, `MemInj`, `_d`'s relation and the other locals' (with
+`encodePtr_inj`, length 8 = `sd.size`); `opSem_addr_fwd` gives the instruction,
 `step_of_view_scopes` with `hsc` = `pre ++ [sc]` (`scopes_append_ok hpre`, then `sc`) the step.
-`writeLocal_priv` (with `encodePtr_inj`, length 8 = `sd.size`) relates `_d` and keeps `MemInj`;
-`LocalRel.writeFrame_apart` the others (`_a`'s object and every other slot are disjoint from
-`_d`'s: `hpriv` against `hesc` and `FnRel.esc`, `apart`); `FnRel.after` assembles `FnRel` at
-`ι'` with `Hidden` by `Hidden.store_hidden` (the stored fragments' provenance is `pa.prov`,
-mapped by `ι'`); `FnRelX`'s other fields carry over from `scope_escape_rel`'s (a private frame
-write keeps objects and allocations); `ProvBounded.store` with `LocalRel.prov_lt`. -/
+`FnRel.after` assembles `FnRel` at `ι'` with `Hidden` by `Hidden.store_hidden` (the stored
+fragments' provenance is `pa.prov`, mapped by `ι'`); `FnRelX`'s other fields carry over from
+`scope_escape_rel`'s (the frame write keeps the objects, `writeFrame_allocsKept` the
+allocations' addresses, liveness and sizes); `ProvBounded.store` with `LocalRel.prov_lt`. -/
 theorem lift_ref {Γ : StmtCtx} {c : R.Code} {s1 s0 : R.RState} {ch : OpSem.Choice} {ι : Inj}
     {live live' : Local → Bool} {o : Spec.Oracle} {s s' : Spec.State} {f : Spec.Frame}
     {rest : List Spec.Frame} (hs : s.stack = f :: rest) (hbody : Γ.body = f.body)
@@ -308,8 +370,8 @@ theorem lift_ref {Γ : StmtCtx} {c : R.Code} {s1 s0 : R.RState} {ch : OpSem.Choi
     (h : runOn (evalStatement (.assign ⟨d, []⟩ rv)) o s = (.ok (), s')) :
     ∃ s0', R.applyScope s0 sc = .ok s0' ∧ LiftOutX Γ c ch ι live' f s s' s1 s0' := by
   cases hlow with
-  | @ref d a rv projs ta ty off pt valid sd sa i hrv hne htaΓ hpath htdΓ hk hsd hsa hsize hoff
-      hpriv hesc hai =>
+  | @ref d a rv projs ta ty off pt valid sd sa i hrv hne htaΓ hpath htdΓ hk hsd hsa hsize hend
+      hoff hesc hai =>
     obtain ⟨v, ps, r, hv, hh, ho, hops, hctl⟩ := addrInsnOk_spec hai
     rw [hmode, hρ] at hv
     have hta : f.body.locals[a]? = some ta := by rw [← hbody]; exact htaΓ
@@ -317,7 +379,7 @@ theorem lift_ref {Γ : StmtCtx} {c : R.Code} {s1 s0 : R.RState} {ch : OpSem.Choi
     obtain ⟨pd, pa, hpd, hpa, hsto, hstk⟩ := assign_ref_inv hs hrv hta hpath htd hk h
     -- the own `Escape`
     have hsc1 : ScopeSpec.ok (.escS sa.off sa.size ta.align.exp) sc = true := by
-      simp only [ownSpec, hrv, hsa, htaΓ, specsOk, Bool.and_true] at hown
+      simp only [ownSpec, hrv, hsa, htaΓ, hpath, Option.isSome_some, ↓reduceIte, specsOk, Bool.and_true] at hown
       exact hown
     have hla : live a = true := hlo a (by
       cases rv <;> simp only [refPlace?, reduceCtorEq, Option.some.injEq] at hrv <;>
@@ -337,7 +399,24 @@ theorem lift_ref {Γ : StmtCtx} {c : R.Code} {s1 s0 : R.RState} {ch : OpSem.Choi
       have h0 : s0'.st.escapedAt slot.off = some e := by simpa using hine 0 hpos
       rw [h0]
       simp
-    obtain ⟨p1, e1, haddr1, hpinj, hprov1, he1⟩ := addrOf_inj hra hesc0 hsize.2
+    -- `addr`'s pointer: inside `_a`'s object, or at its end (`addrOf_end_inj`: no escaped
+    -- object covers the offset after the slot, by `hend` and `FnRel.esc`)
+    have hnone : off = slot.size → s0'.st.escapedAt (slot.off + slot.size) = none := by
+      intro he0
+      cases hq : s0'.st.escapedAt (slot.off + slot.size) with
+      | none => rfl
+      | some q =>
+        have h1 := hX'.rel.esc _ q hq
+        rw [hend he0] at h1
+        cases h1
+    obtain ⟨p1, haddr1, hpinj⟩ : ∃ p1, s0'.st.addrOf (slot.off + off) = .ok p1 ∧
+        PtrInj ι' ⟨pa.addr + off, pa.prov⟩ p1 := by
+      rcases Nat.lt_or_ge off slot.size with hlt | hge
+      · obtain ⟨p1, -, h1, h2, -⟩ := addrOf_inj hra hesc0 hlt
+        exact ⟨p1, h1, h2⟩
+      · have he0 : off = slot.size := by omega
+        subst he0
+        exact addrOf_end_inj hra hesc0 hpos (hnone rfl) hX'.disj
     obtain ⟨a0, hpa0, hlt0⟩ := LocalRel.prov_lt hra
     have hιa : ι' a0 ≠ none := by
       cases hra with
@@ -351,20 +430,10 @@ theorem lift_ref {Γ : StmtCtx} {c : R.Code} {s1 s0 : R.RState} {ch : OpSem.Choi
         subst e3
         rw [hι1]
         simp
-    -- `_d`'s private slot
+    -- `_d`'s slot, private or escaped
     have hpos8 : 0 < sd.size := by omega
-    obtain ⟨ad, xd, hp, hι, hxd, hl, haddr, hpaddr, hsz, hpv⟩ :=
-      hX'.rel.priv_dst hpd hsd hpos8 hpriv
-    have hlenp : (encodePtr p1).length = sd.size := by
-      rw [Ryo.Spec.Theorems.encodePtr_length, hsize.1]
-    have hpw : ∀ i < (encodePtr p1).length, s0'.st.escapedAt (sd.off + i) = none := by
-      intro i hi'
-      rw [hlenp] at hi'
-      exact hpv i hi'
-    obtain ⟨st', hwr⟩ : ∃ st', s0'.st.writeFrame sd.off (encodePtr p1) = .ok st' := by
-      unfold OpSem.State.writeFrame
-      rw [writeEscaped_private' hpw]
-      exact ⟨_, rfl⟩
+    obtain ⟨st', hwr, -, hmi, hrd, hoth⟩ := hX'.rel.write_dst hdi.2 hpd hsd hpos8
+      (encodePtr_inj hpinj) (by rw [Ryo.Spec.Theorems.encodePtr_length, hsize.1]) hsto
     have hf1 := offOk_spec hoff.1
     have hf3 := offOk_spec hoff.2.2
     have hop := opSem_addr_fwd (ch := ch) hh ho ⟨hf1.1, hf1.2, hf3.1, hf3.2⟩ haddr1 hwr
@@ -373,15 +442,6 @@ theorem lift_ref {Γ : StmtCtx} {c : R.Code} {s1 s0 : R.RState} {ch : OpSem.Choi
       all_goals rfl
     have hstep := step_of_view_scopes hi hfold hpe hpl hv hctl (by rw [hops]; exact hop)
     -- the relation
-    obtain ⟨hmi, hrd⟩ := writeLocal_priv hX'.rel.frame.mem ad xd hp hι hxd hl haddr hpaddr hsz
-      hpv (encodePtr_inj hpinj)
-      (by rw [Ryo.Spec.Theorems.encodePtr_length, hsize.1]) hsto hwr
-    have hoth : ∀ (sl : LocalSlot) p lv, LocalRel ι' s0'.fp s0'.st s.mem sl p lv →
-        p.prov ≠ pd.prov → (sd.off + sd.size ≤ sl.off ∨ sl.off + sl.size ≤ sd.off) →
-        LocalRel ι' s0'.fp st' s'.mem sl p lv := by
-      intro sl p lv hr hne hap
-      have h1 := LocalRel.store_other hr hsto (.inl (Ne.symm hne))
-      exact LocalRel.writeFrame_apart h1 hwr hpw (by rw [hlenp]; exact hap)
     have hbprov : ∀ b ∈ encodePtr ⟨pa.addr + off, pa.prov⟩, ∀ fr, b.provFrag = some fr →
         fr.prov = a0 := by
       intro b hb fr hf
@@ -393,7 +453,7 @@ theorem lift_ref {Γ : StmtCtx} {c : R.Code} {s1 s0 : R.RState} {ch : OpSem.Choi
         rw [hbprov b hb fr hf] at hn
         exact hιa hn)
     have hescR := (Ryo.Proofs.OpFacts.opSem_out hop).2.1
-    have hmemR : st'.mem = s0'.st.mem := (writeFrame_private_eq hwr hpw).1
+    have hak : AllocsKept s0'.st.mem st'.mem := writeFrame_allocsKept hwr
     have hfn := hX'.rel.after hpd hsd hmi hrd hoth hhid hescR hlive' (pc' := s0'.pc + 1)
     have hagree := Ryo.Spec.Theorems.Memory.store_agree hsto
     have hbd : BytesBounded s.mem.allocs.size (encodePtr ⟨pa.addr + off, pa.prov⟩) := by
@@ -408,8 +468,8 @@ theorem lift_ref {Γ : StmtCtx} {c : R.Code} {s1 s0 : R.RState} {ch : OpSem.Choi
         exact absurd hq (Nat.not_le.mpr hlt0)), hstep, hstk, ?_, hpb.store hsto hbd,
       Nat.le_of_eq (store_size hsto).symm,
       (hdi.mono hle).store_mapped hsto (fun b hb fr hf => by rw [hbprov b hb fr hf]; exact hιa)⟩
-    -- `FnRelX`'s other fields: R's objects and memory are unchanged (a private frame write),
-    -- L0's allocations keep their liveness (one store)
+    -- `FnRelX`'s other fields: R's objects are unchanged and its allocations keep their
+    -- address, liveness and size (a frame write), L0's keep their liveness (one store)
     refine ⟨hfn, fun e' he' => ?_, ?_, fun q b x e' hq hx hl' he' hid => ?_,
       fun j y hy hl' => ?_, hX'.aligned, fun e' he' => ?_, fun e' he' y hy => ?_⟩
     · have he2 : e' ∈ s0'.st.escaped := by
@@ -429,32 +489,32 @@ theorem lift_ref {Γ : StmtCtx} {c : R.Code} {s1 s0 : R.RState} {ch : OpSem.Choi
       · rw [h2] at hx
         cases hx
         exact hX'.owned q b x0 e' hq h1 (hl0.trans hl') he2 hid
-    · have hy' : s0'.st.mem.get? j = some y := by
-        have h2 : st'.mem.get? j = some y := hy
-        rw [hmemR] at h2
-        exact h2
-      rcases hX'.free j y hy' hl' with ⟨e2, he2, h1, h2, h3⟩ | hfr
-      · refine .inl ⟨e2, ?_, h1, h2, h3⟩
-        show e2 ∈ st'.escaped
-        rw [hescR]
-        exact he2
-      · exact .inr hfr
+    · obtain ⟨y0, hy0, hadd, hlv, hsz⟩ := hak.2 j y hy
+      rcases hX'.free j y0 hy0 (by rw [← hlv]; exact hl') with ⟨e2, he2, h1, h2, h3⟩ | hfr
+      · refine .inl ⟨e2, ?_, h1, ?_, ?_⟩
+        · show e2 ∈ st'.escaped
+          rw [hescR]
+          exact he2
+        · rw [hadd]; exact h2
+        · rw [hsz]; exact h3
+      · refine .inr fun l sl hsl => ?_
+        rw [hadd, hsz]
+        exact hfr l sl hsl
     · have he2 : e' ∈ s0'.st.escaped := by
         have h2 : e' ∈ st'.escaped := he'
         rw [hescR] at h2
         exact h2
       show e'.id < st'.mem.allocs.size
-      rw [hmemR]
+      rw [hak.1]
       exact hX'.idLt e' he2
     · have he2 : e' ∈ s0'.st.escaped := by
         have h2 : e' ∈ st'.escaped := he'
         rw [hescR] at h2
         exact h2
-      have hy' : s0'.st.mem.get? e'.id = some y := by
-        have h2 : st'.mem.get? e'.id = some y := hy
-        rw [hmemR] at h2
-        exact h2
-      exact hX'.addrAt e' he2 y hy'
+      obtain ⟨y0, hy0, hadd, -, -⟩ := hak.2 e'.id y hy
+      show (y.addr : Int) = s0'.fp + e'.off
+      rw [hadd]
+      exact hX'.addrAt e' he2 y0 hy0
 
 
 /-! ### One statement with scopes -/
@@ -472,14 +532,15 @@ theorem stmt_simX_family {Γ : TermCtx} {c : R.Code} {ι : Inj} {o : Spec.Oracle
     (hf : LowerCopy Γ.toStmtCtx st (rangeInsns c.d r) ∨
       LowerIntCast Γ.toStmtCtx st (rangeInsns c.d r) ∨ LowerUnop Γ.toStmtCtx st (rangeInsns c.d r) ∨
       LowerField Γ.toStmtCtx st (rangeInsns c.d r) ∨ LowerCmp Γ.toStmtCtx st (rangeInsns c.d r) ∨
-      LowerWide Γ.toStmtCtx st (rangeInsns c.d r) ∨
+      LowerWide Γ.toStmtCtx st (rangeInsns c.d r) ∨ LowerBinX Γ.toStmtCtx st (rangeInsns c.d r) ∨
+      LowerOffset Γ.toStmtCtx st (rangeInsns c.d r) ∨ LowerOvf Γ.toStmtCtx st (rangeInsns c.d r) ∨
       (LowerDeref Γ.toStmtCtx st (rangeInsns c.d r) ∧ ∃ d rv, st = .assign ⟨d, []⟩ rv))
     (hev : runOn (evalStatement st) o s = (.ok (), s1x)) :
     StmtOutX Γ c ch ι f rest bd blk s s1x s1 := by
   obtain ⟨d, rv, i, rfl, hR⟩ := family_shape hf
   rw [hR] at hf
   have hown : ownSpec Γ.toStmtCtx (.assign ⟨d, []⟩ rv) = [] := by
-    rcases hf with h | h | h | h | h | h | ⟨h, -⟩ <;> cases h <;>
+    rcases hf with h | h | h | h | h | h | h | h | h | ⟨h, -⟩ <;> cases h <;>
       first | rfl | (simp_all [ownSpec, refPlace?])
   obtain ⟨hi0, he⟩ := rangeInsns_single h2 hR
   have hlt : r.1 < r.2 := by omega
@@ -501,17 +562,20 @@ theorem stmt_simX_family {Γ : TermCtx} {c : R.Code} {ι : Inj} {o : Spec.Oracle
   obtain ⟨hl1, hl2⟩ := assign_live hfn.live M.hbd hst
   have hl : LiftOut Γ.toStmtCtx c.dropScopes ch ι ((computeLive Γ.body).get f.bb (f.stmt + 1)) f
       s s1x s0 := by
-    rcases hf with hf | hf | hf | hf | hf | hf | hf
-    · exact lift_copy M.stack hbody hmode' hρ' hf hc0 hsc0 hpe0 hpl0 M.rel.rel M.pb hl2 hl1 hev
-    · exact lift_intCast M.stack hbody hwf hmode' hρ' hf hc0 hsc0 hpe0 hpl0 M.rel.rel M.pb hl2
+    rcases hf with hf | hf | hf | hf | hf | hf | hf | hf | hf | hf
+    · exact lift_copy M.stack hbody hmode' hρ' hf hc0 hsc0 hpe0 hpl0 M.rel.rel M.pb M.dinv.2 hl2 hl1 hev
+    · exact lift_intCast M.stack hbody hwf hmode' hρ' hf hc0 hsc0 hpe0 hpl0 M.rel.rel M.pb M.dinv.2 hl2
         hl1 hev
-    · exact lift_unop M.stack hbody hwf hmode' hρ' hf hc0 hsc0 hpe0 hpl0 M.rel.rel M.pb hl2 hl1
+    · exact lift_unop M.stack hbody hwf hmode' hρ' hf hc0 hsc0 hpe0 hpl0 M.rel.rel M.pb M.dinv.2 hl2 hl1
         hev
-    · exact lift_field M.stack hbody hmode' hρ' hf hc0 hsc0 hpe0 hpl0 M.rel.rel M.pb hl2 hl1 hev
-    · exact lift_cmp M.stack hbody hmode' hρ' hf hc0 hsc0 hpe0 hpl0 M.rel.rel M.pb hl2 hl1 hev
-    · exact lift_wide M.stack hbody hmode' hρ' hf hc0 hsc0 hpe0 hpl0 M.rel.rel M.pb hl2 hl1 hev
+    · exact lift_field M.stack hbody hmode' hρ' hf hc0 hsc0 hpe0 hpl0 M.rel.rel M.pb M.dinv.2 hl2 hl1 hev
+    · exact lift_cmp M.stack hbody hmode' hρ' hf hc0 hsc0 hpe0 hpl0 M.rel.rel M.pb M.dinv.2 hl2 hl1 hev
+    · exact lift_wide M.stack hbody hmode' hρ' hf hc0 hsc0 hpe0 hpl0 M.rel.rel M.pb M.dinv.2 hl2 hl1 hev
+    · exact lift_binX M.stack hbody hwf hmode' hρ' hf hc0 hsc0 hpe0 hpl0 M.rel.rel M.pb hl2 hl1 hev
+    · exact lift_offset M.stack hbody hmode' hρ' hf hc0 hsc0 hpe0 hpl0 M.rel.rel M.pb hl2 hl1 hev
+    · exact lift_ovf M.stack hbody hwf hmode' hρ' hf hc0 hsc0 hpe0 hpl0 M.rel.rel M.pb hl2 hl1 hev
     · exact lift_derefLoad M.stack hbody hmode' hρ' hf.1 hc0 hsc0 hpe0 hpl0 M.rel.rel M.pb
-        M.dinv.1 hl2 hl1 hev
+        M.dinv.1 M.dinv.2 hl2 hl1 hev
   exact stmtOutX_family hfn hmode M hst hr h2 hR hown hpl hv hctl hpcNext hpend0 hl
 
 /-- The `ref` statement under pending scopes: the scopes at `pc` are the pending ones (folded to
@@ -537,8 +601,8 @@ theorem stmt_simX_ref {Γ : TermCtx} {c : R.Code} {ι : Inj} {o : Spec.Oracle}
       ownSpec Γ.toStmtCtx (.assign ⟨d, []⟩ rv) = [.escS sa.off sa.size ta.align.exp] := by
     have hl2 := hlow
     cases hl2 with
-    | @ref _ _ _ _ ta _ _ _ _ _ sa _ hrv _ hta _ _ _ _ hsa _ _ _ _ _ =>
-      exact ⟨sa, ta, by simp only [ownSpec, hrv, hsa, hta]⟩
+    | @ref _ _ _ _ ta _ _ _ _ _ sa _ hrv _ hta hpath _ _ _ hsa _ _ _ _ _ =>
+      exact ⟨sa, ta, by simp only [ownSpec, hrv, hsa, hta, hpath, Option.isSome_some, ↓reduceIte]⟩
   obtain ⟨hi0, he⟩ := rangeInsns_single h2 hR
   have hlt : r.1 < r.2 := by omega
   have hpc0 : s1.pc = r.1 := by rw [← M.pc, pcAt_some hr]
@@ -600,6 +664,12 @@ theorem stmt_simX_single {Γ : TermCtx} {c : R.Code} {ι : Inj} {ch : OpSem.Choi
   exact stmtOutX_family hfn hmode M hst hr h2 hR hown hpl hv hctl hpcNext hpend0
     (hlift hc0 (dropScopes_scopesAt c _) hpe hpl)
 
+/-- A copy of a whole local has no own scope (`useSpec`). -/
+theorem ownSpec_use_local {Γ : StmtCtx} {d a : Local} {o : Operand} (h : o.local? = some a) :
+    ownSpec Γ (.assign ⟨d, []⟩ (.use o)) = [] := by
+  simp only [ownSpec, refPlace?]
+  simp [useSpec, h]
+
 /-- `LowerStmt`'s one-instruction assignments under pending scopes (as `stmt_sim_base`'s, on
 `c.dropScopes`). The storage statements are not covered here (`none` of the result: the
 caller handles them). -/
@@ -654,7 +724,7 @@ theorem stmt_simX_baseAssign {Γ : TermCtx} {c : R.Code} {ι : Inj} {o : Spec.Or
     exact ⟨st', hstep, hstk, hrel, hpb, hle⟩
   | copyInt ha htd hta hsd hsa hsize hoff hpriv hi =>
     obtain ⟨hl1, hl2⟩ := assign_live hfn.live M.hbd hst
-    refine sgl hst hR rfl (fun hc0 hsc0 hpe0 hpl0 => ?_)
+    refine sgl hst hR (ownSpec_use_local ha) (fun hc0 hsc0 hpe0 hpl0 => ?_)
     obtain ⟨st', hstep, hstk, hrel⟩ := lift_copyInt (ch := ch) M.stack hbody hwf hmode' hρ'
       ⟨_, _, _, _, _, ha, htd, hta, hsd, hsa, hsize, hoff, hpriv, hi⟩
       hc0 hsc0 hpe0 hpl0 M.rel.rel (fun x hx => hl2 x (operand_local_mem hx)) hl1 hev
@@ -677,12 +747,12 @@ theorem stmt_simX_baseAssign {Γ : TermCtx} {c : R.Code} {ι : Inj} {o : Spec.Or
     exact ⟨st', hstep, hstk, hrel, hpb, hle⟩
   | copyBool ha htd hta hsd hsa hsize hoff hpriv hi =>
     obtain ⟨hl1, hl2⟩ := assign_live hfn.live M.hbd hst
-    exact sgl hst hR rfl (fun hc0 hsc0 hpe0 hpl0 =>
+    exact sgl hst hR (ownSpec_use_local ha) (fun hc0 hsc0 hpe0 hpl0 =>
       lift_copyBool M.stack hbody hmode' hρ' ha htd hta hsd hsa hsize hoff hpriv hi hc0 hsc0
         hpe0 hpl0 M.rel.rel M.pb (hl2 _ (operand_local_mem ha)) hl1 hev)
   | copyPtr hk ha htd hta hsd hsa hsize hoff hpriv hi =>
     obtain ⟨hl1, hl2⟩ := assign_live hfn.live M.hbd hst
-    exact sgl hst hR rfl (fun hc0 hsc0 hpe0 hpl0 =>
+    exact sgl hst hR (ownSpec_use_local ha) (fun hc0 hsc0 hpe0 hpl0 =>
       lift_copyPtr M.stack hbody hmode' hρ' hk ha htd hta hsd hsa hsize hoff hpriv hi hc0 hsc0
         hpe0 hpl0 M.rel.rel M.pb (hl2 _ (operand_local_mem ha)) hl1 hev)
   | constBool htd hsd hsize hoff hpriv hi =>

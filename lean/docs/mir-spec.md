@@ -365,7 +365,7 @@ list can be audited against the code.
 | D4 | `char` | absent | `u32` with valid range `0..=0x10FFFF`; surrogates invalid per Rust (Miri) | `Ty.char`: UB on load if not a Unicode scalar value |
 | D5 | Floats | absent | IEEE binary32/64. NaN payloads non-deterministic (RFC 3514: arithmetic NaN results pick a payload from a specified set). `as` float→int saturates, NaN→0. `min`/`max` per `f*::min`/`max`. `f16`/`f128` exist | `Value.float fmt bits`. Ops are `opaque` functions on `BitVec` (`@[implemented_by]` hardware `Float32`/`Float` for execution), NaN results replaced by a daemonic choice over RFC 3514's set. `f16`/`f128` values are bits only, and their arithmetic is out of scope |
 | D6 | Fn pointers | function "allocations" with unique addresses | functions may be merged (`unnamed_addr`) or duplicated (one instance per crate copy) | `ReifyFnPointer` address: daemonic choice per instance; fn-pointer equality not guaranteed |
-| D7 | Const allocations, statics | globals unique and mutable | consts and promoted allocations have no unique address (ryo copies them into each image's pool, and vtables too). Consts and immutable statics without `UnsafeCell` are read-only (ryo: RELRO) | daemonic choice of copy per evaluation of a const. Statics unique. `Allocation.mutable = false` for consts and immutable statics: a write is UB |
+| D7 | Const allocations, statics | globals unique and mutable | consts and promoted allocations have no unique address (ryo copies them into each image's pool, and vtables too). Consts and immutable statics without `UnsafeCell` are read-only (ryo: RELRO) | one copy of each const and vtable allocation at the start (as `Machine::new`), then a daemonic choice of copy (an existing or a fresh one) per evaluation of a const. Statics unique. `Allocation.mutable = false` for consts and immutable statics: a write is UB |
 | D8 | ZST allocations | equal addresses count as overlap | zero-size allocas may coincide; ryo gives ZST locals no space | `allocate` with size 0: any aligned non-null address, no overlap constraint |
 | D9 | Storage | `StorageLive`/`Dead` (same as rustc) | locals without any storage statement are live for the whole call (`always_storage_live_locals`); `StorageLive` of a live local reallocates; `StorageDead` of a dead one is a no-op | same, plus the always-live rule at frame creation |
 | D10 | Binary ops | `Shl`/`Shr` mask; `*WithOverflow` result type synthesized | `Add`/`Sub`/`Mul` wrap; `*Unchecked` UB on overflow; `*WithOverflow` returns `(T, bool)` **at the destination's rustc layout**; `Div`/`Rem` UB on 0 and `MIN/-1`; `Shl`/`Shr` RHS is any integer type, shift by `rhs.rem_euclid(bits)`; `Cmp` returns `Ordering` (i8 enum); `Offset` is `ptr.offset` (inbounds, count × pointee size, product must fit `isize`); `BitAnd`/`BitOr`/`BitXor`/`Not` on `bool`; `Eq`…`Ge` on raw pointers compare addresses, wide pointers lexicographically (address, then metadata), and fn pointers are comparable | as listed |
@@ -474,8 +474,11 @@ text above is not rewritten to match.
   (`pendingUnwind`) and the next step pops it, so `step` stays non-recursive. Unwinding out of
   the start function ends the run (`Final.unwound`) instead of UB (needed to run single
   functions).
-- **Globals (D7)**: statics are allocated on first use (still unique); constants are evaluated
-  by encoding their bytes and decoding at the operand type.
+- **Globals (D7)**: statics are allocated on first use (still unique); constants and vtables
+  get one copy each before the start function runs (`instantiateConsts`, as `Machine::new`
+  allocates globals; a lowering can then use that copy at every evaluation), and each
+  evaluation picks a copy; constants are evaluated by encoding their bytes and decoding at
+  the operand type.
 - **Runs**: the start function is called with arguments and its return ends the run (MiniRust
   requires `exit`). MIR well-formedness (`Mir/WellFormed.lean`) is checked before running;
   it type-checks rvalues against destinations up to *shape* (constructor, integer/float

@@ -8,10 +8,10 @@ private), not PE, every block L0 can reach (`Reach.lean`'s `computeReach`, check
 `reachOk`) not dead, every statement and terminator lowered by a rule of
 `StmtExt.lean`/`TermExt.lean`, or a fused block's last statement and terminator together by
 `Fused.lean`'s (M5b); blocks L0 cannot reach need no check;
-every instruction a plain view (`PlainView`), and no two locals with overlapping slots
-storage-live together (`share`: `Live.lean`'s `ShareOk`; slots may be shared by locals never storage-live
-at the same point, since L0 allocates each local at
-its slot and live allocations don't overlap). Liveness: `computeLive` with its post-fixpoint
+every instruction a plain view (`PlainView`), and at each storage statement of a local no other
+local that may be storage-live there with an overlapping slot (`share`: `Live.lean`'s `ShareOk`,
+the backend's sharing condition; L0 allocates each local at its slot and live allocations don't
+overlap). Liveness: `computeLive` with its post-fixpoint
 check, a `StorageDead`'d local dead right after, and a `StorageLive`'d local storage-dead before
 it (`computeStorage` over-approximates storage), its slot the size of its type.
 
@@ -33,7 +33,7 @@ open Ryo.Proofs.Lower (PlainView IntsSized SlotsApart)
 /-- A function's rule context: no `Escape` scope (M5a), so nothing is escaped. -/
 def fnCtx (body : Body) (fc : FuncCert) (mode : Ryo.Obj.Mode) (ρ : Addrs) : TermCtx :=
   { body := body, slots := fc.locals, mode := mode, ρ := ρ, escaped := fun _ => false,
-    blocks := fc.blocks, retKind := fc.retKind }
+    blocks := fc.blocks, retKind := fc.retKind, sret := fc.sret }
 
 /-- The instructions of a certificate range. -/
 def rangeInsns (d : Decoded) (r : Range) : List Insn := (d.insns.extract r.1 r.2).toList
@@ -62,6 +62,12 @@ structure LowersFn (Γ : TermCtx) (d : Decoded) : Prop where
   noScopes : d.scopes.size = 0
   notPe : Γ.mode.pe = false
   noEsc : ∀ o, Γ.escaped o = false
+  /-- No pool placements: the pool-constant rules (`PoolConst.lean`) are for `LowersFnX`, whose
+  simulation carries the pool invariant. -/
+  noPool : Γ.pool = []
+  /-- No function symbol slots: the fn pointer rule (`FnPtrCast.lean`) is for `LowersFnX`, whose
+  simulation carries the function invariant. -/
+  noFnSym : Γ.fnSym = []
   blocksSize : Γ.blocks.size = Γ.body.blocks.size
   reach : ReachSound Γ.body (reachGet (computeReach Γ.body))
   block : ∀ (b : Nat) bd blk, reachGet (computeReach Γ.body) b = true →
@@ -76,12 +82,31 @@ structure LowersFn (Γ : TermCtx) (d : Decoded) : Prop where
   fresh : ∀ (b : Nat) bd (i : Nat) (l : Local), Γ.body.blocks[b]? = some bd → bd.stmts[i]? = some (.storageLive l) →
     (computeStorage Γ.body).get b i l = false ∧ ∃ sd, Γ.slots[l]? = some sd ∧
       ∀ ty, Γ.body.locals[l]? = some ty → ty.size? = some sd.size
+  /-- Every `resume`'s cleanup entry continues unwinding (`TermMore.lean`'s `resumesCheck`). -/
+  resumes : ∀ (k : Nat) i, d.insns[k]? = some i → isResume Γ.mode Γ.ρ i = true →
+    contAt d k = true
+  /-- The sret slot is never overwritten (`RetSret.lean`'s `pinCheck`). -/
+  pin : ∀ so, Γ.sret = some so → pinCheck Γ.mode Γ.ρ so d = true
 
 /-! ### The checker -/
 
+/-- `LowersFn.pin`'s check. -/
+def sretPinCheck (Γ : TermCtx) (d : Decoded) : Bool :=
+  match Γ.sret with
+  | some so => pinCheck Γ.mode Γ.ρ so d
+  | none => true
+
+theorem sretPinCheck_sound {Γ : TermCtx} {d : Decoded} (h : sretPinCheck Γ d = true) :
+    ∀ so, Γ.sret = some so → pinCheck Γ.mode Γ.ρ so d = true := by
+  intro so hso
+  unfold sretPinCheck at h
+  rw [hso] at h
+  exact h
+
 def plainOk (mode : Ryo.Obj.Mode) (ρ : Addrs) (i : Insn) : Bool :=
   match view mode ρ i with
-  | some v => v.op != Full.Opcode.resume && v.op != Full.Opcode.unreachable &&
+  | some v =>
+    (v.ctl == some .trap || (v.op != Full.Opcode.resume && v.op != Full.Opcode.unreachable)) &&
       (v.op.info.operands.zip v.ops).all (fun p => p.2.fits p.1.kind)
   | none => true
 
@@ -89,9 +114,15 @@ theorem plainOk_spec {mode : Ryo.Obj.Mode} {ρ : Addrs} {i : Insn} (h : plainOk 
     PlainView mode ρ i := by
   unfold plainOk at h
   refine ⟨?_, ?_, ?_⟩ <;> intro v hv <;> rw [hv] at h <;>
-    simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at h
-  · exact h.1.1
-  · exact h.1.2
+    simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq, bne_iff_ne, ne_eq] at h
+  · intro hc
+    rcases h.1 with h1 | h1
+    · exact absurd h1 hc
+    · exact h1.1
+  · intro hc
+    rcases h.1 with h1 | h1
+    · exact absurd h1 hc
+    · exact h1.2
   · exact h.2
 
 /-- The terminator's check: with the fused statement for a fused block. -/
@@ -246,7 +277,7 @@ def checkFn (Γ : TermCtx) (d : Decoded) : Bool :=
     storageCheck Γ.body (computeStorage Γ.body) &&
     shareCheck Γ.body Γ.slots (computeStorage Γ.body) &&
     storageStmtsCheck Γ.body Γ.slots (computeLive Γ.body) (computeStorage Γ.body) &&
-    reachOk Γ.body
+    reachOk Γ.body && resumesCheck Γ d && sretPinCheck Γ d
 
 /-- `checkFn` at `fnCtx` (whose `escaped` is constantly false). -/
 theorem checkFn_sound {body : Body} {fc : FuncCert} {mode : Ryo.Obj.Mode} {ρ : Addrs}
@@ -254,12 +285,14 @@ theorem checkFn_sound {body : Body} {fc : FuncCert} {mode : Ryo.Obj.Mode} {ρ : 
     LowersFn (fnCtx body fc mode ρ) d := by
   unfold checkFn at h
   simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at h
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hsc, hpe⟩, hbs⟩, hb⟩, hp⟩, hi⟩, hl⟩, hs⟩, ha⟩, hst⟩, hre⟩ := h
-  exact { noScopes := hsc, notPe := hpe, noEsc := fun _ => rfl, blocksSize := hbs,
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hsc, hpe⟩, hbs⟩, hb⟩, hp⟩, hi⟩, hl⟩, hs⟩, ha⟩, hst⟩, hre⟩, hrs⟩, hpin⟩ :=
+    h
+  exact { noScopes := hsc, notPe := hpe, noEsc := fun _ => rfl, noPool := rfl, noFnSym := rfl, blocksSize := hbs,
           reach := reachOk_sound hre, block := blocksCheck_sound hb, plain := plainsCheck_sound hp,
           ints := intsCheck_sound hi, live := liveCheck_sound hl,
           storage := storageCheck_sound hs, share := shareCheck_sound ha,
-          deadAfter := storageStmtsCheck_dead hst, fresh := storageStmtsCheck_live hst }
+          deadAfter := storageStmtsCheck_dead hst, fresh := storageStmtsCheck_live hst,
+          resumes := resumesCheck_sound hrs, pin := sretPinCheck_sound hpin }
 
 /-- The coverage verdict of a whole function (`CertCheck`'s `functions` count). -/
 def fnVerdict (body : Body) (fc : FuncCert) (d : Decoded) (mode : Ryo.Obj.Mode) (ρ : Addrs) :

@@ -62,12 +62,19 @@ structure FnRel (Γ : StmtCtx) (ι : Inj) (live : Local → Bool) (f0 : Spec.Fra
     SlotsApart sl sl'
   esc : ∀ o e, s1.st.escapedAt o = some e → Γ.escaped o = true
 
-/-- What the lifts need of an instruction's view beyond the rule (decidable on `view`'s result). -/
+/-- What the lifts need of an instruction's view beyond the rule (decidable on `view`'s result):
+not `resume` or `unreachable` unless its control is a trap (so the traps themselves pass), and
+operands fitting their kinds. -/
 structure PlainView (mode : Ryo.Obj.Mode) (ρ : Addrs) (i : Insn) : Prop where
-  notResume : ∀ v, view mode ρ i = some v → v.op ≠ .resume
-  notUnreachable : ∀ v, view mode ρ i = some v → v.op ≠ .unreachable
+  notResume : ∀ v, view mode ρ i = some v → v.ctl ≠ some .trap → v.op ≠ .resume
+  notUnreachable : ∀ v, view mode ρ i = some v → v.ctl ≠ some .trap → v.op ≠ .unreachable
   fits : ∀ v, view mode ρ i = some v →
     (v.op.info.operands.zip v.ops).all (fun p => p.2.fits p.1.kind) = true
+
+/-- A control other than `trap` (`PlainView`'s premise). -/
+theorem ctl_ne_trap {o : Option (R.Then Nat)} {t : R.Then Nat} (h : o = some t)
+    (ht : t ≠ .trap := by intro h; cases h) : o ≠ some .trap := by
+  rw [h]; intro e; exact ht (Option.some.inj e)
 
 theorem LocalRel.weaken {ι : Inj} {fp : Nat} {st : OpSem.State} {m0 : Memory} {slot : LocalSlot}
     {p : ThinPointer} {lv lv' : Bool} (h : LocalRel ι fp st m0 slot p lv)
@@ -403,7 +410,8 @@ theorem step_of_view {c : Code} {s1 : R.RState} {ch : OpSem.Choice} {i : Insn} {
     (hpe : c.mode.pe = false) (hpl : PlainView c.mode c.ρ i) (hv : view c.mode c.ρ i = some v)
     (hctl : v.ctl = some .next) (hop : opSem v.op v.ops s1.st ch = .ok (.next, st')) :
     step c s1 ch = .ok (.step { s1 with pc := s1.pc + 1, st := st' }) :=
-  step_of_opSem hi hsc hv hctl (hpl.notResume v hv) (hpl.notUnreachable v hv) hpe
+  step_of_opSem hi hsc hv hctl (hpl.notResume v hv (ctl_ne_trap hctl))
+      (hpl.notUnreachable v hv (ctl_ne_trap hctl)) hpe
     (fun op ops he f hf => by
       subst he
       exact shapes_of_opShape (view_native_opShape hv hf (by rw [hctl]; rfl))) hop

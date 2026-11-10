@@ -25,7 +25,7 @@ during M1". Tests are in `RyoTest/` (`lake exe ryotest <name>`).
 | D4 `char` | `Ty.char`, `isUnicodeScalar`, `evalCast .intToInt` | `D4/*` | as documented |
 | D5 floats | Lang/Float.lean; `resolveFloat`, `Choice.nanBits` | `D5/*` | **differs from the table, as Deviations says**: exact rational arithmetic instead of `opaque` + `@[implemented_by]`; `f16`/`f128` arithmetic works too. Not covered by the row: `powi` is compiler-rt's `__powidf2` loop (R3, fixed), `fmuladd` fused or not is a daemonic choice (R4, fixed), so is the zero `minimum_number_nsz` returns for opposite zeros (R5, fixed) |
 | D6 fn pointers | `fnPointer`, `instOfFnPtr`, `Choice.fnAddr`, `AllocationKind.function` | `D6/*` | as documented. With D8, function allocations are size 0, so distinct functions may share an address (MiniRust's overlap rule kept them unique, see §2) |
-| D7 consts/statics | `globalPtrF`, `Choice.constCopy`, `Allocation.mutable`, `Allocation.vtableRo`, `GlobalKind.mutable` | `D7/*` | as documented, plus Deviations (lazy statics). Interior mutability is the dump's `static (mutable := true)` flag |
+| D7 consts/statics | `globalPtrF`, `instantiateConsts`, `Choice.constCopy`, `Allocation.mutable`, `Allocation.vtableRo`, `GlobalKind.mutable` | `D7/*` | as documented, plus Deviations (lazy statics). Interior mutability is the dump's `static (mutable := true)` flag |
 | D8 ZST allocations | `Allocation.overlaps` | `D8/zst_sharing` | as documented |
 | D9 storage | `storageLive`, `storageDead`, `createFrame` (always-live locals) | Basic.lean | as documented |
 | D10 binary ops | `evalIntBinOp`, `evalBinOp`, `comparePtr`, `orderingValue` | Int.lean, Ptr.lean | as documented. `*WithOverflow` builds a tuple that is stored at the destination's type; the helper `IntType.withOverflowTy` is unused |
@@ -71,7 +71,7 @@ during M1". Tests are in `RyoTest/` (`lake exe ryotest <name>`).
 | `PtrOffsetFrom` | checks the gap from both pointers | requires equal provenance (unless distance 0) and checks from `q` | equivalent |
 | Entry/exit validation | `Validate` statements inserted by `minimize` (with retags) | implicit at entry and `Return` (D15), no retags | D15, D16 |
 | Program end | the start function must call `exit`; returning from it is ill-formed | returns end the run (`Final.returned`), and so does unwinding (`Final.unwound`) | harness convention (R11) |
-| Globals | all allocated by `Machine::new` | statics on first use, constants per evaluation | D7 (same behaviors, as Step.lean argues) |
+| Globals | all allocated by `Machine::new` | statics on first use; constants and vtables one copy each at the start (`instantiateConsts`), then a copy (existing or fresh) per evaluation | D7 (same behaviors, as Step.lean argues) |
 | `IntPtrCast.exposed` | `Set<Provenance>` | `List AllocId` | representation only |
 | Errors | `panic!` for spec bugs and ill-typed input | `Outcome.illFormed` (machine) or `none` (`decode`/`encode`); ill-formed runs are not behaviors | deliberate (mir-spec §A.8) |
 | Monad | `NdResult` (abstract non-determinism, `pick`/`predict`) | `SemM := ExceptT Outcome (StateT State (ReaderT Oracle Id))`, the state survives UB; choices are `Choice` requests checked against their constraints | as Deviations |

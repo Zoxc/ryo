@@ -5,7 +5,7 @@ and their checker.
 `_d = cast intToInt (_a) (int t' _)`, `_a` a whole local (`copy`/`move`) of an int-like type
 (`castSrc`: an integer type `t`, `bool` as `u8`, `char` as `u32`, the types L0's `intLike`
 reads as integers; the backend's `scalar_kind` gives them the same width and signedness), `_d`
-a whole private local of the integer type `t'` (any valid range: L0 stores
+a whole local (private or escaped) of the integer type `t'` (any valid range: L0 stores
 `t'.bringInBounds i` with `typedStore`, which only checks it is representable). A `char`
 destination (UB-checked in L0) is not a rule. The lowering (`backend/src/lower/cast.rs`,
 `int_cast`):
@@ -62,7 +62,6 @@ inductive LowerIntCast (Γ : StmtCtx) : Statement → List Insn → Prop where
       (hsd : Γ.slots[d]? = some sd) (hsa : Γ.slots[a]? = some sa)
       (hsize : sd.size = t'.size ∧ sa.size = ts.size)
       (hoff : offOk sd.off ∧ offOk sa.off)
-      (hpriv : ∀ k < sd.size, Γ.escaped (sd.off + k) = false)
       (hi : movInsnOk Γ i t'.size sd.off sa.off = true) :
       LowerIntCast Γ (.assign ⟨d, []⟩ (.cast .intToInt oa (.int t' vc))) [i]
   | castExt {d a : Local} {oa : Operand} {ta : Ty} {ts t' : IntType} {vd vc : ValidRange}
@@ -73,7 +72,6 @@ inductive LowerIntCast (Γ : StmtCtx) : Statement → List Insn → Prop where
       (hsd : Γ.slots[d]? = some sd) (hsa : Γ.slots[a]? = some sa)
       (hsize : sd.size = t'.size ∧ sa.size = ts.size)
       (hoff : offOk sd.off ∧ offOk sa.off)
-      (hpriv : ∀ k < sd.size, Γ.escaped (sd.off + k) = false)
       (hi : castInsnOk Γ i ts.size ts.signed t'.size sd.off sa.off = true) :
       LowerIntCast Γ (.assign ⟨d, []⟩ (.cast .intToInt oa (.int t' vc))) [i]
 
@@ -91,7 +89,6 @@ def checkIntCastAt (Γ : StmtCtx) (d : Local) (oa : Operand) (t' : IntType) (is 
           | some sd, some sa, [i] =>
             if !(sd.size == t'.size && sa.size == ts.size) then .rejected "int cast: slot sizes"
             else if !(offOk sd.off && offOk sa.off) then .rejected "int cast: offsets"
-            else if !privOk Γ sd.off sd.size then .unsupported "int cast: escaped destination"
             else if ts.size == t'.size then
               if movInsnOk Γ i t'.size sd.off sa.off then .ok
               else .unsupported "int cast: same-width instruction form"
@@ -134,22 +131,18 @@ theorem checkIntCastAt_sound {Γ : StmtCtx} {d : Local} {oa : Operand} {t' : Int
               · cases h
               next hoff =>
                 split at h
-                · cases h
-                next hpriv =>
+                next hsame =>
                   split at h
-                  next hsame =>
-                    split at h
-                    next hi =>
-                      exact .castMov ha htd hta hts (by simpa using hsame) hsd hsa
-                        (by simpa using hsz) (by simpa using hoff)
-                        (privOk_spec (by simpa using hpriv)) hi
-                    · cases h
-                  next =>
-                    split at h
-                    next hi =>
-                      exact .castExt ha htd hta hts hsd hsa (by simpa using hsz)
-                        (by simpa using hoff) (privOk_spec (by simpa using hpriv)) hi
-                    · cases h
+                  next hi =>
+                    exact .castMov ha htd hta hts (by simpa using hsame) hsd hsa
+                      (by simpa using hsz) (by simpa using hoff) hi
+                  · cases h
+                next =>
+                  split at h
+                  next hi =>
+                    exact .castExt ha htd hta hts hsd hsa (by simpa using hsz)
+                      (by simpa using hoff) hi
+                  · cases h
           · cases h
         · cases h
     · cases h

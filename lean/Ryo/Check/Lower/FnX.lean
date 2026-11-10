@@ -2,9 +2,10 @@
 Ryo.Check.Lower.FnX — a whole function's lowering with scopes (aot.md §C1, M5b): `LowersFnX Γ d`
 is `Fn.lean`'s `LowersFn` without `noScopes`/`noEsc`, plus the scope placement of `Ref.lean`
 (`ScopesOk`), with the context's `escaped` the offsets the function's `Escape`s cover
-(`scopeEscaped`, `fnCtxX`), and the statement ranges' fall-through views and empty pending
-lists after them (`StmtsXOk`). `checkFnX` decides it (`checkFnX_sound`). The simulation it is for
-is `Ryo/Proofs/Lower/FnRelEsc.lean`'s.
+(`scopeEscaped`, `fnCtxX`), the statement ranges' fall-through views and empty pending
+lists after them (`StmtsXOk`), and no fused block (`noFused`, until `SimFused` is lifted).
+`checkFnX` decides it (`checkFnX_sound`). The simulation it is for is
+`Ryo/Proofs/Lower/FnRelEsc.lean`'s, the function theorem `FnSimX.lean`'s `fn_soundEsc`.
 -/
 import Ryo.Check.Lower.Fn
 import Ryo.Check.Lower.Ref
@@ -16,9 +17,9 @@ open Ryo.Proofs.Lower (PlainView IntsSized)
 
 /-- A function's rule context with its `Escape`s. For code without scopes it is `fnCtx`
 (`scopeEscaped` of no scopes is constantly false). -/
-def fnCtxX (body : Body) (fc : FuncCert) (mode : Ryo.Obj.Mode) (ρ : Addrs) (d : Decoded) :
-    TermCtx :=
-  { fnCtx body fc mode ρ with escaped := scopeEscaped d }
+def fnCtxX (body : Body) (fc : FuncCert) (mode : Ryo.Obj.Mode) (ρ : Addrs) (d : Decoded)
+    (pool : List (GlobalId × Nat) := []) (fnSym : List (InstanceId × Nat) := []) : TermCtx :=
+  { fnCtx body fc mode ρ with escaped := scopeEscaped d, pool := pool, fnSym := fnSym }
 
 /-- The statement ranges' facts the simulation with pending scopes needs: every instruction
 of a statement's range falls through (a view with control `next`), and a non-empty range
@@ -137,6 +138,38 @@ structure LowersFnX (Γ : TermCtx) (d : Decoded) : Prop where
       ∀ ty, Γ.body.locals[l]? = some ty → ty.size? = some sd.size
   scopes : ScopesOk Γ d
   stmtsX : StmtsXOk Γ d
+  /-- No fused block: the fused rules' simulation (`SimFused.lean`) is not yet lifted to pending
+  scopes, so `FnSimX.lean`'s invariant has no point between a fused compare and its switch. -/
+  noFused : ∀ (b : Nat) blk, Γ.blocks[b]? = some blk → blk.fused = false
+  /-- Every `resume`'s cleanup entry continues unwinding (`TermMore.lean`'s `resumesCheck`). -/
+  resumes : ∀ (k : Nat) i, d.insns[k]? = some i → isResume Γ.mode Γ.ρ i = true →
+    contAt d k = true
+  /-- The sret slot is never overwritten, nor met by a scope (`RetSret.lean`). -/
+  pinX : ∀ so, Γ.sret = some so → pinCheck Γ.mode Γ.ρ so d = true ∧ pinScopesOk so d = true
+
+/-- `LowersFnX.pinX`'s check. -/
+def sretPinCheckX (Γ : TermCtx) (d : Decoded) : Bool :=
+  match Γ.sret with
+  | some so => pinCheck Γ.mode Γ.ρ so d && pinScopesOk so d
+  | none => true
+
+theorem sretPinCheckX_sound {Γ : TermCtx} {d : Decoded} (h : sretPinCheckX Γ d = true) :
+    ∀ so, Γ.sret = some so → pinCheck Γ.mode Γ.ρ so d = true ∧ pinScopesOk so d = true := by
+  intro so hso
+  unfold sretPinCheckX at h
+  rw [hso] at h
+  simpa only [Bool.and_eq_true] using h
+
+def noFusedCheck (Γ : TermCtx) : Bool := Γ.blocks.all fun blk => !blk.fused
+
+theorem noFusedCheck_sound {Γ : TermCtx} (h : noFusedCheck Γ = true) :
+    ∀ (b : Nat) blk, Γ.blocks[b]? = some blk → blk.fused = false := by
+  intro b blk hb
+  unfold noFusedCheck at h
+  obtain ⟨hlt, he⟩ := Array.getElem?_eq_some_iff.mp hb
+  have h1 := Array.all_eq_true.mp h b hlt
+  rw [he] at h1
+  simpa using h1
 
 /-- The function's checker, scopes allowed. -/
 def checkFnX (Γ : TermCtx) (d : Decoded) : Bool :=
@@ -145,21 +178,26 @@ def checkFnX (Γ : TermCtx) (d : Decoded) : Bool :=
     storageCheck Γ.body (computeStorage Γ.body) &&
     shareCheck Γ.body Γ.slots (computeStorage Γ.body) &&
     storageStmtsCheck Γ.body Γ.slots (computeLive Γ.body) (computeStorage Γ.body) &&
-    scopesCheck Γ d && reachOk Γ.body && stmtsXCheck Γ d
+    scopesCheck Γ d && reachOk Γ.body && stmtsXCheck Γ d && noFusedCheck Γ &&
+    resumesCheck Γ d && sretPinCheckX Γ d
 
 /-- `checkFnX` at `fnCtxX` (whose `escaped` is `scopeEscaped d`). -/
 theorem checkFnX_sound {body : Body} {fc : FuncCert} {mode : Ryo.Obj.Mode} {ρ : Addrs}
-    {d : Decoded} (h : checkFnX (fnCtxX body fc mode ρ d) d = true) :
-    LowersFnX (fnCtxX body fc mode ρ d) d := by
+    {d : Decoded} {pool : List (GlobalId × Nat)} {fnSym : List (InstanceId × Nat)}
+    (h : checkFnX (fnCtxX body fc mode ρ d pool fnSym) d = true) :
+    LowersFnX (fnCtxX body fc mode ρ d pool fnSym) d := by
   unfold checkFnX at h
   simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at h
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hpe, hbs⟩, hb⟩, hp⟩, hi⟩, hl⟩, hs⟩, ha⟩, hst⟩, hsc⟩, hre⟩, hsx⟩ := h
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hpe, hbs⟩, hb⟩, hp⟩, hi⟩, hl⟩, hs⟩, ha⟩, hst⟩, hsc⟩, hre⟩, hsx⟩, hnf⟩, hrs⟩,
+    hpin⟩ := h
   exact { notPe := hpe, escDef := rfl, blocksSize := hbs, reach := reachOk_sound hre,
           block := blocksCheck_sound hb, plain := plainsCheck_sound hp,
           ints := intsCheck_sound hi, live := liveCheck_sound hl,
           storage := storageCheck_sound hs, share := shareCheck_sound ha,
           deadAfter := storageStmtsCheck_dead hst, fresh := storageStmtsCheck_live hst,
-          scopes := scopesCheck_sound hsc, stmtsX := stmtsXCheck_sound hsx }
+          scopes := scopesCheck_sound hsc, stmtsX := stmtsXCheck_sound hsx,
+          noFused := noFusedCheck_sound hnf, resumes := resumesCheck_sound hrs,
+          pinX := sretPinCheckX_sound hpin }
 
 /-- The coverage verdict of a whole function with scopes. -/
 def fnVerdictX (body : Body) (fc : FuncCert) (d : Decoded) (mode : Ryo.Obj.Mode) (ρ : Addrs) :

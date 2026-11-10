@@ -698,8 +698,8 @@ with `BytesInj ι bp bp1`; `decodePtr_inj` gives `q1` with `PtrInj ι q q1`. The
 `(q1.addr + off) % 2^64 = q.addr + off` (`hlim`, `Target.ADDR_LIMIT = 2^64`, `Int.emod_eq_of_lt`),
 the provenance `q`'s. `stLoad_inj hmem _ (n ≠ 0) hmq hlo` gives R's `bs1` with
 `BytesInj ι bs0 bs1`. Then exactly `sim_copyField`'s tail: `reenc_wf`, `BytesInj.of_le_trans`,
-`writeEscaped_private'` for the write, `opSem_load_fwd` (with `hrfp`, `asPtr`), `writeLocal_priv`,
-`LocalRel.store_other` and `LocalRel.writeFrame_apart`. -/
+the write by `hW` (`FnRel.dstWrite`: `_d` private or escaped), `opSem_load_fwd` (with `hrfp`,
+`asPtr`). -/
 theorem sim_derefLoad {ι : Inj} {fp : Nat} {st : OpSem.State} {s s' : Spec.State}
     {ty : Spec.Ty} {n off : Nat} (hwf : ty.wf = true) (hn : ty.size? = some n) (hpos : 0 < n)
     {sd sp : LocalSlot} (hsd : sd.size = n) (hsp : sp.size = 8)
@@ -710,12 +710,8 @@ theorem sim_derefLoad {ι : Inj} {fp : Nat} {st : OpSem.State} {s s' : Spec.Stat
     (hdec : ty.decode bs0 = some v) (hen : ty.encode v = some bsd)
     (hsto : s.mem.store pd bsd .one = .ok s'.mem)
     (hmem : MemInj ι s.mem st.mem) (hrp : LocalRel ι fp st s.mem sp pp true)
-    -- `_d` private
-    (ad : AllocId) (xd : Allocation) (hpdp : pd.prov = some ad) (hιd : ι ad = none)
-    (hxd : s.mem.get? ad = some xd) (hlived : xd.live = true)
-    (haddrd : (xd.addr : Int) = fp + sd.off) (hpaddrd : pd.addr = xd.addr)
-    (hsized : xd.data.size = sd.size)
-    (hprivd : ∀ k < sd.size, st.escapedAt (sd.off + k) = none)
+    -- `_d`, private or escaped (`FnRel.dstWrite`)
+    (hW : DstWrite ι fp st s.mem s'.mem sd pd bsd)
     -- the instruction
     {opc : Full.Opcode} {r : Option String} {tyN : String} {sg : Bool}
     (hh : opc.handler? = some ⟨.load, [tyN], r⟩)
@@ -746,22 +742,9 @@ theorem sim_derefLoad {ι : Inj} {fp : Nat} {st : OpSem.State} {s s' : Spec.Stat
   rw [hbl] at hlend
   have hlenb : bs1.length = n := (BytesInj.length hbs).symm.trans hlend
   -- R's write
-  have hpw : ∀ i < bs1.length, st.escapedAt (sd.off + i) = none := by
-    intro i hi
-    rw [hlenb, ← hsd] at hi
-    exact hprivd i hi
-  obtain ⟨st', hwr⟩ : ∃ st', st.writeFrame sd.off bs1 = .ok st' := by
-    unfold OpSem.State.writeFrame
-    rw [writeEscaped_private' hpw]
-    exact ⟨_, rfl⟩
+  obtain ⟨st', hwr, -, hmi, hrd, hoth⟩ := hW bs1 hbs
   have hop := opSem_load_fwd (ch := ch) hh hty ho hfits hrfp hq1 hl1 hlenb hwr
-  have hlen0 : bsd.length = sd.size := by rw [hlend, hsd]
-  obtain ⟨hmi, hrd⟩ := writeLocal_priv hmem ad xd hpdp hιd hxd hlived haddrd hpaddrd hsized
-    hprivd hbs hlen0 hsto hwr
-  refine ⟨st', hop, hmi, hrd, ?_⟩
-  intro slot p lv hr hne hap
-  have h1 := LocalRel.store_other hr hsto (.inl (Ne.symm hne))
-  exact LocalRel.writeFrame_apart h1 hwr hpw (by rw [hlenb, ← hsd]; exact hap)
+  exact ⟨st', hop, hmi, hrd, hoth⟩
 
 /-- The handler step of `store` from L0's memory facts (`derefStore_mem`), the target
 allocation `a0` mapped to `b0`: the `store` succeeds, keeping `MemInj` and every local's
@@ -941,13 +924,14 @@ theorem lift_derefLoad {Γ : StmtCtx} {c : R.Code} {s1 : R.RState} {ch : OpSem.C
     (hi : c.d.insns[s1.pc]? = some i) (hsc : c.scopesAt s1.pc = []) (hpe : c.mode.pe = false)
     (hpl : PlainView c.mode c.ρ i) (hrel : FnRel Γ ι live f s.mem s1)
     (hpb : ProvBounded s.mem) (hmap : Hidden s.mem (Unmapped ι s.mem))
+    (hld : LiveDisjoint s.mem)
     (hlo : ∀ l ∈ rvalueLocals rv, live l = true)
     (hlive' : ∀ l, live' l = true → l = d ∨ live l = true)
     (h : runOn (evalStatement (.assign ⟨d, []⟩ rv)) o s = (.ok (), s')) :
     LiftOut Γ c ch ι live' f s s' s1 := by
   cases hlow with
   | @load d p oa pointee ty fields pt valid off n sd sp i ha htp hk hpath htd hn hpos hwf hsd
-      hsp hsize hoff hpriv hmi =>
+      hsp hsize hoff hmi =>
     rw [eval_use_place_norm ha] at h
     obtain ⟨v, tyN, r, hv, hh, hty, ho, hops, hctl⟩ := loadInsnOk_spec hmi
     rw [hmode, hρ] at hv
@@ -958,8 +942,12 @@ theorem lift_derefLoad {Γ : StmtCtx} {c : R.Code} {s1 : R.RState} {ch : OpSem.C
     have hlp' : live p = true := hlo _ (operandPlace?_mem ha)
     have hrp := hrel.opnd hpp hsp hlp'
     have hpos' : 0 < sd.size := by rw [hsize.1]; exact hpos
-    obtain ⟨ad, xd, hpdp, hι, hxd, hl, haddr, hpaddr, hsz, hpv⟩ :=
-      hrel.priv_dst hpd hsd hpos' hpriv
+    -- `_d` private or escaped
+    have hlen0 : bsd.length = sd.size :=
+      ((Ryo.Spec.Theorems.bytesLeDefined_iff _ _).mp
+        (reenc_wf hwf hn (load_length hlo0) hd hen)).1.trans
+        ((load_length hlo0).trans hsize.1.symm)
+    have hW := hrel.dstWrite hld hpd hsd hpos' hlen0 hsto
     obtain ⟨a0, b0, hqa, hb0⟩ := deref_target_mapped hmap hlp hq (by omega) hlo0
     have hmq : ∀ a, q.prov = some a → ι a ≠ none := by
       intro a ha'
@@ -970,8 +958,7 @@ theorem lift_derefLoad {Γ : StmtCtx} {c : R.Code} {s1 : R.RState} {ch : OpSem.C
     have hf2 := offOk_spec hoff.2.1
     have hf3 := offOk_spec hoff.2.2
     obtain ⟨st', hop, hmi', hrd, hoth⟩ := sim_derefLoad (ch := ch) hwf hn hpos hsize.1 hsize.2
-      hlp hq hmq hlim hlo0 hd hen hsto hrel.frame.mem hrp ad xd hpdp hι hxd hl haddr hpaddr hsz
-      hpv hh hty' ho ⟨hf1.1, hf1.2, hf2.1, hf2.2, hf3.1, hf3.2⟩
+      hlp hq hmq hlim hlo0 hd hen hsto hrel.frame.mem hrp hW hh hty' ho ⟨hf1.1, hf1.2, hf2.1, hf2.2, hf3.1, hf3.2⟩
     have hsub := bytesLeDefined_prov (reenc_wf hwf hn (load_length hlo0) hd hen)
     -- `Hidden`: the stored provenance is the target's loaded bytes', which `Hidden` excludes
     have hhid := hrel.hidden.load hlo0

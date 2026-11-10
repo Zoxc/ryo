@@ -28,12 +28,18 @@ value but the first when `otherwise` is unreachable (enum discriminants). L0 the
 block, whose terminator is UB, so the simulation (`Proofs/Lower/SimSwitch.lean`) ends there
 (`SwitchOut`'s second case).
 
+`chainF`/`denseF` are the same forms on a field of a local (`d` a copy or move of
+`_a.projs`, `projs` field projections `fieldPath` covers, at offset `off` with an integer or
+`bool` type): the backend tests the field's bytes in place, at slot offset `sa.off + off`
+(`checkSwitchField`).
+
 Not covered (`checkSwitch`'s buckets): `switch.sparse` (its case values are code constants
 that `ρ` places, which nothing relates to the cases yet), a `char` or other discriminant, an
-operand that isn't a local, a slot of the wrong size; fused switches (niche discriminants,
+operand that is neither a local nor a field of one, a slot of the wrong size; fused switches (niche discriminants,
 compares) are `checkBlockTerm`'s.
 -/
 import Ryo.Check.Lower.Term
+import Ryo.Check.Lower.Field
 
 namespace Ryo.Check.Lower
 
@@ -146,6 +152,23 @@ inductive LowerSwitch (Γ : TermCtx) (next : Nat) : Terminator → List Insn →
       (hden : denseOps Γ.toStmtCtx i n = some (a, y, len, ts)) (ha : a = sl.off)
       (hok : denseOk Γ cases otherwise n y len ts = true) :
       LowerSwitch Γ next (.switchInt d cases otherwise) [i]
+  | chainF {d : Operand} {a : Local} {projs : List ProjElem} {ta ty : Ty} {off n : Nat}
+      {sa : LocalSlot} {cases : List (Nat × BasicBlock)} {otherwise : BasicBlock}
+      {is : List Insn}
+      (hd : operandPlace? d = some ⟨a, projs⟩) (hta : Γ.body.locals[a]? = some ta)
+      (hpath : fieldPath ta projs = some (off, ty)) (hn : switchTy ty = some n)
+      (hsa : Γ.slots[a]? = some sa) (hin : off + n ≤ sa.size)
+      (hok : chainOk Γ next cases otherwise n (sa.off + off) [] is = true) :
+      LowerSwitch Γ next (.switchInt d cases otherwise) is
+  | denseF {d : Operand} {a : Local} {projs : List ProjElem} {ta ty : Ty} {off n : Nat}
+      {sa : LocalSlot} {cases : List (Nat × BasicBlock)} {otherwise : BasicBlock} {i : Insn}
+      {a' : Int} {y len : Nat} {ts : List Nat}
+      (hd : operandPlace? d = some ⟨a, projs⟩) (hta : Γ.body.locals[a]? = some ta)
+      (hpath : fieldPath ta projs = some (off, ty)) (hn : switchTy ty = some n)
+      (hsa : Γ.slots[a]? = some sa) (hin : off + n ≤ sa.size)
+      (hden : denseOps Γ.toStmtCtx i n = some (a', y, len, ts)) (ha : a' = sa.off + off)
+      (hok : denseOk Γ cases otherwise n y len ts = true) :
+      LowerSwitch Γ next (.switchInt d cases otherwise) [i]
 
 /-- The instruction form, once the slot `off` and width `n` are known. -/
 def switchForm (Γ : TermCtx) (next : Nat) (cases : List (Nat × BasicBlock))
@@ -179,11 +202,55 @@ theorem switchForm_sound {Γ : TermCtx} {next : Nat} {cases : List (Nat × Basic
       next => exact .inl (okIf_ok h)
   next => exact .inl (okIf_ok h)
 
+/-- A switch on a field of a local (`chainF`/`denseF`). -/
+def checkSwitchField (Γ : TermCtx) (next : Nat) (d : Operand) (cases : List (Nat × BasicBlock))
+    (otherwise : BasicBlock) (is : List Insn) : Verdict :=
+  match operandPlace? d with
+  | some ⟨a, projs⟩ =>
+    match Γ.body.locals[a]?, Γ.slots[a]? with
+    | some ta, some sa =>
+      match fieldPath ta projs with
+      | some (off, ty) =>
+        match switchTy ty with
+        | some n =>
+          if off + n ≤ sa.size then switchForm Γ next cases otherwise n (sa.off + off) is
+          else .unsupported "switch: field slot"
+        | none => .unsupported "switch: discriminant type"
+      | none => .unsupported ("switch: operand, " ++ projWhy projs)
+    | _, _ => .unsupported "switch: local"
+  | none => .unsupported "switch: operand"
+
+theorem checkSwitchField_sound {Γ : TermCtx} {next : Nat} {d : Operand}
+    {cases : List (Nat × BasicBlock)} {otherwise : BasicBlock} {is : List Insn}
+    (h : checkSwitchField Γ next d cases otherwise is = .ok) :
+    LowerSwitch Γ next (.switchInt d cases otherwise) is := by
+  unfold checkSwitchField at h
+  split at h
+  next a projs hd =>
+    split at h
+    next ta sa hta hsa =>
+      split at h
+      next off ty hpath =>
+        split at h
+        next n hn =>
+          split at h
+          next hin =>
+            rcases switchForm_sound h with hc | ⟨i, a', y, len, ts, rfl, hden, ha, hok⟩
+            · exact LowerSwitch.chainF (hd := hd) (hta := hta) (hpath := hpath) (hn := hn)
+                (hsa := hsa) (hin := hin) (hok := hc)
+            · exact LowerSwitch.denseF (hd := hd) (hta := hta) (hpath := hpath) (hn := hn)
+                (hsa := hsa) (hin := hin) (hden := hden) (ha := ha) (hok := hok)
+          next => cases h
+        next => cases h
+      next => cases h
+    next => cases h
+  next => cases h
+
 /-- A `SwitchInt`'s checker once it has one or more cases. -/
 def checkSwitchN (Γ : TermCtx) (next : Nat) (d : Operand) (cases : List (Nat × BasicBlock))
     (otherwise : BasicBlock) (is : List Insn) : Verdict :=
   match d.local? with
-  | none => .unsupported "switch: operand"
+  | none => checkSwitchField Γ next d cases otherwise is
   | some l =>
     match Γ.body.locals[l]?, Γ.slots[l]? with
     | some ty, some sl =>
@@ -200,7 +267,7 @@ theorem checkSwitchN_sound {Γ : TermCtx} {next : Nat} {d : Operand}
     LowerSwitch Γ next (.switchInt d cases otherwise) is := by
   unfold checkSwitchN at h
   split at h
-  next => cases h
+  next => exact checkSwitchField_sound h
   next l hl =>
     split at h
     next ty sl hty hsl =>

@@ -154,7 +154,6 @@ inductive LowerEnumRead (Γ : StmtCtx) : Statement → List Insn → Prop where
       (hsize : sd.size = t.size ∧ 0 < t.size ∧ 0 < tag.tag.size ∧
         tag.offset + tag.tag.size ≤ se.size)
       (hoff : offOk sd.off ∧ offOk se.off ∧ offOk (se.off + tag.offset))
-      (hpriv : ∀ k < sd.size, Γ.escaped (sd.off + k) = false)
       (hi : tagReadOk Γ i tag.tag t.size sd.off (se.off + tag.offset) = true) :
       LowerEnumRead Γ (.assign ⟨d, []⟩ (.discriminant ⟨e, []⟩)) [i]
   | discrSingle {d e : Local} {vs : List Variant} {discrTy : IntType} {idx : Nat}
@@ -164,7 +163,6 @@ inductive LowerEnumRead (Γ : StmtCtx) : Statement → List Insn → Prop where
       (hsd : Γ.slots[d]? = some sd)
       (hsize : sd.size = t.size ∧ 0 < t.size)
       (hoff : offOk sd.off)
-      (hpriv : ∀ k < sd.size, Γ.escaped (sd.off + k) = false)
       (hi : immInsnOk Γ i t.size sd.off (t.toBits (singleDiscr vs discrTy idx)) = true) :
       LowerEnumRead Γ (.assign ⟨d, []⟩ (.discriminant ⟨e, []⟩)) [i]
   | downcast {d a : Local} {oa : Operand} {projs : List ProjElem} {ta ty : Ty} {off n : Nat}
@@ -176,7 +174,6 @@ inductive LowerEnumRead (Γ : StmtCtx) : Statement → List Insn → Prop where
       (hsd : Γ.slots[d]? = some sd) (hsa : Γ.slots[a]? = some sa)
       (hsize : sd.size = n ∧ off + n ≤ sa.size)
       (hoff : offOk sd.off ∧ offOk (sa.off + off))
-      (hpriv : ∀ k < sd.size, Γ.escaped (sd.off + k) = false)
       (hi : movInsnOk Γ i n sd.off (sa.off + off) = true) :
       LowerEnumRead Γ (.assign ⟨d, []⟩ (.use oa)) [i]
 
@@ -205,7 +202,6 @@ inductive LowerEnumAgg (Γ : StmtCtx) : Statement → List Insn → Prop where
       (htag : tagField vs repr v = some (tops, tfs))
       (hsz : var.fields.size? = some sd.size) (hsd : Γ.slots[d]? = some sd)
       (hoff : offOk sd.off ∧ offOk (sd.off + sd.size))
-      (hpriv : ∀ j < sd.size, Γ.escaped (sd.off + j) = false)
       (hf : AggFields Γ sd (ops ++ tops) (vfields ++ tfs) srcs)
       (hi : piecesOk Γ is (aggPieces sd.off (vfields ++ tfs) srcs) = true) :
       LowerEnumAgg Γ (.assign ⟨d, []⟩ (.aggregate (.adt v act) ops)) is
@@ -228,7 +224,6 @@ def checkDiscrDirect (Γ : StmtCtx) (d e : Local) (vs : List Variant) (discrTy :
         .rejected "discriminant: slot sizes"
       else if !(offOk sd.off && (offOk se.off && offOk (se.off + tag.offset))) then
         .rejected "discriminant: offsets"
-      else if !privOk Γ sd.off sd.size then .unsupported "discriminant: escaped destination"
       else if tagReadOk Γ i tag.tag t.size sd.off (se.off + tag.offset) then .ok
       else .unsupported "discriminant: instruction form"
     | _, _, _ => .unsupported "discriminant: slots or instruction count"
@@ -253,16 +248,13 @@ theorem checkDiscrDirect_sound {Γ : StmtCtx} {d e : Local} {vs : List Variant}
         · cases h
         next hoff =>
           split at h
+          next hi =>
+            have hsz' : sd.size = t.size ∧ ¬t.size = 0 ∧ ¬tag.tag.size = 0 ∧
+                tag.offset + tag.tag.size ≤ se.size := by simpa using hsz
+            exact .discrDirect hte henc htd (by simpa using hag) hsd hse
+              ⟨hsz'.1, Nat.pos_of_ne_zero hsz'.2.1, Nat.pos_of_ne_zero hsz'.2.2.1, hsz'.2.2.2⟩
+              (by simpa using hoff) hi
           · cases h
-          next hpriv =>
-            split at h
-            next hi =>
-              have hsz' : sd.size = t.size ∧ ¬t.size = 0 ∧ ¬tag.tag.size = 0 ∧
-                  tag.offset + tag.tag.size ≤ se.size := by simpa using hsz
-              exact .discrDirect hte henc htd (by simpa using hag) hsd hse
-                ⟨hsz'.1, Nat.pos_of_ne_zero hsz'.2.1, Nat.pos_of_ne_zero hsz'.2.2.1, hsz'.2.2.2⟩
-                (by simpa using hoff) (privOk_spec (by simpa using hpriv)) hi
-            · cases h
     · cases h
 
 def checkDiscrSingle (Γ : StmtCtx) (d : Local) (vs : List Variant) (discrTy : IntType)
@@ -271,7 +263,6 @@ def checkDiscrSingle (Γ : StmtCtx) (d : Local) (vs : List Variant) (discrTy : I
   | some sd, [i] =>
     if !(sd.size == t.size && decide (0 < t.size)) then .rejected "discriminant: slot size"
     else if !offOk sd.off then .rejected "discriminant: offset"
-    else if !privOk Γ sd.off sd.size then .unsupported "discriminant: escaped destination"
     else if immInsnOk Γ i t.size sd.off (t.toBits (singleDiscr vs discrTy idx)) then .ok
     else .unsupported "discriminant: single-variant instruction form"
   | _, _ => .unsupported "discriminant: slot or instruction count"
@@ -293,15 +284,11 @@ theorem checkDiscrSingle_sound {Γ : StmtCtx} {d e : Local} {vs : List Variant}
       · cases h
       next hoff =>
         split at h
+        next hi =>
+          have hsz' : sd.size = t.size ∧ ¬t.size = 0 := by simpa using hsz
+          exact .discrSingle hte htd hsd ⟨hsz'.1, Nat.pos_of_ne_zero hsz'.2⟩
+            (by simpa using hoff) hi
         · cases h
-        next hpriv =>
-          split at h
-          next hi =>
-            have hsz' : sd.size = t.size ∧ ¬t.size = 0 := by simpa using hsz
-            exact .discrSingle hte htd hsd ⟨hsz'.1, Nat.pos_of_ne_zero hsz'.2⟩
-              (by simpa using hoff)
-              (privOk_spec (by simpa using hpriv)) hi
-          · cases h
   · cases h
 
 /-- `_d = discriminant(_e)` of whole locals. -/
@@ -360,8 +347,6 @@ def checkDowncastUse (Γ : StmtCtx) (d a : Local) (projs : List ProjElem) (is : 
                   .rejected "downcast: slot sizes"
                 else if !(offOk sd.off && offOk (sa.off + off)) then
                   .rejected "downcast: offsets"
-                else if !privOk Γ sd.off sd.size then
-                  .unsupported "downcast: escaped destination"
                 else if movInsnOk Γ i n sd.off (sa.off + off) then .ok
                 else .unsupported "downcast: instruction form"
               | _, _, _ => .unsupported "downcast: slots or instruction count"
@@ -404,14 +389,10 @@ theorem checkDowncastUse_sound {Γ : StmtCtx} {d a : Local} {oa : Operand}
                     · cases h
                     next hoff =>
                       split at h
+                      next hi =>
+                        exact .downcast ha hta hpath htd hn (Nat.pos_of_ne_zero hn0) hwf' hsd
+                          hsa (by simpa using hsz) (by simpa using hoff) hi
                       · cases h
-                      next hpriv =>
-                        split at h
-                        next hi =>
-                          exact .downcast ha hta hpath htd hn (Nat.pos_of_ne_zero hn0) hwf' hsd
-                            hsa (by simpa using hsz) (by simpa using hoff)
-                            (privOk_spec (by simpa using hpriv)) hi
-                        · cases h
                 · cases h
 
 /-- `_d = copy/move p` with a downcast among `p`'s projections. -/
@@ -532,8 +513,6 @@ def checkEnumAgg (Γ : StmtCtx) (d : Local) (vs : List Variant) (repr : EnumRepr
           if var.fields.size? ≠ some sd.size then .rejected "enum aggregate: slot size"
           else if !(offOk sd.off && offOk (sd.off + sd.size)) then
             .rejected "enum aggregate: offsets"
-          else if !privOk Γ sd.off sd.size then
-            .unsupported "enum aggregate: escaped destination"
           else match guessSrcs Γ sd.off (ops ++ tops) (vfields ++ tfs) is with
             | .error why => .unsupported why
             | .ok srcs =>
@@ -569,19 +548,15 @@ theorem checkEnumAgg_sound {Γ : StmtCtx} {d : Local} {vs : List Variant} {discr
             next hoff =>
               split at h
               · cases h
-              next hpriv =>
+              next srcs _ =>
                 split at h
                 · cases h
-                next srcs _ =>
+                next hf =>
                   split at h
+                  next hi =>
+                    exact .agg htd hvar hlay htag (by simpa using hsz) hsd
+                      (by simpa using hoff) (aggFieldsOk_spec (by simpa using hf)) hi
                   · cases h
-                  next hf =>
-                    split at h
-                    next hi =>
-                      exact .agg htd hvar hlay htag (by simpa using hsz) hsd
-                        (by simpa using hoff) (privOk_spec (by simpa using hpriv))
-                        (aggFieldsOk_spec (by simpa using hf)) hi
-                    · cases h
 
 /-- `_d = aggregate (adt v _) ops` when `_d` is an enum. -/
 def checkEnumAggAt (Γ : StmtCtx) (d : Local) (v : Nat) (ops : List Operand) (is : List Insn) :

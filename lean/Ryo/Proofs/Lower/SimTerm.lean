@@ -331,7 +331,8 @@ theorem step_branch {c : Code} {s1 : RState} {ch : OpSem.Choice} {i : Insn} {v :
     intro op ops he f hf
     subst he
     exact shapes_of_opShape (view_native_opShape hv hf (by rw [hctl]; rfl))
-  exact stepBody_br hnat hv hctl (hpl.notResume v hv) (hpl.notUnreachable v hv) hpe hop
+  exact stepBody_br hnat hv hctl (hpl.notResume v hv (ctl_ne_trap hctl))
+      (hpl.notUnreachable v hv (ctl_ne_trap hctl)) hpe hop
 
 /-! ### The rules -/
 

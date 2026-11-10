@@ -1,12 +1,17 @@
 /-
 Ryo.Check.Lower.TermExt — the terminator rules of all families (aot.md §C1, M5b): `LowerTermX`
 is `Term.lean`'s `LowerTerm`, `Switch.lean`'s `LowerSwitch` (a `SwitchInt` with one or more
-cases) or `RetX.lean`'s `LowerRetX` (every register return), and `checkTermX` decides it,
-trying `checkRetX` on a `return` first, then `checkTerm` and `checkSwitch`
-(`checkTermX_sound`).
+cases), `RetX.lean`'s `LowerRetX` (every register return), `SwitchStatic.lean`'s
+`LowerSwitchStatic` (a `SwitchInt` on a constant or runtime check) or `TermMore.lean`'s
+`LowerTermMore` (`Unreachable`, `UnwindResume`, `Assert`), and `checkTermX` decides it, trying
+`checkRetX` on a `return` first, then `checkSwitchStatic`, `checkTerm`, `checkSwitch` and
+`checkTermMore` (`checkTermX_sound`).
 -/
 import Ryo.Check.Lower.Switch
 import Ryo.Check.Lower.RetX
+import Ryo.Check.Lower.RetSret
+import Ryo.Check.Lower.SwitchStatic
+import Ryo.Check.Lower.TermMore
 
 namespace Ryo.Check.Lower
 
@@ -17,6 +22,9 @@ inductive LowerTermX (Γ : TermCtx) (next : Nat) (term : Terminator) (is : List 
   | base (h : LowerTerm Γ next term is)
   | switch (h : LowerSwitch Γ next term is)
   | retX (h : LowerRetX Γ term is)
+  | static (h : LowerSwitchStatic Γ next term is)
+  | more (h : LowerTermMore Γ next term is)
+  | retSret (h : ∃ so, Γ.sret = some so ∧ LowerRetSret Γ so term is)
 
 theorem LowerRetX.term_eq {Γ : TermCtx} {term : Terminator} {is : List Insn}
     (h : LowerRetX Γ term is) : term = .«return» := by
@@ -26,36 +34,71 @@ theorem LowerRetX.single {Γ : TermCtx} {term : Terminator} {is : List Insn}
     (h : LowerRetX Γ term is) : ∃ i, is = [i] := by
   cases h <;> exact ⟨_, rfl⟩
 
-/-- `checkTerm`, then `checkSwitch`. -/
-def checkTermB (Γ : TermCtx) (next : Nat) (term : Terminator) (is : List Insn) : Verdict :=
+/-- `checkTerm`, then `checkSwitch`, then `checkTermMore`. -/
+def checkTermC (Γ : TermCtx) (next : Nat) (term : Terminator) (is : List Insn) : Verdict :=
   match checkTerm Γ next term is with
   | .ok => .ok
-  | v => (checkSwitch Γ next term is).getD v
+  | v =>
+    match checkSwitch Γ next term is with
+    | some w => w
+    | none => (checkTermMore Γ next term is).getD v
+
+/-- `checkSwitchStatic` first (an operand known statically), then `checkTermC`. -/
+def checkTermB (Γ : TermCtx) (next : Nat) (term : Terminator) (is : List Insn) : Verdict :=
+  match checkSwitchStatic Γ next term is with
+  | some .ok => .ok
+  | _ => checkTermC Γ next term is
 
 /-- `checkRetX` first (its reason kept when neither accepts a `return`), then `checkTermB`. -/
 def checkTermX (Γ : TermCtx) (next : Nat) (term : Terminator) (is : List Insn) : Verdict :=
+  if checkRetSret Γ Γ.sret term is = some .ok then .ok else
   match checkRetX Γ term is with
   | some v =>
     if v = .ok then .ok else if checkTermB Γ next term is = .ok then .ok else v
   | none => checkTermB Γ next term is
 
-theorem checkTermB_sound {Γ : TermCtx} {next : Nat} {term : Terminator} {is : List Insn}
-    (h : checkTermB Γ next term is = .ok) : LowerTermX Γ next term is := by
-  unfold checkTermB at h
+theorem checkTermC_sound {Γ : TermCtx} {next : Nat} {term : Terminator} {is : List Insn}
+    (h : checkTermC Γ next term is = .ok) : LowerTermX Γ next term is := by
+  unfold checkTermC at h
   split at h
   next hb => exact .base (checkTerm_sound hb)
   next hne =>
     cases hf : checkSwitch Γ next term is with
-    | none => rw [hf] at h; simp only [Option.getD] at h; exact absurd h hne
-    | some v =>
+    | some w =>
       rw [hf] at h
-      simp only [Option.getD] at h
+      dsimp only at h
       subst h
       exact .switch (checkSwitch_sound hf)
+    | none =>
+      rw [hf] at h
+      dsimp only at h
+      cases hm : checkTermMore Γ next term is with
+      | none => rw [hm] at h; simp only [Option.getD] at h; exact absurd h hne
+      | some w =>
+        rw [hm] at h
+        simp only [Option.getD] at h
+        subst h
+        exact .more (checkTermMore_sound hm)
+
+theorem checkTermB_sound {Γ : TermCtx} {next : Nat} {term : Terminator} {is : List Insn}
+    (h : checkTermB Γ next term is = .ok) : LowerTermX Γ next term is := by
+  unfold checkTermB at h
+  cases hs : checkSwitchStatic Γ next term is with
+  | none => rw [hs] at h; exact checkTermC_sound h
+  | some w =>
+    by_cases hw : w = .ok
+    · subst hw; exact .static (checkSwitchStatic_sound hs)
+    · rw [hs] at h
+      have h' : checkTermC Γ next term is = .ok := by
+        cases w <;> first | exact h | exact absurd rfl hw
+      exact checkTermC_sound h'
 
 theorem checkTermX_sound {Γ : TermCtx} {next : Nat} {term : Terminator} {is : List Insn}
     (h : checkTermX Γ next term is = .ok) : LowerTermX Γ next term is := by
   unfold checkTermX at h
+  by_cases hs : checkRetSret Γ Γ.sret term is = some .ok
+  · exact .retSret (checkRetSret_sound hs)
+  rw [if_neg hs] at h
   cases hr : checkRetX Γ term is with
   | none => rw [hr] at h; exact checkTermB_sound h
   | some v =>

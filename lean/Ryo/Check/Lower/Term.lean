@@ -36,6 +36,8 @@ structure TermCtx extends StmtCtx where
   blocks : Array BlockCert
   /-- The function's return kind (`FuncCert.retKind`). -/
   retKind : Nat
+  /-- The slot the sret pointer is stored to (`FuncCert.sret`; `RetSret.lean`). -/
+  sret : Option Int := none
 
 /-- The R index block `bb` starts at (see the module comment). -/
 def blockStart (Γ : TermCtx) (bb : BasicBlock) : Option Nat :=

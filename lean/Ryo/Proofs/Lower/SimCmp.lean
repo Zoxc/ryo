@@ -19,6 +19,7 @@ The lift needs nothing from `LowersFn` beyond the common hypotheses: the destina
 so no `IntsSized`.
 -/
 import Ryo.Proofs.Lower.FnSim
+import Ryo.Proofs.Lower.WriteDst
 import Ryo.Check.Lower.Cmp
 
 namespace Ryo.Proofs.Lower
@@ -629,14 +630,14 @@ theorem lift_cmp {Γ : StmtCtx} {c : R.Code} {s1 : R.RState} {ch : OpSem.Choice}
     (hlow : LowerCmp Γ (.assign ⟨d, []⟩ rv) [i])
     (hi : c.d.insns[s1.pc]? = some i) (hsc : c.scopesAt s1.pc = []) (hpe : c.mode.pe = false)
     (hpl : PlainView c.mode c.ρ i) (hrel : FnRel Γ ι live f s.mem s1)
-    (hpb : ProvBounded s.mem)
+    (hpb : ProvBounded s.mem) (hld : Ryo.Proofs.Provenance.LiveDisjoint s.mem)
     (hlo : ∀ l ∈ rvalueLocals rv, live l = true)
     (hlive' : ∀ l, live' l = true → l = d ∨ live l = true)
     (h : runOn (evalStatement (.assign ⟨d, []⟩ rv)) o s = (.ok (), s')) :
     LiftOut Γ c ch ι live' f s s' s1 := by
   cases hlow with
   | @reg d a b oa ob op oc sw ty n sg sd sa sb i hf ha hb htd hta htb hty hsd hsa hsb hsize
-      hoff hpriv hci =>
+      hoff hci =>
     have hla := hlo a (List.mem_append_left _ (operand_local_mem ha))
     have hlb := hlo b (List.mem_append_right _ (operand_local_mem hb))
     rw [eval_binop_norm ha hb] at h
@@ -676,19 +677,16 @@ theorem lift_cmp {Γ : StmtCtx} {c : R.Code} {s1 : R.RState} {ch : OpSem.Choice}
     have hvb : asNat bb = .ok ub := by unfold asNat; rw [hdb']; rfl
     -- R's write
     have hpos : 0 < sd.size := by rw [hsize.1]; exact Nat.one_pos
-    obtain ⟨ad, xd, hp, hι, hxd, hl, haddr, hpaddr, hsz, hpv⟩ := hrel.priv_dst hpd hsd hpos hpriv
     have hf1 := offOk_spec hoff.1
     have hf2 := offOk_spec hoff.2.1
     have hf3 := offOk_spec hoff.2.2
     have hlen0 : (boolByte res).length = sd.size := by rw [boolByte_length, hsize.1]
-    have hpw : ∀ k < (boolByte res).length, s1.st.escapedAt (sd.off + k) = none := by
-      intro k hk
-      rw [hlen0] at hk
-      exact hpv k hk
-    obtain ⟨st', hwr⟩ : ∃ st', s1.st.writeFrame sd.off (boolByte res) = .ok st' := by
-      unfold OpSem.State.writeFrame
-      rw [writeEscaped_private' hpw]
-      exact ⟨_, rfl⟩
+    have hbs : BytesInj ι (boolByte res) (boolByte res) := by
+      first
+        | exact encodeBits_inj ι _ _
+        | (unfold boolByte intBytes; exact encodeBits_inj ι _ _)
+    -- `_d` private or escaped
+    obtain ⟨st', hwr, hesc, hmi, hrd, hoth⟩ := hrel.write_dst hld hpd hsd hpos hbs hlen0 hsto
     have hop : opSem v.op v.ops s1.st ch = .ok (.next, st') := by
       rw [hops]
       cases sw
@@ -696,25 +694,14 @@ theorem lift_cmp {Γ : StmtCtx} {c : R.Code} {s1 : R.RState} {ch : OpSem.Choice}
           hvb ((hsw sgh (BitVec.ofNat (8 * n) ua) (BitVec.ofNat (8 * n) ub)).trans hres) hwr
       · exact opSem_cmp_fwd hh hps ho ⟨hf1.1, hf1.2, hf3.1, hf3.2, hf2.1, hf2.2⟩ hrfb hrfa hvb
           hva ((hsw sgh (BitVec.ofNat (8 * n) ua) (BitVec.ofNat (8 * n) ub)).trans hres) hwr
-    have hbs : BytesInj ι (boolByte res) (boolByte res) := by
-      first
-        | exact encodeBits_inj ι _ _
-        | (unfold boolByte intBytes; exact encodeBits_inj ι _ _)
-    obtain ⟨hmi, hrd⟩ := writeLocal_priv hrel.frame.mem ad xd hp hι hxd hl haddr hpaddr hsz hpv
-      hbs hlen0 hsto hwr
     have hnp : ∀ b ∈ boolByte res, b.provFrag = none := by
       first
         | exact encodeBits_noprov 1 _
         | (unfold boolByte intBytes; exact encodeBits_noprov 1 _)
-    have hesc := (Ryo.Proofs.OpFacts.opSem_out hop).2.1
     obtain ⟨hpb', hle⟩ := memInv_store hpb hsto hnp
     refine ⟨st', step_of_view hi hsc hpe hpl hv hctl hop, hstk, ?_, hpb', hle⟩
-    exact hrel.after hpd hsd hmi hrd
-      (fun slot p lv hr hne hap => LocalRel.writeFrame_apart
-        (LocalRel.store_other hr hsto (.inl (Ne.symm hne))) hwr hpw
-        (by rw [hlen0]; exact hap))
-      (hrel.hidden.store_noprov hsto hnp) hesc hlive'
-  | @imm d a oa op oc bits ty tc n sg sd sa i ho ha htd hta hc hty hsd hsa hsize hoff hpriv
+    exact hrel.after hpd hsd hmi hrd hoth (hrel.hidden.store_noprov hsto hnp) hesc hlive'
+  | @imm d a oa op oc bits ty tc n sg sd sa i ho ha htd hta hc hty hsd hsa hsize hoff
       hci =>
     have hla := hlo a (List.mem_append_left _ (operand_local_mem ha))
     rw [eval_binopImm_norm ha] at h
@@ -755,18 +742,15 @@ theorem lift_cmp {Γ : StmtCtx} {c : R.Code} {s1 : R.RState} {ch : OpSem.Choice}
     have hva : asNat ba = .ok ua := by unfold asNat; rw [hda']; rfl
     -- R's write
     have hpos : 0 < sd.size := by rw [hsize.1]; exact Nat.one_pos
-    obtain ⟨ad, xd, hp, hι, hxd, hl, haddr, hpaddr, hsz, hpv⟩ := hrel.priv_dst hpd hsd hpos hpriv
     have hf1 := offOk_spec hoff.1
     have hf2 := offOk_spec hoff.2
     have hlen0 : (boolByte res).length = sd.size := by rw [boolByte_length, hsize.1]
-    have hpw : ∀ k < (boolByte res).length, s1.st.escapedAt (sd.off + k) = none := by
-      intro k hk
-      rw [hlen0] at hk
-      exact hpv k hk
-    obtain ⟨st', hwr⟩ : ∃ st', s1.st.writeFrame sd.off (boolByte res) = .ok st' := by
-      unfold OpSem.State.writeFrame
-      rw [writeEscaped_private' hpw]
-      exact ⟨_, rfl⟩
+    have hbs : BytesInj ι (boolByte res) (boolByte res) := by
+      first
+        | exact encodeBits_inj ι _ _
+        | (unfold boolByte intBytes; exact encodeBits_inj ι _ _)
+    -- `_d` private or escaped
+    obtain ⟨st', hwr, hesc, hmi, hrd, hoth⟩ := hrel.write_dst hld hpd hsd hpos hbs hlen0 hsto
     -- the immediate denotes the constant's low bits
     have hxe : BitVec.ofNat (8 * n) x = BitVec.ofNat (8 * n) (bits % 2 ^ (8 * n)) := by
       apply BitVec.eq_of_toNat_eq
@@ -776,23 +760,12 @@ theorem lift_cmp {Γ : StmtCtx} {c : R.Code} {s1 : R.RState} {ch : OpSem.Choice}
     have hop : opSem v.op v.ops s1.st ch = .ok (.next, st') := by
       rw [hops'']
       exact opSem_cmpImm_fwd hh hps ho' ⟨hf1.1, hf1.2, hf2.1, hf2.2⟩ hfk hrfa hva hres' hwr
-    have hbs : BytesInj ι (boolByte res) (boolByte res) := by
-      first
-        | exact encodeBits_inj ι _ _
-        | (unfold boolByte intBytes; exact encodeBits_inj ι _ _)
-    obtain ⟨hmi, hrd⟩ := writeLocal_priv hrel.frame.mem ad xd hp hι hxd hl haddr hpaddr hsz hpv
-      hbs hlen0 hsto hwr
     have hnp : ∀ b ∈ boolByte res, b.provFrag = none := by
       first
         | exact encodeBits_noprov 1 _
         | (unfold boolByte intBytes; exact encodeBits_noprov 1 _)
-    have hesc := (Ryo.Proofs.OpFacts.opSem_out hop).2.1
     obtain ⟨hpb', hle⟩ := memInv_store hpb hsto hnp
     refine ⟨st', step_of_view hi hsc hpe hpl hv hctl hop, hstk, ?_, hpb', hle⟩
-    exact hrel.after hpd hsd hmi hrd
-      (fun slot p lv hr hne hap => LocalRel.writeFrame_apart
-        (LocalRel.store_other hr hsto (.inl (Ne.symm hne))) hwr hpw
-        (by rw [hlen0]; exact hap))
-      (hrel.hidden.store_noprov hsto hnp) hesc hlive'
+    exact hrel.after hpd hsd hmi hrd hoth (hrel.hidden.store_noprov hsto hnp) hesc hlive'
 
 end Ryo.Proofs.Lower

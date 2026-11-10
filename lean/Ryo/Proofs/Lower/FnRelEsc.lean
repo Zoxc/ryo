@@ -77,7 +77,8 @@ What `LowersFnX` must give that `LowersFn` doesn't: `ScopesOk`, `escDef` and `st
 statement-range instruction falls through; no pending `End` after a non-empty range; a
 `StorageDead`'s `End` at its pending index). Entry (M5c/the prologue) must establish `free`,
 `aligned` and no escaped object (`objs`, `disj`, `idLt`, `addrAt` trivially). The statement
-step `stmt_simX` is in `SimRef.lean`, with the list of what is still open.
+step `stmt_simX` is in `SimRef.lean`, the function level in `TermSimX.lean` and
+`FnSimX.lean`.
 -/
 import Ryo.Proofs.Lower.FnSim
 import Ryo.Proofs.Lower.StepTerm
@@ -122,7 +123,8 @@ theorem step_of_view_scopes {c : R.Code} {s1 s0 : R.RState} {ch : OpSem.Choice} 
       intro op ops he f hf
       subst he
       exact shapes_of_opShape (view_native_opShape hv hf (by rw [hctl]; rfl)))
-    hv hctl (hpl.notResume v hv) (hpl.notUnreachable v hv) hpe hop rfl
+    hv hctl (hpl.notResume v hv (ctl_ne_trap hctl))
+      (hpl.notUnreachable v hv (ctl_ne_trap hctl)) hpe hop rfl
 
 /-- The code without its scopes: the existing lifts (which take no scopes at `pc`) run on it
 from the folded state. -/
@@ -177,7 +179,7 @@ structure FnRelX (Γ : StmtCtx) (ι : Inj) (live : Local → Bool) (f0 : Spec.Fr
 /-- `DerefInv` for a larger `ι`: fewer allocations are unmapped. -/
 theorem DerefInv.mono {ι ι' : Inj} {m : Memory} (h : DerefInv ι m) (hle : ι.Le ι') :
     DerefInv ι' m := by
-  refine ⟨h.1.mono fun a ha => ?_, h.2⟩
+  refine ⟨h.1.mono fun a ha => ?_, h.2, h.3⟩
   obtain ⟨hn, hx⟩ := ha
   refine ⟨?_, hx⟩
   cases hι : ι a with
@@ -190,7 +192,7 @@ theorem DerefInv.mono {ι ι' : Inj} {m : Memory} (h : DerefInv ι m) (hle : ι.
 theorem DerefInv.store_mapped {ι : Inj} {m m' : Memory} {p : ThinPointer}
     {bs : List AbstractByte} {al : Align} (h : DerefInv ι m) (hsto : m.store p bs al = .ok m')
     (hbs : ∀ b ∈ bs, ∀ fr, b.provFrag = some fr → ι fr.prov ≠ none) : DerefInv ι m' := by
-  obtain ⟨hmap, hld⟩ := h
+  obtain ⟨hmap, hld, hbl⟩ := h
   have hf : ∀ a x', m'.get? a = some x' → ∃ x, m.get? a = some x ∧ x.addr = x'.addr ∧
       (x'.live = true → x.live = true) ∧ x.data.size = x'.data.size := fun a x' hx' => by
     obtain ⟨x, hx, e1, el, es⟩ := store_get?_fwd hsto hx'
@@ -199,7 +201,8 @@ theorem DerefInv.store_mapped {ι : Inj} {m m' : Memory} {p : ThinPointer}
     rintro a ⟨hι, x', hx', hl', hp'⟩
     obtain ⟨x, hx, -, el, es⟩ := hf a x' hx'
     exact ⟨hι, x, hx, el hl', by omega⟩
-  refine ⟨(hmap.mono hU).store_hidden hsto (fun b hb fr hfr hu => hbs b hb fr hfr hu.1), ?_⟩
+  refine ⟨(hmap.mono hU).store_hidden hsto (fun b hb fr hfr hu => hbs b hb fr hfr hu.1), ?_,
+    hbl.of_kept hf⟩
   intro i j a b x hi hj hla hlb h1 h2 h3 h4
   obtain ⟨a0, ha0, ea, el, es⟩ := hf i a hi
   obtain ⟨b0, hb0, eb, el', es'⟩ := hf j b hj
@@ -439,8 +442,8 @@ theorem step_plain_keeps {c : R.Code} {s0 s' : R.RState} {ch : OpSem.Choice} {i 
   have hi' : c.dropScopes.d.insns[s0.pc]? = some i := hi
   have hv' : R.view c.dropScopes.mode c.dropScopes.ρ i = some v := hv
   have hpe' : c.dropScopes.mode.pe = false := hpe
-  have hres := hpl.notResume v hv
-  have hun := hpl.notUnreachable v hv
+  have hres := hpl.notResume v hv (ctl_ne_trap hctl)
+  have hun := hpl.notUnreachable v hv (ctl_ne_trap hctl)
   rw [step_eq_stepBody_nil hi' (dropScopes_scopesAt c _), stepBody_view hnat ⟨v, hv'⟩] at h
   cases hop : opSem v.op v.ops s0.st ch with
   | error e =>
@@ -761,11 +764,13 @@ theorem LocalRel.escape_self {ι : Inj} {fp : Nat} {st st' : OpSem.State} {m0 : 
 
 /-- Under `ShareOk`, every escaped object is exactly `_l`'s slot (and then `_l` is
 storage-live in L0) or apart from it: objects are storage-live locals' slots (`objs`), and
-another storage-live local's slot is disjoint from `_l`'s (`hmay`). -/
+another storage-live local's slot is disjoint from `_l`'s (`ShareOk` at the `StorageDead`,
+`hst`). -/
 theorem obj_slot_or_apart {Γ : TermCtx} {ι : Inj} {live : Local → Bool} {f : Spec.Frame}
     {m0 : Memory} {s0 : R.RState} {bd : BlockData} {l : Local} {sl : LocalSlot}
     (hbd : Γ.body.blocks[f.bb]? = some bd) (hle : f.stmt ≤ bd.stmts.length)
     (hsl : Γ.slots[l]? = some sl)
+    (hst : bd.stmts[f.stmt]? = some (.storageDead l))
     (hmay : (computeStorage Γ.body).get f.bb f.stmt l = true)
     (hshare : ShareOk Γ.body Γ.slots (computeStorage Γ.body).get)
     (hsl0 : ∀ l p, f.locals[l]? = some (some p) → (computeStorage Γ.body).get f.bb f.stmt l = true)
@@ -779,7 +784,8 @@ theorem obj_slot_or_apart {Γ : TermCtx} {ι : Inj} {live : Local → Bool} {f :
     have hss : sl' = sl := Option.some.inj (hsl'.symm.trans hsl)
     subst hss
     exact .inl ⟨hoff, hsize, p, hp⟩
-  · have hd := hshare f.bb bd hbd f.stmt hle l l' (Ne.symm hl) hmay (hsl0 l' p hp) sl sl' hsl hsl'
+  · have hd := hshare f.bb bd hbd f.stmt l (.inr hst) l' (Ne.symm hl) (hsl0 l' p hp)
+      sl sl' hsl hsl'
     right
     omega
 
@@ -896,6 +902,7 @@ theorem end_premises {Γ : TermCtx} {ι : Inj} {live : Local → Bool} {f : Spec
     {m0 m0' : Memory} {s0 : R.RState} {bd : BlockData} {l : Local} {sl : LocalSlot}
     (hbd : Γ.body.blocks[f.bb]? = some bd) (hle : f.stmt ≤ bd.stmts.length)
     (hsl : Γ.slots[l]? = some sl)
+    (hst : bd.stmts[f.stmt]? = some (.storageDead l))
     (hmay : (computeStorage Γ.body).get f.bb f.stmt l = true)
     (hshare : ShareOk Γ.body Γ.slots (computeStorage Γ.body).get)
     (hsl0 : ∀ l p, f.locals[l]? = some (some p) → (computeStorage Γ.body).get f.bb f.stmt l = true)
@@ -911,7 +918,7 @@ theorem end_premises {Γ : TermCtx} {ι : Inj} {live : Local → Bool} {f : Spec
       (x.addr : Int) + x.data.size ≤ s0.fp + sl.off ∨ s0.fp + sl.off + sl.size ≤ x.addr) ∧
     (∀ e y, e ∈ s0.st.escaped → s0.st.mem.get? e.id = some y →
       (y.addr : Int) = s0.fp + e.off) := by
-  have hcase := obj_slot_or_apart hbd hle hsl hmay hshare hsl0 hrel
+  have hcase := obj_slot_or_apart hbd hle hsl hst hmay hshare hsl0 hrel
   refine ⟨fun a b x e hι hx he hid hc1 hc2 => ?_, fun a b x y e hι hx hl hy he hid => ?_,
     fun e y he hy => hrel.addrAt e he y hy⟩
   · cases hxl : x.live with
@@ -932,7 +939,7 @@ theorem end_premises {Γ : TermCtx} {ι : Inj} {live : Local → Bool} {f : Spec
           have := hdead p2 hp a x hpa2 hx
           rw [hxl] at this
           cases this
-        · have hd := hshare f.bb bd hbd f.stmt hle l l2 (Ne.symm hl2) hmay (hsl0 l2 p2 hp2)
+        · have hd := hshare f.bb bd hbd f.stmt l (.inr hst) l2 (Ne.symm hl2) (hsl0 l2 p2 hp2)
             sl sl2 hsl hsl2
           omega
       · omega
@@ -946,7 +953,7 @@ theorem end_premises {Γ : TermCtx} {ι : Inj} {live : Local → Bool} {f : Spec
       have := hdead p2 hp2 a x hpa2 hx
       rw [hl] at this
       cases this
-    have hd := hshare f.bb bd hbd f.stmt hle l l2 (Ne.symm hl2) hmay (hsl0 l2 p2 hp2)
+    have hd := hshare f.bb bd hbd f.stmt l (.inr hst) l2 (Ne.symm hl2) (hsl0 l2 p2 hp2)
       sl sl2 hsl hsl2
     obtain ⟨hxaddr, hxsize⟩ := local_alloc_at hrel.rel hp2 hsl2 hpa2 hx0
     rw [hxa, hxs]
@@ -1093,6 +1100,7 @@ theorem end_fnRelX {Γ : TermCtx} {ι : Inj} {live live' : Local → Bool} {f f'
     {st' : OpSem.State}
     (hbd : Γ.body.blocks[f.bb]? = some bd) (hle : f.stmt ≤ bd.stmts.length)
     (hsl : Γ.slots[l]? = some sl)
+    (hst : bd.stmts[f.stmt]? = some (.storageDead l))
     (hmay : (computeStorage Γ.body).get f.bb f.stmt l = true)
     (hshare : ShareOk Γ.body Γ.slots (computeStorage Γ.body).get)
     (hsl0 : ∀ l p, f.locals[l]? = some (some p) → (computeStorage Γ.body).get f.bb f.stmt l = true)
@@ -1110,8 +1118,8 @@ theorem end_fnRelX {Γ : TermCtx} {ι : Inj} {live live' : Local → Bool} {f f'
       .ok st')
     (hpw : ∀ i < sl.size, (endMid s0 sl.off sl.size).escapedAt (sl.off + i) = none) :
     FnRelX Γ.toStmtCtx ι live' f' m0' { s0 with st := st' } := by
-  have hcase := obj_slot_or_apart hbd hle hsl hmay hshare hsl0 hrel
-  obtain ⟨hgone, hapart, hat⟩ := end_premises hbd hle hsl hmay hshare hsl0 hrel hkeep hdead
+  have hcase := obj_slot_or_apart hbd hle hsl hst hmay hshare hsl0 hrel
+  obtain ⟨hgone, hapart, hat⟩ := end_premises hbd hle hsl hst hmay hshare hsl0 hrel hkeep hdead
   have hpw' : ∀ i < (List.replicate sl.size AbstractByte.uninit).length,
       (endMid s0 sl.off sl.size).escapedAt (sl.off + i) = none := by
     intro i hi
@@ -1154,7 +1162,7 @@ theorem end_fnRelX {Γ : TermCtx} {ι : Inj} {live live' : Local → Bool} {f f'
     have hss : sl3 = sl' := Option.some.inj (hsl3.symm.trans hsl')
     subst hss
     rcases hcase g hg with ⟨ho, hs, -⟩ | h | h
-    · have hd := hshare f.bb bd hbd f.stmt hle l l3 (Ne.symm hne) hmay (hsl0 l3 p' hp0)
+    · have hd := hshare f.bb bd hbd f.stmt l (.inr hst) l3 (Ne.symm hne) (hsl0 l3 p' hp0)
         sl sl3 hsl hsl3
       omega
     · omega
@@ -1166,7 +1174,7 @@ theorem end_fnRelX {Γ : TermCtx} {ι : Inj} {live live' : Local → Bool} {f f'
     obtain ⟨sl', hsl', hr⟩ := hfn.frame.locals l' p' hp' hal'
     refine ⟨sl', hsl', ?_⟩
     obtain ⟨hp0, hne⟩ := hloc l' p' hp'
-    have hd := hshare f.bb bd hbd f.stmt hle l l' (Ne.symm hne) hmay (hsl0 l' p' hp0)
+    have hd := hshare f.bb bd hbd f.stmt l (.inr hst) l' (Ne.symm hne) (hsl0 l' p' hp0)
       sl sl' hsl hsl'
     have hr1 := LocalRel.endMid (off := sl.off) (size := sl.size) hr (hfreeL l' p' hp')
     exact LocalRel.writeFrame_apart hr1 hw hpw' (by rw [List.length_replicate]; exact hd)
@@ -1280,7 +1288,7 @@ theorem scope_end_rel {Γ : TermCtx} {ι : Inj} {live live' : Local → Bool} {o
     unfold R.applyScope
     rw [hk]
     simp only [ho, hn]
-  have hcase := obj_slot_or_apart hbd hle hsl hmay hshare hsl0 hrel
+  have hcase := obj_slot_or_apart hbd hle hsl hst hmay hshare hsl0 hrel
   obtain ⟨st', hSE, hw, hpw⟩ := storageEnd_ok_apart (s := s0) (off := sl.off) (size := sl.size)
     (fun e he => by
       rcases hcase e he with ⟨h1, h2, -⟩ | h1 | h1
@@ -1303,7 +1311,7 @@ theorem scope_end_rel {Γ : TermCtx} {ι : Inj} {live live' : Local → Bool} {o
     obtain ⟨sl1, hsl1, hr1⟩ := hrel.rel.frame.locals l p hp (by rw [hrel.rel.unaliased]; simp)
     obtain ⟨q0, x0, hq0, -, -⟩ := hr1.alloc_live
     obtain ⟨a0, ha0, hm0⟩ := dealloc_ok_at hd hq0
-    refine end_fnRelX hbd hle hsl hmay hshare hsl0 hrel hfn (fun l' p' hp' => ?_)
+    refine end_fnRelX hbd hle hsl hst hmay hshare hsl0 hrel hfn (fun l' p' hp' => ?_)
       (fun l' p' hp' hne => ?_) rfl (fun q x' hx' => ?_) (fun p' hp' q x' hq hx' => ?_) hSE hw hpw
     · by_cases e : l' = l
       · subst e
@@ -1331,7 +1339,7 @@ theorem scope_end_rel {Γ : TermCtx} {ι : Inj} {live live' : Local → Bool} {o
       have h2 : f :: rest = f' :: rest := by rw [← hstk, hs]
       exact (List.cons.inj h2).1.symm
     subst hf'
-    refine end_fnRelX hbd hle hsl hmay hshare hsl0 hrel hfn (fun l' p' hp' => ⟨hp', ?_⟩)
+    refine end_fnRelX hbd hle hsl hst hmay hshare hsl0 hrel hfn (fun l' p' hp' => ⟨hp', ?_⟩)
       (fun l' p' hp' _ => hp') rfl (fun q x' hx' => ⟨x', hx', id, rfl, rfl⟩)
       (fun p hp => absurd hp (hl' p)) hSE hw hpw
     intro e
@@ -1546,11 +1554,11 @@ theorem scope_escape_rel {Γ : StmtCtx} {ι : Inj} {live : Local → Bool} {f : 
 
 /-- A `StorageLive _l`'s slot is private in R (replaces `stmt_sim_base`'s use of `noEsc`): every
 escaped object is a storage-live local's slot (`objs`), disjoint from `_l`'s by `ShareOk` at
-the next point.
+the `StorageLive`.
 
-Proof: `objs` gives the object's local `l'`, storage-live (`hsl0`), `l' ≠ l` (`_l` is dead,
-`hdead`), both maybe-live at `f.stmt + 1` (`StorageSound`), so `ShareOk` makes the slots
-disjoint; `end_escapedAt_some` then contradicts an `escapedAt` in `_l`'s slot. -/
+Proof: `objs` gives the object's local `l'`, storage-live (`hsl0`, so maybe-live at the
+`StorageLive`), `l' ≠ l` (`_l` is dead, `hdead`), so `ShareOk` makes the slots disjoint;
+`end_escapedAt_some` then contradicts an `escapedAt` in `_l`'s slot. -/
 theorem storageLive_privX {Γ : TermCtx} {ι : Inj} {live : Local → Bool} {f : Spec.Frame}
     {m0 : Memory} {s0 : R.RState} {bd : BlockData} {l : Local} {sd : LocalSlot}
     (hbd : Γ.body.blocks[f.bb]? = some bd) (hst : bd.stmts[f.stmt]? = some (.storageLive l))
@@ -1571,15 +1579,7 @@ theorem storageLive_privX {Γ : TermCtx} {ι : Inj} {live : Local → Bool} {f :
     have hne : l ≠ l' := by
       rintro rfl
       exact hdead p hp
-    have hlen : f.stmt < bd.stmts.length := by
-      rcases Nat.lt_or_ge f.stmt bd.stmts.length with h' | h'
-      · exact h'
-      · simp [List.getElem?_eq_none h'] at hst
-    have hl1 : (computeStorage Γ.body).get f.bb (f.stmt + 1) l = true :=
-      (hstor.stmt f.bb bd hbd f.stmt _ hst).2 l rfl hlt
-    have hl2 : (computeStorage Γ.body).get f.bb (f.stmt + 1) l' = true :=
-      (hstor.stmt f.bb bd hbd f.stmt _ hst).1 l' (hsl0 l' p hp) (by simp [storageKill])
-    have hdisj := hshare f.bb bd hbd (f.stmt + 1) (by omega) l l' hne hl1 hl2 sd sl' hsd hsl'
+    have hdisj := hshare f.bb bd hbd f.stmt l (.inl hst) l' hne (hsl0 l' p hp) sd sl' hsd hsl'
     omega
 
 /-! ### One statement: sub-lemmas -/

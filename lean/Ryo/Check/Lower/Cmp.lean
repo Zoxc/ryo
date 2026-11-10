@@ -6,7 +6,7 @@ M5b).
 (`binop.rs` `compare`, its non-float, non-wide-pointer branch). `checkCmp` decides it
 (`checkCmp_sound`), answering `none` for a statement that is not a comparison.
 
-Rules (`op ∈ {eq, ne, lt, le, gt, ge}`, `_d : bool`, `_d`'s slot never escaped):
+Rules (`op ∈ {eq, ne, lt, le, gt, ge}`, `_d : bool`, private or escaped):
 - `reg`: `_d = op(_a, _b)` (`copy`/`move` of whole locals) with `_a`, `_b` of one comparison
   type `ty` (an integer type `t`, or `bool`, which the backend compares as an unsigned byte),
   lowered to one `cmp` handler instruction at `ty`'s width on `[d, x, y]`: `x, y = a, b` with
@@ -109,7 +109,6 @@ inductive LowerCmp (Γ : StmtCtx) : Statement → List Insn → Prop where
       (hsd : Γ.slots[d]? = some sd) (hsa : Γ.slots[a]? = some sa) (hsb : Γ.slots[b]? = some sb)
       (hsize : sd.size = 1 ∧ sa.size = n ∧ sb.size = n)
       (hoff : offOk sd.off ∧ offOk sa.off ∧ offOk sb.off)
-      (hpriv : ∀ k < sd.size, Γ.escaped (sd.off + k) = false)
       (hi : cmpInsnOk Γ i o n sg sd.off (if sw then sb.off else sa.off)
         (if sw then sa.off else sb.off) = true) :
       LowerCmp Γ (.assign ⟨d, []⟩ (.binaryOp op oa ob)) [i]
@@ -121,7 +120,6 @@ inductive LowerCmp (Γ : StmtCtx) : Statement → List Insn → Prop where
       (hsd : Γ.slots[d]? = some sd) (hsa : Γ.slots[a]? = some sa)
       (hsize : sd.size = 1 ∧ sa.size = n)
       (hoff : offOk sd.off ∧ offOk sa.off)
-      (hpriv : ∀ k < sd.size, Γ.escaped (sd.off + k) = false)
       (hi : cmpImmInsnOk Γ i o n sg sd.off sa.off bits = true) :
       LowerCmp Γ (.assign ⟨d, []⟩ (.binaryOp op oa (.const (.scalar bits) tc))) [i]
 
@@ -139,7 +137,6 @@ def checkCmpReg (Γ : StmtCtx) (d : Local) (o : String) (sw : Bool) (oa ob : Ope
           | some sd, some sa, some sb, [i] =>
             if !(sd.size == 1 && sa.size == n && sb.size == n) then .rejected "cmp: slot sizes"
             else if !(offOk sd.off && offOk sa.off && offOk sb.off) then .rejected "cmp: offsets"
-            else if !privOk Γ sd.off sd.size then .unsupported "cmp: escaped destination"
             else if cmpInsnOk Γ i o n sg sd.off (if sw then sb.off else sa.off)
                 (if sw then sa.off else sb.off) then .ok
             else .unsupported "cmp: instruction form"
@@ -163,7 +160,6 @@ def checkCmpImm (Γ : StmtCtx) (d : Local) (o : String) (oa : Operand) (bits : N
           | some sd, some sa, [i] =>
             if !(sd.size == 1 && sa.size == n) then .rejected "cmp imm: slot sizes"
             else if !(offOk sd.off && offOk sa.off) then .rejected "cmp imm: offsets"
-            else if !privOk Γ sd.off sd.size then .unsupported "cmp imm: escaped destination"
             else if cmpImmInsnOk Γ i o n sg sd.off sa.off bits then .ok
             else .unsupported "cmp imm: instruction form"
           | _, _, _ => .unsupported "cmp imm: slots or instruction count"
@@ -246,21 +242,17 @@ theorem checkCmpReg_sound {Γ : StmtCtx} {d : Local} {op : BinOp} {o : String} {
               split at h
               · cases h
               next hoff =>
-                split at h
-                · cases h
-                next hpriv =>
-                  cases hi : cmpInsnOk Γ i o n sg sd.off (if sw then sb.off else sa.off)
-                      (if sw then sa.off else sb.off) with
-                  | false => rw [hi] at h; cases h
-                  | true =>
-                    have hsz' : sd.size = 1 ∧ sa.size = n ∧ sb.size = n := by
-                      simp at hsz
-                      first | exact ⟨hsz.1.1, hsz.1.2, hsz.2⟩ | exact hsz
-                    have hoff' : offOk sd.off ∧ offOk sa.off ∧ offOk sb.off := by
-                      simp at hoff
-                      first | exact ⟨hoff.1.1, hoff.1.2, hoff.2⟩ | exact hoff
-                    exact .reg hf ha hb htd hta htb hty hsd hsa hsb hsz' hoff'
-                      (privOk_spec (by simpa using hpriv)) hi
+                cases hi : cmpInsnOk Γ i o n sg sd.off (if sw then sb.off else sa.off)
+                    (if sw then sa.off else sb.off) with
+                | false => rw [hi] at h; cases h
+                | true =>
+                  have hsz' : sd.size = 1 ∧ sa.size = n ∧ sb.size = n := by
+                    simp at hsz
+                    first | exact ⟨hsz.1.1, hsz.1.2, hsz.2⟩ | exact hsz
+                  have hoff' : offOk sd.off ∧ offOk sa.off ∧ offOk sb.off := by
+                    simp at hoff
+                    first | exact ⟨hoff.1.1, hoff.1.2, hoff.2⟩ | exact hoff
+                  exact .reg hf ha hb htd hta htb hty hsd hsa hsb hsz' hoff' hi
           · cases h
         · cases h
       · cases h
@@ -289,13 +281,10 @@ theorem checkCmpImm_sound {Γ : StmtCtx} {d : Local} {op : BinOp} {o : String} {
               · cases h
               next hoff =>
                 split at h
+                next hi =>
+                  exact .imm ho ha htd hta hc hty hsd hsa (by simpa using hsz)
+                    (by simpa using hoff) hi
                 · cases h
-                next hpriv =>
-                  split at h
-                  next hi =>
-                    exact .imm ho ha htd hta hc hty hsd hsa (by simpa using hsz)
-                      (by simpa using hoff) (privOk_spec (by simpa using hpriv)) hi
-                  · cases h
           · cases h
         · cases h
       · cases h

@@ -71,7 +71,6 @@ inductive LowerWide (Γ : StmtCtx) : Statement → List Insn → Prop where
       (hsd : Γ.slots[d]? = some sd) (hsa : Γ.slots[a]? = some sa)
       (hsize : sd.size = 8 ∧ (8 : Nat) + 8 ≤ sa.size)
       (hoff : offOk sd.off ∧ offOk (sa.off + (8 : Nat)))
-      (hpriv : ∀ k < sd.size, Γ.escaped (sd.off + k) = false)
       (hi : movInsnOk Γ i 8 sd.off (sa.off + (8 : Nat)) = true) :
       LowerWide Γ (.assign ⟨d, []⟩ (.unaryOp .ptrMetadata oa)) [i]
   | wideCast {d a : Local} {oa : Operand} {k : CastKind} {ty : Ty} {ptd pta : PtrType}
@@ -83,7 +82,6 @@ inductive LowerWide (Γ : StmtCtx) : Statement → List Insn → Prop where
       (hsd : Γ.slots[d]? = some sd) (hsa : Γ.slots[a]? = some sa)
       (hsize : sd.size = 16 ∧ sa.size = 16)
       (hoff : offOk sd.off ∧ offOk sa.off)
-      (hpriv : ∀ k < sd.size, Γ.escaped (sd.off + k) = false)
       (hi : movInsnOk Γ i 16 sd.off sa.off = true) :
       LowerWide Γ (.assign ⟨d, []⟩ (.cast k oa ty)) [i]
   | wideToThin {d a : Local} {oa : Operand} {k : CastKind} {ty : Ty} {ptd pta : PtrType}
@@ -95,7 +93,6 @@ inductive LowerWide (Γ : StmtCtx) : Statement → List Insn → Prop where
       (hsd : Γ.slots[d]? = some sd) (hsa : Γ.slots[a]? = some sa)
       (hsize : sd.size = 8 ∧ (0 : Nat) + 8 ≤ sa.size)
       (hoff : offOk sd.off ∧ offOk (sa.off + (0 : Nat)))
-      (hpriv : ∀ k < sd.size, Γ.escaped (sd.off + k) = false)
       (hi : movInsnOk Γ i 8 sd.off (sa.off + (0 : Nat)) = true) :
       LowerWide Γ (.assign ⟨d, []⟩ (.cast k oa ty)) [i]
 
@@ -107,7 +104,6 @@ def checkMovSub (Γ : StmtCtx) (rule : String) (d a : Local) (off n : Nat) (is :
   | some sd, some sa, [i] =>
     if !(sd.size == n && decide (off + n ≤ sa.size)) then .rejected s!"{rule}: slot sizes"
     else if !(offOk sd.off && offOk (sa.off + off)) then .rejected s!"{rule}: offsets"
-    else if !privOk Γ sd.off sd.size then .unsupported s!"{rule}: escaped destination"
     else if movInsnOk Γ i n sd.off (sa.off + off) then .ok
     else .unsupported s!"{rule}: instruction form"
   | _, _, _ => .unsupported s!"{rule}: slots or instruction count"
@@ -116,7 +112,6 @@ theorem checkMovSub_ok {Γ : StmtCtx} {rule : String} {d a : Local} {off n : Nat
     {is : List Insn} (h : checkMovSub Γ rule d a off n is = .ok) :
     ∃ i sd sa, is = [i] ∧ Γ.slots[d]? = some sd ∧ Γ.slots[a]? = some sa ∧
       (sd.size = n ∧ off + n ≤ sa.size) ∧ (offOk sd.off ∧ offOk (sa.off + off)) ∧
-      (∀ k < sd.size, Γ.escaped (sd.off + k) = false) ∧
       movInsnOk Γ i n sd.off (sa.off + off) = true := by
   unfold checkMovSub at h
   split at h
@@ -128,13 +123,9 @@ theorem checkMovSub_ok {Γ : StmtCtx} {rule : String} {d a : Local} {off n : Nat
       · cases h
       next hoff =>
         split at h
+        next hi =>
+          exact ⟨i, sd, sa, rfl, hsd, hsa, by simpa using hsz, by simpa using hoff, hi⟩
         · cases h
-        next hpriv =>
-          split at h
-          next hi =>
-            exact ⟨i, sd, sa, rfl, hsd, hsa, by simpa using hsz, by simpa using hoff,
-              privOk_spec (by simpa using hpriv), hi⟩
-          · cases h
   · cases h
 
 /-- `metaLen`'s checker: `_d = PtrMetadata(oa)`. -/
@@ -169,7 +160,7 @@ def checkWideCast (Γ : StmtCtx) (d a : Local) (k : CastKind) (ty : Ty) (is : Li
       else if !sameMetaShape ptd.metaKind pta.metaKind then
         .unsupported "wide cast: metadata kinds"
       else if !(Ty.ptr pta va).wf then .rejected "wide cast: ill-formed type"
-      else checkMov Γ "wide cast" d a 16 is
+      else checkMovAny Γ "wide cast" d a 16 is
     else .unsupported "wide cast: destination type"
   | _, _ => .unsupported "wide cast: not pointers"
 
@@ -203,8 +194,8 @@ theorem checkMeta_sound {Γ : StmtCtx} {d : Local} {oa : Operand} {is : List Ins
         next t vd htd =>
           split at h
           next ht =>
-            obtain ⟨i, sd, sa, rfl, hsd, hsa, hsz, hoff, hpriv, hi⟩ := checkMovSub_ok h
-            exact .metaLen ha hka hta htd ht hsd hsa hsz hoff hpriv hi
+            obtain ⟨i, sd, sa, rfl, hsd, hsa, hsz, hoff, hi⟩ := checkMovSub_ok h
+            exact .metaLen ha hka hta htd ht hsd hsa hsz hoff hi
           · cases h
         · cases h
       · cases h
@@ -226,8 +217,8 @@ theorem checkWideCast_sound {Γ : StmtCtx} {d a : Local} {oa : Operand} {k : Cas
         next hkd =>
           split at h
           next hk =>
-            obtain ⟨i, sd, sa, rfl, hsd, hsa, hsz, hoff, hpriv, hi⟩ := checkMovSub_ok h
-            exact .wideToThin hk ha hka hkd htd hty hta hsd hsa hsz hoff hpriv hi
+            obtain ⟨i, sd, sa, rfl, hsd, hsa, hsz, hoff, hi⟩ := checkMovSub_ok h
+            exact .wideToThin hk ha hka hkd htd hty hta hsd hsa hsz hoff hi
           · cases h
         next hkd =>
           split at h
@@ -239,9 +230,9 @@ theorem checkWideCast_sound {Γ : StmtCtx} {d a : Local} {oa : Operand} {k : Cas
               split at h
               · cases h
               next hwf =>
-                obtain ⟨i, sd, sa, rfl, hsd, hsa, hsz, hoff, hpriv, hi, -⟩ := checkMov_ok h
+                obtain ⟨i, sd, sa, rfl, hsd, hsa, hsz, hoff, hi, -⟩ := checkMovAny_ok h
                 exact .wideCast (by simpa using hk) ha hka (by simpa using hsh) htd hty hta
-                  (by simpa using hwf) hsd hsa hsz hoff hpriv hi
+                  (by simpa using hwf) hsd hsa hsz hoff hi
     · cases h
   · cases h
 

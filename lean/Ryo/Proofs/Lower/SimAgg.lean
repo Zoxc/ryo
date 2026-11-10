@@ -1501,43 +1501,6 @@ theorem lift_aggMem {Γ : StmtCtx} {c : R.Code} {s1 : R.RState} {ch : OpSem.Choi
       rw [← he0]
       exact hA.load hld _ (List.getElem_mem hj) fr0 hf0⟩
 
-/-- `LowerAgg`'s lift: R runs the statement's `is.length` instructions.
-
-Proof: `cases hlow`. `agg`: `agg_mem hs hbody hk htd hlay hsz hf h`, the live sources from
-`aggFields_slot_mem hf` and `hlo` (`rvalueLocals (.aggregate k ops)` is
-`ops.flatMap operandLocals`), then `lift_aggMem`. `useAny`: `aggUse_mem`, `AggFields.cons hf
-.nil` for the one field, `aggPieces_single` to rewrite `hi`'s pieces (`rvalueLocals (.use op)`
-is `operandLocals op`), then `lift_aggMem`. -/
-theorem lift_agg {Γ : StmtCtx} {c : R.Code} {s1 : R.RState} {ch : OpSem.Choice} {ι : Inj}
-    {live live' : Local → Bool} {o : Spec.Oracle} {s s' : Spec.State} {f : Spec.Frame}
-    {rest : List Spec.Frame} (hs : s.stack = f :: rest) (hbody : Γ.body = f.body)
-    (hmode : Γ.mode = c.mode) (hρ : Γ.ρ = c.ρ)
-    {d : Local} {rv : Rvalue} {is : List R.Insn}
-    (hlow : LowerAgg Γ (.assign ⟨d, []⟩ rv) is)
-    (hi : ∀ j (hj : j < is.length), c.d.insns[s1.pc + j]? = some (is[j]'hj))
-    (hsc : ∀ j, j < is.length → c.scopesAt (s1.pc + j) = []) (hpe : c.mode.pe = false)
-    (hpl : ∀ i ∈ is, PlainView c.mode c.ρ i) (hrel : FnRel Γ ι live f s.mem s1)
-    (hpb : ProvBounded s.mem)
-    (hlo : ∀ l ∈ rvalueLocals rv, live l = true)
-    (hlive' : ∀ l, live' l = true → l = d ∨ live l = true)
-    (h : runOn (evalStatement (.assign ⟨d, []⟩ rv)) o s = (.ok (), s')) :
-    LiftOutN Γ c ch ι live' f s s' s1 is.length := by
-  cases hlow with
-  | agg hk htd hlay hsz hsd hoff hpriv hf hpo =>
-    have hmm := agg_mem hs hbody hk htd hlay hsz hf h
-    refine lift_aggMem hmode hρ hsd hoff hpriv hf hpo hi hsc hpe hpl hrel hpb ?_ hlive' hmm
-    intro src hsrc a so ws he
-    apply hlo
-    have := aggFields_slot_mem hf src hsrc a so ws he
-    simpa [rvalueLocals] using this
-  | useAny htd hsz hsd hoff hpriv hf hpo =>
-    have hmm := aggUse_mem hs hbody htd hsz hf h
-    have hf' := AggFields.cons hf AggFields.nil
-    refine lift_aggMem hmode hρ hsd hoff hpriv hf' (by rw [aggPieces_single]; exact hpo)
-      hi hsc hpe hpl hrel hpb ?_ hlive' hmm
-    intro src' hsrc a so ws he
-    apply hlo
-    have := aggFields_slot_mem hf' src' hsrc a so ws he
-    simpa [rvalueLocals] using this
+-- `lift_agg` (any destination) is in `SimAggDst.lean`.
 
 end Ryo.Proofs.Lower

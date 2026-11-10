@@ -528,38 +528,6 @@ theorem lift_movMem {Γ : StmtCtx} {c : R.Code} {s1 : R.RState} {ch : OpSem.Choi
     hpb.store hsto hbd', Nat.le_of_eq (store_size hsto).symm,
       memKept_load hsto hlo0 hsub⟩
 
-/-- `LowerCopy`'s lift.
-
-Proof: `cases hlow`; in each case `live a` from `hlo a (operand_local_mem ha)`
-(`rvalueLocals (.use oa)` and `rvalueLocals (.cast k oa ty)` are `operandLocals oa`), the
-rule's `*_mem` lemma (types rewritten with `hbody`; `ptrCast`'s `n = 8` gives `hpos` by
-`decide`), then `lift_movMem`. -/
-theorem lift_copy {Γ : StmtCtx} {c : R.Code} {s1 : R.RState} {ch : OpSem.Choice} {ι : Inj}
-    {live live' : Local → Bool} {o : Spec.Oracle} {s s' : Spec.State} {f : Spec.Frame}
-    {rest : List Spec.Frame} (hs : s.stack = f :: rest) (hbody : Γ.body = f.body)
-    (hmode : Γ.mode = c.mode) (hρ : Γ.ρ = c.ρ)
-    {d : Local} {rv : Rvalue} {i : R.Insn}
-    (hlow : LowerCopy Γ (.assign ⟨d, []⟩ rv) [i])
-    (hi : c.d.insns[s1.pc]? = some i) (hsc : c.scopesAt s1.pc = []) (hpe : c.mode.pe = false)
-    (hpl : PlainView c.mode c.ρ i) (hrel : FnRel Γ ι live f s.mem s1)
-    (hpb : ProvBounded s.mem)
-    (hlo : ∀ l ∈ rvalueLocals rv, live l = true)
-    (hlive' : ∀ l, live' l = true → l = d ∨ live l = true)
-    (h : runOn (evalStatement (.assign ⟨d, []⟩ rv)) o s = (.ok (), s')) :
-    LiftOut Γ c ch ι live' f s s' s1 := by
-  cases hlow with
-  | copyAny ha htd hta hwf hn hpos hsd hsa hsize hoff hpriv hmi =>
-    rw [hbody] at htd hta
-    exact lift_movMem hmode hρ hsd hsa hsize hpos hoff hpriv hmi hi hsc hpe hpl hrel hpb
-      (hlo _ (operand_local_mem ha)) hlive' (copyAny_mem hs ha htd hta hwf hn h)
-  | bitCast hk ha htd hta hwfd hwfa hnd hna hpos hsd hsa hsize hoff hpriv hmi =>
-    rw [hbody] at htd hta
-    exact lift_movMem hmode hρ hsd hsa hsize hpos hoff hpriv hmi hi hsc hpe hpl hrel hpb
-      (hlo _ (operand_local_mem ha)) hlive'
-      (bitCast_mem hs hk ha htd hta hwfd hwfa hnd hna h)
-  | ptrCast hk ha hkd hka htd hta hsd hsa hsize hoff hpriv hmi =>
-    rw [hbody] at htd hta
-    exact lift_movMem hmode hρ hsd hsa hsize (by decide) hoff hpriv hmi hi hsc hpe hpl hrel
-      hpb (hlo _ (operand_local_mem ha)) hlive' (ptrCast_mem hs hk ha hkd hka htd hta h)
+-- `lift_copy` (any destination) is in `SimDst.lean`.
 
 end Ryo.Proofs.Lower

@@ -11,12 +11,13 @@ lowering's frame map (aot.md §C1 "Locals", M5a).
 - **Storage liveness** (`computeStorage`): a forward may-be-live dataflow: `StorageLive` gens,
   `StorageDead` kills; at entry the return place, the arguments and every local without storage
   statements are live (`initStorage`).
-- **Layout** (`layoutCheck`): two distinct locals whose certificate slots overlap are never both
-  semantically and storage-live at one point.
+- **Slot sharing** (`shareCheck`, `ShareOk`): at a storage statement of a local, no other local
+  that may be storage-live there has an overlapping certificate slot (the backend's sharing
+  condition).
 
 Nothing about the fixpoint computation is proved: `liveCheck`/`storageCheck` check that the
-result is a post-fixpoint, and `liveCheck_sound`/`storageCheck_sound`/`layoutCheck_sound` turn
-the checks into the facts the simulation uses (`LiveSound`, `StorageSound`, `LayoutOk`).
+result is a post-fixpoint, and `liveCheck_sound`/`storageCheck_sound`/`shareCheck_sound` turn
+the checks into the facts the simulation uses (`LiveSound`, `StorageSound`, `ShareOk`).
 -/
 import Ryo.Check.Lower.Stmt
 
@@ -414,67 +415,37 @@ theorem storageCheck_sound {body : Body} {t : PointTable} (h : storageCheck body
 def slotsOverlap (a b : LocalSlot) : Bool :=
   !(decide (a.off + a.size ≤ b.off) || decide (b.off + b.size ≤ a.off))
 
-/-- The pairs of distinct locals below `n` whose slots overlap. -/
-def overlapPairs (slots : Array LocalSlot) (n : Nat) : List (Local × Local) :=
-  (List.range n).flatMap fun l => (List.range n).filterMap fun l' =>
-    match slots[l]?, slots[l']? with
-    | some s, some s' => if l ≠ l' ∧ slotsOverlap s s' = true then some (l, l') else none
-    | _, _ => none
+/-- The local a storage statement marks. -/
+def markerOf : Statement → Option Local
+  | .storageLive l | .storageDead l => some l
+  | _ => none
 
-/-- Distinct locals that are both semantically and storage-live at a point have disjoint
-slots. -/
-def LayoutOk (body : Body) (slots : Array LocalSlot) (lv sl : BasicBlock → Nat → Local → Bool) :
-    Prop :=
-  ∀ b bd, body.blocks[b]? = some bd → ∀ i ≤ bd.stmts.length, ∀ l l', l ≠ l' →
-    lv b i l = true → lv b i l' = true → sl b i l = true → sl b i l' = true →
-    ∀ s s', slots[l]? = some s → slots[l']? = some s' →
-      s.off + s.size ≤ s'.off ∨ s'.off + s'.size ≤ s.off
-
-def layoutCheck (body : Body) (slots : Array LocalSlot) (lv sl : PointTable) : Bool :=
-  let ps := overlapPairs slots lv.n
-  (List.range body.blocks.size).all fun b => match body.blocks[b]? with
-    | some bd => (List.range (bd.stmts.length + 1)).all fun i => ps.all fun p =>
-        !(lv.get b i p.1 && lv.get b i p.2 && sl.get b i p.1 && sl.get b i p.2)
-    | none => true
-
-theorem layoutCheck_sound {body : Body} {slots : Array LocalSlot} {lv sl : PointTable}
-    (h : layoutCheck body slots lv sl = true) : LayoutOk body slots lv.get sl.get := by
-  intro b bd hb i hi l l' hne h1 h2 h3 h4 s s' hs hs'
-  have hlt : b < body.blocks.size := (Array.getElem?_eq_some_iff.mp hb).1
-  have hB := List.all_eq_true.mp h b (List.mem_range.mpr hlt)
-  simp only [hb] at hB
-  have hI := List.all_eq_true.mp hB i (List.mem_range.mpr (Nat.lt_succ_of_le hi))
-  by_cases hov : slotsOverlap s s' = true
-  · have hmem : (l, l') ∈ overlapPairs slots lv.n := by
-      unfold overlapPairs
-      apply List.mem_flatMap.mpr
-      refine ⟨l, List.mem_range.mpr (PointTable.lt_of_get h1), ?_⟩
-      apply List.mem_filterMap.mpr
-      refine ⟨l', List.mem_range.mpr (PointTable.lt_of_get h2), ?_⟩
-      simp [hs, hs', hne, hov]
-    have := List.all_eq_true.mp hI _ hmem
-    simp [h1, h2, h3, h4] at this
-  · simp only [slotsOverlap, Bool.not_eq_true, Bool.not_eq_false', Bool.or_eq_true,
-      decide_eq_true_eq] at hov
-    exact hov
-
-/-- Distinct locals that are both storage-live at a point have disjoint slots: L0 allocates
-them at their slots (the simulation's address choice), and live allocations don't overlap.
-Slots may still be shared by locals never storage-live together. -/
+/-- At a storage statement of `l` (`StorageLive l` or `StorageDead l`), no other local that
+may be storage-live there (`sl`) overlaps `l`'s slot: the backend's slot-sharing condition
+(`frame.rs`'s `Sharing`: neither of two sharing locals is maybe storage-live where the other's
+storage starts or ends). The simulation keeps L0's storage-live locals' slots pairwise apart
+(`FnRel.apart`) with it: a local becomes storage-live only at its `StorageLive`, where every
+other storage-live local is in `sl`; and a `StorageDead`'s `End` frees only `l`'s object.
+Checking only at the markers, not at every point, admits slots shared by locals both maybe
+storage-live where neither is actually (a join of paths, typically a cleanup block). -/
 def ShareOk (body : Body) (slots : Array LocalSlot) (sl : BasicBlock → Nat → Local → Bool) :
     Prop :=
-  ∀ b bd, body.blocks[b]? = some bd → ∀ i ≤ bd.stmts.length, ∀ l l', l ≠ l' →
-    sl b i l = true → sl b i l' = true →
+  ∀ b bd, body.blocks[b]? = some bd → ∀ i l,
+    (bd.stmts[i]? = some (.storageLive l) ∨ bd.stmts[i]? = some (.storageDead l)) →
+    ∀ l', l ≠ l' → sl b i l' = true →
     ∀ s s', slots[l]? = some s → slots[l']? = some s' →
       s.off + s.size ≤ s'.off ∨ s'.off + s'.size ≤ s.off
 
-/-- `ShareOk` over the overlapping pairs, and the frame map no longer than the locals. -/
+/-- `ShareOk` at every storage statement, and the frame map no longer than the locals. -/
 def shareCheck (body : Body) (slots : Array LocalSlot) (sl : PointTable) : Bool :=
-  let ps := overlapPairs slots sl.n
   decide (slots.size ≤ body.locals.size) &&
   (List.range body.blocks.size).all fun b => match body.blocks[b]? with
-    | some bd => (List.range (bd.stmts.length + 1)).all fun i => ps.all fun p =>
-        !(sl.get b i p.1 && sl.get b i p.2)
+    | some bd => (List.range bd.stmts.length).all fun i =>
+        match (bd.stmts[i]?).bind markerOf with
+        | some l => (List.range sl.n).all fun l' => match slots[l]?, slots[l']? with
+          | some s, some s' => !(decide (l ≠ l') && slotsOverlap s s' && sl.get b i l')
+          | _, _ => true
+        | none => true
     | none => true
 
 theorem shareCheck_sound {body : Body} {slots : Array LocalSlot} {sl : PointTable}
@@ -483,48 +454,48 @@ theorem shareCheck_sound {body : Body} {slots : Array LocalSlot} {sl : PointTabl
   unfold shareCheck at h
   simp only [Bool.and_eq_true, decide_eq_true_eq] at h
   refine ⟨h.1, ?_⟩
-  intro b bd hb i hi l l' hne h3 h4 s s' hs hs'
+  intro b bd hb i l hmk l' hne h4 s s' hs hs'
   have hlt : b < body.blocks.size := (Array.getElem?_eq_some_iff.mp hb).1
   have hB := List.all_eq_true.mp h.2 b (List.mem_range.mpr hlt)
   simp only [hb] at hB
-  have hI := List.all_eq_true.mp hB i (List.mem_range.mpr (Nat.lt_succ_of_le hi))
+  have hm : (bd.stmts[i]?).bind markerOf = some l := by
+    rcases hmk with hmk | hmk <;> simp [hmk, markerOf]
+  have hi : i < bd.stmts.length := by
+    rcases hmk with hmk | hmk <;> exact (List.getElem?_eq_some_iff.mp hmk).1
+  have hI := List.all_eq_true.mp hB i (List.mem_range.mpr hi)
+  simp only [hm] at hI
+  have hL := List.all_eq_true.mp hI l' (List.mem_range.mpr (PointTable.lt_of_get h4))
+  simp only [hs, hs'] at hL
   by_cases hov : slotsOverlap s s' = true
-  · have hmem : (l, l') ∈ overlapPairs slots sl.n := by
-      unfold overlapPairs
-      apply List.mem_flatMap.mpr
-      refine ⟨l, List.mem_range.mpr (PointTable.lt_of_get h3), ?_⟩
-      apply List.mem_filterMap.mpr
-      refine ⟨l', List.mem_range.mpr (PointTable.lt_of_get h4), ?_⟩
-      simp [hs, hs', hne, hov]
-    have := List.all_eq_true.mp hI _ hmem
-    simp [h3, h4] at this
+  · simp [hne, hov, h4] at hL
   · simp only [slotsOverlap, Bool.not_eq_true, Bool.not_eq_false', Bool.or_eq_true,
       decide_eq_true_eq] at hov
     exact hov
 
 /-! ### Running the checks -/
 
-/-- Compute both liveness tables and run the three checks on a body and its frame map. -/
+/-- Compute both liveness tables and run the three checks on a body and its frame map (the
+slot check is `checkFn`'s `shareCheck`). -/
 def runLiveChecks (body : Body) (slots : Array LocalSlot) : Verdict :=
   let lv := computeLive body
   let sl := computeStorage body
   if !liveCheck body lv then .rejected "liveness: not a post-fixpoint"
   else if !storageCheck body sl then .rejected "storage liveness: not a post-fixpoint"
-  else if !layoutCheck body slots lv sl then .rejected "layout: overlapping slots live together"
+  else if !shareCheck body slots sl then
+    .rejected "layout: overlapping slots storage-live at a storage statement"
   else .ok
 
 /-- What `runLiveChecks … = .ok` gives the simulation. -/
 theorem runLiveChecks_sound {body : Body} {slots : Array LocalSlot}
     (h : runLiveChecks body slots = .ok) :
     LiveSound body (computeLive body).get ∧ StorageSound body (computeStorage body).get ∧
-      LayoutOk body slots (computeLive body).get (computeStorage body).get := by
+      slots.size ≤ body.locals.size ∧ ShareOk body slots (computeStorage body).get := by
   have e1 : liveCheck body (computeLive body) = true := by
     cases hc : liveCheck body (computeLive body) <;> simp_all [runLiveChecks]
   have e2 : storageCheck body (computeStorage body) = true := by
     cases hc : storageCheck body (computeStorage body) <;> simp_all [runLiveChecks]
-  have e3 : layoutCheck body slots (computeLive body) (computeStorage body) = true := by
-    cases hc : layoutCheck body slots (computeLive body) (computeStorage body) <;>
-      simp_all [runLiveChecks]
-  exact ⟨liveCheck_sound e1, storageCheck_sound e2, layoutCheck_sound e3⟩
+  have e3 : shareCheck body slots (computeStorage body) = true := by
+    cases hc : shareCheck body slots (computeStorage body) <;> simp_all [runLiveChecks]
+  exact ⟨liveCheck_sound e1, storageCheck_sound e2, shareCheck_sound e3⟩
 
 end Ryo.Check.Lower

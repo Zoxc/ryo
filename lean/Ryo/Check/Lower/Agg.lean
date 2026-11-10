@@ -23,7 +23,7 @@ the same offsets in the same order, so R's final slot bytes refine L0's whatever
 (uninitialized in L0) holds in R (`Ryo/Proofs/Lower/SimAgg.lean`).
 
 Rules:
-- `agg`: `_d = aggregate k ops`, `k ≠ rawPtr`, `_d` a whole private local whose L0 type has
+- `agg`: `_d = aggregate k ops`, `k ≠ rawPtr`, `_d` a whole local (private or escaped) whose L0 type has
   field layout `fields` (`aggLayout`: exactly L0's offsets and types), lowered to the
   concatenation, in field order, of each field's pieces (`aggPieces`), checked instruction by
   instruction (`piecesOk`). Per field (`AggField`): the operand is a whole local of the field's
@@ -151,7 +151,6 @@ inductive LowerAgg (Γ : StmtCtx) : Statement → List Insn → Prop where
       (hk : k ≠ .rawPtr) (htd : Γ.body.locals[d]? = some ty)
       (hlay : aggLayout ty = some fields) (hsz : ty.size? = some sd.size)
       (hsd : Γ.slots[d]? = some sd) (hoff : offOk sd.off ∧ offOk (sd.off + sd.size))
-      (hpriv : ∀ j < sd.size, Γ.escaped (sd.off + j) = false)
       (hf : AggFields Γ sd ops fields srcs)
       (hi : piecesOk Γ is (aggPieces sd.off fields srcs) = true) :
       LowerAgg Γ (.assign ⟨d, []⟩ (.aggregate k ops)) is
@@ -159,7 +158,6 @@ inductive LowerAgg (Γ : StmtCtx) : Statement → List Insn → Prop where
       {is : List Insn}
       (htd : Γ.body.locals[d]? = some ty) (hsz : ty.size? = some sd.size)
       (hsd : Γ.slots[d]? = some sd) (hoff : offOk sd.off ∧ offOk (sd.off + sd.size))
-      (hpriv : ∀ j < sd.size, Γ.escaped (sd.off + j) = false)
       (hf : AggField Γ sd op 0 ty src)
       (hi : piecesOk Γ is (srcPieces sd.off src) = true) :
       LowerAgg Γ (.assign ⟨d, []⟩ (.use op)) is
@@ -309,7 +307,6 @@ def checkAggregate (Γ : StmtCtx) (d : Local) (k : AggregateKind) (ops : List Op
       | some sd =>
         if ty.size? ≠ some sd.size then .rejected "aggregate: slot size"
         else if !(offOk sd.off && offOk (sd.off + sd.size)) then .rejected "aggregate: offsets"
-        else if !privOk Γ sd.off sd.size then .unsupported "aggregate: escaped destination"
         else if ops.length ≠ fields.length then .rejected "aggregate: operand count"
         else match guessSrcs Γ sd.off ops fields is with
           | .error why => .unsupported why
@@ -328,7 +325,6 @@ def checkUseAny (Γ : StmtCtx) (d : Local) (op : Operand) (is : List Insn) : Ver
     | some sd =>
       if ty.size? ≠ some sd.size then .rejected "use: slot size"
       else if !(offOk sd.off && offOk (sd.off + sd.size)) then .rejected "use: offsets"
-      else if !privOk Γ sd.off sd.size then .unsupported "use: escaped destination"
       else match guessSrc Γ "use" sd.off op ty is with
         | .error why => .unsupported why
         | .ok p =>
@@ -381,22 +377,18 @@ theorem checkAggregate_sound {Γ : StmtCtx} {d : Local} {k : AggregateKind}
             next hoff =>
               split at h
               · cases h
-              next hpriv =>
+              next =>
                 split at h
                 · cases h
-                next =>
+                next srcs _ =>
                   split at h
                   · cases h
-                  next srcs _ =>
+                  next hf =>
                     split at h
+                    next hi =>
+                      exact .agg hk htd hlay (by simpa using hsz) hsd (by simpa using hoff)
+                        (aggFieldsOk_spec (by simpa using hf)) hi
                     · cases h
-                    next hf =>
-                      split at h
-                      next hi =>
-                        exact .agg hk htd hlay (by simpa using hsz) hsd (by simpa using hoff)
-                          (privOk_spec (by simpa using hpriv))
-                          (aggFieldsOk_spec (by simpa using hf)) hi
-                      · cases h
 
 theorem checkUseAny_sound {Γ : StmtCtx} {d : Local} {op : Operand} {is : List Insn}
     (h : checkUseAny Γ d op is = .ok) : LowerAgg Γ (.assign ⟨d, []⟩ (.use op)) is := by
@@ -415,18 +407,15 @@ theorem checkUseAny_sound {Γ : StmtCtx} {d : Local} {op : Operand} {is : List I
         next hoff =>
           split at h
           · cases h
-          next hpriv =>
+          next p _ =>
             split at h
             · cases h
-            next p _ =>
+            next hf =>
               split at h
+              next hi =>
+                exact .useAny htd (by simpa using hsz) hsd (by simpa using hoff)
+                  (aggFieldOk_spec (by simpa using hf)) hi
               · cases h
-              next hf =>
-                split at h
-                next hi =>
-                  exact .useAny htd (by simpa using hsz) hsd (by simpa using hoff)
-                    (privOk_spec (by simpa using hpriv)) (aggFieldOk_spec (by simpa using hf)) hi
-                · cases h
 
 theorem checkAgg_sound {Γ : StmtCtx} {st : Statement} {is : List Insn}
     (h : checkAgg Γ st is = some .ok) : LowerAgg Γ st is := by

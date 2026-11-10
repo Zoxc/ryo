@@ -323,7 +323,7 @@ theorem match_entryX {Γ : TermCtx} {c : Code} {ch : OpSem.Choice} {ι : Inj}
 for every prologue `prologXVerdict` accepts. -/
 theorem fn_soundX {Γ : TermCtx} {c : Code} {ι : Inj} {o : Spec.Oracle} {ch : OpSem.Choice}
     (hfn : LowersFn Γ c.d) (hmode : c.mode = Γ.mode) (hρ : c.ρ = Γ.ρ) (hinc : IncomingOk c)
-    (hpick : ∀ s s1, Match Γ ι s s1 → PicksAt Γ o s s1.fp)
+    (hpick : ∀ s s1, Match Γ ι s s1 → PicksAt Γ o ch s s1.fp)
     {Γp : PrologXCtx} {is : List Insn} {inps : List InputX} {lw : List ArgWrite}
     (hpl : LowerPrologX Γp is inps lw) (hslots : Γp.slots = Γ.slots)
     {s : Spec.State} {s1 : RState} {f : Spec.Frame} {rest : List Spec.Frame}
@@ -355,14 +355,14 @@ theorem fn_soundX {Γ : TermCtx} {c : Code} {ι : Inj} {o : Spec.Oracle} {ch : O
       (∃ s1' v regs incoming, StepsTo c ch s1 s1' ∧ s'.final = some (.returned v) ∧
         R.step c s1' ch = .ok (.done (R.exit s1' (.ret regs incoming))) ∧
           RetValX Γ ι v regs) ∨
-      (∃ s1', StepsTo c ch s1 s1' ∧ DeadAt Γ s') := by
+      FnStop Γ c ch ι o s s' s1 := by
   obtain ⟨s0, hst0, hm0, -⟩ := match_entryX (ch := ch) hpl hslots hcode hnoesc hblk hbd hstart
     hfn.reach.entry (fused_start hfn hfn.reach.entry hbd hblk) hs hbody hbb hstmt hpu hcont hal
     qs hloc hrel hmem hhid hprov hapart hsl hpb hfresh hdinv
   rcases fn_sim_ret hfn hmode hρ hinc hpick hm0 hrun with
-    ⟨s1', hst, hm⟩ | ⟨s1', v, regs, incoming, hst, hf, hr, hv⟩ | ⟨s1', hst, hd⟩
+    ⟨s1', hst, hm⟩ | ⟨s1', v, regs, incoming, hst, hf, hr, hv⟩ | hstop
   · exact .inl ⟨s1', hst0.trans hst, hm⟩
   · exact .inr (.inl ⟨s1', v, regs, incoming, hst0.trans hst, hf, hr, hv⟩)
-  · exact .inr (.inr ⟨s1', hst0.trans hst, hd⟩)
+  · exact .inr (.inr (hstop.pre hst0))
 
 end Ryo.Proofs.Lower

@@ -10,9 +10,9 @@ Rule:
   so exactly L0's), `ty` the projected type as L0 computes it (the projections' own type
   annotations are not used), equal to `_d`'s declared type, well-formed (`Ty.wf`: its
   re-encoding refines the bytes it was decoded from, MiniRust's `encode_decode_le`), of
-  `n > 0` bytes; `_d`'s slot is `n` bytes and never escaped, the field range lies in `_a`'s
-  slot (`off + n ≤ sa.size`). `_a` may be private or escaped (the simulation reads either,
-  `Ryo.Proofs.Lower.lift_field`).
+  `n > 0` bytes; `_d`'s slot is `n` bytes (private or escaped), the field range lies in `_a`'s
+  slot (`off + n ≤ sa.size`). `_a` may be private or escaped (the simulation reads and writes
+  either, `Ryo.Proofs.Lower.lift_field`, SimDst.lean).
 
 `checkField` answers `none` for any other statement (including a whole-local copy, which
 `LowerStmt`'s rules cover), so a dispatcher can try families in turn.
@@ -68,7 +68,6 @@ inductive LowerField (Γ : StmtCtx) : Statement → List Insn → Prop where
       (hsd : Γ.slots[d]? = some sd) (hsa : Γ.slots[a]? = some sa)
       (hsize : sd.size = n ∧ off + n ≤ sa.size)
       (hoff : offOk sd.off ∧ offOk (sa.off + off))
-      (hpriv : ∀ k < sd.size, Γ.escaped (sd.off + k) = false)
       (hi : movInsnOk Γ i n sd.off (sa.off + off) = true) :
       LowerField Γ (.assign ⟨d, []⟩ (.use oa)) [i]
 
@@ -95,7 +94,6 @@ def checkFieldUse (Γ : StmtCtx) (d a : Local) (projs : List ProjElem) (is : Lis
                 if !(sd.size == n && decide (off + n ≤ sa.size)) then
                   .rejected "field: slot sizes"
                 else if !(offOk sd.off && offOk (sa.off + off)) then .rejected "field: offsets"
-                else if !privOk Γ sd.off sd.size then .unsupported "field: escaped destination"
                 else if movInsnOk Γ i n sd.off (sa.off + off) then .ok
                 else .unsupported "field: instruction form"
               | _, _, _ => .unsupported "field: slots or instruction count"
@@ -146,14 +144,10 @@ theorem checkFieldUse_sound {Γ : StmtCtx} {d a : Local} {oa : Operand} {projs :
                     · cases h
                     next hoff =>
                       split at h
+                      next hi =>
+                        exact .field ha hta hpath htd hn (Nat.pos_of_ne_zero hn0) hwf' hsd hsa
+                          (by simpa using hsz) (by simpa using hoff) hi
                       · cases h
-                      next hpriv =>
-                        split at h
-                        next hi =>
-                          exact .field ha hta hpath htd hn (Nat.pos_of_ne_zero hn0) hwf' hsd hsa
-                            (by simpa using hsz) (by simpa using hoff)
-                            (privOk_spec (by simpa using hpriv)) hi
-                        · cases h
                 · cases h
 
 theorem checkField_sound {Γ : StmtCtx} {st : Statement} {is : List Insn}

@@ -14,6 +14,7 @@ copied refines what L0 stored. The stored bytes' provenance is the loaded bytes'
 (`bytesLeDefined_prov`), which keeps `Hidden` and `ProvBounded` (as for `lift_copyPtr`).
 -/
 import Ryo.Proofs.Lower.FnSim
+import Ryo.Proofs.Lower.WriteDst
 import Ryo.Check.Lower.Field
 import Ryo.Spec.Theorems.Monotone
 
@@ -463,9 +464,8 @@ Proof: as `sim_copyBytes`: `readLocal_sub_inj hmem hra hin hlo` gives R's bytes 
 `BytesInj ι bs0 ba`; `bs0.length = n` (`BytesInj.length` and the frame read's length, or the
 load's: `Memory.load` returns `n` bytes); `reenc_wf hwf hn` then `BytesInj.of_le_trans` give
 `BytesInj ι bsd ba` and `bsd.length = n`; the write `st.writeFrame sd.off ba` succeeds on the
-private slot (`writeEscaped_private'`); `opSem_mov_fwd hh hty ho hfits` is the step;
-`writeLocal_priv` the destination; `LocalRel.store_other` and `LocalRel.writeFrame_apart` the
-others. -/
+private or escaped slot (`hW`, `FnRel.dstWrite`), which also gives the destination's and the
+other locals' relations; `opSem_mov_fwd hh hty ho hfits` is the step. -/
 theorem sim_copyField {ι : Inj} {fp : Nat} {st : OpSem.State} {s s' : Spec.State}
     {ty : Spec.Ty} {n off : Nat} (hwf : ty.wf = true) (hn : ty.size? = some n)
     {sd sa : LocalSlot} (hsd : sd.size = n) (hin : off + n ≤ sa.size)
@@ -475,12 +475,8 @@ theorem sim_copyField {ι : Inj} {fp : Nat} {st : OpSem.State} {s s' : Spec.Stat
     (hsto : s.mem.store pd bsd .one = .ok s'.mem)
     (hmem : MemInj ι s.mem st.mem)
     (hra : LocalRel ι fp st s.mem sa pa true)
-    -- `_d` private
-    (ad : AllocId) (xd : Allocation) (hpdp : pd.prov = some ad) (hιd : ι ad = none)
-    (hxd : s.mem.get? ad = some xd) (hlived : xd.live = true)
-    (haddrd : (xd.addr : Int) = fp + sd.off) (hpaddrd : pd.addr = xd.addr)
-    (hsized : xd.data.size = sd.size)
-    (hprivd : ∀ k < sd.size, st.escapedAt (sd.off + k) = none)
+    -- `_d`, private or escaped (`FnRel.dstWrite`)
+    (hW : DstWrite ι fp st s.mem s'.mem sd pd bsd)
     -- the instruction
     {opc : Full.Opcode} {r : Option String} {tyN : String} {sg : Bool}
     (hh : opc.handler? = some ⟨.mov, [tyN], r⟩)
@@ -501,86 +497,10 @@ theorem sim_copyField {ι : Inj} {fp : Nat} {st : OpSem.State} {s s' : Spec.Stat
   rw [hbl] at hlend
   have hlenb : ba.length = n := (BytesInj.length hbs).symm.trans hlend
   -- R's write
-  have hpw : ∀ i < ba.length, st.escapedAt (sd.off + i) = none := by
-    intro i hi
-    rw [hlenb, ← hsd] at hi
-    exact hprivd i hi
-  obtain ⟨st', hwr⟩ : ∃ st', st.writeFrame sd.off ba = .ok st' := by
-    unfold OpSem.State.writeFrame
-    rw [writeEscaped_private' hpw]
-    exact ⟨_, rfl⟩
+  obtain ⟨st', hwr, -, hmi, hrd, hoth⟩ := hW ba hbs
   have hop := opSem_mov_fwd (ch := ch) hh hty ho hfits hrfa hlenb hwr
-  have hlen0 : bsd.length = sd.size := by rw [hlend, hsd]
-  obtain ⟨hmi, hrd⟩ := writeLocal_priv hmem ad xd hpdp hιd hxd hlived haddrd hpaddrd hsized
-    hprivd hbs hlen0 hsto hwr
-  refine ⟨st', hop, hmi, hrd, ?_⟩
-  intro slot p lv hr hne hap
-  have h1 := LocalRel.store_other hr hsto (.inl (Ne.symm hne))
-  exact LocalRel.writeFrame_apart h1 hwr hpw (by rw [hlenb, ← hsd]; exact hap)
+  exact ⟨st', hop, hmi, hrd, hoth⟩
 
-/-- `field`'s lift: a `mov` of `n` bytes from inside `_a`'s slot to `_d`'s private slot.
-
-Proof (as `lift_copyPtr`): `cases hlow`; `rw [eval_use_place_norm ha] at h`; `movInsnOk_spec`,
-`intTyOk_spec`, `rw [hbody] at hta htd`; `field_mem hs hta hpath htd hn h` (pointers, bytes,
-store, stack); `live a` from `hlo _ (operandPlace?_mem ha)`, then `hrel.opnd hpa hsa` for `_a`;
-`hrel.priv_dst hpd hsd (by omega) hpriv` for `_d`; `sim_copyField` (offsets by `offOk_spec`).
-Memory invariants: `bytesLeDefined_prov (reenc_wf ..)` sends each stored provenance to a loaded
-byte's, so `hrel.hidden.load hlo0` gives `Hidden.store_hidden` and `hpb.load hlo0` gives
-`hpb.store`; `store_size` the allocation count. The step is `step_of_view`, the relation
-`hrel.after` (`opSem_out` for the escapes). No hypothesis beyond `LowersFn`'s is needed (the
-rule carries `ty.wf`). -/
-theorem lift_field {Γ : StmtCtx} {c : R.Code} {s1 : R.RState} {ch : OpSem.Choice} {ι : Inj}
-    {live live' : Local → Bool} {o : Spec.Oracle} {s s' : Spec.State} {f : Spec.Frame}
-    {rest : List Spec.Frame} (hs : s.stack = f :: rest) (hbody : Γ.body = f.body)
-    (hmode : Γ.mode = c.mode) (hρ : Γ.ρ = c.ρ)
-    {d : Local} {rv : Rvalue} {i : R.Insn}
-    (hlow : LowerField Γ (.assign ⟨d, []⟩ rv) [i])
-    (hi : c.d.insns[s1.pc]? = some i) (hsc : c.scopesAt s1.pc = []) (hpe : c.mode.pe = false)
-    (hpl : PlainView c.mode c.ρ i) (hrel : FnRel Γ ι live f s.mem s1)
-    (hpb : ProvBounded s.mem)
-    (hlo : ∀ l ∈ rvalueLocals rv, live l = true)
-    (hlive' : ∀ l, live' l = true → l = d ∨ live l = true)
-    (h : runOn (evalStatement (.assign ⟨d, []⟩ rv)) o s = (.ok (), s')) :
-    LiftOut Γ c ch ι live' f s s' s1 := by
-  cases hlow with
-  | @field d a oa projs ta ty off n sd sa i ha hta hpath htd hn hpos hwf hsd hsa hsize hoff
-      hpriv hmi =>
-    rw [eval_use_place_norm ha] at h
-    obtain ⟨v, tyN, r, hv, hh, hty, ho, hops, hctl⟩ := movInsnOk_spec hmi
-    rw [hmode, hρ] at hv
-    obtain ⟨sg, hty'⟩ := intTyOk_spec hty
-    rw [hbody] at hta htd
-    obtain ⟨pd, pa, bs0, w, bsd, hpd, hpa, hlo0, hd, hen, hsto, hstk⟩ :=
-      field_mem hs hta hpath htd hn h
-    have hla : live _ = true := hlo _ (operandPlace?_mem ha)
-    have hra := hrel.opnd hpa hsa hla
-    have hpos' : 0 < sd.size := by rw [hsize.1]; exact hpos
-    obtain ⟨ad, xd, hp, hι, hxd, hl, haddr, hpaddr, hsz, hpv⟩ :=
-      hrel.priv_dst hpd hsd hpos' hpriv
-    have hf1 := offOk_spec hoff.1
-    have hf2 := offOk_spec hoff.2
-    obtain ⟨st', hop, hmi', hrd, hoth⟩ := sim_copyField (ch := ch) hwf hn hsize.1 hsize.2 hlo0
-      hd hen hsto hrel.frame.mem hra ad xd hp hι hxd hl haddr hpaddr hsz hpv hh hty' ho
-      ⟨hf1.1, hf1.2, hf2.1, hf2.2⟩
-    have hsub := bytesLeDefined_prov (reenc_wf hwf hn (load_length hlo0) hd hen)
-    -- `Hidden`: the stored provenance is the loaded bytes', which `Hidden` excludes
-    have hhid := hrel.hidden.load hlo0
-    have hhid' : ∀ b ∈ bsd, ∀ fr, b.provFrag = some fr → ¬ PrivAlloc ι f fr.prov := by
-      intro b hb fr hfr
-      obtain ⟨j, hj, fr0, hf0, he0⟩ := hsub b hb fr hfr
-      rw [← he0]
-      exact hhid _ (List.getElem_mem hj) fr0 hf0
-    -- the bound: likewise
-    have hbd := hpb.load hlo0
-    have hbd' : BytesBounded s.mem.allocs.size bsd := by
-      intro b hb fr hfr
-      obtain ⟨j, hj, fr0, hf0, he0⟩ := hsub b hb fr hfr
-      rw [← he0]
-      exact hbd _ (List.getElem_mem hj) fr0 hf0
-    have hesc := (Ryo.Proofs.OpFacts.opSem_out hop).2.1
-    exact ⟨st', step_of_view hi hsc hpe hpl hv hctl (by rw [hops]; exact hop), hstk,
-      hrel.after hpd hsd hmi' hrd hoth (hrel.hidden.store_hidden hsto hhid') hesc hlive',
-      hpb.store hsto hbd', Nat.le_of_eq (store_size hsto).symm,
-      memKept_load hsto hlo0 hsub⟩
+-- `lift_field` (any destination) is in `SimDst.lean`.
 
 end Ryo.Proofs.Lower

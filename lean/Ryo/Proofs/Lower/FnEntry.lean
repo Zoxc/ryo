@@ -19,7 +19,11 @@ Ryo.Proofs.Lower.FnEntry — M5a's function theorem from function entry (aot.md 
   `SimRetX.lean`: each return register part holds `_0`'s bytes at its offset).
   `RetVal` (an integer `_0`'s bits are the low bytes of `rax`) follows from it for
   `Term.lean`'s rule's shape (`RetValX.toRetVal`).
-- `fn_sound`: the two composed, from function entry.
+- `fn_sound`: the two composed, from function entry. Runs that stop (`FnStop`): L0 at a dead
+  block, L0 unwinding out of the function (`resume`, `SimTermMore.ResumeOut`), or a step starting
+  a failed `Assert`'s panic (`AssertFails`, where the simulation stops for M5c). `LowerTermMore`'s
+  terminators go to `sim_termMore`, the static switches (`LowerSwitchStatic`) to
+  `sim_switchStatic`.
 -/
 import Ryo.Proofs.Lower.FnStep
 import Ryo.Proofs.Lower.SimReach
@@ -154,7 +158,12 @@ theorem _root_.Ryo.Check.Lower.LowerFused.assign_shape {Γ : TermCtx} {next : Na
     {st : Statement} {term : Terminator}
     {is : List R.Insn} (hlow : LowerFused Γ next st term is) :
     ∃ c rv, st = .assign ⟨c, []⟩ rv := by
-  cases hlow <;> exact ⟨_, _, rfl⟩
+  cases hlow
+  case niche h => cases h; exact ⟨_, _, rfl⟩
+  case assert h => exact h.assign_shape
+  case nicheDense h => cases h; exact ⟨_, _, rfl⟩
+  case sw => exact (‹FusedCmpBr Γ _ _ _ _ _ _›).assign_shape
+  all_goals exact ⟨_, _, rfl⟩
 
 /-- A reached block's `MatchX` condition at its start: a fused block has its compare. -/
 theorem fused_start {Γ : TermCtx} {d : R.Decoded} (hfn : LowersFn Γ d) {b : Nat}
@@ -167,17 +176,29 @@ theorem fused_start {Γ : TermCtx} {d : R.Decoded} (hfn : LowersFn Γ d) {b : Na
   simp at hl
   omega
 
+/-- L0's `return` from `s` to `s'` of a function returning through the caller's sret pointer,
+with R at the return's instructions in `s1`: the return-site facts `sim_retSret` needs
+(`SimRetSret.lean`, which resolves it with what the steps from the prologue on keep). -/
+def SretAt (Γ : TermCtx) (c : R.Code) (ι : Inj) (o : Spec.Oracle) (s s' : Spec.State)
+    (s1 : R.RState) : Prop :=
+  ∃ f rest live next is so, s.stack = f :: rest ∧ Γ.body = f.body ∧ Γ.sret = some so ∧
+    LowerRetSret Γ so .«return» is ∧ TermAt c s1 next is ∧
+    FnRel Γ.toStmtCtx ι live f s.mem s1 ∧ live 0 = true ∧ f.cont = .bottom ∧
+    runOn (evalTerminator .«return») o s = (.ok (), s')
+
 /-- One L0 step from `MatchX` (see the module comment), with `sim_retX`'s value relation in the
-return case. -/
+return case; an sret return is left to `SimRetSret.lean` (`SretAt`). -/
 theorem fn_step_sim_ret {Γ : TermCtx} {c : R.Code} {ι : Inj} {o : Spec.Oracle} {ch : OpSem.Choice}
     (hfn : LowersFn Γ c.d) (hmode : c.mode = Γ.mode) (hρ : c.ρ = Γ.ρ) (hinc : IncomingOk c)
     {s s' : Spec.State} {s1 : R.RState} (hm : MatchX Γ ι s s1)
-    (hpick : Match Γ ι s s1 → PicksAt Γ o s s1.fp)
+    (hpick : Match Γ ι s s1 → PicksAt Γ o ch s s1.fp)
     (h : runOn Sem.step o s = (.ok (), s')) :
     (∃ s1', StepsTo c ch s1 s1' ∧ MatchX Γ ι s' s1') ∨
       (∃ v regs incoming, s'.final = some (.returned v) ∧
         R.step c s1 ch = .ok (.done (R.exit s1 (.ret regs incoming))) ∧ RetValX Γ ι v regs) ∨
-      DeadAt Γ s' := by
+      DeadAt Γ s' ∨ (∃ f x, ResumeOut c ch ι s' f s1 x) ∨
+      ((∃ live f next msg unwind, AssertFails Γ c ch ι live o s s' f s1 next msg unwind) ∨
+        SretAt Γ c ι o s s' s1) := by
   have hfin := step_final_none h
   have hpe : c.mode.pe = false := by rw [hmode]; exact hfn.notPe
   rcases hm with ⟨f, rest, blk, bd, M, hreach, hfz⟩ |
@@ -269,15 +290,17 @@ theorem fn_step_sim_ret {Γ : TermCtx} {c : R.Code} {ι : Inj} {o : Spec.Oracle}
       by_cases hret : bd.term = .return
       · have hlow := hT
         rw [hret] at hlow h'
-        have hX := hlow.retX_of
-        obtain ⟨i, hi⟩ := hX.single
-        have hat' := hat
-        rw [hi] at hX hat'
         have hl0 : (computeLive Γ.body).get f.bb f.stmt 0 = true := by
           rw [hlen]; exact hlr 0 (by rw [hret]; simp [termReads])
-        obtain ⟨v, regs, incoming, hfinal, hstep, hval⟩ := sim_retX (ch := ch) M.stack
-          M.body.symm hX hat' M.rel hl0 M.cont (hinc _) h'
-        exact .inr (.inl ⟨v, regs, incoming, hfinal, hstep, hval⟩)
+        rcases hlow.ret_cases with hX | ⟨so, hso, hS⟩
+        · obtain ⟨i, hi⟩ := hX.single
+          have hat' := hat
+          rw [hi] at hX hat'
+          obtain ⟨v, regs, incoming, hfinal, hstep, hval⟩ := sim_retX (ch := ch) M.stack
+            M.body.symm hX hat' M.rel hl0 M.cont (hinc _) h'
+          exact .inr (.inl ⟨v, regs, incoming, hfinal, hstep, hval⟩)
+        · exact .inr (.inr (.inr (.inr (.inr
+            ⟨f, rest, _, _, _, so, M.stack, M.body.symm, hso, hS, hat, M.rel, hl0, M.cont, h'⟩))))
       · have hpl : ∀ i, (rangeInsns c.d blk.term).head? = some i → PlainView c.mode c.ρ i := by
           intro i hi
           cases hR : rangeInsns c.d blk.term with
@@ -290,6 +313,11 @@ theorem fn_step_sim_ret {Γ : TermCtx} {c : R.Code} {ι : Inj} {o : Spec.Oracle}
             simp only [Nat.add_zero, hR, List.getElem_cons_zero] at hc
             rw [hmode, hρ]
             exact hfn.plain _ _ hc
+        have hliveS : ∀ (d : Operand) cs ow l, bd.term = .switchInt d cs ow →
+            l ∈ operandLocals d → (computeLive Γ.body).get f.bb f.stmt l = true := by
+          intro d cs ow l he hd
+          rw [hlen]
+          exact hlr l (by rw [he]; exact hd)
         have hlive : ∀ (d : Operand) cs ow l, bd.term = .switchInt d cs ow → d.local? = some l →
             (computeLive Γ.body).get f.bb f.stmt l = true := by
           intro d cs ow l he hd
@@ -301,21 +329,56 @@ theorem fn_step_sim_ret {Γ : TermCtx} {c : R.Code} {ι : Inj} {o : Spec.Oracle}
           have hc := hat.code j hj
           rw [hmode, hρ]
           exact hfn.plain _ _ hc
-        have hout : SwitchOut Γ c ch ι ((computeLive Γ.body).get f.bb f.stmt) s s' f rest s1 := by
-          rcases hT with hlow | hlow | hlow
-          · exact .inl (sim_term (ch := ch) (live' := (computeLive Γ.body).get f.bb f.stmt)
-              M.stack M.body.symm hmode hρ hlow hret hat hpl M.rel hlive (fun _ h => h) h')
-          · exact sim_switch (ch := ch) M.stack M.body.symm hmode hρ hlow hat hplA M.rel hlive
-              (fun _ h => h) h'
-          · exact absurd hlow.term_eq hret
-        rcases hout with ⟨s1', f', hsteps, hs', -, -, hstart, hmem, hrel'⟩ | ⟨ow, hs'', hd⟩
+        have hJ : (∃ s1' b', StepsTo c ch s1 s1' ∧ b' ∈ termSuccs bd.term ∧
+              s'.stack = { f with bb := b', stmt := 0 } :: rest ∧ s'.mem = s.mem ∧
+              blockStart Γ b' = some s1'.pc ∧
+              FnRel Γ.toStmtCtx ι ((computeLive Γ.body).get f.bb f.stmt)
+                { f with bb := b', stmt := 0 } s'.mem s1') ∨
+            DeadAt Γ s' ∨ (∃ f x, ResumeOut c ch ι s' f s1 x) ∨
+            (∃ live f next msg unwind, AssertFails Γ c ch ι live o s s' f s1 next msg unwind) := by
+          by_cases hmore : Nonempty (LowerTermMore Γ blk.term.2 bd.term (rangeInsns c.d blk.term))
+          · obtain ⟨hlowM⟩ := hmore
+            have hlvA : ∀ (d : Operand) e msg target unwind l,
+                bd.term = .assert d e msg target unwind → l ∈ operandLocals d →
+                (computeLive Γ.body).get f.bb f.stmt l = true := by
+              intro d e msg target unwind l he hd
+              rw [hlen]
+              exact hlr l (by rw [he]; exact List.mem_append_left _ hd)
+            have hres : ∀ (k : Nat) i, c.d.insns[k]? = some i → isResume c.mode c.ρ i = true →
+                contAt c.d k = true := by
+              rw [hmode, hρ]; exact hfn.resumes
+            rcases sim_termMore (ch := ch) (live' := (computeLive Γ.body).get f.bb f.stmt)
+                M.stack M.body.symm M.cont hmode hρ hlowM hat hpl hres M.rel hlvA (fun _ h => h)
+                h' with hj | ⟨_, _, _, _, _, _, hf⟩ | ⟨x, _, hr⟩
+            · exact .inl hj
+            · exact .inr (.inr (.inr ⟨_, _, _, _, _, hf⟩))
+            · exact .inr (.inr (.inl ⟨_, _, hr⟩))
+          · have hnm : ¬ LowerTermMore Γ blk.term.2 bd.term (rangeInsns c.d blk.term) :=
+              fun hl => hmore ⟨hl⟩
+            have hout : SwitchOut Γ c ch ι ((computeLive Γ.body).get f.bb f.stmt) s s' f rest
+                s1 := by
+              rcases hT with hlow | hlow | hlow | hlow | hlow | ⟨_, _, hlow⟩
+              · exact .inl (sim_term (ch := ch) (live' := (computeLive Γ.body).get f.bb f.stmt)
+                  M.stack M.body.symm hmode hρ hlow hret hat hpl M.rel hlive (fun _ h => h) h')
+              · exact sim_switch (ch := ch) M.stack M.body.symm hmode hρ hlow hat hplA M.rel
+                  hliveS (fun _ h => h) h'
+              · exact absurd hlow.term_eq hret
+              · exact sim_switchStatic (ch := ch) M.stack hmode hρ hlow hat hplA M.rel
+                  (fun _ h => h) h'
+              · exact absurd hlow hnm
+              · exact absurd hlow.term_eq hret
+            rcases hout with ⟨s1', f', hsteps, hs', -, -, hstart, hmem, hrel'⟩ | ⟨ow, hs'', hd⟩
+            · obtain ⟨b', hsucc, hs'', -⟩ := term_nextX hT hret hnm M.stack M.body h'
+              rw [hs''] at hs'
+              obtain ⟨e, -⟩ := List.cons.inj hs'
+              subst e
+              exact .inl ⟨s1', b', hsteps, hsucc, hs'', hmem, hstart, hrel'⟩
+            · exact .inr (.inl ⟨_, rest, hs'', M.body, M.pu, rfl, hd⟩)
+        rcases hJ with ⟨s1', b', hsteps, hsucc, hs'', hmem, hstart, hrel'⟩ | hd | hr | hf
         rotate_left
-        · -- the dead end: L0 at the start of a dead block
-          exact .inr (.inr ⟨_, rest, hs'', M.body, M.pu, rfl, hd⟩)
-        obtain ⟨b', hsucc, hs'', -⟩ := term_nextX hT hret M.stack h'
-        rw [hs''] at hs'
-        obtain ⟨e, -⟩ := List.cons.inj hs'
-        subst e
+        · exact .inr (.inr (.inl hd))
+        · exact .inr (.inr (.inr (.inl hr)))
+        · exact .inr (.inr (.inr (.inr (.inl hf))))
         -- the target block, reached
         have hreach' : reachGet (computeReach Γ.body) b' = true :=
           hfn.reach.closed f.bb bd M.hbd hreach b' (term_target_mono M.stack hsucc hs'' h')
@@ -369,14 +432,19 @@ theorem fn_step_sim_ret {Γ : TermCtx} {c : R.Code} {ι : Inj} {o : Spec.Oracle}
       rw [hmode, hρ]
       exact hfn.plain _ _ hc
     have hlo := (hfn.live.stmt f.bb bd M.hbd f.stmt st hst).2
-    obtain ⟨s1', b', hsteps, hs'', hsucc, hstart, hpb', hsz, hkept, hrel'⟩ :=
-      sim_fused (ch := ch)
+    rcases sim_fused (ch := ch)
         (live' := fun l => (computeLive Γ.body).get f.bb f.stmt l && !(stmtKill st == some l))
         M.stack M.body.symm hmode hρ hlow hat hplA M.rel M.pb hlo
         (fun l hl => by
           simp only [Bool.and_eq_true, Bool.not_eq_true', beq_eq_false_iff_ne] at hl
           exact hl)
-        hev hsx rfl h'
+        hev hsx rfl h' with
+      ⟨s1', b', hsteps, hs'', hsucc, hstart, hpb', hsz, hkept, hrel'⟩ |
+        ⟨msg, unwind, s1', tl, -, hsteps, hst1, hfp1, hat', -, -, -, -, hrel', hpan⟩
+    rotate_left
+    · -- a fused assert's failing path: where the simulation stops (`AssertFails`)
+      exact .inr (.inr (.inr (.inr (.inl ⟨_, _, _, msg, unwind, s1', tl, hsteps, hst1, hfp1,
+        hat', hrel', hpan⟩))))
     have hreach' : reachGet (computeReach Γ.body) b' = true :=
       hfn.reach.closed f.bb bd M.hbd hreach b'
         (term_target_mono (f := { f with stmt := f.stmt + 1 }) rfl hsucc hs'' h')
@@ -406,15 +474,50 @@ theorem fn_step_sim_ret {Γ : TermCtx} {c : R.Code} {ι : Inj} {o : Spec.Oracle}
       rw [hlen1] at h1
       exact hfn.storage.term f.bb bd M.hbd b' hsucc l h1
 
-/-- `fn_sim` with the returned value related to R's return registers (`RetValX`). -/
+/-- How a run ends short of a matched state or a return: L0 reached a dead block (`DeadAt`), L0
+unwound out of the function (`ResumeOut`, R exiting under `ExcAt`), or a step of the run (from
+`sa`, after `m` steps) started a failed `Assert`'s panic, where the simulation stops
+(`AssertFails`, for M5c), or one (from `sa`) is an sret return, which `SimRetSret.lean`'s
+`fn_soundS` resolves (`SretAt`). `R` reaches `s1'` from `s1` in each. -/
+def FnStop (Γ : TermCtx) (c : R.Code) (ch : OpSem.Choice) (ι : Inj) (o : Spec.Oracle)
+    (s s' : Spec.State) (s1 : R.RState) : Prop :=
+  (∃ s1', StepsTo c ch s1 s1' ∧ DeadAt Γ s') ∨
+    (∃ s1' f x, StepsTo c ch s1 s1' ∧ ResumeOut c ch ι s' f s1' x) ∨
+    (∃ s1' sa sb m live f next msg unwind, StepsTo c ch s1 s1' ∧ L0Steps o m s sa ∧
+      AssertFails Γ c ch ι live o sa sb f s1' next msg unwind) ∨
+    (∃ s1' sa sb m, StepsTo c ch s1 s1' ∧ L0Steps o m s sa ∧ SretAt Γ c ι o sa sb s1')
+
+theorem FnStop.pre {Γ : TermCtx} {c : R.Code} {ch : OpSem.Choice} {ι : Inj} {o : Spec.Oracle}
+    {s s' : Spec.State} {s0 s1 : R.RState} (hst : StepsTo c ch s0 s1)
+    (h : FnStop Γ c ch ι o s s' s1) : FnStop Γ c ch ι o s s' s0 := by
+  rcases h with ⟨s1', h1, hd⟩ | ⟨s1', f, x, h1, hr⟩ | ⟨s1', sa, sb, m, live, f, next, msg, unwind,
+    h1, hm, hf⟩ | ⟨s1', sa, sb, m, h1, hm, hsr⟩
+  · exact .inl ⟨s1', hst.trans h1, hd⟩
+  · exact .inr (.inl ⟨s1', f, x, hst.trans h1, hr⟩)
+  · exact .inr (.inr (.inl ⟨s1', sa, sb, m, live, f, next, msg, unwind, hst.trans h1, hm, hf⟩))
+  · exact .inr (.inr (.inr ⟨s1', sa, sb, m, hst.trans h1, hm, hsr⟩))
+
+theorem FnStop.step {Γ : TermCtx} {c : R.Code} {ch : OpSem.Choice} {ι : Inj} {o : Spec.Oracle}
+    {s sx s' : Spec.State} {s1 : R.RState} (hstep : runOn Sem.step o s = (.ok (), sx))
+    (h : FnStop Γ c ch ι o sx s' s1) : FnStop Γ c ch ι o s s' s1 := by
+  rcases h with h | h | ⟨s1', sa, sb, m, live, f, next, msg, unwind, h1, hm, hf⟩ |
+    ⟨s1', sa, sb, m, h1, hm, hsr⟩
+  · exact .inl h
+  · exact .inr (.inl h)
+  · exact .inr (.inr (.inl ⟨s1', sa, sb, m + 1, live, f, next, msg, unwind, h1, .succ hstep hm,
+      hf⟩))
+  · exact .inr (.inr (.inr ⟨s1', sa, sb, m + 1, h1, .succ hstep hm, hsr⟩))
+
+/-- `fn_sim` with the returned value related to R's return registers (`RetValX`), and the runs
+that stop (`FnStop`). -/
 theorem fn_sim_ret {Γ : TermCtx} {c : R.Code} {ι : Inj} {o : Spec.Oracle} {ch : OpSem.Choice}
     (hfn : LowersFn Γ c.d) (hmode : c.mode = Γ.mode) (hρ : c.ρ = Γ.ρ) (hinc : IncomingOk c)
-    (hpick : ∀ s s1, Match Γ ι s s1 → PicksAt Γ o s s1.fp) :
+    (hpick : ∀ s s1, Match Γ ι s s1 → PicksAt Γ o ch s s1.fp) :
     ∀ {n : Nat} {s s' : Spec.State} {s1 : R.RState}, MatchX Γ ι s s1 → L0Steps o n s s' →
       (∃ s1', StepsTo c ch s1 s1' ∧ MatchX Γ ι s' s1') ∨
       (∃ s1' v regs incoming, StepsTo c ch s1 s1' ∧ s'.final = some (.returned v) ∧
         R.step c s1' ch = .ok (.done (R.exit s1' (.ret regs incoming))) ∧ RetValX Γ ι v regs) ∨
-      (∃ s1', StepsTo c ch s1 s1' ∧ DeadAt Γ s') := by
+      FnStop Γ c ch ι o s s' s1 := by
   intro n s s' s1 hm hrun
   revert s1
   induction hrun with
@@ -422,12 +525,13 @@ theorem fn_sim_ret {Γ : TermCtx} {c : R.Code} {ι : Inj} {o : Spec.Oracle} {ch 
   | succ hstep hrest ih =>
     intro s1 hm
     rcases fn_step_sim_ret (ch := ch) hfn hmode hρ hinc hm (hpick _ _) hstep with
-      ⟨s1', hst, hm'⟩ | ⟨v, regs, incoming, hfinal, hret, hval⟩ | hdead
+      ⟨s1', hst, hm'⟩ | ⟨v, regs, incoming, hfinal, hret, hval⟩ | hdead | ⟨f, x, hres⟩ |
+        ⟨live, f, next, msg, unwind, hfail⟩ | hsr
     · rcases ih hm' with ⟨s1'', hst', hm''⟩ | ⟨s1'', v, regs, incoming, hst', hf, hr, hv⟩ |
-        ⟨s1'', hst', hd⟩
+        hstop
       · exact .inl ⟨s1'', hst.trans hst', hm''⟩
       · exact .inr (.inl ⟨s1'', v, regs, incoming, hst.trans hst', hf, hr, hv⟩)
-      · exact .inr (.inr ⟨s1'', hst.trans hst', hd⟩)
+      · exact .inr (.inr ((hstop.step hstep).pre hst))
     · cases hrest with
       | zero => exact .inr (.inl ⟨s1, v, regs, incoming, .refl _, hfinal, hret, hval⟩)
       | succ hstep' _ =>
@@ -435,10 +539,20 @@ theorem fn_sim_ret {Γ : TermCtx} {c : R.Code} {ι : Inj} {o : Spec.Oracle} {ch 
         rw [hfinal] at this
         cases this
     · cases hrest with
-      | zero => exact .inr (.inr ⟨s1, .refl _, hdead⟩)
+      | zero => exact .inr (.inr (.inl ⟨s1, .refl _, hdead⟩))
       | succ hstep' _ =>
         obtain ⟨f, rest, hs, hb, hpu, hst0, hd⟩ := hdead
         exact absurd hstep' (dead_no_step hs hb hpu hst0 hd)
+    · cases hrest with
+      | zero => exact .inr (.inr (.inr (.inl ⟨s1, f, x, .refl _, hres⟩)))
+      | succ hstep' _ =>
+        obtain ⟨_, _, hfinal, _⟩ := hres
+        have := step_final_none hstep'
+        rw [hfinal] at this
+        cases this
+    · exact .inr (.inr (.inr (.inr (.inl ⟨s1, _, _, 0, live, f, next, msg, unwind, .refl _,
+        .zero _, hfail⟩))))
+    · exact .inr (.inr (.inr (.inr (.inr ⟨s1, _, _, 0, .refl _, .zero _, hsr⟩))))
 
 /-! ### From entry -/
 
@@ -451,7 +565,7 @@ carrying the provenance of a live, non-empty allocation `ι` drops (the caller's
 every step keeps it (`MatchAt.dinv`). -/
 theorem fn_sound {Γ : TermCtx} {c : R.Code} {ι : Inj} {o : Spec.Oracle} {ch : OpSem.Choice}
     (hfn : LowersFn Γ c.d) (hmode : c.mode = Γ.mode) (hρ : c.ρ = Γ.ρ) (hinc : IncomingOk c)
-    (hpick : ∀ s s1, Match Γ ι s s1 → PicksAt Γ o s s1.fp)
+    (hpick : ∀ s s1, Match Γ ι s s1 → PicksAt Γ o ch s s1.fp)
     {Γp : PrologCtx} {is : List R.Insn} {ps : List (LocalSlot × Asm.ArgReg)}
     (hpl : LowerProlog Γp is ps) (hslots : Γp.slots = Γ.slots)
     {s : Spec.State} {s1 : R.RState} {f : Spec.Frame} {rest : List Spec.Frame}
@@ -482,15 +596,15 @@ theorem fn_sound {Γ : TermCtx} {c : R.Code} {ι : Inj} {o : Spec.Oracle} {ch : 
     (∃ s1', StepsTo c ch s1 s1' ∧ MatchX Γ ι s' s1') ∨
       (∃ s1' v regs incoming, StepsTo c ch s1 s1' ∧ s'.final = some (.returned v) ∧
         R.step c s1' ch = .ok (.done (R.exit s1' (.ret regs incoming))) ∧ RetValX Γ ι v regs) ∨
-      (∃ s1', StepsTo c ch s1 s1' ∧ DeadAt Γ s') := by
+      FnStop Γ c ch ι o s s' s1 := by
   obtain ⟨s0, hst0, hm0⟩ := match_entry (ch := ch) hpl hslots hcode hnoesc hblk hbd hstart
     hfn.reach.entry (fused_start hfn hfn.reach.entry hbd hblk) hs hbody hbb hstmt hpu hcont hal
     qs hloc hrel hmem hhid
     hprov hapart hsl hpb hfresh hdinv
   rcases fn_sim_ret hfn hmode hρ hinc hpick hm0 hrun with
-    ⟨s1', hst, hm⟩ | ⟨s1', v, regs, incoming, hst, hf, hr, hv⟩ | ⟨s1', hst, hd⟩
+    ⟨s1', hst, hm⟩ | ⟨s1', v, regs, incoming, hst, hf, hr, hv⟩ | hstop
   · exact .inl ⟨s1', hst0.trans hst, hm⟩
   · exact .inr (.inl ⟨s1', v, regs, incoming, hst0.trans hst, hf, hr, hv⟩)
-  · exact .inr (.inr ⟨s1', hst0.trans hst, hd⟩)
+  · exact .inr (.inr (hstop.pre hst0))
 
 end Ryo.Proofs.Lower

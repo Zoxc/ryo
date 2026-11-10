@@ -3,8 +3,7 @@ Ryo.Check.Lower.Unop — the statement rules for unary operators (aot.md §C1, M
 checker.
 
 Rules (`LowerUnop`), each on whole locals (`copy`/`move` of a local without projections) of one
-type, the destination's slot never escaped in the function (the simulations are for private
-destinations, as `LowerStmt`'s):
+type, the destination private or escaped (`Ryo.Proofs.Lower.FnRel.dstWriteAll`):
 - `intUn`: `_d = not(_a)` or `_d = neg(_a)` at an integer type `t`, lowered to one `un`
   handler-kind instruction (method `not` or `wrapping_neg`, `t`'s width, either signedness) on
   the two locals' slots, the slots of `t`'s size. L0's `not` and `neg` on integers wrap
@@ -53,7 +52,6 @@ inductive LowerUnop (Γ : StmtCtx) : Statement → List Insn → Prop where
       (hsd : Γ.slots[d]? = some sd) (hsa : Γ.slots[a]? = some sa)
       (hsize : sd.size = t.size ∧ sa.size = t.size)
       (hoff : offOk sd.off ∧ offOk sa.off)
-      (hpriv : ∀ k < sd.size, Γ.escaped (sd.off + k) = false)
       (hi : unInsnOk Γ i m t.size sd.off sa.off = true) :
       LowerUnop Γ (.assign ⟨d, []⟩ (.unaryOp op oa)) [i]
   | notBool {d a : Local} {oa : Operand} {sd sa : LocalSlot} {i : Insn}
@@ -62,11 +60,10 @@ inductive LowerUnop (Γ : StmtCtx) : Statement → List Insn → Prop where
       (hsd : Γ.slots[d]? = some sd) (hsa : Γ.slots[a]? = some sa)
       (hsize : sd.size = 1 ∧ sa.size = 1)
       (hoff : offOk sd.off ∧ offOk sa.off)
-      (hpriv : ∀ k < sd.size, Γ.escaped (sd.off + k) = false)
       (hi : binImmInsnOk Γ i "^" 1 sd.off sa.off 1 = true) :
       LowerUnop Γ (.assign ⟨d, []⟩ (.unaryOp .not oa)) [i]
 
-/-- One instruction on the slots of `_d` and `_a`, both of `n` bytes, `_d`'s never escaped, the
+/-- One instruction on the slots of `_d` and `_a`, both of `n` bytes (`_d` private or escaped), the
 instruction accepted by `insnOk` (given the two slots). `what` names the rule in the reasons. -/
 def checkSlots2 (Γ : StmtCtx) (what : String) (d a : Local) (n : Nat)
     (insnOk : LocalSlot → LocalSlot → Insn → Bool) (is : List Insn) : Verdict :=
@@ -74,7 +71,6 @@ def checkSlots2 (Γ : StmtCtx) (what : String) (d a : Local) (n : Nat)
   | some sd, some sa, [i] =>
     if !(sd.size == n && sa.size == n) then .rejected (what ++ ": slot sizes")
     else if !(offOk sd.off && offOk sa.off) then .rejected (what ++ ": offsets")
-    else if !privOk Γ sd.off sd.size then .unsupported (what ++ ": escaped destination")
     else if insnOk sd sa i then .ok
     else .unsupported (what ++ ": instruction form")
   | _, _, _ => .unsupported (what ++ ": slots or instruction count")
@@ -83,8 +79,7 @@ theorem checkSlots2_ok {Γ : StmtCtx} {what : String} {d a : Local} {n : Nat}
     {insnOk : LocalSlot → LocalSlot → Insn → Bool} {is : List Insn}
     (h : checkSlots2 Γ what d a n insnOk is = .ok) :
     ∃ sd sa i, is = [i] ∧ Γ.slots[d]? = some sd ∧ Γ.slots[a]? = some sa ∧
-      (sd.size = n ∧ sa.size = n) ∧ (offOk sd.off ∧ offOk sa.off) ∧
-      (∀ k < sd.size, Γ.escaped (sd.off + k) = false) ∧ insnOk sd sa i = true := by
+      (sd.size = n ∧ sa.size = n) ∧ (offOk sd.off ∧ offOk sa.off) ∧ insnOk sd sa i = true := by
   unfold checkSlots2 at h
   split at h
   next sd sa i hsd hsa =>
@@ -95,13 +90,9 @@ theorem checkSlots2_ok {Γ : StmtCtx} {what : String} {d a : Local} {n : Nat}
       · cases h
       next hoff =>
         split at h
+        next hi =>
+          exact ⟨sd, sa, i, rfl, hsd, hsa, by simpa using hsz, by simpa using hoff, hi⟩
         · cases h
-        next hpriv =>
-          split at h
-          next hi =>
-            exact ⟨sd, sa, i, rfl, hsd, hsa, by simpa using hsz, by simpa using hoff,
-              privOk_spec (by simpa using hpriv), hi⟩
-          · cases h
   · cases h
 
 /-- The reason for a unary operator on locals of other types. -/
@@ -140,8 +131,8 @@ theorem checkUnopAt_sound {Γ : StmtCtx} {d : Local} {op : UnOp} {oa : Operand}
       split at h
       next hop =>
         subst hop
-        obtain ⟨sd, sa, i, rfl, hsd, hsa, hsz, hoff, hpriv, hi⟩ := checkSlots2_ok h
-        exact .notBool ha htd hta hsd hsa hsz hoff hpriv hi
+        obtain ⟨sd, sa, i, rfl, hsd, hsa, hsz, hoff, hi⟩ := checkSlots2_ok h
+        exact .notBool ha htd hta hsd hsa hsz hoff hi
       · cases h
     next t valid ta htd hta =>
       split at h
@@ -151,8 +142,8 @@ theorem checkUnopAt_sound {Γ : StmtCtx} {d : Local} {op : UnOp} {oa : Operand}
         next hty =>
           have hty : ta = .int t valid := by simpa using hty
           subst hty
-          obtain ⟨sd, sa, i, rfl, hsd, hsa, hsz, hoff, hpriv, hi⟩ := checkSlots2_ok h
-          exact .intUn hm ha htd hta hsd hsa hsz hoff hpriv hi
+          obtain ⟨sd, sa, i, rfl, hsd, hsa, hsz, hoff, hi⟩ := checkSlots2_ok h
+          exact .intUn hm ha htd hta hsd hsa hsz hoff hi
       · cases h
     · cases h
   · cases h

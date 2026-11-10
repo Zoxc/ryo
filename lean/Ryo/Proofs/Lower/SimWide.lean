@@ -33,6 +33,7 @@ condition that `.constCopy g n` answers that copy (fresh copies would need `Lift
 -/
 import Ryo.Proofs.Lower.SimCopy
 import Ryo.Proofs.Lower.SimField
+import Ryo.Proofs.Lower.SimDst
 import Ryo.Proofs.Lower.SimUnop
 import Ryo.Check.Lower.Wide
 
@@ -119,11 +120,10 @@ theorem lift_movSub {Γ : StmtCtx} {c : R.Code} {s1 : R.RState} {ch : OpSem.Choi
     (hsd : Γ.slots[d]? = some sd) (hsa : Γ.slots[a]? = some sa)
     (hsize : sd.size = n ∧ off + n ≤ sa.size) (hpos : 0 < n)
     (hoff : offOk sd.off ∧ offOk (sa.off + off))
-    (hpriv : ∀ k < sd.size, Γ.escaped (sd.off + k) = false)
     (hmi : movInsnOk Γ i n sd.off (sa.off + off) = true)
     (hi : c.d.insns[s1.pc]? = some i) (hsc : c.scopesAt s1.pc = []) (hpe : c.mode.pe = false)
     (hpl : PlainView c.mode c.ρ i) (hrel : FnRel Γ ι live f s.mem s1)
-    (hpb : ProvBounded s.mem)
+    (hpb : ProvBounded s.mem) (hld : Ryo.Proofs.Provenance.LiveDisjoint s.mem)
     (hla : live a = true) (hlive' : ∀ l, live' l = true → l = d ∨ live l = true)
     (hmm : MovSubMem f d a off n s s') :
     LiftOut Γ c ch ι live' f s s' s1 := by
@@ -133,7 +133,6 @@ theorem lift_movSub {Γ : StmtCtx} {c : R.Code} {s1 : R.RState} {ch : OpSem.Choi
   obtain ⟨sg, hty'⟩ := intTyOk_spec hty
   have hra := hrel.opnd hpa hsa hla
   have hpos' : 0 < sd.size := by rw [hsize.1]; exact hpos
-  obtain ⟨ad, xd, hp, hι, hxd, hl, haddr, hpaddr, hsz, hpv⟩ := hrel.priv_dst hpd hsd hpos' hpriv
   have hf1 := offOk_spec hoff.1
   have hf2 := offOk_spec hoff.2
   -- R's read refines `bs0`, hence `bsd`
@@ -142,25 +141,10 @@ theorem lift_movSub {Γ : StmtCtx} {c : R.Code} {s1 : R.RState} {ch : OpSem.Choi
   have hlend : bsd.length = n :=
     ((Ryo.Spec.Theorems.bytesLeDefined_iff _ _).mp hle).1.trans (movLoad_length hlo0)
   have hlenb : ba.length = n := (BytesInj.length hbs).symm.trans hlend
-  -- R's write
-  have hpw : ∀ k < ba.length, s1.st.escapedAt (sd.off + k) = none := by
-    intro k hk
-    rw [hlenb, ← hsize.1] at hk
-    exact hpv k hk
-  obtain ⟨st', hwr⟩ : ∃ st', s1.st.writeFrame sd.off ba = .ok st' := by
-    unfold OpSem.State.writeFrame
-    rw [writeEscaped_private' hpw]
-    exact ⟨_, rfl⟩
-  have hop := opSem_mov_fwd (ch := ch) hh hty' ho ⟨hf1.1, hf1.2, hf2.1, hf2.2⟩ hrfa hlenb hwr
+  -- R's write, to a private or an escaped `_d`
   have hlen0 : bsd.length = sd.size := by rw [hlend, hsize.1]
-  obtain ⟨hmi', hrd⟩ := writeLocal_priv hrel.frame.mem ad xd hp hι hxd hl haddr hpaddr hsz hpv
-    hbs hlen0 hsto hwr
-  have hoth : ∀ (slot : LocalSlot) p lv, LocalRel ι s1.fp s1.st s.mem slot p lv →
-      p.prov ≠ pd.prov → (sd.off + sd.size ≤ slot.off ∨ slot.off + slot.size ≤ sd.off) →
-      LocalRel ι s1.fp st' s'.mem slot p lv := by
-    intro slot p lv hr hne hap
-    have h1 := LocalRel.store_other hr hsto (.inl (Ne.symm hne))
-    exact LocalRel.writeFrame_apart h1 hwr hpw (by rw [hlenb, ← hsize.1]; exact hap)
+  obtain ⟨st', hwr, hesc, hmi', hrd, hoth⟩ := hrel.write_dst hld hpd hsd hpos' hbs hlen0 hsto
+  have hop := opSem_mov_fwd (ch := ch) hh hty' ho ⟨hf1.1, hf1.2, hf2.1, hf2.2⟩ hrfa hlenb hwr
   have hsub := le_prov hle
   -- `Hidden`: the stored provenance is the loaded bytes', which `Hidden` excludes
   have hhid := hrel.hidden.load hlo0
@@ -176,7 +160,6 @@ theorem lift_movSub {Γ : StmtCtx} {c : R.Code} {s1 : R.RState} {ch : OpSem.Choi
     obtain ⟨j, hj, fr0, hf0, he0⟩ := hsub b hb fr hfr
     rw [← he0]
     exact hbd _ (List.getElem_mem hj) fr0 hf0
-  have hesc := (Ryo.Proofs.OpFacts.opSem_out hop).2.1
   exact ⟨st', step_of_view hi hsc hpe hpl hv hctl (by rw [hops]; exact hop), hstk,
     hrel.after hpd hsd hmi' hrd hoth (hrel.hidden.store_hidden hsto hhid') hesc hlive',
     hpb.store hsto hbd', Nat.le_of_eq (store_size hsto).symm,
@@ -491,24 +474,24 @@ theorem lift_wide {Γ : StmtCtx} {c : R.Code} {s1 : R.RState} {ch : OpSem.Choice
     (hlow : LowerWide Γ (.assign ⟨d, []⟩ rv) [i])
     (hi : c.d.insns[s1.pc]? = some i) (hsc : c.scopesAt s1.pc = []) (hpe : c.mode.pe = false)
     (hpl : PlainView c.mode c.ρ i) (hrel : FnRel Γ ι live f s.mem s1)
-    (hpb : ProvBounded s.mem)
+    (hpb : ProvBounded s.mem) (hld : Ryo.Proofs.Provenance.LiveDisjoint s.mem)
     (hlo : ∀ l ∈ rvalueLocals rv, live l = true)
     (hlive' : ∀ l, live' l = true → l = d ∨ live l = true)
     (h : runOn (evalStatement (.assign ⟨d, []⟩ rv)) o s = (.ok (), s')) :
     LiftOut Γ c ch ι live' f s s' s1 := by
   cases hlow with
-  | metaLen ha hka hta htd ht hsd hsa hsize hoff hpriv hmi =>
+  | metaLen ha hka hta htd ht hsd hsa hsize hoff hmi =>
     rw [hbody] at hta htd
-    exact lift_movSub hmode hρ hsd hsa hsize (by decide) hoff hpriv hmi hi hsc hpe hpl hrel
-      hpb (hlo _ (operand_local_mem ha)) hlive' (metaLen_mem hs ha hka hta htd ht h)
-  | wideCast hk ha hka hshape htd hty hta hwf hsd hsa hsize hoff hpriv hmi =>
+    exact lift_movSub hmode hρ hsd hsa hsize (by decide) hoff hmi hi hsc hpe hpl hrel
+      hpb hld (hlo _ (operand_local_mem ha)) hlive' (metaLen_mem hs ha hka hta htd ht h)
+  | wideCast hk ha hka hshape htd hty hta hwf hsd hsa hsize hoff hmi =>
     rw [hbody] at hta htd
-    exact lift_movMem hmode hρ hsd hsa hsize (by decide) hoff hpriv hmi hi hsc hpe hpl hrel
-      hpb (hlo _ (operand_local_mem ha)) hlive'
+    exact lift_movMemE hmode hρ hsd hsa hsize (by decide) hoff hmi hi hsc hpe hpl hrel
+      hpb hld (hlo _ (operand_local_mem ha)) hlive'
       (wideCast_mem hs hk ha hka hshape htd hty hta hwf h)
-  | wideToThin hk ha hka hkd htd hty hta hsd hsa hsize hoff hpriv hmi =>
+  | wideToThin hk ha hka hkd htd hty hta hsd hsa hsize hoff hmi =>
     rw [hbody] at hta htd
-    exact lift_movSub hmode hρ hsd hsa hsize (by decide) hoff hpriv hmi hi hsc hpe hpl hrel
-      hpb (hlo _ (operand_local_mem ha)) hlive' (wideToThin_mem hs hk ha hka hkd htd hty hta h)
+    exact lift_movSub hmode hρ hsd hsa hsize (by decide) hoff hmi hi hsc hpe hpl hrel
+      hpb hld (hlo _ (operand_local_mem ha)) hlive' (wideToThin_mem hs hk ha hka hkd htd hty hta h)
 
 end Ryo.Proofs.Lower

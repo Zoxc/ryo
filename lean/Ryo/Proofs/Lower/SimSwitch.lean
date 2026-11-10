@@ -17,8 +17,16 @@ The steps: `switch_read` (L0's load of the local and its `switchBits`, related t
 the slot), `chain_run`/`dense_run` (R's run of the instructions, to a place `hitOk` for the
 value), `hit_finish` (the end, `term_finish` or the dead end). `restOk_spec` is the meaning of
 the check of the values a branch or goto takes; `opSem_switchDense_fwd` the forward `opSem` of
-`switch.dense`. -/
+`switch.dense`.
+
+The field rules (`chainF`/`denseF`, a switch on a field of a local): L0 loads the field
+(`switchInt_inv_field`, by `runOn_evalOperand_field`), R reads the same bytes at the slot
+offset (`readLocal_sub_inj`), `switchF_read` relates the two (`switch_read_at`, `switch_read`
+for a load through any pointer); the run is the local rules'. `sim_switch`'s liveness
+hypothesis is over every local of the operand (`operandLocals`), as a field's local is not
+`d.local?`. `LowerSwitch.term_next` is `term_nextX`'s case for the family. -/
 import Ryo.Proofs.Lower.FnSim
+import Ryo.Proofs.Lower.SimTermMore
 import Ryo.Check.Lower.Switch
 
 namespace Ryo.Proofs.Lower
@@ -193,6 +201,126 @@ theorem switch_read {Γ : StmtCtx} {ι : Inj} {live : Local → Bool} {f : Spec.
       simp only [Prod.mk.injEq, Except.ok.injEq] at hsw
       rw [← hsw.1]
       first | rfl | decide | simp [leDecode]
+
+/-- `switch_read` for a load through any pointer `q` whose `n` bytes R reads at `x`
+(`hread`), as `br_read_step` does for `br`. Same proof. -/
+theorem switch_read_at {ι : Inj} {s : Spec.State} {q : ThinPointer} {ty : Spec.Ty} {n : Nat}
+    {v : Value} {bits : Nat} {o : Spec.Oracle} {st : OpSem.State} {x : Int}
+    (hn : switchTy ty = some n) (hload : typedLoad s.mem q ty .one = .ok v)
+    (hread : ∀ bs0, s.mem.load q n .one = .ok bs0 →
+      ∃ bs1, st.readFrame x n = .ok bs1 ∧ BytesInj ι bs0 bs1)
+    (hsw : runOn (switchBits (v, ty)) o s = (.ok bits, s)) :
+    ∃ bs u, st.readFrame x n = .ok bs ∧ OpSem.asNat bs = .ok u ∧
+      bits = u % 2 ^ (8 * n) := by
+  cases ty
+  all_goals first | (simp [switchTy] at hn; done) | skip
+  case int t valid =>
+    have hn' : n = t.size := by
+      simp only [switchTy, Option.some.injEq] at hn; exact hn.symm
+    subst hn'
+    obtain ⟨bs, u, hld, hdb, -, rfl⟩ := typedLoad_int hload
+    obtain ⟨bs1, hrf, hbi⟩ := hread _ hld
+    have hdec1 := decodeBits_inj hbi hdb
+    have hasn : OpSem.asNat bs1 = .ok u := by
+      unfold OpSem.asNat; rw [hdec1]; rfl
+    refine ⟨bs1, u, hrf, hasn, ?_⟩
+    have e : runOn (switchBits (.int (t.ofBits u), .int t valid)) o s =
+        (.ok (t.toBits (t.ofBits u)), s) := rfl
+    rw [e] at hsw
+    simp only [Prod.mk.injEq, Except.ok.injEq] at hsw
+    rw [← hsw.1, Ryo.Spec.Theorems.IntType.toBits_ofBits, ← modulus_eq_two_pow]
+  case bool =>
+    have hn' : n = 1 := by
+      simp only [switchTy, Option.some.injEq] at hn; omega
+    subst hn'
+    obtain ⟨dd, pr, hld, hcase⟩ := typedLoad_bool hload
+    obtain ⟨bs1, hrf, hbi⟩ := hread _ hld
+    have hdec0 : decodeBits [AbstractByte.init dd pr] = some (leDecode [dd]) := rfl
+    have hdec1 := decodeBits_inj hbi hdec0
+    have hasn : OpSem.asNat bs1 = .ok (leDecode [dd]) := by
+      unfold OpSem.asNat; rw [hdec1]; rfl
+    refine ⟨bs1, leDecode [dd], hrf, hasn, ?_⟩
+    rcases hcase with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+    · have e : runOn (switchBits (.bool false, .bool)) o s = (.ok 0, s) := rfl
+      rw [e] at hsw
+      simp only [Prod.mk.injEq, Except.ok.injEq] at hsw
+      rw [← hsw.1]
+      first | rfl | decide | simp [leDecode]
+    · have e : runOn (switchBits (.bool true, .bool)) o s = (.ok 1, s) := rfl
+      rw [e] at hsw
+      simp only [Prod.mk.injEq, Except.ok.injEq] at hsw
+      rw [← hsw.1]
+      first | rfl | decide | simp [leDecode]
+
+/-- `switchInt_inv` for a field of a local (`fieldPath`): L0 loads the field at the local's
+pointer plus `off` and goes to `caseTarget` of the value's `switchBits`.
+
+Proof: as `switchInt_inv`, with `runOn_evalOperand_field` for the operand. -/
+theorem switchInt_inv_field {o : Spec.Oracle} {s s' : Spec.State} {f : Spec.Frame}
+    {rest : List Spec.Frame} (hs : s.stack = f :: rest) {d : Operand} {a : Local}
+    {projs : List ProjElem} {ta ty : Spec.Ty} {off : Nat}
+    (hd : operandPlace? d = some ⟨a, projs⟩) (hta : f.body.locals[a]? = some ta)
+    (hpath : fieldPath ta projs = some (off, ty)) {cases : List (Nat × BasicBlock)}
+    {otherwise : BasicBlock}
+    (h : runOn (evalTerminator (.switchInt d cases otherwise)) o s = (.ok (), s')) :
+    ∃ pa v bits, f.locals[a]? = some (some pa) ∧
+      typedLoad s.mem ⟨pa.addr + off, pa.prov⟩ ty .one = .ok v ∧
+      runOn (switchBits (v, ty)) o s = (.ok bits, s) ∧
+      s' = { s with stack :=
+        { f with bb := caseTarget cases otherwise bits, stmt := 0 } :: rest } := by
+  have e : evalTerminator (.switchInt d cases otherwise) = (evalOperand d >>= fun x =>
+      switchBits x >>= fun bits =>
+      match cases.find? (·.1 == bits) with
+      | some (_, bb) => SemM.jumpTo bb
+      | none => SemM.jumpTo otherwise) := rfl
+  rw [e] at h
+  obtain ⟨x, s1, h1, h2⟩ := runOn_bind_ok h
+  obtain ⟨pa, v, hpa, hv, hx, hs1⟩ := runOn_evalOperand_field hs hd hta hpath h1
+  rw [hx, hs1] at h2
+  obtain ⟨bits, s2, h3, h4⟩ := runOn_bind_ok h2
+  have hs2 : s2 = s := by
+    revert h3
+    unfold switchBits
+    split <;> intro h3 <;> first
+      | exact (prod_ok_inj h3).2.symm
+      | exact (prod_err_ok h3).elim
+  subst s2
+  refine ⟨pa, v, bits, hpa, hv, h3, ?_⟩
+  rcases hf : cases.find? (·.1 == bits) with _ | ⟨_, bb⟩
+  · simp only [hf] at h4
+    rw [runOn_jumpTo hs] at h4
+    simp only [caseTarget, hf]
+    exact (prod_ok_inj h4).2.symm
+  · simp only [hf] at h4
+    rw [runOn_jumpTo hs] at h4
+    simp only [caseTarget, hf]
+    exact (prod_ok_inj h4).2.symm
+
+/-- A switch on a field of a related local: R reads the field's bytes at `sa.off + off`, a
+number `u` whose low `8 n` bits L0's target is chosen by.
+
+Proof: `switchInt_inv_field`, `FnRel.opnd` (`_a` live), `switch_read_at` with
+`readLocal_sub_inj`. -/
+theorem switchF_read {Γ : TermCtx} {ι : Inj} {live : Local → Bool} {f : Spec.Frame}
+    {s s' : Spec.State} {rest : List Spec.Frame} {s1 : RState} {o : Spec.Oracle}
+    (hs : s.stack = f :: rest) (hbody : Γ.body = f.body) {d : Operand} {a : Local}
+    {projs : List ProjElem} {ta ty : Spec.Ty} {off n : Nat} {sa : LocalSlot}
+    {cases : List (Nat × BasicBlock)} {otherwise : BasicBlock}
+    (hd : operandPlace? d = some ⟨a, projs⟩) (hta : Γ.body.locals[a]? = some ta)
+    (hpath : fieldPath ta projs = some (off, ty)) (hn : switchTy ty = some n)
+    (hsa : Γ.slots[a]? = some sa) (hin : off + n ≤ sa.size)
+    (hrel : FnRel Γ.toStmtCtx ι live f s.mem s1) (hlive : live a = true)
+    (h : runOn (evalTerminator (.switchInt d cases otherwise)) o s = (.ok (), s')) :
+    ∃ bs u, s1.st.readFrame (sa.off + off) n = .ok bs ∧ OpSem.asNat bs = .ok u ∧
+      s' = { s with stack :=
+        { f with bb := caseTarget cases otherwise (u % 2 ^ (8 * n)), stmt := 0 } :: rest } := by
+  rw [hbody] at hta
+  obtain ⟨pa, v, bits, hpa, hload, hsw, hs'⟩ := switchInt_inv_field hs hd hta hpath h
+  have hr := hrel.opnd (Γ := Γ.toStmtCtx) hpa hsa hlive
+  obtain ⟨bs, u, hrf, hu, hb⟩ := switch_read_at (ι := ι) (st := s1.st) (x := sa.off + off) hn
+    hload (fun _ hl => readLocal_sub_inj hrel.frame.mem hr hin hl) hsw
+  subst hb
+  exact ⟨bs, u, hrf, hu, hs'⟩
 
 /-! ### R's run -/
 
@@ -451,7 +579,8 @@ theorem dense_run {Γ : TermCtx} {c : Code} {ch : OpSem.Choice} {s1 : RState} {n
     have hstep : R.step c s1 ch = .ok (.step { s1 with pc :=
         ts[(u % 2 ^ (8 * n) + (2 ^ (8 * n) - y % 2 ^ (8 * n))) % 2 ^ (8 * n)] }) := by
       rw [step_eq_stepBody_nil hi0 hs0]
-      exact stepBody_switch hnat hvw hctl (hpl.notResume _ hvw) (hpl.notUnreachable _ hvw)
+      exact stepBody_switch hnat hvw hctl (hpl.notResume _ hvw (ctl_ne_trap hctl))
+          (hpl.notUnreachable _ hvw (ctl_ne_trap hctl))
         hat.pe hop hget
     have h3 := List.all_eq_true.mp hall _ (List.mem_range.mpr hil)
     try dsimp only at h3
@@ -468,7 +597,8 @@ theorem dense_run {Γ : TermCtx} {c : Code} {ch : OpSem.Choice} {s1 : RState} {n
     have hget : ts[len]? = some ts[len] := List.getElem?_eq_getElem (by omega)
     have hstep : R.step c s1 ch = .ok (.step { s1 with pc := ts[len] }) := by
       rw [step_eq_stepBody_nil hi0 hs0]
-      exact stepBody_switch hnat hvw hctl (hpl.notResume _ hvw) (hpl.notUnreachable _ hvw)
+      exact stepBody_switch hnat hvw hctl (hpl.notResume _ hvw (ctl_ne_trap hctl))
+          (hpl.notUnreachable _ hvw (ctl_ne_trap hctl))
         hat.pe hop hget
     rw [hget] at hdef
     refine ⟨_, .cons hstep (.refl _), ?_, rfl, rfl, rfl⟩
@@ -513,7 +643,7 @@ theorem sim_switch {Γ : TermCtx} {c : Code} {s1 : RState} {ch : OpSem.Choice} {
     {is : List Insn} (hlow : LowerSwitch Γ next term is)
     (hat : TermAt c s1 next is) (hpl : ∀ i ∈ is, PlainView c.mode c.ρ i)
     (hrel : FnRel Γ.toStmtCtx ι live f s.mem s1)
-    (hlive : ∀ (d : Operand) cs ow l, term = .switchInt d cs ow → d.local? = some l →
+    (hlive : ∀ (d : Operand) cs ow l, term = .switchInt d cs ow → l ∈ operandLocals d →
       live l = true)
     (hw : ∀ l, live' l = true → live l = true)
     (h : runOn (evalTerminator term) o s = (.ok (), s')) :
@@ -525,7 +655,7 @@ theorem sim_switch {Γ : TermCtx} {c : Code} {s1 : RState} {ch : OpSem.Choice} {
     rw [hty] at hty'
     obtain rfl := (Option.some.inj hty').symm
     obtain ⟨bs, u, hrf, hu, hbits⟩ := switch_read (Γ := Γ.toStmtCtx) hrel
-      (hlive _ _ _ _ rfl hd) hp hty hbody hn hsl hsize hload hsw
+      (hlive _ _ _ _ rfl (operand_local_mem hd)) hp hty hbody hn hsl hsize hload hsw
     subst hbits
     obtain ⟨s2, hst, hhit, hsst, hfp, -⟩ :=
       chain_run (ch := ch) hmode hρ hu (ex := []) hok hat hpl hrf rfl
@@ -538,11 +668,59 @@ theorem sim_switch {Γ : TermCtx} {c : Code} {s1 : RState} {ch : OpSem.Choice} {
     rw [hty] at hty'
     obtain rfl := (Option.some.inj hty').symm
     obtain ⟨bs, u, hrf, hu, hbits⟩ := switch_read (Γ := Γ.toStmtCtx) hrel
-      (hlive _ _ _ _ rfl hd) hp hty hbody hn hsl hsize hload hsw
+      (hlive _ _ _ _ rfl (operand_local_mem hd)) hp hty hbody hn hsl hsize hload hsw
     subst hbits
     obtain ⟨s2, hst, hhit, hsst, hfp, -⟩ :=
       dense_run (ch := ch) hmode hρ hden hok hat (hpl _ (by simp)) hrf hu
     refine hit_finish ?_ hst hhit hsst hfp hrel hw
     exact hs'
+  case chainF hd hta hpath hn hsa hin hok =>
+    obtain ⟨bs, u, hrf, hu, hs'⟩ := switchF_read hs hbody hd hta hpath hn hsa hin hrel
+      (hlive _ _ _ _ rfl (operandPlace?_base_mem hd)) h
+    obtain ⟨s2, hst, hhit, hsst, hfp, -⟩ :=
+      chain_run (ch := ch) hmode hρ hu (ex := []) hok hat hpl hrf rfl
+    exact hit_finish hs' hst hhit hsst hfp hrel hw
+  case denseF hd hta hpath hn hsa hin hden ha hok =>
+    subst ha
+    obtain ⟨bs, u, hrf, hu, hs'⟩ := switchF_read hs hbody hd hta hpath hn hsa hin hrel
+      (hlive _ _ _ _ rfl (operandPlace?_base_mem hd)) h
+    obtain ⟨s2, hst, hhit, hsst, hfp, -⟩ :=
+      dense_run (ch := ch) hmode hρ hden hok hat (hpl _ (by simp)) hrf hu
+    exact hit_finish hs' hst hhit hsst hfp hrel hw
+
+/-- `term_nextX`'s case for `LowerSwitch`: L0 jumps to one of the switch's successors, memory
+unchanged.
+
+Proof: per rule, `switchInt_inv` or `switchInt_inv_field` (with `hbody`); the target
+`caseTarget cs ow bits` is a case's block or `otherwise` (`List.mem_of_find?_eq_some`). -/
+theorem _root_.Ryo.Check.Lower.LowerSwitch.term_next {Γ : TermCtx} {next : Nat}
+    {term : Terminator} {is : List Insn} (hl : LowerSwitch Γ next term is) {o : Spec.Oracle}
+    {s s' : Spec.State} {f : Spec.Frame} {rest : List Spec.Frame} (hs : s.stack = f :: rest)
+    (hbody : f.body = Γ.body) (h : runOn (evalTerminator term) o s = (.ok (), s')) :
+    ∃ b', b' ∈ termSuccs term ∧ s'.stack = { f with bb := b', stmt := 0 } :: rest ∧
+      s'.mem = s.mem := by
+  have hsucc : ∀ {d : Operand} {cs : List (Nat × BasicBlock)} {ow : BasicBlock} (x : Nat),
+      caseTarget cs ow x ∈ termSuccs (.switchInt d cs ow) := by
+    intro d cs ow x
+    unfold caseTarget
+    simp only [termSuccs, List.mem_append, List.mem_map, List.mem_singleton]
+    cases hf : cs.find? (·.1 == x) with
+    | none => exact .inr rfl
+    | some y => exact .inl ⟨y, List.mem_of_find?_eq_some hf, rfl⟩
+  cases hl
+  case chain hd hty hn hsl hsize hoff hok =>
+    obtain ⟨_, _, _, bits, _, _, _, _, rfl⟩ := switchInt_inv hs hd h
+    exact ⟨_, hsucc bits, rfl, rfl⟩
+  case dense hd hty hn hsl hsize hoff hden ha hok =>
+    obtain ⟨_, _, _, bits, _, _, _, _, rfl⟩ := switchInt_inv hs hd h
+    exact ⟨_, hsucc bits, rfl, rfl⟩
+  case chainF hd hta hpath hn hsa hin hok =>
+    rw [← hbody] at hta
+    obtain ⟨_, _, bits, _, _, _, rfl⟩ := switchInt_inv_field hs hd hta hpath h
+    exact ⟨_, hsucc bits, rfl, rfl⟩
+  case denseF hd hta hpath hn hsa hin hden ha hok =>
+    rw [← hbody] at hta
+    obtain ⟨_, _, bits, _, _, _, rfl⟩ := switchInt_inv_field hs hd hta hpath h
+    exact ⟨_, hsucc bits, rfl, rfl⟩
 
 end Ryo.Proofs.Lower

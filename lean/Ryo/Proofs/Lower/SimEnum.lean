@@ -34,6 +34,7 @@ L0's inversions go through `discr_inv`/`discr_assign_inv` (the `discriminant` rv
 import Ryo.Proofs.Lower.SimField
 import Ryo.Proofs.Lower.SimIntCast
 import Ryo.Proofs.Lower.SimAgg
+import Ryo.Proofs.Lower.SimAggDst
 import Ryo.Check.Lower.Enum
 
 namespace Ryo.Proofs.Lower
@@ -334,12 +335,9 @@ theorem sim_tagRead {Γ : StmtCtx} {ι : Inj} {fp : Nat} {st : OpSem.State} {s s
     (hsto : s.mem.store pd (encodeBits t.size (t.toBits (t.bringInBounds
       (discrTy.bringInBounds dv)))) .one = .ok s'.mem)
     (hmem : MemInj ι s.mem st.mem) (hre : LocalRel ι fp st s.mem se pe true)
-    -- `_d` private
-    (ad : AllocId) (xd : Allocation) (hpdp : pd.prov = some ad) (hιd : ι ad = none)
-    (hxd : s.mem.get? ad = some xd) (hlived : xd.live = true)
-    (haddrd : (xd.addr : Int) = fp + sd.off) (hpaddrd : pd.addr = xd.addr)
-    (hsized : xd.data.size = sd.size)
-    (hprivd : ∀ k < sd.size, st.escapedAt (sd.off + k) = none)
+    -- `_d`, private or escaped (`FnRel.dstWrite`)
+    (hW : DstWrite ι fp st s.mem s'.mem sd pd (encodeBits t.size (t.toBits (t.bringInBounds
+      (discrTy.bringInBounds dv)))))
     {ch : OpSem.Choice} :
     ∃ v st', R.view Γ.mode Γ.ρ i = some v ∧ v.ctl = some .next ∧
       opSem v.op v.ops st ch = .ok (.next, st') ∧
@@ -366,54 +364,28 @@ theorem sim_tagRead {Γ : StmtCtx} {ι : Inj} {fp : Nat} {st : OpSem.State} {s s
     obtain ⟨v, ty, r, hv, hh, hty, ho, hops, hctl⟩ := movInsnOk_spec hm
     obtain ⟨sg, hty'⟩ := intTyOk_spec hty
     have hlb : ba.length = t.size := hlenb.trans hw
-    have hpw : ∀ k < ba.length, st.escapedAt (sd.off + k) = none := by
-      intro k hk
-      rw [hlb, ← hsd] at hk
-      exact hprivd k hk
-    obtain ⟨st', hwr⟩ : ∃ st', st.writeFrame sd.off ba = .ok st' := by
-      unfold OpSem.State.writeFrame
-      rw [writeEscaped_private' hpw]
-      exact ⟨_, rfl⟩
     have hrf' : st.readFrame (se.off + toff) t.size = .ok ba := by rw [← hw]; exact hrf
-    have hop := opSem_mov_fwd (ch := ch) hh hty' ho hfits hrf' hlb hwr
     have hL : encodeBits t.size (t.toBits (t.bringInBounds (discrTy.bringInBounds dv))) =
         encodeBits t.size (tt.toBits dv) := by
       rw [← hval, cast_mov_bytes tt t hw]
     have hbs : BytesInj ι (encodeBits t.size (t.toBits (t.bringInBounds
         (discrTy.bringInBounds dv)))) ba := by
       rw [hL]; exact bytesInj_encodeBits_of_decode hda hlb
-    obtain ⟨hmi, hrd⟩ := writeLocal_priv hmem ad xd hpdp hιd hxd hlived haddrd hpaddrd hsized
-      hprivd hbs hlenL hsto hwr
-    refine ⟨v, st', hv, hctl, by rw [hops]; exact hop, hmi, hrd, ?_⟩
-    intro slot p lv hr hne hap
-    have h1 := LocalRel.store_other hr hsto (.inl (Ne.symm hne))
-    exact LocalRel.writeFrame_apart h1 hwr hpw (by rw [hlb, ← hsd]; exact hap)
+    obtain ⟨st', hwr, -, hmi, hrd, hoth⟩ := hW ba hbs
+    have hop := opSem_mov_fwd (ch := ch) hh hty' ho hfits hrf' hlb hwr
+    exact ⟨v, st', hv, hctl, by rw [hops]; exact hop, hmi, hrd, hoth⟩
   · -- `cvt`: R converts the tag
     obtain ⟨v, tx, ty, r, sx, sy, hv, hh, htx, hty, hsx, ho, hops, hctl⟩ := castInsnOk_spec hc
     have hva : asNat ba = .ok (tt.toBits dv) := by unfold asNat; rw [hda]; rfl
-    have hlenw : (intBytes t.size (cvtInt tt.size sx t.size (tt.toBits dv))).length = t.size :=
-      Ryo.Spec.Theorems.encodeBits_length _ _
-    have hpw : ∀ k < (intBytes t.size (cvtInt tt.size sx t.size (tt.toBits dv))).length,
-        st.escapedAt (sd.off + k) = none := by
-      intro k hk
-      rw [hlenw, ← hsd] at hk
-      exact hprivd k hk
-    obtain ⟨st', hwr⟩ : ∃ st',
-        st.writeFrame sd.off (intBytes t.size (cvtInt tt.size sx t.size (tt.toBits dv))) =
-          .ok st' := by
-      unfold OpSem.State.writeFrame
-      rw [writeEscaped_private' hpw]
-      exact ⟨_, rfl⟩
+    have heq : intBytes t.size (cvtInt tt.size sx t.size (tt.toBits dv)) =
+        encodeBits t.size (t.toBits (t.bringInBounds (discrTy.bringInBounds dv))) := by
+      rw [cvt_bytes tt t sx hu hsx, hval]
+    have hbs : BytesInj ι (encodeBits t.size (t.toBits (t.bringInBounds
+        (discrTy.bringInBounds dv)))) (intBytes t.size (cvtInt tt.size sx t.size (tt.toBits dv))) := by
+      rw [heq]; exact encodeBits_inj ι _ _
+    obtain ⟨st', hwr, -, hmi, hrd, hoth⟩ := hW _ hbs
     have hop := opSem_cvt_fwd (ch := ch) hh htx hty ho hfits hrf hva hwr
-    have hwr' := hwr
-    rw [cvt_bytes tt t sx hu hsx, hval] at hwr'
-    have hbs := encodeBits_inj ι t.size (t.toBits (t.bringInBounds (discrTy.bringInBounds dv)))
-    obtain ⟨hmi, hrd⟩ := writeLocal_priv hmem ad xd hpdp hιd hxd hlived haddrd hpaddrd hsized
-      hprivd hbs hlenL hsto hwr'
-    refine ⟨v, st', hv, hctl, by rw [hops]; exact hop, hmi, hrd, ?_⟩
-    intro slot p lv hr hne hap
-    have h1 := LocalRel.store_other hr hsto (.inl (Ne.symm hne))
-    exact LocalRel.writeFrame_apart h1 hwr hpw (by rw [hlenw, ← hsd]; exact hap)
+    exact ⟨v, st', hv, hctl, by rw [hops]; exact hop, hmi, hrd, hoth⟩
 
 /-! ### Downcast reads -/
 
@@ -546,7 +518,8 @@ theorem enumRead_shape {Γ : StmtCtx} {st : Statement} {is : List R.Insn}
 
 /-- The reads' lift.
 
-`downcast`: `lift_field`'s proof with `downcast_mem`.
+`downcast`: `lift_field`'s proof with `downcast_mem`; `_d` private or escaped
+(`FnRel.dstWrite`, with `hld`).
 
 `discrDirect`: `rw [hbody] at hte htd`; `discrDirect_mem hs hte henc htd h` (`pd`,
 `pe`, the load at `pe.wrappingOffset tag.offset`, `var ∈ vs`, the store, the stack); `live e`
@@ -574,22 +547,22 @@ theorem lift_enumRead {Γ : StmtCtx} {c : R.Code} {s1 : R.RState} {ch : OpSem.Ch
     (hlow : LowerEnumRead Γ (.assign ⟨d, []⟩ rv) [i])
     (hi : c.d.insns[s1.pc]? = some i) (hsc : c.scopesAt s1.pc = []) (hpe : c.mode.pe = false)
     (hpl : PlainView c.mode c.ρ i) (hrel : FnRel Γ ι live f s.mem s1)
-    (hpb : ProvBounded s.mem)
+    (hpb : ProvBounded s.mem) (hld : Ryo.Proofs.Provenance.LiveDisjoint s.mem)
     (hlo : ∀ l ∈ rvalueLocals rv, live l = true)
     (hlive' : ∀ l, live' l = true → l = d ∨ live l = true)
     (h : runOn (evalStatement (.assign ⟨d, []⟩ rv)) o s = (.ok (), s')) :
     LiftOut Γ c ch ι live' f s s' s1 := by
   cases hlow with
   | @discrDirect d e vs discrTy tag esz eal t vd sd se i hte henc htd hagree hsd hse hsize hoff
-      hpriv hii =>
+      hii =>
     rw [hbody] at hte htd
-    obtain ⟨pd, pe, bs, var, hpd, hpe0, hld, hdec, hvar, hsto, hstk⟩ :=
+    obtain ⟨pd, pe, bs, var, hpd, hpe0, hlde, hdec, hvar, hsto, hstk⟩ :=
       discrDirect_mem hs hte henc htd h
     have hle : live e = true := hlo e (by simp [rvalueLocals, placeLocals])
     have hre := hrel.opnd hpe0 hse hle
     -- the tag's address does not wrap
     have hn0 : tag.tag.size ≠ 0 := Nat.pos_iff_ne_zero.mp hsize.2.2.1
-    obtain ⟨id, hid, hpid, -, hlo', -⟩ := load_eq_ok_pos hn0 hld
+    obtain ⟨id, hid, hpid, -, hlo', -⟩ := load_eq_ok_pos hn0 hlde
     have hle2 : pe.addr ≤ (pe.wrappingOffset tag.offset).addr :=
       start_le (q := pe.wrappingOffset tag.offset) hre rfl hid hpid hlo'
     have hoffNat : tag.offset < 2 ^ 64 := by
@@ -597,24 +570,23 @@ theorem lift_enumRead {Γ : StmtCtx} {c : R.Code} {s1 : R.RState} {ch : OpSem.Ch
       have h2 := offOk_spec hoff.2.2
       try dsimp only [Size, Offset] at *
       omega
-    rw [wrappingOffset_eq hoffNat hle2] at hld
-    -- `_d` private
+    rw [wrappingOffset_eq hoffNat hle2] at hlde
+    -- `_d` private or escaped
     have hpos : 0 < sd.size := by rw [hsize.1]; exact hsize.2.1
-    obtain ⟨ad, xd, hp, hι, hxd, hl, haddr, hpaddr, hsz, hpv⟩ :=
-      hrel.priv_dst hpd hsd hpos hpriv
+    have hW := hrel.dstWrite hld hpd hsd hpos
+      (by rw [Ryo.Spec.Theorems.encodeBits_length, hsize.1]) hsto
     have hf1 := offOk_spec hoff.1
     have hf3 := offOk_spec hoff.2.2
     obtain ⟨v, st', hv, hctl, hop, hmi, hrd, hoth⟩ := sim_tagRead (ch := ch) (dv := var.discr)
-      hii hsize.1 hsize.2.2.2 ⟨hf1.1, hf1.2, hf3.1, hf3.2⟩ hld hdec
-      (discrAgree_spec hagree var hvar) hsto hrel.frame.mem hre ad xd hp hι hxd hl haddr hpaddr
-      hsz hpv
+      hii hsize.1 hsize.2.2.2 ⟨hf1.1, hf1.2, hf3.1, hf3.2⟩ hlde hdec
+      (discrAgree_spec hagree var hvar) hsto hrel.frame.mem hre hW
     rw [hmode, hρ] at hv
     have hesc := (Ryo.Proofs.OpFacts.opSem_out hop).2.1
     obtain ⟨hpb', hle'⟩ := memInv_store hpb hsto (encodeBits_noprov _ _)
     exact ⟨st', step_of_view hi hsc hpe hpl hv hctl hop, hstk,
       hrel.after hpd hsd hmi hrd hoth (hrel.hidden.store_noprov hsto (encodeBits_noprov _ _))
         hesc hlive', hpb', hle'⟩
-  | @discrSingle d e vs discrTy idx esz eal t vd sd i hte htd hsd hsize hoff hpriv hii =>
+  | @discrSingle d e vs discrTy idx esz eal t vd sd i hte htd hsd hsize hoff hii =>
     obtain ⟨v, ty, r, hv, hh, hty, hn, hk, hops, hctl⟩ := immInsnOk_spec hii
     rw [hmode, hρ] at hv
     obtain ⟨sg, hty'⟩ := intTyOk_spec hty
@@ -626,8 +598,6 @@ theorem lift_enumRead {Γ : StmtCtx} {c : R.Code} {s1 : R.RState} {ch : OpSem.Ch
     rw [hbody] at hte htd
     obtain ⟨pd, hpd, hsto, hstk⟩ := discrSingle_mem hs hte htd h
     have hpos : 0 < sd.size := by rw [hsize.1]; exact hsize.2
-    obtain ⟨ad, xd, hp, hι, hxd, hl, haddr, hpaddr, hsz, hpv⟩ :=
-      hrel.priv_dst hpd hsd hpos hpriv
     have hf1 := offOk_spec hoff
     -- R writes L0's bytes
     have hib : intBytes t.size x =
@@ -638,36 +608,22 @@ theorem lift_enumRead {Γ : StmtCtx} {c : R.Code} {s1 : R.RState} {ch : OpSem.Ch
           (Ryo.Spec.Theorems.IntType.bringInBounds_emod t (singleDiscr vs discrTy idx))]
     have hlen : (intBytes t.size x).length = t.size := by
       rw [hib]; exact Ryo.Spec.Theorems.encodeBits_length _ _
-    have hpw : ∀ j < (intBytes t.size x).length, s1.st.escapedAt (sd.off + j) = none := by
-      intro j hj
-      rw [hlen, ← hsize.1] at hj
-      exact hpv j hj
-    obtain ⟨st', hwr⟩ : ∃ st', s1.st.writeFrame sd.off (intBytes t.size x) = .ok st' := by
-      unfold OpSem.State.writeFrame
-      rw [writeEscaped_private' hpw]
-      exact ⟨_, rfl⟩
-    have hop := opSem_imm_fwd (ch := ch) hh hty' ho hf1 hfk hwr
     have hbs : BytesInj ι (encodeBits t.size (t.toBits (t.bringInBounds
         (singleDiscr vs discrTy idx)))) (intBytes t.size x) := by
       rw [hib]; exact encodeBits_inj ι _ _
     have hlen0 : (encodeBits t.size (t.toBits (t.bringInBounds
         (singleDiscr vs discrTy idx)))).length = sd.size := by
       rw [Ryo.Spec.Theorems.encodeBits_length, hsize.1]
-    obtain ⟨hmi, hrd⟩ := writeLocal_priv hrel.frame.mem ad xd hp hι hxd hl haddr hpaddr hsz
-      hpv hbs hlen0 hsto hwr
-    have hoth : ∀ (slot : LocalSlot) p lv, LocalRel ι s1.fp s1.st s.mem slot p lv →
-        p.prov ≠ pd.prov → (sd.off + sd.size ≤ slot.off ∨ slot.off + slot.size ≤ sd.off) →
-        LocalRel ι s1.fp st' s'.mem slot p lv := by
-      intro slot p lv hr hne hap
-      have h1 := LocalRel.store_other hr hsto (.inl (Ne.symm hne))
-      exact LocalRel.writeFrame_apart h1 hwr hpw (by rw [hlen, ← hsize.1]; exact hap)
+    -- `_d` private or escaped
+    obtain ⟨st', hwr, -, hmi, hrd, hoth⟩ := hrel.write_dst hld hpd hsd hpos hbs hlen0 hsto
+    have hop := opSem_imm_fwd (ch := ch) hh hty' ho hf1 hfk hwr
     have hesc := (Ryo.Proofs.OpFacts.opSem_out hop).2.1
     obtain ⟨hpb', hle'⟩ := memInv_store hpb hsto (encodeBits_noprov _ _)
     exact ⟨st', step_of_view hi hsc hpe hpl hv hctl (by rw [hops'']; exact hop), hstk,
       hrel.after hpd hsd hmi hrd hoth (hrel.hidden.store_noprov hsto (encodeBits_noprov _ _))
         hesc hlive', hpb', hle'⟩
   | @downcast d a oa projs ta ty off n sd sa i ha hta hpath htd hn hpos hwf hsd hsa hsize hoff
-      hpriv hmi =>
+      hmi =>
     rw [eval_use_place_norm ha] at h
     obtain ⟨v, tyN, r, hv, hh, hty, ho, hops, hctl⟩ := movInsnOk_spec hmi
     rw [hmode, hρ] at hv
@@ -678,13 +634,16 @@ theorem lift_enumRead {Γ : StmtCtx} {c : R.Code} {s1 : R.RState} {ch : OpSem.Ch
     have hla : live _ = true := hlo _ (operandPlace?_mem ha)
     have hra := hrel.opnd hpa hsa hla
     have hpos' : 0 < sd.size := by rw [hsize.1]; exact hpos
-    obtain ⟨ad, xd, hp, hι, hxd, hl, haddr, hpaddr, hsz, hpv⟩ :=
-      hrel.priv_dst hpd hsd hpos' hpriv
+    -- `_d` private or escaped
+    have hlen0 : bsd.length = sd.size :=
+      ((Ryo.Spec.Theorems.bytesLeDefined_iff _ _).mp
+        (reenc_wf hwf hn (load_length hlo0) hd hen)).1.trans
+        ((load_length hlo0).trans hsize.1.symm)
+    have hW := hrel.dstWrite hld hpd hsd hpos' hlen0 hsto
     have hf1 := offOk_spec hoff.1
     have hf2 := offOk_spec hoff.2
     obtain ⟨st', hop, hmi', hrd, hoth⟩ := sim_copyField (ch := ch) hwf hn hsize.1 hsize.2 hlo0
-      hd hen hsto hrel.frame.mem hra ad xd hp hι hxd hl haddr hpaddr hsz hpv hh hty' ho
-      ⟨hf1.1, hf1.2, hf2.1, hf2.2⟩
+      hd hen hsto hrel.frame.mem hra hW hh hty' ho ⟨hf1.1, hf1.2, hf2.1, hf2.2⟩
     have hsub := bytesLeDefined_prov (reenc_wf hwf hn (load_length hlo0) hd hen)
     have hhid := hrel.hidden.load hlo0
     have hhid' : ∀ b ∈ bsd, ∀ fr, b.provFrag = some fr → ¬ PrivAlloc ι f fr.prov := by
@@ -1369,16 +1328,17 @@ theorem lift_enumAgg {Γ : StmtCtx} {c : R.Code} {s1 : R.RState} {ch : OpSem.Cho
     (hi : ∀ j (hj : j < is.length), c.d.insns[s1.pc + j]? = some (is[j]'hj))
     (hsc : ∀ j, j < is.length → c.scopesAt (s1.pc + j) = []) (hpe : c.mode.pe = false)
     (hpl : ∀ i ∈ is, PlainView c.mode c.ρ i) (hrel : FnRel Γ ι live f s.mem s1)
-    (hpb : ProvBounded s.mem)
+    (hpb : ProvBounded s.mem) (hld : Ryo.Proofs.Provenance.LiveDisjoint s.mem)
+    (hio : EscIdOff s1.st)
     (hlo : ∀ l ∈ rvalueLocals rv, live l = true)
     (hlive' : ∀ l, live' l = true → l = d ∨ live l = true)
     (h : runOn (evalStatement (.assign ⟨d, []⟩ rv)) o s = (.ok (), s')) :
     LiftOutN Γ c ch ι live' f s s' s1 is.length := by
   cases hlow with
   | @agg d v act ops vs discrTy repr esz eal var vfields tops tfs sd srcs is htd hvar hlay htag
-      hsz hsd hoff hpriv hf hpo =>
+      hsz hsd hoff hf hpo =>
     have hmm := enumAgg_mem hs hbody htd hvar hlay htag hsz hf h
-    refine lift_aggMem hmode hρ hsd hoff hpriv hf hpo hi hsc hpe hpl hrel hpb ?_ hlive' hmm
+    refine lift_aggMemX hmode hρ hsd hoff hf hpo hi hsc hpe hpl hrel hpb hld hio ?_ hlive' hmm
     intro src hsrc a so ws he
     apply hlo
     have hm := aggFields_slot_mem hf src hsrc a so ws he
@@ -1434,8 +1394,8 @@ theorem stmt_sim_enum {Γ : TermCtx} {c : R.Code} {ι : Inj} {o : Spec.Oracle}
     obtain ⟨hl1, hl2⟩ := assign_live hfn.live M.hbd hst
     rw [hR] at h
     refine stmtOut_of_lift M.stack hfn.storage M.hbd hst M.sl M.fresh M.dinv hpc ?_
-    exact lift_enumRead M.stack M.body.symm hmode.symm hρ.symm h hc hsc hpe hpl M.rel M.pb hl2
-      hl1 hev
+    exact lift_enumRead M.stack M.body.symm hmode.symm hρ.symm h hc hsc hpe hpl M.rel M.pb
+      M.dinv.2 hl2 hl1 hev
   | setDiscr h =>
     generalize hR : rangeInsns c.d r = is at h
     cases h with
@@ -1473,7 +1433,7 @@ theorem stmt_sim_enum {Γ : TermCtx} {c : R.Code} {ι : Inj} {o : Spec.Oracle}
     obtain ⟨hl1, hl2⟩ := assign_live hfn.live M.hbd hst
     refine stmtOut_of_liftN (k := (rangeInsns c.d r).length) M.stack hfn.storage M.hbd hst M.sl
       M.fresh M.dinv (by rw [hpc0, hlen]; omega) ?_
-    exact lift_enumAgg M.stack M.body.symm hmode.symm hρ.symm h hi hsc' hpe hpl M.rel M.pb hl2
-      hl1 hev
+    exact lift_enumAgg M.stack M.body.symm hmode.symm hρ.symm h hi hsc' hpe hpl M.rel M.pb
+      M.dinv.2 (escIdOff_of_noEsc M.rel hfn.noEsc) hl2 hl1 hev
 
 end Ryo.Proofs.Lower
