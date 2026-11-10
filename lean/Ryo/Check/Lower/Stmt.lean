@@ -282,7 +282,8 @@ def checkCopyInt (Γ : StmtCtx) (d : Local) (oa : Operand) (is : List Insn) : Ve
           else .unsupported "copy: instruction form"
         | _, _, _ => .unsupported "copy: slots or instruction count"
     | _, _ => .unsupported "copy: not integers"
-  | none => .unsupported "use: operand"
+  | none => .unsupported (match oa with
+    | .copy _ | .move _ => "use: projected place" | .const .. => "use: const" | _ => "use: operand")
 
 /-- `constInt`'s checker: `_d = const bits : t`. -/
 def checkConstInt (Γ : StmtCtx) (d : Local) (bits : Nat) (t : IntType) (valid : ValidRange)
@@ -347,7 +348,8 @@ def checkCopyOther (Γ : StmtCtx) (d : Local) (oa : Operand) (is : List Insn) : 
       if pt.metaKind = .none ∧ ta = .ptr pt valid then checkCopyN Γ d a 8 is
       else .unsupported "copy: wide pointer or mixed types"
     | _, _ => .unsupported "copy: not integers, bools or thin pointers"
-  | none => .unsupported "use: operand"
+  | none => .unsupported (match oa with
+    | .copy _ | .move _ => "use: projected place" | .const .. => "use: const" | _ => "use: operand")
 
 theorem checkCopyOther_sound {Γ : StmtCtx} {d : Local} {oa : Operand} {is : List Insn}
     (h : checkCopyOther Γ d oa is = .ok) : LowerStmt Γ (.assign ⟨d, []⟩ (.use oa)) is := by
@@ -397,6 +399,32 @@ theorem checkConstBool_sound {Γ : StmtCtx} {d : Local} {bits : Nat} {is : List 
     · cases h
   · cases h
 
+/-- A coverage bucket for a statement no rule handles. -/
+def stmtKind : Statement → String
+  | .assign p rv =>
+    let dst := if p.proj.isEmpty then "" else " (projected place)"
+    let k := match rv with
+      | .use (.copy q) | .use (.move q) => if q.proj.isEmpty then "use local" else "use place"
+      | .use (.const c _) => match c with
+        | .scalar _ => "use const scalar" | .ptr .. => "use const ptr"
+        | .zeroSized => "use const zst" | .slice .. => "use const slice"
+        | .indirect .. => "use const indirect"
+      | .use _ => "use other"
+      | .repeat .. => "repeat" | .ref .. => "ref" | .threadLocalRef _ => "tls ref"
+      | .rawPtr .. => "raw ptr" | .cast k _ _ => s!"cast {(repr k).pretty}"
+      | .binaryOp op _ _ => s!"binop {(repr op).pretty}"
+      | .unaryOp op _ => s!"unop {(repr op).pretty}"
+      | .discriminant _ => "discriminant" | .aggregate k _ => s!"aggregate {(repr k).pretty}"
+      | .copyForDeref _ => "copy for deref" | .wrapUnsafeBinder .. => "wrap binder"
+      | .reborrow .. => "reborrow"
+    "statement: " ++ k ++ dst
+  | .setDiscriminant .. => "statement: set discriminant"
+  | .assume _ => "statement: assume"
+  | .copyNonOverlapping .. => "statement: copy nonoverlapping"
+  | .placeMention _ => "statement: place mention"
+  | .nop w => s!"statement: nop {w}"
+  | _ => "statement"
+
 /-- Decide `LowerStmt` for the rules so far. -/
 def checkStmt (Γ : StmtCtx) : Statement → List Insn → Verdict
   | .storageLive _, [] | .storageDead _, [] => .ok
@@ -408,7 +436,7 @@ def checkStmt (Γ : StmtCtx) : Statement → List Insn → Verdict
     checkConstInt Γ d bits t valid is
   | .assign ⟨d, []⟩ (.use (.const (.scalar bits) .bool)), is => checkConstBool Γ d bits is
   | .assign ⟨d, []⟩ (.use oa), is => checkUse Γ d oa is
-  | _, _ => .unsupported "statement"
+  | st, _ => .unsupported (stmtKind st)
 
 theorem checkBinop_sound {Γ : StmtCtx} {d : Local} {op : BinOp} {oa ob : Operand}
     {is : List Insn} (h : checkBinop Γ d op oa ob is = .ok) :

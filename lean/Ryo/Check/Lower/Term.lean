@@ -275,7 +275,11 @@ def checkTerm (Γ : TermCtx) (next : Nat) : Terminator → List Insn → Verdict
       | none => .unsupported "switch: operand"
     | [(v, bb)], ibr :: tl => okIf (switch1Ok Γ next d v bb otherwise ibr tl) "switch: one case, form"
     | _, _ => .unsupported "switch: cases"
-  | _, _ => .unsupported "terminator"
+  | t, _ => .unsupported (match t with
+    | .call .. => "terminator: call" | .tailCall .. => "terminator: tail call"
+    | .drop .. => "terminator: drop" | .assert .. => "terminator: assert"
+    | .unreachable => "terminator: unreachable" | .unwindResume => "terminator: resume"
+    | .unwindTerminate _ => "terminator: terminate" | _ => "terminator")
 
 theorem checkTerm_sound {Γ : TermCtx} {next : Nat} {term : Terminator} {is : List Insn}
     (h : checkTerm Γ next term is = .ok) : LowerTerm Γ next term is := by

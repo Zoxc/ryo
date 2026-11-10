@@ -350,13 +350,11 @@ theorem return_inv {o : Spec.Oracle} {s s' : Spec.State} {f : Spec.Frame}
     subst s3
     obtain ⟨g, s2, h5, h6⟩ := runOn_bind_ok h4
     have hg : g = f := by
-      first
-      | (unfold popFrame at h5
-         rw [runOn_bind, runOn_curFrame hs] at h5
-         obtain ⟨_, s4, -, h7⟩ := runOn_bind_ok h5
-         obtain ⟨_, s5, -, h8⟩ := runOn_bind_ok h7
-         exact (prod_ok_inj h8).1.symm)
-      | sorry
+      unfold popFrame at h5
+      rw [runOn_bind, runOn_curFrame hs] at h5
+      obtain ⟨_, s4, -, h7⟩ := runOn_bind_ok h5
+      obtain ⟨_, s5, -, h8⟩ := runOn_bind_ok h7
+      exact (prod_ok_inj h8).1.symm
     subst g
     refine ⟨p, ty, v, f, s2, rfl, hty, hv, h5, rfl, fun hc => ?_⟩
     simp only [hc] at h6

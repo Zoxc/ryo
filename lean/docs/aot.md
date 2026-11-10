@@ -291,6 +291,39 @@ combines it with `fn_sim_ret`, whose return case relates `rax`'s low bytes to `_
 address or a by-address argument, which no rule yet covers) go with M5b's places and
 references, and L0's `callBody` facts with M5c's calls.
 
+**M5b** (in progress). More rule families, each a `Check/Lower/` relation with its checker and a
+`Proofs/Lower/Sim*.lean` simulation, joined in `LowerStmtX` (`StmtExt.lean`; `checkFamilies`
+tries each in turn) and `LowerTermX` (`TermExt.lean`), and simulated by `stmt_sim`
+(`FnStep.lean`): copies at any well-formed type by one `mov` of 1 to 16 bytes, bit casts and thin
+pointer casts (`Copy`; re-encoding only refines bytes, `encode_decode_le`), integer casts by
+`mov` or `cvt` (`IntCast`), `not`/`neg` (`Unop`), integer and `bool` compares by `cmp`/`cmp_imm`
+(`Cmp`), reads of a local's field projections (`Field`), aggregates field by field, split copies
+and constants at any type as multi-instruction statements (`Agg`, `LiftOutN`), slice metadata
+and wide-pointer casts (`Wide`), loads and stores through thin pointers (`Deref`), enum
+discriminant reads, downcast field reads, `SetDiscriminant` and enum aggregates (`Enum`).
+`Deref` adds `DerefInv ι m` to `MatchAt` (no live byte carries the provenance of a live,
+non-empty allocation `ι` drops, and L0's live allocations are disjoint): every step keeps it
+(`MemKept` in each lift, `DerefInv.push` at `StorageLive`, `memKept_dealloc`), and `fn_sound`
+assumes it at entry (`hdinv`, the caller's side, M5c/M6). Terminators: `SwitchInt` with
+`br.eq.imm` chains and `switch.dense` (`Switch`), returns of any `_0` in its ABI registers
+(`RetX`; `RetValX` relates each register part's bytes to `_0`'s by `BytesInj` and replaces
+`RetVal`), and a block's last compare fused with its `SwitchInt` into one `br_cmp`/`br_cmp_imm`
+(`Fused`: two L0 steps for one R branch, through `MatchMid`; the compared local dead in both
+successors). Reachability (`Reach.lean`): `monoSuccs` takes only the static target of a switch
+on a constant or `RuntimeChecks`, `reachCheck` checks the untrusted fixpoint, and `LowersFn`
+checks only reached blocks, so `BlockCert.dead` is no longer trusted (a dead block the check
+reaches is rejected); the invariant is `MatchX` (`SimReach.lean`: `MatchAt` at a reached block,
+or `MatchMid`). A dead `otherwise` target ends the simulation in `DeadAt` (no successful L0 step
+follows, `dead_no_step`), `fn_sim_ret`'s and `fn_sound`'s third outcome. The prologue (`PrologX`):
+one `arg` per register piece (pairs, `xmm`, ZSTs, `Cast` units, the sret pointer, the
+`track_caller` location), related by `ArgRelX`, giving `match_entryX` and `fn_soundX`. 1022
+corpus functions validate (`check-cert`). Not covered yet: escaped locals and `&`/`&raw` (in
+progress, over `LowerRef`/`ScopesOk`/`LowersFnX` in `Ref.lean`, `FnX.lean`), static switches,
+sparse switches, division, remainder, shifts and overflow binops, pool constants (they need a
+global/pool invariant), sret returns, `Indirect`, stack and spread inputs, `assert`,
+`unreachable` and `resume` terminators, escaped destinations, niche discriminants and unions;
+calls and drops are M5c's.
+
 ## C2. Bytes → R: `decodeReduced` and `decode_sound` (proved once)
 
 Rather than relating the Rust encoder to anything, prove the **Lean decoder** correct:

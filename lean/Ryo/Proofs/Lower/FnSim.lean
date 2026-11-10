@@ -23,11 +23,13 @@ import Ryo.Proofs.Lower.SimTerm
 import Ryo.Proofs.Lower.SimPtr
 import Ryo.Proofs.Lower.SimBool
 import Ryo.Proofs.Lower.ProvBound
+import Ryo.Proofs.Provenance
 
 namespace Ryo.Proofs.Lower
 
 open Ryo.Spec Ryo.Spec.Sem Ryo.Vm Ryo.Vm.OpSem Ryo.Check.Lower
 open Ryo.Spec.Theorems (ptrProvOf)
+open Ryo.Proofs.Provenance (LiveDisjoint)
 
 /-! ### Small facts -/
 
@@ -116,6 +118,15 @@ theorem dealloc_size {m m' : Memory} {p : ThinPointer} {k : AllocationKind} {n :
 
 /-! ### The relation -/
 
+/-- `a` is a live, non-empty L0 allocation `ι` drops. -/
+def Unmapped (ι : Inj) (m : Memory) (a : AllocId) : Prop :=
+  ι a = none ∧ ∃ x, m.get? a = some x ∧ x.live = true ∧ 0 < x.data.size
+
+/-- The deref rules' memory invariant (`SimDeref`): no live byte carries the provenance of a
+live, non-empty allocation `ι` drops, and L0's live allocations don't overlap. -/
+def DerefInv (ι : Inj) (m : Memory) : Prop :=
+  Hidden m (Unmapped ι m) ∧ LiveDisjoint m
+
 /-- See the module comment. -/
 structure MatchAt (Γ : TermCtx) (ι : Inj) (s : Spec.State) (s1 : R.RState) (f : Spec.Frame)
     (rest : List Spec.Frame) (blk : BlockCert) (bd : BlockData) : Prop where
@@ -131,6 +142,7 @@ structure MatchAt (Γ : TermCtx) (ι : Inj) (s : Spec.State) (s1 : R.RState) (f 
   sl : ∀ l p, f.locals[l]? = some (some p) → (computeStorage Γ.body).get f.bb f.stmt l = true
   pb : ProvBounded s.mem
   fresh : ∀ a, s.mem.allocs.size ≤ a → ι a = none
+  dinv : DerefInv ι s.mem
 
 def Match (Γ : TermCtx) (ι : Inj) (s : Spec.State) (s1 : R.RState) : Prop :=
   ∃ f rest blk bd, MatchAt Γ ι s s1 f rest blk bd
@@ -149,19 +161,46 @@ def IncomingOk (c : R.Code) : Prop := ∀ st : OpSem.State, ∃ bs, st.readFrame
 
 /-! ### Statements -/
 
+/-- `m'` is `m` after a memory change that keeps each allocation's address and size, makes
+none live, and brings in no provenance a `Hidden` predicate excludes (stores of bytes loaded
+from `m` or provenance-free, deallocations): what the deref rules' invariant (`DerefInv`,
+SimDeref) needs of a step. -/
+def MemKept (m m' : Memory) : Prop :=
+  (∀ a x', m'.get? a = some x' → ∃ x, m.get? a = some x ∧ x.addr = x'.addr ∧
+    (x'.live = true → x.live = true) ∧ x.data.size = x'.data.size) ∧
+  ∀ A : AllocId → Prop, Hidden m A → Hidden m' A
+
+/-- After a store, each allocation was there before, at the same address, size and liveness. -/
+theorem store_get?_fwd {m m' : Memory} {p : ThinPointer} {bs : List AbstractByte} {al : Align}
+    (h : m.store p bs al = .ok m') {a : AllocId} {x' : Allocation} (hx : m'.get? a = some x') :
+    ∃ x, m.get? a = some x ∧ x.addr = x'.addr ∧ x.live = x'.live ∧
+      x.data.size = x'.data.size := by
+  obtain ⟨hsz, hag⟩ := Ryo.Spec.Theorems.Memory.store_agree h
+  obtain ⟨hlt', rfl⟩ := Array.getElem?_eq_some_iff.mp (show m'.allocs[a]? = some x' from hx)
+  have hlt : a < m.allocs.size := by
+    first
+      | (have hs' := store_size h; omega)
+      | (rw [hsz]; exact hlt')
+      | exact hsz ▸ hlt'
+  obtain ⟨e1, -, e3, e4, -⟩ := hag a hlt hlt'
+  exact ⟨m.allocs[a], get?_of_lt hlt, e1, e3, e4⟩
+
+theorem MemKept.refl (m : Memory) : MemKept m m :=
+  ⟨fun _ x' hx => ⟨x', hx, rfl, fun h => h, rfl⟩, fun _ h => h⟩
+
+theorem MemKept.trans {m1 m2 m3 : Memory} (h1 : MemKept m1 m2) (h2 : MemKept m2 m3) :
+    MemKept m1 m3 := by
+  refine ⟨fun a x3 hx3 => ?_, fun A hA => h2.2 A (h1.2 A hA)⟩
+  obtain ⟨x2, hx2, e2, l2, s2⟩ := h2.1 a x3 hx3
+  obtain ⟨x1, hx1, e1, l1, s1⟩ := h1.1 a x2 hx2
+  exact ⟨x1, hx1, e1.trans e2, fun h => l1 (l2 h), s1.trans s2⟩
+
 /-- What a lifted assignment gives (`lift_*` plus the memory invariants). -/
 def LiftOut (Γ : StmtCtx) (c : R.Code) (ch : OpSem.Choice) (ι : Inj) (live' : Local → Bool)
     (f : Spec.Frame) (s s' : Spec.State) (s1 : R.RState) : Prop :=
   ∃ st', R.step c s1 ch = .ok (.step { s1 with pc := s1.pc + 1, st := st' }) ∧
     s'.stack = s.stack ∧ FnRel Γ ι live' f s'.mem { s1 with pc := s1.pc + 1, st := st' } ∧
-    ProvBounded s'.mem ∧ s.mem.allocs.size ≤ s'.mem.allocs.size
-
-/-- The memory invariants after a provenance-free store. -/
-theorem memInv_store {s s' : Spec.State} (hpb : ProvBounded s.mem) {pd : ThinPointer}
-    {bs : List AbstractByte} (hsto : s.mem.store pd bs .one = .ok s'.mem)
-    (hnp : ∀ b ∈ bs, b.provFrag = none) :
-    ProvBounded s'.mem ∧ s.mem.allocs.size ≤ s'.mem.allocs.size :=
-  ⟨hpb.store_noprov hsto hnp, Nat.le_of_eq (store_size hsto).symm⟩
+    ProvBounded s'.mem ∧ s.mem.allocs.size ≤ s'.mem.allocs.size ∧ MemKept s.mem s'.mem
 
 
 /-! ### Memory facts of the bool and pointer rules -/
@@ -221,6 +260,145 @@ theorem Hidden.load {m : Memory} {A : AllocId → Prop} (hh : Hidden m A) {p : T
     obtain ⟨j, hj, rfl⟩ := Array.mem_iff_getElem.mp hb
     rw [Array.getElem_extract] at hf
     exact hh id _ (Array.getElem?_eq_getElem hid) hlive _ _ f hf
+
+
+/-- A store whose bytes carry no provenance a `Hidden` predicate of `m` excludes. -/
+theorem memKept_store {m m' : Memory} {p : ThinPointer} {bs : List AbstractByte} {al : Align}
+    (hsto : m.store p bs al = .ok m')
+    (hbs : ∀ A : AllocId → Prop, Hidden m A → ∀ b ∈ bs, ∀ fr, b.provFrag = some fr →
+      ¬ A fr.prov) :
+    MemKept m m' := by
+  refine ⟨fun a x' hx' => ?_, fun A hA => hA.store_hidden hsto (hbs A hA)⟩
+  obtain ⟨x, hx, e1, el, es⟩ := store_get?_fwd hsto hx'
+  exact ⟨x, hx, e1, fun h => el.trans h, es⟩
+
+/-- A store of provenance-free bytes. -/
+theorem memKept_noprov {m m' : Memory} {p : ThinPointer} {bs : List AbstractByte} {al : Align}
+    (hsto : m.store p bs al = .ok m') (hnp : ∀ b ∈ bs, b.provFrag = none) : MemKept m m' :=
+  memKept_store hsto fun _ _ b hb fr hfr => by rw [hnp b hb] at hfr; cases hfr
+
+/-- A store of bytes whose provenance is that of bytes loaded from `m` (`bytesLeDefined_prov`'s
+shape). -/
+theorem memKept_load {m m' : Memory} {p q : ThinPointer} {bsd bs0 : List AbstractByte}
+    {al al' : Align} {n : Nat} (hsto : m.store p bsd al = .ok m')
+    (hlo : m.load q n al' = .ok bs0)
+    (hsub : ∀ b ∈ bsd, ∀ fr, b.provFrag = some fr →
+      ∃ j, ∃ hj : j < bs0.length, ∃ fr0, bs0[j].provFrag = some fr0 ∧ fr0.prov = fr.prov) :
+    MemKept m m' := by
+  refine memKept_store hsto fun A hA b hb fr hfr => ?_
+  obtain ⟨j, hj, fr0, hf0, he0⟩ := hsub b hb fr hfr
+  rw [← he0]
+  exact hA.load hlo _ (List.getElem_mem hj) fr0 hf0
+
+/-- The memory invariants after a provenance-free store. -/
+theorem memInv_store {s s' : Spec.State} (hpb : ProvBounded s.mem) {pd : ThinPointer}
+    {bs : List AbstractByte} (hsto : s.mem.store pd bs .one = .ok s'.mem)
+    (hnp : ∀ b ∈ bs, b.provFrag = none) :
+    ProvBounded s'.mem ∧ s.mem.allocs.size ≤ s'.mem.allocs.size ∧ MemKept s.mem s'.mem :=
+  ⟨hpb.store_noprov hsto hnp, Nat.le_of_eq (store_size hsto).symm, memKept_noprov hsto hnp⟩
+
+/-- `DerefInv` survives any memory change `MemKept` covers (stores of loaded or
+provenance-free bytes, deallocations). -/
+theorem DerefInv.of_memKept {ι : Inj} {m m' : Memory} (h : DerefInv ι m) (hk : MemKept m m') :
+    DerefInv ι m' := by
+  obtain ⟨hmap, hld⟩ := h
+  obtain ⟨hf, hh⟩ := hk
+  have hU : ∀ a, Unmapped ι m' a → Unmapped ι m a := by
+    rintro a ⟨hι, x', hx', hl', hp'⟩
+    obtain ⟨x, hx, -, el, es⟩ := hf a x' hx'
+    exact ⟨hι, x, hx, el hl', by omega⟩
+  refine ⟨(hh _ hmap).mono hU, ?_⟩
+  intro i j a b x hi hj hla hlb h1 h2 h3 h4
+  obtain ⟨a0, ha0, ea, el, es⟩ := hf i a hi
+  obtain ⟨b0, hb0, eb, el', es'⟩ := hf j b hj
+  simp only [Allocation.size] at h2 h4
+  exact hld i j a0 b0 x ha0 hb0 (el hla) (el' hlb) (by omega)
+    (by simp only [Allocation.size]; omega) (by omega) (by simp only [Allocation.size]; omega)
+
+/-- A deallocation only kills an allocation. -/
+theorem memKept_dealloc {m m' : Memory} {p : ThinPointer} {k : AllocationKind} {n : Nat}
+    {al : Align} (hd : m.deallocate p k n al = .ok m') : MemKept m m' := by
+  refine ⟨fun c x' hx' => ?_, fun A hA => hA.dealloc hd⟩
+  obtain ⟨id, a0, hg, rfl⟩ := dealloc_ok_aux hd
+  have hid : id < m.allocs.size := by
+    unfold Memory.get? at hg
+    exact (Array.getElem?_eq_some_iff.mp hg).1
+  unfold Memory.get? at hx'
+  simp only [Array.set!, Array.getElem?_setIfInBounds] at hx'
+  by_cases hc : id = c
+  · subst hc
+    simp [hid] at hx'
+    refine ⟨a0, hg, ?_, ?_, ?_⟩ <;>
+      first
+        | (subst hx'; simp)
+        | (rw [← hx']; simp)
+        | (rw [hx']; simp)
+        | (subst hx'; rfl)
+  · rw [if_neg hc] at hx'
+    exact ⟨x', hx', rfl, fun h => h, rfl⟩
+
+/-- `DerefInv` after a fresh allocation (`Memory.allocate`: `Uninit` bytes at an address no live
+allocation overlaps, `addrOk`); no byte carries its id (`ProvBounded`). -/
+theorem DerefInv.push {ι : Inj} {m : Memory} (h : DerefInv ι m) (hpb : ProvBounded m)
+    {a : Allocation} {size : Nat} {al : Align} (hdata : a.data = Array.replicate size .uninit)
+    (hok : m.addrOk a.addr size al = true) : DerefInv ι { allocs := m.allocs.push a } := by
+  obtain ⟨hmap, hld⟩ := h
+  have hget : ∀ c, ({ allocs := m.allocs.push a } : Memory).get? c =
+      if c = m.allocs.size then some a else m.get? c := by
+    intro c
+    show (m.allocs.push a)[c]? = _
+    first
+      | (rw [Array.getElem?_push]; done)
+      | (rw [Array.getElem?_push]; rfl)
+      | (by_cases hc : c = m.allocs.size <;> simp [Array.getElem?_push, Memory.get?, hc])
+  have hasz : a.data.size = size := by rw [hdata]; simp
+  have hnew : ∀ i (hi : i < a.data.size), a.data[i].provFrag = none := by
+    obtain ⟨d, _, _, _, _, _, _⟩ := a
+    simp only at hdata
+    subst hdata
+    intro i hi
+    simp [AbstractByte.provFrag]
+  -- no live allocation of `m` meets `a`'s range
+  have hno : ∀ j y z, m.get? j = some y → y.live = true → y.addr ≤ z →
+      z < y.addr + y.data.size → a.addr ≤ z → z < a.addr + size → False := by
+    intro j y z hy hyl h1 h2 h3 h4
+    obtain ⟨hjlt, hyj⟩ := Array.getElem?_eq_some_iff.mp (show m.allocs[j]? = some y from hy)
+    have hys : y.data.size ≠ 0 := by omega
+    have hs0 : size ≠ 0 := by omega
+    have hov : (y.live && y.overlaps a.addr size) = true := by
+      rw [hyl, Bool.true_and]
+      unfold Allocation.overlaps
+      first
+        | (simp [Allocation.size, hys, hs0]; exact ⟨decide_eq_false (by omega), by omega⟩)
+        | (simp [Allocation.size, hys, hs0]; omega)
+        | (simp [Allocation.size, hys, hs0, decide_eq_false_iff_not]; omega)
+    have hany : (m.allocs.any fun b => b.live && b.overlaps a.addr size) = true :=
+      Array.any_eq_true.mpr ⟨j, hjlt, by rw [hyj]; exact hov⟩
+    unfold Memory.addrOk at hok
+    rw [hany] at hok
+    simp at hok
+  refine ⟨?_, ?_⟩
+  · intro c x hx hlv i hi fr hfr hU
+    rw [hget] at hx
+    split at hx
+    · obtain rfl := Option.some.inj hx
+      rw [hnew i hi] at hfr
+      cases hfr
+    · have hlt := hpb c x hx i hi fr hfr
+      obtain ⟨hι, y, hy, hyl, hyp⟩ := hU
+      rw [hget, if_neg (Nat.ne_of_lt hlt)] at hy
+      exact hmap c x hx hlv i hi fr hfr ⟨hι, y, hy, hyl, hyp⟩
+  · intro i j x y z hi hj hxl hyl h1 h2 h3 h4
+    simp only [Allocation.size] at h2 h4
+    rw [hget] at hi hj
+    split at hi <;> split at hj
+    · next e1 e2 => exact e1.trans e2.symm
+    · obtain rfl := Option.some.inj hi
+      exact (hno j y z hj hyl h3 h4 h1 (by rw [← hasz]; exact h2)).elim
+    · obtain rfl := Option.some.inj hj
+      exact (hno i x z hi hxl h1 h2 h3 (by rw [← hasz]; exact h4)).elim
+    · exact hld i j x y z hi hj hxl hyl h1 (by simp only [Allocation.size]; exact h2) h3
+        (by simp only [Allocation.size]; exact h4)
 
 /-- A whole-local copy at `ty` of `n` bytes in L0: the source's bytes loaded and decoded, the
 value re-encoded and stored into the destination. -/
@@ -423,7 +601,8 @@ theorem lift_copyPtr {Γ : StmtCtx} {c : R.Code} {s1 : R.RState} {ch : OpSem.Cho
   have hesc := (Ryo.Proofs.OpFacts.opSem_out hop).2.1
   exact ⟨st', step_of_view hi hsc hpe hpl hv hctl (by rw [hops]; exact hop), hstk,
     hrel.after hpd hsd hmi' hrd hoth (hrel.hidden.store_hidden hsto hhid') hesc hlive',
-    hpb.store hsto hbd', Nat.le_of_eq (store_size hsto).symm⟩
+    hpb.store hsto hbd', Nat.le_of_eq (store_size hsto).symm,
+      memKept_load hsto hlo0 hsub⟩
 
 /-- `constBool`'s lift: an `imm` of 1 byte into a private bool local (`sim_constBool`). -/
 theorem lift_constBool {Γ : StmtCtx} {c : R.Code} {s1 : R.RState} {ch : OpSem.Choice} {ι : Inj}
@@ -474,7 +653,7 @@ def StmtOut (Γ : TermCtx) (c : R.Code) (ch : OpSem.Choice) (ι : Inj) (f : Spec
     FnRel Γ.toStmtCtx ι ((computeLive Γ.body).get f.bb (f.stmt + 1)) f' s'.mem s1' ∧
     (∀ l p, f'.locals[l]? = some (some p) →
       (computeStorage Γ.body).get f.bb (f.stmt + 1) l = true) ∧
-    ProvBounded s'.mem ∧ (∀ a, s'.mem.allocs.size ≤ a → ι a = none)
+    ProvBounded s'.mem ∧ (∀ a, s'.mem.allocs.size ≤ a → ι a = none) ∧ DerefInv ι s'.mem
 
 /-- An assignment's `StmtOut` from its `LiftOut`. -/
 theorem stmtOut_of_lift {Γ : TermCtx} {c : R.Code} {ch : OpSem.Choice} {ι : Inj}
@@ -483,13 +662,13 @@ theorem stmtOut_of_lift {Γ : TermCtx} {c : R.Code} {ch : OpSem.Choice} {ι : In
     (hs : s.stack = f :: rest) (hstor : StorageSound Γ.body (computeStorage Γ.body).get)
     (hbd : Γ.body.blocks[f.bb]? = some bd) (hst : bd.stmts[f.stmt]? = some (.assign ⟨d, []⟩ rv))
     (hsl : ∀ l p, f.locals[l]? = some (some p) → (computeStorage Γ.body).get f.bb f.stmt l = true)
-    (hfr : ∀ a, s.mem.allocs.size ≤ a → ι a = none)
+    (hfr : ∀ a, s.mem.allocs.size ≤ a → ι a = none) (hdi : DerefInv ι s.mem)
     (hpc : s1.pc + 1 = r.2)
     (hl : LiftOut Γ.toStmtCtx c ch ι ((computeLive Γ.body).get f.bb (f.stmt + 1)) f s s' s1) :
     StmtOut Γ c ch ι f rest r s s' s1 := by
-  obtain ⟨st', hstep, hstk, hrel, hpb, hle⟩ := hl
+  obtain ⟨st', hstep, hstk, hrel, hpb, hle, hk⟩ := hl
   refine ⟨_, f, .cons hstep (.refl _), hstk.trans hs, rfl, rfl, rfl, rfl, rfl, hpc, hrel,
-    ?_, hpb, ?_⟩
+    ?_, hpb, ?_, hdi.of_memKept hk⟩
   · intro l p hp
     exact (hstor.stmt f.bb bd hbd f.stmt _ hst).1 l (hsl l p hp) (by intro e; cases e)
   · intro a ha
@@ -508,8 +687,8 @@ theorem assign_live {Γ : TermCtx} {f : Spec.Frame} {bd : BlockData} {d : Local}
   · exact .inl e
   · exact .inr (h1 l hl e)
 
-/-- One statement, from `MatchAt` before it. -/
-theorem stmt_sim {Γ : TermCtx} {c : R.Code} {ι : Inj} {o : Spec.Oracle} {ch : OpSem.Choice}
+/-- One statement of `LowerStmt`, from `MatchAt` before it. -/
+theorem stmt_sim_base {Γ : TermCtx} {c : R.Code} {ι : Inj} {o : Spec.Oracle} {ch : OpSem.Choice}
     (hfn : LowersFn Γ c.d) (hmode : c.mode = Γ.mode) (hρ : c.ρ = Γ.ρ)
     {s s1x : Spec.State} {s1 : R.RState} {f : Spec.Frame} {rest : List Spec.Frame}
     {blk : BlockCert} {bd : BlockData} (M : MatchAt Γ ι s s1 f rest blk bd)
@@ -551,7 +730,7 @@ theorem stmt_sim {Γ : TermCtx} {c : R.Code} {ι : Inj} {o : Spec.Oracle} {ch : 
     obtain ⟨_, _, _, bs, hsto, hnp⟩ := binop_mem M.stack hm (by rw [← hbody]; exact htd)
       (by rw [← hbody]; exact hta) (by rw [← hbody]; exact htb) hev'
     obtain ⟨hpb, hle⟩ := memInv_store M.pb hsto hnp
-    exact stmtOut_of_lift M.stack hfn.storage M.hbd hst M.sl M.fresh hpc
+    exact stmtOut_of_lift M.stack hfn.storage M.hbd hst M.sl M.fresh M.dinv hpc
       ⟨st', hstep, hstk, hrel, hpb, hle⟩
   | binopImm hm ha htd hta hsd hsa hsize hoff hpriv hi =>
     obtain ⟨hc, hpc, hpl⟩ := single _ hR
@@ -565,7 +744,7 @@ theorem stmt_sim {Γ : TermCtx} {c : R.Code} {ι : Inj} {o : Spec.Oracle} {ch : 
     obtain ⟨_, _, _, bs, hsto, hnp⟩ := binImm_mem M.stack hm (by rw [← hbody]; exact htd)
       (by rw [← hbody]; exact hta) hev'
     obtain ⟨hpb, hle⟩ := memInv_store M.pb hsto hnp
-    exact stmtOut_of_lift M.stack hfn.storage M.hbd hst M.sl M.fresh hpc
+    exact stmtOut_of_lift M.stack hfn.storage M.hbd hst M.sl M.fresh M.dinv hpc
       ⟨st', hstep, hstk, hrel, hpb, hle⟩
   | copyInt ha htd hta hsd hsa hsize hoff hpriv hi =>
     obtain ⟨hc, hpc, hpl⟩ := single _ hR
@@ -580,7 +759,7 @@ theorem stmt_sim {Γ : TermCtx} {c : R.Code} {ι : Inj} {o : Spec.Oracle} {ch : 
         obtain ⟨_, _, _, _, _, _, _, he⟩ := runOn_evalOperand_copy M.stack hr
         exact he) hev'
     obtain ⟨hpb, hle⟩ := memInv_store M.pb hsto hnp
-    exact stmtOut_of_lift M.stack hfn.storage M.hbd hst M.sl M.fresh hpc
+    exact stmtOut_of_lift M.stack hfn.storage M.hbd hst M.sl M.fresh M.dinv hpc
       ⟨st', hstep, hstk, hrel, hpb, hle⟩
   | constInt htd hsd hsize hoff hpriv hi =>
     obtain ⟨hc, hpc, hpl⟩ := single _ hR
@@ -590,24 +769,24 @@ theorem stmt_sim {Γ : TermCtx} {c : R.Code} {ι : Inj} {o : Spec.Oracle} {ch : 
     obtain ⟨_, _, _, bs, hsto, hnp⟩ := use_mem M.stack (by rw [← hbody]; exact htd)
       (fun _ _ hr => (runOn_evalOperand_const_scalar_int hr).2) hev
     obtain ⟨hpb, hle⟩ := memInv_store M.pb hsto hnp
-    exact stmtOut_of_lift M.stack hfn.storage M.hbd hst M.sl M.fresh hpc
+    exact stmtOut_of_lift M.stack hfn.storage M.hbd hst M.sl M.fresh M.dinv hpc
       ⟨st', hstep, hstk, hrel, hpb, hle⟩
   | copyBool ha htd hta hsd hsa hsize hoff hpriv hi =>
     obtain ⟨hc, hpc, hpl⟩ := single _ hR
     obtain ⟨hl1, hl2⟩ := assign_live hfn.live M.hbd hst
-    exact stmtOut_of_lift M.stack hfn.storage M.hbd hst M.sl M.fresh hpc
+    exact stmtOut_of_lift M.stack hfn.storage M.hbd hst M.sl M.fresh M.dinv hpc
       (lift_copyBool M.stack hbody hmode' hρ' ha htd hta hsd hsa hsize hoff hpriv hi hc hsc
         hpe hpl M.rel M.pb (hl2 _ (operand_local_mem ha)) hl1 hev)
   | copyPtr hk ha htd hta hsd hsa hsize hoff hpriv hi =>
     obtain ⟨hc, hpc, hpl⟩ := single _ hR
     obtain ⟨hl1, hl2⟩ := assign_live hfn.live M.hbd hst
-    exact stmtOut_of_lift M.stack hfn.storage M.hbd hst M.sl M.fresh hpc
+    exact stmtOut_of_lift M.stack hfn.storage M.hbd hst M.sl M.fresh M.dinv hpc
       (lift_copyPtr M.stack hbody hmode' hρ' hk ha htd hta hsd hsa hsize hoff hpriv hi hc hsc
         hpe hpl M.rel M.pb (hl2 _ (operand_local_mem ha)) hl1 hev)
   | constBool htd hsd hsize hoff hpriv hi =>
     obtain ⟨hc, hpc, hpl⟩ := single _ hR
     obtain ⟨hl1, -⟩ := assign_live hfn.live M.hbd hst
-    exact stmtOut_of_lift M.stack hfn.storage M.hbd hst M.sl M.fresh hpc
+    exact stmtOut_of_lift M.stack hfn.storage M.hbd hst M.sl M.fresh M.dinv hpc
       (lift_constBool M.stack hbody hmode' hρ' htd hsd hsize hoff hpriv hi hc hsc hpe hpl
         M.rel M.pb hl1 hev)
   | storageLive l =>
@@ -658,8 +837,8 @@ theorem stmt_sim {Γ : TermCtx} {c : R.Code} {ι : Inj} {o : Spec.Oracle} {ch : 
     subst hs1x
     obtain ⟨e, -⟩ := List.cons.inj hs'
     subst e
-    obtain ⟨a, -, -, -, -, -, -, hm', -, -⟩ := runOn_allocate_ok hal
-    refine ⟨s1, _, .refl _, rfl, rfl, rfl, rfl, rfl, rfl, hpc, hrel', ?_, ?_, ?_⟩
+    obtain ⟨a, hda, hpa, -, -, -, -, hm', hok, -⟩ := runOn_allocate_ok hal
+    refine ⟨s1, _, .refl _, rfl, rfl, rfl, rfl, rfl, rfl, hpc, hrel', ?_, ?_, ?_, ?_⟩
     · intro l' p' hp'
       by_cases e : l' = l
       · rw [e]
@@ -676,6 +855,9 @@ theorem stmt_sim {Γ : TermCtx} {c : R.Code} {ι : Inj} {o : Spec.Oracle} {ch : 
       have hx' : m'.allocs.size ≤ x := hx
       rw [hm', Array.size_push] at hx'
       exact Nat.le_of_succ_le hx'
+    · show DerefInv ι m'
+      rw [hm']
+      exact M.dinv.push M.pb hda (by rw [hpa]; exact hok)
   | storageDead l =>
     have hpc : s1.pc = r.2 := by rw [hpc0, rangeInsns_nil h1 h2 hR]
     have hdead := hfn.deadAfter f.bb bd f.stmt l M.hbd hst
@@ -696,7 +878,8 @@ theorem stmt_sim {Γ : TermCtx} {c : R.Code} {ι : Inj} {o : Spec.Oracle} {ch : 
       subst hs1x
       obtain ⟨e, -⟩ := List.cons.inj hs'
       subst e
-      refine ⟨s1, _, .refl _, rfl, rfl, rfl, rfl, rfl, rfl, hpc, hrel', ?_, M.pb.dealloc hd, ?_⟩
+      refine ⟨s1, _, .refl _, rfl, rfl, rfl, rfl, rfl, rfl, hpc, hrel', ?_, M.pb.dealloc hd, ?_,
+        M.dinv.of_memKept (memKept_dealloc hd)⟩
       · intro l' p' hp'
         by_cases e : l' = l
         · have hp'' : (f.locals.set! l none)[l']? = some (some p') := hp'
@@ -717,7 +900,8 @@ theorem stmt_sim {Γ : TermCtx} {c : R.Code} {ι : Inj} {o : Spec.Oracle} {ch : 
       rw [M.stack] at hs'
       obtain ⟨e, -⟩ := List.cons.inj hs'
       subst e
-      refine ⟨s1, f, .refl _, M.stack, rfl, rfl, rfl, rfl, rfl, hpc, hrel', ?_, M.pb, M.fresh⟩
+      refine ⟨s1, f, .refl _, M.stack, rfl, rfl, rfl, rfl, rfl, hpc, hrel', ?_, M.pb, M.fresh,
+        M.dinv⟩
       intro l' p' hp'
       exact (hfn.storage.stmt f.bb bd M.hbd f.stmt _ hst).1 l' (M.sl l' p' hp')
         (by
@@ -755,163 +939,5 @@ theorem term_next {Γ : TermCtx} {next : Nat} {term : Terminator} {is : List R.I
   case switchNone hd _ => exact hsw hd h
   case switchBool => exact hsw (by assumption) h
   case switchInt => exact hsw (by assumption) h
-
-/-! ### One step -/
-
-/-- One L0 step from `Match` (see the module comment). -/
-theorem fn_step_sim {Γ : TermCtx} {c : R.Code} {ι : Inj} {o : Spec.Oracle} {ch : OpSem.Choice}
-    (hfn : LowersFn Γ c.d) (hmode : c.mode = Γ.mode) (hρ : c.ρ = Γ.ρ) (hinc : IncomingOk c)
-    {s s' : Spec.State} {s1 : R.RState} (hm : Match Γ ι s s1) (hpick : PicksAt Γ o s s1.fp)
-    (h : runOn Sem.step o s = (.ok (), s')) :
-    (∃ s1', StepsTo c ch s1 s1' ∧ Match Γ ι s' s1') ∨
-      (∃ v regs incoming, s'.final = some (.returned v) ∧
-        R.step c s1 ch = .ok (.done (R.exit s1 (.ret regs incoming)))) := by
-  obtain ⟨f, rest, blk, bd, M⟩ := hm
-  have hfin := step_final_none h
-  have hbd' : f.body.blocks[f.bb]? = some bd := by rw [M.body]; exact M.hbd
-  have hB := hfn.block f.bb bd blk M.hbd M.hblk
-  cases hst : bd.stmts[f.stmt]? with
-  | some st =>
-    obtain ⟨s1x, f1, rest1, hev, hs1x, rfl⟩ := step_stmt_inv M.stack hfin M.pu hbd' hst h
-    have hlt : f.stmt < bd.stmts.length := (List.getElem?_eq_some_iff.mp hst).1
-    have hlt' : f.stmt < blk.stmts.size := by rw [hB.len]; exact hlt
-    have hr : blk.stmts[f.stmt]? = some blk.stmts[f.stmt] := Array.getElem?_eq_getElem hlt'
-    obtain ⟨h1, h2, hnext, hlow⟩ := hB.stmt _ _ _ hst hr
-    obtain ⟨s1', f', hsteps, hs', hb', hbb', hst', hpu', hc', hpc', hrel', hsl', hpb', hfr'⟩ :=
-      stmt_sim (ch := ch) hfn hmode hρ M hpick hst hr h1 h2 hlow hev
-    rw [hs'] at hs1x
-    obtain ⟨e1, e2⟩ := List.cons.inj hs1x
-    subst e1 e2
-    refine .inl ⟨s1', hsteps, { f' with stmt := f'.stmt + 1 }, rest, blk, bd, ?_⟩
-    refine { stack := rfl, body := hb'.trans M.body, pu := hpu'.trans M.pu,
-             cont := hc'.trans M.cont, hblk := ?_, hbd := ?_, le := ?_,
-             pc := ?_, rel := ?_, sl := ?_, pb := hpb', fresh := hfr' }
-    · show Γ.blocks[f'.bb]? = some blk
-      rw [hbb']; exact M.hblk
-    · show Γ.body.blocks[f'.bb]? = some bd
-      rw [hbb']; exact M.hbd
-    · show f'.stmt + 1 ≤ bd.stmts.length
-      rw [hst']; exact hlt
-    · show pcAt blk (f'.stmt + 1) = s1'.pc
-      rw [hst', ← nextStart_eq, ← hnext, hpc']
-    · show FnRel Γ.toStmtCtx ι ((computeLive Γ.body).get f'.bb (f'.stmt + 1))
-        { f' with stmt := f'.stmt + 1 } s1x.mem s1'
-      have h2 : FnRel Γ.toStmtCtx ι ((computeLive Γ.body).get f'.bb (f'.stmt + 1)) f' s1x.mem s1' := by
-        rw [hbb', hst']; exact hrel'
-      exact FnRel.congr h2 rfl rfl rfl rfl
-    · intro l p hp
-      show (computeStorage Γ.body).get f'.bb (f'.stmt + 1) l = true
-      rw [hbb', hst']
-      exact hsl' l p hp
-  | none =>
-    have h' := step_term_inv M.stack hfin M.pu hbd' hst h
-    have hlen : f.stmt = bd.stmts.length := by
-      have := List.getElem?_eq_none_iff.mp hst
-      exact Nat.le_antisymm M.le this
-    have hnone : blk.stmts[f.stmt]? = none := by
-      rw [Array.getElem?_eq_none_iff, hB.len]; omega
-    have hpc0 : s1.pc = blk.term.1 := by rw [← M.pc, pcAt_none hnone]
-    have hpe : c.mode.pe = false := by rw [hmode]; exact hfn.notPe
-    have hat := termAt_of hB.termIn hfn.noScopes hpe hpc0 hB.termLe
-    have hlr := (hfn.live.term f.bb bd M.hbd).1
-    by_cases hret : bd.term = .return
-    · have hlow := hB.term
-      have hat' := hat
-      generalize hR : rangeInsns c.d blk.term = is at hlow hat'
-      rw [hret] at hlow h'
-      cases hlow with
-      | ret hok =>
-        have hl0 : (computeLive Γ.body).get f.bb f.stmt 0 = true := by
-          rw [hlen]; exact hlr 0 (by rw [hret]; simp [termReads])
-        obtain ⟨v, regs, incoming, hfinal, hstep, -⟩ := sim_ret (ch := ch) M.stack M.body.symm
-          hok hat' M.rel hl0 M.cont (hinc _) h'
-        exact .inr ⟨v, regs, incoming, hfinal, hstep⟩
-    · have hpl : ∀ i, (rangeInsns c.d blk.term).head? = some i → PlainView c.mode c.ρ i := by
-        intro i hi
-        cases hR : rangeInsns c.d blk.term with
-        | nil => rw [hR] at hi; cases hi
-        | cons j tl =>
-          rw [hR] at hi
-          simp only [List.head?_cons, Option.some.injEq] at hi
-          subst hi
-          have hc := hat.code 0 (by rw [hR]; simp)
-          simp only [Nat.add_zero, hR, List.getElem_cons_zero] at hc
-          rw [hmode, hρ]
-          exact hfn.plain _ _ hc
-      have hlive : ∀ (d : Operand) cs ow l, bd.term = .switchInt d cs ow → d.local? = some l →
-          (computeLive Γ.body).get f.bb f.stmt l = true := by
-        intro d cs ow l he hd
-        rw [hlen]
-        exact hlr l (by rw [he]; exact operand_local_mem hd)
-      obtain ⟨s1', f', hsteps, hs', -, -, hstart, hmem, hrel'⟩ := sim_term (ch := ch)
-        (live' := (computeLive Γ.body).get f.bb f.stmt) M.stack M.body.symm hmode hρ hB.term
-        hret hat hpl M.rel hlive (fun _ h => h) h'
-      obtain ⟨b', hsucc, hs'', -⟩ := term_next hB.term hret M.stack h'
-      rw [hs''] at hs'
-      obtain ⟨e, -⟩ := List.cons.inj hs'
-      subst e
-      -- the target block
-      unfold blockStart at hstart
-      obtain ⟨blk', hblk', hpc'⟩ := Option.map_eq_some_iff.mp hstart
-      have hb'lt : b' < Γ.body.blocks.size := by
-        rw [← hfn.blocksSize]; exact (Array.getElem?_eq_some_iff.mp hblk').1
-      obtain ⟨bd', hbd''⟩ : ∃ bd', Γ.body.blocks[b']? = some bd' :=
-        ⟨_, Array.getElem?_eq_getElem hb'lt⟩
-      refine .inl ⟨s1', hsteps, { f with bb := b', stmt := 0 }, rest, blk', bd', ?_⟩
-      refine { stack := hs'', body := M.body, pu := M.pu, cont := M.cont, hblk := hblk',
-               hbd := hbd'', le := Nat.zero_le _, pc := hpc', rel := ?_, sl := ?_,
-               pb := by rw [hmem]; exact M.pb, fresh := by rw [hmem]; exact M.fresh }
-      · show FnRel Γ.toStmtCtx ι ((computeLive Γ.body).get b' 0) { f with bb := b', stmt := 0 }
-          s'.mem s1'
-        refine hrel'.weaken fun l hl => ?_
-        rw [hlen]
-        exact (hfn.live.term f.bb bd M.hbd).2 b' hsucc l hl
-      · intro l p hp
-        show (computeStorage Γ.body).get b' 0 l = true
-        have := M.sl l p hp
-        rw [hlen] at this
-        exact hfn.storage.term f.bb bd M.hbd b' hsucc l this
-
-/-! ### Runs -/
-
-/-- `n` successful L0 steps. -/
-inductive L0Steps (o : Spec.Oracle) : Nat → Spec.State → Spec.State → Prop where
-  | zero (s : Spec.State) : L0Steps o 0 s s
-  | succ {n : Nat} {s s1 s2 : Spec.State} : runOn Sem.step o s = (.ok (), s1) →
-      L0Steps o n s1 s2 → L0Steps o (n + 1) s s2
-
-theorem StepsTo.trans {c : R.Code} {ch : OpSem.Choice} {a b d : R.RState}
-    (h1 : StepsTo c ch a b) (h2 : StepsTo c ch b d) : StepsTo c ch a d := by
-  induction h1 with
-  | refl => exact h2
-  | cons hs _ ih => exact .cons hs (ih h2)
-
-/-- The function simulation: an L0 run of `n` steps from related states is matched by an R run
-to related states, or L0 returned and R's `ret` ends the function. -/
-theorem fn_sim {Γ : TermCtx} {c : R.Code} {ι : Inj} {o : Spec.Oracle} {ch : OpSem.Choice}
-    (hfn : LowersFn Γ c.d) (hmode : c.mode = Γ.mode) (hρ : c.ρ = Γ.ρ) (hinc : IncomingOk c)
-    (hpick : ∀ s s1, Match Γ ι s s1 → PicksAt Γ o s s1.fp) :
-    ∀ {n : Nat} {s s' : Spec.State} {s1 : R.RState}, Match Γ ι s s1 → L0Steps o n s s' →
-      (∃ s1', StepsTo c ch s1 s1' ∧ Match Γ ι s' s1') ∨
-      (∃ s1' v regs incoming, StepsTo c ch s1 s1' ∧ s'.final = some (.returned v) ∧
-        R.step c s1' ch = .ok (.done (R.exit s1' (.ret regs incoming)))) := by
-  intro n s s' s1 hm hrun
-  revert s1
-  induction hrun with
-  | zero s0 => intro s1 hm; exact .inl ⟨s1, .refl _, hm⟩
-  | succ hstep hrest ih =>
-    intro s1 hm
-    rcases fn_step_sim (ch := ch) hfn hmode hρ hinc hm (hpick _ _ hm) hstep with
-      ⟨s1', hst, hm'⟩ | ⟨v, regs, incoming, hfinal, hret⟩
-    · rcases ih hm' with ⟨s1'', hst', hm''⟩ | ⟨s1'', v, regs, incoming, hst', hf, hr⟩
-      · exact .inl ⟨s1'', hst.trans hst', hm''⟩
-      · exact .inr ⟨s1'', v, regs, incoming, hst.trans hst', hf, hr⟩
-    · -- after the return the run has ended: no further successful step
-      cases hrest with
-      | zero => exact .inr ⟨s1, v, regs, incoming, .refl _, hfinal, hret⟩
-      | succ hstep' _ =>
-        have := step_final_none hstep'
-        rw [hfinal] at this
-        cases this
 
 end Ryo.Proofs.Lower

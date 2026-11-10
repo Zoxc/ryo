@@ -78,11 +78,14 @@ import Std.Data.HashMap
 import Ryo.Check.Lower.Cert
 import Ryo.Check.Image.Common
 import Ryo.Vm.Frame
-import Ryo.Check.Lower.Stmt
-import Ryo.Check.Lower.Term
+import Ryo.Check.Lower.StmtExt
+import Ryo.Check.Lower.TermExt
 import Ryo.Check.Lower.Live
 import Ryo.Check.Lower.Prolog
+import Ryo.Check.Lower.PrologX
 import Ryo.Check.Lower.Fn
+import Ryo.Check.Lower.Fused
+import Ryo.Check.Lower.Reach
 
 namespace Ryo.Check.Lower
 
@@ -573,6 +576,7 @@ def lowerCoverage (body : Body) (fc : FuncCert) (d : Decoded) (mode : Ryo.Obj.Mo
     else none
   let Γ : StmtCtx := { body, slots := fc.locals, mode, ρ := fun _ => none,
                        escaped := fun o => esc.any fun (lo, hi) => lo ≤ o && o < hi }
+  let reach := computeReach body
   let mut out := #[]
   for h : bi in [0:fc.blocks.size] do
     let blk := fc.blocks[bi]
@@ -580,15 +584,26 @@ def lowerCoverage (body : Body) (fc : FuncCert) (d : Decoded) (mode : Ryo.Obj.Mo
     for h : si in [0:blk.stmts.size] do
       let some st := bd.stmts[si]? | continue
       let (lo, hi) := blk.stmts[si]
-      out := out.push (checkStmt Γ st (d.insns.extract lo hi).toList)
+      out := out.push (checkStmtX Γ st (d.insns.extract lo hi).toList)
     let Γt : TermCtx := { Γ with blocks := fc.blocks, retKind := fc.retKind }
-    out := out.push (checkBlockTerm Γt blk bd.term d.insns)
+    -- A dead block needs no rule unless L0 can reach it (`Reach.lean`); a fused block's last
+    -- statement is lowered with its terminator (`Fused.lean`).
+    let v : Verdict :=
+      if blk.dead then
+        if reachGet reach bi then .rejected "dead block: reachable" else .ok
+      else if blk.fused then
+        checkFusedBlock Γt blk.term.2 blk.stmts.size bd.stmts bd.term
+          (d.insns.extract blk.term.1 blk.term.2).toList
+      else checkBlockTermX Γt blk bd.term d.insns
+    out := out.push v
   -- The prologue (`Prolog.lean`): its `arg`s, register inputs only.
   let pro : List Insn := (d.insns.extract fc.prologue.1 fc.prologue.2).toList
   let pv : Verdict := match fc.plan with
     | some plan =>
-      let Γp : PrologCtx := ⟨fc.locals, fc.argHomes, plan, Γ.escaped⟩
-      prologVerdict Γp pro
+      let Γp0 : PrologCtx := ⟨fc.locals, fc.argHomes, plan, Γ.escaped⟩
+      let Γp : PrologXCtx := { Γp0 with
+        sret := fc.sret, callerLoc := fc.callerLocation, spread := fc.spreadArg.isSome }
+      prologXVerdict Γp pro
     | none => .unsupported "prologue: no plan"
   out := out.push pv
   -- The liveness, storage and slot-layout checks (`Live.lean`); a failure only keeps the

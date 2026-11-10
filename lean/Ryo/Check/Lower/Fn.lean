@@ -4,10 +4,13 @@ the function simulation (`Ryo/Proofs/Lower/FnSim.lean`) needs of the decoded cod
 the MIR body and the certificate in `Γ`, and `checkFn` decides it (`checkFn_sound`).
 
 M5a's restrictions: no scopes anywhere in the function (so no escaped locals: every local is
-private), not PE, every block neither fused nor dead, every statement and terminator lowered by
-a rule of `Stmt.lean`/`Term.lean`, every instruction a plain view (`PlainView`), and no two
-locals with overlapping slots storage-live together (`share`: `Live.lean`'s `ShareOk`; slots
-may be shared by locals never storage-live at the same point, since L0 allocates each local at
+private), not PE, every block L0 can reach (`Reach.lean`'s `computeReach`, checked by
+`reachOk`) not dead, every statement and terminator lowered by a rule of
+`StmtExt.lean`/`TermExt.lean`, or a fused block's last statement and terminator together by
+`Fused.lean`'s (M5b); blocks L0 cannot reach need no check;
+every instruction a plain view (`PlainView`), and no two locals with overlapping slots
+storage-live together (`share`: `Live.lean`'s `ShareOk`; slots may be shared by locals never storage-live
+at the same point, since L0 allocates each local at
 its slot and live allocations don't overlap). Liveness: `computeLive` with its post-fixpoint
 check, a `StorageDead`'d local dead right after, and a `StorageLive`'d local storage-dead before
 it (`computeStorage` over-approximates storage), its slot the size of its type.
@@ -15,8 +18,11 @@ it (`computeStorage` over-approximates storage), its slot the size of its type.
 The prologue (`Prolog.lean`) is not part of this: the simulation starts at block 0's first
 statement, from a state the prologue's simulation (`SimProlog.lean`) relates.
 -/
-import Ryo.Check.Lower.Term
+import Ryo.Check.Lower.TermExt
+import Ryo.Check.Lower.StmtExt
 import Ryo.Check.Lower.Live
+import Ryo.Check.Lower.Fused
+import Ryo.Check.Lower.Reach
 import Ryo.Proofs.Lower.FnRel
 
 namespace Ryo.Check.Lower
@@ -37,17 +43,19 @@ terminator's. -/
 def nextStart (blk : BlockCert) (i : Nat) : Nat :=
   ((blk.stmts[i + 1]?).map (·.1)).getD blk.term.1
 
-/-- One block's lowering. -/
+/-- One block's lowering: a fused block's last statement has no range of its own, it is lowered
+with the terminator (`FusedBlock`). -/
 structure BlockOk (Γ : TermCtx) (d : Decoded) (bd : BlockData) (blk : BlockCert) : Prop where
-  fused : blk.fused = false
   dead : blk.dead = false
-  len : blk.stmts.size = bd.stmts.length
+  len : blk.stmts.size + (if blk.fused then 1 else 0) = bd.stmts.length
   stmt : ∀ (i : Nat) st r, bd.stmts[i]? = some st → blk.stmts[i]? = some r →
     r.1 ≤ r.2 ∧ r.2 ≤ d.insns.size ∧ r.2 = nextStart blk i ∧
-      LowerStmt Γ.toStmtCtx st (rangeInsns d r)
+      LowerStmtX Γ.toStmtCtx st (rangeInsns d r)
   termLe : blk.term.1 ≤ blk.term.2
   termIn : blk.term.2 ≤ d.insns.size
-  term : LowerTerm Γ blk.term.2 bd.term (rangeInsns d blk.term)
+  term : blk.fused = false → LowerTermX Γ blk.term.2 bd.term (rangeInsns d blk.term)
+  fusedOk : blk.fused = true →
+    FusedBlock Γ blk.term.2 blk.stmts.size bd.stmts bd.term (rangeInsns d blk.term)
 
 /-- The function's lowering (see the module comment). -/
 structure LowersFn (Γ : TermCtx) (d : Decoded) : Prop where
@@ -55,7 +63,9 @@ structure LowersFn (Γ : TermCtx) (d : Decoded) : Prop where
   notPe : Γ.mode.pe = false
   noEsc : ∀ o, Γ.escaped o = false
   blocksSize : Γ.blocks.size = Γ.body.blocks.size
-  block : ∀ (b : Nat) bd blk, Γ.body.blocks[b]? = some bd → Γ.blocks[b]? = some blk → BlockOk Γ d bd blk
+  reach : ReachSound Γ.body (reachGet (computeReach Γ.body))
+  block : ∀ (b : Nat) bd blk, reachGet (computeReach Γ.body) b = true →
+    Γ.body.blocks[b]? = some bd → Γ.blocks[b]? = some blk → BlockOk Γ d bd blk
   plain : ∀ (k : Nat) i, d.insns[k]? = some i → PlainView Γ.mode Γ.ρ i
   ints : IntsSized Γ.body
   live : LiveSound Γ.body (computeLive Γ.body).get
@@ -84,42 +94,68 @@ theorem plainOk_spec {mode : Ryo.Obj.Mode} {ρ : Addrs} {i : Insn} (h : plainOk 
   · exact h.1.2
   · exact h.2
 
+/-- The terminator's check: with the fused statement for a fused block. -/
+def blockTermCheck (Γ : TermCtx) (d : Decoded) (bd : BlockData) (blk : BlockCert) : Bool :=
+  if blk.fused then
+    checkFusedBlock Γ blk.term.2 blk.stmts.size bd.stmts bd.term (rangeInsns d blk.term) == .ok
+  else checkTermX Γ blk.term.2 bd.term (rangeInsns d blk.term) == .ok
+
+theorem blockTermCheck_sound {Γ : TermCtx} {d : Decoded} {bd : BlockData} {blk : BlockCert}
+    (h : blockTermCheck Γ d bd blk = true) :
+    (blk.fused = false → LowerTermX Γ blk.term.2 bd.term (rangeInsns d blk.term)) ∧
+    (blk.fused = true →
+      FusedBlock Γ blk.term.2 blk.stmts.size bd.stmts bd.term (rangeInsns d blk.term)) := by
+  unfold blockTermCheck at h
+  cases hf : blk.fused
+  · rw [hf] at h
+    simp only [Bool.false_eq_true, eq_self_iff_true, if_true, if_false, ↓reduceIte,
+      beq_iff_eq] at h
+    exact ⟨fun _ => checkTermX_sound h, fun e => by cases e⟩
+  · rw [hf] at h
+    simp only [Bool.false_eq_true, eq_self_iff_true, if_true, if_false, ↓reduceIte,
+      beq_iff_eq] at h
+    exact ⟨fun e => (by cases e), fun _ => checkFusedBlock_sound h⟩
+
 def blockCheck (Γ : TermCtx) (d : Decoded) (bd : BlockData) (blk : BlockCert) : Bool :=
-  !blk.fused && !blk.dead && blk.stmts.size == bd.stmts.length &&
+  !blk.dead && blk.stmts.size + (if blk.fused then 1 else 0) == bd.stmts.length &&
     (List.range blk.stmts.size).all (fun i => match bd.stmts[i]?, blk.stmts[i]? with
       | some st, some r => decide (r.1 ≤ r.2) && decide (r.2 ≤ d.insns.size) &&
-          r.2 == nextStart blk i && checkStmt Γ.toStmtCtx st (rangeInsns d r) == .ok
+          r.2 == nextStart blk i && checkStmtX Γ.toStmtCtx st (rangeInsns d r) == .ok
       | _, _ => false) &&
     decide (blk.term.1 ≤ blk.term.2) && decide (blk.term.2 ≤ d.insns.size) &&
-    checkTerm Γ blk.term.2 bd.term (rangeInsns d blk.term) == .ok
+    blockTermCheck Γ d bd blk
 
 theorem blockCheck_sound {Γ : TermCtx} {d : Decoded} {bd : BlockData} {blk : BlockCert}
     (h : blockCheck Γ d bd blk = true) : BlockOk Γ d bd blk := by
   unfold blockCheck at h
   simp only [Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq, decide_eq_true_eq,
     List.all_eq_true, List.mem_range] at h
-  obtain ⟨⟨⟨⟨⟨⟨hf, hd⟩, hl⟩, hs⟩, h1⟩, h2⟩, ht⟩ := h
-  refine ⟨hf, hd, hl, ?_, h1, h2, checkTerm_sound ht⟩
+  obtain ⟨⟨⟨⟨⟨hd, hl⟩, hs⟩, h1⟩, h2⟩, ht⟩ := h
+  refine ⟨hd, hl, ?_, h1, h2, (blockTermCheck_sound ht).1, (blockTermCheck_sound ht).2⟩
   intro i st r hst hr
   have hi : i < blk.stmts.size := (Array.getElem?_eq_some_iff.mp hr).1
   have := hs i hi
   rw [hst, hr] at this
   simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at this
   obtain ⟨⟨⟨a, b⟩, c⟩, e⟩ := this
-  exact ⟨a, b, c, checkStmt_sound e⟩
+  exact ⟨a, b, c, checkStmtX_sound e⟩
 
+/-- Every block L0 can reach (`computeReach`) checks. -/
 def blocksCheck (Γ : TermCtx) (d : Decoded) : Bool :=
-  (List.range Γ.body.blocks.size).all fun b => match Γ.body.blocks[b]?, Γ.blocks[b]? with
-    | some bd, some blk => blockCheck Γ d bd blk
-    | _, _ => false
+  (List.range Γ.body.blocks.size).all fun b =>
+    !reachGet (computeReach Γ.body) b || match Γ.body.blocks[b]?, Γ.blocks[b]? with
+      | some bd, some blk => blockCheck Γ d bd blk
+      | _, _ => false
 
 theorem blocksCheck_sound {Γ : TermCtx} {d : Decoded} (h : blocksCheck Γ d = true) :
-    ∀ (b : Nat) bd blk, Γ.body.blocks[b]? = some bd → Γ.blocks[b]? = some blk → BlockOk Γ d bd blk := by
-  intro b bd blk hb hk
+    ∀ (b : Nat) bd blk, reachGet (computeReach Γ.body) b = true →
+      Γ.body.blocks[b]? = some bd → Γ.blocks[b]? = some blk → BlockOk Γ d bd blk := by
+  intro b bd blk hr hb hk
   unfold blocksCheck at h
   simp only [List.all_eq_true, List.mem_range] at h
   have := h b (Array.getElem?_eq_some_iff.mp hb).1
-  rw [hb, hk] at this
+  rw [hb, hk, hr] at this
+  simp only [Bool.not_true, Bool.false_or] at this
   exact blockCheck_sound this
 
 def plainsCheck (Γ : TermCtx) (d : Decoded) : Bool :=
@@ -209,7 +245,8 @@ def checkFn (Γ : TermCtx) (d : Decoded) : Bool :=
     intsCheck Γ.body && liveCheck Γ.body (computeLive Γ.body) &&
     storageCheck Γ.body (computeStorage Γ.body) &&
     shareCheck Γ.body Γ.slots (computeStorage Γ.body) &&
-    storageStmtsCheck Γ.body Γ.slots (computeLive Γ.body) (computeStorage Γ.body)
+    storageStmtsCheck Γ.body Γ.slots (computeLive Γ.body) (computeStorage Γ.body) &&
+    reachOk Γ.body
 
 /-- `checkFn` at `fnCtx` (whose `escaped` is constantly false). -/
 theorem checkFn_sound {body : Body} {fc : FuncCert} {mode : Ryo.Obj.Mode} {ρ : Addrs}
@@ -217,9 +254,9 @@ theorem checkFn_sound {body : Body} {fc : FuncCert} {mode : Ryo.Obj.Mode} {ρ : 
     LowersFn (fnCtx body fc mode ρ) d := by
   unfold checkFn at h
   simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at h
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨hsc, hpe⟩, hbs⟩, hb⟩, hp⟩, hi⟩, hl⟩, hs⟩, ha⟩, hst⟩ := h
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hsc, hpe⟩, hbs⟩, hb⟩, hp⟩, hi⟩, hl⟩, hs⟩, ha⟩, hst⟩, hre⟩ := h
   exact { noScopes := hsc, notPe := hpe, noEsc := fun _ => rfl, blocksSize := hbs,
-          block := blocksCheck_sound hb, plain := plainsCheck_sound hp,
+          reach := reachOk_sound hre, block := blocksCheck_sound hb, plain := plainsCheck_sound hp,
           ints := intsCheck_sound hi, live := liveCheck_sound hl,
           storage := storageCheck_sound hs, share := shareCheck_sound ha,
           deadAfter := storageStmtsCheck_dead hst, fresh := storageStmtsCheck_live hst }
